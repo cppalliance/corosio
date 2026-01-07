@@ -77,9 +77,9 @@ target_link_libraries(bench
 # Warning flags (separate from optimizations)
 target_compile_options(bench
   PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Wpedantic -fcoroutines>
-    $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->)
+    $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Wpedantic -Werror -fcoroutines>
+    $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Wpedantic -Werror>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
 
 # Optimization flags (separate from warnings)
 target_compile_options(bench
@@ -119,9 +119,9 @@ target_link_libraries(test_service_provider
 
 target_compile_options(test_service_provider
   PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic>
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->)
+    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
+    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
 
 target_link_options(test_service_provider
   PRIVATE
@@ -141,9 +141,9 @@ target_link_libraries(test_platform_reactor
 
 target_compile_options(test_platform_reactor
   PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic>
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->)
+    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
+    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
 
 target_link_options(test_platform_reactor
   PRIVATE

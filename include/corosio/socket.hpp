@@ -72,7 +72,7 @@ struct socket
     capy::detail::frame_pool& get_frame_allocator() { return pool_; }
 
 private:
-    struct read_state : capy::executor_work
+    struct read_state final : capy::executor_work
     {
         capy::coro h_;
         capy::executor_base const* ex_;
@@ -101,3 +101,4 @@ private:
 } // namespace corosio
 
 #endif
+

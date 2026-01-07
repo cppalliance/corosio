@@ -253,7 +253,7 @@ public:
 
 template<typename Awaitable, typename Dispatcher>
     requires dispatcher<Dispatcher>
-CAPY_CORO_AWAIT_ELIDABLE auto make_affine(Awaitable&& awaitable, Dispatcher const& dispatcher)
+auto make_affine(Awaitable&& awaitable, Dispatcher const& dispatcher)
     -> detail::affinity_trampoline<detail::await_result_t<Awaitable>>
 {
     using result_t = detail::await_result_t<Awaitable>;

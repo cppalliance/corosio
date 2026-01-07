@@ -33,6 +33,7 @@ struct test_work : capy::executor_work
     }
 
     void destroy() override { delete this; }
+    virtual ~test_work() = default;
 };
 
 struct counting_work : capy::executor_work
@@ -48,6 +49,7 @@ struct counting_work : capy::executor_work
     }
 
     void destroy() override { delete this; }
+    virtual ~counting_work() = default;
 };
 
 //------------------------------------------------
@@ -115,6 +117,7 @@ int main()
                     (*destroy_count_)++;
                 delete this;
             }
+            virtual ~cleanup_work() = default;
         };
 
         {
@@ -156,6 +159,7 @@ int main()
             }
 
             void destroy() override { delete this; }
+            virtual ~ordered_work() = default;
         };
 
         // Submit in order
@@ -217,7 +221,7 @@ int main()
         // Launch threads that submit work
         for(int t = 0; t < num_threads; ++t)
         {
-            threads.emplace_back([&reactor, &counter, work_per_thread]() {
+            threads.emplace_back([&reactor, &counter]() {
                 for(int i = 0; i < work_per_thread; ++i)
                 {
                     reactor.submit(new counting_work(&counter));

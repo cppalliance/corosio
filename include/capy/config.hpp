@@ -10,10 +10,11 @@
 #ifndef CAPY_CONFIG_HPP
 #define CAPY_CONFIG_HPP
 
-#if defined(__clang__) && !defined(__apple_build_version__)
+#if defined(__clang__) && !defined(__apple_build_version__) && __clang_major__ >= 20
 #define CAPY_CORO_AWAIT_ELIDABLE [[clang::coro_await_elidable]]
 #else
 #define CAPY_CORO_AWAIT_ELIDABLE
 #endif
 
 #endif
+

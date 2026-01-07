@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} - ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux - GCC
+          - os: ubuntu-24.04
+            compiler: gcc
+            cc: gcc-14
+            cxx: g++-14
+            packages: g++-14
+          
+          # Linux - Clang 18
+          - os: ubuntu-24.04
+            compiler: clang-18
+            cc: clang-18
+            cxx: clang++-18
+            packages: clang-18 libc++-18-dev libc++abi-18-dev
+          
+          # Linux - Clang 20 (from LLVM repo)
+          - os: ubuntu-24.04
+            compiler: clang-20
+            cc: clang-20
+            cxx: clang++-20
+            install_clang_20: true
+          
+          # Windows - MSVC
+          - os: windows-2022
+            compiler: msvc
+            cc: cl
+            cxx: cl
+          
+          # macOS - Clang
+          - os: macos-14
+            compiler: clang
+            cc: clang
+            cxx: clang++
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Clang 20 from LLVM repo (Linux)
+      if: runner.os == 'Linux' && matrix.install_clang_20
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 20
+        sudo apt-get install -y libc++-20-dev libc++abi-20-dev
+    
+    - name: Install dependencies (Linux)
+      if: runner.os == 'Linux' && !matrix.install_clang_20
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ${{ matrix.packages }}
+    
+    - name: Set up MSVC (Windows)
+      if: runner.os == 'Windows'
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Configure CMake
+      env:
+        CC: ${{ matrix.cc }}
+        CXX: ${{ matrix.cxx }}
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Run tests
+      run: ctest --test-dir build --build-config Release --output-on-failure --verbose

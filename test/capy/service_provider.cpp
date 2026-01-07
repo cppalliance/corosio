@@ -148,9 +148,11 @@ int main()
             threw = true;
             std::cout << "Caught expected exception: " << e.what() << "\n";
         }
-        assert(threw);
+        assert(threw && "Expected duplicate service to throw");
+        (void)threw; // Suppress unused variable warning
     }
 
     std::cout << "\n=== All tests passed! ===\n";
     return 0;
 }
+

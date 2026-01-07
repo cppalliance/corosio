@@ -134,6 +134,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE task
                     destroy();
                 }
                 void destroy() override { delete this; }
+                virtual ~starter() = default;
             };
             // VFALCO this should be dispatch() when it handles
             // running_in_this_thread()
@@ -168,3 +169,4 @@ static_assert(affine_awaitable<task, executor_base>);
 } // namespace capy
 
 #endif
+
