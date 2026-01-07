@@ -7,11 +7,13 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BENCH_SUPPORT_HPP
-#define BENCH_SUPPORT_HPP
+#ifndef INSTRUMENTATION_HPP
+#define INSTRUMENTATION_HPP
 
 // NOLINTBEGIN
 
+#include <cstddef>
+#include <cstdlib>
 #include <new> // IWYU pragma: export
 
 static std::size_t g_alloc_count = 0;
@@ -40,3 +42,4 @@ void operator delete(void* p, std::size_t) noexcept
 // NOLINTEND
 
 #endif
+

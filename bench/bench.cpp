@@ -7,8 +7,13 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include "bench.hpp"
-#include "bench_support.hpp"
+#include "instrumentation.hpp"
+#include "callback/handler.hpp"
+#include "callback/operations.hpp"
+#include "callback/socket.hpp"
+#include "callback/tls_stream.hpp"
+#include "coroutine/operations.hpp"
+
 #include <capy/async_run.hpp>
 #include <corosio/io_context.hpp>
 #include <corosio/socket.hpp>
@@ -18,72 +23,6 @@
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
-
-namespace capy {
-
-/** Performs a composed read operation on a stream.
-
-    This coroutine performs 5 sequential read_some operations on the
-    stream, simulating a composed read that continues until a complete
-    message or buffer has been received.
-
-    This demonstrates a 2-level composed operation: async_read calls
-    the stream's async_read_some member function 5 times.
-
-    @param stream The stream to read from.
-
-    @return A task that completes when all read operations finish.
-*/
-template<class Stream>
-task async_read(Stream& stream)
-{
-    for(int i = 0; i < 5; ++i)
-        co_await stream.async_read_some();
-}
-
-/** Performs a composed request operation on a stream.
-
-    This coroutine performs 10 sequential read_some operations,
-    simulating a higher-level protocol operation such as reading
-    an HTTP request with headers and body.
-
-    This demonstrates a 2-level composed operation: async_request
-    calls the stream's async_read_some member function 10 times.
-
-    @param stream The stream to read from.
-
-    @return A task that completes when the entire request is read.
-*/
-template<class Stream>
-task async_request(Stream& stream)
-{
-    for(int i = 0; i < 10; ++i)
-        co_await stream.async_read_some();
-}
-
-/** Performs a composed session operation on a stream.
-
-    This coroutine performs 100 sequential async_request operations,
-    simulating a complete session that handles multiple requests
-    over a persistent connection.
-
-    This demonstrates a 3-level composed operation: async_session
-    calls async_request 100 times, each of which performs 10 I/O
-    operations, for a total of 1000 I/O operations.
-
-    @param stream The stream to use for the session.
-
-    @return A task that completes when the session ends.
-*/
-template<class Stream>
-task async_session(Stream& stream)
-{
-    for(int i = 0; i < 100; ++i)
-        co_await async_request(stream);
-}
-
-} // namespace capy
-
 
 struct bench_result
 {
@@ -110,7 +49,7 @@ struct bench_test
         auto t0 = clock::now();
         for(int i = 0; i < N; ++i)
         {
-            cb::callback cb(count);
+            callback::handler cb(count);
             op(sock, cb);
             ioc.run();
         }
@@ -166,9 +105,9 @@ struct bench_test
     void run()
     {
         corosio::io_context ioc;
-        cb::socket cb_sock(ioc);
+        callback::socket cb_sock(ioc);
         corosio::socket co_sock(ioc);
-        cb::tls_stream<cb::socket> cb_tls(ioc);
+        callback::tls_stream<callback::socket> cb_tls(ioc);
         corosio::tls_stream<corosio::socket> co_tls(ioc);
 
         bench_result cb, co;
@@ -192,17 +131,17 @@ struct bench_test
         std::cout << "\n";
 
         // socket read (5 calls) - level 2
-        cb = bench(cb_sock, [](auto& sock, auto h) { cb::async_read(sock, std::move(h)); });
+        cb = bench(cb_sock, [](auto& sock, auto h) { callback::async_read(sock, std::move(h)); });
         co = bench_co(ioc, [&](int& count) -> capy::task {
-            co_await capy::async_read(co_sock);
+            co_await coroutine::async_read(co_sock);
             ++count;
         });
         print_results(2, "socket", "read", cb, co);
 
         // tls_stream read (5 calls) - level 2
-        cb = bench(cb_tls, [](auto& sock, auto h) { cb::async_read(sock, std::move(h)); });
+        cb = bench(cb_tls, [](auto& sock, auto h) { callback::async_read(sock, std::move(h)); });
         co = bench_co(ioc, [&](int& count) -> capy::task {
-            co_await capy::async_read(co_tls);
+            co_await coroutine::async_read(co_tls);
             ++count;
         });
         print_results(2, "tls_stream", "read", cb, co);
@@ -210,17 +149,18 @@ struct bench_test
         std::cout << "\n";
 
         // socket request (10 calls) - level 2
-        cb = bench(cb_sock, [](auto& sock, auto h) { cb::async_request(sock, std::move(h)); });
+        cb =
+            bench(cb_sock, [](auto& sock, auto h) { callback::async_request(sock, std::move(h)); });
         co = bench_co(ioc, [&](int& count) -> capy::task {
-            co_await capy::async_request(co_sock);
+            co_await coroutine::async_request(co_sock);
             ++count;
         });
         print_results(3, "socket", "request", cb, co);
 
         // tls_stream request (10 calls) - level 2
-        cb = bench(cb_tls, [](auto& sock, auto h) { cb::async_request(sock, std::move(h)); });
+        cb = bench(cb_tls, [](auto& sock, auto h) { callback::async_request(sock, std::move(h)); });
         co = bench_co(ioc, [&](int& count) -> capy::task {
-            co_await capy::async_request(co_tls);
+            co_await coroutine::async_request(co_tls);
             ++count;
         });
         print_results(3, "tls_stream", "request", cb, co);
@@ -228,17 +168,18 @@ struct bench_test
         std::cout << "\n";
 
         // socket session (1000 calls) - level 3
-        cb = bench(cb_sock, [](auto& sock, auto h) { cb::async_session(sock, std::move(h)); });
+        cb =
+            bench(cb_sock, [](auto& sock, auto h) { callback::async_session(sock, std::move(h)); });
         co = bench_co(ioc, [&](int& count) -> capy::task {
-            co_await capy::async_session(co_sock);
+            co_await coroutine::async_session(co_sock);
             ++count;
         });
         print_results(4, "socket", "session", cb, co);
 
         // tls_stream session (1000 calls) - level 3
-        cb = bench(cb_tls, [](auto& sock, auto h) { cb::async_session(sock, std::move(h)); });
+        cb = bench(cb_tls, [](auto& sock, auto h) { callback::async_session(sock, std::move(h)); });
         co = bench_co(ioc, [&](int& count) -> capy::task {
-            co_await capy::async_session(co_tls);
+            co_await coroutine::async_session(co_tls);
             ++count;
         });
         print_results(4, "tls_stream", "session", cb, co);
@@ -251,3 +192,4 @@ int main()
     t.run();
     return 0;
 }
+

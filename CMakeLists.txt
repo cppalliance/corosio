@@ -64,9 +64,13 @@ target_sources(bench
     TYPE HEADERS
     BASE_DIRS bench
     FILES
-      bench/bench.hpp
-      bench/bench_detail.hpp
-      bench/bench_support.hpp
+      bench/callback/detail/op.hpp
+      bench/callback/handler.hpp
+      bench/callback/operations.hpp
+      bench/callback/socket.hpp
+      bench/callback/tls_stream.hpp
+      bench/coroutine/operations.hpp
+      bench/instrumentation.hpp
   PRIVATE
     bench/bench.cpp)
 

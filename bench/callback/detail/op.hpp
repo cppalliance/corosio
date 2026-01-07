@@ -7,16 +7,15 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BENCH_DETAIL_HPP
-#define BENCH_DETAIL_HPP
+#ifndef CALLBACK_DETAIL_OP_HPP
+#define CALLBACK_DETAIL_OP_HPP
 
 #include <corosio/io_context.hpp>
 
 #include <cstddef>
 #include <utility>
 
-namespace cb {
-namespace detail {
+namespace callback::detail {
 
 // Thread-local cache for operation recycling
 struct op_cache
@@ -157,7 +156,6 @@ struct tls_read_op
     }
 };
 
-} // namespace detail
-} // namespace cb
+} // namespace callback::detail
 
 #endif
