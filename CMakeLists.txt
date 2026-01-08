@@ -16,7 +16,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Threading support
 find_package(Threads REQUIRED)
 
+# IDEs
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+# ==============================================================================
+# Libraries
+# ==============================================================================
+
 add_library(capy INTERFACE)
+
+file(GLOB_RECURSE CAPY_HEADERS CONFIGURE_DEPENDS include/capy/*.hpp)
 
 target_sources(capy
   PUBLIC
@@ -24,21 +33,14 @@ target_sources(capy
     TYPE HEADERS
     BASE_DIRS include
     FILES
-      include/capy/detail/frame_pool.hpp
-      include/capy/detail/root_task.hpp
-      include/capy/affine.hpp
-      include/capy/async_run.hpp
-      include/capy/config.hpp
-      include/capy/default_frame_allocator.hpp
-      include/capy/executor.hpp
-      include/capy/executor_work.hpp
-      include/capy/frame_allocator.hpp
-      include/capy/make_affine.hpp
-      include/capy/run_on.hpp
-      include/capy/service_provider.hpp
-      include/capy/task.hpp)
+      ${CAPY_HEADERS})
 
 add_library(corosio INTERFACE)
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/include/capy PREFIX "capy" FILES ${CAPY_HEADERS})
+
+
+file(GLOB_RECURSE COROSIO_HEADERS CONFIGURE_DEPENDS include/corosio/*.hpp)
 
 target_sources(corosio
   PUBLIC
@@ -46,17 +48,46 @@ target_sources(corosio
     TYPE HEADERS
     BASE_DIRS include
     FILES
-      include/corosio/io_context.hpp
-      include/corosio/platform_reactor.hpp
-      include/corosio/socket.hpp
-      include/corosio/tls_stream.hpp)
+     ${COROSIO_HEADERS})
 
 target_link_libraries(corosio
   INTERFACE
     capy)
 
-# Benchmark
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/include/corosio PREFIX "corosio" FILES ${COROSIO_HEADERS})
+
+# ==============================================================================
+# Compiler/Linker Flag Configuration
+# ==============================================================================
+
+# Diagnostic flags (warnings treated as errors)
+set(DIAGNOSTIC_FLAGS_GNU -Wall -Wextra -Wpedantic -Werror -fcoroutines)
+set(DIAGNOSTIC_FLAGS_CLANG -Wall -Wextra -Wpedantic -Werror)
+set(DIAGNOSTIC_FLAGS_MSVC /W4 /WX /permissive-)
+
+# Optimization flags for benchmarks
+set(OPTIMIZATION_FLAGS_GNU -O3 -march=native -funroll-loops -ffast-math)
+set(OPTIMIZATION_FLAGS_CLANG -O3 -march=native)
+set(OPTIMIZATION_FLAGS_MSVC /O2 /Ob2)
+
+# Size reduction flags (remove stack protection and unwind tables for benchmarks)
+set(SIZE_REDUCTION_FLAGS -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables)
+
+# Clang standard library flags (required for both compile and link)
+set(CLANG_STDLIB_FLAGS -stdlib=libc++)
+
+# Linker flags
+set(LINK_FLAGS_GNU -s -Wl,--as-needed)
+set(LINK_FLAGS_CLANG ${CLANG_STDLIB_FLAGS})
+
+# ==============================================================================
+# Benchmark Executable
+# ==============================================================================
+
 add_executable(bench)
+
+file(GLOB_RECURSE BENCH_HEADERS CONFIGURE_DEPENDS bench/*.hpp)
+file(GLOB_RECURSE BENCH_SOURCES CONFIGURE_DEPENDS bench/*.cpp)
 
 target_sources(bench
   PRIVATE
@@ -64,58 +95,62 @@ target_sources(bench
     TYPE HEADERS
     BASE_DIRS bench
     FILES
-      bench/callback/detail/op.hpp
-      bench/callback/handler.hpp
-      bench/callback/operations.hpp
-      bench/callback/socket.hpp
-      bench/callback/tls_stream.hpp
-      bench/coroutine/operations.hpp
-      bench/instrumentation.hpp
+      ${BENCH_HEADERS}
   PRIVATE
-    bench/bench.cpp)
+    ${BENCH_SOURCES})
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/bench PREFIX "bench" FILES ${BENCH_HEADERS} ${BENCH_SOURCES})
 
 target_link_libraries(bench
   PRIVATE
     corosio)
 
-# Warning flags (separate from optimizations)
+# Diagnostic flags
 target_compile_options(bench
   PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Wpedantic -Werror -fcoroutines>
-    $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Wpedantic -Werror>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
+    $<$<CXX_COMPILER_ID:GNU>:${DIAGNOSTIC_FLAGS_GNU}>
+    $<$<CXX_COMPILER_ID:Clang>:${DIAGNOSTIC_FLAGS_CLANG}>
+    $<$<CXX_COMPILER_ID:MSVC>:${DIAGNOSTIC_FLAGS_MSVC}>)
 
-# Optimization flags (separate from warnings)
+# Optimization flags (only for Release-type builds)
 target_compile_options(bench
   PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-O3 -march=native -funroll-loops -ffast-math -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables>
-    $<$<CXX_COMPILER_ID:Clang>:-O3 -march=native>
-    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:/O2 /Ob2 /GL>)
+    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:${OPTIMIZATION_FLAGS_GNU} ${SIZE_REDUCTION_FLAGS}>
+    $<$<AND:$<CXX_COMPILER_ID:Clang>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:${OPTIMIZATION_FLAGS_CLANG} ${SIZE_REDUCTION_FLAGS}>
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:${OPTIMIZATION_FLAGS_MSVC}>)
+
+# Clang requires -stdlib=libc++ for both compile and link
+target_compile_options(bench
+  PRIVATE
+    $<$<CXX_COMPILER_ID:Clang>:${CLANG_STDLIB_FLAGS}>)
 
 target_compile_definitions(bench PRIVATE
     $<$<NOT:$<CONFIG:Debug>>:NDEBUG>)
 
-# Use INTERPROCEDURAL_OPTIMIZATION property instead of manual -flto
+# Link-time optimization (cross-platform via CMake property)
 set_property(TARGET bench PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
-# Linker-specific flags that aren't covered by IPO property
+# Additional linker flags
 target_link_options(bench
   PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-s -Wl,--as-needed>
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>
-    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:/LTCG>)
+    $<$<CXX_COMPILER_ID:GNU>:${LINK_FLAGS_GNU}>
+    $<$<CXX_COMPILER_ID:Clang>:${LINK_FLAGS_CLANG}>)
 
-# Clang stdlib requirement
-target_compile_options(bench
-  PRIVATE
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
+# ==============================================================================
+# Test Executables
+# ==============================================================================
 
-# Platform Service Provider Test
+# Platform Service Provider Test -----------------------------------------------
+
 add_executable(test_service_provider)
+
+file(GLOB_RECURSE TEST_CAPY_SOURCES CONFIGURE_DEPENDS test/capy/*.cpp)
 
 target_sources(test_service_provider
   PRIVATE
-    test/capy/service_provider.cpp)
+    ${TEST_CAPY_SOURCES})
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/test/capy PREFIX "capy (tests)" FILES ${TEST_CAPY_SOURCES})
 
 target_link_libraries(test_service_provider
   PRIVATE
@@ -123,20 +158,29 @@ target_link_libraries(test_service_provider
 
 target_compile_options(test_service_provider
   PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
+    $<$<CXX_COMPILER_ID:GNU>:${DIAGNOSTIC_FLAGS_GNU}>
+    $<$<CXX_COMPILER_ID:Clang>:${DIAGNOSTIC_FLAGS_CLANG}>
+    $<$<CXX_COMPILER_ID:MSVC>:${DIAGNOSTIC_FLAGS_MSVC}>)
+
+target_compile_options(test_service_provider
+  PRIVATE
+    $<$<CXX_COMPILER_ID:Clang>:${CLANG_STDLIB_FLAGS}>)
 
 target_link_options(test_service_provider
   PRIVATE
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
+    $<$<CXX_COMPILER_ID:Clang>:${LINK_FLAGS_CLANG}>)
 
-# Platform Reactor Test
+# Platform Reactor Test --------------------------------------------------------
+
 add_executable(test_platform_reactor)
+
+file(GLOB_RECURSE TEST_COROSIO_SOURCES CONFIGURE_DEPENDS test/corosio/*.cpp)
 
 target_sources(test_platform_reactor
   PRIVATE
-    test/corosio/platform_reactor.cpp)
+    ${TEST_COROSIO_SOURCES})
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/test/corosio PREFIX "corosio (tests)" FILES ${TEST_COROSIO_SOURCES})
 
 target_link_libraries(test_platform_reactor
   PRIVATE
@@ -145,15 +189,19 @@ target_link_libraries(test_platform_reactor
 
 target_compile_options(test_platform_reactor
   PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
+    $<$<CXX_COMPILER_ID:GNU>:${DIAGNOSTIC_FLAGS_GNU}>
+    $<$<CXX_COMPILER_ID:Clang>:${DIAGNOSTIC_FLAGS_CLANG}>
+    $<$<CXX_COMPILER_ID:MSVC>:${DIAGNOSTIC_FLAGS_MSVC}>)
+
+target_compile_options(test_platform_reactor
+  PRIVATE
+    $<$<CXX_COMPILER_ID:Clang>:${CLANG_STDLIB_FLAGS}>)
 
 target_link_options(test_platform_reactor
   PRIVATE
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
+    $<$<CXX_COMPILER_ID:Clang>:${LINK_FLAGS_CLANG}>)
 
-# Register as tests for ctest
+# CTest registration -----------------------------------------------------------
 enable_testing()
 add_test(NAME bench COMMAND bench)
 add_test(NAME test_service_provider COMMAND test_service_provider)
