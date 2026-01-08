@@ -17,11 +17,11 @@ struct socket::ops_state final
         : capy::executor_work
     {
         capy::coro h;
-        capy::executor_base const* ex;
+        capy::any_dispatcher d;
 
         void operator()() override
         {
-            ex->dispatch(h).resume();
+            d(h).resume();
         }
 
         void destroy() override
@@ -51,11 +51,11 @@ void
 socket::
 do_read_some(
     capy::coro h,
-    capy::executor_base const& ex)
+    capy::any_dispatcher d)
 {
     ++g_io_count;
     ops_->rd.h = h;
-    ops_->rd.ex = &ex;
+    ops_->rd.d = d;
     reactor_->submit(&ops_->rd);
 }
 

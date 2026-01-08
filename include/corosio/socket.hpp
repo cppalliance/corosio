@@ -11,6 +11,7 @@
 #define COROSIO_SOCKET_HPP
 
 #include <corosio/platform_reactor.hpp>
+#include <capy/affine.hpp>
 #include <capy/service_provider.hpp>
 #include <capy/detail/frame_pool.hpp>
 #include <capy/executor.hpp>
@@ -59,15 +60,14 @@ struct socket
         {
         }
 
+        template<capy::dispatcher Dispatcher>
         auto
         await_suspend(
             std::coroutine_handle<> h,
-            capy::executor_base const& ex) const ->
+            Dispatcher const& d) const ->
                 std::coroutine_handle<>
         {
-            s_.do_read_some(h, ex);
-            // Affine awaitable: receive caller's executor for completion dispatch.
-            // Return noop because we post work rather than resuming inline.
+            s_.do_read_some(h, d);
             return std::noop_coroutine();
         }
 
@@ -91,7 +91,7 @@ struct socket
 private:
     void do_read_some(
         std::coroutine_handle<>,
-        capy::executor_base const&);
+        capy::any_dispatcher);
 
     struct ops_state;
 
