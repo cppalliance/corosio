@@ -13,7 +13,6 @@
 #include <capy/config.hpp>
 #include <capy/affine.hpp>
 #include <capy/detail/frame_pool.hpp>
-#include <capy/executor.hpp>
 #include <capy/frame_allocator.hpp>
 
 #include <exception>
@@ -72,7 +71,7 @@ struct task_return_base<void, Derived>
     `has_frame_allocator` on the first or second coroutine parameter,
     enabling pooled allocation of coroutine frames.
 
-    @see executor_base
+    @see any_dispatcher
     @see has_frame_allocator
     @see corosio::detail::frame_pool
 */
@@ -84,8 +83,8 @@ struct CAPY_CORO_AWAIT_ELIDABLE
         : capy::detail::frame_pool::promise_allocator
         , detail::task_return_base<T, promise_type>
     {
-        executor_base const* ex_ = nullptr;
-        executor_base const* caller_ex_ = nullptr;
+        any_dispatcher ex_;
+        any_dispatcher caller_ex_;
         coro continuation_;
 
         // Detached cleanup support for async_run
@@ -129,7 +128,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE
                     auto detached_state = p_->detached_state_;
                     h.destroy();
                     if(continuation)
-                        return caller_ex->dispatch(continuation);
+                        return caller_ex(continuation);
                     if(detached_cleanup)
                         detached_cleanup(detached_state);
                     return std::noop_coroutine();
@@ -168,7 +167,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
-                return a_.await_suspend(h, *p_->ex_);
+                return a_.await_suspend(h, p_->ex_);
             }
         };
 
@@ -194,20 +193,21 @@ struct CAPY_CORO_AWAIT_ELIDABLE
             return std::move(*h_.promise().result_);
     }
 
-    // Affine awaitable: receive caller's executor for completion dispatch
-    coro await_suspend(coro continuation, executor_base const& caller_ex)
+    // Affine awaitable: receive caller's dispatcher for completion dispatch
+    template<dispatcher D>
+    coro await_suspend(coro continuation, D const& caller_ex)
     {
-        static_assert(dispatcher<executor_base>);
-        h_.promise().caller_ex_ = &caller_ex;
+        h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
-        h_.promise().ex_ = &caller_ex;
+        h_.promise().ex_ = caller_ex;
         return h_;
     }
 
-    void start(executor_base const& ex)
+    template<dispatcher D>
+    void start(D const& ex)
     {
-        h_.promise().ex_ = &ex;
-        h_.promise().caller_ex_ = &ex;
+        h_.promise().ex_ = ex;
+        h_.promise().caller_ex_ = ex;
         h_.resume();
     }
 
@@ -257,8 +257,8 @@ private:
     }
 };
 
-static_assert(affine_awaitable<task<void>, executor_base>);
-static_assert(affine_awaitable<task<int>, executor_base>);
+static_assert(affine_awaitable<task<void>, any_dispatcher>);
+static_assert(affine_awaitable<task<int>, any_dispatcher>);
 
 } // namespace capy
 
