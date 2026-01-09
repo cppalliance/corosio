@@ -71,7 +71,7 @@ struct bench_test
         auto t0 = clock::now();
         for(int i = 0; i < N; ++i)
         {
-            capy::async_run(ioc.get_executor(), make_task(count));
+            capy::async_run(ioc.get_executor())(make_task(count));
             ioc.run();
         }
         auto t1 = clock::now();

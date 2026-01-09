@@ -26,7 +26,7 @@ std::size_t g_io_count = 0;
 //------------------------------------------------
 
 // Simple coroutine that performs one async read operation
-capy::task read_once(corosio::socket& sock)
+capy::task<> read_once(corosio::socket& sock)
 {
     // Perform a single async read - this will suspend and resume via the reactor
     co_await sock.async_read_some();
@@ -51,21 +51,17 @@ void test_single_layer_coroutine()
     auto ex = ioc.get_executor();
 
     // Launch the coroutine
-    capy::async_run(ex, read_once(sock));
+    capy::async_run(ex)(read_once(sock));
 
-    // At this point, the coroutine has been posted but not executed
-    assert(g_io_count == 0);
-    std::cout << "After async_run, I/O count: " << g_io_count << " (expected 0)\n";
+    // With inline dispatch, coroutine runs immediately until first I/O suspend
+    // g_io_count is incremented when await_suspend is called
+    assert(g_io_count == 1);
+    std::cout << "After async_run, I/O count: " << g_io_count << " (expected 1)\n";
 
-    // Run the I/O context to process the coroutine
+    // Run the I/O context to process the coroutine completion
     ioc.run();
 
-    // The coroutine should have:
-    // 1. Started and hit the co_await
-    // 2. Called socket.async_read_some() which increments g_io_count
-    // 3. Suspended and posted a read_state work item
-    // 4. The reactor processed the work item
-    // 5. The coroutine resumed and completed
+    // The I/O operation was already started; ioc.run() resumes the coroutine
     assert(g_io_count == 1);
     std::cout << "After ioc.run(), I/O count: " << g_io_count << " (expected 1)\n";
 
@@ -73,7 +69,7 @@ void test_single_layer_coroutine()
 }
 
 // Test multiple sequential reads
-capy::task read_multiple(corosio::socket& sock, int count)
+capy::task<> read_multiple(corosio::socket& sock, int count)
 {
     for(int i = 0; i < count; ++i)
     {
@@ -92,10 +88,11 @@ void test_multiple_reads()
     auto ex = ioc.get_executor();
 
     const int read_count = 5;
-    capy::async_run(ex, read_multiple(sock, read_count));
+    capy::async_run(ex)(read_multiple(sock, read_count));
 
-    assert(g_io_count == 0);
-    std::cout << "After async_run, I/O count: " << g_io_count << " (expected 0)\n";
+    // With inline dispatch, first I/O is started immediately
+    assert(g_io_count == 1);
+    std::cout << "After async_run, I/O count: " << g_io_count << " (expected 1)\n";
 
     ioc.run();
 
@@ -136,12 +133,13 @@ void test_multiple_coroutines()
     auto ex = ioc.get_executor();
 
     // Launch three coroutines
-    capy::async_run(ex, read_once(sock1));
-    capy::async_run(ex, read_once(sock2));
-    capy::async_run(ex, read_once(sock3));
+    capy::async_run(ex)(read_once(sock1));
+    capy::async_run(ex)(read_once(sock2));
+    capy::async_run(ex)(read_once(sock3));
 
-    assert(g_io_count == 0);
-    std::cout << "After launching 3 coroutines, I/O count: " << g_io_count << " (expected 0)\n";
+    // With inline dispatch, all 3 coroutines run to first I/O immediately
+    assert(g_io_count == 3);
+    std::cout << "After launching 3 coroutines, I/O count: " << g_io_count << " (expected 3)\n";
 
     ioc.run();
 

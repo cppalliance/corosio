@@ -207,22 +207,16 @@ target_link_options(test_task
 # Platform Reactor Test
 #------------------------------------------------------------------------------
 
-file(GLOB_RECURSE TEST_PLATFORM_REACTOR_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/corosio/*.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/corosio/*.cpp")
-
 add_executable(test_platform_reactor)
 
 target_sources(test_platform_reactor
     PRIVATE
-        ${TEST_PLATFORM_REACTOR_SOURCES})
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/corosio/platform_reactor.cpp")
 
 target_link_libraries(test_platform_reactor
     PRIVATE
         corosio
         Threads::Threads)
-
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/test/corosio" PREFIX "test" FILES ${TEST_PLATFORM_REACTOR_SOURCES})
 
 target_compile_options(test_platform_reactor
     PRIVATE

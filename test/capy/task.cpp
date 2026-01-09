@@ -162,7 +162,7 @@ void test_flow_c_io()
     mock_io_op io("io");
 
     bool completed = false;
-    capy::async_run(ex, flow_c_io(io), overloaded{
+    capy::async_run(ex)(flow_c_io(io), overloaded{
         [&]() {
             completed = true;
             log("completed");
@@ -212,7 +212,7 @@ void test_flow_c1_c2_io()
     mock_io_op io("io");
 
     bool completed = false;
-    capy::async_run(ex, flow_c1_c2_io(io), overloaded{
+    capy::async_run(ex)(flow_c1_c2_io(io), overloaded{
         [&]() {
             completed = true;
             log("completed");
@@ -267,7 +267,7 @@ void test_flow_with_return_value()
     mock_io_op io("io");
 
     int final_result = 0;
-    capy::async_run(ex, flow_c1_c2_value(io), overloaded{
+    capy::async_run(ex)(flow_c1_c2_value(io), overloaded{
         [&](int result) {
             final_result = result;
             log("completed with " + std::to_string(result));
@@ -317,7 +317,7 @@ void test_flow_executor_change()
     mock_io_op io("io");
 
     bool completed = false;
-    capy::async_run(ex1, flow_c1_ex1(io, ex2), overloaded{
+    capy::async_run(ex1)(flow_c1_ex1(io, ex2), overloaded{
         [&]() {
             completed = true;
             log("completed");
@@ -394,7 +394,7 @@ void test_same_executor_symmetric_transfer()
     };
 
     bool completed = false;
-    capy::async_run(ex, c1(), overloaded{
+    capy::async_run(ex)(c1(), overloaded{
         [&]() {
             completed = true;
         },
@@ -469,7 +469,7 @@ void test_task_move()
 
     test_executor ex("ex");
     int result = 0;
-    capy::async_run(ex, std::move(t2), overloaded{
+    capy::async_run(ex)(std::move(t2), overloaded{
         [&](int r) {
             result = r;
         },
@@ -498,7 +498,7 @@ void test_exception_handling()
     bool caught = false;
     std::string error_msg;
 
-    capy::async_run(ex, throwing_task(), overloaded{
+    capy::async_run(ex)(throwing_task(), overloaded{
         [&]() {
             // Should not reach here
         },
@@ -548,7 +548,7 @@ void test_void_and_nonvoid_tasks()
 
     // Test void
     bool void_done = false;
-    capy::async_run(ex, void_task(), overloaded{
+    capy::async_run(ex)(void_task(), overloaded{
         [&]() {
             void_done = true;
         },
@@ -562,7 +562,7 @@ void test_void_and_nonvoid_tasks()
 
     // Test int
     int int_result = 0;
-    capy::async_run(ex, int_task(), overloaded{
+    capy::async_run(ex)(int_task(), overloaded{
         [&](int r) {
             int_result = r;
         },
@@ -576,7 +576,7 @@ void test_void_and_nonvoid_tasks()
 
     // Test string
     std::string str_result;
-    capy::async_run(ex, string_task(), overloaded{
+    capy::async_run(ex)(string_task(), overloaded{
         [&](std::string r) {
             str_result = std::move(r);
         },
