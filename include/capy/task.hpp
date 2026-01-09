@@ -171,6 +171,12 @@ struct CAPY_CORO_AWAIT_ELIDABLE
 
     std::coroutine_handle<promise_type> h_;
 
+    ~task()
+    {
+        if(h_ && !h_.done())
+            h_.destroy();
+    }
+
     bool await_ready() const noexcept
     {
         return false;
@@ -180,10 +186,10 @@ struct CAPY_CORO_AWAIT_ELIDABLE
     {
         if(h_.promise().ep_)
             std::rethrow_exception(h_.promise().ep_);
-        if constexpr (std::is_void_v<T>)
-            return;
-        else
+        if constexpr (! std::is_void_v<T>)
             return std::move(*h_.promise().result_);
+        else
+            return;
     }
 
     // Affine awaitable: receive caller's dispatcher for completion dispatch
@@ -207,12 +213,6 @@ struct CAPY_CORO_AWAIT_ELIDABLE
         std::coroutine_handle<promise_type>
     {
         return std::exchange(h_, nullptr);
-    }
-
-    ~task()
-    {
-        if(h_ && !h_.done())
-            h_.destroy();
     }
 
     // Non-copyable
