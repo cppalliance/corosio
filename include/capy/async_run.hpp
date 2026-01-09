@@ -238,8 +238,6 @@ void run_root_task(Dispatcher d, task<T> t, Handler handler)
     root.release();
 }
 
-} // namespace detail
-
 /** Runner object returned by async_run(dispatcher).
 
     Provides operator() overloads to launch tasks with various
@@ -263,7 +261,7 @@ struct async_runner
     template<typename T>
     void operator()(task<T> t) &&
     {
-        detail::run_root_task<Dispatcher, T, default_handler>(
+        run_root_task<Dispatcher, T, default_handler>(
             std::move(d_), std::move(t), default_handler{});
     }
 
@@ -282,7 +280,7 @@ struct async_runner
     template<typename T, typename Handler>
     void operator()(task<T> t, Handler h) &&
     {
-        detail::run_root_task<Dispatcher, T, Handler>(
+        run_root_task<Dispatcher, T, Handler>(
             std::move(d_), std::move(t), std::move(h));
     }
 
@@ -296,11 +294,13 @@ struct async_runner
     template<typename T, typename H1, typename H2>
     void operator()(task<T> t, H1 h1, H2 h2) &&
     {
-        using combined = detail::split_handler<H1, H2>;
-        detail::run_root_task<Dispatcher, T, combined>(
+        using combined = split_handler<H1, H2>;
+        run_root_task<Dispatcher, T, combined>(
             std::move(d_), std::move(t), combined{std::move(h1), std::move(h2)});
     }
 };
+
+} // namespace detail
 
 /** Creates a runner to launch lazy tasks for detached execution.
 
@@ -355,9 +355,9 @@ struct async_runner
     @see dispatcher
 */
 template<dispatcher Dispatcher>
-async_runner<Dispatcher> async_run(Dispatcher d)
+auto async_run(Dispatcher d)
 {
-    return async_runner<Dispatcher>{std::move(d)};
+    return detail::async_runner<Dispatcher>{std::move(d)};
 }
 
 } // namespace capy

@@ -10,3 +10,4 @@
 - 4-space indent, Allman braces
 - Trailing return type when return type is verbose
 - function name on new line
+- `auto` for `detail` namespace or private return types
