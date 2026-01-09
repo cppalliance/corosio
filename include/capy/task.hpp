@@ -89,6 +89,10 @@ struct CAPY_CORO_AWAIT_ELIDABLE
         executor_base const* caller_ex_ = nullptr;
         std::coroutine_handle<> continuation_;
 
+        // Detached cleanup support for async_run
+        void (*detached_cleanup_)(void*) = nullptr;
+        void* detached_state_ = nullptr;
+
         // Storage: monostate for void, optional<T> otherwise
         [[no_unique_address]]
         std::conditional_t<
@@ -122,9 +126,13 @@ struct CAPY_CORO_AWAIT_ELIDABLE
                     // Destroy before dispatch enables memory recycling
                     auto continuation = p_->continuation_;
                     auto caller_ex = p_->caller_ex_;
+                    auto detached_cleanup = p_->detached_cleanup_;
+                    auto detached_state = p_->detached_state_;
                     h.destroy();
-                    if(continuation) // almost always true
+                    if(continuation)
                         return caller_ex->dispatch(continuation);
+                    if(detached_cleanup)
+                        detached_cleanup(detached_state);
                     return std::noop_coroutine();
                 }
 
