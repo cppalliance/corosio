@@ -103,7 +103,7 @@ struct root_task
 
 template<class Executor>
     requires dispatcher<Executor>
-root_task<Executor> wrapper(task t);
+root_task<Executor> wrapper(task<> t);
 
 } // namespace capy::detail
 

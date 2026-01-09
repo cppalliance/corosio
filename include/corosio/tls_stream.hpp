@@ -35,7 +35,7 @@ struct tls_stream
 
     auto get_executor() const { return stream_.get_executor(); }
 
-    capy::task async_read_some() { co_await stream_.async_read_some(); }
+    capy::task<> async_read_some() { co_await stream_.async_read_some(); }
 
     template<class Stream2 = Stream>
         requires requires(Stream2& s) { s.get_frame_allocator(); }

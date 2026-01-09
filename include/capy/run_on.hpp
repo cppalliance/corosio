@@ -13,6 +13,8 @@
 #include <capy/config.hpp>
 #include <capy/task.hpp>
 
+#include <utility>
+
 namespace capy {
 
 /** Binds a task to execute on a specific executor.
@@ -31,11 +33,14 @@ namespace capy {
     @code
     co_await run_on(strand, some_task());
     @endcode
+
+    @note This is a placeholder implementation. The full run_on_awaitable
+    design will be implemented separately.
 */
-task run_on(executor_base const& ex, task t)
+task<> run_on(executor_base const& ex, task<> t)
 {
-    t.set_executor(ex);
-    return t;
+    (void)ex;  // TODO: implement proper executor binding
+    co_await std::move(t);
 }
 
 } // namespace capy

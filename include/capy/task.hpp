@@ -18,8 +18,34 @@
 
 #include <coroutine>
 #include <exception>
+#include <optional>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
 namespace capy {
+
+namespace detail {
+
+// Helper base to provide return_void or return_value without full class specialization
+template<typename T, typename Derived>
+struct task_return_base
+{
+    void return_value(T value)
+    {
+        static_cast<Derived*>(this)->result_ = std::move(value);
+    }
+};
+
+template<typename Derived>
+struct task_return_base<void, Derived>
+{
+    void return_void()
+    {
+    }
+};
+
+} // namespace detail
 
 /** A coroutine task type implementing the affine awaitable protocol.
 
@@ -27,6 +53,8 @@ namespace capy {
     It implements the affine awaitable protocol where `await_suspend` receives
     the caller's executor, enabling proper completion dispatch across executor
     boundaries.
+
+    @tparam T The return type of the task. Defaults to void.
 
     Key features:
     @li Lazy execution - the coroutine does not start until awaited
@@ -49,51 +77,87 @@ namespace capy {
     @see has_frame_allocator
     @see corosio::detail::frame_pool
 */
-struct CAPY_CORO_AWAIT_ELIDABLE task
+template<typename T = void>
+struct CAPY_CORO_AWAIT_ELIDABLE
+    task
 {
-    struct promise_type : capy::detail::frame_pool::promise_allocator
+    struct promise_type
+        : capy::detail::frame_pool::promise_allocator
+        , detail::task_return_base<T, promise_type>
     {
         executor_base const* ex_ = nullptr;
         executor_base const* caller_ex_ = nullptr;
-        coro continuation_;
+        std::coroutine_handle<> continuation_;
+
+        // Storage: monostate for void, optional<T> otherwise
+        [[no_unique_address]]
+        std::conditional_t<
+            std::is_void_v<T>,
+            std::monostate,
+            std::optional<T>> result_;
 
         task get_return_object()
         {
-            return {std::coroutine_handle<promise_type>::from_promise(*this)};
+            return task{std::coroutine_handle<promise_type>::from_promise(*this)};
         }
-        std::suspend_always initial_suspend() noexcept { return {}; }
+
+        std::suspend_always initial_suspend() noexcept
+        {
+            return {};
+        }
 
         auto final_suspend() noexcept
         {
             struct awaiter
             {
                 promise_type* p_;
-                bool await_ready() const noexcept { return false; }
+
+                bool await_ready() const noexcept
+                {
+                    return false;
+                }
+
                 std::coroutine_handle<> await_suspend(coro h) const noexcept
                 {
-                    std::coroutine_handle<> next = std::noop_coroutine();
-                    if(p_->continuation_)
-                        next = p_->caller_ex_->dispatch(p_->continuation_);
+                    // Destroy before dispatch enables memory recycling
+                    auto continuation = p_->continuation_;
+                    auto caller_ex = p_->caller_ex_;
                     h.destroy();
-                    // Return continuation handle for symmetric transfer to
-                    // avoid stack growth when resuming the caller
-                    return next;
+                    if(continuation) // almost always true
+                        return caller_ex->dispatch(continuation);
+                    return std::noop_coroutine();
                 }
-                void await_resume() const noexcept {}
+
+                void await_resume() const noexcept
+                {
+                }
             };
             return awaiter{this};
         }
 
-        void return_void() {}
-        void unhandled_exception() { std::terminate(); }
+        // return_void() or return_value() inherited from task_return_base
+
+        void unhandled_exception()
+        {
+            std::terminate();
+        }
 
         template<class Awaitable>
         struct transform_awaiter
         {
             std::decay_t<Awaitable> a_;
             promise_type* p_;
-            bool await_ready() { return a_.await_ready(); }
-            auto await_resume() { return a_.await_resume(); }
+
+            bool await_ready()
+            {
+                return a_.await_ready();
+            }
+
+            auto await_resume()
+            {
+                return a_.await_resume();
+            }
+
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
@@ -106,65 +170,88 @@ struct CAPY_CORO_AWAIT_ELIDABLE task
         {
             return transform_awaiter<Awaitable>{std::forward<Awaitable>(a), this};
         }
-
-        void set_executor(executor_base const& ex) { ex_ = &ex; }
     };
 
     std::coroutine_handle<promise_type> h_;
-    bool has_own_ex_ = false;
 
-    bool await_ready() const noexcept { return false; }
-    void await_resume() const noexcept {}
+    bool await_ready() const noexcept
+    {
+        return false;
+    }
+
+    auto await_resume()
+    {
+        if constexpr (std::is_void_v<T>)
+            return;
+        else
+            return std::move(*h_.promise().result_);
+    }
+
     // Affine awaitable: receive caller's executor for completion dispatch
     std::coroutine_handle<> await_suspend(coro continuation, executor_base const& caller_ex)
     {
         static_assert(dispatcher<executor_base>);
         h_.promise().caller_ex_ = &caller_ex;
         h_.promise().continuation_ = continuation;
-
-        if(has_own_ex_)
-        {
-            struct starter : executor_work
-            {
-                coro h_;
-                starter(coro h) : h_(h) {}
-                void operator()() override
-                {
-                    h_.resume();
-                    destroy();
-                }
-                void destroy() override { delete this; }
-                virtual ~starter() = default;
-            };
-            // VFALCO this should be dispatch() when it handles
-            // running_in_this_thread()
-            h_.promise().ex_->post(new starter{h_});
-            // Return noop because we posted work; executor will resume us later
-            return std::noop_coroutine();
-        }
-        else
-        {
-            // Return our handle for symmetric transfer to avoid stack growth
-            h_.promise().ex_ = &caller_ex;
-            return h_;
-        }
+        h_.promise().ex_ = &caller_ex;
+        return h_;
     }
 
     void start(executor_base const& ex)
     {
-        h_.promise().set_executor(ex);
+        h_.promise().ex_ = &ex;
         h_.promise().caller_ex_ = &ex;
         h_.resume();
     }
 
-    void set_executor(executor_base const& ex)
+    /** Release ownership of the coroutine handle.
+
+        After calling this, the task no longer owns the handle and will
+        not destroy it. The caller is responsible for the handle's lifetime.
+
+        @return The coroutine handle, or nullptr if already released.
+    */
+    std::coroutine_handle<promise_type> release() noexcept
     {
-        h_.promise().ex_ = &ex;
-        has_own_ex_ = true;
+        return std::exchange(h_, nullptr);
+    }
+
+    ~task()
+    {
+        if(h_ && !h_.done())
+            h_.destroy();
+    }
+
+    // Non-copyable
+    task(task const&) = delete;
+    task& operator=(task const&) = delete;
+
+    // Movable
+    task(task&& other) noexcept
+        : h_(std::exchange(other.h_, nullptr))
+    {
+    }
+
+    task& operator=(task&& other) noexcept
+    {
+        if(this != &other)
+        {
+            if(h_ && !h_.done())
+                h_.destroy();
+            h_ = std::exchange(other.h_, nullptr);
+        }
+        return *this;
+    }
+
+private:
+    explicit task(std::coroutine_handle<promise_type> h)
+        : h_(h)
+    {
     }
 };
 
-static_assert(affine_awaitable<task, executor_base>);
+static_assert(affine_awaitable<task<void>, executor_base>);
+static_assert(affine_awaitable<task<int>, executor_base>);
 
 } // namespace capy
 

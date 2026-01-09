@@ -115,7 +115,7 @@ struct bench_test
 #if 1
         // socket read_some (1 call) - level 1
         cb = bench(cb_sock, [](auto& sock, auto h) { sock.async_read_some(std::move(h)); });
-        co = bench_co(ioc, [&](int& count) -> capy::task {
+        co = bench_co(ioc, [&](int& count) -> capy::task<> {
             co_await co_sock.async_read_some();
             ++count;
         });
@@ -123,7 +123,7 @@ struct bench_test
 
         // tls_stream read_some (1 call) - level 1
         cb = bench(cb_tls, [](auto& sock, auto h) { sock.async_read_some(std::move(h)); });
-        co = bench_co(ioc, [&](int& count) -> capy::task {
+        co = bench_co(ioc, [&](int& count) -> capy::task<> {
             co_await co_tls.async_read_some();
             ++count;
         });
@@ -133,7 +133,7 @@ struct bench_test
 
         // socket read (5 calls) - level 2
         cb = bench(cb_sock, [](auto& sock, auto h) { callback::async_read(sock, std::move(h)); });
-        co = bench_co(ioc, [&](int& count) -> capy::task {
+        co = bench_co(ioc, [&](int& count) -> capy::task<> {
             co_await coroutine::async_read(co_sock);
             ++count;
         });
@@ -141,7 +141,7 @@ struct bench_test
 
         // tls_stream read (5 calls) - level 2
         cb = bench(cb_tls, [](auto& sock, auto h) { callback::async_read(sock, std::move(h)); });
-        co = bench_co(ioc, [&](int& count) -> capy::task {
+        co = bench_co(ioc, [&](int& count) -> capy::task<> {
             co_await coroutine::async_read(co_tls);
             ++count;
         });
@@ -152,7 +152,7 @@ struct bench_test
         // socket request (10 calls) - level 2
         cb =
             bench(cb_sock, [](auto& sock, auto h) { callback::async_request(sock, std::move(h)); });
-        co = bench_co(ioc, [&](int& count) -> capy::task {
+        co = bench_co(ioc, [&](int& count) -> capy::task<> {
             co_await coroutine::async_request(co_sock);
             ++count;
         });
@@ -160,7 +160,7 @@ struct bench_test
 
         // tls_stream request (10 calls) - level 2
         cb = bench(cb_tls, [](auto& sock, auto h) { callback::async_request(sock, std::move(h)); });
-        co = bench_co(ioc, [&](int& count) -> capy::task {
+        co = bench_co(ioc, [&](int& count) -> capy::task<> {
             co_await coroutine::async_request(co_tls);
             ++count;
         });
@@ -171,7 +171,7 @@ struct bench_test
         // socket session (1000 calls) - level 3
         cb =
             bench(cb_sock, [](auto& sock, auto h) { callback::async_session(sock, std::move(h)); });
-        co = bench_co(ioc, [&](int& count) -> capy::task {
+        co = bench_co(ioc, [&](int& count) -> capy::task<> {
             co_await coroutine::async_session(co_sock);
             ++count;
         });
@@ -180,7 +180,7 @@ struct bench_test
 
         // tls_stream session (1000 calls) - level 3
         //cb = bench(cb_tls, [](auto& sock, auto h) { callback::async_session(sock, std::move(h)); });
-        co = bench_co(ioc, [&](int& count) -> capy::task {
+        co = bench_co(ioc, [&](int& count) -> capy::task<> {
             co_await coroutine::async_session(co_tls);
             ++count;
         });

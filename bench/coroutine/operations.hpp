@@ -28,7 +28,7 @@ namespace coroutine {
     @return A task that completes when all read operations finish.
 */
 template<class Stream>
-capy::task async_read(Stream& stream)
+capy::task<> async_read(Stream& stream)
 {
     for(int i = 0; i < 5; ++i)
         co_await stream.async_read_some();
@@ -48,7 +48,7 @@ capy::task async_read(Stream& stream)
     @return A task that completes when the entire request is read.
 */
 template<class Stream>
-capy::task async_request(Stream& stream)
+capy::task<> async_request(Stream& stream)
 {
     for(int i = 0; i < 10; ++i)
         co_await stream.async_read_some();
@@ -69,7 +69,7 @@ capy::task async_request(Stream& stream)
     @return A task that completes when the session ends.
 */
 template<class Stream>
-capy::task async_session(Stream& stream)
+capy::task<> async_session(Stream& stream)
 {
     for(int i = 0; i < 100; ++i)
         co_await async_request(stream);

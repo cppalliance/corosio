@@ -20,9 +20,9 @@ namespace capy {
 
 template<class Executor>
     requires dispatcher<Executor>
-detail::root_task<Executor> detail::wrapper(task t)
+detail::root_task<Executor> detail::wrapper(task<> t)
 {
-    co_await t;
+    co_await std::move(t);
 }
 
 /** Starts a task for execution on an executor.
@@ -49,7 +49,7 @@ detail::root_task<Executor> detail::wrapper(task t)
     for the duration of the task's execution.
 */
 template<class Executor>
-void async_run(Executor ex, task t)
+void async_run(Executor ex, task<> t)
 {
     auto root = detail::wrapper<Executor>(std::move(t));
     root.h_.promise().ex_ = std::move(ex);
