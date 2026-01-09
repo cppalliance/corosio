@@ -9,9 +9,10 @@
 
 #include <capy/service_provider.hpp>
 
-#include <cassert>
 #include <iostream>
 
+#undef NDEBUG
+#include <cassert>
 //------------------------------------------------
 // Example services
 
@@ -155,4 +156,3 @@ int main()
     std::cout << "\n=== All tests passed! ===\n";
     return 0;
 }
-

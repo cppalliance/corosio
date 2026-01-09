@@ -11,10 +11,12 @@
 #include <capy/service_provider.hpp>
 
 #include <atomic>
-#include <cassert>
 #include <iostream>
 #include <thread>
 #include <vector>
+
+#undef NDEBUG
+#include <cassert>
 
 //------------------------------------------------
 // Test work items

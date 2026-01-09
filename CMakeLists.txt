@@ -131,6 +131,27 @@ target_link_options(test_service_provider
   PRIVATE
     $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
 
+# async_run Test
+add_executable(test_async_run)
+
+target_sources(test_async_run
+  PRIVATE
+    test/capy/async_run.cpp)
+
+target_link_libraries(test_async_run
+  PRIVATE
+    capy)
+
+target_compile_options(test_async_run
+  PRIVATE
+    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
+    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
+
+target_link_options(test_async_run
+  PRIVATE
+    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
+
 # Platform Reactor Test
 add_executable(test_platform_reactor)
 
@@ -153,8 +174,32 @@ target_link_options(test_platform_reactor
   PRIVATE
     $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
 
+# Socket Test
+add_executable(test_socket)
+
+target_sources(test_socket
+  PRIVATE
+    test/corosio/socket.cpp)
+
+target_link_libraries(test_socket
+  PRIVATE
+    corosio
+    Threads::Threads)
+
+target_compile_options(test_socket
+  PRIVATE
+    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
+    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
+
+target_link_options(test_socket
+  PRIVATE
+    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
+
 # Register as tests for ctest
 enable_testing()
 add_test(NAME bench COMMAND bench)
 add_test(NAME test_service_provider COMMAND test_service_provider)
+add_test(NAME test_async_run COMMAND test_async_run)
 add_test(NAME test_platform_reactor COMMAND test_platform_reactor)
+add_test(NAME test_socket COMMAND test_socket)
