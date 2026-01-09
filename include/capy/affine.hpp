@@ -161,6 +161,25 @@ public:
         return d_ != nullptr;
     }
 
+    /** Compares two dispatchers for identity.
+
+        Two `any_dispatcher` instances are equal if they wrap the same
+        underlying dispatcher object (pointer equality). This enables
+        the affinity optimization: when `caller_dispatcher == my_dispatcher`,
+        symmetric transfer can proceed without a `running_in_this_thread()`
+        check.
+
+        @param other The dispatcher to compare against.
+
+        @return `true` if both wrap the same dispatcher object.
+    */
+    bool
+    operator==(
+        any_dispatcher const& other) const noexcept
+    {
+        return d_ == other.d_;
+    }
+
     /** Dispatches a coroutine handle through the wrapped dispatcher.
 
         Invokes the stored dispatcher with the given coroutine handle,
