@@ -23,7 +23,6 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
-#include <coroutine>
 
 namespace capy {
 namespace detail {
@@ -52,7 +51,7 @@ struct dispatch_awaitable
 
     bool await_ready() const noexcept { return false; }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) const
+    coro await_suspend(coro h) const
     {
         return dispatcher_(h);
     }
@@ -62,11 +61,11 @@ struct dispatch_awaitable
 
 struct transfer_to_caller
 {
-    std::coroutine_handle<> caller_;
+    coro caller_;
 
     bool await_ready() noexcept { return false; }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept { return caller_; }
+    coro await_suspend(coro) noexcept { return caller_; }
 
     void await_resume() noexcept {}
 };
@@ -79,7 +78,7 @@ public:
     {
         std::optional<T> value_;
         std::exception_ptr exception_;
-        std::coroutine_handle<> caller_;
+        coro caller_;
 
         affinity_trampoline get_return_object()
         {
@@ -115,7 +114,7 @@ public:
 
     bool await_ready() const noexcept { return false; }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept
+    coro await_suspend(coro caller) noexcept
     {
         handle_.promise().caller_ = caller;
         return handle_;
@@ -136,7 +135,7 @@ public:
     struct promise_type
     {
         std::exception_ptr exception_;
-        std::coroutine_handle<> caller_;
+        coro caller_;
 
         affinity_trampoline get_return_object()
         {
@@ -168,7 +167,7 @@ public:
 
     bool await_ready() const noexcept { return false; }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept
+    coro await_suspend(coro caller) noexcept
     {
         handle_.promise().caller_ = caller;
         return handle_;
@@ -239,7 +238,7 @@ public:
     @code
     struct Dispatcher
     {
-        void operator()(std::coroutine_handle<> h) const;
+        void operator()(coro h) const;
     };
     @endcode
 

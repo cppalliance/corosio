@@ -15,7 +15,6 @@
 #include <capy/executor.hpp>
 #include <capy/task.hpp>
 
-#include <coroutine>
 #include <utility>
 
 namespace capy {
@@ -50,7 +49,7 @@ struct run_on_awaitable
 
     // Affine awaitable: receives caller's executor for completion dispatch
     template<dispatcher D>
-    std::coroutine_handle<> await_suspend(coro continuation, D const& caller_ex)
+    coro await_suspend(coro continuation, D const& caller_ex)
     {
         // 'this' is kept alive by co_await until completion
         // ex_ is valid for the entire operation
@@ -62,7 +61,7 @@ struct run_on_awaitable
 
     // Detached execution (no coroutine caller)
     // Precondition: 'this' is heap-allocated
-    std::coroutine_handle<> await_suspend_detached()
+    coro await_suspend_detached()
     {
         h_.promise().ex_ = &ex_;
         h_.promise().caller_ex_ = &ex_;

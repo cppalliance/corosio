@@ -11,8 +11,8 @@
 #define CAPY_AFFINE_HPP
 
 #include <capy/config.hpp>
+
 #include <concepts>
-#include <coroutine>
 
 namespace capy {
 
@@ -29,7 +29,7 @@ namespace capy {
     @par Requirements
     - `D(h)` must be valid where `h` is `std::coroutine_handle<P>` and
       `d` is a const reference to `D`
-    - `D(h)` must return a `std::coroutine_handle<>` (or convertible type)
+    - `D(h)` must return a `coro` (or convertible type)
       to enable symmetric transfer
     - Calling `D(h)` schedules `h` for resumption (typically by scheduling
       it on a specific execution context) and returns a coroutine handle
@@ -37,12 +37,12 @@ namespace capy {
     - The dispatcher must be const-callable (logical constness), enabling
       thread-safe concurrent dispatch from multiple coroutines
 
-    @note Since `std::coroutine_handle<>` has `operator()` which invokes
+    @note Since `coro` has `operator()` which invokes
     `resume()`, the handle itself is callable and can be dispatched directly.
 */
 template<typename D, typename P = void>
 concept dispatcher = requires(D const& d, std::coroutine_handle<P> h) {
-    { d(h) } -> std::convertible_to<std::coroutine_handle<>>;
+    { d(h) } -> std::convertible_to<coro>;
 };
 
 /** Concept for affine awaitable types.
@@ -67,7 +67,7 @@ concept dispatcher = requires(D const& d, std::coroutine_handle<P> h) {
     @code
     struct my_async_op {
         template<typename Dispatcher>
-        auto await_suspend(std::coroutine_handle<> h, Dispatcher const& d) {
+        auto await_suspend(coro h, Dispatcher const& d) {
             start_async([h, &d] {
                 d(h);  // Schedule resumption through dispatcher
             });
@@ -116,9 +116,7 @@ concept affine_awaitable = dispatcher<D, P> &&
 class any_dispatcher
 {
     void const* d_ = nullptr;
-    std::coroutine_handle<>(*f_)(
-        void const*,
-        std::coroutine_handle<>);
+    coro(*f_)(void const*, coro);
 
 public:
     /** Default constructor.
@@ -142,7 +140,7 @@ public:
     any_dispatcher(
         D const& d)
         : d_(&d)
-        , f_([](void const* pd, std::coroutine_handle<> h)
+        , f_([](void const* pd, coro h)
             {
                 D const& d = *static_cast<D const*>(pd);
                 return d(h);
@@ -194,10 +192,8 @@ public:
         @pre This instance was constructed with a valid dispatcher
              (not default-constructed).
     */
-    auto
-    operator()(
-        std::coroutine_handle<> h) const ->
-            std::coroutine_handle<>
+    coro
+    operator()(coro h) const
     {
         return f_(d_, h);
     }

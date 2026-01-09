@@ -14,11 +14,8 @@
 #include <capy/executor_work.hpp>
 
 #include <concepts>
-#include <coroutine>
 
 namespace capy {
-
-using coro = std::coroutine_handle<void>;
 
 /** Abstract base class for executors.
 
@@ -45,14 +42,18 @@ struct executor_base
     operations. It provides mechanisms for symmetric transfer of coroutine
     handles and for queuing work items to be executed later.
 
-    This concept requires that `T` is unambiguously derived from `executor_base`.
+    This concept requires that `T` is unambiguously derived from `executor_base`
+    and is both copy and move constructible (executors are passed by value).
     The `executor_base` base class defines the interface that executors must
     implement: `dispatch()` for coroutine handles and `post()` for work items.
 
     @tparam T The type to check for executor conformance.
 */
 template<class T>
-concept executor = std::derived_from<T, executor_base>;
+concept executor =
+    std::derived_from<T, executor_base> &&
+    std::copy_constructible<T> &&
+    std::move_constructible<T>;
 
 } // namespace capy
 

@@ -14,7 +14,6 @@
 #include <capy/task.hpp>
 #include <capy/detail/frame_pool.hpp>
 
-#include <coroutine>
 #include <exception>
 
 namespace capy::detail {
@@ -55,7 +54,7 @@ struct root_task
             struct awaiter
             {
                 bool await_ready() const noexcept { return false; }
-                std::coroutine_handle<> await_suspend(coro h) const noexcept
+                coro await_suspend(coro h) const noexcept
                 {
                     h.destroy();
                     return std::noop_coroutine();

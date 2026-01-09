@@ -16,7 +16,6 @@
 #include <capy/executor.hpp>
 #include <capy/frame_allocator.hpp>
 
-#include <coroutine>
 #include <exception>
 #include <optional>
 #include <type_traits>
@@ -87,7 +86,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE
     {
         executor_base const* ex_ = nullptr;
         executor_base const* caller_ex_ = nullptr;
-        std::coroutine_handle<> continuation_;
+        coro continuation_;
 
         // Detached cleanup support for async_run
         void (*detached_cleanup_)(void*) = nullptr;
@@ -121,7 +120,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE
                     return false;
                 }
 
-                std::coroutine_handle<> await_suspend(coro h) const noexcept
+                coro await_suspend(coro h) const noexcept
                 {
                     // Destroy before dispatch enables memory recycling
                     auto continuation = p_->continuation_;
@@ -196,7 +195,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE
     }
 
     // Affine awaitable: receive caller's executor for completion dispatch
-    std::coroutine_handle<> await_suspend(coro continuation, executor_base const& caller_ex)
+    coro await_suspend(coro continuation, executor_base const& caller_ex)
     {
         static_assert(dispatcher<executor_base>);
         h_.promise().caller_ex_ = &caller_ex;
