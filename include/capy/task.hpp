@@ -114,12 +114,18 @@ struct CAPY_CORO_AWAIT_ELIDABLE
                 {
                     // Destroy before dispatch enables memory recycling
                     auto continuation = p_->continuation_;
+                    auto ex = p_->ex_;
                     auto caller_ex = p_->caller_ex_;
                     auto detached_cleanup = p_->detached_cleanup_;
                     auto detached_state = p_->detached_state_;
                     h.destroy();
                     if(continuation)
+                    {
+                        // Same dispatcher: true symmetric transfer
+                        if(caller_ex == ex)
+                            return continuation;
                         return caller_ex(continuation);
+                    }
                     if(detached_cleanup)
                         detached_cleanup(detached_state);
                     return std::noop_coroutine();
@@ -194,14 +200,6 @@ struct CAPY_CORO_AWAIT_ELIDABLE
         return h_;
     }
 
-    template<dispatcher D>
-    void start(D const& ex)
-    {
-        h_.promise().ex_ = ex;
-        h_.promise().caller_ex_ = ex;
-        h_.resume();
-    }
-
     /** Release ownership of the coroutine handle.
 
         After calling this, the task no longer owns the handle and will
@@ -209,7 +207,8 @@ struct CAPY_CORO_AWAIT_ELIDABLE
 
         @return The coroutine handle, or nullptr if already released.
     */
-    std::coroutine_handle<promise_type> release() noexcept
+    auto release() noexcept ->
+        std::coroutine_handle<promise_type>
     {
         return std::exchange(h_, nullptr);
     }
