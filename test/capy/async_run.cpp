@@ -425,6 +425,137 @@ void test_3level_shared_executor()
 }
 
 //------------------------------------------------
+// Test: Stateful frame allocator
+//------------------------------------------------
+
+/** A stateful frame allocator that tracks allocations.
+
+    This allocator maintains counters for allocations and deallocations
+    to verify that the frame allocator is being used correctly.
+*/
+struct tracking_allocator
+{
+    struct stats
+    {
+        std::size_t alloc_count = 0;
+        std::size_t dealloc_count = 0;
+        std::size_t bytes_allocated = 0;
+        std::size_t bytes_deallocated = 0;
+    };
+
+    stats* stats_;
+
+    explicit tracking_allocator(stats* s)
+        : stats_(s)
+    {
+    }
+
+    void* allocate(std::size_t n)
+    {
+        ++stats_->alloc_count;
+        stats_->bytes_allocated += n;
+        return ::operator new(n);
+    }
+
+    void deallocate(void* p, std::size_t n)
+    {
+        ++stats_->dealloc_count;
+        stats_->bytes_deallocated += n;
+        ::operator delete(p);
+    }
+};
+
+static_assert(capy::frame_allocator<tracking_allocator>);
+
+void test_stateful_allocator()
+{
+    std::cout << "\n=== Test 7: Stateful frame allocator ===\n";
+
+    g_suspend_count = 0;
+    g_resume_count = 0;
+
+    tracking_allocator::stats stats;
+    tracking_allocator alloc(&stats);
+
+    mock_context ctx;
+    g_work_queue = &ctx.work_queue_;
+    auto ex = ctx.get_executor();
+
+    std::cout << "Before async_run:\n";
+    std::cout << "  alloc_count: " << stats.alloc_count << "\n";
+    std::cout << "  dealloc_count: " << stats.dealloc_count << "\n";
+
+    capy::async_run(ex, alloc)(async_op_once());
+
+    std::cout << "After async_run (before ctx.run()):\n";
+    std::cout << "  alloc_count: " << stats.alloc_count << "\n";
+    std::cout << "  dealloc_count: " << stats.dealloc_count << "\n";
+
+    // Should have allocated at least 2 frames:
+    // 1. The user's coroutine (async_op_once)
+    // 2. The async_run_task internal coroutine
+    assert(stats.alloc_count >= 2);
+    assert(stats.dealloc_count == 0); // Nothing deallocated yet
+
+    ctx.run();
+
+    std::cout << "After ctx.run():\n";
+    std::cout << "  alloc_count: " << stats.alloc_count << "\n";
+    std::cout << "  dealloc_count: " << stats.dealloc_count << "\n";
+    std::cout << "  bytes_allocated: " << stats.bytes_allocated << "\n";
+    std::cout << "  bytes_deallocated: " << stats.bytes_deallocated << "\n";
+
+    // All frames should be deallocated
+    assert(stats.alloc_count == stats.dealloc_count);
+    assert(stats.bytes_allocated == stats.bytes_deallocated);
+
+    std::cout << "Test passed!\n";
+}
+
+//------------------------------------------------
+// Test: Stateful allocator with nested coroutines
+//------------------------------------------------
+
+void test_stateful_allocator_nested()
+{
+    std::cout << "\n=== Test 8: Stateful allocator with 3-level nesting ===\n";
+
+    g_suspend_count = 0;
+    g_resume_count = 0;
+
+    tracking_allocator::stats stats;
+    tracking_allocator alloc(&stats);
+
+    mock_context ctx;
+    g_work_queue = &ctx.work_queue_;
+    auto ex = ctx.get_executor();
+
+    capy::async_run(ex, alloc)(level1_op());
+
+    std::cout << "After async_run (before ctx.run()):\n";
+    std::cout << "  alloc_count: " << stats.alloc_count << "\n";
+
+    // Should have allocated frames for:
+    // 1. async_run_task
+    // 2. level1_op
+    // 3. level2_op
+    // 4. level3_op
+    assert(stats.alloc_count >= 4);
+
+    ctx.run();
+
+    std::cout << "After ctx.run():\n";
+    std::cout << "  alloc_count: " << stats.alloc_count << "\n";
+    std::cout << "  dealloc_count: " << stats.dealloc_count << "\n";
+
+    // All frames should be deallocated
+    assert(stats.alloc_count == stats.dealloc_count);
+    assert(stats.bytes_allocated == stats.bytes_deallocated);
+
+    std::cout << "Test passed!\n";
+}
+
+//------------------------------------------------
 
 int main()
 {
@@ -439,6 +570,10 @@ int main()
     test_3level_nested_coroutines();
     test_3level_nested_multi_ops();
     test_3level_shared_executor();
+
+    std::cout << "\n=== Stateful Frame Allocator Tests ===\n";
+    test_stateful_allocator();
+    test_stateful_allocator_nested();
 
     std::cout << "\n=== All tests passed! ===\n";
     return 0;

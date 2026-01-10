@@ -68,7 +68,7 @@ struct handler_pair
 };
 
 template<typename T>
-struct root_task_result
+struct async_run_task_result
 {
     std::optional<T> result_;
 
@@ -80,7 +80,7 @@ struct root_task_result
 };
 
 template<>
-struct root_task_result<void>
+struct async_run_task_result<void>
 {
     void return_void()
     {
@@ -93,11 +93,11 @@ template<
     dispatcher Dispatcher,
     typename T,
     typename Handler>
-struct root_task
+struct async_run_task
 {
     struct promise_type
         : frame_allocating_base
-        , root_task_result<T>
+        , async_run_task_result<T>
     {
         Dispatcher d_;
         Handler handler_;
@@ -110,7 +110,7 @@ struct root_task
         {
         }
 
-        root_task get_return_object()
+        async_run_task get_return_object()
         {
             return {std::coroutine_handle<promise_type>::from_promise(*this)};
         }
@@ -216,7 +216,7 @@ struct root_task
         h_ = nullptr;
     }
 
-    ~root_task()
+    ~async_run_task()
     {
         if(h_)
             h_.destroy();
@@ -227,8 +227,8 @@ template<
     dispatcher Dispatcher,
     typename T,
     typename Handler>
-root_task<Dispatcher, T, Handler>
-make_root_task(Dispatcher, Handler handler, task<T> t)
+async_run_task<Dispatcher, T, Handler>
+make_async_run_task(Dispatcher, Handler handler, task<T> t)
 {
     if constexpr (std::is_void_v<T>)
         co_await std::move(t);
@@ -243,9 +243,9 @@ template<
     typename T,
     typename Handler>
 void
-run_root_task(Dispatcher d, task<T> t, Handler handler)
+run_async_run_task(Dispatcher d, task<T> t, Handler handler)
 {
-    auto root = make_root_task<Dispatcher, T, Handler>(
+    auto root = make_async_run_task<Dispatcher, T, Handler>(
         std::move(d), std::move(handler), std::move(t));
     root.h_.promise().d_(coro{root.h_}).resume();
     root.release();
@@ -329,7 +329,7 @@ struct async_runner
     {
         // Note: TLS now points to embedded wrapper in user's task frame,
         // not to embedder_. This is expected behavior.
-        run_root_task<Dispatcher, T, default_handler>(
+        run_async_run_task<Dispatcher, T, default_handler>(
             std::move(d_), std::move(t), default_handler{});
     }
 
@@ -348,7 +348,7 @@ struct async_runner
     template<typename T, typename Handler>
     void operator()(task<T> t, Handler h) &&
     {
-        run_root_task<Dispatcher, T, Handler>(
+        run_async_run_task<Dispatcher, T, Handler>(
             std::move(d_), std::move(t), std::move(h));
     }
 
@@ -363,7 +363,7 @@ struct async_runner
     void operator()(task<T> t, H1 h1, H2 h2) &&
     {
         using combined = handler_pair<H1, H2>;
-        run_root_task<Dispatcher, T, combined>(
+        run_async_run_task<Dispatcher, T, combined>(
             std::move(d_), std::move(t),
                 combined{std::move(h1), std::move(h2)});
     }

@@ -727,7 +727,7 @@ Top-level coroutines present a lifetime challenge: the executor must outlive all
 
 ```cpp
 template<class Executor>
-struct root_task
+struct async_run_task
 {
     struct starter : work { /* embedded in promise */ };
     
@@ -746,14 +746,14 @@ void async_run(Executor ex, task t)
     auto root = wrapper<Executor>(std::move(t));
     root.h_.promise().ex_ = std::move(ex);
     
-    // Post embedded starter—avoids allocation since root_task is long-lived
+    // Post embedded starter—avoids allocation since async_run_task is long-lived
     root.h_.promise().start_.h_ = root.h_;
     root.h_.promise().ex_.post(&root.h_.promise().start_);
     root.release();
 }
 ```
 
-The `root_task` frame lives on the heap and contains the executor by value. All child tasks receive `any_executor const&` referencing this frame-owned executor. The frame self-destructs at `final_suspend`, after all children have completed.
+The `async_run_task` frame lives on the heap and contains the executor by value. All child tasks receive `any_executor const&` referencing this frame-owned executor. The frame self-destructs at `final_suspend`, after all children have completed.
 
 This design provides two key benefits: **cheap type-erasure** (child tasks store only `any_executor const*`, not the concrete executor type) and **automatic lifetime management** (the executor lives exactly as long as the operation tree it serves).
 
