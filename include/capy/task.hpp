@@ -1,4 +1,4 @@
-//
+//0
 // Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
@@ -175,7 +175,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE
 
     ~task()
     {
-        if(h_ && !h_.done())
+        if(h_)
             h_.destroy();
     }
 
@@ -232,7 +232,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE
     {
         if(this != &other)
         {
-            if(h_ && !h_.done())
+            if(h_)
                 h_.destroy();
             h_ = std::exchange(other.h_, nullptr);
         }
