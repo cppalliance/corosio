@@ -80,6 +80,7 @@ struct [[nodiscard]] CAPY_CORO_AWAIT_ELIDABLE
         any_dispatcher caller_ex_;
         coro continuation_;
         std::exception_ptr ep_;
+        std::stop_token stop_token_;
         bool needs_dispatch_ = false;
 
         task get_return_object()
@@ -148,7 +149,11 @@ struct [[nodiscard]] CAPY_CORO_AWAIT_ELIDABLE
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
-                return a_.await_suspend(h, p_->ex_);
+                using A = std::decay_t<Awaitable>;
+                if constexpr (stoppable_awaitable<A, any_dispatcher>)
+                    return a_.await_suspend(h, p_->ex_, p_->stop_token_);
+                else
+                    return a_.await_suspend(h, p_->ex_);
             }
         };
 
@@ -204,6 +209,18 @@ struct [[nodiscard]] CAPY_CORO_AWAIT_ELIDABLE
         return h_;
     }
 
+    // Stoppable awaitable: receive caller's dispatcher and stop_token
+    template<dispatcher D>
+    coro await_suspend(coro continuation, D const& caller_ex, std::stop_token token)
+    {
+        h_.promise().caller_ex_ = caller_ex;
+        h_.promise().continuation_ = continuation;
+        h_.promise().ex_ = caller_ex;
+        h_.promise().stop_token_ = token;
+        h_.promise().needs_dispatch_ = false;
+        return h_;
+    }
+
     /** Release ownership of the coroutine handle.
 
         After calling this, the task no longer owns the handle and will
@@ -247,6 +264,8 @@ private:
 
 static_assert(affine_awaitable<task<void>, any_dispatcher>);
 static_assert(affine_awaitable<task<int>, any_dispatcher>);
+static_assert(stoppable_awaitable<task<void>, any_dispatcher>);
+static_assert(stoppable_awaitable<task<int>, any_dispatcher>);
 
 } // namespace capy
 

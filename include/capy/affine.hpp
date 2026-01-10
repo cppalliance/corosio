@@ -13,6 +13,7 @@
 #include <capy/config.hpp>
 
 #include <concepts>
+#include <stop_token>
 
 namespace capy {
 
@@ -80,6 +81,50 @@ concept dispatcher = requires(D const& d, std::coroutine_handle<P> h) {
 template<typename A, typename D, typename P = void>
 concept affine_awaitable = dispatcher<D, P> &&
     requires(A a, std::coroutine_handle<P> h, D const& d) { a.await_suspend(h, d); };
+
+/** Concept for stoppable awaitable types.
+
+    An awaitable is stoppable if it participates in the stoppable awaitable
+    protocol by accepting both a dispatcher and a stop_token in its
+    `await_suspend` method. This extends the affine awaitable protocol to
+    enable automatic stop token propagation through coroutine chains.
+
+    @tparam A The awaitable type
+    @tparam D The dispatcher type
+    @tparam P The promise type (defaults to void)
+
+    @par Requirements
+    - `A` must satisfy `affine_awaitable<A, D, P>`
+    - `A` must provide `await_suspend(std::coroutine_handle<P> h, D const& d,
+      std::stop_token token)`
+    - The awaitable should use the stop_token to support cancellation
+    - The awaitable must use the dispatcher `d` to resume the caller
+
+    @par Example
+    @code
+    struct my_stoppable_op {
+        template<typename Dispatcher>
+        auto await_suspend(coro h, Dispatcher const& d, std::stop_token token) {
+            start_async([h, &d, token] {
+                if (token.stop_requested()) {
+                    // Handle cancellation
+                }
+                d(h);  // Schedule resumption through dispatcher
+            });
+            return std::noop_coroutine();
+        }
+        // ... await_ready, await_resume ...
+    };
+    @endcode
+
+    @see affine_awaitable
+    @see dispatcher
+*/
+template<typename A, typename D, typename P = void>
+concept stoppable_awaitable = affine_awaitable<A, D, P> &&
+    requires(A a, std::coroutine_handle<P> h, D const& d, std::stop_token token) {
+        a.await_suspend(h, d, token);
+    };
 
 /** A type-erased wrapper for dispatcher objects.
 

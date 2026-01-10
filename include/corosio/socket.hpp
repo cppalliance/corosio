@@ -62,6 +62,7 @@ struct socket
             return ec_;
         }
 
+        // Affine awaitable: uses token from constructor
         template<capy::dispatcher Dispatcher>
         auto
         await_suspend(
@@ -69,6 +70,20 @@ struct socket
             Dispatcher const& d) ->
                 std::coroutine_handle<>
         {
+            s_.do_read_some(h, d, token_, &ec_);
+            return std::noop_coroutine();
+        }
+
+        // Stoppable awaitable: uses token from caller's coroutine chain
+        template<capy::dispatcher Dispatcher>
+        auto
+        await_suspend(
+            std::coroutine_handle<> h,
+            Dispatcher const& d,
+            std::stop_token token) ->
+                std::coroutine_handle<>
+        {
+            token_ = std::move(token);
             s_.do_read_some(h, d, token_, &ec_);
             return std::noop_coroutine();
         }
