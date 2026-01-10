@@ -114,7 +114,7 @@ target_compile_options(bench
     PRIVATE
         $<$<CXX_COMPILER_ID:GNU>:-O3 -march=native -funroll-loops -ffast-math -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables>
         $<$<CXX_COMPILER_ID:Clang>:-O3 -march=native>
-        $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:/O2 /Ob2 /GL>)
+        $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:/O2 /Ob2 /GL /arch:AVX2 /Qspectre->)
 
 target_compile_definitions(bench PRIVATE
     $<$<NOT:$<CONFIG:Debug>>:NDEBUG>)

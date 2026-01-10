@@ -64,6 +64,7 @@ struct run_on_awaitable
         h_.promise().ex_ = ex_;
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
+        h_.promise().needs_dispatch_ = true;
         return h_;
     }
 
@@ -74,6 +75,7 @@ struct run_on_awaitable
         h_.promise().ex_ = ex_;
         h_.promise().caller_ex_ = ex_;
         h_.promise().continuation_ = nullptr;
+        h_.promise().needs_dispatch_ = false;
         h_.promise().detached_cleanup_ = +[](void* p) {
             delete static_cast<run_on_awaitable*>(p);
         };

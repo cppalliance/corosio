@@ -75,6 +75,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE
         any_dispatcher caller_ex_;
         coro continuation_;
         std::exception_ptr ep_;
+        bool needs_dispatch_ = false;
 
         // Detached cleanup support for async_run
         void (*detached_cleanup_)(void*) = nullptr;
@@ -106,7 +107,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE
                     if(p_->continuation_)
                     {
                         // Same dispatcher: true symmetric transfer
-                        if(p_->caller_ex_ == p_->ex_)
+                        if(!p_->needs_dispatch_)
                             return p_->continuation_;
                         return p_->caller_ex_(p_->continuation_);
                     }
@@ -189,6 +190,7 @@ struct CAPY_CORO_AWAIT_ELIDABLE
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
         h_.promise().ex_ = caller_ex;
+        h_.promise().needs_dispatch_ = false;
         return h_;
     }
 

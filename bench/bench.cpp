@@ -176,10 +176,10 @@ struct bench_test
             ++count;
         });
         print_results(4, "socket", "session", cb, co);
-#endif
 
         // tls_stream session (1000 calls) - level 3
-        //cb = bench(cb_tls, [](auto& sock, auto h) { callback::async_session(sock, std::move(h)); });
+        cb = bench(cb_tls, [](auto& sock, auto h) { callback::async_session(sock, std::move(h)); });
+#endif
         co = bench_co(ioc, [&](int& count) -> capy::task<> {
             co_await coroutine::async_session(co_tls);
             ++count;
