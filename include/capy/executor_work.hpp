@@ -42,7 +42,7 @@ namespace capy {
     `operator()` for normal execution or `destroy()` for cleanup.
 
     @note Heap-allocated work items are typically allocated with
-    custom allocators (such as op_cache or frame_pool) to minimize
+    custom allocators (such as op_cache or recycling_frame_allocator) to minimize
     allocation overhead in high-frequency async operations.
 
     @note Some work items (such as those owned by containers like

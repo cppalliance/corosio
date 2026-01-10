@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_DETAIL_FRAME_POOL_HPP
-#define CAPY_DETAIL_FRAME_POOL_HPP
+#ifndef CAPY_DETAIL_RECYCLING_FRAME_ALLOCATOR_HPP
+#define CAPY_DETAIL_RECYCLING_FRAME_ALLOCATOR_HPP
 
 #include <capy/frame_allocator.hpp>
 
@@ -17,9 +17,9 @@
 
 namespace capy::detail {
 
-// Frame pool: thread-local with global overflow
+// Recycling frame allocator: thread-local with global overflow
 // Tracks block sizes to avoid returning undersized blocks
-class frame_pool : public frame_allocator_base
+class recycling_frame_allocator : public frame_allocator_base
 {
     struct block
     {
@@ -133,14 +133,14 @@ public:
     }
 
     // Shared pool instance for all coroutine frames
-    static frame_pool& shared()
+    static recycling_frame_allocator& shared()
     {
-        static frame_pool pool;
+        static recycling_frame_allocator pool;
         return pool;
     }
 };
 
-static_assert(frame_allocator<frame_pool>);
+static_assert(frame_allocator<recycling_frame_allocator>);
 
 } // namespace capy::detail
 

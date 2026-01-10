@@ -13,7 +13,7 @@
 #include <corosio/platform_reactor.hpp>
 #include <capy/affine.hpp>
 #include <capy/service_provider.hpp>
-#include <capy/detail/frame_pool.hpp>
+#include <capy/detail/recycling_frame_allocator.hpp>
 #include <capy/executor.hpp>
  
 #include <cassert>
@@ -83,7 +83,7 @@ struct socket
         return async_read_some_t(*this);
     }
 
-    capy::detail::frame_pool& get_frame_allocator()
+    capy::detail::recycling_frame_allocator& get_frame_allocator()
     {
         return pool_;
     }
@@ -96,7 +96,7 @@ private:
     struct ops_state;
 
     platform_reactor* reactor_;
-    capy::detail::frame_pool pool_;
+    capy::detail::recycling_frame_allocator pool_;
     std::unique_ptr<ops_state, void(*)(ops_state*)> ops_;
 };
 
