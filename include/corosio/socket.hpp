@@ -14,11 +14,13 @@
 #include <capy/affine.hpp>
 #include <capy/service_provider.hpp>
 #include <capy/executor.hpp>
- 
+
 #include <cassert>
 #include <coroutine>
 #include <cstddef>
 #include <memory>
+#include <stop_token>
+#include <system_error>
 
 extern std::size_t g_io_count;
 
@@ -40,47 +42,72 @@ struct socket
     struct async_read_some_t
     {
         async_read_some_t(
-            socket& s)
+            socket& s,
+            std::stop_token token = {})
             : s_(s)
+            , token_(std::move(token))
         {
         }
 
         bool await_ready() const noexcept
         {
-            return false;
+            // Fast path: if already stopped, don't start the operation
+            return token_.stop_requested();
         }
 
-        void await_resume() const noexcept
+        std::error_code await_resume() const noexcept
         {
+            if (token_.stop_requested())
+                return std::make_error_code(std::errc::operation_canceled);
+            return ec_;
         }
 
         template<capy::dispatcher Dispatcher>
         auto
         await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) const ->
+            Dispatcher const& d) ->
                 std::coroutine_handle<>
         {
-            s_.do_read_some(h, d);
+            s_.do_read_some(h, d, token_, &ec_);
             return std::noop_coroutine();
         }
 
     private:
         socket& s_;
+        std::stop_token token_;
+        mutable std::error_code ec_;
     };
 
     explicit socket(capy::service_provider& sp);
 
+    /** Initiates an asynchronous read operation.
+
+        @param token Optional stop token for cancellation support.
+                     If the token's stop is requested, the operation
+                     completes with operation_canceled error.
+
+        @return An awaitable that completes with std::error_code.
+    */
     async_read_some_t
-    async_read_some()
+    async_read_some(std::stop_token token = {})
     {
-        return async_read_some_t(*this);
+        return async_read_some_t(*this, std::move(token));
     }
+
+    /** Cancel any pending asynchronous operations.
+
+        Pending operations will complete with operation_canceled error.
+        This method is thread-safe.
+    */
+    void cancel() const;
 
 private:
     void do_read_some(
         std::coroutine_handle<>,
-        capy::any_dispatcher);
+        capy::any_dispatcher,
+        std::stop_token,
+        std::error_code*);
 
     struct ops_state;
 
@@ -91,4 +118,3 @@ private:
 } // corosio
 
 #endif
-
