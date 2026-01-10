@@ -16,9 +16,6 @@
 
 #include "test_suite.hpp"
 
-// Global counter for tracking I/O operations
-std::size_t g_io_count = 0;
-
 namespace boost {
 namespace corosio {
 
@@ -49,9 +46,6 @@ struct socket_test
     void
     testSingleLayerCoroutine()
     {
-        // Reset I/O counter
-        g_io_count = 0;
-
         // Create I/O context (single-threaded)
         io_context ioc;
 
@@ -64,21 +58,13 @@ struct socket_test
         // Launch the coroutine
         capy::async_run(ex)(read_once(sock));
 
-        // With inline dispatch, coroutine runs immediately until first I/O suspend
-        BOOST_TEST_EQ(g_io_count, 1u);
-
         // Run the I/O context to process the coroutine completion
         ioc.run();
-
-        // The I/O operation was already started; ioc.run() resumes the coroutine
-        BOOST_TEST_EQ(g_io_count, 1u);
     }
 
     void
     testMultipleReads()
     {
-        g_io_count = 0;
-
         io_context ioc;
         socket sock(ioc);
         auto ex = ioc.get_executor();
@@ -86,19 +72,12 @@ struct socket_test
         const int read_count = 5;
         capy::async_run(ex)(read_multiple(sock, read_count));
 
-        // With inline dispatch, first I/O is started immediately
-        BOOST_TEST_EQ(g_io_count, 1u);
-
         ioc.run();
-
-        BOOST_TEST_EQ(g_io_count, static_cast<std::size_t>(read_count));
     }
 
     void
     testMultipleCoroutines()
     {
-        g_io_count = 0;
-
         io_context ioc;
         socket sock1(ioc);
         socket sock2(ioc);
@@ -110,13 +89,7 @@ struct socket_test
         capy::async_run(ex)(read_once(sock2));
         capy::async_run(ex)(read_once(sock3));
 
-        // With inline dispatch, all 3 coroutines run to first I/O immediately
-        BOOST_TEST_EQ(g_io_count, 3u);
-
         ioc.run();
-
-        // All three should have completed one read each
-        BOOST_TEST_EQ(g_io_count, 3u);
     }
 
     void

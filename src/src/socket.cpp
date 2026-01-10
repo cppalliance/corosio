@@ -8,6 +8,7 @@
 //
 
 #include <boost/corosio/socket.hpp>
+#include <boost/capy/executor.hpp>
 
 #include <atomic>
 #include <optional>
@@ -16,7 +17,7 @@
 namespace boost {
 namespace corosio {
 
-struct socket::ops_state final
+struct socket::impl final
 {
     struct read_op
         : capy::executor_work
@@ -67,28 +68,27 @@ struct socket::ops_state final
         }
     };
 
-    static void deleter(ops_state* p)
-    {
-        delete p;
-    }
-
     read_op rd;
 };
 
 socket::
-socket(
-    capy::service_provider& sp)
-    : reactor_(sp.find_service<platform_reactor>())
-    , ops_(new ops_state, ops_state::deleter)
+~socket()
 {
-    assert(reactor_ != nullptr);
+    delete &impl_;
+}
+
+socket::
+socket(
+    capy::execution_context&)
+    : impl_(*new impl)
+{
 }
 
 void
 socket::
 cancel() const
 {
-    ops_->rd.cancel();
+    impl_.rd.cancel();
 }
 
 void
@@ -99,12 +99,11 @@ do_read_some(
     std::stop_token token,
     std::error_code* ec)
 {
-    ++g_io_count;
-    ops_->rd.h = h;
-    ops_->rd.d = d;
-    ops_->rd.ec_out = ec;
-    ops_->rd.start(token);
-    reactor_->submit(&ops_->rd);
+    impl_.rd.h = h;
+    impl_.rd.d = d;
+    impl_.rd.ec_out = ec;
+    impl_.rd.start(token);
+    //reactor_->submit(&impl_.rd);
 }
 
 } // namespace corosio

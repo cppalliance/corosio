@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <boost/corosio/win_iocp_reactor.hpp>
+#include "src/win_iocp_scheduler.hpp"
 
 #ifdef _WIN32
 
@@ -36,13 +36,14 @@ constexpr ULONG_PTR shutdown_key = 0;
 
 } // namespace
 
-win_iocp_reactor::
-win_iocp_reactor(capy::service_provider&)
+win_iocp_scheduler::
+win_iocp_scheduler(capy::execution_context&)
     : iocp_(CreateIoCompletionPort(
         INVALID_HANDLE_VALUE,
         nullptr,
         0,
         0))
+    , thread_id_(std::this_thread::get_id())
 {
     if (iocp_ == nullptr)
     {
@@ -53,8 +54,8 @@ win_iocp_reactor(capy::service_provider&)
     }
 }
 
-win_iocp_reactor::
-~win_iocp_reactor()
+win_iocp_scheduler::
+~win_iocp_scheduler()
 {
     if (iocp_ != nullptr)
     {
@@ -63,7 +64,7 @@ win_iocp_reactor::
 }
 
 void
-win_iocp_reactor::
+win_iocp_scheduler::
 shutdown()
 {
     // Post a shutdown signal to wake any blocked threads
@@ -95,8 +96,38 @@ shutdown()
 }
 
 void
-win_iocp_reactor::
-submit(capy::executor_work* w)
+win_iocp_scheduler::
+post(capy::coro h) const
+{
+    struct coro_work : capy::executor_work
+    {
+        capy::coro h_;
+
+        explicit coro_work(capy::coro h)
+            : h_(h)
+        {
+        }
+
+        void operator()() override
+        {
+            // delete before dispatch to enable work recycling
+            auto h = h_;
+            delete this;
+            h.resume();
+        }
+
+        void destroy() override
+        {
+            delete this;
+        }
+    };
+
+    post(new coro_work(h));
+}
+
+void
+win_iocp_scheduler::
+post(capy::executor_work* w) const
 {
     // Post the work item to the IOCP
     // We use the OVERLAPPED* field to carry the work pointer
@@ -113,9 +144,28 @@ submit(capy::executor_work* w)
     }
 }
 
+bool
+win_iocp_scheduler::
+running_in_this_thread() const noexcept
+{
+    return std::this_thread::get_id() == thread_id_;
+}
+
 void
-win_iocp_reactor::
-process()
+win_iocp_scheduler::
+stop() const
+{
+    // Post a shutdown signal to wake any blocked threads
+    PostQueuedCompletionStatus(
+        iocp_,
+        0,
+        shutdown_key,
+        nullptr);
+}
+
+void
+win_iocp_scheduler::
+run() const
 {
     DWORD bytes;
     ULONG_PTR key;

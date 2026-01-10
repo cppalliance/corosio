@@ -140,6 +140,13 @@ function(boost_corosio_setup_properties target)
     target_link_libraries(${target}
         PUBLIC
             ${BOOST_COROSIO_DEPENDENCIES})
+    target_compile_definitions(${target} PUBLIC BOOST_COROSIO_NO_LIB)
+    target_compile_definitions(${target} PRIVATE BOOST_COROSIO_SOURCE)
+    if (BUILD_SHARED_LIBS)
+        target_compile_definitions(${target} PUBLIC BOOST_COROSIO_DYN_LINK)
+    else ()
+        target_compile_definitions(${target} PUBLIC BOOST_COROSIO_STATIC_LINK)
+    endif ()
     target_compile_options(${target}
         PRIVATE
             $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
@@ -156,59 +163,4 @@ boost_corosio_setup_properties(boost_corosio)
 #-------------------------------------------------
 if (BOOST_COROSIO_BUILD_TESTS)
     add_subdirectory(test)
-endif ()
-
-#-------------------------------------------------
-#
-# Benchmarks
-#
-#-------------------------------------------------
-if (BOOST_COROSIO_BUILD_BENCH)
-    file(GLOB_RECURSE BENCH_SOURCES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/bench/*.hpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/bench/*.cpp")
-
-    add_executable(bench ${BENCH_SOURCES})
-
-    target_include_directories(bench PRIVATE bench)
-
-    target_link_libraries(bench
-        PRIVATE
-            Boost::corosio)
-
-    source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/bench" PREFIX "bench" FILES ${BENCH_SOURCES})
-
-    # Warning flags
-    target_compile_options(bench
-        PRIVATE
-            $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Wpedantic -fcoroutines>
-            $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Wpedantic>
-            $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->)
-
-    # Optimization flags
-    target_compile_options(bench
-        PRIVATE
-            $<$<CXX_COMPILER_ID:GNU>:-O3 -march=native -funroll-loops -ffast-math -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables>
-            $<$<CXX_COMPILER_ID:Clang>:-O3 -march=native>
-            $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:/O2 /Ob2 /GL /arch:AVX2 /Qspectre->)
-
-    target_compile_definitions(bench PRIVATE
-        $<$<NOT:$<CONFIG:Debug>>:NDEBUG>)
-
-    # Use INTERPROCEDURAL_OPTIMIZATION property instead of manual -flto
-    set_property(TARGET bench PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-
-    # Linker-specific flags
-    target_link_options(bench
-        PRIVATE
-            $<$<CXX_COMPILER_ID:GNU>:-s -Wl,--as-needed>
-            $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>
-            $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:/LTCG>)
-
-    # Clang stdlib requirement
-    target_compile_options(bench
-        PRIVATE
-            $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
-
-    add_test(NAME bench COMMAND bench)
 endif ()

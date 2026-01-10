@@ -10,9 +10,9 @@
 #ifndef BOOST_COROSIO_SOCKET_HPP
 #define BOOST_COROSIO_SOCKET_HPP
 
-#include <boost/corosio/platform_reactor.hpp>
+#include <boost/corosio/detail/config.hpp>
 #include <boost/capy/affine.hpp>
-#include <boost/capy/service_provider.hpp>
+#include <boost/capy/execution_context.hpp>
 
 #include <cassert>
 #include <coroutine>
@@ -20,8 +20,6 @@
 #include <memory>
 #include <stop_token>
 #include <system_error>
-
-extern std::size_t g_io_count;
 
 namespace boost {
 namespace corosio {
@@ -42,10 +40,8 @@ struct socket
     struct async_read_some_t
     {
         async_read_some_t(
-            socket& s,
-            std::stop_token token = {})
+            socket& s)
             : s_(s)
-            , token_(std::move(token))
         {
         }
 
@@ -94,7 +90,12 @@ struct socket
         mutable std::error_code ec_;
     };
 
-    explicit socket(capy::service_provider& sp);
+    BOOST_COROSIO_DECL
+    ~socket();
+
+    BOOST_COROSIO_DECL
+    explicit socket(
+        capy::execution_context& ioc);
 
     /** Initiates an asynchronous read operation.
 
@@ -105,9 +106,9 @@ struct socket
         @return An awaitable that completes with std::error_code.
     */
     async_read_some_t
-    async_read_some(std::stop_token token = {})
+    async_read_some()
     {
-        return async_read_some_t(*this, std::move(token));
+        return async_read_some_t(*this);
     }
 
     /** Cancel any pending asynchronous operations.
@@ -124,10 +125,8 @@ private:
         std::stop_token,
         std::error_code*);
 
-    struct ops_state;
-
-    platform_reactor* reactor_;
-    std::unique_ptr<ops_state, void(*)(ops_state*)> ops_;
+    struct impl;
+    impl& impl_;
 };
 
 } // namespace corosio
