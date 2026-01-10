@@ -121,7 +121,7 @@ class frame_allocator_wrapper;
 
 /** Wrapper that embeds a frame_allocator_wrapper in the first allocation.
 
-    This wrapper lives on the stack (in async_runner) and is used only
+    This wrapper lives on the stack (in async_run_awaitable) and is used only
     for the FIRST coroutine frame allocation. It embeds a copy of
     frame_allocator_wrapper at the end of the allocated block, then
     updates TLS to point to that embedded wrapper for subsequent

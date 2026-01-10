@@ -290,7 +290,7 @@ run_async_run_task(Dispatcher d, task<T> t, Handler handler)
 template<
     dispatcher Dispatcher,
     frame_allocator Allocator = detail::recycling_frame_allocator>
-struct async_runner
+struct async_run_awaitable
 {
     Dispatcher d_;
     detail::embedding_frame_allocator<Allocator> embedder_;
@@ -303,7 +303,7 @@ struct async_runner
         @param d The dispatcher for task execution.
         @param a The frame allocator (default: recycling_frame_allocator).
     */
-    async_runner(Dispatcher d, Allocator a)
+    async_run_awaitable(Dispatcher d, Allocator a)
         : d_(std::move(d))
         , embedder_(std::move(a))
     {
@@ -312,10 +312,10 @@ struct async_runner
 
     // Enforce C++17 guaranteed copy elision.
     // If this compiles, elision occurred and &embedder_ is stable.
-    async_runner(async_runner const&) = delete;
-    async_runner(async_runner&&) = delete;
-    async_runner& operator=(async_runner const&) = delete;
-    async_runner& operator=(async_runner&&) = delete;
+    async_run_awaitable(async_run_awaitable const&) = delete;
+    async_run_awaitable(async_run_awaitable&&) = delete;
+    async_run_awaitable& operator=(async_run_awaitable const&) = delete;
+    async_run_awaitable& operator=(async_run_awaitable&&) = delete;
 
     /** Launch task with default handler (fire-and-forget).
 
@@ -373,7 +373,7 @@ struct async_runner
 
 /** Creates a runner to launch lazy tasks for detached execution.
 
-    Returns an async_runner that captures the dispatcher and provides
+    Returns an async_run_awaitable that captures the dispatcher and provides
     operator() overloads to launch tasks. This is analogous to Asio's
     `co_spawn`. The task begins executing when the dispatcher schedules
     it; if the dispatcher permits inline execution, the task runs
@@ -417,16 +417,16 @@ struct async_runner
 
     @param d The dispatcher that schedules and resumes the task.
 
-    @return An async_runner object with operator() to launch tasks.
+    @return An async_run_awaitable object with operator() to launch tasks.
 
-    @see async_runner
+    @see async_run_awaitable
     @see task
     @see dispatcher
 */
 template<dispatcher Dispatcher>
 [[nodiscard]] auto async_run(Dispatcher d)
 {
-    return detail::async_runner<Dispatcher>{std::move(d), {}};
+    return detail::async_run_awaitable<Dispatcher>{std::move(d), {}};
 }
 
 /** Creates a runner with an explicit frame allocator.
@@ -434,16 +434,16 @@ template<dispatcher Dispatcher>
     @param d The dispatcher that schedules and resumes the task.
     @param alloc The allocator for coroutine frame allocation.
 
-    @return An async_runner object with operator() to launch tasks.
+    @return An async_run_awaitable object with operator() to launch tasks.
 
-    @see async_runner
+    @see async_run_awaitable
 */
 template<
     dispatcher Dispatcher,
     frame_allocator Allocator>
 [[nodiscard]] auto async_run(Dispatcher d, Allocator alloc)
 {
-    return detail::async_runner<
+    return detail::async_run_awaitable<
         Dispatcher, Allocator>{std::move(d), std::move(alloc)};
 }
 

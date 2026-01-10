@@ -18,6 +18,7 @@
 #include <utility>
 
 namespace capy {
+namespace detail {
 
 /** Awaitable that binds a task to a specific executor.
 
@@ -29,7 +30,7 @@ namespace capy {
     @tparam E The executor type
 */
 template<typename T, executor E>
-struct run_on_awaitable
+struct [[nodiscard]] run_on_awaitable
 {
     E ex_;
     std::coroutine_handle<typename task<T>::promise_type> h_;
@@ -49,6 +50,8 @@ struct run_on_awaitable
 
     auto await_resume()
     {
+        if(h_.promise().ep_)
+            std::rethrow_exception(h_.promise().ep_);
         if constexpr (std::is_void_v<T>)
             return;
         else
@@ -113,6 +116,8 @@ struct run_on_awaitable
     }
 };
 
+} // namespace detail
+
 /** Binds a task to execute on a specific executor.
 
     The executor is stored by value in the returned awaitable.
@@ -125,9 +130,9 @@ struct run_on_awaitable
     @return An awaitable that runs t on the specified executor.
 */
 template<executor Executor, typename T>
-auto run_on(Executor ex, task<T> t)
+[[nodiscard]] auto run_on(Executor ex, task<T> t)
 {
-    return run_on_awaitable<T, Executor>{
+    return detail::run_on_awaitable<T, Executor>{
         std::move(ex), t.release()};
 }
 

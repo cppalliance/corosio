@@ -68,7 +68,7 @@ struct task_return_base<void>
     @see any_dispatcher
 */
 template<typename T = void>
-struct CAPY_CORO_AWAIT_ELIDABLE
+struct [[nodiscard]] CAPY_CORO_AWAIT_ELIDABLE
     task
 {
     struct promise_type
