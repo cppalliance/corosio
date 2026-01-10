@@ -7,69 +7,87 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+// Test that header file is self-contained.
 #include <boost/corosio/platform_reactor.hpp>
+
 #include <boost/capy/service_provider.hpp>
 
+#include "test_suite.hpp"
+
 #include <atomic>
-#include <iostream>
 #include <thread>
 #include <vector>
 
-#undef NDEBUG
-#include <cassert>
+namespace boost {
+namespace corosio {
 
 //------------------------------------------------
 // Test work items
 
-struct test_work : boost::capy::executor_work
+struct test_work : capy::executor_work
 {
     std::atomic<int>* counter_;
     int value_;
 
-    test_work(std::atomic<int>* counter, int value) : counter_(counter), value_(value) {}
+    test_work(std::atomic<int>* counter, int value)
+        : counter_(counter)
+        , value_(value)
+    {
+    }
 
     void operator()() override
     {
-        if(counter_)
+        if (counter_)
             *counter_ += value_;
     }
 
-    void destroy() override { delete this; }
+    void destroy() override
+    {
+        delete this;
+    }
+
     virtual ~test_work() = default;
 };
 
-struct counting_work : boost::capy::executor_work
+struct counting_work : capy::executor_work
 {
     std::atomic<int>* counter_;
 
-    explicit counting_work(std::atomic<int>* counter) : counter_(counter) {}
+    explicit counting_work(std::atomic<int>* counter)
+        : counter_(counter)
+    {
+    }
 
     void operator()() override
     {
-        if(counter_)
+        if (counter_)
             (*counter_)++;
     }
 
-    void destroy() override { delete this; }
+    void destroy() override
+    {
+        delete this;
+    }
+
     virtual ~counting_work() = default;
 };
 
 //------------------------------------------------
-// Example io_context
+// Example io_context for testing
 
-class io_context : public boost::capy::service_provider
+class test_io_context : public capy::service_provider
 {
-public:
 };
 
 //------------------------------------------------
 
-int main()
+struct platform_reactor_test
 {
-    std::cout << "=== Test 1: Basic submit and process ===\n";
+    void
+    testBasicSubmitProcess()
     {
-        io_context ctx;
-        auto& reactor = ctx.make_service<boost::corosio::platform_reactor_single>();
+        test_io_context ctx;
+        auto& reactor = ctx.make_service<platform_reactor_single>();
 
         std::atomic<int> counter{0};
 
@@ -81,50 +99,55 @@ int main()
         // Process the work
         reactor.process();
 
-        assert(counter == 6);
-        std::cout << "Counter: " << counter << " (expected 6)\n";
+        BOOST_TEST_EQ(counter.load(), 6);
     }
 
-    std::cout << "\n=== Test 2: Empty queue ===\n";
+    void
+    testEmptyQueue()
     {
-        io_context ctx;
-        auto& reactor = ctx.make_service<boost::corosio::platform_reactor_single>();
+        test_io_context ctx;
+        auto& reactor = ctx.make_service<platform_reactor_single>();
 
         // Process empty queue should be safe
         reactor.process();
         reactor.process();
 
-        std::cout << "Empty queue processed successfully\n";
+        BOOST_TEST(true); // If we get here, it worked
     }
 
-    std::cout << "\n=== Test 3: Shutdown cleans up work ===\n";
+    void
+    testShutdownCleansUp()
     {
         std::atomic<int> destroy_count{0};
 
-        struct cleanup_work : boost::capy::executor_work
+        struct cleanup_work : capy::executor_work
         {
             std::atomic<int>* destroy_count_;
 
-            explicit cleanup_work(std::atomic<int>* dc) : destroy_count_(dc) {}
+            explicit cleanup_work(std::atomic<int>* dc)
+                : destroy_count_(dc)
+            {
+            }
 
             void operator()() override
             {
                 // Should not be called during shutdown
-                assert(false);
+                BOOST_TEST(false);
             }
 
             void destroy() override
             {
-                if(destroy_count_)
+                if (destroy_count_)
                     (*destroy_count_)++;
                 delete this;
             }
+
             virtual ~cleanup_work() = default;
         };
 
         {
-            io_context ctx;
-            auto& reactor = ctx.make_service<boost::corosio::platform_reactor_single>();
+            test_io_context ctx;
+            auto& reactor = ctx.make_service<platform_reactor_single>();
 
             // Submit work that won't be processed
             reactor.submit(new cleanup_work(&destroy_count));
@@ -134,38 +157,45 @@ int main()
             // Let destructor call shutdown
         }
 
-        assert(destroy_count == 3);
-        std::cout << "Destroy count: " << destroy_count << " (expected 3)\n";
+        BOOST_TEST_EQ(destroy_count.load(), 3);
     }
-    std::cout << "Shutdown completed\n";
 
-    std::cout << "\n=== Test 4: Process order (FIFO) ===\n";
+    void
+    testProcessOrderFIFO()
     {
-        io_context ctx;
-        auto& reactor = ctx.make_service<boost::corosio::platform_reactor_single>();
+        test_io_context ctx;
+        auto& reactor = ctx.make_service<platform_reactor_single>();
 
         std::vector<int> order;
         order.reserve(5);
 
-        struct ordered_work : boost::capy::executor_work
+        struct ordered_work : capy::executor_work
         {
             std::vector<int>* order_;
             int id_;
 
-            ordered_work(std::vector<int>* order, int id) : order_(order), id_(id) {}
+            ordered_work(std::vector<int>* order, int id)
+                : order_(order)
+                , id_(id)
+            {
+            }
 
             void operator()() override
             {
-                if(order_)
+                if (order_)
                     order_->push_back(id_);
             }
 
-            void destroy() override { delete this; }
+            void destroy() override
+            {
+                delete this;
+            }
+
             virtual ~ordered_work() = default;
         };
 
         // Submit in order
-        for(int i = 1; i <= 5; ++i)
+        for (int i = 1; i <= 5; ++i)
         {
             reactor.submit(new ordered_work(&order, i));
         }
@@ -173,21 +203,18 @@ int main()
         reactor.process();
 
         // Verify FIFO order
-        assert(order.size() == 5);
-        for(int i = 0; i < 5; ++i)
+        BOOST_TEST_EQ(order.size(), 5u);
+        for (int i = 0; i < 5; ++i)
         {
-            assert(order[i] == i + 1);
+            BOOST_TEST_EQ(order[i], i + 1);
         }
-        std::cout << "Order: ";
-        for(int id : order)
-            std::cout << id << " ";
-        std::cout << "(expected 1 2 3 4 5)\n";
     }
 
-    std::cout << "\n=== Test 5: Multiple process calls ===\n";
+    void
+    testMultipleProcessCalls()
     {
-        io_context ctx;
-        auto& reactor = ctx.make_service<boost::corosio::platform_reactor_single>();
+        test_io_context ctx;
+        auto& reactor = ctx.make_service<platform_reactor_single>();
 
         std::atomic<int> counter{0};
 
@@ -204,14 +231,14 @@ int main()
         reactor.submit(new counting_work(&counter));
         reactor.process();
 
-        assert(counter == 6);
-        std::cout << "Counter: " << counter << " (expected 6)\n";
+        BOOST_TEST_EQ(counter.load(), 6);
     }
 
-    std::cout << "\n=== Test 6: Thread safety (submit from multiple threads) ===\n";
+    void
+    testThreadSafety()
     {
-        io_context ctx;
-        auto& reactor = ctx.make_service<boost::corosio::platform_reactor_multi>();
+        test_io_context ctx;
+        auto& reactor = ctx.make_service<platform_reactor_multi>();
 
         std::atomic<int> counter{0};
         const int num_threads = 4;
@@ -221,10 +248,10 @@ int main()
         threads.reserve(num_threads);
 
         // Launch threads that submit work
-        for(int t = 0; t < num_threads; ++t)
+        for (int t = 0; t < num_threads; ++t)
         {
             threads.emplace_back([&reactor, &counter]() {
-                for(int i = 0; i < work_per_thread; ++i)
+                for (int i = 0; i < work_per_thread; ++i)
                 {
                     reactor.submit(new counting_work(&counter));
                 }
@@ -232,25 +259,36 @@ int main()
         }
 
         // Wait for all submissions
-        for(auto& t : threads)
+        for (auto& t : threads)
         {
             t.join();
         }
 
         // Process all submitted work
-        // We know exactly how much work was submitted, so process enough times
         const int total_work = num_threads * work_per_thread;
-        for(int i = 0; i < total_work + 10; ++i) // +10 for safety margin
+        for (int i = 0; i < total_work + 10; ++i)
         {
             reactor.process();
-            if(counter == total_work)
+            if (counter == total_work)
                 break;
         }
 
-        assert(counter == total_work);
-        std::cout << "Counter: " << counter << " (expected " << total_work << ")\n";
+        BOOST_TEST_EQ(counter.load(), total_work);
     }
 
-    std::cout << "\n=== All tests passed! ===\n";
-    return 0;
-}
+    void
+    run()
+    {
+        testBasicSubmitProcess();
+        testEmptyQueue();
+        testShutdownCleansUp();
+        testProcessOrderFIFO();
+        testMultipleProcessCalls();
+        testThreadSafety();
+    }
+};
+
+TEST_SUITE(platform_reactor_test, "boost.corosio.platform_reactor");
+
+} // namespace corosio
+} // namespace boost

@@ -155,27 +155,7 @@ boost_corosio_setup_properties(boost_corosio)
 #
 #-------------------------------------------------
 if (BOOST_COROSIO_BUILD_TESTS)
-    # Common test setup function
-    function(boost_corosio_add_test name source)
-        add_executable(${name} ${source})
-        target_link_libraries(${name}
-            PRIVATE
-                Boost::corosio
-                Threads::Threads)
-        target_compile_options(${name}
-            PRIVATE
-                $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic>
-                $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic>
-                $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->)
-        target_link_options(${name}
-            PRIVATE
-                $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
-        add_test(NAME ${name} COMMAND ${name})
-    endfunction()
-
-    # corosio tests
-    boost_corosio_add_test(test_platform_reactor test/corosio/platform_reactor.cpp)
-    boost_corosio_add_test(test_socket test/corosio/socket.cpp)
+    add_subdirectory(test)
 endif ()
 
 #-------------------------------------------------

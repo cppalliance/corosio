@@ -1,0 +1,20 @@
+#
+# Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio
+#
+
+import testing ;
+
+project boost/corosio/test/unit
+    : requirements
+      <library>/boost/corosio//boost_corosio
+      <library>/boost/url//boost_url_extra_test_suite
+      <toolset>gcc:<cxxflags>-fcoroutines
+    ;
+
+run platform_reactor.cpp ;
+run socket.cpp ;
