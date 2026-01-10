@@ -7,13 +7,13 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef COROSIO_SOCKET_HPP
-#define COROSIO_SOCKET_HPP
+#ifndef BOOST_COROSIO_SOCKET_HPP
+#define BOOST_COROSIO_SOCKET_HPP
 
-#include <corosio/platform_reactor.hpp>
-#include <capy/affine.hpp>
-#include <capy/service_provider.hpp>
-#include <capy/executor.hpp>
+#include <boost/corosio/platform_reactor.hpp>
+#include <boost/capy/affine.hpp>
+#include <boost/capy/service_provider.hpp>
+#include <boost/capy/executor.hpp>
 
 #include <cassert>
 #include <coroutine>
@@ -24,6 +24,7 @@
 
 extern std::size_t g_io_count;
 
+namespace boost {
 namespace corosio {
 
 /** A simulated asynchronous socket for benchmarking coroutine I/O.
@@ -130,6 +131,7 @@ private:
     std::unique_ptr<ops_state, void(*)(ops_state*)> ops_;
 };
 
-} // corosio
+} // namespace corosio
+} // namespace boost
 
 #endif

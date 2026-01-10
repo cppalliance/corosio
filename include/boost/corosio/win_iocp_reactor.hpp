@@ -7,13 +7,14 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef COROSIO_WIN_IOCP_REACTOR_HPP
-#define COROSIO_WIN_IOCP_REACTOR_HPP
+#ifndef BOOST_COROSIO_WIN_IOCP_REACTOR_HPP
+#define BOOST_COROSIO_WIN_IOCP_REACTOR_HPP
 
-#include <corosio/platform_reactor.hpp>
+#include <boost/corosio/platform_reactor.hpp>
 
 #ifdef _WIN32
 
+namespace boost {
 namespace corosio {
 
 /** Windows IOCP-based platform reactor service.
@@ -109,6 +110,7 @@ private:
 };
 
 } // namespace corosio
+} // namespace boost
 
 #endif // _WIN32
 

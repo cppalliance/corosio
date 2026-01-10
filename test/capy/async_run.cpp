@@ -7,10 +7,10 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <capy/async_run.hpp>
-#include <capy/executor.hpp>
-#include <capy/executor_work.hpp>
-#include <capy/task.hpp>
+#include <boost/capy/async_run.hpp>
+#include <boost/capy/executor.hpp>
+#include <boost/capy/executor_work.hpp>
+#include <boost/capy/task.hpp>
 
 #include <coroutine>
 #include <iostream>
@@ -24,7 +24,7 @@ std::size_t g_suspend_count = 0;
 std::size_t g_resume_count = 0;
 
 // Global pointer to current test context's work queue
-std::queue<capy::executor_work*>* g_work_queue = nullptr;
+std::queue<boost::capy::executor_work*>* g_work_queue = nullptr;
 
 //------------------------------------------------
 // Mock executor and awaitable for testing async_run
@@ -35,16 +35,16 @@ std::queue<capy::executor_work*>* g_work_queue = nullptr;
 
     Maintains a queue of work items and processes them when run() is called.
 */
-struct mock_executor : capy::executor_base
+struct mock_executor : boost::capy::executor_base
 {
-    std::queue<capy::executor_work*>* queue_;
+    std::queue<boost::capy::executor_work*>* queue_;
 
     mock_executor() : queue_(nullptr) {}
-    mock_executor(std::queue<capy::executor_work*>* q) : queue_(q) {}
+    mock_executor(std::queue<boost::capy::executor_work*>* q) : queue_(q) {}
 
-    capy::coro dispatch(capy::coro h) const override { return h; }
+    boost::capy::coro dispatch(boost::capy::coro h) const override { return h; }
 
-    void post(capy::executor_work* w) const override
+    void post(boost::capy::executor_work* w) const override
     {
         if(queue_)
             queue_->push(w);
@@ -56,7 +56,7 @@ struct mock_executor : capy::executor_base
 /** Mock context that processes queued work items. */
 struct mock_context
 {
-    std::queue<capy::executor_work*> work_queue_;
+    std::queue<boost::capy::executor_work*> work_queue_;
 
     mock_executor get_executor() { return {&work_queue_}; }
 
@@ -73,7 +73,7 @@ struct mock_context
 
 /** Mock async operation that suspends and resumes.
 
-    This mimics the behavior of corosio::socket::async_read_some()
+    This mimics the behavior of boost::corosio::socket::async_read_some()
     but without any dependency on corosio. Uses the global g_work_queue
     for posting work.
 */
@@ -81,8 +81,8 @@ struct mock_async_op
 {
     bool await_ready() const noexcept { return false; }
 
-    template<capy::dispatcher D>
-    std::coroutine_handle<> await_suspend(capy::coro h, D const& d)
+    template<boost::capy::dispatcher D>
+    std::coroutine_handle<> await_suspend(boost::capy::coro h, D const& d)
     {
         ++g_suspend_count;
         // Post the continuation back to the global work queue
@@ -95,13 +95,13 @@ struct mock_async_op
     void await_resume() noexcept { ++g_resume_count; }
 
 private:
-    template<capy::dispatcher D>
-    struct resume_work final : capy::executor_work
+    template<boost::capy::dispatcher D>
+    struct resume_work final : boost::capy::executor_work
     {
-        capy::coro h_;
+        boost::capy::coro h_;
         D d_;
 
-        resume_work(capy::coro h, D const& d)
+        resume_work(boost::capy::coro h, D const& d)
             : h_(h)
             , d_(d)
         {
@@ -125,7 +125,7 @@ private:
 // Test: Single-layer coroutine with mock operation
 //------------------------------------------------
 
-capy::task<> async_op_once()
+boost::capy::task<> async_op_once()
 {
     co_await mock_async_op{};
 }
@@ -141,7 +141,7 @@ void test_single_layer_coroutine()
     g_work_queue = &ctx.work_queue_;
     auto ex = ctx.get_executor();
 
-    capy::async_run(ex)(async_op_once());
+    boost::capy::async_run(ex)(async_op_once());
 
     // With inline dispatch, the coroutine runs immediately until it suspends
     assert(g_suspend_count == 1);
@@ -163,7 +163,7 @@ void test_single_layer_coroutine()
 // Test: Multiple sequential operations
 //------------------------------------------------
 
-capy::task<> async_op_multiple(int count)
+boost::capy::task<> async_op_multiple(int count)
 {
     for(int i = 0; i < count; ++i)
     {
@@ -183,7 +183,7 @@ void test_multiple_operations()
     auto ex = ctx.get_executor();
 
     const int op_count = 5;
-    capy::async_run(ex)(async_op_multiple(op_count));
+    boost::capy::async_run(ex)(async_op_multiple(op_count));
 
     // With inline dispatch, first suspend happens immediately
     assert(g_suspend_count == 1);
@@ -216,9 +216,9 @@ void test_multiple_coroutines()
     g_work_queue = &ctx.work_queue_;
     auto ex = ctx.get_executor();
 
-    capy::async_run(ex)(async_op_once());
-    capy::async_run(ex)(async_op_once());
-    capy::async_run(ex)(async_op_once());
+    boost::capy::async_run(ex)(async_op_once());
+    boost::capy::async_run(ex)(async_op_once());
+    boost::capy::async_run(ex)(async_op_once());
 
     // With inline dispatch, all 3 coroutines run to first suspend immediately
     assert(g_suspend_count == 3);
@@ -240,14 +240,14 @@ void test_multiple_coroutines()
 // Test: 3-level nested coroutines
 //------------------------------------------------
 
-capy::task<> level3_op()
+boost::capy::task<> level3_op()
 {
     std::cout << "  Level 3: Before async operation\n";
     co_await mock_async_op{};
     std::cout << "  Level 3: After async operation\n";
 }
 
-capy::task<> level2_op()
+boost::capy::task<> level2_op()
 {
     std::cout << " Level 2: Before calling level 3\n";
     co_await level3_op();
@@ -258,7 +258,7 @@ capy::task<> level2_op()
     std::cout << " Level 2: After own async operation\n";
 }
 
-capy::task<> level1_op()
+boost::capy::task<> level1_op()
 {
     std::cout << "Level 1: Before calling level 2\n";
     co_await level2_op();
@@ -280,7 +280,7 @@ void test_3level_nested_coroutines()
     g_work_queue = &ctx.work_queue_;
     auto ex = ctx.get_executor();
 
-    capy::async_run(ex)(level1_op());
+    boost::capy::async_run(ex)(level1_op());
 
     // With inline dispatch, coroutine runs until first suspend (level 3's async op)
     assert(g_suspend_count == 1);
@@ -303,7 +303,7 @@ void test_3level_nested_coroutines()
 // Test: 3-level nesting with multiple operations at each level
 //------------------------------------------------
 
-capy::task<> level3_multi(int ops)
+boost::capy::task<> level3_multi(int ops)
 {
     std::cout << "  Level 3: Performing " << ops << " operations\n";
     for(int i = 0; i < ops; ++i)
@@ -313,7 +313,7 @@ capy::task<> level3_multi(int ops)
     std::cout << "  Level 3: Completed " << ops << " operations\n";
 }
 
-capy::task<> level2_multi()
+boost::capy::task<> level2_multi()
 {
     std::cout << " Level 2: Before calling level 3 (2 ops)\n";
     co_await level3_multi(2);
@@ -325,7 +325,7 @@ capy::task<> level2_multi()
     std::cout << " Level 2: Completed own operations\n";
 }
 
-capy::task<> level1_multi()
+boost::capy::task<> level1_multi()
 {
     std::cout << "Level 1: Before calling level 2\n";
     co_await level2_multi();
@@ -349,7 +349,7 @@ void test_3level_nested_multi_ops()
     auto ex = ctx.get_executor();
 
     // Expected: 2 ops (level3) + 3 ops (level2) + 4 ops (level1) = 9 total
-    capy::async_run(ex)(level1_multi());
+    boost::capy::async_run(ex)(level1_multi());
 
     // With inline dispatch, coroutine runs until first suspend
     assert(g_suspend_count == 1);
@@ -372,13 +372,13 @@ void test_3level_nested_multi_ops()
 // Test: 3-level nesting with same executor
 //------------------------------------------------
 
-capy::task<> level3_shared()
+boost::capy::task<> level3_shared()
 {
     std::cout << "  Level 3: Async operation\n";
     co_await mock_async_op{};
 }
 
-capy::task<> level2_shared()
+boost::capy::task<> level2_shared()
 {
     std::cout << " Level 2: Before level 3\n";
     co_await level3_shared();
@@ -386,7 +386,7 @@ capy::task<> level2_shared()
     co_await mock_async_op{};
 }
 
-capy::task<> level1_shared()
+boost::capy::task<> level1_shared()
 {
     std::cout << "Level 1: Before level 2\n";
     co_await level2_shared();
@@ -405,7 +405,7 @@ void test_3level_shared_executor()
     g_work_queue = &ctx.work_queue_;
     auto ex = ctx.get_executor();
 
-    capy::async_run(ex)(level1_shared());
+    boost::capy::async_run(ex)(level1_shared());
 
     // With inline dispatch, coroutine runs until first suspend
     assert(g_suspend_count == 1);
@@ -465,7 +465,7 @@ struct tracking_allocator
     }
 };
 
-static_assert(capy::frame_allocator<tracking_allocator>);
+static_assert(boost::capy::frame_allocator<tracking_allocator>);
 
 void test_stateful_allocator()
 {
@@ -485,7 +485,7 @@ void test_stateful_allocator()
     std::cout << "  alloc_count: " << stats.alloc_count << "\n";
     std::cout << "  dealloc_count: " << stats.dealloc_count << "\n";
 
-    capy::async_run(ex, alloc)(async_op_once());
+    boost::capy::async_run(ex, alloc)(async_op_once());
 
     std::cout << "After async_run (before ctx.run()):\n";
     std::cout << "  alloc_count: " << stats.alloc_count << "\n";
@@ -530,7 +530,7 @@ void test_stateful_allocator_nested()
     g_work_queue = &ctx.work_queue_;
     auto ex = ctx.get_executor();
 
-    capy::async_run(ex, alloc)(level1_op());
+    boost::capy::async_run(ex, alloc)(level1_op());
 
     std::cout << "After async_run (before ctx.run()):\n";
     std::cout << "  alloc_count: " << stats.alloc_count << "\n";
@@ -578,4 +578,3 @@ int main()
     std::cout << "\n=== All tests passed! ===\n";
     return 0;
 }
-

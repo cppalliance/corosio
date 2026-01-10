@@ -7,20 +7,21 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_ASYNC_RUN_HPP
-#define CAPY_ASYNC_RUN_HPP
+#ifndef BOOST_CAPY_ASYNC_RUN_HPP
+#define BOOST_CAPY_ASYNC_RUN_HPP
 
-#include <capy/config.hpp>
-#include <capy/affine.hpp>
-#include <capy/detail/recycling_frame_allocator.hpp>
-#include <capy/frame_allocator.hpp>
-#include <capy/make_affine.hpp>
-#include <capy/task.hpp>
+#include <boost/capy/config.hpp>
+#include <boost/capy/affine.hpp>
+#include <boost/capy/detail/recycling_frame_allocator.hpp>
+#include <boost/capy/frame_allocator.hpp>
+#include <boost/capy/make_affine.hpp>
+#include <boost/capy/task.hpp>
 
 #include <exception>
 #include <optional>
 #include <utility>
 
+namespace boost {
 namespace capy {
 
 namespace detail {
@@ -483,5 +484,6 @@ template<
 }
 
 } // namespace capy
+} // namespace boost
 
 #endif

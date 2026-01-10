@@ -7,13 +7,13 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-// Tests for capy::run_on
+// Tests for boost::capy::run_on
 // Tests flow diagrams from context/design.md involving executor changes
 
-#include <capy/run_on.hpp>
-#include <capy/task.hpp>
-#include <capy/async_run.hpp>
-#include <capy/executor.hpp>
+#include <boost/capy/run_on.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/async_run.hpp>
+#include <boost/capy/executor.hpp>
 
 #include <cassert>
 #include <iostream>
@@ -65,7 +65,7 @@ void expect_log(std::initializer_list<std::string> expected)
 // Mock executor for testing
 //------------------------------------------------------------------------------
 
-struct test_executor : capy::executor_base
+struct test_executor : boost::capy::executor_base
 {
     std::string name_;
     mutable int dispatch_count_ = 0;
@@ -75,14 +75,14 @@ struct test_executor : capy::executor_base
     {
     }
 
-    capy::coro dispatch(capy::coro h) const override
+    boost::capy::coro dispatch(boost::capy::coro h) const override
     {
         ++dispatch_count_;
         log(name_ + ".dispatch");
         return h;
     }
 
-    void post(capy::executor_work* w) const override
+    void post(boost::capy::executor_work* w) const override
     {
         log(name_ + ".post");
         (*w)();
@@ -94,7 +94,7 @@ struct test_executor : capy::executor_base
     test_executor& operator=(test_executor&&) = default;
 };
 
-static_assert(capy::executor<test_executor>);
+static_assert(boost::capy::executor<test_executor>);
 
 //------------------------------------------------------------------------------
 // Mock io_object for testing dispatcher propagation
@@ -103,7 +103,7 @@ static_assert(capy::executor<test_executor>);
 struct mock_io_op
 {
     std::string name_;
-    capy::any_dispatcher captured_dispatcher_;
+    boost::capy::any_dispatcher captured_dispatcher_;
 
     explicit mock_io_op(std::string name)
         : name_(std::move(name))
@@ -120,8 +120,8 @@ struct mock_io_op
         log(name_ + ".await_resume");
     }
 
-    template<capy::dispatcher D>
-    capy::coro await_suspend(capy::coro h, D const& d)
+    template<boost::capy::dispatcher D>
+    boost::capy::coro await_suspend(boost::capy::coro h, D const& d)
     {
         log(name_ + ".await_suspend");
         captured_dispatcher_ = d;
@@ -129,14 +129,14 @@ struct mock_io_op
     }
 };
 
-static_assert(capy::affine_awaitable<mock_io_op, capy::any_dispatcher>);
+static_assert(boost::capy::affine_awaitable<mock_io_op, boost::capy::any_dispatcher>);
 
 //------------------------------------------------------------------------------
 // Test: Basic run_on functionality
 //------------------------------------------------------------------------------
 
 // Flow: !c -> io (c runs on ex2)
-capy::task<> basic_task(mock_io_op& io)
+boost::capy::task<> basic_task(mock_io_op& io)
 {
     log("c.start");
     co_await io;
@@ -153,14 +153,14 @@ void test_basic_run_on()
     mock_io_op io("io");
 
     // Outer task runs on ex1, but uses run_on to execute inner on ex2
-    auto outer = [&]() -> capy::task<> {
+    auto outer = [&]() -> boost::capy::task<> {
         log("outer.start");
-        co_await capy::run_on(ex2, basic_task(io));
+        co_await boost::capy::run_on(ex2, basic_task(io));
         log("outer.end");
     };
 
     bool completed = false;
-    capy::async_run(ex1)(outer(), [&]() {
+    boost::capy::async_run(ex1)(outer(), [&]() {
         completed = true;
         log("completed");
     });
@@ -188,21 +188,21 @@ void test_basic_run_on()
 // Test: Flow diagram !c1 -> c2 -> !c3 -> io from design.md
 //------------------------------------------------------------------------------
 
-capy::task<> flow_c3(mock_io_op& io)
+boost::capy::task<> flow_c3(mock_io_op& io)
 {
     log("c3.start");
     co_await io;
     log("c3.end");
 }
 
-capy::task<> flow_c2(mock_io_op& io, test_executor& ex2)
+boost::capy::task<> flow_c2(mock_io_op& io, test_executor& ex2)
 {
     log("c2.start");
-    co_await capy::run_on(ex2, flow_c3(io));
+    co_await boost::capy::run_on(ex2, flow_c3(io));
     log("c2.end");
 }
 
-capy::task<> flow_c1(mock_io_op& io, test_executor& ex2)
+boost::capy::task<> flow_c1(mock_io_op& io, test_executor& ex2)
 {
     log("c1.start");
     co_await flow_c2(io, ex2);
@@ -219,7 +219,7 @@ void test_flow_executor_change_mid_chain()
     mock_io_op io("io");
 
     bool completed = false;
-    capy::async_run(ex1)(flow_c1(io, ex2), [&]() {
+    boost::capy::async_run(ex1)(flow_c1(io, ex2), [&]() {
         completed = true;
         log("completed");
     });
@@ -258,16 +258,16 @@ void test_flow_executor_change_mid_chain()
 // Test: run_on with return value
 //------------------------------------------------------------------------------
 
-capy::task<int> value_task()
+boost::capy::task<int> value_task()
 {
     log("value_task.start");
     co_return 42;
 }
 
-capy::task<int> outer_value_task(test_executor& ex2)
+boost::capy::task<int> outer_value_task(test_executor& ex2)
 {
     log("outer.start");
-    int result = co_await capy::run_on(ex2, value_task());
+    int result = co_await boost::capy::run_on(ex2, value_task());
     log("outer.got_value");
     co_return result * 2;
 }
@@ -281,7 +281,7 @@ void test_run_on_with_return_value()
     test_executor ex2("ex2");
 
     int final_result = 0;
-    capy::async_run(ex1)(outer_value_task(ex2), [&](int r) {
+    boost::capy::async_run(ex1)(outer_value_task(ex2), [&](int r) {
         final_result = r;
         log("completed with " + std::to_string(r));
     });
@@ -295,7 +295,7 @@ void test_run_on_with_return_value()
 // Test: run_on with void task
 //------------------------------------------------------------------------------
 
-capy::task<> void_task()
+boost::capy::task<> void_task()
 {
     log("void_task");
     co_return;
@@ -309,14 +309,14 @@ void test_run_on_void_task()
     test_executor ex1("ex1");
     test_executor ex2("ex2");
 
-    auto outer = [&]() -> capy::task<> {
+    auto outer = [&]() -> boost::capy::task<> {
         log("outer.start");
-        co_await capy::run_on(ex2, void_task());
+        co_await boost::capy::run_on(ex2, void_task());
         log("outer.end");
     };
 
     bool completed = false;
-    capy::async_run(ex1)(outer(), [&]() {
+    boost::capy::async_run(ex1)(outer(), [&]() {
         completed = true;
         log("completed");
     });
@@ -329,7 +329,7 @@ void test_run_on_void_task()
 // Test: Exception propagation through run_on
 //------------------------------------------------------------------------------
 
-capy::task<> throwing_task()
+boost::capy::task<> throwing_task()
 {
     log("throwing_task");
     throw std::runtime_error("test error from run_on");
@@ -344,16 +344,16 @@ void test_run_on_exception_propagation()
     test_executor ex1("ex1");
     test_executor ex2("ex2");
 
-    auto outer = [&]() -> capy::task<> {
+    auto outer = [&]() -> boost::capy::task<> {
         log("outer.start");
-        co_await capy::run_on(ex2, throwing_task());
+        co_await boost::capy::run_on(ex2, throwing_task());
         log("outer.end");  // Should not reach here
     };
 
     bool caught = false;
     std::string error_msg;
 
-    capy::async_run(ex1)(outer(), overloaded{
+    boost::capy::async_run(ex1)(outer(), overloaded{
         [&]() {
             // Should not reach here
         },
@@ -384,7 +384,7 @@ void test_run_on_exception_propagation()
 // Test: Nested run_on calls
 //------------------------------------------------------------------------------
 
-capy::task<> innermost_task(mock_io_op& io)
+boost::capy::task<> innermost_task(mock_io_op& io)
 {
     log("innermost.start");
     co_await io;
@@ -401,20 +401,20 @@ void test_nested_run_on()
     test_executor ex3("ex3");
     mock_io_op io("io");
 
-    auto middle = [&]() -> capy::task<> {
+    auto middle = [&]() -> boost::capy::task<> {
         log("middle.start");
-        co_await capy::run_on(ex3, innermost_task(io));
+        co_await boost::capy::run_on(ex3, innermost_task(io));
         log("middle.end");
     };
 
-    auto outer = [&]() -> capy::task<> {
+    auto outer = [&]() -> boost::capy::task<> {
         log("outer.start");
-        co_await capy::run_on(ex2, middle());
+        co_await boost::capy::run_on(ex2, middle());
         log("outer.end");
     };
 
     bool completed = false;
-    capy::async_run(ex1)(outer(), [&]() {
+    boost::capy::async_run(ex1)(outer(), [&]() {
         completed = true;
         log("completed");
     });
@@ -460,21 +460,21 @@ void test_run_on_same_executor()
     test_executor ex("ex");
     mock_io_op io("io");
 
-    auto inner = [&]() -> capy::task<> {
+    auto inner = [&]() -> boost::capy::task<> {
         log("inner.start");
         co_await io;
         log("inner.end");
     };
 
-    auto outer = [&]() -> capy::task<> {
+    auto outer = [&]() -> boost::capy::task<> {
         log("outer.start");
         // run_on with same executor - redundant but should work
-        co_await capy::run_on(ex, inner());
+        co_await boost::capy::run_on(ex, inner());
         log("outer.end");
     };
 
     bool completed = false;
-    capy::async_run(ex)(outer(), [&]() {
+    boost::capy::async_run(ex)(outer(), [&]() {
         completed = true;
         log("completed");
     });
@@ -496,15 +496,15 @@ void test_run_on_dispatcher_propagation()
     test_executor ex2("ex2");
     mock_io_op io("io");
 
-    auto inner = [&]() -> capy::task<> {
+    auto inner = [&]() -> boost::capy::task<> {
         co_await io;
     };
 
-    auto outer = [&]() -> capy::task<> {
-        co_await capy::run_on(ex2, inner());
+    auto outer = [&]() -> boost::capy::task<> {
+        co_await boost::capy::run_on(ex2, inner());
     };
 
-    capy::async_run(ex1)(outer(), [&]() {});
+    boost::capy::async_run(ex1)(outer(), [&]() {});
 
     // Verify io captured ex2's dispatcher (run_on's executor)
     // The dispatch happened through ex2
@@ -520,7 +520,7 @@ void test_run_on_dispatcher_propagation()
 int main()
 {
     std::cout << "========================================\n";
-    std::cout << "capy::run_on tests\n";
+    std::cout << "boost::capy::run_on tests\n";
     std::cout << "Testing executor binding from design.md\n";
     std::cout << "========================================\n\n";
 

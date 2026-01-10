@@ -7,11 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_EXECUTOR_WORK_HPP
-#define CAPY_EXECUTOR_WORK_HPP
+#ifndef BOOST_CAPY_EXECUTOR_WORK_HPP
+#define BOOST_CAPY_EXECUTOR_WORK_HPP
 
-#include <capy/config.hpp>
+#include <boost/capy/config.hpp>
 
+namespace boost {
 namespace capy {
 
 //------------------------------------------------
@@ -155,5 +156,6 @@ private:
 };
 
 } // namespace capy
+} // namespace boost
 
 #endif

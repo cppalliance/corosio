@@ -13,17 +13,18 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_MAKE_AFFINE_HPP
-#define CAPY_MAKE_AFFINE_HPP
+#ifndef BOOST_CAPY_MAKE_AFFINE_HPP
+#define BOOST_CAPY_MAKE_AFFINE_HPP
 
-#include <capy/config.hpp>
-#include <capy/affine.hpp>
+#include <boost/capy/config.hpp>
+#include <boost/capy/affine.hpp>
 
 #include <exception>
 #include <optional>
 #include <type_traits>
 #include <utility>
 
+namespace boost {
 namespace capy {
 namespace detail {
 
@@ -271,5 +272,6 @@ auto make_affine(Awaitable&& awaitable, Dispatcher const& dispatcher)
 }
 
 } // namespace capy
+} // namespace boost
 
-#endif // CAPY_MAKE_AFFINE_HPP
+#endif // BOOST_CAPY_MAKE_AFFINE_HPP

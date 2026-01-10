@@ -1,4 +1,5 @@
 #
+# Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 # Copyright (c) 2026 Steve Gerbino
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
@@ -7,281 +8,264 @@
 # Official repository: https://github.com/cppalliance/corosio
 #
 
-cmake_minimum_required(VERSION 3.16)
-project(corosio LANGUAGES CXX)
+#-------------------------------------------------
+#
+# Project
+#
+#-------------------------------------------------
+cmake_minimum_required(VERSION 3.16...3.28)
+set(BOOST_COROSIO_VERSION 1)
+if (BOOST_SUPERPROJECT_VERSION)
+    set(BOOST_COROSIO_VERSION ${BOOST_SUPERPROJECT_VERSION})
+endif ()
+project(boost_corosio VERSION "${BOOST_COROSIO_VERSION}" LANGUAGES CXX)
+set(BOOST_COROSIO_IS_ROOT OFF)
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(BOOST_COROSIO_IS_ROOT ON)
+endif ()
+set(__ignore__ ${CMAKE_C_COMPILER})
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#-------------------------------------------------
+#
+# Options
+#
+#-------------------------------------------------
+if (BOOST_COROSIO_IS_ROOT)
+    include(CTest)
+endif ()
+option(BOOST_COROSIO_BUILD_TESTS "Build boost::corosio tests" ${BUILD_TESTING})
+option(BOOST_COROSIO_BUILD_BENCH "Build boost::corosio benchmarks" ${BOOST_COROSIO_IS_ROOT})
 
+# Check if environment variable BOOST_SRC_DIR is set
+if (NOT DEFINED BOOST_SRC_DIR AND DEFINED ENV{BOOST_SRC_DIR})
+    set(DEFAULT_BOOST_SRC_DIR "$ENV{BOOST_SRC_DIR}")
+else ()
+    set(DEFAULT_BOOST_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+endif ()
+set(BOOST_SRC_DIR ${DEFAULT_BOOST_SRC_DIR} CACHE STRING "Boost source dir to use when running CMake from this directory")
+
+#-------------------------------------------------
+#
+# Boost modules
+#
+#-------------------------------------------------
+# corosio depends on buffers
+set(BOOST_COROSIO_DEPENDENCIES
+    Boost::buffers)
+
+foreach (BOOST_COROSIO_DEPENDENCY ${BOOST_COROSIO_DEPENDENCIES})
+    if (BOOST_COROSIO_DEPENDENCY MATCHES "^[ ]*Boost::([A-Za-z0-9_]+)[ ]*$")
+        list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES ${CMAKE_MATCH_1})
+    endif ()
+endforeach ()
+
+# Complete dependency list
+set(BOOST_INCLUDE_LIBRARIES ${BOOST_COROSIO_INCLUDE_LIBRARIES})
+# Exclude both capy and corosio since this repo provides them
+set(BOOST_EXCLUDE_LIBRARIES capy corosio)
+
+#-------------------------------------------------
+#
+# Add Boost Subdirectory
+#
+#-------------------------------------------------
+if (BOOST_COROSIO_IS_ROOT)
+    set(CMAKE_FOLDER Dependencies)
+    # Find absolute BOOST_SRC_DIR
+    if (NOT IS_ABSOLUTE ${BOOST_SRC_DIR})
+        set(BOOST_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${BOOST_SRC_DIR}")
+    endif ()
+
+    # Validate BOOST_SRC_DIR
+    set(BOOST_SRC_DIR_IS_VALID ON)
+    foreach (F "CMakeLists.txt" "Jamroot" "boost-build.jam" "bootstrap.sh" "libs")
+        if (NOT EXISTS "${BOOST_SRC_DIR}/${F}")
+            message(STATUS "${BOOST_SRC_DIR}/${F} does not exist. Fallback to find_package.")
+            set(BOOST_SRC_DIR_IS_VALID OFF)
+            break()
+        endif ()
+    endforeach ()
+
+    # Create Boost interface targets
+    if (BOOST_SRC_DIR_IS_VALID)
+        # From BOOST_SRC_DIR
+        if (BUILD_SHARED_LIBS)
+            set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+        endif ()
+        set(PREV_BUILD_TESTING ${BUILD_TESTING})
+        set(BUILD_TESTING OFF CACHE BOOL "Build the tests." FORCE)
+        add_subdirectory(${BOOST_SRC_DIR} Dependencies/boost EXCLUDE_FROM_ALL)
+        set(BUILD_TESTING ${PREV_BUILD_TESTING} CACHE BOOL "Build the tests." FORCE)
+        set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${BOOST_SRC_DIR}/tools/cmake/include")
+    else ()
+        # From Boost Package
+        find_package(Boost REQUIRED COMPONENTS buffers)
+        foreach (BOOST_INCLUDE_LIBRARY ${BOOST_COROSIO_INCLUDE_LIBRARIES})
+            if (NOT TARGET Boost::${BOOST_INCLUDE_LIBRARY})
+                add_library(Boost::${BOOST_INCLUDE_LIBRARY} ALIAS Boost::headers)
+            endif ()
+        endforeach ()
+    endif ()
+    unset(CMAKE_FOLDER)
+endif ()
+
+#-------------------------------------------------
+#
 # Threading support
+#
+#-------------------------------------------------
 find_package(Threads REQUIRED)
 
-#------------------------------------------------------------------------------
+#-------------------------------------------------
+#
 # capy library
-#------------------------------------------------------------------------------
+#
+#-------------------------------------------------
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-file(GLOB_RECURSE CAPY_HEADERS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/capy/*.hpp")
-file(GLOB_RECURSE CAPY_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/capy/src/*.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/capy/src/*.cpp")
+file(GLOB_RECURSE BOOST_CAPY_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/capy/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/capy.hpp")
+file(GLOB_RECURSE BOOST_CAPY_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/capy/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/capy/*.cpp")
 
-add_library(capy STATIC)
+source_group("" FILES "include/boost/capy.hpp")
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/capy" PREFIX "include" FILES ${BOOST_CAPY_HEADERS})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/capy" PREFIX "src" FILES ${BOOST_CAPY_SOURCES})
 
-target_sources(capy
-    PUBLIC
-        FILE_SET capy_headers
-        TYPE HEADERS
-        BASE_DIRS include
-        FILES ${CAPY_HEADERS}
-    PRIVATE
-        ${CAPY_SOURCES})
+function(boost_capy_setup_properties target)
+    target_compile_features(${target} PUBLIC cxx_std_20)
+    target_include_directories(${target} PUBLIC "${PROJECT_SOURCE_DIR}/include")
+    target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_compile_options(${target}
+        PRIVATE
+            $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+endfunction()
 
-target_include_directories(capy
-    PUBLIC
-        include
-    PRIVATE
-        src/capy)
+add_library(boost_capy ${BOOST_CAPY_HEADERS} ${BOOST_CAPY_SOURCES})
+add_library(Boost::capy ALIAS boost_capy)
+boost_capy_setup_properties(boost_capy)
 
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/capy" PREFIX "capy" FILES ${CAPY_HEADERS})
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/capy/src" PREFIX "src" FILES ${CAPY_SOURCES})
-
-#------------------------------------------------------------------------------
+#-------------------------------------------------
+#
 # corosio library
-#------------------------------------------------------------------------------
+#
+#-------------------------------------------------
+file(GLOB_RECURSE BOOST_COROSIO_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio.hpp")
+file(GLOB_RECURSE BOOST_COROSIO_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/corosio/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/corosio/*.cpp")
 
-file(GLOB_RECURSE COROSIO_HEADERS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/corosio/*.hpp")
-file(GLOB_RECURSE COROSIO_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/corosio/src/*.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/corosio/src/*.cpp")
+source_group("" FILES "include/boost/corosio.hpp")
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio" PREFIX "include" FILES ${BOOST_COROSIO_HEADERS})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/corosio" PREFIX "src" FILES ${BOOST_COROSIO_SOURCES})
 
-add_library(corosio STATIC)
+function(boost_corosio_setup_properties target)
+    target_compile_features(${target} PUBLIC cxx_std_20)
+    target_include_directories(${target} PUBLIC "${PROJECT_SOURCE_DIR}/include")
+    target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(${target}
+        PUBLIC
+            Boost::capy
+            ${BOOST_COROSIO_DEPENDENCIES})
+    target_compile_options(${target}
+        PRIVATE
+            $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+endfunction()
 
-target_sources(corosio
-    PUBLIC
-        FILE_SET corosio_headers
-        TYPE HEADERS
-        BASE_DIRS include
-        FILES ${COROSIO_HEADERS}
-    PRIVATE
-        ${COROSIO_SOURCES})
+add_library(boost_corosio ${BOOST_COROSIO_HEADERS} ${BOOST_COROSIO_SOURCES})
+add_library(Boost::corosio ALIAS boost_corosio)
+boost_corosio_setup_properties(boost_corosio)
 
-target_include_directories(corosio
-    PUBLIC
-        include
-    PRIVATE
-        src/corosio)
+#-------------------------------------------------
+#
+# Tests
+#
+#-------------------------------------------------
+if (BOOST_COROSIO_BUILD_TESTS)
+    # Common test setup function
+    function(boost_corosio_add_test name source)
+        add_executable(${name} ${source})
+        target_link_libraries(${name}
+            PRIVATE
+                Boost::corosio
+                Threads::Threads)
+        target_compile_options(${name}
+            PRIVATE
+                $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic>
+                $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic>
+                $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->)
+        target_link_options(${name}
+            PRIVATE
+                $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
+        add_test(NAME ${name} COMMAND ${name})
+    endfunction()
 
-target_link_libraries(corosio
-    PUBLIC
-        capy)
+    # capy tests
+    boost_corosio_add_test(test_service_provider test/capy/service_provider.cpp)
+    boost_corosio_add_test(test_async_run test/capy/async_run.cpp)
+    boost_corosio_add_test(test_task test/capy/task.cpp)
+    boost_corosio_add_test(test_run_on test/capy/run_on.cpp)
 
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/corosio" PREFIX "corosio" FILES ${COROSIO_HEADERS})
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/corosio/src" PREFIX "src" FILES ${COROSIO_SOURCES})
+    # corosio tests
+    boost_corosio_add_test(test_platform_reactor test/corosio/platform_reactor.cpp)
+    boost_corosio_add_test(test_socket test/corosio/socket.cpp)
+endif ()
 
-#------------------------------------------------------------------------------
-# Benchmark
-#------------------------------------------------------------------------------
+#-------------------------------------------------
+#
+# Benchmarks
+#
+#-------------------------------------------------
+if (BOOST_COROSIO_BUILD_BENCH)
+    file(GLOB_RECURSE BENCH_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/bench/*.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/bench/*.cpp")
 
-file(GLOB_RECURSE BENCH_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/bench/*.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/bench/*.cpp")
+    add_executable(bench ${BENCH_SOURCES})
 
-add_executable(bench)
+    target_include_directories(bench PRIVATE bench)
 
-target_sources(bench
-    PRIVATE
-        ${BENCH_SOURCES})
+    target_link_libraries(bench
+        PRIVATE
+            Boost::corosio)
 
-target_include_directories(bench PRIVATE bench)
+    source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/bench" PREFIX "bench" FILES ${BENCH_SOURCES})
 
-target_link_libraries(bench
-    PRIVATE
-        corosio)
+    # Warning flags
+    target_compile_options(bench
+        PRIVATE
+            $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Wpedantic -fcoroutines>
+            $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Wpedantic>
+            $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->)
 
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/bench" PREFIX "bench" FILES ${BENCH_SOURCES})
+    # Optimization flags
+    target_compile_options(bench
+        PRIVATE
+            $<$<CXX_COMPILER_ID:GNU>:-O3 -march=native -funroll-loops -ffast-math -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables>
+            $<$<CXX_COMPILER_ID:Clang>:-O3 -march=native>
+            $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:/O2 /Ob2 /GL /arch:AVX2 /Qspectre->)
 
-# Warning flags (separate from optimizations)
-target_compile_options(bench
-    PRIVATE
-        $<$<CXX_COMPILER_ID:GNU>:-Wall -Wextra -Wpedantic -Werror -fcoroutines>
-        $<$<CXX_COMPILER_ID:Clang>:-Wall -Wextra -Wpedantic -Werror>
-        $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
+    target_compile_definitions(bench PRIVATE
+        $<$<NOT:$<CONFIG:Debug>>:NDEBUG>)
 
-# Optimization flags (separate from warnings)
-target_compile_options(bench
-    PRIVATE
-        $<$<CXX_COMPILER_ID:GNU>:-O3 -march=native -funroll-loops -ffast-math -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables>
-        $<$<CXX_COMPILER_ID:Clang>:-O3 -march=native>
-        $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:/O2 /Ob2 /GL /arch:AVX2 /Qspectre->)
+    # Use INTERPROCEDURAL_OPTIMIZATION property instead of manual -flto
+    set_property(TARGET bench PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
-target_compile_definitions(bench PRIVATE
-    $<$<NOT:$<CONFIG:Debug>>:NDEBUG>)
+    # Linker-specific flags
+    target_link_options(bench
+        PRIVATE
+            $<$<CXX_COMPILER_ID:GNU>:-s -Wl,--as-needed>
+            $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>
+            $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:/LTCG>)
 
-# Use INTERPROCEDURAL_OPTIMIZATION property instead of manual -flto
-set_property(TARGET bench PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    # Clang stdlib requirement
+    target_compile_options(bench
+        PRIVATE
+            $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
 
-# Linker-specific flags that aren't covered by IPO property
-target_link_options(bench
-    PRIVATE
-        $<$<CXX_COMPILER_ID:GNU>:-s -Wl,--as-needed>
-        $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>
-        $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>:/LTCG>)
-
-# Clang stdlib requirement
-target_compile_options(bench
-    PRIVATE
-        $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
-
-#------------------------------------------------------------------------------
-# Service Provider Test
-#------------------------------------------------------------------------------
-
-add_executable(test_service_provider)
-
-target_sources(test_service_provider
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/test/capy/service_provider.cpp")
-
-target_link_libraries(test_service_provider
-    PRIVATE
-        capy)
-
-target_compile_options(test_service_provider
-    PRIVATE
-        $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
-        $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
-        $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
-
-target_link_options(test_service_provider
-    PRIVATE
-        $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
-
-# async_run Test
-add_executable(test_async_run)
-
-target_sources(test_async_run
-  PRIVATE
-    test/capy/async_run.cpp)
-
-target_link_libraries(test_async_run
-  PRIVATE
-    capy)
-
-target_compile_options(test_async_run
-  PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
-
-target_link_options(test_async_run
-  PRIVATE
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
-
-#------------------------------------------------------------------------------
-# Task Test
-#------------------------------------------------------------------------------
-
-add_executable(test_task)
-
-target_sources(test_task
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/test/capy/task.cpp")
-
-target_link_libraries(test_task
-    PRIVATE
-        capy)
-
-target_compile_options(test_task
-    PRIVATE
-        $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
-        $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
-        $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
-
-target_link_options(test_task
-    PRIVATE
-        $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
-
-#------------------------------------------------------------------------------
-# run_on Test
-#------------------------------------------------------------------------------
-
-add_executable(test_run_on)
-
-target_sources(test_run_on
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/test/capy/run_on.cpp")
-
-target_link_libraries(test_run_on
-    PRIVATE
-        capy)
-
-target_compile_options(test_run_on
-    PRIVATE
-        $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
-        $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
-        $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
-
-target_link_options(test_run_on
-    PRIVATE
-        $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
-
-#------------------------------------------------------------------------------
-# Platform Reactor Test
-#------------------------------------------------------------------------------
-
-add_executable(test_platform_reactor)
-
-target_sources(test_platform_reactor
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/test/corosio/platform_reactor.cpp")
-
-target_link_libraries(test_platform_reactor
-    PRIVATE
-        corosio
-        Threads::Threads)
-
-target_compile_options(test_platform_reactor
-    PRIVATE
-        $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
-        $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
-        $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
-
-target_link_options(test_platform_reactor
-    PRIVATE
-        $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
-
-# Socket Test
-add_executable(test_socket)
-
-target_sources(test_socket
-  PRIVATE
-    test/corosio/socket.cpp)
-
-target_link_libraries(test_socket
-  PRIVATE
-    corosio
-    Threads::Threads)
-
-target_compile_options(test_socket
-  PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines -Wall -Wextra -Wpedantic -Werror>
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++ -Wall -Wextra -Wpedantic -Werror>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /permissive->)
-
-target_link_options(test_socket
-  PRIVATE
-    $<$<CXX_COMPILER_ID:Clang>:-stdlib=libc++>)
-
-# Register as tests for ctest
-#------------------------------------------------------------------------------
-
-enable_testing()
-add_test(NAME bench COMMAND bench)
-add_test(NAME test_service_provider COMMAND test_service_provider)
-add_test(NAME test_async_run COMMAND test_async_run)
-add_test(NAME test_platform_reactor COMMAND test_platform_reactor)
-add_test(NAME test_socket COMMAND test_socket)
-add_test(NAME test_task COMMAND test_task)
-add_test(NAME test_run_on COMMAND test_run_on)
+    add_test(NAME bench COMMAND bench)
+endif ()

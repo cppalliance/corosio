@@ -7,13 +7,13 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-// Comprehensive tests for capy::task
+// Comprehensive tests for boost::capy::task
 // Tests all flow diagrams from context/design.md
 
-#include <capy/task.hpp>
-#include <capy/async_run.hpp>
-#include <capy/run_on.hpp>
-#include <capy/executor.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/async_run.hpp>
+#include <boost/capy/run_on.hpp>
+#include <boost/capy/executor.hpp>
 
 #include <cassert>
 #include <iostream>
@@ -67,7 +67,7 @@ void expect_log(std::initializer_list<std::string> expected)
 // Mock executor for testing
 //------------------------------------------------------------------------------
 
-struct test_executor : capy::executor_base
+struct test_executor : boost::capy::executor_base
 {
     std::string name_;
     mutable int dispatch_count_ = 0;
@@ -78,7 +78,7 @@ struct test_executor : capy::executor_base
     {
     }
 
-    capy::coro dispatch(capy::coro h) const override
+    boost::capy::coro dispatch(boost::capy::coro h) const override
     {
         ++dispatch_count_;
         dispatches_.push_back(name_ + ".dispatch");
@@ -86,7 +86,7 @@ struct test_executor : capy::executor_base
         return h;
     }
 
-    void post(capy::executor_work* w) const override
+    void post(boost::capy::executor_work* w) const override
     {
         log(name_ + ".post");
         (*w)();
@@ -99,7 +99,7 @@ struct test_executor : capy::executor_base
     test_executor& operator=(test_executor&&) = default;
 };
 
-static_assert(capy::executor<test_executor>);
+static_assert(boost::capy::executor<test_executor>);
 
 //------------------------------------------------------------------------------
 // Mock io_object for testing dispatcher propagation
@@ -108,8 +108,8 @@ static_assert(capy::executor<test_executor>);
 struct mock_io_op
 {
     std::string name_;
-    capy::any_dispatcher captured_dispatcher_;
-    capy::coro continuation_;
+    boost::capy::any_dispatcher captured_dispatcher_;
+    boost::capy::coro continuation_;
 
     explicit mock_io_op(std::string name)
         : name_(std::move(name))
@@ -127,8 +127,8 @@ struct mock_io_op
     }
 
     // Affine awaitable protocol
-    template<capy::dispatcher D>
-    capy::coro await_suspend(capy::coro h, D const& d)
+    template<boost::capy::dispatcher D>
+    boost::capy::coro await_suspend(boost::capy::coro h, D const& d)
     {
         log(name_ + ".await_suspend");
         captured_dispatcher_ = d;
@@ -138,7 +138,7 @@ struct mock_io_op
     }
 };
 
-static_assert(capy::affine_awaitable<mock_io_op, capy::any_dispatcher>);
+static_assert(boost::capy::affine_awaitable<mock_io_op, boost::capy::any_dispatcher>);
 
 //------------------------------------------------------------------------------
 // Flow diagram tests from design.md
@@ -146,7 +146,7 @@ static_assert(capy::affine_awaitable<mock_io_op, capy::any_dispatcher>);
 
 // Flow: c -> io
 // Simple coroutine awaiting io_object
-capy::task<> flow_c_io(mock_io_op& io)
+boost::capy::task<> flow_c_io(mock_io_op& io)
 {
     log("c.start");
     co_await io;
@@ -162,7 +162,7 @@ void test_flow_c_io()
     mock_io_op io("io");
 
     bool completed = false;
-    capy::async_run(ex)(flow_c_io(io), [&]() {
+    boost::capy::async_run(ex)(flow_c_io(io), [&]() {
         completed = true;
         log("completed");
     });
@@ -183,14 +183,14 @@ void test_flow_c_io()
 
 // Flow: c1 -> c2 -> io
 // Chained coroutines
-capy::task<> flow_c2(mock_io_op& io)
+boost::capy::task<> flow_c2(mock_io_op& io)
 {
     log("c2.start");
     co_await io;
     log("c2.end");
 }
 
-capy::task<> flow_c1_c2_io(mock_io_op& io)
+boost::capy::task<> flow_c1_c2_io(mock_io_op& io)
 {
     log("c1.start");
     co_await flow_c2(io);
@@ -206,7 +206,7 @@ void test_flow_c1_c2_io()
     mock_io_op io("io");
 
     bool completed = false;
-    capy::async_run(ex)(flow_c1_c2_io(io), [&]() {
+    boost::capy::async_run(ex)(flow_c1_c2_io(io), [&]() {
         completed = true;
         log("completed");
     });
@@ -230,7 +230,7 @@ void test_flow_c1_c2_io()
 }
 
 // Flow: c1 -> c2 -> io with return value
-capy::task<int> flow_c2_value(mock_io_op& io)
+boost::capy::task<int> flow_c2_value(mock_io_op& io)
 {
     log("c2.start");
     co_await io;
@@ -238,7 +238,7 @@ capy::task<int> flow_c2_value(mock_io_op& io)
     co_return 42;
 }
 
-capy::task<int> flow_c1_c2_value(mock_io_op& io)
+boost::capy::task<int> flow_c1_c2_value(mock_io_op& io)
 {
     log("c1.start");
     int result = co_await flow_c2_value(io);
@@ -255,7 +255,7 @@ void test_flow_with_return_value()
     mock_io_op io("io");
 
     int final_result = 0;
-    capy::async_run(ex)(flow_c1_c2_value(io), [&](int result) {
+    boost::capy::async_run(ex)(flow_c1_c2_value(io), [&](int result) {
         final_result = result;
         log("completed with " + std::to_string(result));
     });
@@ -267,21 +267,21 @@ void test_flow_with_return_value()
 
 // Flow: !c1 -> c2 -> !c3 -> io
 // Executor changes mid-chain
-capy::task<> flow_c3_ex2(mock_io_op& io)
+boost::capy::task<> flow_c3_ex2(mock_io_op& io)
 {
     log("c3.start");
     co_await io;
     log("c3.end");
 }
 
-capy::task<> flow_c2_changes_executor(mock_io_op& io, test_executor& ex2)
+boost::capy::task<> flow_c2_changes_executor(mock_io_op& io, test_executor& ex2)
 {
     log("c2.start");
-    co_await capy::run_on(ex2, flow_c3_ex2(io));
+    co_await boost::capy::run_on(ex2, flow_c3_ex2(io));
     log("c2.end");
 }
 
-capy::task<> flow_c1_ex1(mock_io_op& io, test_executor& ex2)
+boost::capy::task<> flow_c1_ex1(mock_io_op& io, test_executor& ex2)
 {
     log("c1.start");
     co_await flow_c2_changes_executor(io, ex2);
@@ -299,7 +299,7 @@ void test_flow_executor_change()
     mock_io_op io("io");
 
     bool completed = false;
-    capy::async_run(ex1)(flow_c1_ex1(io, ex2), [&]() {
+    boost::capy::async_run(ex1)(flow_c1_ex1(io, ex2), [&]() {
         completed = true;
         log("completed");
     });
@@ -345,32 +345,32 @@ void test_same_executor_symmetric_transfer()
     mock_io_op io("io");
 
     // Deep chain with same executor throughout
-    auto c4 = [&]() -> capy::task<> {
+    auto c4 = [&]() -> boost::capy::task<> {
         log("c4.start");
         co_await io;
         log("c4.end");
     };
 
-    auto c3 = [&]() -> capy::task<> {
+    auto c3 = [&]() -> boost::capy::task<> {
         log("c3.start");
         co_await c4();
         log("c3.end");
     };
 
-    auto c2 = [&]() -> capy::task<> {
+    auto c2 = [&]() -> boost::capy::task<> {
         log("c2.start");
         co_await c3();
         log("c2.end");
     };
 
-    auto c1 = [&]() -> capy::task<> {
+    auto c1 = [&]() -> boost::capy::task<> {
         log("c1.start");
         co_await c2();
         log("c1.end");
     };
 
     bool completed = false;
-    capy::async_run(ex)(c1(), [&]() {
+    boost::capy::async_run(ex)(c1(), [&]() {
         completed = true;
     });
 
@@ -407,9 +407,9 @@ void test_dispatcher_identity()
     test_executor ex1("ex1");
     test_executor ex2("ex2");
 
-    capy::any_dispatcher d1a = ex1;
-    capy::any_dispatcher d1b = ex1;
-    capy::any_dispatcher d2 = ex2;
+    boost::capy::any_dispatcher d1a = ex1;
+    boost::capy::any_dispatcher d1b = ex1;
+    boost::capy::any_dispatcher d2 = ex2;
 
     // Same executor -> same dispatcher identity
     assert(d1a == d1b);
@@ -427,19 +427,19 @@ void test_task_move()
 {
     std::cout << "=== Test: Task move semantics ===\n";
 
-    auto make_task = []() -> capy::task<int> {
+    auto make_task = []() -> boost::capy::task<int> {
         co_return 42;
     };
 
-    capy::task<int> t1 = make_task();
-    capy::task<int> t2 = std::move(t1);
+    boost::capy::task<int> t1 = make_task();
+    boost::capy::task<int> t2 = std::move(t1);
 
     // t1 should be empty after move
     // t2 should have the coroutine
 
     test_executor ex("ex");
     int result = 0;
-    capy::async_run(ex)(std::move(t2), [&](int r) {
+    boost::capy::async_run(ex)(std::move(t2), [&](int r) {
         result = r;
     });
 
@@ -453,7 +453,7 @@ void test_exception_handling()
 {
     std::cout << "=== Test: Exception handling ===\n";
 
-    auto throwing_task = []() -> capy::task<> {
+    auto throwing_task = []() -> boost::capy::task<> {
         throw std::runtime_error("test error");
         co_return;
     };
@@ -462,7 +462,7 @@ void test_exception_handling()
     bool caught = false;
     std::string error_msg;
 
-    capy::async_run(ex)(throwing_task(), overloaded{
+    boost::capy::async_run(ex)(throwing_task(), overloaded{
         [&]() {
             // Should not reach here
         },
@@ -494,17 +494,17 @@ void test_void_and_nonvoid_tasks()
     std::cout << "=== Test: Void and non-void tasks ===\n";
 
     // Void task
-    auto void_task = []() -> capy::task<> {
+    auto void_task = []() -> boost::capy::task<> {
         co_return;
     };
 
     // Int task
-    auto int_task = []() -> capy::task<int> {
+    auto int_task = []() -> boost::capy::task<int> {
         co_return 123;
     };
 
     // String task
-    auto string_task = []() -> capy::task<std::string> {
+    auto string_task = []() -> boost::capy::task<std::string> {
         co_return "hello";
     };
 
@@ -512,7 +512,7 @@ void test_void_and_nonvoid_tasks()
 
     // Test void
     bool void_done = false;
-    capy::async_run(ex)(void_task(), [&]() {
+    boost::capy::async_run(ex)(void_task(), [&]() {
         void_done = true;
     });
     assert(void_done);
@@ -520,7 +520,7 @@ void test_void_and_nonvoid_tasks()
 
     // Test int
     int int_result = 0;
-    capy::async_run(ex)(int_task(), [&](int r) {
+    boost::capy::async_run(ex)(int_task(), [&](int r) {
         int_result = r;
     });
     assert(int_result == 123);
@@ -528,7 +528,7 @@ void test_void_and_nonvoid_tasks()
 
     // Test string
     std::string str_result;
-    capy::async_run(ex)(string_task(), [&](std::string r) {
+    boost::capy::async_run(ex)(string_task(), [&](std::string r) {
         str_result = std::move(r);
     });
     assert(str_result == "hello");
@@ -544,7 +544,7 @@ void test_void_and_nonvoid_tasks()
 int main()
 {
     std::cout << "========================================\n";
-    std::cout << "capy::task comprehensive tests\n";
+    std::cout << "boost::capy::task comprehensive tests\n";
     std::cout << "Testing flow diagrams from design.md\n";
     std::cout << "========================================\n\n";
 

@@ -7,13 +7,14 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef COROSIO_TLS_STREAM_HPP
-#define COROSIO_TLS_STREAM_HPP
+#ifndef BOOST_COROSIO_TLS_STREAM_HPP
+#define BOOST_COROSIO_TLS_STREAM_HPP
 
-#include <capy/task.hpp>
+#include <boost/capy/task.hpp>
 
 #include <utility>
 
+namespace boost {
 namespace corosio {
 
 /** A TLS stream adapter that wraps another stream.
@@ -46,5 +47,6 @@ struct tls_stream
 };
 
 } // namespace corosio
+} // namespace boost
 
 #endif

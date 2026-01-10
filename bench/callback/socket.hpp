@@ -12,8 +12,8 @@
 
 #include "detail/op.hpp"
 
-#include <corosio/platform_reactor.hpp>
-#include <corosio/io_context.hpp>
+#include <boost/corosio/platform_reactor.hpp>
+#include <boost/corosio/io_context.hpp>
 
 extern std::size_t g_io_count;
 
@@ -36,12 +36,12 @@ namespace callback {
 */
 struct socket
 {
-    corosio::io_context& ioc_;
-    corosio::platform_reactor* reactor_;
+    boost::corosio::io_context& ioc_;
+    boost::corosio::platform_reactor* reactor_;
 
-    explicit socket(corosio::io_context& ioc)
+    explicit socket(boost::corosio::io_context& ioc)
         : ioc_(ioc),
-          reactor_(ioc.find_service<corosio::platform_reactor>())
+          reactor_(ioc.find_service<boost::corosio::platform_reactor>())
     {}
 
     auto get_executor() const { return ioc_.get_executor(); }
@@ -50,7 +50,7 @@ struct socket
     void async_read_some(Handler&& handler)
     {
         ++g_io_count;
-        using op_t = detail::io_op<corosio::io_context::executor, std::decay_t<Handler>>;
+        using op_t = detail::io_op<boost::corosio::io_context::executor, std::decay_t<Handler>>;
         auto ex = ioc_.get_executor();
         reactor_->submit(new op_t(ex, std::forward<Handler>(handler)));
     }

@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <capy/service_provider.hpp>
+#include <boost/capy/service_provider.hpp>
 
 #include <iostream>
 
@@ -16,7 +16,7 @@
 //------------------------------------------------
 // Example services
 
-struct file_service : capy::service
+struct file_service : boost::capy::service
 {
     virtual int read() = 0;
 };
@@ -25,7 +25,7 @@ struct posix_file_service : file_service
 {
     using key_type = file_service;
 
-    explicit posix_file_service(capy::service_provider&)
+    explicit posix_file_service(boost::capy::service_provider&)
     {
         std::cout << "posix_file_service created\n";
     }
@@ -35,18 +35,18 @@ struct posix_file_service : file_service
     int read() override { return 42; }
 };
 
-struct timer_service : capy::service
+struct timer_service : boost::capy::service
 {
-    explicit timer_service(capy::service_provider&) { std::cout << "timer_service created\n"; }
+    explicit timer_service(boost::capy::service_provider&) { std::cout << "timer_service created\n"; }
 
     void shutdown() override { std::cout << "timer_service stopped\n"; }
 
     void schedule() {}
 };
 
-struct resolver_service : capy::service
+struct resolver_service : boost::capy::service
 {
-    explicit resolver_service(capy::service_provider&, int port) : port_(port)
+    explicit resolver_service(boost::capy::service_provider&, int port) : port_(port)
     {
         std::cout << "resolver_service created with port " << port << "\n";
     }
@@ -59,7 +59,7 @@ struct resolver_service : capy::service
 //------------------------------------------------
 // Example io_context
 
-class io_context : public capy::service_provider
+class io_context : public boost::capy::service_provider
 {
 public:
 };

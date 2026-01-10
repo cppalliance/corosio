@@ -7,16 +7,17 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef COROSIO_IO_CONTEXT_HPP
-#define COROSIO_IO_CONTEXT_HPP
+#ifndef BOOST_COROSIO_IO_CONTEXT_HPP
+#define BOOST_COROSIO_IO_CONTEXT_HPP
 
-#include <corosio/platform_reactor.hpp>
-#include <capy/service_provider.hpp>
-#include <capy/executor.hpp>
+#include <boost/corosio/platform_reactor.hpp>
+#include <boost/capy/service_provider.hpp>
+#include <boost/capy/executor.hpp>
 
 #include <concepts>
 #include <utility>
 
+namespace boost {
 namespace corosio {
 
 /** A simple I/O context for running asynchronous operations.
@@ -87,5 +88,6 @@ private:
 };
 
 } // namespace corosio
+} // namespace boost
 
 #endif

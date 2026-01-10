@@ -7,14 +7,15 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_AFFINE_HPP
-#define CAPY_AFFINE_HPP
+#ifndef BOOST_CAPY_AFFINE_HPP
+#define BOOST_CAPY_AFFINE_HPP
 
-#include <capy/config.hpp>
+#include <boost/capy/config.hpp>
 
 #include <concepts>
 #include <stop_token>
 
+namespace boost {
 namespace capy {
 
 /** Concept for dispatcher types.
@@ -255,6 +256,6 @@ public:
 };
 
 } // namespace capy
+} // namespace boost
 
 #endif
-

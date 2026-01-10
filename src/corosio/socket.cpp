@@ -7,12 +7,13 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <corosio/socket.hpp>
+#include <boost/corosio/socket.hpp>
 
 #include <atomic>
 #include <optional>
 #include <stop_token>
 
+namespace boost {
 namespace corosio {
 
 struct socket::ops_state final
@@ -106,4 +107,5 @@ do_read_some(
     reactor_->submit(&ops_->rd);
 }
 
-} // corosio
+} // namespace corosio
+} // namespace boost

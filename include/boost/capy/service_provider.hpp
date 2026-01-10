@@ -7,16 +7,17 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_SERVICE_PROVIDER_HPP
-#define CAPY_SERVICE_PROVIDER_HPP
+#ifndef BOOST_CAPY_SERVICE_PROVIDER_HPP
+#define BOOST_CAPY_SERVICE_PROVIDER_HPP
 
-#include <capy/config.hpp>
+#include <boost/capy/config.hpp>
 #include <cstring>
 #include <mutex>
 #include <stdexcept>
 #include <type_traits>
 #include <typeindex>
 
+namespace boost {
 namespace capy {
 
 class service_provider;
@@ -311,5 +312,6 @@ inline service* service_provider::find_impl(std::type_index ti) const noexcept
 }
 
 } // namespace capy
+} // namespace boost
 
 #endif

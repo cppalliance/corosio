@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <corosio/win_iocp_reactor.hpp>
+#include <boost/corosio/win_iocp_reactor.hpp>
 
 #ifdef _WIN32
 
@@ -23,6 +23,7 @@
 
 #include <system_error>
 
+namespace boost {
 namespace corosio {
 
 namespace {
@@ -146,5 +147,6 @@ process()
 }
 
 } // namespace corosio
+} // namespace boost
 
 #endif // _WIN32

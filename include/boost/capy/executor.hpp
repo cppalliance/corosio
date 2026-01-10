@@ -7,14 +7,15 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_EXECUTOR_HPP
-#define CAPY_EXECUTOR_HPP
+#ifndef BOOST_CAPY_EXECUTOR_HPP
+#define BOOST_CAPY_EXECUTOR_HPP
 
-#include <capy/config.hpp>
-#include <capy/executor_work.hpp>
+#include <boost/capy/config.hpp>
+#include <boost/capy/executor_work.hpp>
 
 #include <concepts>
 
+namespace boost {
 namespace capy {
 
 /** Abstract base class for executors.
@@ -56,5 +57,6 @@ concept executor =
     std::move_constructible<T>;
 
 } // namespace capy
+} // namespace boost
 
 #endif

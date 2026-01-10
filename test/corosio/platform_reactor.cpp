@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <corosio/platform_reactor.hpp>
-#include <capy/service_provider.hpp>
+#include <boost/corosio/platform_reactor.hpp>
+#include <boost/capy/service_provider.hpp>
 
 #include <atomic>
 #include <iostream>
@@ -21,7 +21,7 @@
 //------------------------------------------------
 // Test work items
 
-struct test_work : capy::executor_work
+struct test_work : boost::capy::executor_work
 {
     std::atomic<int>* counter_;
     int value_;
@@ -38,7 +38,7 @@ struct test_work : capy::executor_work
     virtual ~test_work() = default;
 };
 
-struct counting_work : capy::executor_work
+struct counting_work : boost::capy::executor_work
 {
     std::atomic<int>* counter_;
 
@@ -57,7 +57,7 @@ struct counting_work : capy::executor_work
 //------------------------------------------------
 // Example io_context
 
-class io_context : public capy::service_provider
+class io_context : public boost::capy::service_provider
 {
 public:
 };
@@ -69,7 +69,7 @@ int main()
     std::cout << "=== Test 1: Basic submit and process ===\n";
     {
         io_context ctx;
-        auto& reactor = ctx.make_service<corosio::platform_reactor_single>();
+        auto& reactor = ctx.make_service<boost::corosio::platform_reactor_single>();
 
         std::atomic<int> counter{0};
 
@@ -88,7 +88,7 @@ int main()
     std::cout << "\n=== Test 2: Empty queue ===\n";
     {
         io_context ctx;
-        auto& reactor = ctx.make_service<corosio::platform_reactor_single>();
+        auto& reactor = ctx.make_service<boost::corosio::platform_reactor_single>();
 
         // Process empty queue should be safe
         reactor.process();
@@ -101,7 +101,7 @@ int main()
     {
         std::atomic<int> destroy_count{0};
 
-        struct cleanup_work : capy::executor_work
+        struct cleanup_work : boost::capy::executor_work
         {
             std::atomic<int>* destroy_count_;
 
@@ -124,7 +124,7 @@ int main()
 
         {
             io_context ctx;
-            auto& reactor = ctx.make_service<corosio::platform_reactor_single>();
+            auto& reactor = ctx.make_service<boost::corosio::platform_reactor_single>();
 
             // Submit work that won't be processed
             reactor.submit(new cleanup_work(&destroy_count));
@@ -142,12 +142,12 @@ int main()
     std::cout << "\n=== Test 4: Process order (FIFO) ===\n";
     {
         io_context ctx;
-        auto& reactor = ctx.make_service<corosio::platform_reactor_single>();
+        auto& reactor = ctx.make_service<boost::corosio::platform_reactor_single>();
 
         std::vector<int> order;
         order.reserve(5);
 
-        struct ordered_work : capy::executor_work
+        struct ordered_work : boost::capy::executor_work
         {
             std::vector<int>* order_;
             int id_;
@@ -187,7 +187,7 @@ int main()
     std::cout << "\n=== Test 5: Multiple process calls ===\n";
     {
         io_context ctx;
-        auto& reactor = ctx.make_service<corosio::platform_reactor_single>();
+        auto& reactor = ctx.make_service<boost::corosio::platform_reactor_single>();
 
         std::atomic<int> counter{0};
 
@@ -211,7 +211,7 @@ int main()
     std::cout << "\n=== Test 6: Thread safety (submit from multiple threads) ===\n";
     {
         io_context ctx;
-        auto& reactor = ctx.make_service<corosio::platform_reactor_multi>();
+        auto& reactor = ctx.make_service<boost::corosio::platform_reactor_multi>();
 
         std::atomic<int> counter{0};
         const int num_threads = 4;

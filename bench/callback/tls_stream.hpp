@@ -12,8 +12,8 @@
 
 #include "detail/op.hpp"
 
-#include <corosio/platform_reactor.hpp>
-#include <corosio/io_context.hpp>
+#include <boost/corosio/platform_reactor.hpp>
+#include <boost/corosio/io_context.hpp>
 
 namespace callback {
 

@@ -7,16 +7,17 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_FRAME_ALLOCATOR_HPP
-#define CAPY_FRAME_ALLOCATOR_HPP
+#ifndef BOOST_CAPY_FRAME_ALLOCATOR_HPP
+#define BOOST_CAPY_FRAME_ALLOCATOR_HPP
 
-#include <capy/config.hpp>
+#include <boost/capy/config.hpp>
 
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <new>
 
+namespace boost {
 namespace capy {
 
 //----------------------------------------------------------
@@ -415,5 +416,6 @@ embedding_frame_allocator<Allocator>::allocate(std::size_t n)
 } // namespace detail
 
 } // namespace capy
+} // namespace boost
 
 #endif

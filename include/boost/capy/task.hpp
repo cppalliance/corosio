@@ -1,4 +1,4 @@
-//0
+//
 // Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
@@ -7,13 +7,13 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_TASK_HPP
-#define CAPY_TASK_HPP
+#ifndef BOOST_CAPY_TASK_HPP
+#define BOOST_CAPY_TASK_HPP
 
-#include <capy/config.hpp>
-#include <capy/affine.hpp>
-#include <capy/frame_allocator.hpp>
-#include <capy/make_affine.hpp>
+#include <boost/capy/config.hpp>
+#include <boost/capy/affine.hpp>
+#include <boost/capy/frame_allocator.hpp>
+#include <boost/capy/make_affine.hpp>
 
 #include <exception>
 #include <optional>
@@ -21,6 +21,7 @@
 #include <utility>
 #include <variant>
 
+namespace boost {
 namespace capy {
 
 namespace detail {
@@ -69,7 +70,7 @@ struct task_return_base<void>
     @see any_dispatcher
 */
 template<typename T = void>
-struct [[nodiscard]] CAPY_CORO_AWAIT_ELIDABLE
+struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     task
 {
     struct promise_type
@@ -268,5 +269,6 @@ static_assert(stoppable_awaitable<task<void>, any_dispatcher>);
 static_assert(stoppable_awaitable<task<int>, any_dispatcher>);
 
 } // namespace capy
+} // namespace boost
 
 #endif

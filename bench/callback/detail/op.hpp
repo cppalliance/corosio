@@ -10,7 +10,7 @@
 #ifndef CALLBACK_DETAIL_OP_HPP
 #define CALLBACK_DETAIL_OP_HPP
 
-#include <corosio/io_context.hpp>
+#include <boost/corosio/io_context.hpp>
 
 #include <cstddef>
 #include <utility>
@@ -66,7 +66,7 @@ private:
 
 // Native callback operations
 template<class Executor, class Handler>
-struct io_op : capy::executor_work
+struct io_op : boost::capy::executor_work
 {
     Executor ex_;
     Handler handler_;

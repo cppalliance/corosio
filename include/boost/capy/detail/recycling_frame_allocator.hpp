@@ -7,15 +7,17 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_DETAIL_RECYCLING_FRAME_ALLOCATOR_HPP
-#define CAPY_DETAIL_RECYCLING_FRAME_ALLOCATOR_HPP
+#ifndef BOOST_CAPY_DETAIL_RECYCLING_FRAME_ALLOCATOR_HPP
+#define BOOST_CAPY_DETAIL_RECYCLING_FRAME_ALLOCATOR_HPP
 
-#include <capy/frame_allocator.hpp>
+#include <boost/capy/frame_allocator.hpp>
 
 #include <cstddef>
 #include <mutex>
 
-namespace capy::detail {
+namespace boost {
+namespace capy {
+namespace detail {
 
 /** Recycling frame allocator with thread-local and global pools.
 
@@ -144,6 +146,8 @@ public:
 
 static_assert(frame_allocator<recycling_frame_allocator>);
 
-} // namespace capy::detail
+} // namespace detail
+} // namespace capy
+} // namespace boost
 
 #endif

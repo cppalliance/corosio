@@ -7,14 +7,15 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef COROSIO_PLATFORM_REACTOR_HPP
-#define COROSIO_PLATFORM_REACTOR_HPP
+#ifndef BOOST_COROSIO_PLATFORM_REACTOR_HPP
+#define BOOST_COROSIO_PLATFORM_REACTOR_HPP
 
-#include <capy/service_provider.hpp>
-#include <capy/executor_work.hpp>
+#include <boost/capy/service_provider.hpp>
+#include <boost/capy/executor_work.hpp>
 
 #include <mutex>
 
+namespace boost {
 namespace corosio {
 
 /** Abstract base class for platform reactor services.
@@ -222,5 +223,6 @@ public:
 };
 
 } // namespace corosio
+} // namespace boost
 
 #endif

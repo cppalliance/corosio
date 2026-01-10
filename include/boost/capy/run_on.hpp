@@ -7,16 +7,17 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_RUN_ON_HPP
-#define CAPY_RUN_ON_HPP
+#ifndef BOOST_CAPY_RUN_ON_HPP
+#define BOOST_CAPY_RUN_ON_HPP
 
-#include <capy/config.hpp>
-#include <capy/affine.hpp>
-#include <capy/executor.hpp>
-#include <capy/task.hpp>
+#include <boost/capy/config.hpp>
+#include <boost/capy/affine.hpp>
+#include <boost/capy/executor.hpp>
+#include <boost/capy/task.hpp>
 
 #include <utility>
 
+namespace boost {
 namespace capy {
 namespace detail {
 
@@ -134,5 +135,6 @@ template<executor Executor, typename T>
 }
 
 } // namespace capy
+} // namespace boost
 
 #endif

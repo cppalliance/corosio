@@ -7,10 +7,10 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <corosio/io_context.hpp>
-#include <corosio/socket.hpp>
-#include <capy/task.hpp>
-#include <capy/async_run.hpp>
+#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/socket.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/async_run.hpp>
 
 #include <iostream>
 
@@ -26,7 +26,7 @@ std::size_t g_io_count = 0;
 //------------------------------------------------
 
 // Simple coroutine that performs one async read operation
-capy::task<> read_once(corosio::socket& sock)
+boost::capy::task<> read_once(boost::corosio::socket& sock)
 {
     // Perform a single async read - this will suspend and resume via the reactor
     co_await sock.async_read_some();
@@ -42,16 +42,16 @@ void test_single_layer_coroutine()
     g_io_count = 0;
 
     // Create I/O context (single-threaded)
-    corosio::io_context ioc;
+    boost::corosio::io_context ioc;
 
     // Create a mock socket
-    corosio::socket sock(ioc);
+    boost::corosio::socket sock(ioc);
 
     // Get executor
     auto ex = ioc.get_executor();
 
     // Launch the coroutine
-    capy::async_run(ex)(read_once(sock));
+    boost::capy::async_run(ex)(read_once(sock));
 
     // With inline dispatch, coroutine runs immediately until first I/O suspend
     // g_io_count is incremented when await_suspend is called
@@ -69,7 +69,7 @@ void test_single_layer_coroutine()
 }
 
 // Test multiple sequential reads
-capy::task<> read_multiple(corosio::socket& sock, int count)
+boost::capy::task<> read_multiple(boost::corosio::socket& sock, int count)
 {
     for(int i = 0; i < count; ++i)
     {
@@ -83,12 +83,12 @@ void test_multiple_reads()
 
     g_io_count = 0;
 
-    corosio::io_context ioc;
-    corosio::socket sock(ioc);
+    boost::corosio::io_context ioc;
+    boost::corosio::socket sock(ioc);
     auto ex = ioc.get_executor();
 
     const int read_count = 5;
-    capy::async_run(ex)(read_multiple(sock, read_count));
+    boost::capy::async_run(ex)(read_multiple(sock, read_count));
 
     // With inline dispatch, first I/O is started immediately
     assert(g_io_count == 1);
@@ -110,16 +110,16 @@ void test_multiple_coroutines()
 
     g_io_count = 0;
 
-    corosio::io_context ioc;
-    corosio::socket sock1(ioc);
-    corosio::socket sock2(ioc);
-    corosio::socket sock3(ioc);
+    boost::corosio::io_context ioc;
+    boost::corosio::socket sock1(ioc);
+    boost::corosio::socket sock2(ioc);
+    boost::corosio::socket sock3(ioc);
     auto ex = ioc.get_executor();
 
     // Launch three coroutines
-    capy::async_run(ex)(read_once(sock1));
-    capy::async_run(ex)(read_once(sock2));
-    capy::async_run(ex)(read_once(sock3));
+    boost::capy::async_run(ex)(read_once(sock1));
+    boost::capy::async_run(ex)(read_once(sock2));
+    boost::capy::async_run(ex)(read_once(sock3));
 
     // With inline dispatch, all 3 coroutines run to first I/O immediately
     assert(g_io_count == 3);
@@ -139,8 +139,8 @@ void test_always_suspends()
 {
     std::cout << "\n=== Test 5: async_read_some always suspends ===\n";
 
-    corosio::io_context ioc;
-    corosio::socket sock(ioc);
+    boost::corosio::io_context ioc;
+    boost::corosio::socket sock(ioc);
 
     auto awaitable = sock.async_read_some();
     (void)awaitable;

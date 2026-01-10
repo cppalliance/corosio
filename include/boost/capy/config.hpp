@@ -7,22 +7,23 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef CAPY_CONFIG_HPP
-#define CAPY_CONFIG_HPP
+#ifndef BOOST_CAPY_CONFIG_HPP
+#define BOOST_CAPY_CONFIG_HPP
 
 #include <coroutine>
 
 #if defined(__clang__) && !defined(__apple_build_version__) && __clang_major__ >= 20
-#define CAPY_CORO_AWAIT_ELIDABLE [[clang::coro_await_elidable]]
+#define BOOST_CAPY_CORO_AWAIT_ELIDABLE [[clang::coro_await_elidable]]
 #else
-#define CAPY_CORO_AWAIT_ELIDABLE
+#define BOOST_CAPY_CORO_AWAIT_ELIDABLE
 #endif
 
+namespace boost {
 namespace capy {
 
 using coro = std::coroutine_handle<void>;
 
 } // namespace capy
+} // namespace boost
 
 #endif
-
