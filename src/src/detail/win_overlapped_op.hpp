@@ -41,7 +41,7 @@ namespace detail {
 
 struct overlapped_op
     : OVERLAPPED
-    , capy::execution_context::handler
+    , capy::execution_context::handler  // handler already has intrusive_list node
 {
     struct canceller
     {
@@ -58,6 +58,11 @@ struct overlapped_op
     std::atomic<bool> cancelled{false};
     std::optional<std::stop_callback<canceller>> stop_cb;
 
+    // Synchronizes GQCS completion with initiating function return.
+    // GQCS can complete before WSARecv/etc returns; ready_=1 means
+    // the initiator is done and the op can be dispatched.
+    long ready_ = 0;
+
     void reset() noexcept
     {
         Internal = 0;
@@ -68,6 +73,7 @@ struct overlapped_op
         error = 0;
         bytes_transferred = 0;
         cancelled.store(false, std::memory_order_relaxed);
+        ready_ = 0;
     }
 
     void operator()() override
