@@ -17,6 +17,8 @@
 #include <boost/corosio/io_context.hpp>
 #include <boost/capy/execution_context.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <thread>
 
 namespace boost {
@@ -111,18 +113,70 @@ public:
 
         This causes run() to return as soon as possible.
     */
-    void stop() const override;
+    void stop() override;
+
+    /** Return whether the scheduler has been stopped.
+
+        @return true if stop() has been called and restart()
+            has not been called since.
+    */
+    bool stopped() const noexcept override;
+
+    /** Restart the scheduler after being stopped.
+
+        This function must be called before run() can be called
+        again after stop() has been called.
+    */
+    void restart() override;
 
     /** Processes pending work items.
 
         Dequeues all available completions from the IOCP and executes
-        them. Returns when no more completions are immediately available.
+        them. Returns when stopped or no more work is available.
+
+        @return The number of handlers executed.
 
         @par Thread Safety
         This function is thread-safe. Multiple threads may call
         run() concurrently.
     */
-    void run() const override;
+    std::size_t run() override;
+
+    /** Processes at most one pending work item.
+
+        Blocks until one work item is executed or stop() is called.
+
+        @return The number of handlers executed (0 or 1).
+    */
+    std::size_t run_one() override;
+
+    /** Processes work items for the specified duration.
+
+        @param rel_time The duration for which to process work.
+
+        @return The number of handlers executed.
+    */
+    std::size_t run_for(std::chrono::steady_clock::duration rel_time) override;
+
+    /** Processes work items until the specified time.
+
+        @param abs_time The time point until which to process work.
+
+        @return The number of handlers executed.
+    */
+    std::size_t run_until(std::chrono::steady_clock::time_point abs_time) override;
+
+    /** Processes all ready work items without blocking.
+
+        @return The number of handlers executed.
+    */
+    std::size_t poll() override;
+
+    /** Processes at most one ready work item without blocking.
+
+        @return The number of handlers executed (0 or 1).
+    */
+    std::size_t poll_one() override;
 
     /** Returns the native IOCP handle.
 
@@ -131,8 +185,11 @@ public:
     void* native_handle() const noexcept { return iocp_; }
 
 private:
+    std::size_t do_run(unsigned long timeout, std::size_t max_handlers);
+
     void* iocp_;
     std::thread::id thread_id_;
+    std::atomic<bool> stopped_{false};
 };
 
 } // namespace corosio

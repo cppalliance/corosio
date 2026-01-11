@@ -37,7 +37,8 @@ constexpr ULONG_PTR shutdown_key = 0;
 } // namespace
 
 win_iocp_scheduler::
-win_iocp_scheduler(capy::execution_context&)
+win_iocp_scheduler(
+    capy::execution_context&)
     : iocp_(CreateIoCompletionPort(
         INVALID_HANDLE_VALUE,
         nullptr,
@@ -68,7 +69,7 @@ win_iocp_scheduler::
 shutdown()
 {
     // Post a shutdown signal to wake any blocked threads
-    PostQueuedCompletionStatus(
+    ::PostQueuedCompletionStatus(
         iocp_,
         0,
         shutdown_key,
@@ -79,7 +80,7 @@ shutdown()
     ULONG_PTR key;
     LPOVERLAPPED overlapped;
 
-    while (GetQueuedCompletionStatus(
+    while (::GetQueuedCompletionStatus(
         iocp_,
         &bytes,
         &key,
@@ -131,7 +132,7 @@ post(capy::executor_work* w) const
 {
     // Post the work item to the IOCP
     // We use the OVERLAPPED* field to carry the work pointer
-    BOOL result = PostQueuedCompletionStatus(
+    BOOL result = ::PostQueuedCompletionStatus(
         iocp_,
         0,
         work_key,
@@ -141,6 +142,8 @@ post(capy::executor_work* w) const
     {
         // If posting fails, destroy the work item
         w->destroy();
+
+        // Claude: what should we do here?
     }
 }
 
@@ -153,47 +156,152 @@ running_in_this_thread() const noexcept
 
 void
 win_iocp_scheduler::
-stop() const
+stop()
 {
+    stopped_.store(true, std::memory_order_release);
     // Post a shutdown signal to wake any blocked threads
-    PostQueuedCompletionStatus(
+    ::PostQueuedCompletionStatus(
         iocp_,
         0,
         shutdown_key,
         nullptr);
 }
 
+bool
+win_iocp_scheduler::
+stopped() const noexcept
+{
+    return stopped_.load(std::memory_order_acquire);
+}
+
 void
 win_iocp_scheduler::
-run() const
+restart()
 {
+    stopped_.store(false, std::memory_order_release);
+}
+
+std::size_t
+win_iocp_scheduler::
+do_run(unsigned long timeout, std::size_t max_handlers)
+{
+    std::size_t count = 0;
     DWORD bytes;
     ULONG_PTR key;
     LPOVERLAPPED overlapped;
 
-    // Process all available completions without blocking
-    while (GetQueuedCompletionStatus(
-        iocp_,
-        &bytes,
-        &key,
-        &overlapped,
-        0)) // Timeout of 0 = non-blocking
+    while (count < max_handlers && !stopped())
     {
+        BOOL result = ::GetQueuedCompletionStatus(
+            iocp_,
+            &bytes,
+            &key,
+            &overlapped,
+            timeout);
+
+        if (!result)
+        {
+            // Timeout or error
+            break;
+        }
+
         if (key == shutdown_key)
         {
-            // Shutdown signal received
+            // Shutdown signal received - re-post for other threads
+            ::PostQueuedCompletionStatus(
+                iocp_,
+                0,
+                shutdown_key,
+                nullptr);
             break;
         }
 
         if (key == work_key && overlapped != nullptr)
         {
-            auto* work = reinterpret_cast<capy::executor_work*>(overlapped);
-
-            // Execute the work item
-            // The work item is responsible for deleting itself
-            (*work)();
+            (*reinterpret_cast<capy::executor_work*>(overlapped))();
+            ++count;
         }
+
+        // After first handler, switch to non-blocking for poll behavior
+        if (timeout == 0)
+            continue;
     }
+
+    return count;
+}
+
+std::size_t
+win_iocp_scheduler::
+run()
+{
+    std::size_t total = 0;
+
+    while (!stopped())
+    {
+        std::size_t n = do_run(INFINITE, static_cast<std::size_t>(-1));
+        if (n == 0)
+            break;
+        total += n;
+    }
+
+    return total;
+}
+
+std::size_t
+win_iocp_scheduler::
+run_one()
+{
+    return do_run(INFINITE, 1);
+}
+
+std::size_t
+win_iocp_scheduler::
+run_for(std::chrono::steady_clock::duration rel_time)
+{
+    auto end_time = std::chrono::steady_clock::now() + rel_time;
+    return run_until(end_time);
+}
+
+std::size_t
+win_iocp_scheduler::
+run_until(std::chrono::steady_clock::time_point abs_time)
+{
+    std::size_t total = 0;
+
+    while (!stopped())
+    {
+        auto now = std::chrono::steady_clock::now();
+        if (now >= abs_time)
+            break;
+
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            abs_time - now);
+        DWORD timeout = static_cast<DWORD>(remaining.count());
+        if (timeout == 0)
+            timeout = 1; // Minimum 1ms to avoid pure poll
+
+        std::size_t n = do_run(timeout, static_cast<std::size_t>(-1));
+        total += n;
+
+        if (n == 0)
+            break;
+    }
+
+    return total;
+}
+
+std::size_t
+win_iocp_scheduler::
+poll()
+{
+    return do_run(0, static_cast<std::size_t>(-1));
+}
+
+std::size_t
+win_iocp_scheduler::
+poll_one()
+{
+    return do_run(0, 1);
 }
 
 } // namespace corosio

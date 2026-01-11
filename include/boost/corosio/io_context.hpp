@@ -16,7 +16,9 @@
 #include <boost/capy/executor.hpp>
 #include <boost/capy/execution_context.hpp>
 
+#include <chrono>
 #include <concepts>
+#include <cstddef>
 #include <utility>
 
 namespace boost {
@@ -30,8 +32,15 @@ struct scheduler
     virtual void post(capy::coro) const = 0;
     virtual void post(capy::executor_work*) const = 0;
     virtual bool running_in_this_thread() const noexcept = 0;
-    virtual void stop() const = 0;
-    virtual void run() const = 0;
+    virtual void stop() = 0;
+    virtual bool stopped() const noexcept = 0;
+    virtual void restart() = 0;
+    virtual std::size_t run() = 0;
+    virtual std::size_t run_one() = 0;
+    virtual std::size_t run_for(std::chrono::steady_clock::duration) = 0;
+    virtual std::size_t run_until(std::chrono::steady_clock::time_point) = 0;
+    virtual std::size_t poll() = 0;
+    virtual std::size_t poll_one() = 0;
 };
 
 } // namespace detail
@@ -67,6 +76,9 @@ class io_context : public capy::execution_context
 public:
     class executor;
 
+    /// The executor type for this io_context.
+    using executor_type = executor;
+
     /** Construct an io_context.
 
         The concurrency hint is set to the number of hardware
@@ -93,29 +105,126 @@ public:
 
         @return An executor associated with this io_context.
     */
-    executor
+    executor_type
     get_executor() const noexcept;
 
     /** Signal the io_context to stop processing.
 
         This causes run() to return as soon as possible.
-        Any pending work items are destroyed without being executed.
+        Any pending work items remain queued.
     */
     void
-    stop() const
+    stop()
     {
         sched_.stop();
+    }
+
+    /** Return whether the io_context has been stopped.
+
+        @return true if stop() has been called and restart()
+            has not been called since.
+    */
+    bool
+    stopped() const noexcept
+    {
+        return sched_.stopped();
+    }
+
+    /** Restart the io_context after being stopped.
+
+        This function must be called before run() can be called
+        again after stop() has been called.
+    */
+    void
+    restart()
+    {
+        sched_.restart();
     }
 
     /** Process all pending work items.
 
         This function blocks until all pending work items have
         been executed or stop() is called.
+
+        @return The number of handlers executed.
     */
-    void
-    run() const
+    std::size_t
+    run()
     {
-        sched_.run();
+        return sched_.run();
+    }
+
+    /** Process at most one pending work item.
+
+        This function blocks until one work item has been
+        executed or stop() is called.
+
+        @return The number of handlers executed (0 or 1).
+    */
+    std::size_t
+    run_one()
+    {
+        return sched_.run_one();
+    }
+
+    /** Process work items for the specified duration.
+
+        This function blocks until work items have been executed
+        for the specified duration, or stop() is called.
+
+        @param rel_time The duration for which to process work.
+
+        @return The number of handlers executed.
+    */
+    template<class Rep, class Period>
+    std::size_t
+    run_for(std::chrono::duration<Rep, Period> const& rel_time)
+    {
+        return sched_.run_for(
+            std::chrono::duration_cast<
+                std::chrono::steady_clock::duration>(rel_time));
+    }
+
+    /** Process work items until the specified time.
+
+        This function blocks until work items have been executed
+        until the specified time, or stop() is called.
+
+        @param abs_time The time point until which to process work.
+
+        @return The number of handlers executed.
+    */
+    template<class Clock, class Duration>
+    std::size_t
+    run_until(std::chrono::time_point<Clock, Duration> const& abs_time)
+    {
+        return run_for(abs_time - Clock::now());
+    }
+
+    /** Process all ready work items without blocking.
+
+        This function executes all work items that are ready
+        to run without blocking for more work.
+
+        @return The number of handlers executed.
+    */
+    std::size_t
+    poll()
+    {
+        return sched_.poll();
+    }
+
+    /** Process at most one ready work item without blocking.
+
+        This function executes at most one work item that is
+        ready to run without blocking for more work.
+
+        @return The number of handlers executed (0 or 1).
+    */
+    std::size_t
+    poll_one()
+    {
+        return sched_.poll_one();
     }
 
 private:
@@ -243,9 +352,9 @@ inline
 auto
 io_context::
 get_executor() const noexcept ->
-    executor
+    executor_type
 {
-    return executor(sched_);
+    return executor_type(sched_);
 }
 
 } // namespace corosio
