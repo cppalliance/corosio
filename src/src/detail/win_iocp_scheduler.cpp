@@ -8,6 +8,7 @@
 //
 
 #include "src/detail/win_iocp_scheduler.hpp"
+#include "src/detail/win_iocp_sockets.hpp"
 
 #ifdef _WIN32
 
@@ -31,11 +32,14 @@ namespace detail {
 
 namespace {
 
-// Completion key used to identify work items
-constexpr ULONG_PTR work_key = 1;
-
 // Completion key used to signal shutdown
 constexpr ULONG_PTR shutdown_key = 0;
+
+// Completion key used to identify posted work items
+constexpr ULONG_PTR work_key = 1;
+
+// Completion key used to identify socket I/O completions
+constexpr ULONG_PTR socket_key = 2;
 
 inline system::error_code
 last_error() noexcept
@@ -120,11 +124,20 @@ shutdown()
         &overlapped,
         0)) // Non-blocking
     {
-        if (key == work_key && overlapped != nullptr)
+        if (overlapped != nullptr)
         {
-            pending_.fetch_sub(1, std::memory_order_relaxed);
-            auto* work = reinterpret_cast<capy::executor_work*>(overlapped);
-            work->destroy();
+            if (key == work_key)
+            {
+                pending_.fetch_sub(1, std::memory_order_relaxed);
+                auto* work = reinterpret_cast<capy::executor_work*>(overlapped);
+                work->destroy();
+            }
+            else if (key == socket_key)
+            {
+                pending_.fetch_sub(1, std::memory_order_relaxed);
+                auto* op = static_cast<overlapped_op*>(overlapped);
+                op->destroy();
+            }
         }
         // Ignore shutdown signals during drain
     }
@@ -283,12 +296,25 @@ do_run(unsigned long timeout, std::size_t max_handlers,
             continue;
         }
 
-        if (key == work_key && overlapped != nullptr)
+        if (overlapped != nullptr)
         {
-            // Decrement pending count before execution
-            pending_.fetch_sub(1, std::memory_order_relaxed);
-            (*reinterpret_cast<capy::executor_work*>(overlapped))();
-            ++count;
+            if (key == work_key)
+            {
+                // Posted work item
+                pending_.fetch_sub(1, std::memory_order_relaxed);
+                (*reinterpret_cast<capy::executor_work*>(overlapped))();
+                ++count;
+            }
+            else if (key == socket_key)
+            {
+                // Socket I/O completion
+                pending_.fetch_sub(1, std::memory_order_relaxed);
+                auto* op = static_cast<overlapped_op*>(overlapped);
+                DWORD err = result ? 0 : ::GetLastError();
+                op->complete(bytes, err);
+                (*op)();
+                ++count;
+            }
         }
     }
 
@@ -343,7 +369,7 @@ do_wait(unsigned long timeout, system::error_code& ec)
     }
 
     // Put the completion back for later execution
-    if (key == work_key && overlapped != nullptr)
+    if (overlapped != nullptr && (key == work_key || key == socket_key))
     {
         ::PostQueuedCompletionStatus(
             iocp_,

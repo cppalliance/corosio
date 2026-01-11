@@ -12,13 +12,14 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/buffers_param.hpp>
+#include <boost/corosio/tcp.hpp>
 #include <boost/capy/affine.hpp>
 #include <boost/capy/execution_context.hpp>
 
 #include <cassert>
 #include <coroutine>
 #include <cstddef>
-#include <memory>
 #include <stop_token>
 #include <system_error>
 
@@ -26,27 +27,47 @@ namespace boost {
 namespace corosio {
 namespace detail { class socket_impl; }
 
-/** An asynchronous socket for coroutine I/O.
+/** An asynchronous TCP socket for coroutine I/O.
 
     This class models an asynchronous socket that provides I/O operations
-    returning awaitable types. It demonstrates the affine awaitable protocol
+    returning awaitable types. It implements the affine awaitable protocol
     where the awaitable receives the caller's executor for completion dispatch.
 
-    @see async_read_some_t
+    @par Example
+    @code
+    io_context ioc;
+    socket s(ioc);
+    s.open();
+    co_await s.connect(tcp::endpoint(urls::ipv4_address::loopback(), 8080));
+    char buf[1024];
+    auto [ec, n] = co_await s.read_some(buffers::mutable_buffer(buf, sizeof(buf)));
+    @endcode
 */
-struct socket
+class socket
 {
-    struct async_read_some_t
+public:
+    //--------------------------------------------------------------------------
+    //
+    // Awaitables
+    //
+    //--------------------------------------------------------------------------
+
+    /** Awaitable for connect operations. */
+    struct connect_awaitable
     {
-        async_read_some_t(
-            socket& s)
+        socket& s_;
+        tcp::endpoint endpoint_;
+        std::stop_token token_;
+        mutable std::error_code ec_;
+
+        connect_awaitable(socket& s, tcp::endpoint ep) noexcept
             : s_(s)
+            , endpoint_(ep)
         {
         }
 
         bool await_ready() const noexcept
         {
-            // Fast path: if already stopped, don't start the operation
             return token_.stop_requested();
         }
 
@@ -57,52 +78,148 @@ struct socket
             return ec_;
         }
 
-        // Affine awaitable: uses token from constructor
         template<capy::dispatcher Dispatcher>
-        auto
-        await_suspend(
+        auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) ->
-                std::coroutine_handle<>
+            Dispatcher const& d) -> std::coroutine_handle<>
         {
-            s_.do_read_some(h, d, token_, &ec_);
+            s_.do_connect(h, d, endpoint_, token_, &ec_);
             return std::noop_coroutine();
         }
 
-        // Stoppable awaitable: uses token from caller's coroutine chain
         template<capy::dispatcher Dispatcher>
-        auto
-        await_suspend(
+        auto await_suspend(
             std::coroutine_handle<> h,
             Dispatcher const& d,
-            std::stop_token token) ->
-                std::coroutine_handle<>
+            std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            s_.do_read_some(h, d, token_, &ec_);
+            s_.do_connect(h, d, endpoint_, token_, &ec_);
+            return std::noop_coroutine();
+        }
+    };
+
+    /** Awaitable for read operations.
+
+        @tparam MutableBufferSequence The buffer sequence type.
+    */
+    template<class MutableBufferSequence>
+    struct read_some_awaitable
+    {
+        socket& s_;
+        MutableBufferSequence buffers_;
+        std::stop_token token_;
+        mutable std::error_code ec_;
+        mutable std::size_t bytes_transferred_ = 0;
+
+        read_some_awaitable(socket& s, MutableBufferSequence buffers) noexcept
+            : s_(s)
+            , buffers_(std::move(buffers))
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return token_.stop_requested();
+        }
+
+        std::pair<std::error_code, std::size_t> await_resume() const noexcept
+        {
+            if (token_.stop_requested())
+                return {std::make_error_code(std::errc::operation_canceled), 0};
+            return {ec_, bytes_transferred_};
+        }
+
+        template<capy::dispatcher Dispatcher>
+        auto await_suspend(
+            std::coroutine_handle<> h,
+            Dispatcher const& d) -> std::coroutine_handle<>
+        {
+            buffers_param_impl param(buffers_);
+            s_.do_read_some(h, d, param, token_, &ec_, &bytes_transferred_);
             return std::noop_coroutine();
         }
 
-    private:
+        template<capy::dispatcher Dispatcher>
+        auto await_suspend(
+            std::coroutine_handle<> h,
+            Dispatcher const& d,
+            std::stop_token token) -> std::coroutine_handle<>
+        {
+            token_ = std::move(token);
+            buffers_param_impl param(buffers_);
+            s_.do_read_some(h, d, param, token_, &ec_, &bytes_transferred_);
+            return std::noop_coroutine();
+        }
+    };
+
+    /** Awaitable for write operations.
+
+        @tparam ConstBufferSequence The buffer sequence type.
+    */
+    template<class ConstBufferSequence>
+    struct write_some_awaitable
+    {
         socket& s_;
+        ConstBufferSequence buffers_;
         std::stop_token token_;
         mutable std::error_code ec_;
+        mutable std::size_t bytes_transferred_ = 0;
+
+        write_some_awaitable(socket& s, ConstBufferSequence buffers) noexcept
+            : s_(s)
+            , buffers_(std::move(buffers))
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return token_.stop_requested();
+        }
+
+        std::pair<std::error_code, std::size_t> await_resume() const noexcept
+        {
+            if (token_.stop_requested())
+                return {std::make_error_code(std::errc::operation_canceled), 0};
+            return {ec_, bytes_transferred_};
+        }
+
+        template<capy::dispatcher Dispatcher>
+        auto await_suspend(
+            std::coroutine_handle<> h,
+            Dispatcher const& d) -> std::coroutine_handle<>
+        {
+            buffers_param_impl param(buffers_);
+            s_.do_write_some(h, d, param, token_, &ec_, &bytes_transferred_);
+            return std::noop_coroutine();
+        }
+
+        template<capy::dispatcher Dispatcher>
+        auto await_suspend(
+            std::coroutine_handle<> h,
+            Dispatcher const& d,
+            std::stop_token token) -> std::coroutine_handle<>
+        {
+            token_ = std::move(token);
+            buffers_param_impl param(buffers_);
+            s_.do_write_some(h, d, param, token_, &ec_, &bytes_transferred_);
+            return std::noop_coroutine();
+        }
     };
+
+    //--------------------------------------------------------------------------
+    //
+    // Construction / Assignment
+    //
+    //--------------------------------------------------------------------------
 
     BOOST_COROSIO_DECL
     ~socket();
 
     BOOST_COROSIO_DECL
-    explicit socket(
-        capy::execution_context& ctx);
+    explicit socket(capy::execution_context& ctx);
 
-    /** Move constructor.
-
-        Transfers ownership of the socket from other.
-        After the move, other.is_open() == false.
-
-        @param other The socket to move from.
-    */
+    /** Move constructor. */
     socket(socket&& other) noexcept
         : ctx_(other.ctx_)
         , impl_(other.impl_)
@@ -110,18 +227,7 @@ struct socket
         other.impl_ = nullptr;
     }
 
-    /** Move assignment.
-
-        Transfers ownership of the socket from other.
-        If this socket was open, it is closed first.
-        After the move, other.is_open() == false.
-
-        @throws std::logic_error if other is on a different execution context.
-
-        @param other The socket to move from.
-
-        @return *this
-    */
+    /** Move assignment. */
     socket& operator=(socket&& other)
     {
         if (this != &other)
@@ -139,12 +245,18 @@ struct socket
     socket(socket const&) = delete;
     socket& operator=(socket const&) = delete;
 
+    //--------------------------------------------------------------------------
+    //
+    // Operations
+    //
+    //--------------------------------------------------------------------------
+
     /** Open the socket.
 
-        Allocates the internal implementation if not already open.
+        Creates an IPv4 TCP socket and associates it with the IOCP.
         This must be called before initiating I/O operations.
 
-        @note This is idempotent - calling on an already-open socket is a no-op.
+        @throws std::system_error on failure.
     */
     BOOST_COROSIO_DECL
     void open();
@@ -152,55 +264,90 @@ struct socket
     /** Close the socket.
 
         Releases the internal implementation. Pending operations are cancelled.
-        The socket can be reopened by calling open() again.
-
-        @note This is idempotent - calling on an already-closed socket is a no-op.
     */
     BOOST_COROSIO_DECL
     void close();
 
-    /** Check if the socket is open.
-
-        @return true if the socket has an allocated implementation.
-    */
+    /** Check if the socket is open. */
     bool is_open() const noexcept
     {
         return impl_ != nullptr;
     }
 
-    /** Initiates an asynchronous read operation.
+    /** Initiate an asynchronous connect operation.
 
-        @param token Optional stop token for cancellation support.
-                     If the token's stop is requested, the operation
-                     completes with operation_canceled error.
-
+        @param ep The endpoint to connect to.
         @return An awaitable that completes with std::error_code.
-
-        @pre is_open() == true
     */
-    async_read_some_t
-    async_read_some()
+    connect_awaitable connect(tcp::endpoint ep)
     {
-        return async_read_some_t(*this);
+        assert(impl_ != nullptr);
+        return connect_awaitable(*this, ep);
     }
 
-    /** Cancel any pending asynchronous operations.
+    /** Initiate an asynchronous read operation.
 
-        Pending operations will complete with operation_canceled error.
-        This method is thread-safe.
-
-        @pre is_open() == true
+        @param buffers The buffers to read into.
+        @return An awaitable that completes with (error_code, bytes_transferred).
     */
+    template<class MutableBufferSequence>
+    read_some_awaitable<MutableBufferSequence>
+    read_some(MutableBufferSequence const& buffers)
+    {
+        assert(impl_ != nullptr);
+        return read_some_awaitable<MutableBufferSequence>(*this, buffers);
+    }
+
+    /** Initiate an asynchronous write operation.
+
+        @param buffers The buffers to write from.
+        @return An awaitable that completes with (error_code, bytes_transferred).
+    */
+    template<class ConstBufferSequence>
+    write_some_awaitable<ConstBufferSequence>
+    write_some(ConstBufferSequence const& buffers)
+    {
+        assert(impl_ != nullptr);
+        return write_some_awaitable<ConstBufferSequence>(*this, buffers);
+    }
+
+    /** Cancel any pending asynchronous operations. */
     BOOST_COROSIO_DECL
     void cancel();
 
+    /** Return the execution context. */
+    capy::execution_context& get_executor_context() noexcept
+    {
+        return *ctx_;
+    }
+
 private:
+    friend class tcp::acceptor;
+    BOOST_COROSIO_DECL
+    void do_connect(
+        std::coroutine_handle<>,
+        capy::any_dispatcher,
+        tcp::endpoint,
+        std::stop_token,
+        std::error_code*);
+
     BOOST_COROSIO_DECL
     void do_read_some(
         std::coroutine_handle<>,
         capy::any_dispatcher,
+        buffers_param<true>&,
         std::stop_token,
-        std::error_code*);
+        std::error_code*,
+        std::size_t*);
+
+    BOOST_COROSIO_DECL
+    void do_write_some(
+        std::coroutine_handle<>,
+        capy::any_dispatcher,
+        buffers_param<false>&,
+        std::stop_token,
+        std::error_code*,
+        std::size_t*);
 
     capy::execution_context* ctx_;
     detail::socket_impl* impl_ = nullptr;

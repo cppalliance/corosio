@@ -49,10 +49,11 @@ set(BOOST_SRC_DIR ${DEFAULT_BOOST_SRC_DIR} CACHE STRING "Boost source dir to use
 # Boost modules
 #
 #-------------------------------------------------
-# corosio depends on capy and buffers
+# corosio depends on capy, buffers, and url
 set(BOOST_COROSIO_DEPENDENCIES
     Boost::capy
-    Boost::buffers)
+    Boost::buffers
+    Boost::url)
 
 foreach (BOOST_COROSIO_DEPENDENCY ${BOOST_COROSIO_DEPENDENCIES})
     if (BOOST_COROSIO_DEPENDENCY MATCHES "^[ ]*Boost::([A-Za-z0-9_]+)[ ]*$")
@@ -99,7 +100,7 @@ if (BOOST_COROSIO_IS_ROOT)
         set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${BOOST_SRC_DIR}/tools/cmake/include")
     else ()
         # From Boost Package
-        find_package(Boost REQUIRED COMPONENTS capy buffers)
+        find_package(Boost REQUIRED COMPONENTS capy buffers url)
         foreach (BOOST_INCLUDE_LIBRARY ${BOOST_COROSIO_INCLUDE_LIBRARIES})
             if (NOT TARGET Boost::${BOOST_INCLUDE_LIBRARY})
                 add_library(Boost::${BOOST_INCLUDE_LIBRARY} ALIAS Boost::headers)
@@ -139,7 +140,8 @@ function(boost_corosio_setup_properties target)
     target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/src")
     target_link_libraries(${target}
         PUBLIC
-            ${BOOST_COROSIO_DEPENDENCIES})
+            ${BOOST_COROSIO_DEPENDENCIES}
+            $<$<PLATFORM_ID:Windows>:ws2_32>)
     target_compile_definitions(${target} PUBLIC BOOST_COROSIO_NO_LIB)
     target_compile_definitions(${target} PRIVATE BOOST_COROSIO_SOURCE)
     if (BUILD_SHARED_LIBS)

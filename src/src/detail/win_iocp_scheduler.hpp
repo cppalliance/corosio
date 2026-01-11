@@ -219,6 +219,26 @@ public:
     */
     void* native_handle() const noexcept { return iocp_; }
 
+    /** Notify scheduler that an I/O operation has started.
+
+        This increments the pending work count. Must be called
+        before initiating async I/O that will complete on the IOCP.
+    */
+    void work_started() const noexcept
+    {
+        pending_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    /** Notify scheduler that an I/O operation was abandoned.
+
+        This decrements the pending work count. Called when an
+        async I/O fails synchronously without posting to IOCP.
+    */
+    void work_finished() const noexcept
+    {
+        pending_.fetch_sub(1, std::memory_order_relaxed);
+    }
+
 private:
     std::size_t do_run(unsigned long timeout, std::size_t max_handlers,
         system::error_code& ec);

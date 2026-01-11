@@ -11,8 +11,6 @@
 #include <boost/corosio/socket.hpp>
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/capy/task.hpp>
-#include <boost/capy/async_run.hpp>
 
 #include "test_suite.hpp"
 
@@ -21,96 +19,77 @@ namespace corosio {
 
 //------------------------------------------------
 // Socket-specific tests
-// Focus: socket awaitable interface, frame allocator, basic operation
+// Focus: socket construction and basic interface
 //------------------------------------------------
 
 struct socket_test
 {
-    // Simple coroutine that performs one async read operation
-    static capy::task<>
-    read_once(socket& sock)
-    {
-        co_await sock.async_read_some();
-    }
-
-    // Coroutine for multiple sequential reads
-    static capy::task<>
-    read_multiple(socket& sock, int count)
-    {
-        for (int i = 0; i < count; ++i)
-        {
-            co_await sock.async_read_some();
-        }
-    }
-
     void
-    testSingleLayerCoroutine()
-    {
-        // Create I/O context (single-threaded)
-        io_context ioc;
-
-        // Create a mock socket
-        socket sock(ioc);
-
-        // Get executor
-        auto ex = ioc.get_executor();
-
-        // Launch the coroutine
-        capy::async_run(ex)(read_once(sock));
-
-        // Run the I/O context to process the coroutine completion
-        ioc.run();
-    }
-
-    void
-    testMultipleReads()
+    testConstruction()
     {
         io_context ioc;
         socket sock(ioc);
-        auto ex = ioc.get_executor();
 
-        const int read_count = 5;
-        capy::async_run(ex)(read_multiple(sock, read_count));
-
-        ioc.run();
+        // Socket should not be open initially
+        BOOST_TEST_EQ(sock.is_open(), false);
     }
 
     void
-    testMultipleCoroutines()
+    testOpen()
+    {
+        io_context ioc;
+        socket sock(ioc);
+
+        // Open the socket
+        sock.open();
+        BOOST_TEST_EQ(sock.is_open(), true);
+
+        // Close it
+        sock.close();
+        BOOST_TEST_EQ(sock.is_open(), false);
+    }
+
+    void
+    testMoveConstruct()
+    {
+        io_context ioc;
+        socket sock1(ioc);
+        sock1.open();
+        BOOST_TEST_EQ(sock1.is_open(), true);
+
+        // Move construct
+        socket sock2(std::move(sock1));
+        BOOST_TEST_EQ(sock1.is_open(), false);
+        BOOST_TEST_EQ(sock2.is_open(), true);
+
+        sock2.close();
+    }
+
+    void
+    testMoveAssign()
     {
         io_context ioc;
         socket sock1(ioc);
         socket sock2(ioc);
-        socket sock3(ioc);
-        auto ex = ioc.get_executor();
+        sock1.open();
+        BOOST_TEST_EQ(sock1.is_open(), true);
+        BOOST_TEST_EQ(sock2.is_open(), false);
 
-        // Launch three coroutines
-        capy::async_run(ex)(read_once(sock1));
-        capy::async_run(ex)(read_once(sock2));
-        capy::async_run(ex)(read_once(sock3));
+        // Move assign
+        sock2 = std::move(sock1);
+        BOOST_TEST_EQ(sock1.is_open(), false);
+        BOOST_TEST_EQ(sock2.is_open(), true);
 
-        ioc.run();
-    }
-
-    void
-    testAlwaysSuspends()
-    {
-        io_context ioc;
-        socket sock(ioc);
-
-        auto awaitable = sock.async_read_some();
-
-        // The awaitable should always suspend (return false from await_ready)
-        BOOST_TEST_EQ(awaitable.await_ready(), false);
+        sock2.close();
     }
 
     void
     run()
     {
-        testSingleLayerCoroutine();
-        testMultipleReads();
-        testMultipleCoroutines();
-        testAlwaysSuspends();
+        testConstruction();
+        testOpen();
+        testMoveConstruct();
+        testMoveAssign();
     }
 };
 

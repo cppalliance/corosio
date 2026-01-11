@@ -37,11 +37,15 @@ lib boost_corosio
   : requirements
     <library>/boost/capy//boost_capy
     <library>/boost/buffers//boost_buffers
+    <library>/boost/url//boost_url
+    <target-os>windows:<library>ws2_32
     <include>$(COROSIO_ROOT)/include
     <include>$(COROSIO_ROOT)/src
   : usage-requirements
     <library>/boost/capy//boost_capy
     <library>/boost/buffers//boost_buffers
+    <library>/boost/url//boost_url
+    <target-os>windows:<library>ws2_32
     <include>$(COROSIO_ROOT)/include
   ;
 
