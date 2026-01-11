@@ -11,13 +11,11 @@
 #define BOOST_COROSIO_IO_CONTEXT_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/unique_ptr.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/executor.hpp>
 #include <boost/capy/execution_context.hpp>
-#include <boost/system/error_code.hpp>
 
 #include <chrono>
 #include <concepts>
@@ -128,11 +126,7 @@ public:
     std::size_t
     run()
     {
-        system::error_code ec;
-        std::size_t n = sched_.run(ec);
-        if (ec)
-            detail::throw_system_error(ec);
-        return n;
+        return sched_.run();
     }
 
     /** Process at most one pending work item.
@@ -147,11 +141,7 @@ public:
     std::size_t
     run_one()
     {
-        system::error_code ec;
-        std::size_t n = sched_.run_one(ec);
-        if (ec)
-            detail::throw_system_error(ec);
-        return n;
+        return sched_.run_one();
     }
 
     /** Process at most one pending work item with timeout.
@@ -168,11 +158,7 @@ public:
     std::size_t
     run_one(long usec)
     {
-        system::error_code ec;
-        std::size_t n = sched_.run_one(usec, ec);
-        if (ec)
-            detail::throw_system_error(ec);
-        return n;
+        return sched_.run_one(usec);
     }
 
     /** Wait for at most one completion without executing.
@@ -190,11 +176,7 @@ public:
     std::size_t
     wait_one(long usec)
     {
-        system::error_code ec;
-        std::size_t n = sched_.wait_one(usec, ec);
-        if (ec)
-            detail::throw_system_error(ec);
-        return n;
+        return sched_.wait_one(usec);
     }
 
     /** Process work items for the specified duration.
@@ -243,11 +225,7 @@ public:
     std::size_t
     poll()
     {
-        system::error_code ec;
-        std::size_t n = sched_.poll(ec);
-        if (ec)
-            detail::throw_system_error(ec);
-        return n;
+        return sched_.poll();
     }
 
     /** Process at most one ready work item without blocking.
@@ -262,11 +240,7 @@ public:
     std::size_t
     poll_one()
     {
-        system::error_code ec;
-        std::size_t n = sched_.poll_one(ec);
-        if (ec)
-            detail::throw_system_error(ec);
-        return n;
+        return sched_.poll_one();
     }
 
 private:

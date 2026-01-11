@@ -413,11 +413,10 @@ do_run(
 template<bool isUnsafe>
 std::size_t
 reactive_scheduler<isUnsafe>::
-run(system::error_code& ec)
+run()
 {
     thread_context_guard guard(this);
     thread_info this_thread{context_stack.get()};
-    ec.clear();
 
     std::size_t total = 0;
     std::unique_lock<std::mutex> lock(mutex_);
@@ -444,11 +443,10 @@ run(system::error_code& ec)
 template<bool isUnsafe>
 std::size_t
 reactive_scheduler<isUnsafe>::
-run_one(system::error_code& ec)
+run_one()
 {
     thread_context_guard guard(this);
     thread_info this_thread{context_stack.get()};
-    ec.clear();
 
     std::unique_lock<std::mutex> lock(mutex_);
 
@@ -466,11 +464,10 @@ run_one(system::error_code& ec)
 template<bool isUnsafe>
 std::size_t
 reactive_scheduler<isUnsafe>::
-run_one(long usec, system::error_code& ec)
+run_one(long usec)
 {
     thread_context_guard guard(this);
     thread_info this_thread{context_stack.get()};
-    ec.clear();
 
     std::unique_lock<std::mutex> lock(mutex_);
 
@@ -488,10 +485,8 @@ run_one(long usec, system::error_code& ec)
 template<bool isUnsafe>
 std::size_t
 reactive_scheduler<isUnsafe>::
-wait_one(long usec, system::error_code& ec)
+wait_one(long usec)
 {
-    ec.clear();
-
     std::unique_lock<std::mutex> lock(mutex_);
 
     if (stopped_)
@@ -556,11 +551,10 @@ run_until(std::chrono::steady_clock::time_point abs_time)
 template<bool isUnsafe>
 std::size_t
 reactive_scheduler<isUnsafe>::
-poll(system::error_code& ec)
+poll()
 {
     thread_context_guard guard(this);
     thread_info this_thread{context_stack.get()};
-    ec.clear();
 
     std::unique_lock<std::mutex> lock(mutex_);
     return do_run(lock, this_thread, static_cast<std::size_t>(-1));
@@ -569,11 +563,10 @@ poll(system::error_code& ec)
 template<bool isUnsafe>
 std::size_t
 reactive_scheduler<isUnsafe>::
-poll_one(system::error_code& ec)
+poll_one()
 {
     thread_context_guard guard(this);
     thread_info this_thread{context_stack.get()};
-    ec.clear();
 
     std::unique_lock<std::mutex> lock(mutex_);
     return do_run(lock, this_thread, 1);

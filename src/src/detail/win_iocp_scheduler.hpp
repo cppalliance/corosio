@@ -16,6 +16,7 @@
 
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/execution_context.hpp>
+#include <boost/system/error_code.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -63,14 +64,14 @@ public:
     void stop() override;
     bool stopped() const noexcept override;
     void restart() override;
-    std::size_t run(system::error_code& ec) override;
-    std::size_t run_one(system::error_code& ec) override;
-    std::size_t run_one(long usec, system::error_code& ec) override;
-    std::size_t wait_one(long usec, system::error_code& ec) override;
+    std::size_t run() override;
+    std::size_t run_one() override;
+    std::size_t run_one(long usec) override;
+    std::size_t wait_one(long usec) override;
     std::size_t run_for(std::chrono::steady_clock::duration rel_time) override;
     std::size_t run_until(std::chrono::steady_clock::time_point abs_time) override;
-    std::size_t poll(system::error_code& ec) override;
-    std::size_t poll_one(system::error_code& ec) override;
+    std::size_t poll() override;
+    std::size_t poll_one() override;
 
     void* native_handle() const noexcept { return iocp_; }
 

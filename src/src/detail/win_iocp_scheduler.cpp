@@ -387,8 +387,9 @@ do_wait(unsigned long timeout, system::error_code& ec)
 
 std::size_t
 win_iocp_scheduler::
-run(system::error_code& ec)
+run()
 {
+    system::error_code ec;
     std::size_t total = 0;
 
     while (!stopped())
@@ -399,7 +400,7 @@ run(system::error_code& ec)
 
         std::size_t n = do_run(INFINITE, static_cast<std::size_t>(-1), ec);
         if (ec)
-            break;
+            detail::throw_system_error(ec);
         if (n == 0)
             break;
         total += n;
@@ -410,33 +411,42 @@ run(system::error_code& ec)
 
 std::size_t
 win_iocp_scheduler::
-run_one(system::error_code& ec)
+run_one()
 {
     // Check if there's any pending work before blocking
     if (pending_.load(std::memory_order_relaxed) == 0)
-    {
-        ec.clear();
         return 0;
-    }
-    return do_run(INFINITE, 1, ec);
+    system::error_code ec;
+    std::size_t n = do_run(INFINITE, 1, ec);
+    if (ec)
+        detail::throw_system_error(ec);
+    return n;
 }
 
 std::size_t
 win_iocp_scheduler::
-run_one(long usec, system::error_code& ec)
+run_one(long usec)
 {
     // Convert microseconds to milliseconds (round up)
     unsigned long timeout_ms = static_cast<unsigned long>((usec + 999) / 1000);
-    return do_run(timeout_ms, 1, ec);
+    system::error_code ec;
+    std::size_t n = do_run(timeout_ms, 1, ec);
+    if (ec)
+        detail::throw_system_error(ec);
+    return n;
 }
 
 std::size_t
 win_iocp_scheduler::
-wait_one(long usec, system::error_code& ec)
+wait_one(long usec)
 {
     // Convert microseconds to milliseconds (round up)
     unsigned long timeout_ms = static_cast<unsigned long>((usec + 999) / 1000);
-    return do_wait(timeout_ms, ec);
+    system::error_code ec;
+    std::size_t n = do_wait(timeout_ms, ec);
+    if (ec)
+        detail::throw_system_error(ec);
+    return n;
 }
 
 std::size_t
@@ -473,7 +483,9 @@ run_until(std::chrono::steady_clock::time_point abs_time)
         std::size_t n = do_run(timeout, static_cast<std::size_t>(-1), ec);
         total += n;
 
-        if (n == 0 || ec)
+        if (ec)
+            detail::throw_system_error(ec);
+        if (n == 0)
             break;
     }
 
@@ -482,16 +494,24 @@ run_until(std::chrono::steady_clock::time_point abs_time)
 
 std::size_t
 win_iocp_scheduler::
-poll(system::error_code& ec)
+poll()
 {
-    return do_run(0, static_cast<std::size_t>(-1), ec);
+    system::error_code ec;
+    std::size_t n = do_run(0, static_cast<std::size_t>(-1), ec);
+    if (ec)
+        detail::throw_system_error(ec);
+    return n;
 }
 
 std::size_t
 win_iocp_scheduler::
-poll_one(system::error_code& ec)
+poll_one()
 {
-    return do_run(0, 1, ec);
+    system::error_code ec;
+    std::size_t n = do_run(0, 1, ec);
+    if (ec)
+        detail::throw_system_error(ec);
+    return n;
 }
 
 } // namespace detail
