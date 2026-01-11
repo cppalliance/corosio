@@ -37,6 +37,8 @@ constexpr std::uintptr_t shutdown_key = 0;
 constexpr std::uintptr_t handler_key = 1;
 constexpr std::uintptr_t socket_key = 2;
 
+using op_queue = capy::intrusive_list<capy::execution_context::handler>;
+
 // Forward declaration
 struct overlapped_op;
 
@@ -95,7 +97,7 @@ private:
     mutable long dispatch_required_;
 
     mutable std::mutex dispatch_mutex_;                                    // protects completed_ops_
-    mutable capy::intrusive_list<capy::execution_context::handler> completed_ops_; // fallback when PQCS fails (no auto-destroy)
+    mutable op_queue completed_ops_;                                       // fallback when PQCS fails (no auto-destroy)
     std::thread timer_thread_;                                             // placeholder for timer support
 };
 

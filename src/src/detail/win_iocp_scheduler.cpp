@@ -112,7 +112,7 @@ shutdown()
     while (::InterlockedExchangeAdd(&outstanding_work_, 0) > 0)
     {
         // First drain the fallback queue (intrusive_list doesn't auto-destroy)
-        capy::intrusive_list<capy::execution_context::handler> ops;
+        op_queue ops;
         {
             std::lock_guard<std::mutex> lock(dispatch_mutex_);
             ops.push_back(completed_ops_);  // splice all from completed_ops_
@@ -295,12 +295,9 @@ std::size_t
 win_iocp_scheduler::
 run()
 {
-    // Return immediately if stopped (explicit stop takes precedence)
-    if (stopped())
-        return 0;
-
-    // Return immediately if no work
     if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
+        return 0;
+    if (stopped())
         return 0;
 
     system::error_code ec;
@@ -426,13 +423,11 @@ std::size_t
 win_iocp_scheduler::
 poll()
 {
-    // Return immediately if stopped
-    if (stopped())
-        return 0;
-
-    // Return immediately if no work
     if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
+    {
+        stop();
         return 0;
+    }
 
     system::error_code ec;
     std::size_t n = do_run(0, static_cast<std::size_t>(-1), ec);
@@ -462,12 +457,14 @@ poll_one()
 
 std::size_t
 win_iocp_scheduler::
-do_run(unsigned long timeout, std::size_t max_handlers,
+do_run(
+    unsigned long timeout,
+    std::size_t max_handlers,
     system::error_code& ec)
 {
+    std::size_t count = 0;
     thread_context_guard guard(this);
     ec.clear();
-    std::size_t count = 0;
 
     while (count < max_handlers)
     {
