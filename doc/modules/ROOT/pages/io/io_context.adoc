@@ -1,0 +1,192 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= I/O Context
+
+The `io_context` class provides the execution environment for asynchronous
+I/O operations. It maintains a queue of pending work and processes completions
+from the underlying platform reactor (IOCP on Windows).
+
+NOTE: Code snippets assume the following declarations are in effect:
+
+[source,cpp]
+----
+#include <boost/corosio.hpp>
+namespace corosio = boost::corosio;
+----
+
+== Creating an I/O Context
+
+The default constructor creates an io_context with a concurrency hint equal
+to the number of hardware threads:
+
+[source,cpp]
+----
+corosio::io_context ioc;
+----
+
+For single-threaded use, pass a concurrency hint of 1 to avoid synchronization
+overhead:
+
+[source,cpp]
+----
+corosio::io_context ioc(1);  // Single-threaded, no locking
+----
+
+== Running the Event Loop
+
+The `run()` function processes I/O completions and executes ready coroutines
+until no work remains:
+
+[source,cpp]
+----
+ioc.run();  // Blocks until all work completes
+----
+
+For finer control, use the variations:
+
+[cols="1,2"]
+|===
+|Function |Behavior
+
+|`run()`
+|Process all work until stopped or exhausted
+
+|`run_one()`
+|Process at most one completion
+
+|`run_for(duration)`
+|Process work for the specified duration
+
+|`run_until(time_point)`
+|Process work until the specified time
+
+|`poll()`
+|Process ready work without blocking
+
+|`poll_one()`
+|Process at most one ready item without blocking
+|===
+
+== Stopping and Restarting
+
+To interrupt `run()` from another thread or coroutine:
+
+[source,cpp]
+----
+ioc.stop();
+----
+
+After `run()` returns (either from `stop()` or work exhaustion), you must
+restart before calling `run()` again:
+
+[source,cpp]
+----
+if (ioc.stopped())
+    ioc.restart();
+ioc.run();
+----
+
+== The Executor
+
+The io_context provides an executor via `get_executor()`. The executor is
+a lightweight handle that can be copied and passed around:
+
+[source,cpp]
+----
+auto ex = ioc.get_executor();
+----
+
+The executor satisfies the `capy::executor` concept and provides the dispatcher
+interface for coroutine resumption.
+
+=== Executor Operations
+
+[cols="1,2"]
+|===
+|Operation |Behavior
+
+|`dispatch(h)`
+|Resume `h` inline if running in this thread, otherwise post
+
+|`post(h)`
+|Always queue `h` for later execution
+
+|`defer(h)`
+|Queue `h` as a continuation (optimization hint)
+
+|`operator()(h)`
+|Alias for `dispatch(h)`
+|===
+
+=== Symmetric Transfer
+
+When a coroutine completes and its caller has the same executor, the executor
+supports symmetric transfer—direct resumption without going through the queue.
+This is the fast path for coroutine chains on the same executor.
+
+== Thread Safety
+
+The io_context uses internal synchronization when the concurrency hint is
+greater than 1. Multiple threads can safely call `run()` concurrently:
+
+[source,cpp]
+----
+corosio::io_context ioc;  // Default concurrency hint
+
+std::vector<std::thread> threads;
+for (int i = 0; i < 4; ++i)
+    threads.emplace_back([&]{ ioc.run(); });
+
+for (auto& t : threads)
+    t.join();
+----
+
+For single-threaded applications, use a concurrency hint of 1 to eliminate
+synchronization overhead.
+
+== Work Tracking
+
+The io_context tracks outstanding work through two mechanisms:
+
+1. **Pending I/O operations** — Each socket operation in flight counts as work
+2. **Manual work guards** — Call `on_work_started()` / `on_work_finished()` on the executor
+
+When the work count reaches zero, `run()` returns.
+
+== Example: Timed Operations
+
+Use `run_for()` to implement timeouts:
+
+[source,cpp]
+----
+capy::task<void> timed_operation(corosio::io_context& ioc)
+{
+    corosio::socket s(ioc);
+    s.open();
+
+    // Start connect
+    auto connect_task = s.connect(
+        corosio::tcp::endpoint(addr, 8080));
+
+    // Run for at most 5 seconds
+    auto n = ioc.run_for(std::chrono::seconds(5));
+
+    if (ioc.stopped())
+    {
+        s.cancel();  // Cancel the pending connect
+        std::cerr << "Connection timed out\n";
+    }
+}
+----
+
+== Next Steps
+
+* xref:io/sockets.adoc[Sockets] — Socket operations in detail
+* xref:concepts/affine-awaitables.adoc[Affine Awaitables] — How dispatching works

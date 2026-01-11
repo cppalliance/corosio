@@ -10,9 +10,40 @@
 #ifndef BOOST_COROSIO_HPP
 #define BOOST_COROSIO_HPP
 
+/** @file
+    @brief Master include file for Boost.Corosio
+
+    This header includes all public headers of the Boost.Corosio library.
+    Including this file provides access to:
+
+    - @ref boost::corosio::io_context "io_context" — Event loop for async operations
+    - @ref boost::corosio::socket "socket" — Asynchronous TCP socket
+    - @ref boost::corosio::tcp::acceptor "tcp::acceptor" — Server-side connection acceptance
+    - @ref boost::corosio::tcp::endpoint "tcp::endpoint" — TCP address and port
+    - @ref boost::corosio::tls_stream "tls_stream" — TLS stream adapter
+
+    @par Example
+    @code
+    #include <boost/corosio.hpp>
+    #include <boost/capy/task.hpp>
+    #include <boost/capy/async_run.hpp>
+
+    namespace corosio = boost::corosio;
+    namespace capy = boost::capy;
+
+    capy::task<void> client(corosio::io_context& ioc)
+    {
+        corosio::socket s(ioc);
+        s.open();
+        co_await s.connect(corosio::tcp::endpoint(
+            boost::urls::ipv4_address::loopback(), 8080));
+    }
+    @endcode
+*/
+
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/platform_reactor.hpp>
 #include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tls_stream.hpp>
 
 #endif

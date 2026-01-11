@@ -35,6 +35,8 @@ if (BOOST_COROSIO_IS_ROOT)
 endif ()
 option(BOOST_COROSIO_BUILD_TESTS "Build boost::corosio tests" ${BUILD_TESTING})
 option(BOOST_COROSIO_BUILD_BENCH "Build boost::corosio benchmarks" ${BOOST_COROSIO_IS_ROOT})
+option(BOOST_COROSIO_BUILD_DOCS "Build boost::corosio documentation" OFF)
+option(BOOST_COROSIO_MRDOCS_BUILD "Building for MrDocs documentation generation" OFF)
 
 # Check if environment variable BOOST_SRC_DIR is set
 if (NOT DEFINED BOOST_SRC_DIR AND DEFINED ENV{BOOST_SRC_DIR})

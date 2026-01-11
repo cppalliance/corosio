@@ -33,30 +33,38 @@ namespace corosio {
 
 /** An asynchronous TCP socket for coroutine I/O.
 
-    This class models an asynchronous socket that provides I/O operations
-    returning awaitable types. It implements the affine awaitable protocol
-    where the awaitable receives the caller's executor for completion dispatch.
+    This class provides asynchronous TCP socket operations that return
+    awaitable types. Each operation participates in the affine awaitable
+    protocol, ensuring coroutines resume on the correct executor.
+
+    The socket must be opened before performing I/O operations. Operations
+    support cancellation through `std::stop_token` via the affine protocol,
+    or explicitly through the `cancel()` member function.
+
+    @par Thread Safety
+    Distinct objects: Safe.@n
+    Shared objects: Unsafe. A socket must not have concurrent operations
+    of the same type (e.g., two simultaneous reads). One read and one
+    write may be in flight simultaneously.
 
     @par Example
     @code
     io_context ioc;
     socket s(ioc);
     s.open();
-    co_await s.connect(tcp::endpoint(urls::ipv4_address::loopback(), 8080));
+
+    auto ec = co_await s.connect(
+        tcp::endpoint(urls::ipv4_address::loopback(), 8080));
+    if (ec)
+        co_return;
+
     char buf[1024];
-    auto [ec, n] = co_await s.read_some(buffers::mutable_buffer(buf, sizeof(buf)));
+    auto [read_ec, n] = co_await s.read_some(
+        buffers::mutable_buffer(buf, sizeof(buf)));
     @endcode
 */
 class socket
 {
-public:
-    //--------------------------------------------------------------------------
-    //
-    // Awaitables
-    //
-    //--------------------------------------------------------------------------
-
-    /** Awaitable for connect operations. */
     struct connect_awaitable
     {
         socket& s_;
@@ -103,10 +111,6 @@ public:
         }
     };
 
-    /** Awaitable for read operations.
-
-        @tparam MutableBufferSequence The buffer sequence type.
-    */
     template<class MutableBufferSequence>
     struct read_some_awaitable
     {
@@ -157,10 +161,6 @@ public:
         }
     };
 
-    /** Awaitable for write operations.
-
-        @tparam ConstBufferSequence The buffer sequence type.
-    */
     template<class ConstBufferSequence>
     struct write_some_awaitable
     {
@@ -211,19 +211,24 @@ public:
         }
     };
 
-    //--------------------------------------------------------------------------
-    //
-    // Construction / Assignment
-    //
-    //--------------------------------------------------------------------------
+public:
+    /** Destructor.
 
+        Closes the socket if open, cancelling any pending operations.
+    */
     BOOST_COROSIO_DECL
     ~socket();
 
+    /** Construct a socket from an execution context.
+
+        @param ctx The execution context that will own this socket.
+    */
     BOOST_COROSIO_DECL
     explicit socket(capy::execution_context& ctx);
 
-    /** Construct from an executor.
+    /** Construct a socket from an executor.
+
+        The socket is associated with the executor's context.
 
         @param ex The executor whose context will own the socket.
     */
@@ -235,7 +240,12 @@ public:
     {
     }
 
-    /** Move constructor. */
+    /** Move constructor.
+
+        Transfers ownership of the socket resources.
+
+        @param other The socket to move from.
+    */
     socket(socket&& other) noexcept
         : ctx_(other.ctx_)
         , impl_(other.impl_)
@@ -243,7 +253,17 @@ public:
         other.impl_ = nullptr;
     }
 
-    /** Move assignment. */
+    /** Move assignment operator.
+
+        Closes any existing socket and transfers ownership.
+        The source and destination must share the same execution context.
+
+        @param other The socket to move from.
+
+        @return Reference to this socket.
+
+        @throws std::logic_error if the sockets have different execution contexts.
+    */
     socket& operator=(socket&& other)
     {
         if (this != &other)
@@ -261,16 +281,11 @@ public:
     socket(socket const&) = delete;
     socket& operator=(socket const&) = delete;
 
-    //--------------------------------------------------------------------------
-    //
-    // Operations
-    //
-    //--------------------------------------------------------------------------
-
     /** Open the socket.
 
-        Creates an IPv4 TCP socket and associates it with the IOCP.
-        This must be called before initiating I/O operations.
+        Creates an IPv4 TCP socket and associates it with the platform
+        reactor (IOCP on Windows). This must be called before initiating
+        I/O operations.
 
         @throws std::system_error on failure.
     */
@@ -279,12 +294,16 @@ public:
 
     /** Close the socket.
 
-        Releases the internal implementation. Pending operations are cancelled.
+        Releases socket resources. Any pending operations complete
+        with `errc::operation_canceled`.
     */
     BOOST_COROSIO_DECL
     void close();
 
-    /** Check if the socket is open. */
+    /** Check if the socket is open.
+
+        @return `true` if the socket is open and ready for operations.
+    */
     bool is_open() const noexcept
     {
         return impl_ != nullptr;
@@ -292,8 +311,26 @@ public:
 
     /** Initiate an asynchronous connect operation.
 
-        @param ep The endpoint to connect to.
-        @return An awaitable that completes with system::error_code.
+        Connects the socket to the specified remote endpoint. The socket
+        must be open before calling this function.
+
+        The operation supports cancellation via `std::stop_token` through
+        the affine awaitable protocol. If the associated stop token is
+        triggered, the operation completes immediately with
+        `errc::operation_canceled`.
+
+        @param ep The remote endpoint to connect to.
+
+        @return An awaitable that completes with `system::error_code`.
+            Returns success (default error_code) on successful connection,
+            or an error code on failure including:
+            - connection_refused: No server listening at endpoint
+            - timed_out: Connection attempt timed out
+            - network_unreachable: No route to host
+            - operation_canceled: Cancelled via stop_token or cancel()
+
+        @par Preconditions
+        The socket must be open (`is_open() == true`).
     */
     auto connect(tcp::endpoint ep)
     {
@@ -303,8 +340,28 @@ public:
 
     /** Initiate an asynchronous read operation.
 
-        @param buffers The buffers to read into.
-        @return An awaitable that completes with (error_code, bytes_transferred).
+        Reads available data into the provided buffer sequence. The
+        operation completes when at least one byte has been read, or
+        an error occurs.
+
+        The operation supports cancellation via `std::stop_token` through
+        the affine awaitable protocol. If the associated stop token is
+        triggered, the operation completes immediately with
+        `errc::operation_canceled`.
+
+        @param buffers The buffer sequence to read data into.
+
+        @return An awaitable that completes with a pair of
+            `{error_code, bytes_transferred}`. Returns success with the
+            number of bytes read, or an error code on failure including:
+            - connection_reset: Peer closed the connection
+            - operation_canceled: Cancelled via stop_token or cancel()
+
+        @par Preconditions
+        The socket must be open and connected.
+
+        @note This function may return fewer bytes than the buffer
+            capacity. Use a loop to read an exact amount.
     */
     template<class MutableBufferSequence>
     auto read_some(MutableBufferSequence const& buffers)
@@ -315,8 +372,28 @@ public:
 
     /** Initiate an asynchronous write operation.
 
-        @param buffers The buffers to write from.
-        @return An awaitable that completes with (error_code, bytes_transferred).
+        Writes data from the provided buffer sequence. The operation
+        completes when at least one byte has been written, or an
+        error occurs.
+
+        The operation supports cancellation via `std::stop_token` through
+        the affine awaitable protocol. If the associated stop token is
+        triggered, the operation completes immediately with
+        `errc::operation_canceled`.
+
+        @param buffers The buffer sequence containing data to write.
+
+        @return An awaitable that completes with a pair of
+            `{error_code, bytes_transferred}`. Returns success with the
+            number of bytes written, or an error code on failure including:
+            - broken_pipe: Connection closed by peer
+            - operation_canceled: Cancelled via stop_token or cancel()
+
+        @par Preconditions
+        The socket must be open and connected.
+
+        @note This function may write fewer bytes than the buffer
+            contains. Use a loop to write all data.
     */
     template<class ConstBufferSequence>
     auto write_some(ConstBufferSequence const& buffers)
@@ -325,11 +402,17 @@ public:
         return write_some_awaitable<ConstBufferSequence>(*this, buffers);
     }
 
-    /** Cancel any pending asynchronous operations. */
+    /** Cancel any pending asynchronous operations.
+
+        All outstanding operations complete with `errc::operation_canceled`.
+    */
     BOOST_COROSIO_DECL
     void cancel();
 
-    /** Return the execution context. */
+    /** Return the execution context.
+
+        @return Reference to the execution context that owns this socket.
+    */
     auto
     context() const noexcept ->
         capy::execution_context&

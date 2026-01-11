@@ -1,0 +1,40 @@
+site:
+  title: Boost.Corosio
+  url: https://antora.cppalliance.org/develop/lib/doc
+  start_page: corosio::index.adoc
+  robots: allow
+  keys:
+    repo_url: 'https://github.com/cppalliance/corosio'
+
+content:
+  sources:
+    - url: ..
+      start_path: doc
+      edit_url: 'https://github.com/cppalliance/corosio/edit/{refname}/{path}'
+
+ui:
+  bundle:
+    url: https://github.com/boostorg/website-v2-docs/releases/download/ui-develop/ui-bundle.zip
+    snapshot: true
+
+antora:
+  extensions:
+    - require: '@cppalliance/antora-cpp-tagfiles-extension'
+      cpp-tagfiles:
+        using-namespaces:
+          - 'boost::'
+    - require: '@cppalliance/antora-cpp-reference-extension'
+      dependencies:
+        - name: 'boost'
+          repo: 'https://github.com/boostorg/boost.git'
+          tag: 'develop'
+          variable: 'BOOST_SRC_DIR'
+          system-env: 'BOOST_SRC_DIR'
+
+asciidoc:
+  attributes:
+    # Enable pagination
+    page-pagination: ''
+  extensions:
+    - '@cppalliance/asciidoctor-boost-links'
+    - '@asciidoctor/tabs'

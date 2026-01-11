@@ -1,0 +1,162 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Buffer Sequences
+
+Corosio socket operations accept any buffer sequence compatible with
+Boost.Buffers. Internally, the socket implementation uses a type-erased
+interface (`buffers_param`) to avoid templating the implementation on
+buffer types.
+
+== Buffer Types
+
+Boost.Buffers provides two fundamental buffer types:
+
+[source,cpp]
+----
+// Mutable buffer - for reading into
+boost::buffers::mutable_buffer buf(ptr, size);
+
+// Const buffer - for writing from
+boost::buffers::const_buffer buf(ptr, size);
+----
+
+== Using Buffers with Sockets
+
+Pass buffers directly to socket operations:
+
+[source,cpp]
+----
+char data[1024];
+
+// Read into a single buffer
+auto [ec, n] = co_await s.read_some(
+    boost::buffers::mutable_buffer(data, sizeof(data)));
+
+// Write from a single buffer
+auto [ec2, n2] = co_await s.write_some(
+    boost::buffers::const_buffer(data, n));
+----
+
+== Buffer Sequences
+
+A buffer sequence is any range of buffers. Use arrays or vectors for
+scatter/gather I/O:
+
+[source,cpp]
+----
+// Scatter read into multiple buffers
+std::array<boost::buffers::mutable_buffer, 2> read_bufs = {
+    boost::buffers::mutable_buffer(header, header_size),
+    boost::buffers::mutable_buffer(body, body_size)
+};
+auto [ec, n] = co_await s.read_some(read_bufs);
+
+// Gather write from multiple buffers
+std::array<boost::buffers::const_buffer, 2> write_bufs = {
+    boost::buffers::const_buffer(header, header_size),
+    boost::buffers::const_buffer(body, body_size)
+};
+auto [ec2, n2] = co_await s.write_some(write_bufs);
+----
+
+== The buffers_param Interface
+
+Internally, Corosio uses `buffers_param` to type-erase buffer sequences.
+This allows the socket implementation to remain non-templated while
+accepting any buffer sequence type.
+
+The interface is simple:
+
+[source,cpp]
+----
+template<bool IsMutable>
+class buffers_param
+{
+public:
+    using buffer_type = std::conditional_t<IsMutable,
+        buffers::mutable_buffer, buffers::const_buffer>;
+
+    virtual ~buffers_param() = default;
+
+    // Copy buffers to an array (e.g., WSABUF array)
+    virtual std::size_t copy_to(buffer_type* dest, std::size_t n) = 0;
+};
+----
+
+The `buffers_param_impl` adapter wraps any buffer sequence:
+
+[source,cpp]
+----
+template<class Buffers>
+class buffers_param_impl final : public buffers_param</*IsMutable*/>;
+----
+
+== Why Type Erasure?
+
+Without type erasure, the socket implementation would need to be templated
+on every buffer sequence type used:
+
+[source,cpp]
+----
+// Without type erasure - explosion of template instantiations
+template<class Buffers>
+void socket_impl::read_some(Buffers const& bufs, ...);
+----
+
+With type erasure, the implementation is fixed:
+
+[source,cpp]
+----
+// With type erasure - single implementation
+void socket_impl::read_some(buffers_param<true>& bufs, ...);
+----
+
+The cost is a virtual call when iterating buffers, which is negligible
+compared to I/O latency.
+
+== Custom Buffer Sequences
+
+Any type that satisfies `MutableBufferSequence` or `ConstBufferSequence`
+works with Corosio:
+
+[source,cpp]
+----
+struct my_buffer_sequence
+{
+    // Buffer type
+    using value_type = boost::buffers::mutable_buffer;
+
+    // Iterator support
+    auto begin() const { return buffers_.begin(); }
+    auto end() const { return buffers_.end(); }
+
+private:
+    std::vector<boost::buffers::mutable_buffer> buffers_;
+};
+----
+
+== Performance Considerations
+
+For maximum performance:
+
+1. **Prefer single buffers** when possible—fewer iterations
+2. **Reuse buffers** to avoid allocation
+3. **Size buffers appropriately**—too small means more syscalls, too large wastes memory
+
+Typical buffer sizes:
+
+* Small messages: 1-4 KB
+* Bulk transfers: 64 KB - 1 MB
+* High-throughput: Match TCP window size (typically 64 KB default)
+
+== Next Steps
+
+* xref:io/sockets.adoc[Sockets] — Socket read/write operations
+* xref:reference/tcp-endpoint.adoc[tcp::endpoint] — Endpoint reference

@@ -1,0 +1,29 @@
+# Input
+source-root: ..
+# Directories that contain documented source files
+input:
+  - ../include
+# Patterns to filter out the source-files in the directories
+file-patterns:
+  - '*.hpp'
+
+# Filters
+include-symbols:
+  - 'boost::corosio::**'
+implementation-defined:
+  - 'boost::corosio::detail'
+  - 'boost::corosio::*::detail'
+inaccessible-members: never
+inaccessible-bases: never
+
+# Generator
+generate: adoc
+base-url: https://www.github.com/cppalliance/corosio/blob/develop/
+
+# Style
+verbose: true
+multipage: true
+# use-system-libc: true
+# use-system-stdlib: true
+
+cmake: '-DCMAKE_CXX_STANDARD=20 -DBOOST_COROSIO_MRDOCS_BUILD=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF'

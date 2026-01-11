@@ -1,0 +1,222 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= tcp::endpoint
+
+An IPv4 TCP endpoint representing an address and port combination.
+
+== Synopsis
+
+[source,cpp]
+----
+namespace boost::corosio::tcp {
+
+struct endpoint
+{
+    // Members
+    urls::ipv4_address address;
+    std::uint16_t port = 0;
+
+    // Constructors
+    endpoint() = default;
+    endpoint(urls::ipv4_address addr, std::uint16_t port) noexcept;
+    explicit endpoint(std::uint16_t port) noexcept;
+
+    // Conversion
+    sockaddr_in to_sockaddr() const noexcept;
+    static endpoint from_sockaddr(sockaddr_in const& sa) noexcept;
+
+    // Comparison
+    friend bool operator==(endpoint const&, endpoint const&) noexcept;
+    friend bool operator!=(endpoint const&, endpoint const&) noexcept;
+};
+
+} // namespace boost::corosio::tcp
+----
+
+== Description
+
+The `endpoint` struct combines an IPv4 address with a port number. It is
+used to specify connection targets for clients and bind addresses for servers.
+
+== Members
+
+[cols="1,3"]
+|===
+|Member |Description
+
+|`address`
+|The IPv4 address as `boost::urls::ipv4_address`
+
+|`port`
+|The port number in host byte order (0-65535)
+|===
+
+== Constructors
+
+=== Default Constructor
+
+[source,cpp]
+----
+endpoint() = default;
+----
+
+Creates an endpoint with the any address (0.0.0.0) and port 0.
+
+=== Address and Port Constructor
+
+[source,cpp]
+----
+endpoint(urls::ipv4_address addr, std::uint16_t port) noexcept;
+----
+
+Creates an endpoint with the specified address and port.
+
+[cols="1,3"]
+|===
+|Parameter |Description
+
+|`addr`
+|The IPv4 address
+
+|`port`
+|The port number in host byte order
+|===
+
+==== Example
+
+[source,cpp]
+----
+// Connect to localhost:8080
+corosio::tcp::endpoint ep(
+    boost::urls::ipv4_address::loopback(),
+    8080);
+
+// Connect to specific address
+corosio::tcp::endpoint ep2(
+    boost::urls::ipv4_address({192, 168, 1, 100}),
+    443);
+----
+
+=== Port-Only Constructor
+
+[source,cpp]
+----
+explicit endpoint(std::uint16_t port) noexcept;
+----
+
+Creates an endpoint with the any address (0.0.0.0) and the specified port.
+Useful for server bind addresses.
+
+[cols="1,3"]
+|===
+|Parameter |Description
+
+|`port`
+|The port number in host byte order
+|===
+
+==== Example
+
+[source,cpp]
+----
+// Bind to all interfaces on port 8080
+corosio::tcp::endpoint ep(8080);
+acceptor.bind(ep);
+----
+
+== Member Functions
+
+=== to_sockaddr
+
+[source,cpp]
+----
+sockaddr_in to_sockaddr() const noexcept;
+----
+
+Converts the endpoint to a `sockaddr_in` structure for use with system calls.
+
+Returns:: A `sockaddr_in` with fields in network byte order.
+
+=== from_sockaddr
+
+[source,cpp]
+----
+static endpoint from_sockaddr(sockaddr_in const& sa) noexcept;
+----
+
+Creates an endpoint from a `sockaddr_in` structure.
+
+[cols="1,3"]
+|===
+|Parameter |Description
+
+|`sa`
+|A `sockaddr_in` structure (network byte order)
+|===
+
+Returns:: An endpoint with the address and port from `sa`.
+
+== Comparison
+
+Endpoints support equality comparison:
+
+[source,cpp]
+----
+corosio::tcp::endpoint a(8080);
+corosio::tcp::endpoint b(8080);
+corosio::tcp::endpoint c(9090);
+
+assert(a == b);
+assert(a != c);
+----
+
+Two endpoints are equal if both their address and port are equal.
+
+== Common Addresses
+
+Use `boost::urls::ipv4_address` factory functions:
+
+[cols="1,2"]
+|===
+|Function |Address
+
+|`ipv4_address::any()`
+|0.0.0.0 (all interfaces)
+
+|`ipv4_address::loopback()`
+|127.0.0.1 (localhost)
+
+|`ipv4_address::broadcast()`
+|255.255.255.255
+|===
+
+== Example Usage
+
+[source,cpp]
+----
+// Client: connect to server
+corosio::tcp::endpoint server_ep(
+    boost::urls::ipv4_address::loopback(), 8080);
+co_await socket.connect(server_ep);
+
+// Server: bind to port
+corosio::tcp::endpoint bind_ep(8080);  // 0.0.0.0:8080
+acceptor.bind(bind_ep);
+
+// Server: bind to specific interface
+corosio::tcp::endpoint specific_ep(
+    boost::urls::ipv4_address({10, 0, 0, 1}), 8080);
+acceptor.bind(specific_ep);
+----
+
+== See Also
+
+* xref:io/sockets.adoc[Sockets] — Using endpoints with socket::connect
+* xref:io/acceptor.adoc[Acceptor] — Using endpoints with acceptor::bind

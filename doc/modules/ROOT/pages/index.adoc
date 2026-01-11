@@ -1,0 +1,119 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Boost.Corosio
+
+Boost.Corosio is a coroutine-first I/O library for C++20 that provides
+asynchronous networking primitives with automatic executor affinity propagation.
+
+== What This Library Does
+
+Corosio provides asynchronous I/O operations that integrate seamlessly with
+C++20 coroutines through the affine awaitable protocol. When you `co_await`
+an I/O operation, the completion resumes your coroutine on the correct executor
+without manual dispatch.
+
+Corosio provides:
+
+* **io_context** — An event loop for processing asynchronous operations
+* **socket** — Asynchronous TCP socket with affine-aware awaitables
+* **tcp::acceptor** — Server-side connection acceptance
+* **Affine awaitable protocol** — Automatic executor affinity through coroutine chains
+
+== What This Library Does Not Do
+
+Corosio focuses on coroutine-first I/O. It does not include:
+
+* General-purpose executor abstractions (use Boost.Capy for that)
+* The sender/receiver execution model (P2300)
+* HTTP, WebSocket, or other application protocols
+* UDP or other transport protocols (TCP only for now)
+
+Corosio is designed to work with Boost.Capy's task and executor infrastructure.
+
+== Design Philosophy
+
+**Coroutines first.** Every I/O operation returns an awaitable. There are no
+callback-based interfaces to maintain compatibility with.
+
+**Affinity through the protocol.** The dispatcher propagates through
+`await_suspend` parameters, not through thread-local storage or global state.
+When an I/O operation completes, it resumes your coroutine through the
+dispatcher you provided, ensuring execution on the correct executor.
+
+**Type erasure at I/O boundaries.** The socket implementation uses type-erased
+dispatchers internally. For I/O-bound code, the indirection cost is negligible
+compared to actual I/O latency.
+
+== Requirements
+
+* C++20 compiler with coroutine support
+* Boost (capy, buffers, url, system)
+
+=== Tested Compilers
+
+* GCC 11+
+* Clang 14+
+* MSVC 19.29+ (Visual Studio 2019 16.10+)
+
+=== Platform Support
+
+* Windows (IOCP)
+* Linux (planned: io_uring)
+* macOS (planned: kqueue)
+
+== Quick Example
+
+[source,cpp]
+----
+#include <boost/corosio.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/async_run.hpp>
+#include <iostream>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+
+capy::task<void> connect_and_read(corosio::io_context& ioc)
+{
+    corosio::socket s(ioc);
+    s.open();
+
+    // Connect to server
+    auto ec = co_await s.connect(
+        corosio::tcp::endpoint(boost::urls::ipv4_address::loopback(), 8080));
+
+    if (ec)
+    {
+        std::cerr << "Connect failed: " << ec.message() << "\n";
+        co_return;
+    }
+
+    // Read some data
+    char buf[1024];
+    auto [read_ec, n] = co_await s.read_some(
+        boost::buffers::mutable_buffer(buf, sizeof(buf)));
+
+    if (!read_ec)
+        std::cout << "Received " << n << " bytes\n";
+}
+
+int main()
+{
+    corosio::io_context ioc;
+    capy::async_run(ioc.get_executor())(connect_and_read(ioc));
+    ioc.run();
+}
+----
+
+== Next Steps
+
+* xref:quick-start.adoc[Quick Start] — Build a working echo server in 5 minutes
+* xref:io/io_context.adoc[I/O Context] — Understand the event loop
+* xref:io/sockets.adoc[Sockets] — Learn socket operations in detail

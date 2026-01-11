@@ -1,0 +1,248 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Sockets
+
+The `socket` class provides asynchronous TCP socket operations that return
+awaitables. Each operation participates in the affine awaitable protocol,
+ensuring your coroutine resumes on the correct executor.
+
+NOTE: Code snippets assume the following declarations are in effect:
+
+[source,cpp]
+----
+#include <boost/corosio.hpp>
+namespace corosio = boost::corosio;
+----
+
+== Creating a Socket
+
+Sockets are created from an execution context or executor:
+
+[source,cpp]
+----
+corosio::io_context ioc;
+corosio::socket s(ioc);            // From io_context
+corosio::socket s2(ioc.get_executor());  // From executor
+----
+
+Sockets are move-only. Moving a socket between execution contexts is not
+allowed and throws `std::logic_error`.
+
+== Opening and Closing
+
+Before performing I/O, open the socket:
+
+[source,cpp]
+----
+s.open();  // Creates IPv4 TCP socket
+----
+
+The socket registers with the platform reactor (IOCP) during `open()`.
+Call `close()` to release resources:
+
+[source,cpp]
+----
+s.close();  // Cancels pending ops, releases handle
+----
+
+Check if a socket is open:
+
+[source,cpp]
+----
+if (s.is_open())
+    // ...
+----
+
+== Connecting
+
+The `connect()` function initiates an asynchronous connection:
+
+[source,cpp]
+----
+corosio::tcp::endpoint ep(boost::urls::ipv4_address::loopback(), 8080);
+auto ec = co_await s.connect(ep);
+
+if (ec)
+{
+    std::cerr << "Connect failed: " << ec.message() << "\n";
+    co_return;
+}
+----
+
+The awaitable returns a `boost::system::error_code`. Common errors:
+
+* `errc::connection_refused` — No server listening
+* `errc::timed_out` — Connection attempt timed out
+* `errc::network_unreachable` — No route to host
+
+== Reading Data
+
+The `read_some()` function reads available data into a buffer:
+
+[source,cpp]
+----
+char buf[1024];
+auto [ec, n] = co_await s.read_some(
+    boost::buffers::mutable_buffer(buf, sizeof(buf)));
+
+if (ec)
+{
+    if (ec == boost::system::errc::connection_reset)
+        std::cout << "Peer closed connection\n";
+    else
+        std::cerr << "Read error: " << ec.message() << "\n";
+    co_return;
+}
+
+std::cout << "Read " << n << " bytes\n";
+----
+
+The awaitable returns a pair: `{error_code, bytes_transferred}`.
+
+`read_some()` returns when any data is available. It may return fewer bytes
+than the buffer size. To read an exact amount, loop until you have enough:
+
+[source,cpp]
+----
+capy::task<std::pair<boost::system::error_code, std::size_t>>
+read_exactly(corosio::socket& s, char* buf, std::size_t len)
+{
+    std::size_t total = 0;
+    while (total < len)
+    {
+        auto [ec, n] = co_await s.read_some(
+            boost::buffers::mutable_buffer(buf + total, len - total));
+
+        if (ec)
+            co_return {ec, total};
+
+        if (n == 0)
+            co_return {boost::system::errc::make_error_code(
+                boost::system::errc::connection_reset), total};
+
+        total += n;
+    }
+    co_return {{}, total};
+}
+----
+
+== Writing Data
+
+The `write_some()` function writes data from a buffer:
+
+[source,cpp]
+----
+const char* msg = "Hello, world!";
+auto [ec, n] = co_await s.write_some(
+    boost::buffers::const_buffer(msg, std::strlen(msg)));
+
+if (ec)
+{
+    std::cerr << "Write error: " << ec.message() << "\n";
+    co_return;
+}
+
+std::cout << "Wrote " << n << " bytes\n";
+----
+
+Like `read_some()`, this may write fewer bytes than requested. Loop for
+complete writes:
+
+[source,cpp]
+----
+capy::task<boost::system::error_code>
+write_all(corosio::socket& s, const char* data, std::size_t len)
+{
+    std::size_t total = 0;
+    while (total < len)
+    {
+        auto [ec, n] = co_await s.write_some(
+            boost::buffers::const_buffer(data + total, len - total));
+
+        if (ec)
+            co_return ec;
+
+        total += n;
+    }
+    co_return {};
+}
+----
+
+== Buffer Sequences
+
+Both `read_some()` and `write_some()` accept any buffer sequence satisfying
+`boost::buffers::MutableBufferSequence` or `boost::buffers::ConstBufferSequence`.
+Use multiple buffers for scatter/gather I/O:
+
+[source,cpp]
+----
+std::array<boost::buffers::mutable_buffer, 2> bufs = {
+    boost::buffers::mutable_buffer(header, sizeof(header)),
+    boost::buffers::mutable_buffer(body, body_size)
+};
+auto [ec, n] = co_await s.read_some(bufs);
+----
+
+== Cancellation
+
+Cancel pending operations with `cancel()`:
+
+[source,cpp]
+----
+s.cancel();  // All pending ops complete with operation_canceled
+----
+
+Operations also support cancellation via `std::stop_token` through the affine
+awaitable protocol. When the stop token is triggered, the operation completes
+immediately with `errc::operation_canceled`.
+
+== Error Handling
+
+Socket operations return error codes rather than throwing exceptions. This
+design allows efficient error handling in hot paths:
+
+[source,cpp]
+----
+auto [ec, n] = co_await s.read_some(buf);
+
+if (ec)
+{
+    switch (ec.value())
+    {
+    case boost::system::errc::connection_reset:
+    case boost::system::errc::broken_pipe:
+        // Normal disconnect
+        break;
+
+    case boost::system::errc::operation_canceled:
+        // We called cancel()
+        break;
+
+    default:
+        // Log unexpected error
+        std::cerr << "Socket error: " << ec.message() << "\n";
+    }
+    co_return;
+}
+----
+
+== Thread Safety
+
+A single socket must not have concurrent operations of the same type. You
+may have one read and one write in flight simultaneously, but not two reads
+or two writes.
+
+For thread safety across the socket object itself, ensure operations are
+serialized (e.g., through the executor's strand semantics if available).
+
+== Next Steps
+
+* xref:io/acceptor.adoc[Acceptor] — Server-side connection acceptance
+* xref:concepts/buffers.adoc[Buffer Sequences] — The buffers_param interface

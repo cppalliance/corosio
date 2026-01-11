@@ -1,0 +1,205 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Acceptor
+
+The `tcp::acceptor` class provides server-side socket functionality for
+accepting incoming TCP connections. It uses IOCP's AcceptEx on Windows for
+efficient asynchronous acceptance.
+
+NOTE: Code snippets assume the following declarations are in effect:
+
+[source,cpp]
+----
+#include <boost/corosio.hpp>
+namespace corosio = boost::corosio;
+----
+
+== Creating an Acceptor
+
+Acceptors are created from an execution context:
+
+[source,cpp]
+----
+corosio::io_context ioc;
+corosio::tcp::acceptor acceptor(ioc);
+----
+
+== Setting Up the Acceptor
+
+Before accepting connections, the acceptor must be opened, bound, and set
+to listen:
+
+[source,cpp]
+----
+acceptor.open();                              // Create socket
+acceptor.bind(corosio::tcp::endpoint(8080));  // Bind to port
+acceptor.listen();                            // Start listening
+----
+
+The `bind()` function accepts an endpoint. To bind to all interfaces on a
+specific port:
+
+[source,cpp]
+----
+acceptor.bind(corosio::tcp::endpoint(8080));  // 0.0.0.0:8080
+----
+
+To bind to a specific interface:
+
+[source,cpp]
+----
+acceptor.bind(corosio::tcp::endpoint(
+    boost::urls::ipv4_address::loopback(), 8080));  // 127.0.0.1:8080
+----
+
+== Listen Backlog
+
+The `listen()` function accepts an optional backlog parameter that specifies
+the maximum number of pending connections:
+
+[source,cpp]
+----
+acceptor.listen(128);     // Backlog of 128
+acceptor.listen();        // Uses SOMAXCONN (system default)
+----
+
+== Accepting Connections
+
+The `accept()` function initiates an asynchronous accept operation:
+
+[source,cpp]
+----
+corosio::socket client(ioc);
+client.open();  // Pre-create the client socket
+
+auto ec = co_await acceptor.accept(client);
+
+if (ec)
+{
+    std::cerr << "Accept failed: " << ec.message() << "\n";
+    co_return;
+}
+
+// client is now connected to the peer
+----
+
+The client socket must be opened before calling `accept()`. On Windows,
+AcceptEx requires a pre-created socket to accept into.
+
+== Accept Loop Pattern
+
+A typical server accepts connections in a loop and spawns handlers:
+
+[source,cpp]
+----
+capy::task<void> accept_loop(corosio::io_context& ioc)
+{
+    corosio::tcp::acceptor acceptor(ioc);
+    acceptor.open();
+    acceptor.bind(corosio::tcp::endpoint(8080));
+    acceptor.listen();
+
+    for (;;)
+    {
+        corosio::socket client(ioc);
+        client.open();
+
+        auto ec = co_await acceptor.accept(client);
+
+        if (ec)
+        {
+            if (ec == boost::system::errc::operation_canceled)
+                break;  // Acceptor was closed
+            std::cerr << "Accept error: " << ec.message() << "\n";
+            continue;
+        }
+
+        // Launch handler for this client
+        capy::async_run(ioc.get_executor())(
+            handle_client(std::move(client)));
+    }
+}
+----
+
+== Closing the Acceptor
+
+Close the acceptor to stop accepting new connections:
+
+[source,cpp]
+----
+acceptor.close();
+----
+
+This cancels any pending `accept()` operation, which completes with
+`operation_canceled`.
+
+== Cancellation
+
+Cancel a pending accept operation:
+
+[source,cpp]
+----
+acceptor.cancel();
+----
+
+The pending `accept()` completes with `errc::operation_canceled`.
+
+== Error Handling
+
+Common errors from `accept()`:
+
+* `errc::operation_canceled` — Acceptor was closed or `cancel()` was called
+* `errc::too_many_open_files` — File descriptor limit reached
+* `errc::connection_aborted` — Client disconnected before accept completed
+
+== Example: Graceful Shutdown
+
+To shut down a server gracefully, signal the acceptor to stop and wait for
+existing connections to complete:
+
+[source,cpp]
+----
+std::atomic<bool> shutdown_requested{false};
+
+capy::task<void> accept_loop(corosio::io_context& ioc)
+{
+    corosio::tcp::acceptor acceptor(ioc);
+    acceptor.open();
+    acceptor.bind(corosio::tcp::endpoint(8080));
+    acceptor.listen();
+
+    while (!shutdown_requested)
+    {
+        corosio::socket client(ioc);
+        client.open();
+
+        auto ec = co_await acceptor.accept(client);
+
+        if (ec)
+            break;
+
+        capy::async_run(ioc.get_executor())(
+            handle_client(std::move(client)));
+    }
+
+    acceptor.close();
+}
+
+void request_shutdown(corosio::tcp::acceptor& acceptor)
+{
+    shutdown_requested = true;
+    acceptor.cancel();  // Wake up the accept loop
+}
+----
+
+== Next Steps
+
+* xref:io/sockets.adoc[Sockets] — Client socket operations
+* xref:concepts/affine-awaitables.adoc[Affine Awaitables] — How dispatching works

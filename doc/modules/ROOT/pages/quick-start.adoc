@@ -1,0 +1,160 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Quick Start
+
+This page gets you from zero to a working TCP echo server in five minutes.
+
+NOTE: Corosio requires C++20 with coroutine support.
+
+== Echo Server Example
+
+Create a file `echo_server.cpp`:
+
+[source,cpp]
+----
+#include <boost/corosio.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/async_run.hpp>
+#include <iostream>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+
+// Handle a single client connection
+capy::task<void> handle_client(corosio::socket client)
+{
+    char buf[1024];
+
+    for (;;)
+    {
+        // Read data from client
+        auto [read_ec, n] = co_await client.read_some(
+            boost::buffers::mutable_buffer(buf, sizeof(buf)));
+
+        if (read_ec)
+        {
+            if (read_ec != boost::system::errc::connection_reset)
+                std::cerr << "Read error: " << read_ec.message() << "\n";
+            co_return;
+        }
+
+        // Echo it back
+        auto [write_ec, written] = co_await client.write_some(
+            boost::buffers::const_buffer(buf, n));
+
+        if (write_ec)
+        {
+            std::cerr << "Write error: " << write_ec.message() << "\n";
+            co_return;
+        }
+    }
+}
+
+// Accept connections and spawn handlers
+capy::task<void> accept_loop(corosio::io_context& ioc)
+{
+    corosio::tcp::acceptor acceptor(ioc);
+    acceptor.open();
+    acceptor.bind(corosio::tcp::endpoint(8080));
+    acceptor.listen();
+
+    std::cout << "Listening on port 8080...\n";
+
+    for (;;)
+    {
+        corosio::socket client(ioc);
+        client.open();
+
+        auto ec = co_await acceptor.accept(client);
+        if (ec)
+        {
+            std::cerr << "Accept error: " << ec.message() << "\n";
+            continue;
+        }
+
+        // Launch client handler (detached)
+        capy::async_run(ioc.get_executor())(handle_client(std::move(client)));
+    }
+}
+
+int main()
+{
+    corosio::io_context ioc;
+    capy::async_run(ioc.get_executor())(accept_loop(ioc));
+    ioc.run();
+}
+----
+
+== Build and Run
+
+[tabs]
+====
+CMake::
++
+[source,bash]
+----
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+./echo_server
+----
+
+MSVC::
++
+[source,powershell]
+----
+cl /std:c++20 /EHsc /O2 echo_server.cpp /I path/to/boost /link /LIBPATH:path/to/boost/stage/lib
+.\echo_server.exe
+----
+
+GCC::
++
+[source,bash]
+----
+g++ -std=c++20 -fcoroutines -O2 echo_server.cpp -o echo_server \
+    -I/path/to/boost -L/path/to/boost/stage/lib \
+    -lboost_system -pthread
+./echo_server
+----
+====
+
+== Test the Server
+
+In another terminal:
+
+[source,bash]
+----
+echo "Hello, Corosio!" | nc localhost 8080
+----
+
+Expected output:
+
+----
+Hello, Corosio!
+----
+
+== What Just Happened?
+
+1. `accept_loop` creates an acceptor bound to port 8080
+2. The acceptor waits for connections with `co_await acceptor.accept(client)`
+3. When a client connects, the acceptor returns and we launch `handle_client`
+4. `handle_client` reads data with `co_await client.read_some(...)`
+5. The data is echoed back with `co_await client.write_some(...)`
+6. The loop continues until the client disconnects
+
+The key insight: all coroutines run on the same executor because affinity
+propagates automatically. The I/O context handles multiplexing many concurrent
+clients on a single thread.
+
+== Next Steps
+
+* xref:io/io_context.adoc[I/O Context] — Learn about the event loop
+* xref:io/sockets.adoc[Sockets] — Detailed socket operations
+* xref:concepts/affine-awaitables.adoc[Affine Awaitables] — How affinity propagation works
