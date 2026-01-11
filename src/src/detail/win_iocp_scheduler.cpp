@@ -10,6 +10,9 @@
 #include "src/detail/win_iocp_scheduler.hpp"
 #include "src/detail/win_iocp_sockets.hpp"
 
+#include <boost/corosio/detail/except.hpp>
+#include <boost/capy/thread_local_ptr.hpp>
+
 #ifdef _WIN32
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -19,8 +22,6 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-
-#include <boost/corosio/detail/except.hpp>
 
 #include <WinSock2.h>
 #include <Windows.h>

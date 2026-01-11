@@ -12,6 +12,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/unique_ptr.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/executor.hpp>
@@ -25,32 +26,6 @@
 
 namespace boost {
 namespace corosio {
-
-namespace detail {
-
-struct scheduler
-{
-    virtual ~scheduler() = default;
-    virtual void post(capy::coro) const = 0;
-    virtual void post(capy::executor_work*) const = 0;
-    virtual void defer(capy::coro) const = 0;
-    virtual void on_work_started() noexcept = 0;
-    virtual void on_work_finished() noexcept = 0;
-    virtual bool running_in_this_thread() const noexcept = 0;
-    virtual void stop() = 0;
-    virtual bool stopped() const noexcept = 0;
-    virtual void restart() = 0;
-    virtual std::size_t run(system::error_code& ec) = 0;
-    virtual std::size_t run_one(system::error_code& ec) = 0;
-    virtual std::size_t run_one(long usec, system::error_code& ec) = 0;
-    virtual std::size_t wait_one(long usec, system::error_code& ec) = 0;
-    virtual std::size_t run_for(std::chrono::steady_clock::duration) = 0;
-    virtual std::size_t run_until(std::chrono::steady_clock::time_point) = 0;
-    virtual std::size_t poll(system::error_code& ec) = 0;
-    virtual std::size_t poll_one(system::error_code& ec) = 0;
-};
-
-} // namespace detail
 
 /** An I/O context for running asynchronous operations.
 
