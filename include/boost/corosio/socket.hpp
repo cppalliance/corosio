@@ -61,7 +61,7 @@ namespace corosio {
 
     char buf[1024];
     auto [read_ec, n] = co_await s.read_some(
-        buffers::mutable_buffer(buf, sizeof(buf)));
+        capy::mutable_buffer(buf, sizeof(buf)));
     @endcode
 */
 class socket : public io_stream

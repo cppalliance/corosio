@@ -10,7 +10,7 @@
 #include <boost/corosio.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/async_run.hpp>
-#include <boost/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 #include <boost/url/ipv4_address.hpp>
 
 #include <cstdlib>
@@ -52,7 +52,7 @@ do_request(
     while (total_sent < request.size())
     {
         auto [write_ec, n] = co_await s.write_some(
-            boost::buffers::const_buffer(
+            boost::capy::const_buffer(
                 request.data() + total_sent,
                 request.size() - total_sent));
         if (write_ec)
@@ -68,7 +68,7 @@ do_request(
     for (;;)
     {
         auto [read_ec, n] = co_await s.read_some(
-            boost::buffers::mutable_buffer(buf, sizeof(buf)));
+            boost::capy::mutable_buffer(buf, sizeof(buf)));
 
         if (read_ec)
         {

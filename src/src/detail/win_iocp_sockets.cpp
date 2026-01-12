@@ -168,7 +168,7 @@ read_some(
     op.bytes_out = bytes_out;
     op.start(token);
 
-    buffers::mutable_buffer bufs[read_op::max_buffers];
+    capy::mutable_buffer bufs[read_op::max_buffers];
     op.wsabuf_count = static_cast<DWORD>(
         param.copy_to(bufs, read_op::max_buffers));
 
@@ -229,7 +229,7 @@ write_some(
     op.bytes_out = bytes_out;
     op.start(token);
 
-    buffers::const_buffer bufs[write_op::max_buffers];
+    capy::const_buffer bufs[write_op::max_buffers];
     op.wsabuf_count = static_cast<DWORD>(
         param.copy_to(bufs, write_op::max_buffers));
 

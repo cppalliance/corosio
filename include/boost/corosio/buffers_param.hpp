@@ -11,7 +11,7 @@
 #define BOOST_COROSIO_BUFFERS_PARAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 
 #include <cstddef>
 #include <type_traits>
@@ -22,7 +22,7 @@ namespace corosio {
 namespace detail {
 
 template<class Buffers>
-constexpr bool is_mutable_buffer_sequence_v = buffers::mutable_buffer_sequence<Buffers>;
+constexpr bool is_mutable_buffer_sequence_v = capy::mutable_buffer_sequence<Buffers>;
 
 } // detail
 
@@ -41,7 +41,7 @@ class buffers_param
 {
 public:
     using buffer_type = std::conditional_t<IsMutable,
-        buffers::mutable_buffer, buffers::const_buffer>;
+        capy::mutable_buffer, capy::const_buffer>;
 
     virtual ~buffers_param() = default;
 
