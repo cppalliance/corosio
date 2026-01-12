@@ -19,6 +19,8 @@
     - @ref boost::corosio::io_context "io_context" — Event loop for async operations
     - @ref boost::corosio::socket "socket" — Asynchronous TCP socket
     - @ref boost::corosio::endpoint "endpoint" — IP endpoint supporting IPv4 and IPv6
+    - @ref boost::corosio::consuming_buffers "consuming_buffers" — Buffer sequence wrapper for incremental consumption
+    - @ref boost::corosio::read "read" — Read until buffer is full
     - @ref boost::corosio::tls_stream "tls_stream" — TLS stream adapter
 
     @par Example
@@ -43,6 +45,8 @@
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket.hpp>
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/consuming_buffers.hpp>
+#include <boost/corosio/read.hpp>
 #include <boost/corosio/tls_stream.hpp>
 
 #endif

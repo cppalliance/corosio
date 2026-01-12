@@ -67,21 +67,26 @@ do_request(
     char buf[4096];
     for (;;)
     {
-        auto [read_ec, n] = co_await s.read_some(
-            boost::capy::mutable_buffer(buf, sizeof(buf)));
+        auto [read_ec, n] = co_await corosio::read(
+            s, boost::capy::mutable_buffer(buf, sizeof(buf)));
 
         if (read_ec)
         {
-            // connection_reset or end of stream is expected
-            // when server closes the connection
-            if (read_ec != boost::system::errc::connection_reset)
+            // connection_reset is expected when server closes the connection
+            if (read_ec == boost::system::errc::connection_reset)
             {
-                // EOF or other expected close - not an error
+                // Print any remaining data before EOF
+                if (n > 0)
+                    std::cout.write(buf, static_cast<std::streamsize>(n));
+            }
+            else
+            {
+                std::cerr << "Read error: " << read_ec.message() << "\n";
             }
             break;
         }
 
-        // Print received data
+        // Print received data (buffer is completely filled)
         std::cout.write(buf, static_cast<std::streamsize>(n));
     }
 
