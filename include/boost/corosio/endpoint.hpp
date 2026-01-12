@@ -15,6 +15,21 @@
 #include <boost/url/ipv6_address.hpp>
 
 #include <cstdint>
+#include <cstring>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <WinSock2.h>
+#include <Ws2tcpip.h>
+#else
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
 
 namespace boost {
 namespace corosio {
@@ -173,6 +188,65 @@ public:
     friend bool operator!=(endpoint const& a, endpoint const& b) noexcept
     {
         return !(a == b);
+    }
+
+    /** Convert IPv4 endpoint to sockaddr_in.
+
+        @return A sockaddr_in structure with fields in network byte order.
+        @note This function requires the endpoint to be IPv4. The behavior
+            is undefined if is_v4() returns false.
+    */
+    sockaddr_in to_sockaddr_in() const noexcept
+    {
+        sockaddr_in sa{};
+        sa.sin_family = AF_INET;
+        sa.sin_port = htons(port_);
+        auto bytes = v4_address_.to_bytes();
+        std::memcpy(&sa.sin_addr, bytes.data(), 4);
+        return sa;
+    }
+
+    /** Convert IPv6 endpoint to sockaddr_in6.
+
+        @return A sockaddr_in6 structure with fields in network byte order.
+        @note This function requires the endpoint to be IPv6. The behavior
+            is undefined if is_v6() returns false.
+    */
+    sockaddr_in6 to_sockaddr_in6() const noexcept
+    {
+        sockaddr_in6 sa{};
+        sa.sin6_family = AF_INET6;
+        sa.sin6_port = htons(port_);
+        auto bytes = v6_address_.to_bytes();
+        std::memcpy(&sa.sin6_addr, bytes.data(), 16);
+        return sa;
+    }
+
+
+    /** Create endpoint from sockaddr_in.
+
+        @param sa The sockaddr_in structure with fields in network byte order.
+
+        @return An endpoint with address and port extracted from sa.
+    */
+    static endpoint from_sockaddr_in(sockaddr_in const& sa) noexcept
+    {
+        urls::ipv4_address::bytes_type bytes;
+        std::memcpy(bytes.data(), &sa.sin_addr, 4);
+        return endpoint(urls::ipv4_address(bytes), ntohs(sa.sin_port));
+    }
+
+    /** Create endpoint from sockaddr_in6.
+
+        @param sa The sockaddr_in6 structure with fields in network byte order.
+
+        @return An endpoint with address and port extracted from sa.
+    */
+    static endpoint from_sockaddr_in6(sockaddr_in6 const& sa) noexcept
+    {
+        urls::ipv6_address::bytes_type bytes;
+        std::memcpy(bytes.data(), &sa.sin6_addr, 16);
+        return endpoint(urls::ipv6_address(bytes), ntohs(sa.sin6_port));
     }
 
 private:

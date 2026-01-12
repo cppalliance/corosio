@@ -9,13 +9,13 @@
 
 = Quick Start
 
-This page gets you from zero to a working TCP echo server in five minutes.
+This page gets you from zero to a working TCP echo client in five minutes.
 
 NOTE: Corosio requires C++20 with coroutine support.
 
-== Echo Server Example
+== Echo Client Example
 
-Create a file `echo_server.cpp`:
+Create a file `echo_client.cpp`:
 
 [source,cpp]
 ----
@@ -57,37 +57,29 @@ capy::task<void> handle_client(corosio::socket client)
     }
 }
 
-// Accept connections and spawn handlers
-capy::task<void> accept_loop(corosio::io_context& ioc)
+// Client connection handler
+capy::task<void> client_loop(corosio::io_context& ioc)
 {
-    corosio::tcp::acceptor acceptor(ioc);
-    acceptor.open();
-    acceptor.bind(corosio::tcp::endpoint(8080));
-    acceptor.listen();
+    corosio::socket client(ioc);
+    client.open();
 
-    std::cout << "Listening on port 8080...\n";
-
-    for (;;)
+    // Connect to server
+    auto ec = co_await client.connect(
+        corosio::endpoint(boost::urls::ipv4_address::loopback(), 8080));
+    if (ec)
     {
-        corosio::socket client(ioc);
-        client.open();
-
-        auto ec = co_await acceptor.accept(client);
-        if (ec)
-        {
-            std::cerr << "Accept error: " << ec.message() << "\n";
-            continue;
-        }
-
-        // Launch client handler (detached)
-        capy::async_run(ioc.get_executor())(handle_client(std::move(client)));
+        std::cerr << "Connect error: " << ec.message() << "\n";
+        co_return;
     }
+
+    // Launch client handler
+    co_await handle_client(std::move(client));
 }
 
 int main()
 {
     corosio::io_context ioc;
-    capy::async_run(ioc.get_executor())(accept_loop(ioc));
+    capy::async_run(ioc.get_executor())(client_loop(ioc));
     ioc.run();
 }
 ----
@@ -111,47 +103,35 @@ MSVC::
 [source,powershell]
 ----
 cl /std:c++20 /EHsc /O2 echo_server.cpp /I path/to/boost /link /LIBPATH:path/to/boost/stage/lib
-.\echo_server.exe
+.\echo_client.exe
 ----
 
 GCC::
 +
 [source,bash]
 ----
-g++ -std=c++20 -fcoroutines -O2 echo_server.cpp -o echo_server \
+g++ -std=c++20 -fcoroutines -O2 echo_client.cpp -o echo_client \
     -I/path/to/boost -L/path/to/boost/stage/lib \
     -lboost_system -pthread
-./echo_server
+./echo_client
 ----
 ====
 
-== Test the Server
+== Test the Client
 
-In another terminal:
-
-[source,bash]
-----
-echo "Hello, Corosio!" | nc localhost 8080
-----
-
-Expected output:
-
-----
-Hello, Corosio!
-----
+Run the client and it will connect to a server on localhost:8080.
+Make sure you have a server running on that port, or the connection will fail.
 
 == What Just Happened?
 
-1. `accept_loop` creates an acceptor bound to port 8080
-2. The acceptor waits for connections with `co_await acceptor.accept(client)`
-3. When a client connects, the acceptor returns and we launch `handle_client`
-4. `handle_client` reads data with `co_await client.read_some(...)`
-5. The data is echoed back with `co_await client.write_some(...)`
-6. The loop continues until the client disconnects
+1. `client_loop` creates a socket and connects to the server
+2. `handle_client` reads data with `co_await client.read_some(...)`
+3. The data is echoed back with `co_await client.write_some(...)`
+4. The loop continues until the client disconnects
 
 The key insight: all coroutines run on the same executor because affinity
-propagates automatically. The I/O context handles multiplexing many concurrent
-clients on a single thread.
+propagates automatically. The I/O context handles multiplexing I/O operations
+on a single thread.
 
 == Next Steps
 

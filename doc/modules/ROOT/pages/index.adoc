@@ -23,7 +23,7 @@ Corosio provides:
 
 * **io_context** — An event loop for processing asynchronous operations
 * **socket** — Asynchronous TCP socket with affine-aware awaitables
-* **tcp::acceptor** — Server-side connection acceptance
+* **endpoint** — IP endpoint supporting IPv4 and IPv6
 * **Affine awaitable protocol** — Automatic executor affinity through coroutine chains
 
 == What This Library Does Not Do
@@ -87,7 +87,7 @@ capy::task<void> connect_and_read(corosio::io_context& ioc)
 
     // Connect to server
     auto ec = co_await s.connect(
-        corosio::tcp::endpoint(boost::urls::ipv4_address::loopback(), 8080));
+        corosio::endpoint(boost::urls::ipv4_address::loopback(), 8080));
 
     if (ec)
     {

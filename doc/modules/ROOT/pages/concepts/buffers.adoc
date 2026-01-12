@@ -159,4 +159,3 @@ Typical buffer sizes:
 == Next Steps
 
 * xref:io/sockets.adoc[Sockets] — Socket read/write operations
-* xref:reference/tcp-endpoint.adoc[tcp::endpoint] — Endpoint reference

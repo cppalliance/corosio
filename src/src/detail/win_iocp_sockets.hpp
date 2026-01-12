@@ -98,7 +98,7 @@ public:
     void connect(
         std::coroutine_handle<>,
         capy::any_dispatcher,
-        tcp::endpoint,
+        endpoint,
         std::stop_token,
         system::error_code*) override;
     void read_some(

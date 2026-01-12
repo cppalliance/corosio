@@ -33,7 +33,7 @@ do_request(
 
     // Connect to the server
     auto ec = co_await s.connect(
-        corosio::tcp::endpoint(addr, port));
+        corosio::endpoint(addr, port));
     if (ec)
     {
         std::cerr << "Connect error: " << ec.message() << "\n";

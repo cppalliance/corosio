@@ -14,7 +14,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/io_stream.hpp>
 #include <boost/corosio/buffers_param.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/endpoint.hpp>
 #include <boost/capy/any_dispatcher.hpp>
 #include <boost/capy/concept/affine_awaitable.hpp>
 #include <boost/capy/execution_context.hpp>
@@ -55,7 +55,7 @@ namespace corosio {
     s.open();
 
     auto ec = co_await s.connect(
-        tcp::endpoint(urls::ipv4_address::loopback(), 8080));
+        endpoint(urls::ipv4_address::loopback(), 8080));
     if (ec)
         co_return;
 
@@ -69,11 +69,11 @@ class socket : public io_stream
     struct connect_awaitable
     {
         socket& s_;
-        tcp::endpoint endpoint_;
+        endpoint endpoint_;
         std::stop_token token_;
         mutable system::error_code ec_;
 
-        connect_awaitable(socket& s, tcp::endpoint ep) noexcept
+        connect_awaitable(socket& s, endpoint ep) noexcept
             : s_(s)
             , endpoint_(ep)
         {
@@ -233,7 +233,7 @@ public:
         @par Preconditions
         The socket must be open (`is_open() == true`).
     */
-    auto connect(tcp::endpoint ep)
+    auto connect(endpoint ep)
     {
         assert(impl_ != nullptr);
         return connect_awaitable(*this, ep);
@@ -259,20 +259,15 @@ public:
 
     struct socket_impl : io_stream_impl
     {
-        virtual ~socket_impl() = default;
-    
-        virtual void release() = 0;
-    
         virtual void connect(
             std::coroutine_handle<>,
             capy::any_dispatcher,
-            tcp::endpoint,
+            endpoint,
             std::stop_token,
             system::error_code*) = 0;
     };
     
 private:
-    friend class tcp::acceptor;
 
     inline socket_impl& get() const noexcept
     {

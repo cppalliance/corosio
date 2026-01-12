@@ -84,7 +84,7 @@ win_socket_impl::
 connect(
     capy::coro h,
     capy::any_dispatcher d,
-    tcp::endpoint endpoint,
+    endpoint ep,
     std::stop_token token,
     system::error_code* ec)
 {
@@ -117,7 +117,7 @@ connect(
         return;
     }
 
-    sockaddr_in addr = endpoint.to_sockaddr();
+    sockaddr_in addr = ep.to_sockaddr_in();
 
     svc_.work_started();
 

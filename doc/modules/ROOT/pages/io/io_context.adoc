@@ -173,7 +173,7 @@ capy::task<void> timed_operation(corosio::io_context& ioc)
 
     // Start connect
     auto connect_task = s.connect(
-        corosio::tcp::endpoint(addr, 8080));
+        corosio::endpoint(addr, 8080));
 
     // Run for at most 5 seconds
     auto n = ioc.run_for(std::chrono::seconds(5));

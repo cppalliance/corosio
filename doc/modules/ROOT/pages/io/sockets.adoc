@@ -66,7 +66,7 @@ The `connect()` function initiates an asynchronous connection:
 
 [source,cpp]
 ----
-corosio::tcp::endpoint ep(boost::urls::ipv4_address::loopback(), 8080);
+corosio::endpoint ep(boost::urls::ipv4_address::loopback(), 8080);
 auto ec = co_await s.connect(ep);
 
 if (ec)
@@ -244,5 +244,4 @@ serialized (e.g., through the executor's strand semantics if available).
 
 == Next Steps
 
-* xref:io/acceptor.adoc[Acceptor] — Server-side connection acceptance
 * xref:concepts/buffers.adoc[Buffer Sequences] — The buffers_param interface
