@@ -48,19 +48,12 @@ do_request(
         "\r\n";
 
     // Send the request
-    std::size_t total_sent = 0;
-    while (total_sent < request.size())
+    auto [write_ec, bytes_written] = co_await corosio::write(
+        s, capy::const_buffer(request.data(), request.size()));
+    if (write_ec)
     {
-        auto [write_ec, n] = co_await s.write_some(
-            boost::capy::const_buffer(
-                request.data() + total_sent,
-                request.size() - total_sent));
-        if (write_ec)
-        {
-            std::cerr << "Write error: " << write_ec.message() << "\n";
-            co_return;
-        }
-        total_sent += n;
+        std::cerr << "Write error: " << write_ec.message() << "\n";
+        co_return;
     }
 
     // Read the entire response into a string
