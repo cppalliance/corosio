@@ -12,19 +12,12 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/range.hpp>
 
 #include <cstddef>
-#include <type_traits>
 
 namespace boost {
 namespace corosio {
-
-namespace detail {
-
-template<class Buffers>
-constexpr bool is_mutable_buffer_sequence_v = capy::mutable_buffer_sequence<Buffers>;
-
-} // detail
 
 /** Type-erased buffer sequence interface.
 
@@ -32,27 +25,20 @@ constexpr bool is_mutable_buffer_sequence_v = capy::mutable_buffer_sequence<Buff
     buffer sequences without knowing the concrete type. It is
     used to fill WSABUF arrays from arbitrary buffer sequences
     without templating the socket implementation.
-
-    @tparam IsMutable If true, provides mutable buffers (for reading).
-                      If false, provides const buffers (for writing).
 */
-template<bool IsMutable>
 class buffers_param
 {
 public:
-    using buffer_type = std::conditional_t<IsMutable,
-        capy::mutable_buffer, capy::const_buffer>;
-
     virtual ~buffers_param() = default;
 
     /** Fill an array with buffers from the sequence.
 
-        @param dest Pointer to array of buffer descriptors.
+        @param dest Pointer to array of mutable buffer descriptors.
         @param n Maximum number of buffers to copy.
 
         @return The number of buffers actually copied.
     */
-    virtual std::size_t copy_to(buffer_type* dest, std::size_t n) = 0;
+    virtual std::size_t copy_to(capy::mutable_buffer* dest, std::size_t n) = 0;
 };
 
 /** Concrete adapter for any buffer sequence.
@@ -65,13 +51,11 @@ public:
 */
 template<class Buffers>
 class buffers_param_impl final
-    : public buffers_param<detail::is_mutable_buffer_sequence_v<Buffers>>
+    : public buffers_param
 {
     Buffers const& bufs_;
 
 public:
-    using buffer_type = typename buffers_param_impl::buffers_param::buffer_type;
-
     /** Construct from a buffer sequence reference.
 
         @param b The buffer sequence to adapt.
@@ -81,11 +65,31 @@ public:
     {
     }
 
-    std::size_t copy_to(buffer_type* dest, std::size_t n) override
+    std::size_t copy_to(capy::mutable_buffer* dest, std::size_t n) override
     {
-        (void)n;
-        (void)dest;
         std::size_t i = 0;
+        if constexpr (capy::mutable_buffer_sequence<Buffers>)
+        {
+            for (auto const& buf : capy::range(bufs_))
+            {
+                if (i >= n)
+                    break;
+                dest[i] = buf;
+                ++i;
+            }
+        }
+        else
+        {
+            for (auto const& buf : capy::range(bufs_))
+            {
+                if (i >= n)
+                    break;
+                dest[i] = capy::mutable_buffer(
+                    const_cast<char*>(static_cast<char const*>(buf.data())),
+                    buf.size());
+                ++i;
+            }
+        }
         return i;
     }
 };

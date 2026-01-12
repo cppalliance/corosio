@@ -104,14 +104,14 @@ public:
     void read_some(
         std::coroutine_handle<>,
         capy::any_dispatcher,
-        buffers_param<true>&,
+        buffers_param&,
         std::stop_token,
         system::error_code*,
         std::size_t*) override;
     void write_some(
         std::coroutine_handle<>,
         capy::any_dispatcher,
-        buffers_param<false>&,
+        buffers_param&,
         std::stop_token,
         system::error_code*,
         std::size_t*) override;

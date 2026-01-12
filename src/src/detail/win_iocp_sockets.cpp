@@ -155,7 +155,7 @@ win_socket_impl::
 read_some(
     capy::coro h,
     capy::any_dispatcher d,
-    buffers_param<true>& param,
+    buffers_param& param,
     std::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_out)
@@ -216,7 +216,7 @@ win_socket_impl::
 write_some(
     capy::coro h,
     capy::any_dispatcher d,
-    buffers_param<false>& param,
+    buffers_param& param,
     std::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_out)
@@ -229,14 +229,13 @@ write_some(
     op.bytes_out = bytes_out;
     op.start(token);
 
-    capy::const_buffer bufs[write_op::max_buffers];
+    capy::mutable_buffer bufs[write_op::max_buffers];
     op.wsabuf_count = static_cast<DWORD>(
         param.copy_to(bufs, write_op::max_buffers));
 
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
     {
-        op.wsabufs[i].buf = const_cast<char*>(
-            static_cast<char const*>(bufs[i].data()));
+        op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
