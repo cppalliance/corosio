@@ -47,6 +47,8 @@ struct read_op : overlapped_op
     WSABUF wsabufs[max_buffers];
     DWORD wsabuf_count = 0;
     DWORD flags = 0;
+
+    bool is_read_operation() const noexcept override { return true; }
 };
 
 /** Write operation state with buffer descriptors. */

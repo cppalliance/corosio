@@ -81,6 +81,11 @@ struct overlapped_op
             else if (error != 0)
                 *ec_out = system::error_code(
                     static_cast<int>(error), system::system_category());
+            else if (is_read_operation() && bytes_transferred == 0)
+            {
+                // EOF: 0 bytes transferred with no error indicates end of stream
+                *ec_out = make_error_code(system::errc::broken_pipe);
+            }
         }
 
         if (bytes_out)
@@ -88,6 +93,9 @@ struct overlapped_op
 
         d(h).resume();
     }
+
+    // Returns true if this is a read operation (for EOF detection)
+    virtual bool is_read_operation() const noexcept { return false; }
 
     void destroy() override
     {

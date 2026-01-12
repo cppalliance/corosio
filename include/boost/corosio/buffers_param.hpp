@@ -12,7 +12,6 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/range.hpp>
 
 #include <cstddef>
 
@@ -68,26 +67,24 @@ public:
     std::size_t copy_to(capy::mutable_buffer* dest, std::size_t n) override
     {
         std::size_t i = 0;
+        auto it = capy::begin(bufs_);
+        auto end_it = capy::end(bufs_);
+        
         if constexpr (capy::mutable_buffer_sequence<Buffers>)
         {
-            for (auto const& buf : capy::range(bufs_))
+            for (; it != end_it && i < n; ++it, ++i)
             {
-                if (i >= n)
-                    break;
-                dest[i] = buf;
-                ++i;
+                dest[i] = *it;
             }
         }
         else
         {
-            for (auto const& buf : capy::range(bufs_))
+            for (; it != end_it && i < n; ++it, ++i)
             {
-                if (i >= n)
-                    break;
+                auto const& buf = *it;
                 dest[i] = capy::mutable_buffer(
                     const_cast<char*>(static_cast<char const*>(buf.data())),
                     buf.size());
-                ++i;
             }
         }
         return i;
