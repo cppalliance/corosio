@@ -101,6 +101,9 @@ public:
         using pointer = value_type*;
         using reference = value_type;
 
+        // Default constructor required for forward_iterator
+        const_iterator() noexcept = default;
+
         const_iterator(
             iterator_type it,
             end_iterator_type end,
@@ -114,6 +117,12 @@ public:
         bool operator==(const_iterator const& other) const noexcept
         {
             return it_ == other.it_ && consumed_ == other.consumed_;
+        }
+
+        // != operator required for equality_comparable
+        bool operator!=(const_iterator const& other) const noexcept
+        {
+            return !(*this == other);
         }
 
         value_type operator*() const noexcept

@@ -13,6 +13,9 @@
 #include <boost/capy/buffers.hpp>
 
 #include <array>
+#include <concepts>
+#include <iterator>
+#include <ranges>
 
 #include "test_suite.hpp"
 
@@ -38,10 +41,10 @@ struct consuming_buffers_test
 
         consuming_buffers<decltype(bufs)> cb(bufs);
 
-        // TODO: Fix range concept - static assert that consuming_buffers models mutable_buffer_sequence
-        // static_assert(
-        //     capy::mutable_buffer_sequence<consuming_buffers<decltype(bufs)>>,
-        //     "consuming_buffers must model mutable_buffer_sequence");
+        // Verify consuming_buffers models mutable_buffer_sequence
+        static_assert(
+            capy::mutable_buffer_sequence<consuming_buffers<decltype(bufs)>>,
+            "consuming_buffers must model mutable_buffer_sequence");
 
         // Verify it can be used with buffer_size
         std::size_t const size = capy::buffer_size(cb);
@@ -56,13 +59,66 @@ struct consuming_buffers_test
 
         consuming_buffers<capy::mutable_buffer> cb(mbuf);
 
-        // TODO: Fix range concept - static assert for single buffer
-        // static_assert(
-        //     capy::mutable_buffer_sequence<consuming_buffers<capy::mutable_buffer>>,
-        //     "consuming_buffers must model mutable_buffer_sequence for single buffer");
+        // Verify consuming_buffers models mutable_buffer_sequence for single buffer
+        static_assert(
+            capy::mutable_buffer_sequence<consuming_buffers<capy::mutable_buffer>>,
+            "consuming_buffers must model mutable_buffer_sequence for single buffer");
 
         std::size_t const size = capy::buffer_size(cb);
         BOOST_TEST_EQ(size, sizeof(buf));
+    }
+
+    void
+    testRangeConcepts()
+    {
+        char buf1[100];
+        char buf2[200];
+        std::array<capy::mutable_buffer, 2> bufs = {
+            capy::mutable_buffer(buf1, sizeof(buf1)),
+            capy::mutable_buffer(buf2, sizeof(buf2))
+        };
+
+        using cb_type = consuming_buffers<decltype(bufs)>;
+
+        // Most general to most specific - Range Concepts
+        static_assert(std::ranges::range<cb_type>,
+            "consuming_buffers must satisfy std::ranges::range");
+        static_assert(std::ranges::input_range<cb_type>,
+            "consuming_buffers must satisfy std::ranges::input_range");
+        static_assert(std::ranges::forward_range<cb_type>,
+            "consuming_buffers must satisfy std::ranges::forward_range");
+        static_assert(std::ranges::bidirectional_range<cb_type>,
+            "consuming_buffers must satisfy std::ranges::bidirectional_range");
+
+        // Most general to most specific - Iterator Concepts
+        using iter_t = std::ranges::iterator_t<cb_type>;
+        static_assert(std::input_iterator<iter_t>,
+            "consuming_buffers iterator must satisfy std::input_iterator");
+        static_assert(std::forward_iterator<iter_t>,
+            "consuming_buffers iterator must satisfy std::forward_iterator");
+        static_assert(std::bidirectional_iterator<iter_t>,
+            "consuming_buffers iterator must satisfy std::bidirectional_iterator");
+
+        // Iterator traits check
+        using traits = std::iterator_traits<iter_t>;
+        static_assert(std::same_as<typename traits::iterator_category, std::bidirectional_iterator_tag>,
+            "Iterator category must be bidirectional_iterator_tag");
+
+        // Range value type check
+        static_assert(std::is_convertible_v<std::ranges::range_value_t<cb_type>, capy::mutable_buffer>,
+            "Range value type must be convertible to mutable_buffer");
+
+        // Verify std::ranges::begin and std::ranges::end work
+        {
+            cb_type cb(bufs);
+            auto it1 = std::ranges::begin(cb);
+            auto it2 = std::ranges::end(cb);
+            BOOST_TEST(it1 != it2);
+        }
+
+        // Final check - Buffer Sequence Concept
+        static_assert(capy::mutable_buffer_sequence<cb_type>,
+            "consuming_buffers must model mutable_buffer_sequence");
     }
 
     void
@@ -70,6 +126,7 @@ struct consuming_buffers_test
     {
         testBufferSequenceConcept();
         testSingleBuffer();
+        testRangeConcepts();
     }
 };
 

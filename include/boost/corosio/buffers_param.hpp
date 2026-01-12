@@ -11,7 +11,6 @@
 #define BOOST_COROSIO_BUFFERS_PARAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/consuming_buffers.hpp>
 #include <boost/capy/buffers.hpp>
 
 #include <cstddef>
@@ -96,33 +95,6 @@ public:
 // Deduction guide for CTAD
 template<class Buffers>
 buffers_param_impl(Buffers const&) -> buffers_param_impl<Buffers>;
-
-// Specialization for consuming_buffers to avoid capy::begin/end issues
-template<capy::mutable_buffer_sequence MutableBufferSequence>
-class buffers_param_impl<consuming_buffers<MutableBufferSequence>> final
-    : public buffers_param
-{
-    consuming_buffers<MutableBufferSequence> const& bufs_;
-
-public:
-    explicit buffers_param_impl(consuming_buffers<MutableBufferSequence> const& b) noexcept
-        : bufs_(b)
-    {
-    }
-
-    std::size_t copy_to(capy::mutable_buffer* dest, std::size_t n) override
-    {
-        std::size_t i = 0;
-        auto it = bufs_.begin();
-        auto end_it = bufs_.end();
-        
-        for (; it != end_it && i < n; ++it, ++i)
-        {
-            dest[i] = *it;
-        }
-        return i;
-    }
-};
 
 } // namespace corosio
 } // namespace boost
