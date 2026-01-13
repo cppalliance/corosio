@@ -21,21 +21,46 @@
 namespace boost {
 namespace corosio {
 
+namespace detail {
+
+template<class T>
+struct buffer_type_for;
+
+template<capy::mutable_buffer_sequence T>
+struct buffer_type_for<T>
+{
+    using type = capy::mutable_buffer;
+};
+
+template<capy::const_buffer_sequence T>
+    requires (!capy::mutable_buffer_sequence<T>)
+struct buffer_type_for<T>
+{
+    using type = capy::const_buffer;
+};
+
+} // namespace detail
+
 /** Wrapper for consuming a buffer sequence incrementally.
 
-    This class wraps a mutable buffer sequence and tracks the
-    current read position. It provides a `consume(n)` function
-    that advances through the sequence as bytes are read.
+    This class wraps a buffer sequence and tracks the current
+    position. It provides a `consume(n)` function that advances
+    through the sequence as bytes are processed.
 
-    @tparam MutableBufferSequence The buffer sequence type.
+    Works with both mutable and const buffer sequences.
+
+    @tparam BufferSequence The buffer sequence type.
 */
-template<capy::mutable_buffer_sequence MutableBufferSequence>
+template<class BufferSequence>
+    requires capy::mutable_buffer_sequence<BufferSequence> ||
+             capy::const_buffer_sequence<BufferSequence>
 class consuming_buffers
 {
-    using iterator_type = decltype(capy::begin(std::declval<MutableBufferSequence const&>()));
-    using end_iterator_type = decltype(capy::end(std::declval<MutableBufferSequence const&>()));
+    using iterator_type = decltype(capy::begin(std::declval<BufferSequence const&>()));
+    using end_iterator_type = decltype(capy::end(std::declval<BufferSequence const&>()));
+    using buffer_type = typename detail::buffer_type_for<BufferSequence>::type;
 
-    MutableBufferSequence const& bufs_;
+    BufferSequence const& bufs_;
     iterator_type it_;
     end_iterator_type end_;
     std::size_t consumed_ = 0;  // Bytes consumed in current buffer
@@ -45,7 +70,7 @@ public:
 
         @param bufs The buffer sequence to wrap.
     */
-    explicit consuming_buffers(MutableBufferSequence const& bufs) noexcept
+    explicit consuming_buffers(BufferSequence const& bufs) noexcept
         : bufs_(bufs)
         , it_(capy::begin(bufs))
         , end_(capy::end(bufs))
@@ -96,7 +121,7 @@ public:
 
     public:
         using iterator_category = std::bidirectional_iterator_tag;
-        using value_type = capy::mutable_buffer;
+        using value_type = buffer_type;
         using difference_type = std::ptrdiff_t;
         using pointer = value_type*;
         using reference = value_type;
@@ -128,9 +153,18 @@ public:
         value_type operator*() const noexcept
         {
             auto const& buf = *it_;
-            return capy::mutable_buffer(
-                static_cast<char*>(buf.data()) + consumed_,
-                buf.size() - consumed_);
+            if constexpr (std::is_same_v<buffer_type, capy::mutable_buffer>)
+            {
+                return buffer_type(
+                    static_cast<char*>(buf.data()) + consumed_,
+                    buf.size() - consumed_);
+            }
+            else
+            {
+                return buffer_type(
+                    static_cast<char const*>(buf.data()) + consumed_,
+                    buf.size() - consumed_);
+            }
         }
 
         const_iterator& operator++() noexcept
@@ -196,14 +230,18 @@ public:
 };
 
 // ADL helpers for capy::begin and capy::end
-template<capy::mutable_buffer_sequence MutableBufferSequence>
-auto begin(consuming_buffers<MutableBufferSequence> const& cb) noexcept
+template<class BufferSequence>
+    requires capy::mutable_buffer_sequence<BufferSequence> ||
+             capy::const_buffer_sequence<BufferSequence>
+auto begin(consuming_buffers<BufferSequence> const& cb) noexcept
 {
     return cb.begin();
 }
 
-template<capy::mutable_buffer_sequence MutableBufferSequence>
-auto end(consuming_buffers<MutableBufferSequence> const& cb) noexcept
+template<class BufferSequence>
+    requires capy::mutable_buffer_sequence<BufferSequence> ||
+             capy::const_buffer_sequence<BufferSequence>
+auto end(consuming_buffers<BufferSequence> const& cb) noexcept
 {
     return cb.end();
 }
