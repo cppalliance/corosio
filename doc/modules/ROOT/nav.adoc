@@ -3,7 +3,6 @@
 * I/O
 ** xref:io/io_context.adoc[I/O Context]
 ** xref:io/sockets.adoc[Sockets]
-** xref:io/tls-stream.adoc[TLS Stream]
 * Concepts
 ** xref:concepts/affine-awaitables.adoc[Affine Awaitables]
 ** xref:concepts/buffers.adoc[Buffer Sequences]

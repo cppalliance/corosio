@@ -41,6 +41,7 @@ public:
     };
 
 protected:
+    virtual ~io_object() = default;
     io_object() = default;
     
     io_object_impl* impl_ = nullptr;
