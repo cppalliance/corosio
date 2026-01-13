@@ -54,7 +54,8 @@ capy::task<void>
 run_client(
     corosio::io_context& ioc,
     boost::urls::ipv4_address addr,
-    std::uint16_t port)
+    std::uint16_t port,
+    std::string_view hostname)
 {
     corosio::socket s(ioc);
     s.open();
@@ -65,20 +66,26 @@ run_client(
     // Wrap socket in TLS stream
     corosio::wolfssl_stream secure(s);
 
-    co_await do_request(secure, addr.to_string());
+    // Perform TLS handshake
+    (co_await secure.handshake(corosio::wolfssl_stream::client)).value();
+
+    co_await do_request(secure, hostname);
 }
 
 int
 main(int argc, char* argv[])
 {
-    if (argc != 3)
+    if (argc < 3 || argc > 4)
     {
         std::cerr <<
-            "Usage: https_client <ip-address> <port>\n"
+            "Usage: https_client <ip-address> <port> [hostname]\n"
             "Example:\n"
-            "    https_client 35.190.118.110 443\n";
+            "    https_client 35.190.118.110 443 www.boost.org\n";
         return EXIT_FAILURE;
     }
+
+    // Optional hostname for SNI and Host header (defaults to IP if not provided)
+    std::string hostname = (argc == 4) ? argv[3] : argv[1];
 
     // Parse IP address
     auto addr_result = boost::urls::parse_ipv4_address(argv[1]);
@@ -98,10 +105,23 @@ main(int argc, char* argv[])
     auto port = static_cast<std::uint16_t>(port_int);
 
     // Create I/O context and run
-    corosio::io_context ioc;
-    capy::async_run(ioc.get_executor())(
-        run_client(ioc, *addr_result, port));
-    ioc.run();
+    try
+    {
+        corosio::io_context ioc;
+        capy::async_run(ioc.get_executor())(
+            run_client(ioc, *addr_result, port, hostname));
+        ioc.run();
+    }
+    catch(boost::system::system_error const& e)
+    {
+        std::cerr << "Error: " << e.what() << "\n";
+        return EXIT_FAILURE;
+    }
+    catch(std::exception const& e)
+    {
+        std::cerr << "Error: " << e.what() << "\n";
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }
