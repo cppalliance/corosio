@@ -284,6 +284,7 @@ public:
     };
     
 private:
+    friend class acceptor;
 
     inline socket_impl& get() const noexcept
     {

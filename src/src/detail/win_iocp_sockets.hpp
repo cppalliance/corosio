@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_DETAIL_WIN_IOCP_SOCKETS_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/socket.hpp>
 #include <boost/capy/any_dispatcher.hpp>
 #include <boost/capy/concept/affine_awaitable.hpp>
@@ -32,6 +33,7 @@ namespace detail {
 class win_iocp_scheduler;
 class win_iocp_sockets;
 class win_socket_impl;
+class win_acceptor_impl;
 
 //------------------------------------------------------------------------------
 
@@ -64,16 +66,12 @@ struct accept_op : overlapped_op
 {
     SOCKET accepted_socket = INVALID_SOCKET;
     win_socket_impl* peer_impl = nullptr;  // New impl for accepted socket
-    void* peer_socket = nullptr;  // Pointer to peer socket object
-    void* sockets_svc = nullptr;  // Pointer to win_iocp_sockets service
     SOCKET listen_socket = INVALID_SOCKET;  // For SO_UPDATE_ACCEPT_CONTEXT
+    io_object::io_object_impl** impl_out = nullptr;  // Output: impl for awaitable
     // Buffer for AcceptEx: local + remote addresses
     char addr_buf[2 * (sizeof(sockaddr_in6) + 16)];
 
-    // Transfer callback - set by acceptor
-    void (*transfer_fn)(void* peer, void* svc, win_socket_impl* impl, SOCKET sock) = nullptr;
-
-    /** Resume the coroutine, transferring the accepted socket. */
+    /** Resume the coroutine after accept completes. */
     void operator()() override;
 };
 
@@ -127,6 +125,43 @@ public:
     connect_op conn_;
     read_op rd_;
     write_op wr_;
+
+private:
+    win_iocp_sockets& svc_;
+    SOCKET socket_ = INVALID_SOCKET;
+};
+
+//------------------------------------------------------------------------------
+
+/** Acceptor implementation for IOCP-based I/O.
+
+    This class contains the state for a listening socket, including
+    the native socket handle and pending accept operation.
+
+    @note Internal implementation detail. Users interact with acceptor class.
+*/
+class win_acceptor_impl
+    : public acceptor::acceptor_impl
+    , public capy::intrusive_list<win_acceptor_impl>::node
+{
+    friend class win_iocp_sockets;
+
+public:
+    explicit win_acceptor_impl(win_iocp_sockets& svc) noexcept;
+
+    void release() override;
+    void accept(
+        std::coroutine_handle<>,
+        capy::any_dispatcher,
+        std::stop_token,
+        system::error_code*,
+        io_object::io_object_impl**) override;
+
+    SOCKET native_handle() const noexcept { return socket_; }
+    bool is_open() const noexcept { return socket_ != INVALID_SOCKET; }
+    void cancel() noexcept;
+    void close_socket() noexcept;
+
     accept_op acc_;
 
 private:
@@ -189,6 +224,24 @@ public:
     */
     system::error_code open_socket(win_socket_impl& impl);
 
+    /** Create a new acceptor implementation. */
+    win_acceptor_impl& create_acceptor_impl();
+
+    /** Destroy an acceptor implementation. */
+    void destroy_acceptor_impl(win_acceptor_impl& impl);
+
+    /** Create, bind, and listen on an acceptor socket.
+
+        @param impl The acceptor implementation to initialize.
+        @param ep The local endpoint to bind to.
+        @param backlog The listen backlog.
+        @return Error code, or success.
+    */
+    system::error_code open_acceptor(
+        win_acceptor_impl& impl,
+        endpoint ep,
+        int backlog);
+
     /** Return the IOCP handle. */
     void* native_handle() const noexcept { return iocp_; }
 
@@ -212,7 +265,8 @@ private:
 
     win_iocp_scheduler& sched_;
     win_mutex mutex_;
-    capy::intrusive_list<win_socket_impl> list_;
+    capy::intrusive_list<win_socket_impl> socket_list_;
+    capy::intrusive_list<win_acceptor_impl> acceptor_list_;
     void* iocp_;
     LPFN_CONNECTEX connect_ex_ = nullptr;
     LPFN_ACCEPTEX accept_ex_ = nullptr;
