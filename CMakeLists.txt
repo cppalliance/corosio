@@ -163,6 +163,29 @@ boost_corosio_setup_properties(boost_corosio)
 
 #-------------------------------------------------
 #
+# WolfSSL
+#
+#-------------------------------------------------
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+find_package(WolfSSL)
+if (WolfSSL_FOUND)
+    file(GLOB_RECURSE BOOST_COROSIO_WOLFSSL_HEADERS CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/wolfssl/*.hpp")
+    file(GLOB_RECURSE BOOST_COROSIO_WOLFSSL_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/wolfssl/src/*.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/wolfssl/src/*.cpp")
+    source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/wolfssl" PREFIX "include" FILES ${BOOST_COROSIO_WOLFSSL_HEADERS})
+    source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/wolfssl/src" PREFIX "src" FILES ${BOOST_COROSIO_WOLFSSL_SOURCES})
+    add_library(boost_corosio_wolfssl ${BOOST_COROSIO_WOLFSSL_HEADERS} ${BOOST_COROSIO_WOLFSSL_SOURCES})
+    add_library(Boost::corosio_wolfssl ALIAS boost_corosio_wolfssl)
+    boost_corosio_setup_properties(boost_corosio_wolfssl)
+    target_link_libraries(boost_corosio_wolfssl PUBLIC boost_corosio)
+    target_link_libraries(boost_corosio_wolfssl PRIVATE WolfSSL::WolfSSL)
+    target_compile_definitions(boost_corosio_wolfssl PUBLIC BOOST_COROSIO_HAS_WOLFSSL)
+endif ()
+
+#-------------------------------------------------
+#
 # Tests
 #
 #-------------------------------------------------

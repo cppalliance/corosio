@@ -7,6 +7,7 @@
 # Official repository: https://github.com/cppalliance/corosio
 #
 
+import ac ;
 import config : requires ;
 
 constant c20-requires :
@@ -49,4 +50,19 @@ lib boost_corosio
     <include>$(COROSIO_ROOT)/include
   ;
 
-boost-install boost_corosio ;
+# WolfSSL
+using wolfssl ;
+
+alias corosio_wolfssl_sources : [ glob-tree-ex $(COROSIO_ROOT)/src/wolfssl/src : *.cpp ] ;
+
+lib boost_corosio_wolfssl
+  : corosio_wolfssl_sources
+  : requirements
+    <library>/boost/corosio//boost_corosio
+    [ ac.check-library /wolfssl//wolfssl : <library>/wolfssl//wolfssl : <build>no ]
+  : usage-requirements
+    <library>/boost/corosio//boost_corosio
+    <define>BOOST_COROSIO_HAS_WOLFSSL
+  ;
+
+boost-install boost_corosio boost_corosio_wolfssl ;
