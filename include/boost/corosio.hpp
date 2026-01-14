@@ -17,5 +17,7 @@
 #include <boost/corosio/consuming_buffers.hpp>
 #include <boost/corosio/read.hpp>
 #include <boost/corosio/write.hpp>
+#include <boost/corosio/resolver.hpp>
+#include <boost/corosio/resolver_results.hpp>
 
 #endif

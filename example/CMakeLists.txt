@@ -9,6 +9,7 @@
 
 add_subdirectory(client)
 add_subdirectory(echo-server)
+add_subdirectory(nslookup)
 
 if(WolfSSL_FOUND)
     add_subdirectory(https-client)
