@@ -75,6 +75,18 @@ operator()()
     d(h).resume();
 }
 
+void
+accept_op::
+do_cancel() noexcept
+{
+    if (listen_socket != INVALID_SOCKET)
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(listen_socket),
+            this);
+    }
+}
+
 win_socket_impl::
 win_socket_impl(win_iocp_sockets& svc) noexcept
     : svc_(svc)

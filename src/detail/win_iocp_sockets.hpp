@@ -73,6 +73,9 @@ struct accept_op : overlapped_op
 
     /** Resume the coroutine after accept completes. */
     void operator()() override;
+
+    /** Cancel the pending accept via CancelIoEx. */
+    void do_cancel() noexcept override;
 };
 
 //------------------------------------------------------------------------------
