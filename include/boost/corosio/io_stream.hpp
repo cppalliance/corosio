@@ -43,8 +43,10 @@ public:
         @return An awaitable that completes with a pair of
             `{error_code, bytes_transferred}`. Returns success with the
             number of bytes read, or an error code on failure including:
-            - capy::error::eof: End of stream reached
-            - operation_canceled: Cancelled via stop_token or cancel()
+            - capy::error::eof: End of stream reached.
+                Check `ec == cond::eof` for portable comparison.
+            - operation_canceled: Cancelled via stop_token or cancel().
+                Check `ec == cond::canceled` for portable comparison.
 
         @par Preconditions
         The socket must be open and connected.
@@ -75,7 +77,8 @@ public:
             `{error_code, bytes_transferred}`. Returns success with the
             number of bytes written, or an error code on failure including:
             - broken_pipe: Connection closed by peer
-            - operation_canceled: Cancelled via stop_token or cancel()
+            - operation_canceled: Cancelled via stop_token or cancel().
+                Check `ec == cond::canceled` for portable comparison.
 
         @par Preconditions
         The socket must be open and connected.

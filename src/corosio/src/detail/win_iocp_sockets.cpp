@@ -75,9 +75,60 @@ operator()()
     d(h).resume();
 }
 
+void
+accept_op::
+do_cancel() noexcept
+{
+    if (listen_socket != INVALID_SOCKET)
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(listen_socket),
+            this);
+    }
+}
+
+void
+read_op::
+do_cancel() noexcept
+{
+    if (impl.is_open())
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(impl.native_handle()),
+            this);
+    }
+}
+
+void
+write_op::
+do_cancel() noexcept
+{
+    if (impl.is_open())
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(impl.native_handle()),
+            this);
+    }
+}
+
+void
+connect_op::
+do_cancel() noexcept
+{
+    if (impl.is_open())
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(impl.native_handle()),
+            this);
+    }
+}
+
 win_socket_impl::
 win_socket_impl(win_iocp_sockets& svc) noexcept
     : svc_(svc)
+    , conn_(*this)
+    , rd_(*this)
+    , wr_(*this)
 {
 }
 

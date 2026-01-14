@@ -1,5 +1,6 @@
-/build-*/
-/bin64/
-.cache/
-/output/
-/.temp
+/.vscode/
+/build/
+!/build/Jamfile
+!/build/wolfssl.jam
+/out/
+CMakeUserPresets.json

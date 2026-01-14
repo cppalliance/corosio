@@ -36,7 +36,11 @@ struct overlapped_op
     struct canceller
     {
         overlapped_op* op;
-        void operator()() const noexcept { op->request_cancel(); }
+        void operator()() const noexcept
+        {
+            op->request_cancel();
+            op->do_cancel();
+        }
     };
 
     capy::any_coro h;
@@ -106,6 +110,11 @@ struct overlapped_op
     void request_cancel() noexcept
     {
         cancelled.store(true, std::memory_order_release);
+    }
+
+    /** Hook for derived classes to perform actual I/O cancellation. */
+    virtual void do_cancel() noexcept
+    {
     }
 
     void start(std::stop_token token)

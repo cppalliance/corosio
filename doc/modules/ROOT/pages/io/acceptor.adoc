@@ -115,7 +115,7 @@ capy::task<void> accept_loop(corosio::io_context& ioc)
 
         if (ec)
         {
-            if (ec == boost::system::errc::operation_canceled)
+            if (ec == capy::cond::canceled)
                 break;  // Acceptor was closed
             std::cerr << "Accept error: " << ec.message() << "\n";
             continue;
