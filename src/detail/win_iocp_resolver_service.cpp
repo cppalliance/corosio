@@ -9,9 +9,9 @@
 
 #ifdef _WIN32
 
-#include "src/detail/win_iocp_resolver_service.hpp"
-#include "src/detail/win_iocp_scheduler.hpp"
-#include "src/detail/endpoint_convert.hpp"
+#include "detail/win_iocp_resolver_service.hpp"
+#include "detail/win_iocp_scheduler.hpp"
+#include "detail/endpoint_convert.hpp"
 
 #include <boost/url/ipv4_address.hpp>
 #include <boost/url/ipv6_address.hpp>

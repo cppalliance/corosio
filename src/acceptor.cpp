@@ -10,7 +10,9 @@
 #include <boost/corosio/acceptor.hpp>
 
 #ifdef _WIN32
-#include "src/detail/win_iocp_sockets.hpp"
+#include "detail/win_iocp_sockets.hpp"
+#else
+#include "detail/posix_sockets.hpp"
 #endif
 
 #include <boost/corosio/detail/except.hpp>
@@ -25,7 +27,8 @@ namespace {
 using acceptor_service = detail::win_iocp_sockets;
 using acceptor_impl_type = detail::win_acceptor_impl;
 #else
-#error "Unsupported platform"
+using acceptor_service = detail::posix_sockets;
+using acceptor_impl_type = detail::posix_acceptor_impl;
 #endif
 
 } // namespace

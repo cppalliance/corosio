@@ -16,13 +16,13 @@
 #include <boost/capy/core/intrusive_queue.hpp>
 #include <boost/system/error_code.hpp>
 
-#include "src/detail/win_mutex.hpp"
+#include "detail/win_mutex.hpp"
 
 #include <chrono>
 #include <cstdint>
 #include <thread>
 
-#include "src/detail/windows.hpp"
+#include "detail/windows.hpp"
 
 namespace boost {
 namespace corosio {

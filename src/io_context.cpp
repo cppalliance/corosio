@@ -10,9 +10,9 @@
 #include <boost/corosio/io_context.hpp>
 
 #ifdef _WIN32
-#include "src/detail/win_iocp_scheduler.hpp"
+#include "detail/win_iocp_scheduler.hpp"
 #else
-#include "src/detail/posix_scheduler.hpp"
+#include "detail/posix_scheduler.hpp"
 #endif
 
 #include <thread>

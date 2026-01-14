@@ -9,7 +9,7 @@
 
 #ifdef _WIN32
 
-#include "src/detail/win_wsa_init.hpp"
+#include "detail/win_wsa_init.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 

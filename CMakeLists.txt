@@ -130,12 +130,12 @@ file(GLOB_RECURSE BOOST_COROSIO_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio.hpp")
 file(GLOB_RECURSE BOOST_COROSIO_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/src/*.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/src/*.cpp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 source_group("" FILES "include/boost/corosio.hpp")
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio" PREFIX "include" FILES ${BOOST_COROSIO_HEADERS})
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/src" PREFIX "src" FILES ${BOOST_COROSIO_SOURCES})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "src" FILES ${BOOST_COROSIO_SOURCES})
 
 function(boost_corosio_setup_properties target)
     target_compile_features(${target} PUBLIC cxx_std_20)

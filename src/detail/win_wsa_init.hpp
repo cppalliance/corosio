@@ -12,7 +12,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 
-#include "src/detail/windows.hpp"
+#include "detail/windows.hpp"
 
 namespace boost {
 namespace corosio {

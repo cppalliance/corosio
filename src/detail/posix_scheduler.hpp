@@ -17,8 +17,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
 
 namespace boost {
@@ -27,12 +27,18 @@ namespace detail {
 
 using op_queue = capy::intrusive_queue<capy::execution_context::handler>;
 
-/** POSIX scheduler using condition variables.
+// Forward declaration
+struct posix_op;
 
-    This scheduler implements the scheduler interface using standard
-    C++ threading primitives (std::mutex, std::condition_variable).
-    It manages a queue of handlers and provides blocking/non-blocking
-    execution methods.
+/** POSIX scheduler using epoll for I/O multiplexing.
+
+    This scheduler implements the scheduler interface using Linux epoll
+    for efficient I/O event notification. It manages a queue of handlers
+    and provides blocking/non-blocking execution methods.
+
+    The scheduler uses an eventfd to wake up epoll_wait when non-I/O
+    handlers are posted, enabling efficient integration of both
+    I/O completions and posted handlers.
 
     @par Thread Safety
     All public member functions are thread-safe.
@@ -45,6 +51,8 @@ public:
     using key_type = scheduler;
 
     /** Construct the scheduler.
+
+        Creates an epoll instance and eventfd for event notification.
 
         @param ctx Reference to the owning execution_context.
         @param concurrency_hint Hint for expected thread count (unused).
@@ -73,11 +81,50 @@ public:
     std::size_t poll() override;
     std::size_t poll_one() override;
 
+    /** Return the epoll file descriptor.
+
+        Used by socket services to register file descriptors
+        for I/O event notification.
+
+        @return The epoll file descriptor.
+    */
+    int epoll_fd() const noexcept { return epoll_fd_; }
+
+    /** Register a file descriptor with epoll.
+
+        @param fd The file descriptor to register.
+        @param op The operation associated with this fd.
+        @param events The epoll events to monitor (EPOLLIN, EPOLLOUT, etc.).
+    */
+    void register_fd(int fd, posix_op* op, std::uint32_t events) const;
+
+    /** Modify epoll registration for a file descriptor.
+
+        @param fd The file descriptor to modify.
+        @param op The operation associated with this fd.
+        @param events The new epoll events to monitor.
+    */
+    void modify_fd(int fd, posix_op* op, std::uint32_t events) const;
+
+    /** Unregister a file descriptor from epoll.
+
+        @param fd The file descriptor to unregister.
+    */
+    void unregister_fd(int fd) const;
+
+    /** For use by I/O operations to track pending work. */
+    void work_started() const noexcept;
+
+    /** For use by I/O operations to track completed work. */
+    void work_finished() const noexcept;
+
 private:
     std::size_t do_one(long timeout_us);
+    void wakeup() const;
 
+    int epoll_fd_;                              // epoll instance
+    int event_fd_;                              // for waking epoll_wait
     mutable std::mutex mutex_;
-    mutable std::condition_variable wakeup_;
     mutable op_queue completed_ops_;
     mutable std::atomic<long> outstanding_work_;
     std::atomic<bool> stopped_;

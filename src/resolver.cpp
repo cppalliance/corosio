@@ -10,7 +10,9 @@
 #include <boost/corosio/resolver.hpp>
 
 #ifdef _WIN32
-#include "src/detail/win_iocp_resolver_service.hpp"
+#include "detail/win_iocp_resolver_service.hpp"
+#else
+#include "detail/posix_resolver_service.hpp"
 #endif
 
 namespace boost {
@@ -21,7 +23,8 @@ namespace {
 using resolver_service = detail::win_iocp_resolver_service;
 using resolver_impl_type = detail::win_resolver_impl;
 #else
-#error "Unsupported platform"
+using resolver_service = detail::posix_resolver_service;
+using resolver_impl_type = detail::posix_resolver_impl;
 #endif
 
 } // namespace

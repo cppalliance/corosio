@@ -267,17 +267,6 @@ public:
     BOOST_COROSIO_DECL
     void cancel();
 
-    /** Return the execution context.
-
-        @return Reference to the execution context that owns this acceptor.
-    */
-    auto
-    context() const noexcept ->
-        capy::execution_context&
-    {
-        return *ctx_;
-    }
-
     struct acceptor_impl : io_object_impl
     {
         virtual void accept(
@@ -294,8 +283,6 @@ private:
     {
         return *static_cast<acceptor_impl*>(impl_);
     }
-
-    capy::execution_context* ctx_;
 };
 
 } // namespace corosio
