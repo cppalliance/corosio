@@ -168,7 +168,7 @@ void
 win_iocp_scheduler::
 post(capy::any_coro h) const
 {
-    struct post_handler
+    struct post_handler final
         : capy::execution_context::handler
     {
         capy::any_coro h_;
@@ -179,6 +179,8 @@ post(capy::any_coro h) const
             : h_(h)
         {
         }
+
+        ~post_handler() = default;
 
         void operator()() override
         {

@@ -132,6 +132,9 @@ file(GLOB_RECURSE BOOST_COROSIO_HEADERS CONFIGURE_DEPENDS
 file(GLOB_RECURSE BOOST_COROSIO_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+# Exclude wolfssl files from main library (they are added separately when WolfSSL is found)
+list(FILTER BOOST_COROSIO_HEADERS EXCLUDE REGEX ".*/wolfssl/.*")
+list(FILTER BOOST_COROSIO_SOURCES EXCLUDE REGEX ".*/wolfssl/.*")
 
 source_group("" FILES "include/boost/corosio.hpp")
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio" PREFIX "include" FILES ${BOOST_COROSIO_HEADERS})
@@ -147,6 +150,7 @@ function(boost_corosio_setup_properties target)
             $<$<PLATFORM_ID:Windows>:ws2_32>)
     target_compile_definitions(${target} PUBLIC BOOST_COROSIO_NO_LIB)
     target_compile_definitions(${target} PRIVATE BOOST_COROSIO_SOURCE)
+    target_compile_definitions(${target} PRIVATE $<$<PLATFORM_ID:Windows>:_WIN32_WINNT=0x0602>)
     if (BUILD_SHARED_LIBS)
         target_compile_definitions(${target} PUBLIC BOOST_COROSIO_DYN_LINK)
     else ()
@@ -156,6 +160,21 @@ function(boost_corosio_setup_properties target)
         PRIVATE
             $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
 endfunction()
+
+#-------------------------------------------------
+#
+# MrDocs Build (minimal for documentation)
+#
+#-------------------------------------------------
+if (BOOST_COROSIO_MRDOCS_BUILD)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp"
+        "#include <boost/corosio.hpp>\n")
+    add_library(boost_corosio_mrdocs "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp")
+    boost_corosio_setup_properties(boost_corosio_mrdocs)
+    target_compile_definitions(boost_corosio_mrdocs PUBLIC BOOST_COROSIO_MRDOCS)
+    set_target_properties(boost_corosio_mrdocs PROPERTIES EXPORT_COMPILE_COMMANDS ON)
+    return()
+endif()
 
 add_library(boost_corosio ${BOOST_COROSIO_HEADERS} ${BOOST_COROSIO_SOURCES})
 add_library(Boost::corosio ALIAS boost_corosio)

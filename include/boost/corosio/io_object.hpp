@@ -31,7 +31,7 @@ namespace corosio {
         The implementation pointer is accessible to derived classes
         through the protected member `impl_`.
 */
-class io_object
+class BOOST_COROSIO_DECL io_object
 {
 public:
     struct io_object_impl

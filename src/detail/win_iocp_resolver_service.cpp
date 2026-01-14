@@ -16,6 +16,13 @@
 #include <boost/url/ipv4_address.hpp>
 #include <boost/url/ipv6_address.hpp>
 
+// MinGW may not have GetAddrInfoExCancel declared
+#if defined(__MINGW32__) || defined(__MINGW64__)
+extern "C" {
+INT WSAAPI GetAddrInfoExCancel(LPHANDLE lpHandle);
+}
+#endif
+
 namespace boost {
 namespace corosio {
 namespace detail {

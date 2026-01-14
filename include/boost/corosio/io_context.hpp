@@ -48,7 +48,7 @@ namespace corosio {
     ioc.run();  // Process all queued work
     @endcode
 */
-class io_context : public capy::execution_context
+class BOOST_COROSIO_DECL io_context : public capy::execution_context
 {
 public:
     class executor_type;
@@ -59,7 +59,6 @@ public:
         available on the system. If more than one thread is available,
         thread-safe synchronization is used.
     */
-    BOOST_COROSIO_DECL
     io_context();
 
     /** Construct an io_context with a concurrency hint.
@@ -68,7 +67,6 @@ public:
             will call `run()`. If greater than 1, thread-safe
             synchronization is used internally.
     */
-    BOOST_COROSIO_DECL
     explicit
     io_context(unsigned concurrency_hint);
 

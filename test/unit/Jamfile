@@ -12,10 +12,18 @@ import testing ;
 project boost/corosio/test/unit
     : requirements
       <library>/boost/corosio//boost_corosio
-      <library>/boost/url//boost_url_extra_test_suite
+      <source>../../../url/extra/test_suite/test_main.cpp
+      <source>../../../url/extra/test_suite/test_suite.cpp
+      <include>../../../url/extra/test_suite
+      <include>.
+      <include>../..
       <toolset>gcc:<cxxflags>-fcoroutines
     ;
 
+run acceptor.cpp ;
+run consuming_buffers.cpp ;
+run io_context.cpp ;
 run io_result.cpp ;
-run platform_reactor.cpp ;
+run read.cpp ;
 run socket.cpp ;
+run write.cpp ;

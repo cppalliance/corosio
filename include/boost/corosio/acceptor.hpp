@@ -61,7 +61,7 @@ namespace corosio {
     }
     @endcode
 */
-class acceptor : public io_object
+class BOOST_COROSIO_DECL acceptor : public io_object
 {
     struct accept_awaitable
     {
@@ -123,14 +123,12 @@ public:
 
         Closes the acceptor if open, cancelling any pending operations.
     */
-    BOOST_COROSIO_DECL
     ~acceptor();
 
     /** Construct an acceptor from an execution context.
 
         @param ctx The execution context that will own this acceptor.
     */
-    BOOST_COROSIO_DECL
     explicit acceptor(capy::execution_context& ctx);
 
     /** Construct an acceptor from an executor.
@@ -202,7 +200,6 @@ public:
 
         @throws std::system_error on failure.
     */
-    BOOST_COROSIO_DECL
     void listen(endpoint ep, int backlog = 128);
 
     /** Close the acceptor.
@@ -210,7 +207,6 @@ public:
         Releases acceptor resources. Any pending operations complete
         with `errc::operation_canceled`.
     */
-    BOOST_COROSIO_DECL
     void close();
 
     /** Check if the acceptor is listening.
@@ -264,7 +260,6 @@ public:
 
         All outstanding operations complete with `errc::operation_canceled`.
     */
-    BOOST_COROSIO_DECL
     void cancel();
 
     struct acceptor_impl : io_object_impl

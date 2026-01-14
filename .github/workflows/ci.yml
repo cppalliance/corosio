@@ -1,85 +1,631 @@
+#
+# Copyright (c) 2026 Steve Gerbino
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio/
+#
+
 name: CI
 
 on:
-  push:
-    branches: [ "**" ]
   pull_request:
     branches: [ master, develop ]
   workflow_dispatch:
+  push:
+    branches:
+      - master
+      - develop
+      - bugfix/**
+      - feature/**
+      - fix/**
+      - pr/**
+
+
+concurrency:
+  group: ${{format('{0}:{1}', github.repository, github.ref)}}
+  cancel-in-progress: true
+
+env:
+  GIT_FETCH_JOBS: 8
+  NET_RETRY_COUNT: 5
+  DEFAULT_BUILD_VARIANT: debug,release
+  UBSAN_OPTIONS: "print_stacktrace=1"
+  DEBIAN_FRONTEND: "noninteractive"
+  TZ: "Europe/London"
 
 jobs:
-  build-and-test:
-    name: ${{ matrix.os }} - ${{ matrix.compiler }}
-    runs-on: ${{ matrix.os }}
-    
+  runner-selection:
+    name: Runner Selection
+    runs-on: ${{ github.repository_owner == 'boostorg' && fromJSON('[ "self-hosted", "linux", "x64", "ubuntu-latest-aws" ]') || 'ubuntu-latest' }}
+    outputs:
+      labelmatrix: ${{ steps.aws_hosted_runners.outputs.labelmatrix }}
+    steps:
+      - name: AWS Hosted Runners
+        id: aws_hosted_runners
+        uses: cppalliance/aws-hosted-runners@v1.0.0
+
+  build:
+    needs: [ runner-selection ]
+    defaults:
+      run:
+        shell: bash
+
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Linux - GCC
-          - os: ubuntu-24.04
-            compiler: gcc
-            cc: gcc-14
-            cxx: g++-14
-            packages: g++-14
-          
-          # Linux - Clang 18
-          - os: ubuntu-24.04
-            compiler: clang-18
-            cc: clang-18
-            cxx: clang++-18
-            packages: clang-18 libc++-18-dev libc++abi-18-dev
-          
-          # Linux - Clang 20 (from LLVM repo)
-          - os: ubuntu-24.04
-            compiler: clang-20
-            cc: clang-20
-            cxx: clang++-20
-            install_clang_20: true
-          
-          # Windows - MSVC
-          - os: windows-2022
-            compiler: msvc
-            cc: cl
-            cxx: cl
-          
-          # macOS - Clang
-          - os: macos-14
-            compiler: clang
-            cc: clang
-            cxx: clang++
+          # Windows (3 configurations)
+
+          - compiler: "msvc"
+            version: "14.42"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            runs-on: "windows-2022"
+            b2-toolset: "msvc-14.4"
+            generator: "Visual Studio 17 2022"
+            is-latest: true
+            name: "MSVC 14.42: C++20"
+            shared: false
+            build-type: "Release"
+            build-cmake: true
+
+          - compiler: "msvc"
+            version: "14.34"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            runs-on: "windows-2022"
+            b2-toolset: "msvc-14.3"
+            generator: "Visual Studio 17 2022"
+            name: "MSVC 14.34: C++20 (shared)"
+            shared: true
+            build-type: "Release"
+
+          - compiler: "mingw"
+            version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++"
+            cc: "gcc"
+            runs-on: "windows-2022"
+            b2-toolset: "gcc"
+            generator: "MinGW Makefiles"
+            is-latest: true
+            is-earliest: true
+            name: "MinGW: C++20"
+            shared: false
+            build-type: "Release"
+            build-cmake: true
+
+          # macOS (2 configurations)
+          # TODO: Re-enable when BSD/kqueue support is implemented
+          #
+          # - compiler: "apple-clang"
+          #   version: "*"
+          #   cxxstd: "20"
+          #   latest-cxxstd: "20"
+          #   cxx: "clang++"
+          #   cc: "clang"
+          #   runs-on: "macos-26"
+          #   b2-toolset: "clang"
+          #   is-latest: true
+          #   name: "Apple-Clang (macOS 26, asan+ubsan): C++20"
+          #   shared: true
+          #   build-type: "RelWithDebInfo"
+          #   asan: true
+          #   ubsan: true
+          #
+          # - compiler: "apple-clang"
+          #   version: "*"
+          #   cxxstd: "20"
+          #   latest-cxxstd: "20"
+          #   cxx: "clang++"
+          #   cc: "clang"
+          #   runs-on: "macos-14"
+          #   b2-toolset: "clang"
+          #   name: "Apple-Clang (macOS 14): C++20"
+          #   shared: true
+          #   build-type: "Release"
+          #   build-cmake: true
+
+          # Linux GCC (4 configurations)
+
+          - compiler: "gcc"
+            version: "15"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++-15"
+            cc: "gcc-15"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:25.04"
+            b2-toolset: "gcc"
+            is-latest: true
+            name: "GCC 15: C++20"
+            shared: true
+            build-type: "Release"
+            build-cmake: true
+
+          - compiler: "gcc"
+            version: "15"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++-15"
+            cc: "gcc-15"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:25.04"
+            b2-toolset: "gcc"
+            is-latest: true
+            name: "GCC 15: C++20 (asan+ubsan)"
+            shared: true
+            asan: true
+            ubsan: true
+            build-type: "RelWithDebInfo"
+
+          - compiler: "gcc"
+            version: "12"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++-12"
+            cc: "gcc-12"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:22.04"
+            b2-toolset: "gcc"
+            name: "GCC 12: C++20"
+            shared: true
+            build-type: "Release"
+
+          - compiler: "gcc"
+            version: "13"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++-13"
+            cc: "gcc-13"
+            runs-on: "ubuntu-24.04"
+            b2-toolset: "gcc"
+            name: "GCC 13: C++20 (coverage)"
+            shared: false
+            coverage: true
+            build-type: "Debug"
+            cxxflags: "--coverage -fprofile-arcs -ftest-coverage"
+            ccflags: "--coverage -fprofile-arcs -ftest-coverage"
+            install: "lcov wget unzip"
+
+          # Linux Clang (5 configurations)
+
+          - compiler: "clang"
+            version: "20"
+            cxxstd: "20,23"
+            latest-cxxstd: "23"
+            cxx: "clang++-20"
+            cc: "clang-20"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:24.04"
+            b2-toolset: "clang"
+            is-latest: true
+            name: "Clang 20: C++20-23"
+            shared: true
+            build-type: "Release"
+            build-cmake: true
+
+          - compiler: "clang"
+            version: "20"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++-20"
+            cc: "clang-20"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:24.04"
+            b2-toolset: "clang"
+            is-latest: true
+            name: "Clang 20: C++20 (asan+ubsan)"
+            shared: false
+            asan: true
+            ubsan: true
+            build-type: "RelWithDebInfo"
+
+          - compiler: "clang"
+            version: "17"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++-17"
+            cc: "clang-17"
+            runs-on: "ubuntu-24.04"
+            b2-toolset: "clang"
+            name: "Clang 17: C++20"
+            shared: false
+            build-type: "Release"
+
+          - compiler: "clang"
+            version: "14"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++-14"
+            cc: "clang-14"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:22.04"
+            b2-toolset: "clang"
+            name: "Clang 14: C++20"
+            shared: true
+            build-type: "Release"
+
+          - compiler: "clang"
+            version: "20"
+            cxxstd: "20,23"
+            latest-cxxstd: "23"
+            cxx: "clang++-20"
+            cc: "clang-20"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:24.04"
+            b2-toolset: "clang"
+            is-latest: true
+            name: "Clang 20: C++20-23 (x86)"
+            shared: false
+            x86: true
+            build-type: "Release"
+            install: "gcc-multilib g++-multilib"
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)[matrix.runs-on] }}
+    container:
+      image: ${{ matrix.container }}
+      options: --privileged
+
+    timeout-minutes: 120
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Clone Boost.Corosio
+        uses: actions/checkout@v4
+        with:
+          path: corosio-root
 
-    - name: Install Clang 20 from LLVM repo (Linux)
-      if: runner.os == 'Linux' && matrix.install_clang_20
-      run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 20
-        sudo apt-get install -y libc++-20-dev libc++abi-20-dev
-    
-    - name: Install dependencies (Linux)
-      if: runner.os == 'Linux' && !matrix.install_clang_20
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ${{ matrix.packages }}
-    
-    - name: Set up MSVC (Windows)
-      if: runner.os == 'Windows'
-      uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup C++
+        uses: alandefreitas/cpp-actions/setup-cpp@v1.9.0
+        id: setup-cpp
+        with:
+          compiler: ${{ matrix.compiler }}
+          version: ${{ matrix.version }}
+          check-latest: true
+          trace-commands: true
 
-    - name: Configure CMake
-      env:
-        CC: ${{ matrix.cc }}
-        CXX: ${{ matrix.cxx }}
-      run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Install packages
+        uses: alandefreitas/cpp-actions/package-install@v1.9.0
+        id: package-install
+        with:
+          apt-get-add-architecture: ${{ matrix.x86 && 'i386' || '' }}
+          apt-get: >-
+            ${{ matrix.install }}
+            build-essential
+            ${{ matrix.x86 && '' || '' }}
 
-    - name: Build
-      run: cmake --build build --config Release
+      - name: Clone Capy
+        uses: actions/checkout@v4
+        with:
+          repository: cppalliance/capy
+          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          path: capy-root
 
-    - name: Run tests
-      run: ctest --test-dir build --build-config Release --output-on-failure --verbose
+      - name: Clone Boost
+        uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
+        id: boost-clone
+        with:
+          branch: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          boost-dir: boost-source
+          modules-exclude-paths: ''
+          scan-modules-dir: corosio-root
+          scan-modules-ignore: corosio,capy
+
+      - name: ASLR Fix
+        if: ${{ startsWith(matrix.runs-on, 'ubuntu' )}}
+        run: |
+          sysctl vm.mmap_rnd_bits=28
+
+      - name: Patch Boost
+        id: patch
+        shell: bash
+        run: |
+          set -xe
+          pwd
+          ls
+          ls -lah boost-source
+
+          # Identify boost module being tested
+          module=${GITHUB_REPOSITORY#*/}
+          echo "module=$module" >> $GITHUB_OUTPUT
+
+          # Identify GitHub workspace root
+          workspace_root=$(echo "$GITHUB_WORKSPACE" | sed 's/\\/\//g')
+          echo -E "workspace_root=$workspace_root" >> $GITHUB_OUTPUT
+
+          # Remove module from boost-source
+          rm -r "boost-source/libs/$module" || true
+          rm -r "boost-source/libs/capy" || true
+
+          # Copy cached boost-source to an isolated boost-root
+          cp -r boost-source boost-root
+
+          # Set boost-root output
+          cd boost-root
+          boost_root="$(pwd)"
+          boost_root=$(echo "$boost_root" | sed 's/\\/\//g')
+          echo -E "boost_root=$boost_root" >> $GITHUB_OUTPUT
+
+          # Patch boost-root with workspace module
+          cp -r "$workspace_root"/corosio-root "libs/$module"
+
+          # Patch boost-root with capy dependency
+          cp -r "$workspace_root"/capy-root "libs/capy"
+
+      - name: Boost B2 Workflow
+        uses: alandefreitas/cpp-actions/b2-workflow@v1.9.0
+        if: ${{ !matrix.coverage }}
+        env:
+          ASAN_OPTIONS: ${{ ((matrix.compiler == 'apple-clang' || matrix.compiler == 'clang') && 'detect_invalid_pointer_pairs=0:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1') || 'detect_invalid_pointer_pairs=2:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1' }}
+        with:
+          source-dir: boost-root
+          modules: corosio
+          toolset: ${{ matrix.b2-toolset }}
+          build-variant: ${{ matrix.build-type }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx || '' }}
+          cxxstd: ${{ matrix.cxxstd }}
+          address-model: ${{ (matrix.x86 && '32') || '64' }}
+          asan: ${{ matrix.asan }}
+          ubsan: ${{ matrix.ubsan }}
+          shared: ${{ matrix.shared }}
+          rtti: on
+          cxxflags: ${{ (matrix.asan && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
+          stop-on-error: true
+
+      - name: Boost CMake Workflow
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ matrix.coverage || matrix.build-cmake || matrix.is-earliest }}
+        with:
+          source-dir: boost-root
+          build-dir: __build_cmake_test__
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          build-target: tests
+          run-tests: true
+          install-prefix: .local
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc:  ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          ccflags: ${{ matrix.ccflags }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cxxflags: ${{ matrix.cxxflags }}
+          shared: ${{ matrix.shared }}
+          cmake-version: '>=3.20'
+          extra-args: |
+            -D Boost_VERBOSE=ON
+            -D BOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}"
+          package: false
+          package-artifact: false
+          ref-source-dir: boost-root/libs/corosio
+
+      - name: Set Path
+        if: startsWith(matrix.runs-on, 'windows') && matrix.shared
+        run: echo "$GITHUB_WORKSPACE/.local/bin" >> $GITHUB_PATH
+
+      - name: Set LD_LIBRARY_PATH
+        if: startsWith(matrix.runs-on, 'ubuntu') && matrix.shared
+        run: |
+          echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/.local/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+
+      - name: Find Package Integration Workflow
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ matrix.build-cmake || matrix.is-earliest }}
+        with:
+          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
+          build-dir: __build_cmake_install_test__
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          ccflags: ${{ matrix.ccflags }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cxxflags: ${{ matrix.cxxflags }}
+          shared: ${{ matrix.shared }}
+          install: false
+          cmake-version: '>=3.15'
+          extra-args: |
+            -D BOOST_CI_INSTALL_TEST=ON
+            -D CMAKE_PREFIX_PATH=${{ steps.patch.outputs.workspace_root }}/.local
+          ref-source-dir: boost-root/libs/corosio
+          trace-commands: true
+
+      - name: Subdirectory Integration Workflow
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ matrix.build-cmake || matrix.is-earliest }}
+        with:
+          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
+          build-dir: __build_cmake_subdir_test__
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          ccflags: ${{ matrix.ccflags }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cxxflags: ${{ matrix.cxxflags }}
+          shared: ${{ matrix.shared }}
+          install: false
+          cmake-version: '>=3.15'
+          extra-args: -D BOOST_CI_INSTALL_TEST=OFF
+          ref-source-dir: boost-root/libs/corosio/test/cmake_test
+
+      - name: Root Project CMake Workflow
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ matrix.build-cmake || matrix.is-earliest }}
+        with:
+          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}
+          build-dir: __build_root_test__
+          build-target: tests
+          run-tests: true
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          install: false
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          ccflags: ${{ matrix.ccflags }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cxxflags: ${{ matrix.cxxflags }}
+          shared: ${{ matrix.shared }}
+          cmake-version: '>=3.20'
+          package: false
+          package-artifact: false
+          ref-source-dir: boost-root
+
+      - name: Codecov
+        if: ${{ matrix.coverage }}
+        run: |
+          set -x
+
+          # Generate report
+          gcov_tool="gcov"
+          if command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}.${{ steps.setup-cpp.outputs.version-minor }}" &> /dev/null; then
+              gcov_tool="gcov"
+          elif command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}" &> /dev/null; then
+              gcov_tool="gcov-${{ steps.setup-cpp.outputs.version-major }}"
+          fi
+          lcov -c -q -o "boost-root/__build_cmake_test__/coverage.info" -d "boost-root/__build_cmake_test__" --include "$(pwd)/boost-root/libs/${{steps.patch.outputs.module}}/*" --gcov-tool "$gcov_tool"
+
+          # Upload to codecov
+          bash <(curl -s https://codecov.io/bash) -f "boost-root/__build_cmake_test__/coverage.info"
+
+          # Summary
+          echo "# Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[![codecov](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA/graphs/sunburst.svg)](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: [![codecov](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA/graph/badge.svg)](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Branch: [![codecov](https://codecov.io/github/$GITHUB_REPOSITORY/branch/$GITHUB_REF_NAME/graph/badge.svg)](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+  changelog:
+    needs: [ runner-selection ]
+    defaults:
+      run:
+        shell: bash
+
+    name: Changelog Summary
+    runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-22.04'] }}
+    timeout-minutes: 120
+
+    steps:
+      - name: Clone Boost.Corosio
+        uses: actions/checkout@v4
+        with:
+          # Avoid the common API rate limit exceeded error in boostorg by including 100 latest commits in any case
+          fetch-depth: 100
+
+      - name: Changelog
+        uses: alandefreitas/cpp-actions/create-changelog@v1.9.0
+        with:
+          thank-non-regular: ${{ startsWith(github.ref, 'refs/tags/') }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          limit: 200
+          tag-pattern: 'boost-.*\..*\..*'
+
+  antora:
+    needs: [ runner-selection ]
+    name: Antora Docs
+    runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-latest'] }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install packages
+        uses: alandefreitas/cpp-actions/package-install@v1.9.0
+        with:
+          apt-get: git cmake
+
+      - name: Clone Boost.Corosio
+        uses: actions/checkout@v4
+        with:
+          path: corosio-root
+
+      - name: Clone Capy
+        uses: actions/checkout@v4
+        with:
+          repository: cppalliance/capy
+          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          path: capy-root
+
+      - name: Clone Boost
+        uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
+        id: boost-clone
+        with:
+          branch: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          boost-dir: boost-source
+          modules-exclude-paths: ''
+          scan-modules-dir: corosio-root
+          scan-modules-ignore: corosio,capy
+
+      - name: Patch Boost
+        id: patch
+        shell: bash
+        run: |
+          set -xe
+          pwd
+          ls
+          ls -lah boost-source
+
+          # Identify boost module being tested
+          module=${GITHUB_REPOSITORY#*/}
+          echo "module=$module" >> $GITHUB_OUTPUT
+
+          # Identify GitHub workspace root
+          workspace_root=$(echo "$GITHUB_WORKSPACE" | sed 's/\\/\//g')
+          echo -E "workspace_root=$workspace_root" >> $GITHUB_OUTPUT
+
+          # Remove module from boost-source
+          rm -r "boost-source/libs/$module" || true
+          rm -r "boost-source/libs/capy" || true
+
+          # Copy cached boost-source to an isolated boost-root
+          cp -r boost-source boost-root
+
+          # Set boost-root output
+          cd boost-root
+          boost_root="$(pwd)"
+          boost_root=$(echo "$boost_root" | sed 's/\\/\//g')
+          echo -E "boost_root=$boost_root" >> $GITHUB_OUTPUT
+
+          # Patch boost-root with workspace module
+          cp -r "$workspace_root"/corosio-root "libs/$module"
+
+          # Patch boost-root with capy dependency
+          cp -r "$workspace_root"/capy-root "libs/capy"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Build Antora Docs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global --add safe.directory "$(pwd)"
+
+          BOOST_SRC_DIR="$(pwd)/boost-root"
+          export BOOST_SRC_DIR
+          cd boost-root/libs/corosio
+
+          cd doc
+          bash ./build_antora.sh
+
+          # Antora returns zero even if it fails, so we check if the site directory exists
+          if [ ! -d "build/site" ]; then
+              echo "Antora build failed"
+              exit 1
+          fi
+
+      - name: Create Antora Docs Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: antora-docs
+          path: boost-root/libs/corosio/doc/build/site

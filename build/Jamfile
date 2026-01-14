@@ -12,7 +12,7 @@ import config : requires ;
 
 constant c20-requires :
     [ requires
-    cxx20_constexpr
+    cxx20_hdr_concepts
     ]
     ;
 
@@ -31,7 +31,15 @@ project boost/corosio
   : source-location $(COROSIO_ROOT)
   ;
 
-alias corosio_sources : [ glob-tree-ex $(COROSIO_ROOT)/src/src : *.cpp ] ;
+local COROSIO_SRC =
+    [ glob $(COROSIO_ROOT)/src/*.cpp ]
+    [ glob $(COROSIO_ROOT)/src/detail/*.cpp ]
+    ;
+
+alias corosio_sources : $(COROSIO_SRC) ;
+
+# System libraries
+lib ws2_32 ;
 
 lib boost_corosio
   : corosio_sources
@@ -40,6 +48,7 @@ lib boost_corosio
     <library>/boost/url//boost_url
     <library>/boost/system//boost_system
     <target-os>windows:<library>ws2_32
+    <target-os>windows:<define>_WIN32_WINNT=0x0602
     <include>$(COROSIO_ROOT)/include
     <include>$(COROSIO_ROOT)/src
   : usage-requirements

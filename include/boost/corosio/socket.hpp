@@ -70,7 +70,7 @@ namespace corosio {
     auto bytes = (co_await s.read_some(buf)).value();
     @endcode
 */
-class socket : public io_stream
+class BOOST_COROSIO_DECL socket : public io_stream
 {
 public:
     struct socket_impl : io_stream_impl
@@ -134,14 +134,12 @@ public:
 
         Closes the socket if open, cancelling any pending operations.
     */
-    BOOST_COROSIO_DECL
     ~socket();
 
     /** Construct a socket from an execution context.
 
         @param ctx The execution context that will own this socket.
     */
-    BOOST_COROSIO_DECL
     explicit socket(capy::execution_context& ctx);
 
     /** Construct a socket from an executor.
@@ -207,7 +205,6 @@ public:
 
         @throws std::system_error on failure.
     */
-    BOOST_COROSIO_DECL
     void open();
 
     /** Close the socket.
@@ -215,7 +212,6 @@ public:
         Releases socket resources. Any pending operations complete
         with `errc::operation_canceled`.
     */
-    BOOST_COROSIO_DECL
     void close();
 
     /** Check if the socket is open.
@@ -270,7 +266,6 @@ public:
 
         All outstanding operations complete with `errc::operation_canceled`.
     */
-    BOOST_COROSIO_DECL
     void cancel();
 
 private:

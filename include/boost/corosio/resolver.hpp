@@ -136,7 +136,7 @@ operator&=(resolve_flags& a, resolve_flags b) noexcept
     auto results = (co_await r.resolve("www.example.com", "https")).value();
     @endcode
 */
-class resolver : public io_object
+class BOOST_COROSIO_DECL resolver : public io_object
 {
     struct resolve_awaitable
     {
@@ -198,14 +198,12 @@ public:
 
         Cancels any pending operations.
     */
-    BOOST_COROSIO_DECL
     ~resolver();
 
     /** Construct a resolver from an execution context.
 
         @param ctx The execution context that will own this resolver.
     */
-    BOOST_COROSIO_DECL
     explicit resolver(capy::execution_context& ctx);
 
     /** Construct a resolver from an executor.
@@ -313,7 +311,6 @@ public:
 
         All outstanding operations complete with `errc::operation_canceled`.
     */
-    BOOST_COROSIO_DECL
     void cancel();
 
 public:

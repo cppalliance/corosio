@@ -134,7 +134,7 @@ void
 posix_scheduler::
 post(capy::any_coro h) const
 {
-    struct post_handler
+    struct post_handler final
         : capy::execution_context::handler
     {
         capy::any_coro h_;
@@ -144,6 +144,8 @@ post(capy::any_coro h) const
             : h_(h)
         {
         }
+
+        ~post_handler() = default;
 
         void operator()() override
         {
@@ -387,8 +389,10 @@ posix_scheduler::
 wakeup() const
 {
     // Write to eventfd to wake up epoll_wait
+    // Return value intentionally ignored - eventfd write cannot fail
+    // when buffer has space (counter won't overflow with uint64_t max)
     std::uint64_t val = 1;
-    ::write(event_fd_, &val, sizeof(val));
+    [[maybe_unused]] auto r = ::write(event_fd_, &val, sizeof(val));
 }
 
 // RAII guard - work_finished called even if handler throws
@@ -453,8 +457,9 @@ do_one(long timeout_us)
         if (events[i].data.ptr == nullptr)
         {
             // eventfd wakeup - drain it
+            // Return value intentionally ignored - we just need to consume the event
             std::uint64_t val;
-            ::read(event_fd_, &val, sizeof(val));
+            [[maybe_unused]] auto r = ::read(event_fd_, &val, sizeof(val));
             continue;
         }
 

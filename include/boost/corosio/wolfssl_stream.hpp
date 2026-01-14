@@ -41,7 +41,7 @@ namespace corosio {
     // Use secure stream for TLS communication
     @endcode
 */
-class wolfssl_stream : public io_stream
+class BOOST_COROSIO_DECL wolfssl_stream : public io_stream
 {
     struct handshake_awaitable
     {
@@ -109,7 +109,6 @@ public:
 
         @param stream Reference to the underlying stream to wrap.
     */
-    BOOST_COROSIO_DECL
     explicit
     wolfssl_stream(io_stream& stream);
 
@@ -161,7 +160,7 @@ public:
     };
 
 private:
-    BOOST_COROSIO_DECL void construct();
+    void construct();
 
     wolfssl_stream_impl& get() const noexcept
     {

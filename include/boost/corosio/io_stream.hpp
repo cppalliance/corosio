@@ -24,7 +24,7 @@
 namespace boost {
 namespace corosio {
 
-class io_stream : public io_object
+class BOOST_COROSIO_DECL io_stream : public io_object
 {
 public:
     /** Initiate an asynchronous read operation.
