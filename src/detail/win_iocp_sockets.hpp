@@ -40,6 +40,11 @@ class win_acceptor_impl;
 /** Connect operation state. */
 struct connect_op : overlapped_op
 {
+    win_socket_impl& impl;
+
+    explicit connect_op(win_socket_impl& impl_) noexcept : impl(impl_) {}
+
+    void do_cancel() noexcept override;
 };
 
 /** Read operation state with buffer descriptors. */

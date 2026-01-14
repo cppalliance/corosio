@@ -111,9 +111,22 @@ do_cancel() noexcept
     }
 }
 
+void
+connect_op::
+do_cancel() noexcept
+{
+    if (impl.is_open())
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(impl.native_handle()),
+            this);
+    }
+}
+
 win_socket_impl::
 win_socket_impl(win_iocp_sockets& svc) noexcept
     : svc_(svc)
+    , conn_(*this)
     , rd_(*this)
     , wr_(*this)
 {
