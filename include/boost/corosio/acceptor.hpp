@@ -16,9 +16,9 @@
 #include <boost/corosio/io_result.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/socket.hpp>
-#include <boost/capy/any_dispatcher.hpp>
+#include <boost/capy/ex/any_dispatcher.hpp>
 #include <boost/capy/concept/affine_awaitable.hpp>
-#include <boost/capy/execution_context.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <boost/system/error_code.hpp>

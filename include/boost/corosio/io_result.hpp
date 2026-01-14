@@ -220,7 +220,8 @@ struct io_result<T, U, Args...>
 
         @throws system::system_error if `ec` is set.
     */
-    std::tuple<T, U, Args...> value() const
+    auto value() const ->
+        std::tuple<T, U, Args...>
     {
         if (ec)
             detail::throw_system_error(ec);

@@ -13,7 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_result.hpp>
 #include <boost/corosio/io_stream.hpp>
-#include <boost/capy/any_dispatcher.hpp>
+#include <boost/capy/ex/any_dispatcher.hpp>
 
 #include <coroutine>
 #include <stop_token>

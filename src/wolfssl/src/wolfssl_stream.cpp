@@ -8,8 +8,8 @@
 //
 
 #include <boost/corosio/wolfssl_stream.hpp>
-#include <boost/capy/async_mutex.hpp>
-#include <boost/capy/async_run.hpp>
+#include <boost/capy/ex/async_mutex.hpp>
+#include <boost/capy/ex/async_run.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/task.hpp>
 

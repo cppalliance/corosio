@@ -11,8 +11,8 @@
 #define BOOST_COROSIO_DETAIL_SCHEDULER_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/capy/coro.hpp>
-#include <boost/capy/execution_context.hpp>
+#include <boost/capy/ex/coro.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 
 #include <cstddef>
 

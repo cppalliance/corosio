@@ -16,9 +16,9 @@
 #include <boost/corosio/io_result.hpp>
 #include <boost/corosio/any_bufref.hpp>
 #include <boost/corosio/endpoint.hpp>
-#include <boost/capy/any_dispatcher.hpp>
+#include <boost/capy/ex/any_dispatcher.hpp>
 #include <boost/capy/concept/affine_awaitable.hpp>
-#include <boost/capy/execution_context.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <boost/system/error_code.hpp>
@@ -72,15 +72,6 @@ namespace corosio {
 */
 class socket : public io_stream
 {
-    friend class acceptor;
-
-    struct socket_impl;
-
-    inline socket_impl& get() const noexcept
-    {
-        return *static_cast<socket_impl*>(impl_);
-    }
-
 public:
     struct socket_impl : io_stream_impl
     {
@@ -281,6 +272,14 @@ public:
     */
     BOOST_COROSIO_DECL
     void cancel();
+
+private:
+    friend class acceptor;
+
+    inline socket_impl& get() const noexcept
+    {
+        return *static_cast<socket_impl*>(impl_);
+    }
 };
 
 } // namespace corosio

@@ -12,8 +12,8 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
-#include <boost/capy/execution_context.hpp>
-#include <boost/capy/intrusive_queue.hpp>
+#include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/core/intrusive_queue.hpp>
 #include <boost/system/error_code.hpp>
 
 #include "src/detail/win_mutex.hpp"

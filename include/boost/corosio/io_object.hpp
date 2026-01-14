@@ -11,7 +11,7 @@
 #define BOOST_COROSIO_IO_OBJECT_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/capy/execution_context.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 
 namespace boost {
 namespace corosio {

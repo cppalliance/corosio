@@ -13,7 +13,7 @@
 #include "src/detail/win_overlapped_op.hpp"
 
 #include <boost/corosio/detail/except.hpp>
-#include <boost/capy/thread_local_ptr.hpp>
+#include <boost/capy/core/thread_local_ptr.hpp>
 
 #include <limits>
 

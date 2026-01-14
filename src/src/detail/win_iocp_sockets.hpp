@@ -13,10 +13,10 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/socket.hpp>
-#include <boost/capy/any_dispatcher.hpp>
+#include <boost/capy/ex/any_dispatcher.hpp>
 #include <boost/capy/concept/affine_awaitable.hpp>
-#include <boost/capy/execution_context.hpp>
-#include <boost/capy/intrusive_list.hpp>
+#include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/core/intrusive_list.hpp>
 
 #include "src/detail/windows.hpp"
 #include "src/detail/win_overlapped_op.hpp"

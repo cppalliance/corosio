@@ -74,7 +74,7 @@ compared to actual I/O latency.
 ----
 #include <boost/corosio.hpp>
 #include <boost/capy/task.hpp>
-#include <boost/capy/async_run.hpp>
+#include <boost/capy/ex/async_run.hpp>
 #include <iostream>
 
 namespace corosio = boost::corosio;

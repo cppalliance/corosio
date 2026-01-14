@@ -13,9 +13,9 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/unique_ptr.hpp>
-#include <boost/capy/coro.hpp>
+#include <boost/capy/ex/coro.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/execution_context.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 
 #include <chrono>
 #include <concepts>
