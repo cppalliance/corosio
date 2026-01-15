@@ -31,15 +31,10 @@ project boost/corosio
   : source-location $(COROSIO_ROOT)
   ;
 
-local COROSIO_SRC =
-    [ glob $(COROSIO_ROOT)/src/*.cpp ]
-    [ glob $(COROSIO_ROOT)/src/detail/*.cpp ]
-    ;
-
-alias corosio_sources : $(COROSIO_SRC) ;
-
 # System libraries
 lib ws2_32 ;
+
+alias corosio_sources : [ glob-tree-ex $(COROSIO_ROOT)/src/corosio/src : *.cpp ] ;
 
 lib boost_corosio
   : corosio_sources
@@ -50,7 +45,8 @@ lib boost_corosio
     <target-os>windows:<library>ws2_32
     <target-os>windows:<define>_WIN32_WINNT=0x0602
     <include>$(COROSIO_ROOT)/include
-    <include>$(COROSIO_ROOT)/src
+    <include>$(COROSIO_ROOT)/src/corosio
+    <include>$(COROSIO_ROOT)/src/corosio/src
   : usage-requirements
     <library>/boost/capy//boost_capy
     <library>/boost/url//boost_url

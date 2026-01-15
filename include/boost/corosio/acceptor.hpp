@@ -235,7 +235,8 @@ public:
         @return An awaitable that completes with `io_result<>`.
             Returns success on successful accept, or an error code on
             failure including:
-            - operation_canceled: Cancelled via stop_token or cancel()
+            - operation_canceled: Cancelled via stop_token or cancel().
+                Check `ec == cond::canceled` for portable comparison.
 
         @par Preconditions
         The acceptor must be listening (`is_open() == true`).
@@ -259,6 +260,7 @@ public:
     /** Cancel any pending asynchronous operations.
 
         All outstanding operations complete with `errc::operation_canceled`.
+        Check `ec == cond::canceled` for portable comparison.
     */
     void cancel();
 

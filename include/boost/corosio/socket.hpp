@@ -241,7 +241,8 @@ public:
             - connection_refused: No server listening at endpoint
             - timed_out: Connection attempt timed out
             - network_unreachable: No route to host
-            - operation_canceled: Cancelled via stop_token or cancel()
+            - operation_canceled: Cancelled via stop_token or cancel().
+                Check `ec == cond::canceled` for portable comparison.
 
         @par Preconditions
         The socket must be open (`is_open() == true`).
@@ -265,6 +266,7 @@ public:
     /** Cancel any pending asynchronous operations.
 
         All outstanding operations complete with `errc::operation_canceled`.
+        Check `ec == cond::canceled` for portable comparison.
     */
     void cancel();
 

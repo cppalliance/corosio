@@ -94,7 +94,7 @@ auto [ec, n] = co_await s.read_some(
 
 if (ec)
 {
-    if (ec == capy::error::eof)
+    if (ec == capy::cond::eof)
         std::cout << "Peer closed connection\n";
     else
         std::cerr << "Read error: " << ec.message() << "\n";
@@ -213,11 +213,11 @@ auto [ec, n] = co_await s.read_some(buf);
 
 if (ec)
 {
-    if (ec == capy::error::eof)
+    if (ec == capy::cond::eof)
     {
         // Normal disconnect (end of stream)
     }
-    else if (ec == boost::system::errc::operation_canceled)
+    else if (ec == capy::cond::canceled)
     {
         // We called cancel()
     }
