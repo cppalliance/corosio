@@ -16,8 +16,6 @@ constant c20-requires :
     ]
     ;
 
-path-constant COROSIO_ROOT : .. ;
-
 project boost/corosio
   : requirements
     $(c20-requires)
@@ -28,18 +26,13 @@ project boost/corosio
     <link>static:<define>BOOST_COROSIO_STATIC_LINK
   : usage-requirements
     <define>BOOST_COROSIO_NO_LIB
-  : source-location $(COROSIO_ROOT)
+  : source-location ..
   ;
 
 # System libraries
 lib ws2_32 ;
 
-local COROSIO_SRC =
-    [ glob $(COROSIO_ROOT)/src/corosio/src/*.cpp ]
-    [ glob $(COROSIO_ROOT)/src/corosio/src/detail/*.cpp ]
-    ;
-
-alias corosio_sources : $(COROSIO_SRC) ;
+alias corosio_sources : [ glob-tree-ex src/corosio/src : *.cpp ] ;
 
 lib boost_corosio
   : corosio_sources
@@ -49,21 +42,20 @@ lib boost_corosio
     <library>/boost/system//boost_system
     <target-os>windows:<library>ws2_32
     <target-os>windows:<define>_WIN32_WINNT=0x0602
-    <include>$(COROSIO_ROOT)/include
-    <include>$(COROSIO_ROOT)/src/corosio
-    <include>$(COROSIO_ROOT)/src/corosio/src
+    <include>../include
+    <include>../src/corosio
   : usage-requirements
     <library>/boost/capy//boost_capy
     <library>/boost/url//boost_url
     <library>/boost/system//boost_system
     <target-os>windows:<library>ws2_32
-    <include>$(COROSIO_ROOT)/include
+    <include>../include
   ;
 
 # WolfSSL
 using wolfssl ;
 
-alias corosio_wolfssl_sources : [ glob-tree-ex $(COROSIO_ROOT)/src/wolfssl/src : *.cpp ] ;
+alias corosio_wolfssl_sources : [ glob-tree-ex src/wolfssl/src : *.cpp ] ;
 
 lib boost_corosio_wolfssl
   : corosio_wolfssl_sources

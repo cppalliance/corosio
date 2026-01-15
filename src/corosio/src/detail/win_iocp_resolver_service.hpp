@@ -26,10 +26,10 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 
-#include "detail/windows.hpp"
-#include "detail/win_overlapped_op.hpp"
-#include "detail/win_mutex.hpp"
-#include "detail/win_wsa_init.hpp"
+#include "src/detail/windows.hpp"
+#include "src/detail/win_overlapped_op.hpp"
+#include "src/detail/win_mutex.hpp"
+#include "src/detail/win_wsa_init.hpp"
 
 #include <WS2tcpip.h>
 

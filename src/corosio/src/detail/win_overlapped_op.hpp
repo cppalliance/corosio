@@ -23,7 +23,7 @@
 #include <optional>
 #include <stop_token>
 
-#include "detail/windows.hpp"
+#include "src/detail/windows.hpp"
 
 namespace boost {
 namespace corosio {

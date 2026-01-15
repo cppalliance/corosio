@@ -18,9 +18,9 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 
-#include "detail/posix_op.hpp"
-#include "detail/posix_scheduler.hpp"
-#include "detail/endpoint_convert.hpp"
+#include "src/detail/posix_op.hpp"
+#include "src/detail/posix_scheduler.hpp"
+#include "src/detail/endpoint_convert.hpp"
 
 #include <mutex>
 

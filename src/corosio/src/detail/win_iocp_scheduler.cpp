@@ -9,8 +9,8 @@
 
 #ifdef _WIN32
 
-#include "detail/win_iocp_scheduler.hpp"
-#include "detail/win_overlapped_op.hpp"
+#include "src/detail/win_iocp_scheduler.hpp"
+#include "src/detail/win_overlapped_op.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/core/thread_local_ptr.hpp>

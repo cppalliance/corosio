@@ -9,8 +9,8 @@
 
 #ifndef _WIN32
 
-#include "detail/posix_scheduler.hpp"
-#include "detail/posix_op.hpp"
+#include "src/detail/posix_scheduler.hpp"
+#include "src/detail/posix_op.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/core/thread_local_ptr.hpp>

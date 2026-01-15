@@ -9,9 +9,9 @@
 
 #ifdef _WIN32
 
-#include "detail/win_iocp_sockets.hpp"
-#include "detail/win_iocp_scheduler.hpp"
-#include "detail/endpoint_convert.hpp"
+#include "src/detail/win_iocp_sockets.hpp"
+#include "src/detail/win_iocp_scheduler.hpp"
+#include "src/detail/endpoint_convert.hpp"
 
 namespace boost {
 namespace corosio {
