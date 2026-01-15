@@ -141,8 +141,7 @@ function(boost_corosio_setup_properties target)
     target_compile_features(${target} PUBLIC cxx_std_20)
     target_include_directories(${target} PUBLIC "${PROJECT_SOURCE_DIR}/include")
     target_include_directories(${target} PRIVATE
-        "${PROJECT_SOURCE_DIR}/src/corosio"
-        "${PROJECT_SOURCE_DIR}/src/corosio/src")
+        "${PROJECT_SOURCE_DIR}/src/corosio")
     target_link_libraries(${target}
         PUBLIC
             ${BOOST_COROSIO_DEPENDENCIES}

@@ -25,17 +25,17 @@
 
     In corosio, we post BOTH types directly to the completion port:
       - OVERLAPPED* (overlapped_op) for I/O operations
-      - capy::execution_context::handler* for posted handlers/coroutines
+      - scheduler_op* for posted handlers/coroutines
 
     Discrimination is done via the completion key:
-      - handler_key (1): the LPOVERLAPPED is actually a handler*
+      - handler_key (1): the LPOVERLAPPED is actually a scheduler_op*
       - overlapped_key (2): the LPOVERLAPPED is an overlapped_op*
 
-    The op_queue (intrusive_list<handler>) holds MIXED elements:
+    The op_queue (intrusive_list<scheduler_op>) holds MIXED elements:
       - Plain handlers (coro_work, etc.)
-      - overlapped_op (which derives from handler)
+      - overlapped_op (which derives from scheduler_op)
 
-    Use get_overlapped_op(handler*) to safely check if a handler is an
+    Use get_overlapped_op(scheduler_op*) to safely check if a scheduler_op is an
     overlapped_op (returns nullptr if not). All code that processes op_queue
     must be mindful of this mixed content.
 */
@@ -150,7 +150,7 @@ shutdown()
             if (key == handler_key)
             {
                 // Posted handlers (coro_work, etc.)
-                reinterpret_cast<capy::execution_context::handler*>(overlapped)->destroy();
+                reinterpret_cast<scheduler_op*>(overlapped)->destroy();
             }
             else if (key == overlapped_key)
             {
@@ -169,7 +169,7 @@ win_iocp_scheduler::
 post(capy::any_coro h) const
 {
     struct post_handler final
-        : capy::execution_context::handler
+        : scheduler_op
     {
         capy::any_coro h_;
         long ready_ = 1;  // always ready for immediate dispatch
@@ -210,7 +210,7 @@ post(capy::any_coro h) const
 
 void
 win_iocp_scheduler::
-post(capy::execution_context::handler* h) const
+post(scheduler_op* h) const
 {
     // Mark ready if this is an overlapped_op (safe to dispatch immediately)
     if (auto* op = get_overlapped_op(h))
@@ -453,9 +453,9 @@ do_one(unsigned long timeout_ms)
         {
             if (key == handler_key)
             {
-                // handler*
+                // scheduler_op*
                 work_guard g{this};
-                (*reinterpret_cast<capy::execution_context::handler*>(overlapped))();
+                (*reinterpret_cast<scheduler_op*>(overlapped))();
                 return 1;
             }
             else if (key == overlapped_key)

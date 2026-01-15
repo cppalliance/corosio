@@ -15,8 +15,9 @@
 #include <boost/capy/concept/affine_awaitable.hpp>
 #include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/execution_context.hpp>
 #include <boost/system/error_code.hpp>
+
+#include "src/detail/scheduler_op.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -31,7 +32,7 @@ namespace detail {
 
 struct overlapped_op
     : OVERLAPPED
-    , capy::execution_context::handler
+    , scheduler_op
 {
     struct canceller
     {
@@ -134,7 +135,7 @@ struct overlapped_op
 };
 
 inline overlapped_op*
-get_overlapped_op(capy::execution_context::handler* h) noexcept
+get_overlapped_op(scheduler_op* h) noexcept
 {
     return static_cast<overlapped_op*>(h->data());
 }

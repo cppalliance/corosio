@@ -13,9 +13,9 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/core/intrusive_queue.hpp>
 #include <boost/system/error_code.hpp>
 
+#include "src/detail/scheduler_op.hpp"
 #include "src/detail/win_mutex.hpp"
 
 #include <chrono>
@@ -32,8 +32,6 @@ namespace detail {
 constexpr std::uintptr_t shutdown_key = 0;
 constexpr std::uintptr_t handler_key = 1;
 constexpr std::uintptr_t overlapped_key = 2;
-
-using op_queue = capy::intrusive_queue<capy::execution_context::handler>;
 
 // Forward declaration
 struct overlapped_op;
@@ -54,7 +52,7 @@ public:
 
     void shutdown() override;
     void post(capy::any_coro h) const override;
-    void post(capy::execution_context::handler* h) const override;
+    void post(scheduler_op* h) const override;
     void on_work_started() noexcept override;
     void on_work_finished() noexcept override;
     bool running_in_this_thread() const noexcept override;

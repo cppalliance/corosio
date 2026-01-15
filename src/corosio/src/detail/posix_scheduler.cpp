@@ -135,7 +135,7 @@ posix_scheduler::
 post(capy::any_coro h) const
 {
     struct post_handler final
-        : capy::execution_context::handler
+        : scheduler_op
     {
         capy::any_coro h_;
 
@@ -172,7 +172,7 @@ post(capy::any_coro h) const
 
 void
 posix_scheduler::
-post(capy::execution_context::handler* h) const
+post(scheduler_op* h) const
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 
@@ -411,7 +411,7 @@ do_one(long timeout_us)
         return 0;
 
     // First check if there are handlers in the queue
-    capy::execution_context::handler* h = nullptr;
+    scheduler_op* h = nullptr;
     {
         std::lock_guard lock(mutex_);
         h = completed_ops_.pop();

@@ -16,8 +16,9 @@
 #include <boost/capy/concept/affine_awaitable.hpp>
 #include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/execution_context.hpp>
 #include <boost/system/error_code.hpp>
+
+#include "src/detail/scheduler_op.hpp"
 
 #include <unistd.h>
 #include <errno.h>
@@ -42,7 +43,7 @@ namespace detail {
     It stores the coroutine handle, dispatcher, and result
     pointers needed to complete an async operation.
 */
-struct posix_op : capy::execution_context::handler
+struct posix_op : scheduler_op
 {
     struct canceller
     {
@@ -136,7 +137,7 @@ struct posix_op : capy::execution_context::handler
 };
 
 inline posix_op*
-get_posix_op(capy::execution_context::handler* h) noexcept
+get_posix_op(scheduler_op* h) noexcept
 {
     return static_cast<posix_op*>(h->data());
 }
