@@ -47,7 +47,7 @@ jobs:
         uses: cppalliance/aws-hosted-runners@v1.0.0
 
   build:
-    needs: [ runner-selection ]
+    # needs: [ runner-selection ]
     defaults:
       run:
         shell: bash
@@ -266,7 +266,9 @@ jobs:
             install: "gcc-multilib g++-multilib"
 
     name: ${{ matrix.name }}
-    runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)[matrix.runs-on] }}
+    # Skip self-hosted selection for now
+    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)[matrix.runs-on] }}
+    runs-on: ${{ matrix.runs-on }}
     container:
       image: ${{ matrix.container }}
       options: --privileged
@@ -506,13 +508,15 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
   changelog:
-    needs: [ runner-selection ]
+    # needs: [ runner-selection ]
     defaults:
       run:
         shell: bash
 
     name: Changelog Summary
-    runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-22.04'] }}
+    # Skip self-hosted runners for now
+    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-22.04'] }}
+    runs-on: 'ubuntu-22.04'
     timeout-minutes: 120
 
     steps:
@@ -531,9 +535,11 @@ jobs:
           tag-pattern: 'boost-.*\..*\..*'
 
   antora:
-    needs: [ runner-selection ]
+    # needs: [ runner-selection ]
     name: Antora Docs
-    runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-latest'] }}
+    # Skip self-hosted runner selection for now
+    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-latest'] }}
+    runs-on: ${{ 'ubuntu-latest' }}
     defaults:
       run:
         shell: bash
