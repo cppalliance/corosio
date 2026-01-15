@@ -108,6 +108,12 @@ class win_socket_impl
 {
     friend class win_iocp_sockets;
 
+    win_iocp_sockets& svc_;
+    connect_op conn_;
+    read_op rd_;
+    write_op wr_;
+    SOCKET socket_ = INVALID_SOCKET;
+
 public:
     explicit win_socket_impl(win_iocp_sockets& svc) noexcept;
 
@@ -141,14 +147,6 @@ public:
     void cancel() noexcept;
     void close_socket() noexcept;
     void set_socket(SOCKET s) noexcept { socket_ = s; }
-
-    connect_op conn_;
-    read_op rd_;
-    write_op wr_;
-
-private:
-    win_iocp_sockets& svc_;
-    SOCKET socket_ = INVALID_SOCKET;
 };
 
 //------------------------------------------------------------------------------
