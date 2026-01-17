@@ -10,7 +10,7 @@
 #include <boost/corosio/io_context.hpp>
 
 #ifdef _WIN32
-#include "detail/win_iocp_scheduler.hpp"
+#include "src/detail/win/scheduler.hpp"
 #else
 #include "detail/posix_scheduler.hpp"
 #endif
@@ -21,7 +21,7 @@ namespace boost {
 namespace corosio {
 
 #ifdef _WIN32
-using scheduler_type = detail::win_iocp_scheduler;
+using scheduler_type = detail::win_scheduler;
 #else
 using scheduler_type = detail::posix_scheduler;
 #endif

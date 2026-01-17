@@ -9,9 +9,9 @@
 
 #ifdef _WIN32
 
-#include "win_timers.hpp"
-#include "win_timers_nt.hpp"
-#include "win_timers_thread.hpp"
+#include "src/detail/win/timers.hpp"
+#include "src/detail/win/timers_nt.hpp"
+#include "src/detail/win/timers_thread.hpp"
 
 namespace boost {
 namespace corosio {

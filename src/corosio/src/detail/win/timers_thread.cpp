@@ -9,7 +9,7 @@
 
 #ifdef _WIN32
 
-#include "win_timers_thread.hpp"
+#include "src/detail/win/timers_thread.hpp"
 #include "src/detail/windows.hpp"
 
 namespace boost {

@@ -10,7 +10,7 @@
 #include <boost/corosio/resolver.hpp>
 
 #ifdef _WIN32
-#include "detail/win_iocp_resolver_service.hpp"
+#include "src/detail/win/resolver_service.hpp"
 #else
 #include "detail/posix_resolver_service.hpp"
 #endif
@@ -20,7 +20,7 @@ namespace corosio {
 namespace {
 
 #ifdef _WIN32
-using resolver_service = detail::win_iocp_resolver_service;
+using resolver_service = detail::win_resolver_service;
 using resolver_impl_type = detail::win_resolver_impl;
 #else
 using resolver_service = detail::posix_resolver_service;

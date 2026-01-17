@@ -11,7 +11,7 @@
 #include <boost/corosio/detail/except.hpp>
 
 #ifdef _WIN32
-#include "src/detail/win_iocp_sockets.hpp"
+#include "src/detail/win/sockets.hpp"
 #else
 #include "src/detail/posix_sockets.hpp"
 #endif
@@ -23,7 +23,7 @@ namespace corosio {
 
 namespace {
 #ifdef _WIN32
-using socket_service = detail::win_iocp_sockets;
+using socket_service = detail::win_sockets;
 using socket_impl_type = detail::win_socket_impl;
 #else
 using socket_service = detail::posix_sockets;

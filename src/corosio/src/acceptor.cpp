@@ -10,7 +10,7 @@
 #include <boost/corosio/acceptor.hpp>
 
 #ifdef _WIN32
-#include "detail/win_iocp_sockets.hpp"
+#include "src/detail/win/sockets.hpp"
 #else
 #include "detail/posix_sockets.hpp"
 #endif
@@ -24,7 +24,7 @@ namespace corosio {
 namespace {
 
 #ifdef _WIN32
-using acceptor_service = detail::win_iocp_sockets;
+using acceptor_service = detail::win_sockets;
 using acceptor_impl_type = detail::win_acceptor_impl;
 #else
 using acceptor_service = detail::posix_sockets;

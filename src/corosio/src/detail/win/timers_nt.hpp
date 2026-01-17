@@ -10,7 +10,7 @@
 #ifndef BOOST_COROSIO_DETAIL_WIN_TIMERS_NT_HPP
 #define BOOST_COROSIO_DETAIL_WIN_TIMERS_NT_HPP
 
-#include "win_timers.hpp"
+#include "src/detail/win/timers.hpp"
 
 namespace boost {
 namespace corosio {
