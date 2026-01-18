@@ -43,7 +43,7 @@ struct consuming_buffers_test
 
         // Verify consuming_buffers models mutable_buffer_sequence
         static_assert(
-            capy::mutable_buffer_sequence<consuming_buffers<decltype(bufs)>>,
+            capy::MutableBufferSequence<consuming_buffers<decltype(bufs)>>,
             "consuming_buffers must model mutable_buffer_sequence");
 
         // Verify it can be used with buffer_size
@@ -61,7 +61,7 @@ struct consuming_buffers_test
 
         // Verify consuming_buffers models mutable_buffer_sequence for single buffer
         static_assert(
-            capy::mutable_buffer_sequence<consuming_buffers<capy::mutable_buffer>>,
+            capy::MutableBufferSequence<consuming_buffers<capy::mutable_buffer>>,
             "consuming_buffers must model mutable_buffer_sequence for single buffer");
 
         std::size_t const size = capy::buffer_size(cb);
@@ -117,7 +117,7 @@ struct consuming_buffers_test
         }
 
         // Final check - Buffer Sequence Concept
-        static_assert(capy::mutable_buffer_sequence<cb_type>,
+        static_assert(capy::MutableBufferSequence<cb_type>,
             "consuming_buffers must model mutable_buffer_sequence");
     }
 

@@ -76,7 +76,7 @@ namespace corosio {
         error or EOF occurs), whereas `read_some()` may return
         after reading any amount of data.
 */
-template<capy::mutable_buffer_sequence MutableBufferSequence>
+template<capy::MutableBufferSequence MutableBufferSequence>
 capy::task<io_result<std::size_t>>
 read(io_stream& ios, MutableBufferSequence const& buffers)
 {

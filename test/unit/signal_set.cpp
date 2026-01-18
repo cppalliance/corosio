@@ -10,6 +10,8 @@
 // Test that header file is self-contained.
 #include <boost/corosio/signal_set.hpp>
 
+#ifdef _WIN32
+
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/timer.hpp>
 #include <boost/capy/cond.hpp>
@@ -641,3 +643,5 @@ TEST_SUITE(signal_set_test, "boost.corosio.signal_set");
 
 } // namespace corosio
 } // namespace boost
+
+#endif // _WIN32

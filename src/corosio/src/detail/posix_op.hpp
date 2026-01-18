@@ -12,8 +12,8 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_object.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/system/error_code.hpp>
@@ -40,7 +40,7 @@ namespace detail {
 /** Base class for POSIX async operations.
 
     This class is analogous to overlapped_op on Windows.
-    It stores the coroutine handle, dispatcher, and result
+    It stores the coroutine handle, executor, and result
     pointers needed to complete an async operation.
 */
 struct posix_op : scheduler_op
@@ -52,7 +52,7 @@ struct posix_op : scheduler_op
     };
 
     capy::any_coro h;
-    capy::any_dispatcher d;
+    capy::any_executor_ref d;
     system::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
 
@@ -98,7 +98,7 @@ struct posix_op : scheduler_op
         if (bytes_out)
             *bytes_out = bytes_transferred;
 
-        d(h).resume();
+        d.dispatch(h).resume();
     }
 
     // Returns true if this is a read operation (for EOF detection)
@@ -293,7 +293,7 @@ struct posix_accept_op : posix_op
                 *impl_out = nullptr;
         }
 
-        d(h).resume();
+        d.dispatch(h).resume();
     }
 };
 

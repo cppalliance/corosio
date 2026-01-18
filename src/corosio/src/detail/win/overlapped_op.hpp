@@ -11,8 +11,8 @@
 #define BOOST_COROSIO_DETAIL_WIN_OVERLAPPED_OP_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/system/error_code.hpp>
@@ -45,7 +45,7 @@ struct overlapped_op
     };
 
     capy::any_coro h;
-    capy::any_dispatcher d;
+    capy::any_executor_ref d;
     system::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
     DWORD error = 0;
@@ -97,7 +97,7 @@ struct overlapped_op
         if (bytes_out)
             *bytes_out = static_cast<std::size_t>(bytes_transferred);
 
-        d(h).resume();
+        d.dispatch(h).resume();
     }
 
     // Returns true if this is a read operation (for EOF detection)

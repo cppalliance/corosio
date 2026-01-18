@@ -26,14 +26,14 @@ namespace detail {
 template<class T>
 struct buffer_type_for;
 
-template<capy::mutable_buffer_sequence T>
+template<capy::MutableBufferSequence T>
 struct buffer_type_for<T>
 {
     using type = capy::mutable_buffer;
 };
 
-template<capy::const_buffer_sequence T>
-    requires (!capy::mutable_buffer_sequence<T>)
+template<capy::ConstBufferSequence T>
+    requires (!capy::MutableBufferSequence<T>)
 struct buffer_type_for<T>
 {
     using type = capy::const_buffer;
@@ -52,8 +52,8 @@ struct buffer_type_for<T>
     @tparam BufferSequence The buffer sequence type.
 */
 template<class BufferSequence>
-    requires capy::mutable_buffer_sequence<BufferSequence> ||
-             capy::const_buffer_sequence<BufferSequence>
+    requires capy::MutableBufferSequence<BufferSequence> ||
+             capy::ConstBufferSequence<BufferSequence>
 class consuming_buffers
 {
     using iterator_type = decltype(capy::begin(std::declval<BufferSequence const&>()));
@@ -231,16 +231,16 @@ public:
 
 // ADL helpers for capy::begin and capy::end
 template<class BufferSequence>
-    requires capy::mutable_buffer_sequence<BufferSequence> ||
-             capy::const_buffer_sequence<BufferSequence>
+    requires capy::MutableBufferSequence<BufferSequence> ||
+             capy::ConstBufferSequence<BufferSequence>
 auto begin(consuming_buffers<BufferSequence> const& cb) noexcept
 {
     return cb.begin();
 }
 
 template<class BufferSequence>
-    requires capy::mutable_buffer_sequence<BufferSequence> ||
-             capy::const_buffer_sequence<BufferSequence>
+    requires capy::MutableBufferSequence<BufferSequence> ||
+             capy::ConstBufferSequence<BufferSequence>
 auto end(consuming_buffers<BufferSequence> const& cb) noexcept
 {
     return cb.end();

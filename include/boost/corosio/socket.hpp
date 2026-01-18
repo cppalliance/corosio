@@ -16,8 +16,8 @@
 #include <boost/corosio/io_result.hpp>
 #include <boost/corosio/any_bufref.hpp>
 #include <boost/corosio/endpoint.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
@@ -77,7 +77,7 @@ public:
     {
         virtual void connect(
             std::coroutine_handle<>,
-            capy::any_dispatcher,
+            capy::any_executor_ref,
             endpoint,
             std::stop_token,
             system::error_code*) = 0;
@@ -108,23 +108,23 @@ public:
             return {ec_};
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) -> std::coroutine_handle<>
+            Ex const& ex) -> std::coroutine_handle<>
         {
-            s_.get().connect(h, d, endpoint_, token_, &ec_);
+            s_.get().connect(h, ex, endpoint_, token_, &ec_);
             return std::noop_coroutine();
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d,
+            Ex const& ex,
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            s_.get().connect(h, d, endpoint_, token_, &ec_);
+            s_.get().connect(h, ex, endpoint_, token_, &ec_);
             return std::noop_coroutine();
         }
     };
@@ -148,10 +148,10 @@ public:
 
         @param ex The executor whose context will own the socket.
     */
-    template<class Executor>
-        requires (!std::same_as<std::remove_cvref_t<Executor>, socket>) &&
-                 capy::executor<Executor>
-    explicit socket(Executor const& ex)
+    template<class Ex>
+        requires (!std::same_as<std::remove_cvref_t<Ex>, socket>) &&
+                 capy::Executor<Ex>
+    explicit socket(Ex const& ex)
         : socket(ex.context())
     {
     }

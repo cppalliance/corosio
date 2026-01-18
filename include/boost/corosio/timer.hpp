@@ -15,9 +15,9 @@
 #include <boost/corosio/io_object.hpp>
 #include <boost/corosio/io_result.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <chrono>
@@ -65,23 +65,23 @@ class BOOST_COROSIO_DECL timer : public io_object
             return {ec_};
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) -> std::coroutine_handle<>
+            Ex const& ex) -> std::coroutine_handle<>
         {
-            t_.get().wait(h, d, token_, &ec_);
+            t_.get().wait(h, ex, token_, &ec_);
             return std::noop_coroutine();
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d,
+            Ex const& ex,
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            t_.get().wait(h, d, token_, &ec_);
+            t_.get().wait(h, ex, token_, &ec_);
             return std::noop_coroutine();
         }
     };
@@ -91,7 +91,7 @@ public:
     {
         virtual void wait(
             std::coroutine_handle<>,
-            capy::any_dispatcher,
+            capy::any_executor_ref,
             std::stop_token,
             system::error_code*) = 0;
     };

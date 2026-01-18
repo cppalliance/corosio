@@ -291,7 +291,7 @@ private:
 
     The executor provides the interface for posting work items and
     dispatching coroutines to the associated io_context. It satisfies
-    the `capy::executor` concept.
+    the `capy::Executor` concept.
 
     Executors are lightweight handles that can be copied and compared
     for equality. Two executors compare equal if they refer to the
@@ -365,7 +365,7 @@ public:
 
     /** Dispatch a coroutine handle.
 
-        This is the dispatcher interface for capy coroutines. If called
+        This is the executor interface for capy coroutines. If called
         from within `run()`, returns the handle for symmetric transfer.
         Otherwise posts the handle and returns `noop_coroutine`.
 
@@ -375,7 +375,7 @@ public:
             if the handle was posted.
     */
     capy::any_coro
-    operator()(capy::any_coro h) const
+    dispatch(capy::any_coro h) const
     {
         if (running_in_this_thread())
             return h;
@@ -396,18 +396,6 @@ public:
         ctx_->sched_.post(h);
     }
 
-    /** Queue a coroutine for deferred execution.
-
-        This is semantically identical to `post`, but conveys that
-        `h` is a continuation of the current call context.
-
-        @param h The coroutine handle to defer.
-    */
-    void
-    defer(capy::any_coro h) const
-    {
-        ctx_->sched_.post(h);
-    }
 
     /** Compare two executors for equality.
 

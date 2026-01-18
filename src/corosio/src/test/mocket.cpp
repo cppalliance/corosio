@@ -89,7 +89,7 @@ public:
 
     void read_some(
         std::coroutine_handle<> h,
-        capy::any_dispatcher d,
+        capy::any_executor_ref d,
         any_bufref& buffers,
         std::stop_token token,
         system::error_code* ec,
@@ -97,7 +97,7 @@ public:
 
     void write_some(
         std::coroutine_handle<> h,
-        capy::any_dispatcher d,
+        capy::any_executor_ref d,
         any_bufref& buffers,
         std::stop_token token,
         system::error_code* ec,
@@ -256,12 +256,13 @@ void
 mocket_impl::
 read_some(
     std::coroutine_handle<> h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     any_bufref& buffers,
     std::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_transferred)
 {
+    (void)token;
     // Fuse check for m1 only
     if (check_fuse_)
     {
@@ -270,7 +271,7 @@ read_some(
         {
             *ec = fail_ec;
             *bytes_transferred = 0;
-            d(capy::any_coro{h}).resume();
+            d.dispatch(capy::any_coro{h}).resume();
             return;
         }
     }
@@ -285,7 +286,7 @@ read_some(
     {
         *ec = {};
         *bytes_transferred = n;
-        d(capy::any_coro{h}).resume();
+        d.dispatch(capy::any_coro{h}).resume();
         return;
     }
 
@@ -297,39 +298,24 @@ read_some(
     }
 
     // Pass through to the real socket
-    capy::run_async(d, token,
-        [h, d]()
-        {
-            d(capy::any_coro{h}).resume();
-        },
-        [this](std::exception_ptr ep)
-        {
-            fuse_.fail(ep);
-        })(
-        [this, bufs, count, ec, bytes_transferred]() -> capy::task<>
-        {
-            std::array<capy::mutable_buffer, max_buffers> mut_bufs;
-            for (std::size_t i = 0; i < count; ++i)
-                mut_bufs[i] = bufs[i];
-
-            auto [read_ec, read_n] = co_await sock_.read_some(
-                std::span<capy::mutable_buffer>(mut_bufs.data(), count));
-
-            *ec = read_ec;
-            *bytes_transferred = read_n;
-        }());
+    // TODO: Temporarily disabled during API refactoring
+    // run_async requires Executor concept but any_executor_ref doesn't satisfy it
+    *ec = make_error_code(system::errc::not_supported);
+    *bytes_transferred = 0;
+    d.dispatch(capy::any_coro{h}).resume();
 }
 
 void
 mocket_impl::
 write_some(
     std::coroutine_handle<> h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     any_bufref& buffers,
     std::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_transferred)
 {
+    (void)token;
     // Fuse check for m1 only
     if (check_fuse_)
     {
@@ -338,7 +324,7 @@ write_some(
         {
             *ec = fail_ec;
             *bytes_transferred = 0;
-            d(capy::any_coro{h}).resume();
+            d.dispatch(capy::any_coro{h}).resume();
             return;
         }
     }
@@ -359,40 +345,23 @@ write_some(
         {
             *ec = capy::error::test_failure;
             *bytes_transferred = 0;
-            d(capy::any_coro{h}).resume();
+            d.dispatch(capy::any_coro{h}).resume();
             return;
         }
 
         // If all expected data was validated, report success
         *ec = {};
         *bytes_transferred = total_size;
-        d(capy::any_coro{h}).resume();
+        d.dispatch(capy::any_coro{h}).resume();
         return;
     }
 
     // Pass through to the real socket
-    capy::run_async(d, token,
-        [h, d]()
-        {
-            d(capy::any_coro{h}).resume();
-        },
-        [this](std::exception_ptr ep)
-        {
-            fuse_.fail(ep);
-        })(
-        [this, bufs, count, ec, bytes_transferred]() -> capy::task<>
-        {
-            // Convert to const_buffer for write
-            std::array<capy::const_buffer, max_buffers> const_bufs;
-            for (std::size_t i = 0; i < count; ++i)
-                const_bufs[i] = capy::const_buffer(bufs[i].data(), bufs[i].size());
-
-            auto [write_ec, write_n] = co_await sock_.write_some(
-                std::span<capy::const_buffer>(const_bufs.data(), count));
-
-            *ec = write_ec;
-            *bytes_transferred = write_n;
-        }());
+    // TODO: Temporarily disabled during API refactoring
+    // run_async requires Executor concept but any_executor_ref doesn't satisfy it
+    *ec = make_error_code(system::errc::not_supported);
+    *bytes_transferred = 0;
+    d.dispatch(capy::any_coro{h}).resume();
 }
 
 //------------------------------------------------------------------------------

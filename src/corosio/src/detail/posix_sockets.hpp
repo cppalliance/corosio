@@ -13,8 +13,8 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/socket.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 
@@ -60,14 +60,14 @@ public:
 
     void connect(
         std::coroutine_handle<>,
-        capy::any_dispatcher,
+        capy::any_executor_ref,
         endpoint,
         std::stop_token,
         system::error_code*) override;
 
     void read_some(
         std::coroutine_handle<>,
-        capy::any_dispatcher,
+        capy::any_executor_ref,
         any_bufref&,
         std::stop_token,
         system::error_code*,
@@ -75,7 +75,7 @@ public:
 
     void write_some(
         std::coroutine_handle<>,
-        capy::any_dispatcher,
+        capy::any_executor_ref,
         any_bufref&,
         std::stop_token,
         system::error_code*,
@@ -115,7 +115,7 @@ public:
 
     void accept(
         std::coroutine_handle<>,
-        capy::any_dispatcher,
+        capy::any_executor_ref,
         std::stop_token,
         system::error_code*,
         io_object::io_object_impl**) override;
@@ -233,7 +233,7 @@ inline void
 posix_socket_impl::
 connect(
     std::coroutine_handle<> h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     endpoint ep,
     std::stop_token token,
     system::error_code* ec)
@@ -275,7 +275,7 @@ inline void
 posix_socket_impl::
 read_some(
     std::coroutine_handle<> h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     any_bufref& param,
     std::stop_token token,
     system::error_code* ec,
@@ -335,7 +335,7 @@ inline void
 posix_socket_impl::
 write_some(
     std::coroutine_handle<> h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     any_bufref& param,
     std::stop_token token,
     system::error_code* ec,
@@ -428,7 +428,7 @@ inline void
 posix_acceptor_impl::
 accept(
     std::coroutine_handle<> h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     std::stop_token token,
     system::error_code* ec,
     io_object::io_object_impl** impl_out)

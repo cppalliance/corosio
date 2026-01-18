@@ -13,8 +13,8 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/resolver_results.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 
@@ -54,7 +54,7 @@ public:
 
     void resolve(
         std::coroutine_handle<>,
-        capy::any_dispatcher,
+        capy::any_executor_ref,
         std::string_view /*host*/,
         std::string_view /*service*/,
         resolve_flags /*flags*/,

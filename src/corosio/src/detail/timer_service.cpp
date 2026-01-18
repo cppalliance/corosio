@@ -12,7 +12,7 @@
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <coroutine>
@@ -41,7 +41,7 @@ struct timer_impl
 
     // Wait operation state
     std::coroutine_handle<> h_;
-    capy::any_dispatcher d_;
+    capy::any_executor_ref d_;
     system::error_code* ec_out_ = nullptr;
     std::stop_token token_;
     bool waiting_ = false;
@@ -55,7 +55,7 @@ struct timer_impl
 
     void wait(
         std::coroutine_handle<>,
-        capy::any_dispatcher,
+        capy::any_executor_ref,
         std::stop_token,
         system::error_code*) override;
 };
@@ -142,7 +142,7 @@ public:
         bool notify = false;
         bool was_waiting = false;
         std::coroutine_handle<> h;
-        capy::any_dispatcher d;
+        capy::any_executor_ref d;
         system::error_code* ec_out = nullptr;
 
         {
@@ -186,8 +186,8 @@ public:
         {
             if (ec_out)
                 *ec_out = make_error_code(capy::error::canceled);
-            auto resume_h = d(h);
-            // Resume the handle if dispatcher returned it for symmetric transfer
+            auto resume_h = d.dispatch(h);
+            // Resume the handle if executor returned it for symmetric transfer
             if (resume_h.address() == h.address())
                 resume_h.resume();
             // Call on_work_finished AFTER the coroutine resumes
@@ -207,7 +207,7 @@ public:
     void cancel_timer(timer_impl& impl)
     {
         std::coroutine_handle<> h;
-        capy::any_dispatcher d;
+        capy::any_executor_ref d;
         system::error_code* ec_out = nullptr;
         bool was_waiting = false;
 
@@ -229,8 +229,8 @@ public:
         {
             if (ec_out)
                 *ec_out = make_error_code(capy::error::canceled);
-            auto resume_h = d(h);
-            // Resume the handle if dispatcher returned it for symmetric transfer
+            auto resume_h = d.dispatch(h);
+            // Resume the handle if executor returned it for symmetric transfer
             if (resume_h.address() == h.address())
                 resume_h.resume();
             // Call on_work_finished AFTER the coroutine resumes
@@ -256,7 +256,7 @@ public:
         struct expired_entry
         {
             std::coroutine_handle<> h;
-            capy::any_dispatcher d;
+            capy::any_executor_ref d;
             system::error_code* ec_out;
         };
         std::vector<expired_entry> expired;
@@ -285,9 +285,9 @@ public:
         {
             if (e.ec_out)
                 *e.ec_out = {};
-            auto resume_h = e.d(e.h);
-            // Resume the handle if dispatcher returned it for symmetric transfer
-            // (dispatcher returns our handle if we should resume, noop if it posted)
+            auto resume_h = e.d.dispatch(e.h);
+            // Resume the handle if executor returned it for symmetric transfer
+            // (executor returns our handle if we should resume, noop if it posted)
             if (resume_h.address() == e.h.address())
                 resume_h.resume();
             // Call on_work_finished AFTER the coroutine resumes, so it has a
@@ -378,7 +378,7 @@ void
 timer_impl::
 wait(
     std::coroutine_handle<> h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     std::stop_token token,
     system::error_code* ec)
 {
@@ -391,8 +391,8 @@ wait(
         if (ec)
             *ec = {};
         // Note: no work tracking needed - we dispatch synchronously
-        auto resume_h = d(h);
-        // Resume the handle if dispatcher returned it for symmetric transfer
+        auto resume_h = d.dispatch(h);
+        // Resume the handle if executor returned it for symmetric transfer
         if (resume_h.address() == h.address())
             resume_h.resume();
         return;

@@ -104,7 +104,7 @@ operator()()
             *impl_out = nullptr;
     }
 
-    d(h).resume();
+    d.dispatch(h).resume();
 }
 
 void
@@ -176,7 +176,7 @@ void
 win_socket_impl::
 connect(
     capy::any_coro h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     endpoint ep,
     std::stop_token token,
     system::error_code* ec)
@@ -246,7 +246,7 @@ void
 win_socket_impl::
 read_some(
     capy::any_coro h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     any_bufref& param,
     std::stop_token token,
     system::error_code* ec,
@@ -307,7 +307,7 @@ void
 win_socket_impl::
 write_some(
     capy::any_coro h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     any_bufref& param,
     std::stop_token token,
     system::error_code* ec,
@@ -678,7 +678,7 @@ void
 win_acceptor_impl::
 accept(
     capy::any_coro h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     std::stop_token token,
     system::error_code* ec,
     io_object::io_object_impl** impl_out)

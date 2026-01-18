@@ -14,7 +14,7 @@
 #include <boost/corosio/io_object.hpp>
 #include <boost/corosio/io_result.hpp>
 #include <boost/corosio/any_bufref.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <coroutine>
@@ -122,25 +122,25 @@ protected:
             return {ec_, bytes_transferred_};
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) -> std::coroutine_handle<>
+            Ex const& ex) -> std::coroutine_handle<>
         {
             any_bufref param(buffers_);
-            ios_.get().read_some(h, d, param, token_, &ec_, &bytes_transferred_);
+            ios_.get().read_some(h, ex, param, token_, &ec_, &bytes_transferred_);
             return std::noop_coroutine();
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d,
+            Ex const& ex,
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             any_bufref param(buffers_);
-            ios_.get().read_some(h, d, param, token_, &ec_, &bytes_transferred_);
+            ios_.get().read_some(h, ex, param, token_, &ec_, &bytes_transferred_);
             return std::noop_coroutine();
         }
     };
@@ -174,25 +174,25 @@ protected:
             return {ec_, bytes_transferred_};
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) -> std::coroutine_handle<>
+            Ex const& ex) -> std::coroutine_handle<>
         {
             any_bufref param(buffers_);
-            ios_.get().write_some(h, d, param, token_, &ec_, &bytes_transferred_);
+            ios_.get().write_some(h, ex, param, token_, &ec_, &bytes_transferred_);
             return std::noop_coroutine();
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d,
+            Ex const& ex,
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             any_bufref param(buffers_);
-            ios_.get().write_some(h, d, param, token_, &ec_, &bytes_transferred_);
+            ios_.get().write_some(h, ex, param, token_, &ec_, &bytes_transferred_);
             return std::noop_coroutine();
         }
     };
@@ -202,7 +202,7 @@ public:
     {
         virtual void read_some(
             std::coroutine_handle<>,
-            capy::any_dispatcher,
+            capy::any_executor_ref,
             any_bufref&,
             std::stop_token,
             system::error_code*,
@@ -210,7 +210,7 @@ public:
 
         virtual void write_some(
             std::coroutine_handle<>,
-            capy::any_dispatcher,
+            capy::any_executor_ref,
             any_bufref&,
             std::stop_token,
             system::error_code*,

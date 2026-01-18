@@ -15,8 +15,8 @@
 #include <boost/corosio/io_object.hpp>
 #include <boost/corosio/io_result.hpp>
 #include <boost/corosio/resolver_results.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
@@ -172,23 +172,23 @@ class BOOST_COROSIO_DECL resolver : public io_object
             return {ec_, std::move(results_)};
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) -> std::coroutine_handle<>
+            Ex const& ex) -> std::coroutine_handle<>
         {
-            r_.get().resolve(h, d, host_, service_, flags_, token_, &ec_, &results_);
+            r_.get().resolve(h, ex, host_, service_, flags_, token_, &ec_, &results_);
             return std::noop_coroutine();
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d,
+            Ex const& ex,
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            r_.get().resolve(h, d, host_, service_, flags_, token_, &ec_, &results_);
+            r_.get().resolve(h, ex, host_, service_, flags_, token_, &ec_, &results_);
             return std::noop_coroutine();
         }
     };
@@ -212,10 +212,10 @@ public:
 
         @param ex The executor whose context will own the resolver.
     */
-    template<class Executor>
-        requires (!std::same_as<std::remove_cvref_t<Executor>, resolver>) &&
-                 capy::executor<Executor>
-    explicit resolver(Executor const& ex)
+    template<class Ex>
+        requires (!std::same_as<std::remove_cvref_t<Ex>, resolver>) &&
+                 capy::Executor<Ex>
+    explicit resolver(Ex const& ex)
         : resolver(ex.context())
     {
     }
@@ -319,7 +319,7 @@ public:
     {
         virtual void resolve(
             std::coroutine_handle<>,
-            capy::any_dispatcher,
+            capy::any_executor_ref,
             std::string_view host,
             std::string_view service,
             resolve_flags flags,

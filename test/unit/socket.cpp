@@ -24,8 +24,8 @@ namespace corosio {
 // Verify socket satisfies stream concepts
 //------------------------------------------------
 
-static_assert(capy::read_stream<socket, capy::mutable_buffer>);
-static_assert(capy::write_stream<socket, capy::const_buffer>);
+static_assert(capy::ReadStream<socket, capy::mutable_buffer>);
+static_assert(capy::WriteStream<socket, capy::const_buffer>);
 
 //------------------------------------------------
 // Socket-specific tests

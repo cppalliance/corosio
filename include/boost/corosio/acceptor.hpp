@@ -16,8 +16,8 @@
 #include <boost/corosio/io_result.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/socket.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
@@ -97,23 +97,23 @@ class BOOST_COROSIO_DECL acceptor : public io_object
             return {ec_};
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) -> std::coroutine_handle<>
+            Ex const& ex) -> std::coroutine_handle<>
         {
-            acc_.get().accept(h, d, token_, &ec_, &peer_impl_);
+            acc_.get().accept(h, ex, token_, &ec_, &peer_impl_);
             return std::noop_coroutine();
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d,
+            Ex const& ex,
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            acc_.get().accept(h, d, token_, &ec_, &peer_impl_);
+            acc_.get().accept(h, ex, token_, &ec_, &peer_impl_);
             return std::noop_coroutine();
         }
     };
@@ -137,10 +137,10 @@ public:
 
         @param ex The executor whose context will own the acceptor.
     */
-    template<class Executor>
-        requires (!std::same_as<std::remove_cvref_t<Executor>, acceptor>) &&
-                 capy::executor<Executor>
-    explicit acceptor(Executor const& ex)
+    template<class Ex>
+        requires (!std::same_as<std::remove_cvref_t<Ex>, acceptor>) &&
+                 capy::Executor<Ex>
+    explicit acceptor(Ex const& ex)
         : acceptor(ex.context())
     {
     }
@@ -268,7 +268,7 @@ public:
     {
         virtual void accept(
             std::coroutine_handle<>,
-            capy::any_dispatcher,
+            capy::any_executor_ref,
             std::stop_token,
             system::error_code*,
             io_object_impl**) = 0;

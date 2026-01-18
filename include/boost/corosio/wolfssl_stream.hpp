@@ -13,7 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_result.hpp>
 #include <boost/corosio/io_stream.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
 
 #include <coroutine>
 #include <stop_token>
@@ -70,23 +70,23 @@ class BOOST_COROSIO_DECL wolfssl_stream : public io_stream
             return {ec_};
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) -> std::coroutine_handle<>
+            Ex const& ex) -> std::coroutine_handle<>
         {
-            stream_.get().handshake(h, d, type_, token_, &ec_);
+            stream_.get().handshake(h, ex, type_, token_, &ec_);
             return std::noop_coroutine();
         }
 
-        template<capy::dispatcher Dispatcher>
+        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d,
+            Ex const& ex,
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            stream_.get().handshake(h, d, type_, token_, &ec_);
+            stream_.get().handshake(h, ex, type_, token_, &ec_);
             return std::noop_coroutine();
         }
     };
@@ -153,7 +153,7 @@ public:
     {
         virtual void handshake(
             std::coroutine_handle<>,
-            capy::any_dispatcher,
+            capy::any_executor_ref,
             int,
             std::stop_token,
             system::error_code*) = 0;

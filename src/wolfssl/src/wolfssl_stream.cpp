@@ -238,7 +238,7 @@ struct wolfssl_stream_impl_
         system::error_code* ec_out,
         std::size_t* bytes_out,
         std::coroutine_handle<> continuation,
-        capy::any_dispatcher d)
+        capy::any_executor_ref d)
     {
         system::error_code ec;
         std::size_t total_read = 0;
@@ -325,8 +325,8 @@ struct wolfssl_stream_impl_
         *ec_out = ec;
         *bytes_out = total_read;
 
-        // Resume the original caller via dispatcher
-        d(capy::any_coro{continuation}).resume();
+        // Resume the original caller via executor
+        d.dispatch(capy::any_coro{continuation}).resume();
         co_return;
     }
 
@@ -343,7 +343,7 @@ struct wolfssl_stream_impl_
         system::error_code* ec_out,
         std::size_t* bytes_out,
         std::coroutine_handle<> continuation,
-        capy::any_dispatcher d)
+        capy::any_executor_ref d)
     {
         system::error_code ec;
         std::size_t total_written = 0;
@@ -436,8 +436,8 @@ struct wolfssl_stream_impl_
         *ec_out = ec;
         *bytes_out = total_written;
 
-        // Resume the original caller via dispatcher
-        d(capy::any_coro{continuation}).resume();
+        // Resume the original caller via executor
+        d.dispatch(capy::any_coro{continuation}).resume();
         co_return;
     }
 
@@ -452,7 +452,7 @@ struct wolfssl_stream_impl_
         std::stop_token token,
         system::error_code* ec_out,
         std::coroutine_handle<> continuation,
-        capy::any_dispatcher d)
+        capy::any_executor_ref d)
     {
         system::error_code ec;
 
@@ -565,8 +565,8 @@ struct wolfssl_stream_impl_
 
         *ec_out = ec;
 
-        // Resume the original caller via dispatcher
-        d(capy::any_coro{continuation}).resume();
+        // Resume the original caller via executor
+        d.dispatch(capy::any_coro{continuation}).resume();
         co_return;
     }
 
@@ -581,7 +581,7 @@ struct wolfssl_stream_impl_
 
     void read_some(
         std::coroutine_handle<> h,
-        capy::any_dispatcher d,
+        capy::any_executor_ref d,
         any_bufref& param,
         std::stop_token token,
         system::error_code* ec,
@@ -599,7 +599,7 @@ struct wolfssl_stream_impl_
 
     void write_some(
         std::coroutine_handle<> h,
-        capy::any_dispatcher d,
+        capy::any_executor_ref d,
         any_bufref& param,
         std::stop_token token,
         system::error_code* ec,
@@ -617,7 +617,7 @@ struct wolfssl_stream_impl_
 
     void handshake(
         std::coroutine_handle<> h,
-        capy::any_dispatcher d,
+        capy::any_executor_ref d,
         int type,
         std::stop_token token,
         system::error_code* ec) override

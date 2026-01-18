@@ -150,7 +150,7 @@ operator()()
 
     cancel_handle = nullptr;
 
-    d(h).resume();
+    d.dispatch(h).resume();
 }
 
 void
@@ -190,7 +190,7 @@ void
 win_resolver_impl::
 resolve(
     capy::any_coro h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     std::string_view host,
     std::string_view service,
     resolve_flags flags,

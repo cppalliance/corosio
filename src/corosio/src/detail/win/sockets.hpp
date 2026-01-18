@@ -13,8 +13,8 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/socket.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 
@@ -122,14 +122,14 @@ public:
 
     void connect(
         std::coroutine_handle<>,
-        capy::any_dispatcher,
+        capy::any_executor_ref,
         endpoint,
         std::stop_token,
         system::error_code*) override;
 
     void read_some(
         std::coroutine_handle<>,
-        capy::any_dispatcher,
+        capy::any_executor_ref,
         any_bufref&,
         std::stop_token,
         system::error_code*,
@@ -137,7 +137,7 @@ public:
 
     void write_some(
         std::coroutine_handle<>,
-        capy::any_dispatcher,
+        capy::any_executor_ref,
         any_bufref&,
         std::stop_token,
         system::error_code*,
@@ -172,7 +172,7 @@ public:
 
     void accept(
         std::coroutine_handle<>,
-        capy::any_dispatcher,
+        capy::any_executor_ref,
         std::stop_token,
         system::error_code*,
         io_object::io_object_impl**) override;

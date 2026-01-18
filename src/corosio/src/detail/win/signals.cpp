@@ -73,7 +73,7 @@ operator()()
     auto* service = svc;
     svc = nullptr;
 
-    d(h).resume();
+    d.dispatch(h).resume();
 
     // Balance the on_work_started() from start_wait
     if (service)
@@ -113,7 +113,7 @@ void
 win_signal_impl::
 wait(
     std::coroutine_handle<> h,
-    capy::any_dispatcher d,
+    capy::any_executor_ref d,
     std::stop_token token,
     system::error_code* ec,
     int* signal_out)
@@ -131,7 +131,7 @@ wait(
             *ec = make_error_code(capy::error::canceled);
         if (signal_out)
             *signal_out = 0;
-        d(h).resume();
+        d.dispatch(h).resume();
         return;
     }
 
@@ -397,7 +397,7 @@ cancel_wait(win_signal_impl& impl)
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        op->d(op->h).resume();
+        op->d.dispatch(op->h).resume();
         sched_.on_work_finished();
     }
 }

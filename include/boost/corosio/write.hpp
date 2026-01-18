@@ -71,7 +71,7 @@ namespace corosio {
         error occurs), whereas `write_some()` may return after
         writing any amount of data.
 */
-template<capy::const_buffer_sequence ConstBufferSequence>
+template<capy::ConstBufferSequence ConstBufferSequence>
 capy::task<io_result<std::size_t>>
 write(io_stream& ios, ConstBufferSequence const& buffers)
 {
