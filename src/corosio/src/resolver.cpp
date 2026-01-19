@@ -9,22 +9,24 @@
 
 #include <boost/corosio/resolver.hpp>
 
-#ifdef _WIN32
-#include "src/detail/win/resolver_service.hpp"
-#else
-#include "detail/posix_resolver_service.hpp"
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#include "src/detail/iocp/resolver_service.hpp"
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+#include "src/detail/epoll/resolver_service.hpp"
 #endif
 
 namespace boost {
 namespace corosio {
 namespace {
 
-#ifdef _WIN32
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
 using resolver_service = detail::win_resolver_service;
 using resolver_impl_type = detail::win_resolver_impl;
-#else
-using resolver_service = detail::posix_resolver_service;
-using resolver_impl_type = detail::posix_resolver_impl;
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+using resolver_service = detail::epoll_resolver_service;
+using resolver_impl_type = detail::epoll_resolver_impl;
 #endif
 
 } // namespace

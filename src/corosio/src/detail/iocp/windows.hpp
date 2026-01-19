@@ -7,8 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_WINDOWS_HPP
-#define BOOST_COROSIO_DETAIL_WINDOWS_HPP
+#ifndef BOOST_COROSIO_DETAIL_IOCP_WINDOWS_HPP
+#define BOOST_COROSIO_DETAIL_IOCP_WINDOWS_HPP
+
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
 
 #if defined(_WIN32_WINNT) && (_WIN32_WINNT < 0x0600)
 #error "corosio requires Windows Vista or later (_WIN32_WINNT >= 0x0600)"
@@ -25,4 +29,6 @@
 #include <WinSock2.h>
 #include <Windows.h>
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_IOCP
+
+#endif // BOOST_COROSIO_DETAIL_IOCP_WINDOWS_HPP

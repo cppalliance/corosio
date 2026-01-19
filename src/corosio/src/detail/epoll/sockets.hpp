@@ -7,8 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_POSIX_SOCKETS_HPP
-#define BOOST_COROSIO_DETAIL_POSIX_SOCKETS_HPP
+#ifndef BOOST_COROSIO_DETAIL_EPOLL_SOCKETS_HPP
+#define BOOST_COROSIO_DETAIL_EPOLL_SOCKETS_HPP
+
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_EPOLL)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/acceptor.hpp>
@@ -18,8 +22,8 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 
-#include "src/detail/posix_op.hpp"
-#include "src/detail/posix_scheduler.hpp"
+#include "src/detail/epoll/op.hpp"
+#include "src/detail/epoll/scheduler.hpp"
 #include "src/detail/endpoint_convert.hpp"
 
 #include <mutex>
@@ -36,9 +40,9 @@ namespace boost {
 namespace corosio {
 namespace detail {
 
-class posix_sockets;
-class posix_socket_impl;
-class posix_acceptor_impl;
+class epoll_sockets;
+class epoll_socket_impl;
+class epoll_acceptor_impl;
 
 //------------------------------------------------------------------------------
 
@@ -47,14 +51,14 @@ class posix_acceptor_impl;
     This class contains the state for a single socket, including
     the native socket handle and pending operations.
 */
-class posix_socket_impl
+class epoll_socket_impl
     : public socket::socket_impl
-    , public capy::intrusive_list<posix_socket_impl>::node
+    , public capy::intrusive_list<epoll_socket_impl>::node
 {
-    friend class posix_sockets;
+    friend class epoll_sockets;
 
 public:
-    explicit posix_socket_impl(posix_sockets& svc) noexcept;
+    explicit epoll_socket_impl(epoll_sockets& svc) noexcept;
 
     void release() override;
 
@@ -87,12 +91,12 @@ public:
     void close_socket() noexcept;
     void set_socket(int fd) noexcept { fd_ = fd; }
 
-    posix_connect_op conn_;
-    posix_read_op rd_;
-    posix_write_op wr_;
+    epoll_connect_op conn_;
+    epoll_read_op rd_;
+    epoll_write_op wr_;
 
 private:
-    posix_sockets& svc_;
+    epoll_sockets& svc_;
     int fd_ = -1;
 };
 
@@ -102,14 +106,14 @@ private:
 
     This class contains the state for a listening socket.
 */
-class posix_acceptor_impl
+class epoll_acceptor_impl
     : public acceptor::acceptor_impl
-    , public capy::intrusive_list<posix_acceptor_impl>::node
+    , public capy::intrusive_list<epoll_acceptor_impl>::node
 {
-    friend class posix_sockets;
+    friend class epoll_sockets;
 
 public:
-    explicit posix_acceptor_impl(posix_sockets& svc) noexcept;
+    explicit epoll_acceptor_impl(epoll_sockets& svc) noexcept;
 
     void release() override;
 
@@ -125,59 +129,59 @@ public:
     void cancel() noexcept;
     void close_socket() noexcept;
 
-    posix_accept_op acc_;
+    epoll_accept_op acc_;
 
 private:
-    posix_sockets& svc_;
+    epoll_sockets& svc_;
     int fd_ = -1;
 };
 
 //------------------------------------------------------------------------------
 
-/** POSIX epoll socket management service.
+/** epoll socket management service.
 
     This service owns all socket implementations and coordinates their
     lifecycle with the epoll-based scheduler.
 */
-class posix_sockets
+class epoll_sockets
     : public capy::execution_context::service
 {
 public:
-    using key_type = posix_sockets;
+    using key_type = epoll_sockets;
 
     /** Construct the socket service.
 
         @param ctx Reference to the owning execution_context.
     */
-    explicit posix_sockets(capy::execution_context& ctx);
+    explicit epoll_sockets(capy::execution_context& ctx);
 
     /** Destroy the socket service. */
-    ~posix_sockets();
+    ~epoll_sockets();
 
-    posix_sockets(posix_sockets const&) = delete;
-    posix_sockets& operator=(posix_sockets const&) = delete;
+    epoll_sockets(epoll_sockets const&) = delete;
+    epoll_sockets& operator=(epoll_sockets const&) = delete;
 
     /** Shut down the service. */
     void shutdown() override;
 
     /** Create a new socket implementation. */
-    posix_socket_impl& create_impl();
+    epoll_socket_impl& create_impl();
 
     /** Destroy a socket implementation. */
-    void destroy_impl(posix_socket_impl& impl);
+    void destroy_impl(epoll_socket_impl& impl);
 
     /** Create and configure a socket.
 
         @param impl The socket implementation to initialize.
         @return Error code, or success.
     */
-    system::error_code open_socket(posix_socket_impl& impl);
+    system::error_code open_socket(epoll_socket_impl& impl);
 
     /** Create a new acceptor implementation. */
-    posix_acceptor_impl& create_acceptor_impl();
+    epoll_acceptor_impl& create_acceptor_impl();
 
     /** Destroy an acceptor implementation. */
-    void destroy_acceptor_impl(posix_acceptor_impl& impl);
+    void destroy_acceptor_impl(epoll_acceptor_impl& impl);
 
     /** Create, bind, and listen on an acceptor socket.
 
@@ -187,15 +191,15 @@ public:
         @return Error code, or success.
     */
     system::error_code open_acceptor(
-        posix_acceptor_impl& impl,
+        epoll_acceptor_impl& impl,
         endpoint ep,
         int backlog);
 
     /** Return the scheduler. */
-    posix_scheduler& scheduler() const noexcept { return sched_; }
+    epoll_scheduler& scheduler() const noexcept { return sched_; }
 
     /** Post an operation for completion. */
-    void post(posix_op* op);
+    void post(epoll_op* op);
 
     /** Notify scheduler of pending I/O work. */
     void work_started() noexcept;
@@ -204,25 +208,25 @@ public:
     void work_finished() noexcept;
 
 private:
-    posix_scheduler& sched_;
+    epoll_scheduler& sched_;
     std::mutex mutex_;
-    capy::intrusive_list<posix_socket_impl> socket_list_;
-    capy::intrusive_list<posix_acceptor_impl> acceptor_list_;
+    capy::intrusive_list<epoll_socket_impl> socket_list_;
+    capy::intrusive_list<epoll_acceptor_impl> acceptor_list_;
 };
 
 //------------------------------------------------------------------------------
-// posix_socket_impl implementation
+// epoll_socket_impl implementation
 //------------------------------------------------------------------------------
 
 inline
-posix_socket_impl::
-posix_socket_impl(posix_sockets& svc) noexcept
+epoll_socket_impl::
+epoll_socket_impl(epoll_sockets& svc) noexcept
     : svc_(svc)
 {
 }
 
 inline void
-posix_socket_impl::
+epoll_socket_impl::
 release()
 {
     close_socket();
@@ -230,7 +234,7 @@ release()
 }
 
 inline void
-posix_socket_impl::
+epoll_socket_impl::
 connect(
     std::coroutine_handle<> h,
     capy::any_executor_ref d,
@@ -268,7 +272,7 @@ connect(
 }
 
 inline void
-posix_socket_impl::
+epoll_socket_impl::
 read_some(
     std::coroutine_handle<> h,
     capy::any_executor_ref d,
@@ -286,8 +290,8 @@ read_some(
     op.fd = fd_;
     op.start(token);
 
-    capy::mutable_buffer bufs[posix_read_op::max_buffers];
-    op.iovec_count = static_cast<int>(param.copy_to(bufs, posix_read_op::max_buffers));
+    capy::mutable_buffer bufs[epoll_read_op::max_buffers];
+    op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_read_op::max_buffers));
     for (int i = 0; i < op.iovec_count; ++i)
     {
         op.iovecs[i].iov_base = bufs[i].data();
@@ -322,7 +326,7 @@ read_some(
 }
 
 inline void
-posix_socket_impl::
+epoll_socket_impl::
 write_some(
     std::coroutine_handle<> h,
     capy::any_executor_ref d,
@@ -340,8 +344,8 @@ write_some(
     op.fd = fd_;
     op.start(token);
 
-    capy::mutable_buffer bufs[posix_write_op::max_buffers];
-    op.iovec_count = static_cast<int>(param.copy_to(bufs, posix_write_op::max_buffers));
+    capy::mutable_buffer bufs[epoll_write_op::max_buffers];
+    op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_write_op::max_buffers));
     for (int i = 0; i < op.iovec_count; ++i)
     {
         op.iovecs[i].iov_base = bufs[i].data();
@@ -370,7 +374,7 @@ write_some(
 }
 
 inline void
-posix_socket_impl::
+epoll_socket_impl::
 cancel() noexcept
 {
     conn_.request_cancel();
@@ -379,7 +383,7 @@ cancel() noexcept
 }
 
 inline void
-posix_socket_impl::
+epoll_socket_impl::
 close_socket() noexcept
 {
     if (fd_ >= 0)
@@ -391,18 +395,18 @@ close_socket() noexcept
 }
 
 //------------------------------------------------------------------------------
-// posix_acceptor_impl implementation
+// epoll_acceptor_impl implementation
 //------------------------------------------------------------------------------
 
 inline
-posix_acceptor_impl::
-posix_acceptor_impl(posix_sockets& svc) noexcept
+epoll_acceptor_impl::
+epoll_acceptor_impl(epoll_sockets& svc) noexcept
     : svc_(svc)
 {
 }
 
 inline void
-posix_acceptor_impl::
+epoll_acceptor_impl::
 release()
 {
     close_socket();
@@ -410,7 +414,7 @@ release()
 }
 
 inline void
-posix_acceptor_impl::
+epoll_acceptor_impl::
 accept(
     std::coroutine_handle<> h,
     capy::any_executor_ref d,
@@ -430,7 +434,7 @@ accept(
     // Callback for creating peer socket when accept completes via epoll
     op.service_ptr = &svc_;
     op.create_peer = [](void* svc_ptr, int new_fd) -> io_object::io_object_impl* {
-        auto& svc = *static_cast<posix_sockets*>(svc_ptr);
+        auto& svc = *static_cast<epoll_sockets*>(svc_ptr);
         auto& peer_impl = svc.create_impl();
         peer_impl.set_socket(new_fd);
         return &peer_impl;
@@ -464,14 +468,14 @@ accept(
 }
 
 inline void
-posix_acceptor_impl::
+epoll_acceptor_impl::
 cancel() noexcept
 {
     acc_.request_cancel();
 }
 
 inline void
-posix_acceptor_impl::
+epoll_acceptor_impl::
 close_socket() noexcept
 {
     if (fd_ >= 0)
@@ -483,24 +487,24 @@ close_socket() noexcept
 }
 
 //------------------------------------------------------------------------------
-// posix_sockets implementation
+// epoll_sockets implementation
 //------------------------------------------------------------------------------
 
 inline
-posix_sockets::
-posix_sockets(capy::execution_context& ctx)
-    : sched_(ctx.use_service<posix_scheduler>())
+epoll_sockets::
+epoll_sockets(capy::execution_context& ctx)
+    : sched_(ctx.use_service<epoll_scheduler>())
 {
 }
 
 inline
-posix_sockets::
-~posix_sockets()
+epoll_sockets::
+~epoll_sockets()
 {
 }
 
 inline void
-posix_sockets::
+epoll_sockets::
 shutdown()
 {
     std::lock_guard lock(mutex_);
@@ -518,11 +522,11 @@ shutdown()
     }
 }
 
-inline posix_socket_impl&
-posix_sockets::
+inline epoll_socket_impl&
+epoll_sockets::
 create_impl()
 {
-    auto* impl = new posix_socket_impl(*this);
+    auto* impl = new epoll_socket_impl(*this);
 
     {
         std::lock_guard lock(mutex_);
@@ -533,8 +537,8 @@ create_impl()
 }
 
 inline void
-posix_sockets::
-destroy_impl(posix_socket_impl& impl)
+epoll_sockets::
+destroy_impl(epoll_socket_impl& impl)
 {
     {
         std::lock_guard lock(mutex_);
@@ -545,8 +549,8 @@ destroy_impl(posix_socket_impl& impl)
 }
 
 inline system::error_code
-posix_sockets::
-open_socket(posix_socket_impl& impl)
+epoll_sockets::
+open_socket(epoll_socket_impl& impl)
 {
     impl.close_socket();
 
@@ -558,11 +562,11 @@ open_socket(posix_socket_impl& impl)
     return {};
 }
 
-inline posix_acceptor_impl&
-posix_sockets::
+inline epoll_acceptor_impl&
+epoll_sockets::
 create_acceptor_impl()
 {
-    auto* impl = new posix_acceptor_impl(*this);
+    auto* impl = new epoll_acceptor_impl(*this);
 
     {
         std::lock_guard lock(mutex_);
@@ -573,8 +577,8 @@ create_acceptor_impl()
 }
 
 inline void
-posix_sockets::
-destroy_acceptor_impl(posix_acceptor_impl& impl)
+epoll_sockets::
+destroy_acceptor_impl(epoll_acceptor_impl& impl)
 {
     {
         std::lock_guard lock(mutex_);
@@ -585,9 +589,9 @@ destroy_acceptor_impl(posix_acceptor_impl& impl)
 }
 
 inline system::error_code
-posix_sockets::
+epoll_sockets::
 open_acceptor(
-    posix_acceptor_impl& impl,
+    epoll_acceptor_impl& impl,
     endpoint ep,
     int backlog)
 {
@@ -620,21 +624,21 @@ open_acceptor(
 }
 
 inline void
-posix_sockets::
-post(posix_op* op)
+epoll_sockets::
+post(epoll_op* op)
 {
     sched_.post(op);
 }
 
 inline void
-posix_sockets::
+epoll_sockets::
 work_started() noexcept
 {
     sched_.work_started();
 }
 
 inline void
-posix_sockets::
+epoll_sockets::
 work_finished() noexcept
 {
     sched_.work_finished();
@@ -644,4 +648,6 @@ work_finished() noexcept
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_EPOLL
+
+#endif // BOOST_COROSIO_DETAIL_EPOLL_SOCKETS_HPP

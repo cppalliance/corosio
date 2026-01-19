@@ -7,10 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifdef _WIN32
+#include "src/detail/config_backend.hpp"
 
-#include "src/detail/win/resolver_service.hpp"
-#include "src/detail/win/scheduler.hpp"
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+
+#include "src/detail/iocp/resolver_service.hpp"
+#include "src/detail/iocp/scheduler.hpp"
 #include "src/detail/endpoint_convert.hpp"
 
 #include <boost/url/ipv4_address.hpp>

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -7,8 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_POSIX_SCHEDULER_HPP
-#define BOOST_COROSIO_DETAIL_POSIX_SCHEDULER_HPP
+#ifndef BOOST_COROSIO_DETAIL_EPOLL_SCHEDULER_HPP
+#define BOOST_COROSIO_DETAIL_EPOLL_SCHEDULER_HPP
+
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_EPOLL)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
@@ -27,9 +31,9 @@ namespace boost {
 namespace corosio {
 namespace detail {
 
-struct posix_op;
+struct epoll_op;
 
-/** POSIX scheduler using epoll for I/O multiplexing.
+/** Linux scheduler using epoll for I/O multiplexing.
 
     This scheduler implements the scheduler interface using Linux epoll
     for efficient I/O event notification. It manages a queue of handlers
@@ -42,7 +46,7 @@ struct posix_op;
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class posix_scheduler
+class epoll_scheduler
     : public scheduler
     , public capy::execution_context::service
 {
@@ -56,14 +60,14 @@ public:
         @param ctx Reference to the owning execution_context.
         @param concurrency_hint Hint for expected thread count (unused).
     */
-    posix_scheduler(
+    epoll_scheduler(
         capy::execution_context& ctx,
         int concurrency_hint = -1);
 
-    ~posix_scheduler();
+    ~epoll_scheduler();
 
-    posix_scheduler(posix_scheduler const&) = delete;
-    posix_scheduler& operator=(posix_scheduler const&) = delete;
+    epoll_scheduler(epoll_scheduler const&) = delete;
+    epoll_scheduler& operator=(epoll_scheduler const&) = delete;
 
     void shutdown() override;
     void post(capy::any_coro h) const override;
@@ -95,7 +99,7 @@ public:
         @param op The operation associated with this fd.
         @param events The epoll events to monitor (EPOLLIN, EPOLLOUT, etc.).
     */
-    void register_fd(int fd, posix_op* op, std::uint32_t events) const;
+    void register_fd(int fd, epoll_op* op, std::uint32_t events) const;
 
     /** Modify epoll registration for a file descriptor.
 
@@ -103,7 +107,7 @@ public:
         @param op The operation associated with this fd.
         @param events The new epoll events to monitor.
     */
-    void modify_fd(int fd, posix_op* op, std::uint32_t events) const;
+    void modify_fd(int fd, epoll_op* op, std::uint32_t events) const;
 
     /** Unregister a file descriptor from epoll.
 
@@ -136,4 +140,6 @@ private:
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_EPOLL
+
+#endif // BOOST_COROSIO_DETAIL_EPOLL_SCHEDULER_HPP

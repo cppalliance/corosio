@@ -7,10 +7,14 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_WIN_TIMERS_THREAD_HPP
-#define BOOST_COROSIO_DETAIL_WIN_TIMERS_THREAD_HPP
+#ifndef BOOST_COROSIO_DETAIL_IOCP_TIMERS_THREAD_HPP
+#define BOOST_COROSIO_DETAIL_IOCP_TIMERS_THREAD_HPP
 
-#include "src/detail/win/timers.hpp"
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+
+#include "src/detail/iocp/timers.hpp"
 #include <thread>
 
 namespace boost {
@@ -43,4 +47,6 @@ private:
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_IOCP
+
+#endif // BOOST_COROSIO_DETAIL_IOCP_TIMERS_THREAD_HPP

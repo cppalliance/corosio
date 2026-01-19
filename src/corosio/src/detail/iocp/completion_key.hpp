@@ -7,10 +7,14 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_WIN_COMPLETION_KEY_HPP
-#define BOOST_COROSIO_DETAIL_WIN_COMPLETION_KEY_HPP
+#ifndef BOOST_COROSIO_DETAIL_IOCP_COMPLETION_KEY_HPP
+#define BOOST_COROSIO_DETAIL_IOCP_COMPLETION_KEY_HPP
 
-#include "src/detail/windows.hpp"
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+
+#include "src/detail/iocp/windows.hpp"
 
 namespace boost {
 namespace corosio {
@@ -79,4 +83,6 @@ struct completion_key
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_IOCP
+
+#endif // BOOST_COROSIO_DETAIL_IOCP_COMPLETION_KEY_HPP

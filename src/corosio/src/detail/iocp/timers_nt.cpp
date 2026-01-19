@@ -7,10 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifdef _WIN32
+#include "src/detail/config_backend.hpp"
 
-#include "src/detail/win/timers_nt.hpp"
-#include "src/detail/windows.hpp"
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+
+#include "src/detail/iocp/timers_nt.hpp"
+#include "src/detail/iocp/windows.hpp"
 
 namespace boost {
 namespace corosio {

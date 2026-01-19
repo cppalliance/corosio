@@ -7,10 +7,14 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_WIN_TIMERS_HPP
-#define BOOST_COROSIO_DETAIL_WIN_TIMERS_HPP
+#ifndef BOOST_COROSIO_DETAIL_IOCP_TIMERS_HPP
+#define BOOST_COROSIO_DETAIL_IOCP_TIMERS_HPP
 
-#include "src/detail/win/completion_key.hpp"
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+
+#include "src/detail/iocp/completion_key.hpp"
 
 #include <chrono>
 #include <memory>
@@ -61,4 +65,6 @@ std::unique_ptr<win_timers> make_win_timers(
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_IOCP
+
+#endif // BOOST_COROSIO_DETAIL_IOCP_TIMERS_HPP

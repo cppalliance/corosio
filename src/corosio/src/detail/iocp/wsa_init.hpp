@@ -7,12 +7,16 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_WIN_WSA_INIT_HPP
-#define BOOST_COROSIO_DETAIL_WIN_WSA_INIT_HPP
+#ifndef BOOST_COROSIO_DETAIL_IOCP_WSA_INIT_HPP
+#define BOOST_COROSIO_DETAIL_IOCP_WSA_INIT_HPP
+
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
 
 #include <boost/corosio/detail/config.hpp>
 
-#include "src/detail/windows.hpp"
+#include "src/detail/iocp/windows.hpp"
 
 namespace boost {
 namespace corosio {
@@ -43,4 +47,6 @@ private:
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_IOCP
+
+#endif // BOOST_COROSIO_DETAIL_IOCP_WSA_INIT_HPP

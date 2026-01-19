@@ -7,8 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_POSIX_OP_HPP
-#define BOOST_COROSIO_DETAIL_POSIX_OP_HPP
+#ifndef BOOST_COROSIO_DETAIL_EPOLL_OP_HPP
+#define BOOST_COROSIO_DETAIL_EPOLL_OP_HPP
+
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_EPOLL)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_object.hpp>
@@ -37,17 +41,17 @@ namespace boost {
 namespace corosio {
 namespace detail {
 
-/** Base class for POSIX async operations.
+/** Base class for epoll async operations.
 
     This class is analogous to overlapped_op on Windows.
     It stores the coroutine handle, executor, and result
     pointers needed to complete an async operation.
 */
-struct posix_op : scheduler_op
+struct epoll_op : scheduler_op
 {
     struct canceller
     {
-        posix_op* op;
+        epoll_op* op;
         void operator()() const noexcept { op->request_cancel(); }
     };
 
@@ -64,7 +68,7 @@ struct posix_op : scheduler_op
     std::atomic<bool> cancelled{false};
     std::optional<std::stop_callback<canceller>> stop_cb;
 
-    posix_op()
+    epoll_op()
     {
         data_ = this;
     }
@@ -135,16 +139,16 @@ struct posix_op : scheduler_op
     virtual void perform_io() noexcept {}
 };
 
-inline posix_op*
-get_posix_op(scheduler_op* h) noexcept
+inline epoll_op*
+get_epoll_op(scheduler_op* h) noexcept
 {
-    return static_cast<posix_op*>(h->data());
+    return static_cast<epoll_op*>(h->data());
 }
 
 //------------------------------------------------------------------------------
 
 /** Connect operation state. */
-struct posix_connect_op : posix_op
+struct epoll_connect_op : epoll_op
 {
     void perform_io() noexcept override
     {
@@ -160,7 +164,7 @@ struct posix_connect_op : posix_op
 //------------------------------------------------------------------------------
 
 /** Read operation state with buffer descriptors. */
-struct posix_read_op : posix_op
+struct epoll_read_op : epoll_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -170,7 +174,7 @@ struct posix_read_op : posix_op
 
     void reset() noexcept
     {
-        posix_op::reset();
+        epoll_op::reset();
         iovec_count = 0;
     }
 
@@ -187,7 +191,7 @@ struct posix_read_op : posix_op
 //------------------------------------------------------------------------------
 
 /** Write operation state with buffer descriptors. */
-struct posix_write_op : posix_op
+struct epoll_write_op : epoll_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -195,7 +199,7 @@ struct posix_write_op : posix_op
 
     void reset() noexcept
     {
-        posix_op::reset();
+        epoll_op::reset();
         iovec_count = 0;
     }
 
@@ -212,7 +216,7 @@ struct posix_write_op : posix_op
 //------------------------------------------------------------------------------
 
 /** Accept operation state. */
-struct posix_accept_op : posix_op
+struct epoll_accept_op : epoll_op
 {
     int accepted_fd = -1;
     io_object::io_object_impl* peer_impl = nullptr;
@@ -224,7 +228,7 @@ struct posix_accept_op : posix_op
 
     void reset() noexcept
     {
-        posix_op::reset();
+        epoll_op::reset();
         accepted_fd = -1;
         peer_impl = nullptr;
         impl_out = nullptr;
@@ -297,4 +301,6 @@ struct posix_accept_op : posix_op
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_EPOLL
+
+#endif // BOOST_COROSIO_DETAIL_EPOLL_OP_HPP

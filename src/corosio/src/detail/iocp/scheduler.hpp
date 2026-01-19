@@ -7,8 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_WIN_SCHEDULER_HPP
-#define BOOST_COROSIO_DETAIL_WIN_SCHEDULER_HPP
+#ifndef BOOST_COROSIO_DETAIL_IOCP_SCHEDULER_HPP
+#define BOOST_COROSIO_DETAIL_IOCP_SCHEDULER_HPP
+
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
@@ -16,14 +20,14 @@
 #include <boost/system/error_code.hpp>
 
 #include "src/detail/scheduler_op.hpp"
-#include "src/detail/win/completion_key.hpp"
-#include "src/detail/win/mutex.hpp"
+#include "src/detail/iocp/completion_key.hpp"
+#include "src/detail/iocp/mutex.hpp"
 
 #include <chrono>
 #include <cstdint>
 #include <memory>
 
-#include "src/detail/windows.hpp"
+#include "src/detail/iocp/windows.hpp"
 
 namespace boost {
 namespace corosio {
@@ -125,4 +129,6 @@ private:
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_IOCP
+
+#endif // BOOST_COROSIO_DETAIL_IOCP_SCHEDULER_HPP

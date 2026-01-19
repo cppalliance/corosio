@@ -7,9 +7,11 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifdef _WIN32
+#include "src/detail/config_backend.hpp"
 
-#include "src/detail/win/wsa_init.hpp"
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+
+#include "src/detail/iocp/wsa_init.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 
