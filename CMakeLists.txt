@@ -210,6 +210,28 @@ endif ()
 
 #-------------------------------------------------
 #
+# OpenSSL
+#
+#-------------------------------------------------
+find_package(OpenSSL)
+if (OpenSSL_FOUND)
+    file(GLOB_RECURSE BOOST_COROSIO_OPENSSL_HEADERS CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/openssl/*.hpp")
+    file(GLOB_RECURSE BOOST_COROSIO_OPENSSL_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/openssl/src/*.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/openssl/src/*.cpp")
+    source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/openssl" PREFIX "include" FILES ${BOOST_COROSIO_OPENSSL_HEADERS})
+    source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/openssl/src" PREFIX "src" FILES ${BOOST_COROSIO_OPENSSL_SOURCES})
+    add_library(boost_corosio_openssl ${BOOST_COROSIO_OPENSSL_HEADERS} ${BOOST_COROSIO_OPENSSL_SOURCES})
+    add_library(Boost::corosio_openssl ALIAS boost_corosio_openssl)
+    boost_corosio_setup_properties(boost_corosio_openssl)
+    target_link_libraries(boost_corosio_openssl PUBLIC boost_corosio)
+    target_link_libraries(boost_corosio_openssl PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(boost_corosio_openssl PUBLIC BOOST_COROSIO_HAS_OPENSSL)
+endif ()
+
+#-------------------------------------------------
+#
 # Tests
 #
 #-------------------------------------------------

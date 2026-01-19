@@ -15,7 +15,7 @@ It wraps an existing stream (like `socket`) and provides encrypted I/O.
 NOTE: Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/wolfssl_stream.hpp>
+#include <boost/corosio/tls/wolfssl_stream.hpp>
 #include <boost/corosio/socket.hpp>
 
 namespace corosio = boost::corosio;

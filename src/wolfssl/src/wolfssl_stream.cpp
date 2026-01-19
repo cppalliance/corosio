@@ -7,11 +7,14 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <boost/corosio/wolfssl_stream.hpp>
+#include <boost/corosio/tls/wolfssl_stream.hpp>
 #include <boost/capy/ex/async_mutex.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/task.hpp>
+
+// Internal context implementation
+#include "src/tls/detail/context_impl.hpp"
 
 // Include WolfSSL options first to get proper feature detection
 #include <wolfssl/options.h>
@@ -53,9 +56,9 @@
 
     Key Types
     ---------
-    - wolfssl_stream_impl : io_stream_impl  -- the impl stored in io_object::impl_
-    - recv_callback, send_callback          -- WolfSSL I/O hooks (static)
-    - do_read_some, do_write_some           -- inner coroutines with WANT_* loops
+    - wolfssl_stream_impl_ : tls_stream_impl  -- the impl stored in io_object::impl_
+    - recv_callback, send_callback            -- WolfSSL I/O hooks (static)
+    - do_read_some, do_write_some             -- inner coroutines with WANT_* loops
 */
 
 namespace boost {
@@ -75,12 +78,111 @@ using buffer_array = std::array<capy::mutable_buffer, max_buffers>;
 } // namespace
 
 //------------------------------------------------------------------------------
+//
+// Native context caching
+//
+//------------------------------------------------------------------------------
+
+namespace tls {
+namespace detail {
+
+/** Cached WolfSSL context owning WOLFSSL_CTX.
+
+    Created on first stream construction for a given tls::context,
+    then reused for subsequent streams sharing that context.
+*/
+class wolfssl_native_context
+    : public native_context_base
+{
+public:
+    WOLFSSL_CTX* ctx_;
+
+    explicit
+    wolfssl_native_context( context_data const& cd )
+        : ctx_( nullptr )
+    {
+        // Create WOLFSSL_CTX for TLS client (auto-negotiate best version)
+        ctx_ = wolfSSL_CTX_new( wolfTLS_client_method() );
+        if( !ctx_ )
+            return;
+
+        // Apply verify mode from config
+        int verify_mode_flag = WOLFSSL_VERIFY_NONE;
+        if( cd.verification_mode == verify_mode::peer )
+            verify_mode_flag = WOLFSSL_VERIFY_PEER;
+        else if( cd.verification_mode == verify_mode::require_peer )
+            verify_mode_flag = WOLFSSL_VERIFY_PEER | WOLFSSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+        wolfSSL_CTX_set_verify( ctx_, verify_mode_flag, nullptr );
+
+        // Apply certificates if provided
+        if( !cd.entity_certificate.empty() )
+        {
+            int format = ( cd.entity_cert_format == file_format::pem )
+                ? WOLFSSL_FILETYPE_PEM : WOLFSSL_FILETYPE_ASN1;
+            wolfSSL_CTX_use_certificate_buffer( ctx_,
+                reinterpret_cast<unsigned char const*>( cd.entity_certificate.data() ),
+                static_cast<long>( cd.entity_certificate.size() ),
+                format );
+        }
+
+        // Apply private key if provided
+        if( !cd.private_key.empty() )
+        {
+            int format = ( cd.private_key_format == file_format::pem )
+                ? WOLFSSL_FILETYPE_PEM : WOLFSSL_FILETYPE_ASN1;
+            wolfSSL_CTX_use_PrivateKey_buffer( ctx_,
+                reinterpret_cast<unsigned char const*>( cd.private_key.data() ),
+                static_cast<long>( cd.private_key.size() ),
+                format );
+        }
+
+        // Apply CA certificates for verification
+        for( auto const& ca : cd.ca_certificates )
+        {
+            wolfSSL_CTX_load_verify_buffer( ctx_,
+                reinterpret_cast<unsigned char const*>( ca.data() ),
+                static_cast<long>( ca.size() ),
+                WOLFSSL_FILETYPE_PEM );
+        }
+
+        // Apply verify depth
+        wolfSSL_CTX_set_verify_depth( ctx_, cd.verify_depth );
+    }
+
+    ~wolfssl_native_context() override
+    {
+        if( ctx_ )
+            wolfSSL_CTX_free( ctx_ );
+    }
+};
+
+/** Get or create cached WOLFSSL_CTX for this context.
+
+    @param cd The context implementation.
+
+    @return Pointer to the cached WOLFSSL_CTX.
+*/
+inline WOLFSSL_CTX*
+get_wolfssl_context( context_data const& cd )
+{
+    static char key;
+    auto* p = cd.find( &key, [&]
+    {
+        return new wolfssl_native_context( cd );
+    });
+    return static_cast<wolfssl_native_context*>( p )->ctx_;
+}
+
+} // namespace detail
+} // namespace tls
+
+//------------------------------------------------------------------------------
 
 struct wolfssl_stream_impl_
-    : wolfssl_stream::wolfssl_stream_impl
+    : tls_stream::tls_stream_impl
 {
     io_stream& s_;
-    WOLFSSL_CTX* ctx_ = nullptr;
+    tls::context ctx_;      // holds ref to cached native context
     WOLFSSL* ssl_ = nullptr;
 
     // Buffers for read operations (used by do_read_some)
@@ -116,22 +218,21 @@ struct wolfssl_stream_impl_
 
     //--------------------------------------------------------------------------
 
-    explicit
-    wolfssl_stream_impl_(io_stream& s)
-        : s_(s)
+    wolfssl_stream_impl_( io_stream& s, tls::context ctx )
+        : s_( s )
+        , ctx_( std::move( ctx ) )
     {
-        read_in_buf_.resize(default_buffer_size);
-        read_out_buf_.resize(default_buffer_size);
-        write_in_buf_.resize(default_buffer_size);
-        write_out_buf_.resize(default_buffer_size);
+        read_in_buf_.resize( default_buffer_size );
+        read_out_buf_.resize( default_buffer_size );
+        write_in_buf_.resize( default_buffer_size );
+        write_out_buf_.resize( default_buffer_size );
     }
 
     ~wolfssl_stream_impl_()
     {
-        if(ssl_)
-            wolfSSL_free(ssl_);
-        if(ctx_)
-            wolfSSL_CTX_free(ctx_);
+        if( ssl_ )
+            wolfSSL_free( ssl_ );
+        // WOLFSSL_CTX* is owned by cached native context, not freed here
     }
 
     //--------------------------------------------------------------------------
@@ -570,6 +671,139 @@ struct wolfssl_stream_impl_
         co_return;
     }
 
+    /** Inner coroutine that performs TLS shutdown with WANT_READ/WANT_WRITE loop.
+
+        Calls wolfSSL_shutdown in a loop, performing async I/O on the
+        underlying stream when needed.
+    */
+    capy::task<>
+    do_shutdown(
+        std::stop_token token,
+        system::error_code* ec_out,
+        std::coroutine_handle<> continuation,
+        capy::any_executor_ref d)
+    {
+        system::error_code ec;
+
+        // Set up operation buffers for callbacks (use read buffers for shutdown)
+        op_buffers op{
+            &read_in_buf_, &read_in_pos_, &read_in_len_,
+            &read_out_buf_, &read_out_len_,
+            false, false
+        };
+        current_op_ = &op;
+
+        while(!token.stop_requested())
+        {
+            op.want_read = false;
+            op.want_write = false;
+
+            int ret = wolfSSL_shutdown(ssl_);
+
+            if(ret == WOLFSSL_SUCCESS)
+            {
+                // Shutdown completed successfully
+                // Flush any remaining output
+                while(read_out_len_ > 0)
+                {
+                    capy::mutable_buffer buf(read_out_buf_.data(), read_out_len_);
+                    auto [wec, wn] = co_await do_underlying_write(buf);
+                    if(wec)
+                    {
+                        ec = wec;
+                        break;
+                    }
+                    if(wn < read_out_len_)
+                        std::memmove(read_out_buf_.data(), read_out_buf_.data() + wn, read_out_len_ - wn);
+                    read_out_len_ -= wn;
+                }
+                break;
+            }
+            else if(ret == WOLFSSL_SHUTDOWN_NOT_DONE)
+            {
+                int err = wolfSSL_get_error(ssl_, ret);
+
+                if(err == WOLFSSL_ERROR_WANT_READ)
+                {
+                    // Flush any pending output first
+                    while(read_out_len_ > 0)
+                    {
+                        capy::mutable_buffer buf(read_out_buf_.data(), read_out_len_);
+                        auto [wec, wn] = co_await do_underlying_write(buf);
+                        if(wec)
+                        {
+                            ec = wec;
+                            goto exit_shutdown;
+                        }
+                        if(wn < read_out_len_)
+                            std::memmove(read_out_buf_.data(), read_out_buf_.data() + wn, read_out_len_ - wn);
+                        read_out_len_ -= wn;
+                    }
+
+                    if(read_in_pos_ == read_in_len_)
+                    {
+                        read_in_pos_ = 0;
+                        read_in_len_ = 0;
+                    }
+                    capy::mutable_buffer buf(
+                        read_in_buf_.data() + read_in_len_,
+                        read_in_buf_.size() - read_in_len_);
+                    auto [rec, rn] = co_await do_underlying_read(buf);
+                    if(rec)
+                    {
+                        // EOF from peer is expected during shutdown
+                        if(rec == make_error_code(capy::error::eof))
+                            break;
+                        ec = rec;
+                        break;
+                    }
+                    read_in_len_ += rn;
+                }
+                else if(err == WOLFSSL_ERROR_WANT_WRITE)
+                {
+                    while(read_out_len_ > 0)
+                    {
+                        capy::mutable_buffer buf(read_out_buf_.data(), read_out_len_);
+                        auto [wec, wn] = co_await do_underlying_write(buf);
+                        if(wec)
+                        {
+                            ec = wec;
+                            goto exit_shutdown;
+                        }
+                        if(wn < read_out_len_)
+                            std::memmove(read_out_buf_.data(), read_out_buf_.data() + wn, read_out_len_ - wn);
+                        read_out_len_ -= wn;
+                    }
+                }
+                else
+                {
+                    // Other error
+                    ec = system::error_code(err, system::system_category());
+                    break;
+                }
+            }
+            else
+            {
+                // SSL_FATAL_ERROR
+                int err = wolfSSL_get_error(ssl_, ret);
+                ec = system::error_code(err, system::system_category());
+                break;
+            }
+        }
+
+    exit_shutdown:
+        current_op_ = nullptr;
+
+        if(token.stop_requested())
+            ec = make_error_code(system::errc::operation_canceled);
+
+        *ec_out = ec;
+
+        // Resume the original caller via executor
+        d.dispatch(capy::any_coro{continuation}).resume();
+        co_return;
+    }
+
     //--------------------------------------------------------------------------
     // io_stream_impl interface
     //--------------------------------------------------------------------------
@@ -627,6 +861,17 @@ struct wolfssl_stream_impl_
             do_handshake(type, token, ec, h, d));
     }
 
+    void shutdown(
+        std::coroutine_handle<> h,
+        capy::any_executor_ref d,
+        std::stop_token token,
+        system::error_code* ec) override
+    {
+        // Launch inner coroutine via run_async
+        capy::run_async(d)(
+            do_shutdown(token, ec, h, d));
+    }
+
     //--------------------------------------------------------------------------
     // Initialization
     //--------------------------------------------------------------------------
@@ -634,41 +879,39 @@ struct wolfssl_stream_impl_
     system::error_code
     init_ssl()
     {
-        // Create WolfSSL context for TLS client (auto-negotiate best version)
-        ctx_ = wolfSSL_CTX_new(wolfTLS_client_method());
-        if(!ctx_)
+        // Get cached WOLFSSL_CTX from tls::context
+        auto& impl = tls::detail::get_context_data( ctx_ );
+        WOLFSSL_CTX* native_ctx = tls::detail::get_wolfssl_context( impl );
+        if( !native_ctx )
         {
             return system::error_code(
-                wolfSSL_get_error(nullptr, 0),
-                system::system_category());
+                wolfSSL_get_error( nullptr, 0 ),
+                system::system_category() );
         }
 
-        // Disable certificate verification for now (TODO: make configurable)
-        // This is needed when connecting without proper CA certificates
-        wolfSSL_CTX_set_verify(ctx_, WOLFSSL_VERIFY_NONE, nullptr);
-
-        // Create SSL session
-        ssl_ = wolfSSL_new(ctx_);
-        if(!ssl_)
+        // Create SSL session from cached context
+        ssl_ = wolfSSL_new( native_ctx );
+        if( !ssl_ )
         {
-            int err = wolfSSL_get_error(nullptr, 0);
-            wolfSSL_CTX_free(ctx_);
-            ctx_ = nullptr;
-            return system::error_code(err, system::system_category());
+            int err = wolfSSL_get_error( nullptr, 0 );
+            return system::error_code( err, system::system_category() );
         }
 
         // Set custom I/O callbacks
-        wolfSSL_SSLSetIORecv(ssl_, &recv_callback);
-        wolfSSL_SSLSetIOSend(ssl_, &send_callback);
+        wolfSSL_SSLSetIORecv( ssl_, &recv_callback );
+        wolfSSL_SSLSetIOSend( ssl_, &send_callback );
 
         // Set this impl as the I/O context
-        wolfSSL_SetIOReadCtx(ssl_, this);
-        wolfSSL_SetIOWriteCtx(ssl_, this);
+        wolfSSL_SetIOReadCtx( ssl_, this );
+        wolfSSL_SetIOWriteCtx( ssl_, this );
 
-        // Set SNI (Server Name Indication) - required by most modern TLS servers
-        // TODO: Make this configurable via API
-        // WOLFSSL_SNI_HOST_NAME = 0
-        wolfSSL_UseSNI(ssl_, 0, "www.boost.org", 13);
+        // Apply per-session config (SNI) from context
+        if( !impl.hostname.empty() )
+        {
+            wolfSSL_UseSNI( ssl_, WOLFSSL_SNI_HOST_NAME,
+                impl.hostname.data(),
+                static_cast<unsigned short>( impl.hostname.size() ) );
+        }
 
         return {};
     }
@@ -677,22 +920,28 @@ struct wolfssl_stream_impl_
 //------------------------------------------------------------------------------
 
 wolfssl_stream::
-wolfssl_stream(io_stream& stream)
-    : io_stream(stream.context())
-    , s_(stream)
+wolfssl_stream( io_stream& stream )
+    : tls_stream( stream )
 {
-    construct();
+    construct( tls::context() );
+}
+
+wolfssl_stream::
+wolfssl_stream( io_stream& stream, tls::context ctx )
+    : tls_stream( stream )
+{
+    construct( std::move( ctx ) );
 }
 
 void
 wolfssl_stream::
-construct()
+construct( tls::context ctx )
 {
-    auto* impl = new wolfssl_stream_impl_(s_);
+    auto* impl = new wolfssl_stream_impl_( s_, std::move( ctx ) );
 
-    // Initialize WolfSSL
+    // Initialize WolfSSL using cached context
     auto ec = impl->init_ssl();
-    if(ec)
+    if( ec )
     {
         delete impl;
         // For now, silently fail - could throw or store error

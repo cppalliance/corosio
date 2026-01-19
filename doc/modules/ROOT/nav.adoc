@@ -4,6 +4,7 @@
 ** xref:tutorials/echo-server.adoc[Echo Server]
 ** xref:tutorials/http-client.adoc[HTTP Client]
 ** xref:tutorials/dns-lookup.adoc[DNS Lookup]
+** xref:tutorials/tls-context.adoc[TLS Context Configuration]
 * Guide
 ** xref:guide/tcp-networking.adoc[TCP/IP Networking]
 ** xref:guide/concurrent-programming.adoc[Concurrent Programming]

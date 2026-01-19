@@ -8,7 +8,7 @@
 //
 
 #include <boost/corosio.hpp>
-#include <boost/corosio/wolfssl_stream.hpp>
+#include <boost/corosio/tls/wolfssl_stream.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/buffers.hpp>

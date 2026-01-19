@@ -217,7 +217,7 @@ To make HTTPS requests, wrap the socket in a `wolfssl_stream`:
 
 [source,cpp]
 ----
-#include <boost/corosio/wolfssl_stream.hpp>
+#include <boost/corosio/tls/wolfssl_stream.hpp>
 
 capy::task<void> run_https_client(
     corosio::io_context& ioc,
