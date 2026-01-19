@@ -13,7 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_stream.hpp>
 #include <boost/corosio/io_result.hpp>
-#include <boost/corosio/any_bufref.hpp>
+#include <boost/capy/any_bufref.hpp>
 #include <boost/corosio/consuming_buffers.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/task.hpp>

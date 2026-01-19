@@ -14,7 +14,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/io_stream.hpp>
 #include <boost/corosio/io_result.hpp>
-#include <boost/corosio/any_bufref.hpp>
+#include <boost/capy/any_bufref.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>

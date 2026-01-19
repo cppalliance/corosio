@@ -249,7 +249,7 @@ win_socket_impl::
 read_some(
     capy::any_coro h,
     capy::any_executor_ref d,
-    any_bufref& param,
+    capy::any_bufref& param,
     std::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_out)
@@ -310,7 +310,7 @@ win_socket_impl::
 write_some(
     capy::any_coro h,
     capy::any_executor_ref d,
-    any_bufref& param,
+    capy::any_bufref& param,
     std::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_out)
