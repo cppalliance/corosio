@@ -493,23 +493,27 @@ make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
     socket accepted_socket(ctx);
 
     // Launch accept operation
+    // Note: Pass captures as parameters to store them in the coroutine frame,
+    // avoiding use-after-scope when the lambda temporary is destroyed.
     capy::run_async(ex)(
-        [&]() -> capy::task<>
+        [](acceptor& a, socket& s,
+           system::error_code& ec_out, bool& done_out) -> capy::task<>
         {
-            auto [ec] = co_await acc.accept(accepted_socket);
-            accept_ec = ec;
-            accept_done = true;
-        }());
+            auto [ec] = co_await a.accept(s);
+            ec_out = ec;
+            done_out = true;
+        }(acc, accepted_socket, accept_ec, accept_done));
 
     // Launch connect operation
     capy::run_async(ex)(
-        [&]() -> capy::task<>
+        [](socket& s, endpoint ep,
+           system::error_code& ec_out, bool& done_out) -> capy::task<>
         {
-            auto [ec] = co_await impl2.get_socket().connect(
-                endpoint(urls::ipv4_address::loopback(), port));
-            connect_ec = ec;
-            connect_done = true;
-        }());
+            auto [ec] = co_await s.connect(ep);
+            ec_out = ec;
+            done_out = true;
+        }(impl2.get_socket(), endpoint(urls::ipv4_address::loopback(), port),
+          connect_ec, connect_done));
 
     // Run until both complete
     ioc.run();

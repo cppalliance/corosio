@@ -26,14 +26,6 @@ tcp_server::push_aw::await_ready() const noexcept
     return false;
 }
 
-std::coroutine_handle<>
-tcp_server::push_aw::await_suspend(
-    std::coroutine_handle<> h) noexcept
-{
-    // Dispatch to server's executor before touching shared state
-    return self_.dispatch_.dispatch(h);
-}
-
 void
 tcp_server::push_aw::await_resume() noexcept
 {
@@ -60,17 +52,6 @@ bool
 tcp_server::pop_aw::await_ready() const noexcept
 {
     return self_.wv_.idle_ != nullptr;
-}
-
-bool
-tcp_server::pop_aw::await_suspend(
-    std::coroutine_handle<> h) noexcept
-{
-    wait_.h = h;
-    wait_.w = nullptr;
-    wait_.next = self_.waiters_;
-    self_.waiters_ = &wait_;
-    return true;
 }
 
 system::result<tcp_server::worker_base&>

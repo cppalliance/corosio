@@ -15,8 +15,9 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/core/thread_local_ptr.hpp>
 
+#include <algorithm>
+#include <chrono>
 #include <limits>
-#include <thread>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -60,7 +61,7 @@ struct thread_context_guard
 
 posix_scheduler::
 posix_scheduler(
-    capy::execution_context&,
+    capy::execution_context& ctx,
     int)
     : epoll_fd_(-1)
     , event_fd_(-1)
@@ -68,14 +69,12 @@ posix_scheduler(
     , stopped_(false)
     , shutdown_(false)
 {
-    // Create epoll instance
     epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
     if (epoll_fd_ < 0)
         detail::throw_system_error(
             system::error_code(errno, system::system_category()),
             "epoll_create1");
 
-    // Create eventfd for waking the scheduler
     event_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (event_fd_ < 0)
     {
@@ -86,7 +85,7 @@ posix_scheduler(
             "eventfd");
     }
 
-    // Register eventfd with epoll (data.ptr = nullptr signals wakeup event)
+    // data.ptr = nullptr distinguishes wakeup events from I/O completions
     epoll_event ev{};
     ev.events = EPOLLIN;
     ev.data.ptr = nullptr;
@@ -99,6 +98,12 @@ posix_scheduler(
             system::error_code(err, system::system_category()),
             "epoll_ctl");
     }
+
+    timer_svc_ = &get_timer_service(ctx, *this);
+    timer_svc_->set_on_earliest_changed(
+        timer_service::callback(
+            this,
+            [](void* p) { static_cast<posix_scheduler*>(p)->wakeup(); }));
 }
 
 posix_scheduler::
@@ -378,19 +383,14 @@ void
 posix_scheduler::
 work_finished() const noexcept
 {
-    if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
-    {
-        const_cast<posix_scheduler*>(this)->stop();
-    }
+    outstanding_work_.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 void
 posix_scheduler::
 wakeup() const
 {
-    // Write to eventfd to wake up epoll_wait
-    // Return value intentionally ignored - eventfd write cannot fail
-    // when buffer has space (counter won't overflow with uint64_t max)
+    // Write cannot fail: eventfd counter won't overflow with single increments
     std::uint64_t val = 1;
     [[maybe_unused]] auto r = ::write(event_fd_, &val, sizeof(val));
 }
@@ -402,126 +402,142 @@ struct work_guard
     ~work_guard() { self->work_finished(); }
 };
 
+long
+posix_scheduler::
+calculate_timeout(long requested_timeout_us) const
+{
+    if (requested_timeout_us == 0)
+        return 0;
+
+    auto nearest = timer_svc_->nearest_expiry();
+    if (nearest == timer_service::time_point::max())
+        return requested_timeout_us;
+
+    auto now = std::chrono::steady_clock::now();
+    if (nearest <= now)
+        return 0;
+
+    auto timer_timeout_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        nearest - now).count();
+
+    if (requested_timeout_us < 0)
+        return static_cast<long>(timer_timeout_us);
+
+    return static_cast<long>((std::min)(
+        static_cast<long long>(requested_timeout_us),
+        static_cast<long long>(timer_timeout_us)));
+}
+
 std::size_t
 posix_scheduler::
 do_one(long timeout_us)
 {
-    // Check stopped first
-    if (stopped_.load(std::memory_order_acquire))
-        return 0;
-
-    // First check if there are handlers in the queue
-    scheduler_op* h = nullptr;
+    for (;;)
     {
-        std::lock_guard lock(mutex_);
-        h = completed_ops_.pop();
-    }
-
-    if (h)
-    {
-        // Execute handler outside the lock
-        work_guard g{this};
-        (*h)();
-        return 1;
-    }
-
-    // Check if there's actually work to wait for
-    if (outstanding_work_.load(std::memory_order_acquire) == 0)
-        return 0;
-
-    // Convert timeout from microseconds to milliseconds
-    int timeout_ms;
-    if (timeout_us < 0)
-        timeout_ms = -1;  // Infinite wait
-    else if (timeout_us == 0)
-        timeout_ms = 0;   // Non-blocking poll
-    else
-        timeout_ms = static_cast<int>((timeout_us + 999) / 1000);
-
-    // Wait for events
-    epoll_event events[64];
-    int nfds = ::epoll_wait(epoll_fd_, events, 64, timeout_ms);
-
-    if (nfds < 0)
-    {
-        if (errno == EINTR)
+        if (stopped_.load(std::memory_order_acquire))
             return 0;
-        detail::throw_system_error(
-            system::error_code(errno, system::system_category()),
-            "epoll_wait");
-    }
 
-    // Process epoll events
-    for (int i = 0; i < nfds; ++i)
-    {
-        if (events[i].data.ptr == nullptr)
-        {
-            // eventfd wakeup - drain it
-            // Return value intentionally ignored - we just need to consume the event
-            std::uint64_t val;
-            [[maybe_unused]] auto r = ::read(event_fd_, &val, sizeof(val));
-            continue;
-        }
-
-        // I/O event - get the operation from data.ptr
-        auto* op = static_cast<posix_op*>(events[i].data.ptr);
-
-        // Unregister the fd from epoll (one-shot behavior)
-        unregister_fd(op->fd);
-
-        // Check for errors
-        if (events[i].events & (EPOLLERR | EPOLLHUP))
-        {
-            // Get socket error
-            int err = 0;
-            socklen_t len = sizeof(err);
-            if (::getsockopt(op->fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
-                err = errno;
-            if (err == 0)
-                err = EIO;  // Generic I/O error
-
-            op->complete(err, 0);
-        }
-        else
-        {
-            // Operation is ready - perform the actual I/O
-            op->perform_io();
-        }
-
-        // Post the operation to the handler queue
+        scheduler_op* h = nullptr;
         {
             std::lock_guard lock(mutex_);
-            completed_ops_.push(op);
+            h = completed_ops_.pop();
         }
+
+        if (h)
+        {
+            work_guard g{this};
+            (*h)();
+            return 1;
+        }
+
+        if (outstanding_work_.load(std::memory_order_acquire) == 0)
+            return 0;
+
+        long effective_timeout_us = calculate_timeout(timeout_us);
+
+        int timeout_ms;
+        if (effective_timeout_us < 0)
+            timeout_ms = -1;
+        else if (effective_timeout_us == 0)
+            timeout_ms = 0;
+        else
+            timeout_ms = static_cast<int>((effective_timeout_us + 999) / 1000);
+
+        epoll_event events[64];
+        int nfds = ::epoll_wait(epoll_fd_, events, 64, timeout_ms);
+
+        if (nfds < 0)
+        {
+            if (errno == EINTR)
+            {
+                // EINTR: retry for infinite waits, return for timed waits
+                if (timeout_us < 0)
+                    continue;
+                return 0;
+            }
+            detail::throw_system_error(
+                system::error_code(errno, system::system_category()),
+                "epoll_wait");
+        }
+
+        // May dispatch timer handlers inline
+        timer_svc_->process_expired();
+
+        for (int i = 0; i < nfds; ++i)
+        {
+            if (events[i].data.ptr == nullptr)
+            {
+                // Drain eventfd; read cannot fail since epoll signaled readiness
+                std::uint64_t val;
+                [[maybe_unused]] auto r = ::read(event_fd_, &val, sizeof(val));
+                continue;
+            }
+
+            auto* op = static_cast<posix_op*>(events[i].data.ptr);
+
+            // One-shot: unregister before I/O
+            unregister_fd(op->fd);
+
+            if (events[i].events & (EPOLLERR | EPOLLHUP))
+            {
+                int err = 0;
+                socklen_t len = sizeof(err);
+                if (::getsockopt(op->fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
+                    err = errno;
+                if (err == 0)
+                    err = EIO;
+                op->complete(err, 0);
+            }
+            else
+            {
+                op->perform_io();
+            }
+
+            {
+                std::lock_guard lock(mutex_);
+                completed_ops_.push(op);
+            }
+        }
+
+        if (stopped_.load(std::memory_order_acquire))
+            return 0;
+
+        {
+            std::lock_guard lock(mutex_);
+            h = completed_ops_.pop();
+        }
+
+        if (h)
+        {
+            work_guard g{this};
+            (*h)();
+            return 1;
+        }
+
+        // Finite timeout: return on timeout; infinite: keep looping
+        if (timeout_us >= 0)
+            return 0;
     }
-
-    // Check stopped again after epoll
-    if (stopped_.load(std::memory_order_acquire))
-        return 0;
-
-    // Check again for handlers after processing epoll events
-    {
-        std::lock_guard lock(mutex_);
-        h = completed_ops_.pop();
-    }
-
-    if (h)
-    {
-        work_guard g{this};
-        (*h)();
-        return 1;
-    }
-
-    // If we processed only wakeup events (no I/O completions) and
-    // there's still outstanding work, continue waiting
-    if (nfds > 0 && outstanding_work_.load(std::memory_order_acquire) > 0)
-    {
-        // Recurse to wait again - this handles the case where we
-        // only processed eventfd wakeups with no actual completions
-        return do_one(timeout_us);
-    }
-
-    return 0;
 }
 
 } // namespace detail

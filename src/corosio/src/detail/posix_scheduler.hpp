@@ -15,6 +15,7 @@
 #include <boost/capy/ex/execution_context.hpp>
 
 #include "src/detail/scheduler_op.hpp"
+#include "src/detail/timer_service.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -26,7 +27,6 @@ namespace boost {
 namespace corosio {
 namespace detail {
 
-// Forward declaration
 struct posix_op;
 
 /** POSIX scheduler using epoll for I/O multiplexing.
@@ -120,14 +120,16 @@ public:
 private:
     std::size_t do_one(long timeout_us);
     void wakeup() const;
+    long calculate_timeout(long requested_timeout_us) const;
 
-    int epoll_fd_;                              // epoll instance
+    int epoll_fd_;
     int event_fd_;                              // for waking epoll_wait
     mutable std::mutex mutex_;
     mutable op_queue completed_ops_;
     mutable std::atomic<long> outstanding_work_;
     std::atomic<bool> stopped_;
     bool shutdown_;
+    timer_service* timer_svc_ = nullptr;
 };
 
 } // namespace detail

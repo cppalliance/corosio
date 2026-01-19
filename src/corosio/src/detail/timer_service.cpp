@@ -12,12 +12,14 @@
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <coroutine>
 #include <limits>
 #include <mutex>
+#include <stdexcept>
 #include <stop_token>
 #include <vector>
 
@@ -415,7 +417,15 @@ wait(
 timer::timer_impl*
 timer_service_create(capy::execution_context& ctx)
 {
-    return ctx.find_service<timer_service>()->create_impl();
+    auto* svc = ctx.find_service<timer_service>();
+    if (!svc)
+    {
+        // Timer service not yet created - this happens if io_context
+        // hasn't been constructed yet, or if the scheduler didn't
+        // initialize the timer service
+        throw std::runtime_error("timer_service not found");
+    }
+    return svc->create_impl();
 }
 
 void

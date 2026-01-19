@@ -30,6 +30,11 @@
 namespace boost {
 namespace corosio {
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251) // class needs to have dll-interface
+#endif
+
 class BOOST_COROSIO_DECL
     tcp_server
 {
@@ -126,7 +131,15 @@ private:
     public:
         push_aw(tcp_server& self, worker_base& w) noexcept;
         bool await_ready() const noexcept;
-        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept;
+
+        template<typename Ex>
+        std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<> h, Ex const&, std::stop_token) noexcept
+        {
+            // Dispatch to server's executor before touching shared state
+            return self_.dispatch_.dispatch(h);
+        }
+
         void await_resume() noexcept;
     };
 
@@ -142,7 +155,18 @@ private:
     public:
         pop_aw(tcp_server& self) noexcept;
         bool await_ready() const noexcept;
-        bool await_suspend(std::coroutine_handle<> h) noexcept;
+
+        template<typename Ex>
+        bool
+        await_suspend(std::coroutine_handle<> h, Ex const&, std::stop_token) noexcept
+        {
+            wait_.h = h;
+            wait_.w = nullptr;
+            wait_.next = self_.waiters_;
+            self_.waiters_ = &wait_;
+            return true;
+        }
+
         system::result<worker_base&> await_resume() noexcept;
     };
 
@@ -151,7 +175,7 @@ private:
     capy::task<void> do_accept(acceptor& acc);
 
 protected:
-    class worker_base
+    class BOOST_COROSIO_DECL worker_base
     {
         worker_base* next = nullptr;
 
@@ -171,13 +195,21 @@ protected:
         }
     };
 
-    class workers
+    class BOOST_COROSIO_DECL workers
     {
         friend class tcp_server;
 
         std::vector<std::unique_ptr<worker_base>> v_;
         worker_base* idle_ = nullptr;
 
+    public:
+        workers() = default;
+        workers(workers const&) = delete;
+        workers& operator=(workers const&) = delete;
+        workers(workers&&) = default;
+        workers& operator=(workers&&) = default;
+
+    private:
         void push(worker_base& w) noexcept
         {
             w.next = idle_;
@@ -208,7 +240,7 @@ protected:
 
     workers wv_;
 
-    class launcher
+    class BOOST_COROSIO_DECL launcher
     {
         tcp_server* srv_;
         worker_base* w_;
@@ -282,6 +314,10 @@ public:
 
     void start();
 };
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 } // corosio
 } // boost

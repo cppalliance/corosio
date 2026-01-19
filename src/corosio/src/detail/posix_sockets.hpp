@@ -246,13 +246,11 @@ connect(
     op.fd = fd_;
     op.start(token);
 
-    // Initiate non-blocking connect
     sockaddr_in addr = detail::to_sockaddr_in(ep);
     int result = ::connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
 
     if (result == 0)
     {
-        // Immediate success (rare for TCP)
         op.complete(0, 0);
         svc_.post(&op);
         return;
@@ -260,13 +258,11 @@ connect(
 
     if (errno == EINPROGRESS)
     {
-        // Connection in progress - register for write-ready
         svc_.work_started();
         svc_.scheduler().register_fd(fd_, &op, EPOLLOUT | EPOLLET);
         return;
     }
 
-    // Immediate error
     op.complete(errno, 0);
     svc_.post(&op);
 }
@@ -290,7 +286,6 @@ read_some(
     op.fd = fd_;
     op.start(token);
 
-    // Fill iovecs from buffer sequence
     capy::mutable_buffer bufs[posix_read_op::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, posix_read_op::max_buffers));
     for (int i = 0; i < op.iovec_count; ++i)
@@ -299,12 +294,10 @@ read_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    // Try immediate read first
     ssize_t n = ::readv(fd_, op.iovecs, op.iovec_count);
 
     if (n > 0)
     {
-        // Got data immediately
         op.complete(0, static_cast<std::size_t>(n));
         svc_.post(&op);
         return;
@@ -312,7 +305,6 @@ read_some(
 
     if (n == 0)
     {
-        // EOF
         op.complete(0, 0);
         svc_.post(&op);
         return;
@@ -320,13 +312,11 @@ read_some(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
-        // Would block - register for read-ready
         svc_.work_started();
         svc_.scheduler().register_fd(fd_, &op, EPOLLIN | EPOLLET);
         return;
     }
 
-    // Immediate error
     op.complete(errno, 0);
     svc_.post(&op);
 }
@@ -350,7 +340,6 @@ write_some(
     op.fd = fd_;
     op.start(token);
 
-    // Fill iovecs from buffer sequence
     capy::mutable_buffer bufs[posix_write_op::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, posix_write_op::max_buffers));
     for (int i = 0; i < op.iovec_count; ++i)
@@ -359,12 +348,10 @@ write_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    // Try immediate write first
     ssize_t n = ::writev(fd_, op.iovecs, op.iovec_count);
 
     if (n > 0)
     {
-        // Wrote data immediately
         op.complete(0, static_cast<std::size_t>(n));
         svc_.post(&op);
         return;
@@ -372,13 +359,12 @@ write_some(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
-        // Would block - register for write-ready
         svc_.work_started();
         svc_.scheduler().register_fd(fd_, &op, EPOLLOUT | EPOLLET);
         return;
     }
 
-    // Immediate error (including n == 0 which shouldn't happen for TCP)
+    // n == 0 shouldn't happen for TCP stream sockets
     op.complete(errno ? errno : EIO, 0);
     svc_.post(&op);
 }
@@ -398,7 +384,6 @@ close_socket() noexcept
 {
     if (fd_ >= 0)
     {
-        // Unregister from epoll before closing
         svc_.scheduler().unregister_fd(fd_);
         ::close(fd_);
         fd_ = -1;
@@ -442,7 +427,7 @@ accept(
     op.fd = fd_;
     op.start(token);
 
-    // Set up callback for creating peer impl when accept completes via epoll
+    // Callback for creating peer socket when accept completes via epoll
     op.service_ptr = &svc_;
     op.create_peer = [](void* svc_ptr, int new_fd) -> io_object::io_object_impl* {
         auto& svc = *static_cast<posix_sockets*>(svc_ptr);
@@ -451,7 +436,6 @@ accept(
         return &peer_impl;
     };
 
-    // Try immediate accept first
     sockaddr_in addr{};
     socklen_t addrlen = sizeof(addr);
     int accepted = ::accept4(fd_, reinterpret_cast<sockaddr*>(&addr),
@@ -459,7 +443,6 @@ accept(
 
     if (accepted >= 0)
     {
-        // Got a connection immediately
         auto& peer_impl = svc_.create_impl();
         peer_impl.set_socket(accepted);
         op.accepted_fd = accepted;
@@ -471,13 +454,11 @@ accept(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
-        // No pending connections - register for read-ready
         svc_.work_started();
         svc_.scheduler().register_fd(fd_, &op, EPOLLIN | EPOLLET);
         return;
     }
 
-    // Immediate error
     op.complete(errno, 0);
     svc_.post(&op);
 }
@@ -495,7 +476,6 @@ close_socket() noexcept
 {
     if (fd_ >= 0)
     {
-        // Unregister from epoll before closing
         svc_.scheduler().unregister_fd(fd_);
         ::close(fd_);
         fd_ = -1;
@@ -525,14 +505,12 @@ shutdown()
 {
     std::lock_guard lock(mutex_);
 
-    // Close all sockets
     while (auto* impl = socket_list_.pop_front())
     {
         impl->close_socket();
         delete impl;
     }
 
-    // Close all acceptors
     while (auto* impl = acceptor_list_.pop_front())
     {
         impl->close_socket();
@@ -572,12 +550,9 @@ open_socket(posix_socket_impl& impl)
 {
     impl.close_socket();
 
-    // Create non-blocking TCP socket
     int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (fd < 0)
-    {
         return system::error_code(errno, system::system_category());
-    }
 
     impl.fd_ = fd;
     return {};
@@ -618,18 +593,13 @@ open_acceptor(
 {
     impl.close_socket();
 
-    // Create non-blocking TCP socket
     int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (fd < 0)
-    {
         return system::error_code(errno, system::system_category());
-    }
 
-    // Allow address reuse
     int reuse = 1;
     ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
-    // Bind to endpoint
     sockaddr_in addr = detail::to_sockaddr_in(ep);
     if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
     {
@@ -638,7 +608,6 @@ open_acceptor(
         return system::error_code(err, system::system_category());
     }
 
-    // Start listening
     if (::listen(fd, backlog) < 0)
     {
         int err = errno;

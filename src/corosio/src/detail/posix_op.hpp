@@ -56,9 +56,9 @@ struct posix_op : scheduler_op
     system::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
 
-    int fd = -1;                    // Socket file descriptor
-    std::uint32_t events = 0;       // Requested epoll events (EPOLLIN/EPOLLOUT)
-    int error = 0;                  // errno on completion
+    int fd = -1;
+    std::uint32_t events = 0;
+    int error = 0;
     std::size_t bytes_transferred = 0;
 
     std::atomic<bool> cancelled{false};
@@ -101,7 +101,6 @@ struct posix_op : scheduler_op
         d.dispatch(h).resume();
     }
 
-    // Returns true if this is a read operation (for EOF detection)
     virtual bool is_read_operation() const noexcept { return false; }
 
     void destroy() override
@@ -219,7 +218,6 @@ struct posix_accept_op : posix_op
     io_object::io_object_impl* peer_impl = nullptr;
     io_object::io_object_impl** impl_out = nullptr;
 
-    // Function to create peer impl - set by posix_sockets
     using create_peer_fn = io_object::io_object_impl* (*)(void*, int);
     create_peer_fn create_peer = nullptr;
     void* service_ptr = nullptr;
@@ -269,14 +267,12 @@ struct posix_accept_op : posix_op
 
         if (success && accepted_fd >= 0 && peer_impl)
         {
-            // Pass impl to awaitable for assignment to peer socket
             if (impl_out)
                 *impl_out = peer_impl;
             peer_impl = nullptr;
         }
         else
         {
-            // Cleanup on failure
             if (accepted_fd >= 0)
             {
                 ::close(accepted_fd);
