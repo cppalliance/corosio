@@ -10,10 +10,12 @@
 #include <boost/corosio/socket.hpp>
 #include <boost/corosio/detail/except.hpp>
 
-#ifdef _WIN32
-#include "src/detail/win/sockets.hpp"
-#else
-#include "src/detail/posix_sockets.hpp"
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#include "src/detail/iocp/sockets.hpp"
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+#include "src/detail/epoll/sockets.hpp"
 #endif
 
 #include <cassert>
@@ -22,12 +24,12 @@ namespace boost {
 namespace corosio {
 
 namespace {
-#ifdef _WIN32
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
 using socket_service = detail::win_sockets;
 using socket_impl_type = detail::win_socket_impl;
-#else
-using socket_service = detail::posix_sockets;
-using socket_impl_type = detail::posix_socket_impl;
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+using socket_service = detail::epoll_sockets;
+using socket_impl_type = detail::epoll_socket_impl;
 #endif
 } // namespace
 

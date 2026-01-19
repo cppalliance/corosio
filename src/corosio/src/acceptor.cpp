@@ -9,10 +9,12 @@
 
 #include <boost/corosio/acceptor.hpp>
 
-#ifdef _WIN32
-#include "src/detail/win/sockets.hpp"
-#else
-#include "detail/posix_sockets.hpp"
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#include "src/detail/iocp/sockets.hpp"
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+#include "src/detail/epoll/sockets.hpp"
 #endif
 
 #include <boost/corosio/detail/except.hpp>
@@ -23,12 +25,12 @@ namespace boost {
 namespace corosio {
 namespace {
 
-#ifdef _WIN32
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
 using acceptor_service = detail::win_sockets;
 using acceptor_impl_type = detail::win_acceptor_impl;
-#else
-using acceptor_service = detail::posix_sockets;
-using acceptor_impl_type = detail::posix_acceptor_impl;
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+using acceptor_service = detail::epoll_sockets;
+using acceptor_impl_type = detail::epoll_acceptor_impl;
 #endif
 
 } // namespace

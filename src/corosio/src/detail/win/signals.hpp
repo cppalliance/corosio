@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP
 #define BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP
 
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_SIGNAL_WIN)
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/signal_set.hpp>
 #include <boost/capy/ex/any_executor_ref.hpp>
@@ -19,7 +23,7 @@
 #include <boost/capy/core/intrusive_queue.hpp>
 #include <boost/system/error_code.hpp>
 
-#include "src/detail/win/mutex.hpp"
+#include "src/detail/iocp/mutex.hpp"
 #include "src/detail/scheduler_op.hpp"
 
 #include <coroutine>
@@ -227,4 +231,6 @@ private:
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_SIGNAL_WIN
+
+#endif // BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP

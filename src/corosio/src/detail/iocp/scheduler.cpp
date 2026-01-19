@@ -7,11 +7,13 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifdef _WIN32
+#include "src/detail/config_backend.hpp"
 
-#include "src/detail/win/scheduler.hpp"
-#include "src/detail/win/overlapped_op.hpp"
-#include "src/detail/win/timers.hpp"
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+
+#include "src/detail/iocp/scheduler.hpp"
+#include "src/detail/iocp/overlapped_op.hpp"
+#include "src/detail/iocp/timers.hpp"
 #include "src/detail/timer_service.hpp"
 
 #include <boost/corosio/detail/except.hpp>

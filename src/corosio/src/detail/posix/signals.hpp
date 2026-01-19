@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_DETAIL_POSIX_SIGNALS_HPP
 #define BOOST_COROSIO_DETAIL_POSIX_SIGNALS_HPP
 
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_SIGNAL_POSIX)
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/signal_set.hpp>
 #include <boost/capy/ex/any_executor_ref.hpp>
@@ -17,7 +21,6 @@
 #include <boost/capy/core/intrusive_list.hpp>
 #include <boost/system/error_code.hpp>
 
-#include "src/detail/posix_op.hpp"
 #include "src/detail/scheduler_op.hpp"
 
 #include <coroutine>
@@ -31,7 +34,7 @@ namespace boost {
 namespace corosio {
 namespace detail {
 
-class posix_scheduler;
+class epoll_scheduler;
 class posix_signals;
 class posix_signal_impl;
 
@@ -69,7 +72,7 @@ struct signal_registration
 
 //------------------------------------------------------------------------------
 
-/** Signal set implementation for POSIX using signalfd.
+/** Signal set implementation for POSIX.
 
     This class contains the state for a single signal_set, including
     registered signals and pending wait operation.
@@ -107,20 +110,18 @@ public:
 
 //------------------------------------------------------------------------------
 
-/** POSIX signal management service using signalfd.
+/** POSIX signal management service.
 
     This service owns all signal set implementations and coordinates
-    their lifecycle. It provides:
+    their lifecycle using C signal handlers. It provides:
 
     - Signal implementation allocation and deallocation
-    - Signal registration via signalfd
+    - Signal registration via C signal()
     - Global signal state management
     - Graceful shutdown - destroys all implementations when io_context stops
 
     @par Thread Safety
     All public member functions are thread-safe.
-
-    @note Only available on POSIX platforms with signalfd support.
 */
 class posix_signals : public capy::execution_context::service
 {
@@ -209,7 +210,7 @@ private:
     static void add_service(posix_signals* service);
     static void remove_service(posix_signals* service);
 
-    posix_scheduler& sched_;
+    epoll_scheduler& sched_;
     std::mutex mutex_;
     capy::intrusive_list<posix_signal_impl> impl_list_;
 
@@ -228,4 +229,6 @@ private:
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_SIGNAL_POSIX
+
+#endif // BOOST_COROSIO_DETAIL_POSIX_SIGNALS_HPP

@@ -9,10 +9,12 @@
 
 #include <boost/corosio/io_context.hpp>
 
-#ifdef _WIN32
-#include "src/detail/win/scheduler.hpp"
-#else
-#include "detail/posix_scheduler.hpp"
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#include "src/detail/iocp/scheduler.hpp"
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+#include "src/detail/epoll/scheduler.hpp"
 #endif
 
 #include <thread>
@@ -20,10 +22,10 @@
 namespace boost {
 namespace corosio {
 
-#ifdef _WIN32
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
 using scheduler_type = detail::win_scheduler;
-#else
-using scheduler_type = detail::posix_scheduler;
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+using scheduler_type = detail::epoll_scheduler;
 #endif
 
 io_context::

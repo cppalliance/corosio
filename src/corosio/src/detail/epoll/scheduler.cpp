@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -7,10 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef _WIN32
+#include "src/detail/config_backend.hpp"
 
-#include "src/detail/posix_scheduler.hpp"
-#include "src/detail/posix_op.hpp"
+#if defined(BOOST_COROSIO_BACKEND_EPOLL)
+
+#include "src/detail/epoll/scheduler.hpp"
+#include "src/detail/epoll/op.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/core/thread_local_ptr.hpp>
@@ -34,7 +36,7 @@ namespace {
 
 struct scheduler_context
 {
-    posix_scheduler const* key;
+    epoll_scheduler const* key;
     scheduler_context* next;
 };
 
@@ -45,7 +47,7 @@ struct thread_context_guard
     scheduler_context frame_;
 
     explicit thread_context_guard(
-        posix_scheduler const* ctx) noexcept
+        epoll_scheduler const* ctx) noexcept
         : frame_{ctx, context_stack.get()}
     {
         context_stack.set(&frame_);
@@ -59,8 +61,8 @@ struct thread_context_guard
 
 } // namespace
 
-posix_scheduler::
-posix_scheduler(
+epoll_scheduler::
+epoll_scheduler(
     capy::execution_context& ctx,
     int)
     : epoll_fd_(-1)
@@ -103,11 +105,11 @@ posix_scheduler(
     timer_svc_->set_on_earliest_changed(
         timer_service::callback(
             this,
-            [](void* p) { static_cast<posix_scheduler*>(p)->wakeup(); }));
+            [](void* p) { static_cast<epoll_scheduler*>(p)->wakeup(); }));
 }
 
-posix_scheduler::
-~posix_scheduler()
+epoll_scheduler::
+~epoll_scheduler()
 {
     if (event_fd_ >= 0)
         ::close(event_fd_);
@@ -116,7 +118,7 @@ posix_scheduler::
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 shutdown()
 {
     std::unique_lock lock(mutex_);
@@ -136,7 +138,7 @@ shutdown()
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 post(capy::any_coro h) const
 {
     struct post_handler final
@@ -176,7 +178,7 @@ post(capy::any_coro h) const
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 post(scheduler_op* h) const
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
@@ -189,14 +191,14 @@ post(scheduler_op* h) const
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 on_work_started() noexcept
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 on_work_finished() noexcept
 {
     if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
@@ -204,7 +206,7 @@ on_work_finished() noexcept
 }
 
 bool
-posix_scheduler::
+epoll_scheduler::
 running_in_this_thread() const noexcept
 {
     for (auto* c = context_stack.get(); c != nullptr; c = c->next)
@@ -214,7 +216,7 @@ running_in_this_thread() const noexcept
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 stop()
 {
     bool expected = false;
@@ -226,21 +228,21 @@ stop()
 }
 
 bool
-posix_scheduler::
+epoll_scheduler::
 stopped() const noexcept
 {
     return stopped_.load(std::memory_order_acquire);
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 restart()
 {
     stopped_.store(false, std::memory_order_release);
 }
 
 std::size_t
-posix_scheduler::
+epoll_scheduler::
 run()
 {
     if (stopped_.load(std::memory_order_acquire))
@@ -262,7 +264,7 @@ run()
 }
 
 std::size_t
-posix_scheduler::
+epoll_scheduler::
 run_one()
 {
     if (stopped_.load(std::memory_order_acquire))
@@ -279,7 +281,7 @@ run_one()
 }
 
 std::size_t
-posix_scheduler::
+epoll_scheduler::
 wait_one(long usec)
 {
     if (stopped_.load(std::memory_order_acquire))
@@ -296,7 +298,7 @@ wait_one(long usec)
 }
 
 std::size_t
-posix_scheduler::
+epoll_scheduler::
 poll()
 {
     if (stopped_.load(std::memory_order_acquire))
@@ -318,7 +320,7 @@ poll()
 }
 
 std::size_t
-posix_scheduler::
+epoll_scheduler::
 poll_one()
 {
     if (stopped_.load(std::memory_order_acquire))
@@ -335,8 +337,8 @@ poll_one()
 }
 
 void
-posix_scheduler::
-register_fd(int fd, posix_op* op, std::uint32_t events) const
+epoll_scheduler::
+register_fd(int fd, epoll_op* op, std::uint32_t events) const
 {
     epoll_event ev{};
     ev.events = events;
@@ -350,8 +352,8 @@ register_fd(int fd, posix_op* op, std::uint32_t events) const
 }
 
 void
-posix_scheduler::
-modify_fd(int fd, posix_op* op, std::uint32_t events) const
+epoll_scheduler::
+modify_fd(int fd, epoll_op* op, std::uint32_t events) const
 {
     epoll_event ev{};
     ev.events = events;
@@ -365,7 +367,7 @@ modify_fd(int fd, posix_op* op, std::uint32_t events) const
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 unregister_fd(int fd) const
 {
     // EPOLL_CTL_DEL ignores the event parameter (can be NULL on Linux 2.6.9+)
@@ -373,21 +375,21 @@ unregister_fd(int fd) const
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 work_started() const noexcept
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 work_finished() const noexcept
 {
     outstanding_work_.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 void
-posix_scheduler::
+epoll_scheduler::
 wakeup() const
 {
     // Write cannot fail: eventfd counter won't overflow with single increments
@@ -398,12 +400,12 @@ wakeup() const
 // RAII guard - work_finished called even if handler throws
 struct work_guard
 {
-    posix_scheduler const* self;
+    epoll_scheduler const* self;
     ~work_guard() { self->work_finished(); }
 };
 
 long
-posix_scheduler::
+epoll_scheduler::
 calculate_timeout(long requested_timeout_us) const
 {
     if (requested_timeout_us == 0)
@@ -429,7 +431,7 @@ calculate_timeout(long requested_timeout_us) const
 }
 
 std::size_t
-posix_scheduler::
+epoll_scheduler::
 do_one(long timeout_us)
 {
     for (;;)
@@ -493,7 +495,7 @@ do_one(long timeout_us)
                 continue;
             }
 
-            auto* op = static_cast<posix_op*>(events[i].data.ptr);
+            auto* op = static_cast<epoll_op*>(events[i].data.ptr);
 
             // One-shot: unregister before I/O
             unregister_fd(op->fd);

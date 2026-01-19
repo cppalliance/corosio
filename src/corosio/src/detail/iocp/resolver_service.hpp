@@ -7,12 +7,14 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_WIN_RESOLVER_SERVICE_HPP
-#define BOOST_COROSIO_DETAIL_WIN_RESOLVER_SERVICE_HPP
+#ifndef BOOST_COROSIO_DETAIL_IOCP_RESOLVER_SERVICE_HPP
+#define BOOST_COROSIO_DETAIL_IOCP_RESOLVER_SERVICE_HPP
+
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
 
 #include <boost/corosio/detail/config.hpp>
-
-#ifdef _WIN32
 
 // GetAddrInfoExW requires Windows 8 or later
 #if !defined(_WIN32_WINNT) || (_WIN32_WINNT < 0x0602)
@@ -26,10 +28,10 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 
-#include "src/detail/windows.hpp"
-#include "src/detail/win/overlapped_op.hpp"
-#include "src/detail/win/mutex.hpp"
-#include "src/detail/win/wsa_init.hpp"
+#include "src/detail/iocp/windows.hpp"
+#include "src/detail/iocp/overlapped_op.hpp"
+#include "src/detail/iocp/mutex.hpp"
+#include "src/detail/iocp/wsa_init.hpp"
 
 #include <WS2tcpip.h>
 
@@ -171,6 +173,6 @@ private:
 } // namespace corosio
 } // namespace boost
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_BACKEND_IOCP
 
-#endif
+#endif // BOOST_COROSIO_DETAIL_IOCP_RESOLVER_SERVICE_HPP

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -7,10 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef _WIN32
+#include "src/detail/config_backend.hpp"
 
-#include "src/detail/posix_signals.hpp"
-#include "src/detail/posix_scheduler.hpp"
+#if defined(BOOST_COROSIO_SIGNAL_POSIX)
+
+#include "src/detail/posix/signals.hpp"
+#include "src/detail/epoll/scheduler.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/error.hpp>
@@ -175,7 +177,7 @@ cancel()
 
 posix_signals::
 posix_signals(capy::execution_context& ctx)
-    : sched_(ctx.use_service<posix_scheduler>())
+    : sched_(ctx.use_service<epoll_scheduler>())
 {
     for (int i = 0; i < max_signal_number; ++i)
     {

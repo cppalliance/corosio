@@ -7,10 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifdef _WIN32
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_SIGNAL_WIN)
 
 #include "src/detail/win/signals.hpp"
-#include "src/detail/win/scheduler.hpp"
+#include "src/detail/iocp/scheduler.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/error.hpp>

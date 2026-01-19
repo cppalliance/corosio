@@ -7,8 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_WIN_SOCKETS_HPP
-#define BOOST_COROSIO_DETAIL_WIN_SOCKETS_HPP
+#ifndef BOOST_COROSIO_DETAIL_IOCP_SOCKETS_HPP
+#define BOOST_COROSIO_DETAIL_IOCP_SOCKETS_HPP
+
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/acceptor.hpp>
@@ -18,11 +22,11 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 
-#include "src/detail/windows.hpp"
-#include "src/detail/win/completion_key.hpp"
-#include "src/detail/win/overlapped_op.hpp"
-#include "src/detail/win/mutex.hpp"
-#include "src/detail/win/wsa_init.hpp"
+#include "src/detail/iocp/windows.hpp"
+#include "src/detail/iocp/completion_key.hpp"
+#include "src/detail/iocp/overlapped_op.hpp"
+#include "src/detail/iocp/mutex.hpp"
+#include "src/detail/iocp/wsa_init.hpp"
 
 #include <MSWSock.h>
 #include <Ws2tcpip.h>
@@ -311,4 +315,6 @@ private:
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_IOCP
+
+#endif // BOOST_COROSIO_DETAIL_IOCP_SOCKETS_HPP

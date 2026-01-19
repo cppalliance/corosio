@@ -7,8 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_WIN_OVERLAPPED_OP_HPP
-#define BOOST_COROSIO_DETAIL_WIN_OVERLAPPED_OP_HPP
+#ifndef BOOST_COROSIO_DETAIL_IOCP_OVERLAPPED_OP_HPP
+#define BOOST_COROSIO_DETAIL_IOCP_OVERLAPPED_OP_HPP
+
+#include "src/detail/config_backend.hpp"
+
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/any_executor_ref.hpp>
@@ -24,7 +28,7 @@
 #include <optional>
 #include <stop_token>
 
-#include "src/detail/windows.hpp"
+#include "src/detail/iocp/windows.hpp"
 
 namespace boost {
 namespace corosio {
@@ -144,4 +148,6 @@ get_overlapped_op(scheduler_op* h) noexcept
 } // namespace corosio
 } // namespace boost
 
-#endif
+#endif // BOOST_COROSIO_BACKEND_IOCP
+
+#endif // BOOST_COROSIO_DETAIL_IOCP_OVERLAPPED_OP_HPP
