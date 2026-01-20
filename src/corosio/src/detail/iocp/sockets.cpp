@@ -266,6 +266,16 @@ read_some(
     op.wsabuf_count = static_cast<DWORD>(
         param.copy_to(bufs, read_op::max_buffers));
 
+    // Handle empty buffer: complete immediately with 0 bytes
+    if (op.wsabuf_count == 0)
+    {
+        op.bytes_transferred = 0;
+        op.error = 0;
+        op.empty_buffer = true;
+        svc_.post(&op);
+        return;
+    }
+
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
     {
         op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
@@ -326,6 +336,15 @@ write_some(
     capy::mutable_buffer bufs[write_op::max_buffers];
     op.wsabuf_count = static_cast<DWORD>(
         param.copy_to(bufs, write_op::max_buffers));
+
+    // Handle empty buffer: complete immediately with 0 bytes
+    if (op.wsabuf_count == 0)
+    {
+        op.bytes_transferred = 0;
+        op.error = 0;
+        svc_.post(&op);
+        return;
+    }
 
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
     {

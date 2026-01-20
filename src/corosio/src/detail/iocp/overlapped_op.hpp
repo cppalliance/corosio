@@ -54,6 +54,7 @@ struct overlapped_op
     std::size_t* bytes_out = nullptr;
     DWORD error = 0;
     DWORD bytes_transferred = 0;
+    bool empty_buffer = false;  // True if operation was with empty buffer
     std::atomic<bool> cancelled{false};
     std::optional<std::stop_callback<canceller>> stop_cb;
 
@@ -76,6 +77,7 @@ struct overlapped_op
         hEvent = nullptr;
         error = 0;
         bytes_transferred = 0;
+        empty_buffer = false;
         cancelled.store(false, std::memory_order_relaxed);
         ready_ = 0;
     }
@@ -91,11 +93,12 @@ struct overlapped_op
             else if (error != 0)
                 *ec_out = system::error_code(
                     static_cast<int>(error), system::system_category());
-        else if (is_read_operation() && bytes_transferred == 0)
-        {
-            // EOF: 0 bytes transferred with no error indicates end of stream
-            *ec_out = make_error_code(capy::error::eof);
-        }
+            else if (is_read_operation() && bytes_transferred == 0 && !empty_buffer)
+            {
+                // EOF: 0 bytes transferred with no error indicates end of stream
+                // (but not if we intentionally read with an empty buffer)
+                *ec_out = make_error_code(capy::error::eof);
+            }
         }
 
         if (bytes_out)

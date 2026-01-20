@@ -415,6 +415,8 @@ run_tls_test_fail(
     capy::run_async( ioc.get_executor() )(
         [&timeout, &s1, &s2, &client_done, &server_done]() -> capy::task<>
         {
+            (void)client_done;
+            (void)server_done;
             auto [ec] = co_await timeout.wait();
             if( !ec )
             {
