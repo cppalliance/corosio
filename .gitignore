@@ -1,7 +1,9 @@
 /.vscode/
 /.cache/
+/.clangd
 /build/*
 !/build/Jamfile
 !/build/wolfssl.jam
 /out/
-CMakeUserPresets.json
+/CMakeUserPresets.json
+/tmpclaude-*-cwd
