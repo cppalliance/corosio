@@ -22,6 +22,7 @@
 #include <boost/capy/core/intrusive_list.hpp>
 #include <boost/capy/core/intrusive_queue.hpp>
 #include <boost/system/error_code.hpp>
+#include <boost/system/result.hpp>
 
 #include "src/detail/iocp/mutex.hpp"
 #include "src/detail/scheduler_op.hpp"
@@ -105,9 +106,9 @@ public:
         system::error_code*,
         int*) override;
 
-    system::error_code add(int signal_number) override;
-    system::error_code remove(int signal_number) override;
-    system::error_code clear() override;
+    system::result<void> add(int signal_number) override;
+    system::result<void> remove(int signal_number) override;
+    system::result<void> clear() override;
     void cancel() override;
 };
 
@@ -158,9 +159,9 @@ public:
 
         @param impl The signal implementation to modify.
         @param signal_number The signal to register.
-        @return Error code, or success.
+        @return Success, or an error.
     */
-    system::error_code add_signal(
+    system::result<void> add_signal(
         win_signal_impl& impl,
         int signal_number);
 
@@ -168,18 +169,18 @@ public:
 
         @param impl The signal implementation to modify.
         @param signal_number The signal to unregister.
-        @return Error code, or success.
+        @return Success, or an error.
     */
-    system::error_code remove_signal(
+    system::result<void> remove_signal(
         win_signal_impl& impl,
         int signal_number);
 
     /** Remove all signals from a signal set.
 
         @param impl The signal implementation to clear.
-        @return Error code, or success.
+        @return Success, or an error.
     */
-    system::error_code clear_signals(win_signal_impl& impl);
+    system::result<void> clear_signals(win_signal_impl& impl);
 
     /** Cancel pending wait operations.
 

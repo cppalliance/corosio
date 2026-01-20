@@ -63,8 +63,14 @@ run_client(
     // Connect to the server (throws on error)
     (co_await s.connect(corosio::endpoint(addr, port))).value();
 
+    // Configure TLS context
+    corosio::tls::context ctx;
+    ctx.set_hostname(hostname);
+    ctx.set_default_verify_paths().value();
+    ctx.set_verify_mode(corosio::tls::verify_mode::peer).value();
+
     // Wrap socket in TLS stream
-    corosio::wolfssl_stream secure(s);
+    corosio::wolfssl_stream secure(s, ctx);
 
     // Perform TLS handshake
     (co_await secure.handshake(corosio::wolfssl_stream::client)).value();

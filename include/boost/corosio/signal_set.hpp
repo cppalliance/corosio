@@ -20,7 +20,9 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/system/error_code.hpp>
+#include <boost/system/result.hpp>
 
+#include <concepts>
 #include <coroutine>
 #include <stop_token>
 
@@ -76,15 +78,6 @@ class BOOST_COROSIO_DECL signal_set : public io_object
         template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Ex const& ex) -> std::coroutine_handle<>
-        {
-            s_.get().wait(h, ex, token_, &ec_, &signal_number_);
-            return std::noop_coroutine();
-        }
-
-        template<typename Ex>
-        auto await_suspend(
-            std::coroutine_handle<> h,
             Ex const& ex,
             std::stop_token token) -> std::coroutine_handle<>
         {
@@ -104,61 +97,42 @@ public:
             system::error_code*,
             int*) = 0;
 
-        virtual system::error_code add(int signal_number) = 0;
-        virtual system::error_code remove(int signal_number) = 0;
-        virtual system::error_code clear() = 0;
+        virtual system::result<void> add(int signal_number) = 0;
+        virtual system::result<void> remove(int signal_number) = 0;
+        virtual system::result<void> clear() = 0;
         virtual void cancel() = 0;
     };
 
-public:
     /** Destructor.
 
         Cancels any pending operations and releases signal resources.
     */
     ~signal_set();
 
-    /** Construct a signal set without adding any signals.
+    /** Construct an empty signal set.
 
         @param ctx The execution context that will own this signal set.
     */
     explicit signal_set(capy::execution_context& ctx);
 
-    /** Construct a signal set and add one signal.
+    /** Construct a signal set with initial signals.
 
         @param ctx The execution context that will own this signal set.
-        @param signal_number_1 The signal number to be added.
+        @param signal First signal number to add.
+        @param signals Additional signal numbers to add.
 
         @throws boost::system::system_error Thrown on failure.
     */
-    signal_set(capy::execution_context& ctx, int signal_number_1);
-
-    /** Construct a signal set and add two signals.
-
-        @param ctx The execution context that will own this signal set.
-        @param signal_number_1 The first signal number to be added.
-        @param signal_number_2 The second signal number to be added.
-
-        @throws boost::system::system_error Thrown on failure.
-    */
+    template<std::convertible_to<int>... Signals>
     signal_set(
         capy::execution_context& ctx,
-        int signal_number_1,
-        int signal_number_2);
-
-    /** Construct a signal set and add three signals.
-
-        @param ctx The execution context that will own this signal set.
-        @param signal_number_1 The first signal number to be added.
-        @param signal_number_2 The second signal number to be added.
-        @param signal_number_3 The third signal number to be added.
-
-        @throws boost::system::system_error Thrown on failure.
-    */
-    signal_set(
-        capy::execution_context& ctx,
-        int signal_number_1,
-        int signal_number_2,
-        int signal_number_3);
+        int signal,
+        Signals... signals)
+        : signal_set(ctx)
+    {
+        add(signal).value();
+        (add(signals).value(), ...);
+    }
 
     /** Move constructor.
 
@@ -192,19 +166,9 @@ public:
 
         @param signal_number The signal to be added to the set.
 
-        @throws boost::system::system_error Thrown on failure.
+        @return Success, or an error if the signal could not be added.
     */
-    void add(int signal_number);
-
-    /** Add a signal to the signal set.
-
-        This function adds the specified signal to the set. It has no
-        effect if the signal is already in the set.
-
-        @param signal_number The signal to be added to the set.
-        @param ec Set to indicate what error occurred, if any.
-    */
-    void add(int signal_number, system::error_code& ec);
+    system::result<void> add(int signal_number);
 
     /** Remove a signal from the signal set.
 
@@ -213,37 +177,18 @@ public:
 
         @param signal_number The signal to be removed from the set.
 
-        @throws boost::system::system_error Thrown on failure.
+        @return Success, or an error if the signal could not be removed.
     */
-    void remove(int signal_number);
-
-    /** Remove a signal from the signal set.
-
-        This function removes the specified signal from the set. It has
-        no effect if the signal is not in the set.
-
-        @param signal_number The signal to be removed from the set.
-        @param ec Set to indicate what error occurred, if any.
-    */
-    void remove(int signal_number, system::error_code& ec);
+    system::result<void> remove(int signal_number);
 
     /** Remove all signals from the signal set.
 
         This function removes all signals from the set. It has no effect
         if the set is already empty.
 
-        @throws boost::system::system_error Thrown on failure.
+        @return Success, or an error if resetting any signal handler fails.
     */
-    void clear();
-
-    /** Remove all signals from the signal set.
-
-        This function removes all signals from the set. It has no effect
-        if the set is already empty.
-
-        @param ec Set to indicate what error occurred, if any.
-    */
-    void clear(system::error_code& ec);
+    system::result<void> clear();
 
     /** Cancel all operations associated with the signal set.
 
