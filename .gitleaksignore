@@ -1,0 +1,7 @@
+# Allowlist for gitleaks secret scanning
+#
+# test/unit/tls/test_utils.hpp contains embedded test certificates and
+# private keys from Boost.Beast for TLS unit testing. These are intentional
+# test credentials documented in-code, not production secrets.
+
+test/unit/tls/test_utils.hpp
