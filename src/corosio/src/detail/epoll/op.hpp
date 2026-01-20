@@ -189,6 +189,9 @@ struct epoll_read_op : epoll_op
 
     void perform_io() noexcept override
     {
+        // Detect intentional zero-length reads to suppress EOF
+        empty_buffer_read = (iovec_count == 0);
+
         ssize_t n = ::readv(fd, iovecs, iovec_count);
         if (n >= 0)
             complete(0, static_cast<std::size_t>(n));

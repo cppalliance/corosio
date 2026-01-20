@@ -127,10 +127,13 @@ struct acceptor_test
                 co_await t.wait();
                 acc.cancel();
 
-                // Wait for accept to complete
-                timer t2(ioc);
-                t2.expires_after(std::chrono::milliseconds(50));
-                co_await t2.wait();
+                // Poll for accept completion instead of fixed sleep
+                timer poll_timer(ioc);
+                for (int i = 0; i < 1000 && !accept_done; ++i)
+                {
+                    poll_timer.expires_after(std::chrono::milliseconds(1));
+                    co_await poll_timer.wait();
+                }
 
                 BOOST_TEST(accept_done);
                 BOOST_TEST(accept_ec == capy::cond::canceled);
@@ -179,9 +182,13 @@ struct acceptor_test
                 co_await t.wait();
                 acc.close();
 
-                timer t2(ioc);
-                t2.expires_after(std::chrono::milliseconds(50));
-                co_await t2.wait();
+                // Poll for accept completion instead of fixed sleep
+                timer poll_timer(ioc);
+                for (int i = 0; i < 1000 && !accept_done; ++i)
+                {
+                    poll_timer.expires_after(std::chrono::milliseconds(1));
+                    co_await poll_timer.wait();
+                }
 
                 BOOST_TEST(accept_done);
                 BOOST_TEST(accept_ec == capy::cond::canceled);

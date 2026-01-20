@@ -42,7 +42,7 @@ namespace corosio {
     `errc::operation_canceled`.
 
     @param ios The I/O stream to read from.
-    @param buffers The buffer sequence to read data into.
+    @param bs The buffer sequence to read data into.
 
     @return An awaitable that completes with `io_result<std::size_t>`.
         Returns success with the total number of bytes read (equal to

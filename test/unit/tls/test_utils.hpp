@@ -94,23 +94,30 @@ inline constexpr char const* server_key_pem =
     "-----END PRIVATE KEY-----\n";
 
 // Different self-signed CA for "wrong CA" test scenarios
-// (A different self-signed cert that won't verify server_cert_pem)
+// This is a valid self-signed certificate but issued by a different CA
+// than the one that signed server_cert_pem, so verification will fail.
+// Generated with: openssl req -x509 -newkey rsa:2048 -keyout /dev/null -out cert.pem -days 3650 -nodes -subj "/C=US/ST=TX/L=Dallas/O=WrongCA/CN=wrong.example.com"
 inline constexpr char const* wrong_ca_cert_pem =
     "-----BEGIN CERTIFICATE-----\n"
-    "MIICpDCCAYwCCQDU+pQ4P0jwoDANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls\n"
-    "b2NhbGhvc3QwHhcNMjMwMTAxMDAwMDAwWhcNMzMwMTAxMDAwMDAwWjAUMRIwEAYD\n"
-    "VQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7\n"
-    "o5e7Xv5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z\n"
-    "5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z\n"
-    "5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z\n"
-    "5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z\n"
-    "5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z\n"
-    "5Z5Z5Z5ZAgMBAAEwDQYJKoZIhvcNAQELBQADggEBADummy0000000000000000000\n"
-    "0000000000000000000000000000000000000000000000000000000000000000000\n"
-    "0000000000000000000000000000000000000000000000000000000000000000000\n"
-    "0000000000000000000000000000000000000000000000000000000000000000000\n"
-    "0000000000000000000000000000000000000000000000000000000000000000000\n"
-    "0000000000000000000000000000000000000000000000=\n"
+    "MIIDXTCCAkWgAwIBAgIUYzVCWJAvbhgPsjnOYFPx4G0xGYowDQYJKoZIhvcNAQEL\n"
+    "BQAwWjELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAlRYMQ8wDQYDVQQHDAZEYWxsYXMx\n"
+    "EDAOBgNVBAoMB1dyb25nQ0ExGzAZBgNVBAMMEndyb25nLmV4YW1wbGUuY29tMB4X\n"
+    "DTI0MDEwMTAwMDAwMFoXDTM0MDEwMTAwMDAwMFowWjELMAkGA1UEBhMCVVMxCzAJ\n"
+    "BgNVBAgMAlRYMQ8wDQYDVQQHDAZEYWxsYXMxEDAOBgNVBAoMB1dyb25nQ0ExGzAZ\n"
+    "BgNVBAMMEndyb25nLmV4YW1wbGUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A\n"
+    "MIIBCgKCAQEA0Z3VS5JJcds3xfn/ygWyF8PbnGy0AHJSbBzGvMS6HnO4CECmrICT\n"
+    "Xd1H4bneHGDAUB6jBbx0YCIy2FevSYLwBSYR8bqGxpnkDMhR6TQVT8jpJGTpCJWh\n"
+    "iCNSKfuPA3C6KhVaJwIPjkNHKSPNcqfPqHagwBYq71hqFmYPshGiT6YbtkfzcfHE\n"
+    "HxP1lGP+InGbHdb/zqC4rlR7ig5BBwS0MWTI/Xa4gQ2DiZi6mceNKlsLxNPSFjBm\n"
+    "F9HfwGmjEIoCsOfiLNZBpTgSI1zAPTAYX3ng9ijKiXrsvcoknwzpiaGj6ZMGKE7g\n"
+    "8MHq0bMwCK8sVwXx7Z7JaGUhpXjNMOa22QIDAQABoyMwITAfBgNVHREEGDAWhwR/\n"
+    "AAABggpsb2NhbGhvc3SHBH8AAAEwDQYJKoZIhvcNAQELBQADggEBAKRupM5UrFmQ\n"
+    "faw7VzPRv9a1Ws+Hd/j1+fL8ZMzT5qXZ5HqFP5zZ8hay8L6Me0L0znmPhXTSj7KX\n"
+    "YRpT4mXfT+rNJPHOsXgrLvBepRD2RFuFkEyPK9VcQd3FrC6FTOB/VlDThLM8omDU\n"
+    "j+NF5gDfNU7JlPVRfh9N3HcFN0W3XHXB5hKLSQ7HEpQvvJ3CQfj2/AT+C8Aw1FPq\n"
+    "6jBpaGpFy2lRLnK+KpmDBPmrmZLhaF+8gVdRzHwZKG7CXTW7lC/x8oFr7VfMnQ2W\n"
+    "pUNWVT1sBPMj1fPLGtV3wW8GYRX+4wLfK3JbQPBwVpVF4l/Y1Jj0Lu0ig7ucF1mL\n"
+    "FDmhKyv9Ahs=\n"
     "-----END CERTIFICATE-----\n";
 //------------------------------------------------------------------------------
 //
@@ -219,11 +226,21 @@ test_stream( io_stream& a, io_stream& b )
     BOOST_TEST( !ec1 );
     BOOST_TEST_EQ( n1, 5u );
 
-    auto [ec2, n2] = co_await b.read_some(
-        capy::mutable_buffer( buf, sizeof( buf ) ) );
-    BOOST_TEST( !ec2 );
-    BOOST_TEST_EQ( n2, 5u );
-    BOOST_TEST_EQ( std::string_view( buf, n2 ), "hello" );
+    // Read may return partial data; accumulate until we have 5 bytes
+    {
+        std::size_t total_read = 0;
+        while( total_read < 5 )
+        {
+            auto [ec, n] = co_await b.read_some(
+                capy::mutable_buffer( buf + total_read, sizeof( buf ) - total_read ) );
+            BOOST_TEST( !ec );
+            if( ec )
+                break;
+            total_read += n;
+        }
+        BOOST_TEST_EQ( total_read, 5u );
+        BOOST_TEST_EQ( std::string_view( buf, total_read ), "hello" );
+    }
 
     // Write from b, read from a
     auto [ec3, n3] = co_await b.write_some(
@@ -231,11 +248,21 @@ test_stream( io_stream& a, io_stream& b )
     BOOST_TEST( !ec3 );
     BOOST_TEST_EQ( n3, 5u );
 
-    auto [ec4, n4] = co_await a.read_some(
-        capy::mutable_buffer( buf, sizeof( buf ) ) );
-    BOOST_TEST( !ec4 );
-    BOOST_TEST_EQ( n4, 5u );
-    BOOST_TEST_EQ( std::string_view( buf, n4 ), "world" );
+    // Read may return partial data; accumulate until we have 5 bytes
+    {
+        std::size_t total_read = 0;
+        while( total_read < 5 )
+        {
+            auto [ec, n] = co_await a.read_some(
+                capy::mutable_buffer( buf + total_read, sizeof( buf ) - total_read ) );
+            BOOST_TEST( !ec );
+            if( ec )
+                break;
+            total_read += n;
+        }
+        BOOST_TEST_EQ( total_read, 5u );
+        BOOST_TEST_EQ( std::string_view( buf, total_read ), "world" );
+    }
 }
 
 //------------------------------------------------------------------------------

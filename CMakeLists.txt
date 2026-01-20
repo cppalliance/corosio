@@ -214,7 +214,7 @@ endif ()
 #
 #-------------------------------------------------
 find_package(OpenSSL)
-if (OpenSSL_FOUND)
+if (OPENSSL_FOUND)
     file(GLOB_RECURSE BOOST_COROSIO_OPENSSL_HEADERS CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/openssl/*.hpp")
     file(GLOB_RECURSE BOOST_COROSIO_OPENSSL_SOURCES CONFIGURE_DEPENDS

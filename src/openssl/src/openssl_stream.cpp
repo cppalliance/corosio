@@ -187,7 +187,13 @@ public:
         if( !cd.ciphersuites.empty() )
         {
             SSL_CTX_set_security_level( ctx_, 0 );
-            SSL_CTX_set_cipher_list( ctx_, cd.ciphersuites.c_str() );
+            if( SSL_CTX_set_cipher_list( ctx_, cd.ciphersuites.c_str() ) == 0 )
+            {
+                // Invalid cipher string - abort initialization
+                SSL_CTX_free( ctx_ );
+                ctx_ = nullptr;
+                return;
+            }
         }
     }
 

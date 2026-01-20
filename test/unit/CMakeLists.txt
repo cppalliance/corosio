@@ -29,7 +29,7 @@ if (WolfSSL_FOUND)
     target_compile_definitions(boost_corosio_tests PRIVATE BOOST_COROSIO_HAS_WOLFSSL=1)
 endif()
 
-if (OpenSSL_FOUND)
+if (OPENSSL_FOUND)
     target_link_libraries(boost_corosio_tests PRIVATE boost_corosio_openssl)
     target_compile_definitions(boost_corosio_tests PRIVATE BOOST_COROSIO_HAS_OPENSSL=1)
 endif()

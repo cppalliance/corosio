@@ -7,8 +7,6 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-// Plan: c:\Users\Vinnie\.cursor\plans\tls_stream_tests_83c24f98.plan.md
-
 // Cross-Implementation Notes
 // --------------------------
 // - Anonymous ciphers skipped: cipher string syntax differs between impls
