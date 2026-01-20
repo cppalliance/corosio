@@ -13,6 +13,7 @@
 
 #include "src/detail/epoll/scheduler.hpp"
 #include "src/detail/epoll/op.hpp"
+#include "src/detail/make_err.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/core/thread_local_ptr.hpp>
@@ -73,18 +74,14 @@ epoll_scheduler(
 {
     epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
     if (epoll_fd_ < 0)
-        detail::throw_system_error(
-            system::error_code(errno, system::system_category()),
-            "epoll_create1");
+        detail::throw_system_error(make_err(errno), "epoll_create1");
 
     event_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (event_fd_ < 0)
     {
-        int err = errno;
+        int errn = errno;
         ::close(epoll_fd_);
-        detail::throw_system_error(
-            system::error_code(err, system::system_category()),
-            "eventfd");
+        detail::throw_system_error(make_err(errn), "eventfd");
     }
 
     // data.ptr = nullptr distinguishes wakeup events from I/O completions
@@ -93,12 +90,10 @@ epoll_scheduler(
     ev.data.ptr = nullptr;
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, event_fd_, &ev) < 0)
     {
-        int err = errno;
+        int errn = errno;
         ::close(event_fd_);
         ::close(epoll_fd_);
-        detail::throw_system_error(
-            system::error_code(err, system::system_category()),
-            "epoll_ctl");
+        detail::throw_system_error(make_err(errn), "epoll_ctl");
     }
 
     timer_svc_ = &get_timer_service(ctx, *this);
@@ -344,11 +339,7 @@ register_fd(int fd, epoll_op* op, std::uint32_t events) const
     ev.events = events;
     ev.data.ptr = op;
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0)
-    {
-        detail::throw_system_error(
-            system::error_code(errno, system::system_category()),
-            "epoll_ctl ADD");
-    }
+        detail::throw_system_error(make_err(errno), "epoll_ctl ADD");
 }
 
 void
@@ -359,11 +350,7 @@ modify_fd(int fd, epoll_op* op, std::uint32_t events) const
     ev.events = events;
     ev.data.ptr = op;
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev) < 0)
-    {
-        detail::throw_system_error(
-            system::error_code(errno, system::system_category()),
-            "epoll_ctl MOD");
-    }
+        detail::throw_system_error(make_err(errno), "epoll_ctl MOD");
 }
 
 void
@@ -477,9 +464,7 @@ do_one(long timeout_us)
                     continue;
                 return 0;
             }
-            detail::throw_system_error(
-                system::error_code(errno, system::system_category()),
-                "epoll_wait");
+            detail::throw_system_error(make_err(errno), "epoll_wait");
         }
 
         // May dispatch timer handlers inline
@@ -502,13 +487,13 @@ do_one(long timeout_us)
 
             if (events[i].events & (EPOLLERR | EPOLLHUP))
             {
-                int err = 0;
-                socklen_t len = sizeof(err);
-                if (::getsockopt(op->fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
-                    err = errno;
-                if (err == 0)
-                    err = EIO;
-                op->complete(err, 0);
+                int errn = 0;
+                socklen_t len = sizeof(errn);
+                if (::getsockopt(op->fd, SOL_SOCKET, SO_ERROR, &errn, &len) < 0)
+                    errn = errno;
+                if (errn == 0)
+                    errn = EIO;
+                op->complete(errn, 0);
             }
             else
             {

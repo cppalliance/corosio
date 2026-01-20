@@ -12,6 +12,7 @@
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
 
 #include "src/detail/iocp/wsa_init.hpp"
+#include "src/detail/make_err.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 
@@ -30,8 +31,7 @@ win_wsa_init::win_wsa_init()
         if (result != 0)
         {
             ::InterlockedDecrement(&count_);
-            throw_system_error(
-                system::error_code(result, system::system_category()));
+            throw_system_error(make_err(result));
         }
     }
 }

@@ -25,6 +25,7 @@
 #include "src/detail/epoll/op.hpp"
 #include "src/detail/epoll/scheduler.hpp"
 #include "src/detail/endpoint_convert.hpp"
+#include "src/detail/make_err.hpp"
 
 #include <mutex>
 
@@ -575,7 +576,7 @@ open_socket(epoll_socket_impl& impl)
 
     int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (fd < 0)
-        return system::error_code(errno, system::system_category());
+        return make_err(errno);
 
     impl.fd_ = fd;
     return {};
@@ -618,7 +619,7 @@ open_acceptor(
 
     int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (fd < 0)
-        return system::error_code(errno, system::system_category());
+        return make_err(errno);
 
     int reuse = 1;
     ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
@@ -626,16 +627,16 @@ open_acceptor(
     sockaddr_in addr = detail::to_sockaddr_in(ep);
     if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
     {
-        int err = errno;
+        int errn = errno;
         ::close(fd);
-        return system::error_code(err, system::system_category());
+        return make_err(errn);
     }
 
     if (::listen(fd, backlog) < 0)
     {
-        int err = errno;
+        int errn = errno;
         ::close(fd);
-        return system::error_code(err, system::system_category());
+        return make_err(errn);
     }
 
     impl.fd_ = fd;

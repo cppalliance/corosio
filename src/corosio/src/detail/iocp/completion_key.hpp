@@ -43,14 +43,14 @@ struct completion_key
 
         @param sched The scheduler dequeuing the completion.
         @param bytes Bytes transferred (from GQCS).
-        @param error Error code (from GetLastError if GQCS failed).
+        @param dwError Error code (from GetLastError if GQCS failed).
         @param overlapped The OVERLAPPED pointer (may be nullptr for signals).
         @return Action for the run loop to take.
     */
     virtual result on_completion(
         win_scheduler& sched,
         DWORD bytes,
-        DWORD error,
+        DWORD dwError,
         LPOVERLAPPED overlapped) = 0;
 
     /** Destroy a completion during shutdown without invoking handler.

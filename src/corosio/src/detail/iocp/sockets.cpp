@@ -14,6 +14,7 @@
 #include "src/detail/iocp/sockets.hpp"
 #include "src/detail/iocp/scheduler.hpp"
 #include "src/detail/endpoint_convert.hpp"
+#include "src/detail/make_err.hpp"
 
 /*
     Windows IOCP Socket Implementation Overview
@@ -144,7 +145,7 @@ win_sockets::overlapped_key::
 on_completion(
     win_scheduler& sched,
     DWORD bytes,
-    DWORD error,
+    DWORD dwError,
     LPOVERLAPPED overlapped)
 {
     auto* op = static_cast<overlapped_op*>(overlapped);
@@ -157,7 +158,7 @@ on_completion(
         };
 
         work_guard g{&sched};
-        op->complete(bytes, error);
+        op->complete(bytes, dwError);
         (*op)();
         return result::did_work;
     }
@@ -177,18 +178,14 @@ operator()()
 {
     stop_cb.reset();
 
-    bool success = (error == 0 && !cancelled.load(std::memory_order_acquire));
+    bool success = (dwError == 0 && !cancelled.load(std::memory_order_acquire));
 
     if (ec_out)
     {
         if (cancelled.load(std::memory_order_acquire))
             *ec_out = capy::error::canceled;
-        else if (error == ERROR_OPERATION_ABORTED)
-            // CancelIoEx or socket close caused abort
-            *ec_out = capy::error::canceled;
-        else if (error != 0)
-            *ec_out = system::error_code(
-                static_cast<int>(error), system::system_category());
+        else if (dwError != 0)
+            *ec_out = make_err(dwError);
     }
 
     if (success && accepted_socket != INVALID_SOCKET && peer_wrapper)
@@ -371,7 +368,7 @@ connect(
         reinterpret_cast<sockaddr*>(&bind_addr),
         sizeof(bind_addr)) == SOCKET_ERROR)
     {
-        op.error = ::WSAGetLastError();
+        op.dwError = ::WSAGetLastError();
         svc_.post(&op);
         return;
     }
@@ -379,7 +376,7 @@ connect(
     auto connect_ex = svc_.connect_ex();
     if (!connect_ex)
     {
-        op.error = WSAEOPNOTSUPP;
+        op.dwError = WSAEOPNOTSUPP;
         svc_.post(&op);
         return;
     }
@@ -403,7 +400,7 @@ connect(
         if (err != ERROR_IO_PENDING)
         {
             svc_.work_finished();
-            op.error = err;
+            op.dwError = err;
             svc_.post(&op);
             return;
         }
@@ -411,7 +408,7 @@ connect(
     else
     {
         svc_.work_finished();
-        op.error = 0;
+        op.dwError = 0;
         svc_.post(&op);
     }
 }
@@ -445,7 +442,7 @@ read_some(
     if (op.wsabuf_count == 0)
     {
         op.bytes_transferred = 0;
-        op.error = 0;
+        op.dwError = 0;
         op.empty_buffer = true;
         svc_.post(&op);
         return;
@@ -476,7 +473,7 @@ read_some(
         if (err != WSA_IO_PENDING)
         {
             svc_.work_finished();
-            op.error = err;
+            op.dwError = err;
             svc_.post(&op);
             return;
         }
@@ -485,7 +482,7 @@ read_some(
     {
         svc_.work_finished();
         op.bytes_transferred = static_cast<DWORD>(op.InternalHigh);
-        op.error = 0;
+        op.dwError = 0;
         svc_.post(&op);
     }
 }
@@ -519,7 +516,7 @@ write_some(
     if (op.wsabuf_count == 0)
     {
         op.bytes_transferred = 0;
-        op.error = 0;
+        op.dwError = 0;
         svc_.post(&op);
         return;
     }
@@ -547,7 +544,7 @@ write_some(
         if (err != WSA_IO_PENDING)
         {
             svc_.work_finished();
-            op.error = err;
+            op.dwError = err;
             svc_.post(&op);
             return;
         }
@@ -556,7 +553,7 @@ write_some(
     {
         svc_.work_finished();
         op.bytes_transferred = static_cast<DWORD>(op.InternalHigh);
-        op.error = 0;
+        op.dwError = 0;
         svc_.post(&op);
     }
 }
@@ -705,11 +702,7 @@ open_socket(win_socket_impl_internal& impl)
         WSA_FLAG_OVERLAPPED);
 
     if (sock == INVALID_SOCKET)
-    {
-        return system::error_code(
-            ::WSAGetLastError(),
-            system::system_category());
-    }
+        return make_err(::WSAGetLastError());
 
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(sock),
@@ -719,11 +712,9 @@ open_socket(win_socket_impl_internal& impl)
 
     if (result == nullptr)
     {
-        DWORD err = ::GetLastError();
+        DWORD dwError = ::GetLastError();
         ::closesocket(sock);
-        return system::error_code(
-            static_cast<int>(err),
-            system::system_category());
+        return make_err(dwError);
     }
 
     ::SetFileCompletionNotificationModes(
@@ -857,11 +848,7 @@ open_acceptor(
         WSA_FLAG_OVERLAPPED);
 
     if (sock == INVALID_SOCKET)
-    {
-        return system::error_code(
-            ::WSAGetLastError(),
-            system::system_category());
-    }
+        return make_err(::WSAGetLastError());
 
     // Allow address reuse
     int reuse = 1;
@@ -876,11 +863,9 @@ open_acceptor(
 
     if (result == nullptr)
     {
-        DWORD err = ::GetLastError();
+        DWORD dwError = ::GetLastError();
         ::closesocket(sock);
-        return system::error_code(
-            static_cast<int>(err),
-            system::system_category());
+        return make_err(dwError);
     }
 
     ::SetFileCompletionNotificationModes(
@@ -893,21 +878,17 @@ open_acceptor(
         reinterpret_cast<sockaddr*>(&addr),
         sizeof(addr)) == SOCKET_ERROR)
     {
-        DWORD err = ::WSAGetLastError();
+        DWORD dwError = ::WSAGetLastError();
         ::closesocket(sock);
-        return system::error_code(
-            static_cast<int>(err),
-            system::system_category());
+        return make_err(dwError);
     }
 
     // Start listening
     if (::listen(sock, backlog) == SOCKET_ERROR)
     {
-        DWORD err = ::WSAGetLastError();
+        DWORD dwError = ::WSAGetLastError();
         ::closesocket(sock);
-        return system::error_code(
-            static_cast<int>(err),
-            system::system_category());
+        return make_err(dwError);
     }
 
     impl.socket_ = sock;
@@ -977,7 +958,7 @@ accept(
     if (accepted == INVALID_SOCKET)
     {
         peer_wrapper.release();
-        op.error = ::WSAGetLastError();
+        op.dwError = ::WSAGetLastError();
         svc_.post(&op);
         return;
     }
@@ -993,7 +974,7 @@ accept(
         DWORD err = ::GetLastError();
         ::closesocket(accepted);
         peer_wrapper.release();
-        op.error = err;
+        op.dwError = err;
         svc_.post(&op);
         return;
     }
@@ -1014,7 +995,7 @@ accept(
         peer_wrapper.release();
         op.peer_wrapper = nullptr;
         op.accepted_socket = INVALID_SOCKET;
-        op.error = WSAEOPNOTSUPP;
+        op.dwError = WSAEOPNOTSUPP;
         svc_.post(&op);
         return;
     }
@@ -1042,7 +1023,7 @@ accept(
             peer_wrapper.release();
             op.peer_wrapper = nullptr;
             op.accepted_socket = INVALID_SOCKET;
-            op.error = err;
+            op.dwError = err;
             svc_.post(&op);
             return;
         }
@@ -1050,7 +1031,7 @@ accept(
     else
     {
         svc_.work_finished();
-        op.error = 0;
+        op.dwError = 0;
         svc_.post(&op);
     }
 }

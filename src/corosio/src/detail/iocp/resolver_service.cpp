@@ -14,6 +14,7 @@
 #include "src/detail/iocp/resolver_service.hpp"
 #include "src/detail/iocp/scheduler.hpp"
 #include "src/detail/endpoint_convert.hpp"
+#include "src/detail/make_err.hpp"
 
 #include <boost/url/ipv4_address.hpp>
 #include <boost/url/ipv6_address.hpp>
@@ -114,12 +115,12 @@ convert_results(
 void CALLBACK
 resolve_op::
 completion(
-    DWORD error,
+    DWORD dwError,
     DWORD /*bytes*/,
     OVERLAPPED* ov)
 {
     auto* op = static_cast<resolve_op*>(ov);
-    op->error = error;
+    op->dwError = dwError;
     op->impl->svc_.work_finished();
     op->impl->svc_.post(op);
 }
@@ -133,13 +134,12 @@ operator()()
     if (ec_out)
     {
         if (cancelled.load(std::memory_order_acquire))
-            *ec_out = make_error_code(system::errc::operation_canceled);
-        else if (error != 0)
-            *ec_out = system::error_code(
-                static_cast<int>(error), system::system_category());
+            *ec_out = capy::error::canceled;
+        else if (dwError != 0)
+            *ec_out = make_err(dwError);
     }
 
-    if (out && !cancelled.load(std::memory_order_acquire) && error == 0 && results)
+    if (out && !cancelled.load(std::memory_order_acquire) && dwError == 0 && results)
     {
         *out = convert_results(results, host, service);
     }
@@ -239,11 +239,11 @@ resolve(
         if (result == 0)
         {
             // Completed synchronously
-            op.error = 0;
+            op.dwError = 0;
         }
         else
         {
-            op.error = static_cast<DWORD>(::WSAGetLastError());
+            op.dwError = static_cast<DWORD>(::WSAGetLastError());
         }
 
         svc_.post(&op);

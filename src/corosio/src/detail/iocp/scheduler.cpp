@@ -15,6 +15,7 @@
 #include "src/detail/iocp/overlapped_op.hpp"
 #include "src/detail/iocp/timers.hpp"
 #include "src/detail/timer_service.hpp"
+#include "src/detail/make_err.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/core/thread_local_ptr.hpp>
@@ -50,15 +51,6 @@ namespace {
 
 // Max timeout for GQCS to allow periodic re-checking of conditions
 constexpr unsigned long max_gqcs_timeout = 500;
-
-inline
-system::error_code
-last_error() noexcept
-{
-    return system::error_code(
-        static_cast<int>(GetLastError()),
-        system::system_category());
-}
 
 struct scheduler_context
 {
@@ -151,7 +143,7 @@ win_scheduler(
         static_cast<DWORD>(concurrency_hint >= 0 ? concurrency_hint : DWORD(~0)));
 
     if (iocp_ == nullptr)
-        detail::throw_system_error(last_error());
+        detail::throw_system_error(make_err(::GetLastError()));
 
     // Create timer wakeup mechanism (tries NT native, falls back to thread)
     timers_ = make_win_timers(iocp_, &dispatch_required_);
@@ -327,10 +319,8 @@ stop()
                 reinterpret_cast<ULONG_PTR>(&shutdown_key_),
                 nullptr))
             {
-                DWORD last_error = ::GetLastError();
-                detail::throw_system_error(system::error_code(
-                    static_cast<int>(last_error),
-                    system::system_category()));
+                DWORD dwError = ::GetLastError();
+                detail::throw_system_error(make_err(dwError));
             }
         }
     }
@@ -483,13 +473,13 @@ do_one(unsigned long timeout_ms)
         BOOL result = ::GetQueuedCompletionStatus(
             iocp_, &bytes, &key, &overlapped,
             timeout_ms < max_gqcs_timeout ? timeout_ms : max_gqcs_timeout);
-        DWORD last_error = ::GetLastError();
+        DWORD dwError = ::GetLastError();
 
         if (overlapped || (result && key != 0))
         {
             auto* target = reinterpret_cast<completion_key*>(key);
-            DWORD err = result ? 0 : last_error;
-            auto r = target->on_completion(*this, bytes, err, overlapped);
+            DWORD dwErr = result ? 0 : dwError;
+            auto r = target->on_completion(*this, bytes, dwErr, overlapped);
 
             if (r == completion_key::result::did_work)
                 return 1;
@@ -500,11 +490,8 @@ do_one(unsigned long timeout_ms)
 
         if (!result)
         {
-            if (last_error != WAIT_TIMEOUT)
-            {
-                detail::throw_system_error(system::error_code(
-                    static_cast<int>(last_error), system::system_category()));
-            }
+            if (dwError != WAIT_TIMEOUT)
+                detail::throw_system_error(make_err(dwError));
             if (timeout_ms != INFINITE)
                 return 0;
         }

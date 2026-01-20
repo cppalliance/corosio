@@ -61,7 +61,7 @@ struct resolve_op : overlapped_op
 
     /** Completion callback for GetAddrInfoExW. */
     static void CALLBACK completion(
-        DWORD error,
+        DWORD dwError,
         DWORD bytes,
         OVERLAPPED* ov);
 

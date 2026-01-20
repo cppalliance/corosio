@@ -22,6 +22,7 @@
 #include <boost/capy/error.hpp>
 #include <boost/system/error_code.hpp>
 
+#include "src/detail/make_err.hpp"
 #include "src/detail/scheduler_op.hpp"
 
 #include <unistd.h>
@@ -62,7 +63,7 @@ struct epoll_op : scheduler_op
 
     int fd = -1;
     std::uint32_t events = 0;
-    int error = 0;
+    int errn = 0;
     std::size_t bytes_transferred = 0;
 
     std::atomic<bool> cancelled{false};
@@ -77,7 +78,7 @@ struct epoll_op : scheduler_op
     {
         fd = -1;
         events = 0;
-        error = 0;
+        errn = 0;
         bytes_transferred = 0;
         cancelled.store(false, std::memory_order_relaxed);
     }
@@ -89,13 +90,13 @@ struct epoll_op : scheduler_op
         if (ec_out)
         {
             if (cancelled.load(std::memory_order_acquire))
-                *ec_out = make_error_code(system::errc::operation_canceled);
-            else if (error != 0)
-                *ec_out = system::error_code(error, system::system_category());
+                *ec_out = capy::error::canceled;
+            else if (errn != 0)
+                *ec_out = make_err(errn);
             else if (is_read_operation() && bytes_transferred == 0)
             {
                 // EOF: 0 bytes transferred with no error indicates end of stream
-                *ec_out = make_error_code(capy::error::eof);
+                *ec_out = capy::error::eof;
             }
         }
 
@@ -128,7 +129,7 @@ struct epoll_op : scheduler_op
 
     void complete(int err, std::size_t bytes) noexcept
     {
-        error = err;
+        errn = err;
         bytes_transferred = bytes;
     }
 
@@ -267,14 +268,14 @@ struct epoll_accept_op : epoll_op
     {
         stop_cb.reset();
 
-        bool success = (error == 0 && !cancelled.load(std::memory_order_acquire));
+        bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
 
         if (ec_out)
         {
             if (cancelled.load(std::memory_order_acquire))
-                *ec_out = make_error_code(system::errc::operation_canceled);
-            else if (error != 0)
-                *ec_out = system::error_code(error, system::system_category());
+                *ec_out = capy::error::canceled;
+            else if (errn != 0)
+                *ec_out = make_err(errn);
         }
 
         if (success && accepted_fd >= 0 && peer_impl)

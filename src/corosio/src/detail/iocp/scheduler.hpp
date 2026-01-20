@@ -84,7 +84,7 @@ private:
         result on_completion(
             win_scheduler& sched,
             DWORD bytes,
-            DWORD error,
+            DWORD dwError,
             LPOVERLAPPED overlapped) override;
 
         void destroy(LPOVERLAPPED overlapped) override;
@@ -96,7 +96,7 @@ private:
         result on_completion(
             win_scheduler& sched,
             DWORD bytes,
-            DWORD error,
+            DWORD dwError,
             LPOVERLAPPED overlapped) override;
     };
 

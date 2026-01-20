@@ -21,6 +21,7 @@
 #include <boost/capy/error.hpp>
 #include <boost/system/error_code.hpp>
 
+#include "src/detail/make_err.hpp"
 #include "src/detail/scheduler_op.hpp"
 
 #include <atomic>
@@ -52,7 +53,7 @@ struct overlapped_op
     capy::any_executor_ref d;
     system::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
-    DWORD error = 0;
+    DWORD dwError = 0;
     DWORD bytes_transferred = 0;
     bool empty_buffer = false;  // True if operation was with empty buffer
     std::atomic<bool> cancelled{false};
@@ -75,7 +76,7 @@ struct overlapped_op
         Offset = 0;
         OffsetHigh = 0;
         hEvent = nullptr;
-        error = 0;
+        dwError = 0;
         bytes_transferred = 0;
         empty_buffer = false;
         cancelled.store(false, std::memory_order_relaxed);
@@ -93,15 +94,9 @@ struct overlapped_op
                 // Explicit cancellation via cancel() or stop_token
                 *ec_out = capy::error::canceled;
             }
-            else if (error == ERROR_OPERATION_ABORTED)
+            else if (dwError != 0)
             {
-                // CancelIoEx or socket close caused abort
-                *ec_out = capy::error::canceled;
-            }
-            else if (error != 0)
-            {
-                *ec_out = system::error_code(
-                    static_cast<int>(error), system::system_category());
+                *ec_out = make_err(dwError);
             }
             else if (is_read_operation() && bytes_transferred == 0 && !empty_buffer)
             {
@@ -147,7 +142,7 @@ struct overlapped_op
     void complete(DWORD bytes, DWORD err) noexcept
     {
         bytes_transferred = bytes;
-        error = err;
+        dwError = err;
     }
 };
 
