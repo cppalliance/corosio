@@ -101,8 +101,8 @@ public:
     wolfssl_native_context( context_data const& cd )
         : ctx_( nullptr )
     {
-        // Create WOLFSSL_CTX for TLS client (auto-negotiate best version)
-        ctx_ = wolfSSL_CTX_new( wolfTLS_client_method() );
+        // Create WOLFSSL_CTX supporting both client and server
+        ctx_ = wolfSSL_CTX_new( wolfSSLv23_method() );
         if( !ctx_ )
             return;
 
