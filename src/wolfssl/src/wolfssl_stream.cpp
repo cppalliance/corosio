@@ -920,22 +920,8 @@ struct wolfssl_stream_impl_
 //------------------------------------------------------------------------------
 
 wolfssl_stream::
-wolfssl_stream( io_stream& stream )
-    : tls_stream( stream )
-{
-    construct( tls::context() );
-}
-
-wolfssl_stream::
 wolfssl_stream( io_stream& stream, tls::context ctx )
     : tls_stream( stream )
-{
-    construct( std::move( ctx ) );
-}
-
-void
-wolfssl_stream::
-construct( tls::context ctx )
 {
     auto* impl = new wolfssl_stream_impl_( s_, std::move( ctx ) );
 

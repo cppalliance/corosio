@@ -99,8 +99,8 @@ public:
     openssl_native_context( context_data const& cd )
         : ctx_( nullptr )
     {
-        // Create SSL_CTX for TLS client (auto-negotiate best version)
-        ctx_ = SSL_CTX_new( TLS_client_method() );
+        // Create SSL_CTX supporting both client and server
+        ctx_ = SSL_CTX_new( TLS_method() );
         if( !ctx_ )
             return;
 
@@ -182,6 +182,13 @@ public:
 
         // Apply verify depth
         SSL_CTX_set_verify_depth( ctx_, cd.verify_depth );
+
+        // Apply cipher suites if provided
+        if( !cd.ciphersuites.empty() )
+        {
+            SSL_CTX_set_security_level( ctx_, 0 );
+            SSL_CTX_set_cipher_list( ctx_, cd.ciphersuites.c_str() );
+        }
     }
 
     ~openssl_native_context() override
@@ -741,22 +748,8 @@ struct openssl_stream_impl_
 //------------------------------------------------------------------------------
 
 openssl_stream::
-openssl_stream( io_stream& stream )
-    : tls_stream( stream )
-{
-    construct( tls::context() );
-}
-
-openssl_stream::
 openssl_stream( io_stream& stream, tls::context ctx )
     : tls_stream( stream )
-{
-    construct( std::move( ctx ) );
-}
-
-void
-openssl_stream::
-construct( tls::context ctx )
 {
     auto* impl = new openssl_stream_impl_( s_, std::move( ctx ) );
 

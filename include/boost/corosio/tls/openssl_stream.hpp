@@ -46,17 +46,7 @@ namespace corosio {
 class BOOST_COROSIO_DECL openssl_stream : public tls_stream
 {
 public:
-    /** Construct an OpenSSL stream with default context.
-
-        The underlying stream must remain valid for the lifetime of
-        this openssl_stream object.
-
-        @param stream Reference to the underlying stream to wrap.
-    */
-    explicit
-    openssl_stream( io_stream& stream );
-
-    /** Construct an OpenSSL stream with TLS context.
+    /** Construct an OpenSSL stream.
 
         The underlying stream must remain valid for the lifetime of
         this openssl_stream object. The context's configuration is
@@ -67,9 +57,6 @@ public:
         @param ctx The TLS context containing configuration.
     */
     openssl_stream( io_stream& stream, tls::context ctx );
-
-private:
-    void construct( tls::context ctx );
 };
 
 } // namespace corosio

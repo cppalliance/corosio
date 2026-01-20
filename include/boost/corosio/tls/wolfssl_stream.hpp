@@ -48,17 +48,7 @@ class BOOST_COROSIO_DECL
     wolfssl_stream : public tls_stream
 {
 public:
-    /** Construct a WolfSSL stream with default context.
-
-        The underlying stream must remain valid for the lifetime of
-        this wolfssl_stream object.
-
-        @param stream Reference to the underlying stream to wrap.
-    */
-    explicit
-    wolfssl_stream(io_stream& stream);
-
-    /** Construct a WolfSSL stream with TLS context.
+    /** Construct a WolfSSL stream.
 
         The underlying stream must remain valid for the lifetime of
         this wolfssl_stream object. The context's configuration is
@@ -69,9 +59,6 @@ public:
         @param ctx The TLS context containing configuration.
     */
     wolfssl_stream(io_stream& stream, tls::context ctx);
-
-private:
-    void construct(tls::context ctx);
 };
 
 } // namespace corosio
