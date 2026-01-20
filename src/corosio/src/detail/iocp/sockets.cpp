@@ -623,6 +623,7 @@ shutdown()
     for (auto* impl = socket_list_.pop_front(); impl != nullptr;
          impl = socket_list_.pop_front())
     {
+        impl->in_service_list_ = false;  // Prevent unregister_impl() from calling remove()
         impl->close_socket();
         // Note: impl may still be alive if operations hold shared_ptr
     }
@@ -630,6 +631,7 @@ shutdown()
     for (auto* impl = acceptor_list_.pop_front(); impl != nullptr;
          impl = acceptor_list_.pop_front())
     {
+        impl->in_service_list_ = false;  // Prevent unregister_acceptor_impl() from calling remove()
         impl->close_socket();
     }
 
@@ -656,6 +658,7 @@ create_impl()
     {
         std::lock_guard<win_mutex> lock(mutex_);
         socket_list_.push_back(internal.get());
+        internal->in_service_list_ = true;
     }
 
     auto* wrapper = new win_socket_impl(std::move(internal));
@@ -684,7 +687,11 @@ win_sockets::
 unregister_impl(win_socket_impl_internal& impl)
 {
     std::lock_guard<win_mutex> lock(mutex_);
-    socket_list_.remove(&impl);
+    if (impl.in_service_list_)
+    {
+        socket_list_.remove(&impl);
+        impl.in_service_list_ = false;
+    }
 }
 
 system::error_code
@@ -799,6 +806,7 @@ create_acceptor_impl()
     {
         std::lock_guard<win_mutex> lock(mutex_);
         acceptor_list_.push_back(internal.get());
+        internal->in_service_list_ = true;
     }
 
     auto* wrapper = new win_acceptor_impl(std::move(internal));
@@ -827,7 +835,11 @@ win_sockets::
 unregister_acceptor_impl(win_acceptor_impl_internal& impl)
 {
     std::lock_guard<win_mutex> lock(mutex_);
-    acceptor_list_.remove(&impl);
+    if (impl.in_service_list_)
+    {
+        acceptor_list_.remove(&impl);
+        impl.in_service_list_ = false;
+    }
 }
 
 system::error_code

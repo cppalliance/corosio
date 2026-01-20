@@ -134,6 +134,14 @@ class win_socket_impl_internal
     write_op wr_;
     SOCKET socket_ = INVALID_SOCKET;
 
+    // Tracks whether this internal is in the service's socket_list_.
+    // Used to prevent double-removal: during shutdown(), internals are
+    // popped from the list before wrappers are deleted. If wrapper deletion
+    // triggers the internal destructor (last shared_ptr ref), the destructor
+    // calls unregister_impl() which would otherwise call remove() on an
+    // already-removed node, corrupting the intrusive list via stale pointers.
+    bool in_service_list_ = false;
+
 public:
     explicit win_socket_impl_internal(win_sockets& svc) noexcept;
     ~win_socket_impl_internal();
@@ -267,6 +275,10 @@ public:
 private:
     win_sockets& svc_;
     SOCKET socket_ = INVALID_SOCKET;
+
+    // Tracks whether this internal is in the service's acceptor_list_.
+    // See win_socket_impl_internal::in_service_list_ for detailed rationale.
+    bool in_service_list_ = false;
 };
 
 //------------------------------------------------------------------------------
