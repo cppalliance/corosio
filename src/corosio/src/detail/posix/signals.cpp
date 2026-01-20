@@ -16,9 +16,6 @@
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/any_coro.hpp>
-
-#include <cerrno>
 #include <mutex>
 
 #include <signal.h>
@@ -78,7 +75,7 @@ operator()()
     auto* service = svc;
     svc = nullptr;
 
-    d.post(capy::any_coro{h});
+    d.post(h);
 
     // Balance the on_work_started() from start_wait
     if (service)
@@ -134,28 +131,28 @@ wait(
             *ec = make_error_code(capy::error::canceled);
         if (signal_out)
             *signal_out = 0;
-        d.post(capy::any_coro{h});
+        d.post(h);
         return;
     }
 
     svc_.start_wait(*this, &pending_op_);
 }
 
-system::error_code
+system::result<void>
 posix_signal_impl::
 add(int signal_number)
 {
     return svc_.add_signal(*this, signal_number);
 }
 
-system::error_code
+system::result<void>
 posix_signal_impl::
 remove(int signal_number)
 {
     return svc_.remove_signal(*this, signal_number);
 }
 
-system::error_code
+system::result<void>
 posix_signal_impl::
 clear()
 {
@@ -237,13 +234,13 @@ destroy_impl(posix_signal_impl& impl)
     delete &impl;
 }
 
-system::error_code
+system::result<void>
 posix_signals::
 add_signal(
     posix_signal_impl& impl,
     int signal_number)
 {
-    if (signal_number < 1 || signal_number >= max_signal_number)
+    if (signal_number < 0 || signal_number >= max_signal_number)
         return make_error_code(system::errc::invalid_argument);
 
     signal_state* state = get_signal_state();
@@ -292,13 +289,13 @@ add_signal(
     return {};
 }
 
-system::error_code
+system::result<void>
 posix_signals::
 remove_signal(
     posix_signal_impl& impl,
     int signal_number)
 {
-    if (signal_number < 1 || signal_number >= max_signal_number)
+    if (signal_number < 0 || signal_number >= max_signal_number)
         return make_error_code(system::errc::invalid_argument);
 
     signal_state* state = get_signal_state();
@@ -318,7 +315,10 @@ remove_signal(
 
     // Restore default handler on last global unregistration
     if (state->registration_count[signal_number] == 1)
-        ::signal(signal_number, SIG_DFL);
+    {
+        if (::signal(signal_number, SIG_DFL) == SIG_ERR)
+            return make_error_code(system::errc::invalid_argument);
+    }
 
     *deletion_point = reg->next_in_set;
 
@@ -336,7 +336,7 @@ remove_signal(
     return {};
 }
 
-system::error_code
+system::result<void>
 posix_signals::
 clear_signals(posix_signal_impl& impl)
 {
@@ -344,12 +344,17 @@ clear_signals(posix_signal_impl& impl)
     std::lock_guard state_lock(state->mutex);
     std::lock_guard lock(mutex_);
 
+    system::error_code first_error;
+
     while (signal_registration* reg = impl.signals_)
     {
         int signal_number = reg->signal_number;
 
         if (state->registration_count[signal_number] == 1)
-            ::signal(signal_number, SIG_DFL);
+        {
+            if (::signal(signal_number, SIG_DFL) == SIG_ERR && !first_error)
+                first_error = make_error_code(system::errc::invalid_argument);
+        }
 
         impl.signals_ = reg->next_in_set;
 
@@ -366,6 +371,8 @@ clear_signals(posix_signal_impl& impl)
         delete reg;
     }
 
+    if (first_error)
+        return first_error;
     return {};
 }
 
@@ -392,7 +399,7 @@ cancel_wait(posix_signal_impl& impl)
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        op->d.post(capy::any_coro{op->h});
+        op->d.post(op->h);
         sched_.on_work_finished();
     }
 }
@@ -430,7 +437,7 @@ void
 posix_signals::
 deliver_signal(int signal_number)
 {
-    if (signal_number < 1 || signal_number >= max_signal_number)
+    if (signal_number < 0 || signal_number >= max_signal_number)
         return;
 
     signal_state* state = get_signal_state();
@@ -542,40 +549,6 @@ signal_set(capy::execution_context& ctx)
 }
 
 signal_set::
-signal_set(capy::execution_context& ctx, int signal_number_1)
-    : io_object(ctx)
-{
-    impl_ = &ctx.use_service<detail::posix_signals>().create_impl();
-    add(signal_number_1);
-}
-
-signal_set::
-signal_set(
-    capy::execution_context& ctx,
-    int signal_number_1,
-    int signal_number_2)
-    : io_object(ctx)
-{
-    impl_ = &ctx.use_service<detail::posix_signals>().create_impl();
-    add(signal_number_1);
-    add(signal_number_2);
-}
-
-signal_set::
-signal_set(
-    capy::execution_context& ctx,
-    int signal_number_1,
-    int signal_number_2,
-    int signal_number_3)
-    : io_object(ctx)
-{
-    impl_ = &ctx.use_service<detail::posix_signals>().create_impl();
-    add(signal_number_1);
-    add(signal_number_2);
-    add(signal_number_3);
-}
-
-signal_set::
 signal_set(signal_set&& other) noexcept
     : io_object(std::move(other))
 {
@@ -601,52 +574,25 @@ operator=(signal_set&& other)
     return *this;
 }
 
-void
+system::result<void>
 signal_set::
 add(int signal_number)
 {
-    system::error_code ec = get().add(signal_number);
-    if (ec)
-        detail::throw_system_error(ec, "signal_set::add");
+    return get().add(signal_number);
 }
 
-void
-signal_set::
-add(int signal_number, system::error_code& ec)
-{
-    ec = get().add(signal_number);
-}
-
-void
+system::result<void>
 signal_set::
 remove(int signal_number)
 {
-    system::error_code ec = get().remove(signal_number);
-    if (ec)
-        detail::throw_system_error(ec, "signal_set::remove");
+    return get().remove(signal_number);
 }
 
-void
-signal_set::
-remove(int signal_number, system::error_code& ec)
-{
-    ec = get().remove(signal_number);
-}
-
-void
+system::result<void>
 signal_set::
 clear()
 {
-    system::error_code ec = get().clear();
-    if (ec)
-        detail::throw_system_error(ec, "signal_set::clear");
-}
-
-void
-signal_set::
-clear(system::error_code& ec)
-{
-    ec = get().clear();
+    return get().clear();
 }
 
 void

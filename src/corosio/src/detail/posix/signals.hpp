@@ -16,10 +16,12 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/signal_set.hpp>
+#include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/core/intrusive_list.hpp>
 #include <boost/system/error_code.hpp>
+#include <boost/system/result.hpp>
 
 #include "src/detail/scheduler_op.hpp"
 
@@ -46,7 +48,7 @@ enum { max_signal_number = 64 };
 /** Signal wait operation state. */
 struct signal_op : scheduler_op
 {
-    std::coroutine_handle<> h;
+    capy::any_coro h;
     capy::any_executor_ref d;
     system::error_code* ec_out = nullptr;
     int* signal_out = nullptr;
@@ -102,9 +104,9 @@ public:
         system::error_code*,
         int*) override;
 
-    system::error_code add(int signal_number) override;
-    system::error_code remove(int signal_number) override;
-    system::error_code clear() override;
+    system::result<void> add(int signal_number) override;
+    system::result<void> remove(int signal_number) override;
+    system::result<void> clear() override;
     void cancel() override;
 };
 
@@ -153,9 +155,9 @@ public:
 
         @param impl The signal implementation to modify.
         @param signal_number The signal to register.
-        @return Error code, or success.
+        @return Success, or an error.
     */
-    system::error_code add_signal(
+    system::result<void> add_signal(
         posix_signal_impl& impl,
         int signal_number);
 
@@ -163,18 +165,18 @@ public:
 
         @param impl The signal implementation to modify.
         @param signal_number The signal to unregister.
-        @return Error code, or success.
+        @return Success, or an error.
     */
-    system::error_code remove_signal(
+    system::result<void> remove_signal(
         posix_signal_impl& impl,
         int signal_number);
 
     /** Remove all signals from a signal set.
 
         @param impl The signal implementation to clear.
-        @return Error code, or success.
+        @return Success, or an error.
     */
-    system::error_code clear_signals(posix_signal_impl& impl);
+    system::result<void> clear_signals(posix_signal_impl& impl);
 
     /** Cancel pending wait operations.
 

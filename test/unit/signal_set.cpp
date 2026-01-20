@@ -113,19 +113,8 @@ struct signal_set_test
         io_context ioc;
         signal_set s(ioc);
 
-        s.add(SIGINT);
-        BOOST_TEST_PASS();
-    }
-
-    void
-    testAddWithErrorCode()
-    {
-        io_context ioc;
-        signal_set s(ioc);
-
-        system::error_code ec;
-        s.add(SIGINT, ec);
-        BOOST_TEST(!ec);
+        auto result = s.add(SIGINT);
+        BOOST_TEST(result.has_value());
     }
 
     void
@@ -134,9 +123,9 @@ struct signal_set_test
         io_context ioc;
         signal_set s(ioc);
 
-        s.add(SIGINT);
-        s.add(SIGINT);  // Should be no-op
-        BOOST_TEST_PASS();
+        BOOST_TEST(s.add(SIGINT).has_value());
+        auto result = s.add(SIGINT);  // Should be no-op
+        BOOST_TEST(result.has_value());
     }
 
     void
@@ -145,9 +134,8 @@ struct signal_set_test
         io_context ioc;
         signal_set s(ioc);
 
-        system::error_code ec;
-        s.add(-1, ec);
-        BOOST_TEST(ec);
+        auto result = s.add(-1);
+        BOOST_TEST(result.has_error());
     }
 
     void
@@ -156,21 +144,9 @@ struct signal_set_test
         io_context ioc;
         signal_set s(ioc);
 
-        s.add(SIGINT);
-        s.remove(SIGINT);
-        BOOST_TEST_PASS();
-    }
-
-    void
-    testRemoveWithErrorCode()
-    {
-        io_context ioc;
-        signal_set s(ioc);
-
-        s.add(SIGINT);
-        system::error_code ec;
-        s.remove(SIGINT, ec);
-        BOOST_TEST(!ec);
+        BOOST_TEST(s.add(SIGINT).has_value());
+        auto result = s.remove(SIGINT);
+        BOOST_TEST(result.has_value());
     }
 
     void
@@ -180,8 +156,8 @@ struct signal_set_test
         signal_set s(ioc);
 
         // Removing signal not in set should be a no-op
-        s.remove(SIGINT);
-        BOOST_TEST_PASS();
+        auto result = s.remove(SIGINT);
+        BOOST_TEST(result.has_value());
     }
 
     void
@@ -190,22 +166,9 @@ struct signal_set_test
         io_context ioc;
         signal_set s(ioc);
 
-        s.add(SIGINT);
-        s.add(SIGTERM);
-        s.clear();
-        BOOST_TEST_PASS();
-    }
-
-    void
-    testClearWithErrorCode()
-    {
-        io_context ioc;
-        signal_set s(ioc);
-
-        s.add(SIGINT);
-        system::error_code ec;
-        s.clear(ec);
-        BOOST_TEST(!ec);
+        BOOST_TEST(s.add(SIGINT).has_value());
+        BOOST_TEST(s.add(SIGTERM).has_value());
+        BOOST_TEST(s.clear().has_value());
     }
 
     void
@@ -214,8 +177,7 @@ struct signal_set_test
         io_context ioc;
         signal_set s(ioc);
 
-        s.clear();  // Should be no-op
-        BOOST_TEST_PASS();
+        BOOST_TEST(s.clear().has_value());  // Should be no-op
     }
 
     //--------------------------------------------
@@ -593,14 +555,11 @@ struct signal_set_test
 
         // Add/remove/clear tests
         testAdd();
-        testAddWithErrorCode();
         testAddDuplicate();
         testAddInvalidSignal();
         testRemove();
-        testRemoveWithErrorCode();
         testRemoveNotPresent();
         testClear();
-        testClearWithErrorCode();
         testClearEmpty();
 
         // Async wait tests
