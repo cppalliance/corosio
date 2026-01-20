@@ -1,0 +1,41 @@
+[width="100%",cols="7%,66%,27%",options="header",]
+|===
+
+|Branch
+|https://github.com/cppalliance/corosio/tree/master[`master`]
+|https://github.com/cppalliance/corosio/tree/develop[`develop`]
+
+|https://develop.corosio.cpp.al/[Docs]
+|https://master.corosio.cpp.al/[image:https://img.shields.io/badge/docs-master-brightgreen.svg[Documentation]]
+|https://develop.corosio.cpp.al/[image:https://img.shields.io/badge/docs-develop-brightgreen.svg[Documentation]]
+
+|https://github.com/[GitHub Actions]
+|https://github.com/cppalliance/corosio/actions/workflows/ci.yml?query=branch%3Amaster[image:https://github.com/cppalliance/corosio/actions/workflows/ci.yml/badge.svg?branch=master[CI]]
+|https://github.com/cppalliance/corosio/actions/workflows/ci.yml?query=branch%3Adevelop[image:https://github.com/cppalliance/corosio/actions/workflows/ci.yml/badge.svg?branch=develop[CI]]
+
+
+|https://drone.io/[Drone]
+|https://drone.cpp.al/cppalliance/corosio/branches[image:https://drone.cpp.al/api/badges/cppalliance/corosio/status.svg?ref=refs/heads/master[Build Status]]
+|https://drone.cpp.al/cppalliance/corosio/branches[image:https://drone.cpp.al/api/badges/cppalliance/corosio/status.svg?ref=refs/heads/develop[Build Status]]
+
+|https://codecov.io[Codecov]
+|https://app.codecov.io/gh/cppalliance/corosio/tree/master[image:https://codecov.io/gh/cppalliance/corosio/branch/master/graph/badge.svg[codecov]]
+|https://app.codecov.io/gh/cppalliance/corosio/tree/develop[image:https://codecov.io/gh/cppalliance/corosio/branch/develop/graph/badge.svg[codecov]]
+
+|===
+
+== Boost.Corosio
+
+Boost.Corosio is a coroutine-first I/O library for C++20 that provides
+asynchronous networking primitives with automatic executor affinity propagation.
+
+Corosio provides asynchronous I/O operations designed from the ground up for
+C++20 coroutines. Every operation returns an awaitable that integrates with
+the _affine awaitable protocol_, ensuring your coroutines resume on the correct
+executor without manual dispatch.
+
+=== License
+
+Distributed under the Boost Software License, Version 1.0.
+(See accompanying file [LICENSE_1_0.txt](LICENSE_1_0.txt) or copy at
+https://www.boost.org/LICENSE_1_0.txt)
