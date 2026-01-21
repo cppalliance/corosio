@@ -30,7 +30,6 @@
 
 #include <atomic>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <stop_token>
@@ -96,7 +95,6 @@ struct epoll_op : scheduler_op
     std::size_t* bytes_out = nullptr;
 
     int fd = -1;
-    std::uint32_t events = 0;
     int errn = 0;
     std::size_t bytes_transferred = 0;
 
@@ -116,7 +114,6 @@ struct epoll_op : scheduler_op
     void reset() noexcept
     {
         fd = -1;
-        events = 0;
         errn = 0;
         bytes_transferred = 0;
         cancelled.store(false, std::memory_order_relaxed);
@@ -177,12 +174,6 @@ struct epoll_op : scheduler_op
 
     virtual void perform_io() noexcept {}
 };
-
-inline epoll_op*
-get_epoll_op(scheduler_op* h) noexcept
-{
-    return static_cast<epoll_op*>(h->data());
-}
 
 //------------------------------------------------------------------------------
 

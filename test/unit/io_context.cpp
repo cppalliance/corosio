@@ -12,8 +12,11 @@
 
 #include <boost/capy/concept/executor.hpp>
 
-#include <thread>
+#include <atomic>
 #include <chrono>
+#include <sstream>
+#include <thread>
+#include <vector>
 
 #include "test_suite.hpp"
 
@@ -52,6 +55,42 @@ struct counter_coro
 inline counter_coro make_coro(int& counter)
 {
     auto c = []() -> counter_coro { co_return; }();
+    c.h.promise().counter_ = &counter;
+    return c;
+}
+
+// Coroutine that increments an atomic counter when resumed
+struct atomic_counter_coro
+{
+    struct promise_type
+    {
+        std::atomic<int>* counter_ = nullptr;
+
+        atomic_counter_coro get_return_object()
+        {
+            return {std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_never final_suspend() noexcept { return {}; }
+
+        void return_void()
+        {
+            if (counter_)
+                counter_->fetch_add(1, std::memory_order_relaxed);
+        }
+
+        void unhandled_exception() { std::terminate(); }
+    };
+
+    std::coroutine_handle<promise_type> h;
+
+    operator capy::coro() const { return h; }
+};
+
+inline atomic_counter_coro make_atomic_coro(std::atomic<int>& counter)
+{
+    auto c = []() -> atomic_counter_coro { co_return; }();
     c.h.promise().counter_ = &counter;
     return c;
 }
@@ -346,6 +385,79 @@ struct io_context_test
     }
 
     void
+    testMultithreaded()
+    {
+        io_context ioc;
+        auto ex = ioc.get_executor();
+        std::atomic<int> counter{0};
+        constexpr int num_threads = 4;
+        constexpr int handlers_per_thread = 100;
+        constexpr int total_handlers = num_threads * handlers_per_thread;
+
+        // Post handlers from multiple threads concurrently
+        std::vector<std::thread> posters;
+        for (int t = 0; t < num_threads; ++t)
+        {
+            posters.emplace_back([&ex, &counter]() {
+                for (int i = 0; i < handlers_per_thread; ++i)
+                    ex.post(make_atomic_coro(counter));
+            });
+        }
+
+        // Wait for all posters to finish
+        for (auto& t : posters)
+            t.join();
+
+        // Run with multiple threads
+        std::vector<std::thread> runners;
+        for (int t = 0; t < num_threads; ++t)
+            runners.emplace_back([&ioc]() { ioc.run(); });
+
+        // Wait for all runners to complete
+        for (auto& t : runners)
+            t.join();
+
+        BOOST_TEST(counter.load() == total_handlers);
+    }
+
+    void
+    testMultithreadedStress()
+    {
+        // Stress test: multiple iterations of post-then-run with multiple threads
+        constexpr int iterations = 10;
+        constexpr int num_threads = 4;
+        constexpr int handlers_per_iteration = 100;
+
+        for (int iter = 0; iter < iterations; ++iter)
+        {
+            io_context ioc;
+            auto ex = ioc.get_executor();
+            std::atomic<int> counter{0};
+
+            // Post all handlers first
+            for (int i = 0; i < handlers_per_iteration; ++i)
+                ex.post(make_atomic_coro(counter));
+
+            // Run with multiple threads
+            std::vector<std::thread> runners;
+            for (int t = 0; t < num_threads; ++t)
+                runners.emplace_back([&ioc]() { ioc.run(); });
+
+            for (auto& t : runners)
+                t.join();
+
+            auto count = counter.load();
+            if (count != handlers_per_iteration)
+            {
+                std::ostringstream ss;
+                ss << "iteration " << iter << ": counter=" << count
+                   << ", expected=" << handlers_per_iteration;
+                BOOST_ERROR(ss.str().c_str());
+            }
+        }
+    }
+
+    void
     run()
     {
         testConstruction();
@@ -359,6 +471,8 @@ struct io_context_test
         testRunOneUntil();
         testRunFor();
         testExecutorRunningInThisThread();
+        testMultithreaded();
+        testMultithreadedStress();
     }
 };
 

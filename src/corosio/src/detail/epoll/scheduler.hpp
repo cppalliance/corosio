@@ -23,6 +23,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -36,12 +37,18 @@ struct epoll_op;
 /** Linux scheduler using epoll for I/O multiplexing.
 
     This scheduler implements the scheduler interface using Linux epoll
-    for efficient I/O event notification. It manages a queue of handlers
-    and provides blocking/non-blocking execution methods.
+    for efficient I/O event notification. It uses a single reactor model
+    where one thread runs epoll_wait while other threads
+    wait on a condition variable for handler work. This design provides:
 
-    The scheduler uses an eventfd to wake up epoll_wait when non-I/O
-    handlers are posted, enabling efficient integration of both
-    I/O completions and posted handlers.
+    - Handler parallelism: N posted handlers can execute on N threads
+    - No thundering herd: condition_variable wakes exactly one thread
+    - IOCP parity: Behavior matches Windows I/O completion port semantics
+
+    When threads call run(), they first try to execute queued handlers.
+    If the queue is empty and no reactor is running, one thread becomes
+    the reactor and runs epoll_wait. Other threads wait on a condition
+    variable until handlers are available.
 
     @par Thread Safety
     All public member functions are thread-safe.
@@ -123,17 +130,25 @@ public:
 
 private:
     std::size_t do_one(long timeout_us);
-    void wakeup() const;
+    void run_reactor(std::unique_lock<std::mutex>& lock);
+    void wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const;
+    void interrupt_reactor() const;
     long calculate_timeout(long requested_timeout_us) const;
 
     int epoll_fd_;
-    int event_fd_;                              // for waking epoll_wait
+    int event_fd_;                              // for interrupting reactor
     mutable std::mutex mutex_;
+    mutable std::condition_variable wakeup_event_;
     mutable op_queue completed_ops_;
     mutable std::atomic<long> outstanding_work_;
     std::atomic<bool> stopped_;
     bool shutdown_;
     timer_service* timer_svc_ = nullptr;
+
+    // Single reactor thread coordination
+    mutable bool reactor_running_ = false;
+    mutable bool reactor_interrupted_ = false;
+    mutable int idle_thread_count_ = 0;
 };
 
 } // namespace detail
