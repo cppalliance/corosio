@@ -150,7 +150,7 @@ public:
     void read_some(
         capy::any_coro,
         capy::any_executor_ref,
-        capy::buffer_param,
+        io_buffer_param,
         std::stop_token,
         system::error_code*,
         std::size_t*);
@@ -158,7 +158,7 @@ public:
     void write_some(
         capy::any_coro,
         capy::any_executor_ref,
-        capy::buffer_param,
+        io_buffer_param,
         std::stop_token,
         system::error_code*,
         std::size_t*);
@@ -206,7 +206,7 @@ public:
     void read_some(
         std::coroutine_handle<> h,
         capy::any_executor_ref d,
-        capy::buffer_param buf,
+        io_buffer_param buf,
         std::stop_token token,
         system::error_code* ec,
         std::size_t* bytes) override
@@ -217,7 +217,7 @@ public:
     void write_some(
         std::coroutine_handle<> h,
         capy::any_executor_ref d,
-        capy::buffer_param buf,
+        io_buffer_param buf,
         std::stop_token token,
         system::error_code* ec,
         std::size_t* bytes) override

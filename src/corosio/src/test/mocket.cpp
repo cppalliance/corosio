@@ -90,7 +90,7 @@ public:
     void read_some(
         std::coroutine_handle<> h,
         capy::any_executor_ref d,
-        capy::buffer_param buffers,
+        io_buffer_param buffers,
         std::stop_token token,
         system::error_code* ec,
         std::size_t* bytes_transferred) override;
@@ -98,7 +98,7 @@ public:
     void write_some(
         std::coroutine_handle<> h,
         capy::any_executor_ref d,
-        capy::buffer_param buffers,
+        io_buffer_param buffers,
         std::stop_token token,
         system::error_code* ec,
         std::size_t* bytes_transferred) override;
@@ -257,7 +257,7 @@ mocket_impl::
 read_some(
     std::coroutine_handle<> h,
     capy::any_executor_ref d,
-    capy::buffer_param buffers,
+    io_buffer_param buffers,
     std::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_transferred)
@@ -299,7 +299,7 @@ mocket_impl::
 write_some(
     std::coroutine_handle<> h,
     capy::any_executor_ref d,
-    capy::buffer_param buffers,
+    io_buffer_param buffers,
     std::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_transferred)

@@ -647,7 +647,7 @@ struct openssl_stream_impl_
     void read_some(
         std::coroutine_handle<> h,
         capy::any_executor_ref d,
-        capy::buffer_param param,
+        io_buffer_param param,
         std::stop_token token,
         system::error_code* ec,
         std::size_t* bytes) override
@@ -662,7 +662,7 @@ struct openssl_stream_impl_
     void write_some(
         std::coroutine_handle<> h,
         capy::any_executor_ref d,
-        capy::buffer_param param,
+        io_buffer_param param,
         std::stop_token token,
         system::error_code* ec,
         std::size_t* bytes) override

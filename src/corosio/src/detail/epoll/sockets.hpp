@@ -124,7 +124,7 @@ public:
     void read_some(
         std::coroutine_handle<>,
         capy::any_executor_ref,
-        capy::buffer_param,
+        io_buffer_param,
         std::stop_token,
         system::error_code*,
         std::size_t*) override;
@@ -132,7 +132,7 @@ public:
     void write_some(
         std::coroutine_handle<>,
         capy::any_executor_ref,
-        capy::buffer_param,
+        io_buffer_param,
         std::stop_token,
         system::error_code*,
         std::size_t*) override;
@@ -308,7 +308,7 @@ epoll_socket_impl::
 read_some(
     std::coroutine_handle<> h,
     capy::any_executor_ref d,
-    capy::buffer_param param,
+    io_buffer_param param,
     std::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_out)
@@ -372,7 +372,7 @@ epoll_socket_impl::
 write_some(
     std::coroutine_handle<> h,
     capy::any_executor_ref d,
-    capy::buffer_param param,
+    io_buffer_param param,
     std::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_out)
