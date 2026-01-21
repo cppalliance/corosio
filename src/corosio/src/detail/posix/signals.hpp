@@ -19,7 +19,7 @@
 #include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/core/intrusive_list.hpp>
+#include <boost/capy/detail/intrusive.hpp>
 #include <boost/system/error_code.hpp>
 #include <boost/system/result.hpp>
 
@@ -83,7 +83,7 @@ struct signal_registration
 */
 class posix_signal_impl
     : public signal_set::signal_set_impl
-    , public capy::intrusive_list<posix_signal_impl>::node
+    , public capy::detail::intrusive_list<posix_signal_impl>::node
 {
     friend class posix_signals;
 
@@ -214,7 +214,7 @@ private:
 
     epoll_scheduler& sched_;
     std::mutex mutex_;
-    capy::intrusive_list<posix_signal_impl> impl_list_;
+    capy::detail::intrusive_list<posix_signal_impl> impl_list_;
 
     // Per-signal registration table
     signal_registration* registrations_[max_signal_number];

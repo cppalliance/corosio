@@ -20,7 +20,7 @@
 #include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/core/intrusive_list.hpp>
+#include <boost/capy/detail/intrusive.hpp>
 
 #include "src/detail/iocp/windows.hpp"
 #include "src/detail/iocp/completion_key.hpp"
@@ -119,7 +119,7 @@ struct accept_op : overlapped_op
     @note Internal implementation detail. Users interact with socket class.
 */
 class win_socket_impl_internal
-    : public capy::intrusive_list<win_socket_impl_internal>::node
+    : public capy::detail::intrusive_list<win_socket_impl_internal>::node
     , public std::enable_shared_from_this<win_socket_impl_internal>
 {
     friend class win_sockets;
@@ -181,7 +181,7 @@ public:
 */
 class win_socket_impl
     : public socket::socket_impl
-    , public capy::intrusive_list<win_socket_impl>::node
+    , public capy::detail::intrusive_list<win_socket_impl>::node
 {
     std::shared_ptr<win_socket_impl_internal> internal_;
 
@@ -254,7 +254,7 @@ public:
     @note Internal implementation detail. Users interact with acceptor class.
 */
 class win_acceptor_impl_internal
-    : public capy::intrusive_list<win_acceptor_impl_internal>::node
+    : public capy::detail::intrusive_list<win_acceptor_impl_internal>::node
     , public std::enable_shared_from_this<win_acceptor_impl_internal>
 {
     friend class win_sockets;
@@ -296,7 +296,7 @@ private:
 */
 class win_acceptor_impl
     : public acceptor::acceptor_impl
-    , public capy::intrusive_list<win_acceptor_impl>::node
+    , public capy::detail::intrusive_list<win_acceptor_impl>::node
 {
     std::shared_ptr<win_acceptor_impl_internal> internal_;
 
@@ -450,10 +450,10 @@ private:
     win_scheduler& sched_;
     overlapped_key overlapped_key_;
     win_mutex mutex_;
-    capy::intrusive_list<win_socket_impl_internal> socket_list_;
-    capy::intrusive_list<win_acceptor_impl_internal> acceptor_list_;
-    capy::intrusive_list<win_socket_impl> socket_wrapper_list_;
-    capy::intrusive_list<win_acceptor_impl> acceptor_wrapper_list_;
+    capy::detail::intrusive_list<win_socket_impl_internal> socket_list_;
+    capy::detail::intrusive_list<win_acceptor_impl_internal> acceptor_list_;
+    capy::detail::intrusive_list<win_socket_impl> socket_wrapper_list_;
+    capy::detail::intrusive_list<win_acceptor_impl> acceptor_wrapper_list_;
     void* iocp_;
     LPFN_CONNECTEX connect_ex_ = nullptr;
     LPFN_ACCEPTEX accept_ex_ = nullptr;

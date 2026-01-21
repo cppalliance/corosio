@@ -20,7 +20,7 @@
 #include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/core/intrusive_list.hpp>
+#include <boost/capy/detail/intrusive.hpp>
 
 #include "src/detail/epoll/op.hpp"
 #include "src/detail/epoll/scheduler.hpp"
@@ -105,7 +105,7 @@ class epoll_acceptor_impl;
 class epoll_socket_impl
     : public socket::socket_impl
     , public std::enable_shared_from_this<epoll_socket_impl>
-    , public capy::intrusive_list<epoll_socket_impl>::node
+    , public capy::detail::intrusive_list<epoll_socket_impl>::node
 {
     friend class epoll_sockets;
 
@@ -173,7 +173,7 @@ private:
 class epoll_acceptor_impl
     : public acceptor::acceptor_impl
     , public std::enable_shared_from_this<epoll_acceptor_impl>
-    , public capy::intrusive_list<epoll_acceptor_impl>::node
+    , public capy::detail::intrusive_list<epoll_acceptor_impl>::node
 {
     friend class epoll_sockets;
 
@@ -239,8 +239,8 @@ private:
 
     // Dual tracking: intrusive_list for fast shutdown iteration,
     // vectors for shared_ptr ownership. See "Impl Lifetime" in file header.
-    capy::intrusive_list<epoll_socket_impl> socket_list_;
-    capy::intrusive_list<epoll_acceptor_impl> acceptor_list_;
+    capy::detail::intrusive_list<epoll_socket_impl> socket_list_;
+    capy::detail::intrusive_list<epoll_acceptor_impl> acceptor_list_;
     std::vector<std::shared_ptr<epoll_socket_impl>> socket_ptrs_;
     std::vector<std::shared_ptr<epoll_acceptor_impl>> acceptor_ptrs_;
 };

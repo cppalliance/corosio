@@ -26,7 +26,7 @@
 #include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/core/intrusive_list.hpp>
+#include <boost/capy/detail/intrusive.hpp>
 
 #include "src/detail/iocp/windows.hpp"
 #include "src/detail/iocp/overlapped_op.hpp"
@@ -82,7 +82,7 @@ struct resolve_op : overlapped_op
 */
 class win_resolver_impl
     : public resolver::resolver_impl
-    , public capy::intrusive_list<win_resolver_impl>::node
+    , public capy::detail::intrusive_list<win_resolver_impl>::node
 {
     friend class win_resolver_service;
     friend struct resolve_op;
@@ -166,7 +166,7 @@ public:
 private:
     win_scheduler& sched_;
     win_mutex mutex_;
-    capy::intrusive_list<win_resolver_impl> resolver_list_;
+    capy::detail::intrusive_list<win_resolver_impl> resolver_list_;
 };
 
 } // namespace detail

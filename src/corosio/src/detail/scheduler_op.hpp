@@ -11,7 +11,7 @@
 #define BOOST_COROSIO_DETAIL_SCHEDULER_OP_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/capy/core/intrusive_queue.hpp>
+#include <boost/capy/detail/intrusive.hpp>
 
 namespace boost {
 namespace corosio {
@@ -83,7 +83,7 @@ namespace detail {
 
     @see scheduler_op_queue
 */
-class scheduler_op : public capy::intrusive_queue<scheduler_op>::node
+class scheduler_op : public capy::detail::intrusive_queue<scheduler_op>::node
 {
 public:
     virtual void operator()() = 0;
@@ -113,7 +113,7 @@ protected:
 
 //------------------------------------------------------------------------------
 
-using op_queue = capy::intrusive_queue<scheduler_op>;
+using op_queue = capy::detail::intrusive_queue<scheduler_op>;
 
 //------------------------------------------------------------------------------
 

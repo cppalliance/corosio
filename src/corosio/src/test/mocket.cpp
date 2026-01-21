@@ -11,7 +11,7 @@
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket.hpp>
-#include <boost/capy/core/intrusive_list.hpp>
+#include <boost/capy/detail/intrusive.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -41,7 +41,7 @@ class mocket_service;
 
 class mocket_impl
     : public io_stream::io_stream_impl
-    , public capy::intrusive_list<mocket_impl>::node
+    , public capy::detail::intrusive_list<mocket_impl>::node
 {
     mocket_service& svc_;
     capy::test::fuse& fuse_;
@@ -122,7 +122,7 @@ class mocket_service
     : public capy::execution_context::service
 {
     capy::execution_context& ctx_;
-    capy::intrusive_list<mocket_impl> impls_;
+    capy::detail::intrusive_list<mocket_impl> impls_;
 
 public:
     explicit mocket_service(capy::execution_context& ctx)

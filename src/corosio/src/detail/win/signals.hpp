@@ -19,8 +19,7 @@
 #include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/core/intrusive_list.hpp>
-#include <boost/capy/core/intrusive_queue.hpp>
+#include <boost/capy/detail/intrusive.hpp>
 #include <boost/system/error_code.hpp>
 #include <boost/system/result.hpp>
 
@@ -85,7 +84,7 @@ struct signal_registration
 */
 class win_signal_impl
     : public signal_set::signal_set_impl
-    , public capy::intrusive_list<win_signal_impl>::node
+    , public capy::detail::intrusive_list<win_signal_impl>::node
 {
     friend class win_signals;
 
@@ -218,7 +217,7 @@ private:
 
     win_scheduler& sched_;
     win_mutex mutex_;
-    capy::intrusive_list<win_signal_impl> impl_list_;
+    capy::detail::intrusive_list<win_signal_impl> impl_list_;
 
     // Per-signal registration table for this service
     signal_registration* registrations_[max_signal_number];

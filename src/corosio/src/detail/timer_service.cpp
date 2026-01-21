@@ -10,7 +10,7 @@
 #include "src/detail/timer_service.hpp"
 
 #include <boost/corosio/detail/scheduler.hpp>
-#include <boost/capy/core/intrusive_list.hpp>
+#include <boost/capy/detail/intrusive.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/ex/any_executor_ref.hpp>
@@ -31,7 +31,7 @@ class timer_service_impl;
 
 struct timer_impl
     : timer::timer_impl
-    , capy::intrusive_list<timer_impl>::node
+    , capy::detail::intrusive_list<timer_impl>::node
 {
     using clock_type = std::chrono::steady_clock;
     using time_point = clock_type::time_point;
@@ -81,8 +81,8 @@ private:
     scheduler* sched_ = nullptr;
     mutable std::mutex mutex_;
     std::vector<heap_entry> heap_;
-    capy::intrusive_list<timer_impl> timers_;
-    capy::intrusive_list<timer_impl> free_list_;
+    capy::detail::intrusive_list<timer_impl> timers_;
+    capy::detail::intrusive_list<timer_impl> free_list_;
     callback on_earliest_changed_;
 
 public:
