@@ -15,6 +15,8 @@
 #include "src/detail/iocp/sockets.hpp"
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)
 #include "src/detail/epoll/sockets.hpp"
+#elif defined(BOOST_COROSIO_BACKEND_KQUEUE)
+#include "src/detail/kqueue/sockets.hpp"
 #endif
 
 #include <boost/corosio/detail/except.hpp>
@@ -31,6 +33,9 @@ using acceptor_impl_type = detail::win_acceptor_impl;
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)
 using acceptor_service = detail::epoll_sockets;
 using acceptor_impl_type = detail::epoll_acceptor_impl;
+#elif defined(BOOST_COROSIO_BACKEND_KQUEUE)
+using acceptor_service = detail::kqueue_sockets;
+using acceptor_impl_type = detail::kqueue_acceptor_impl;
 #endif
 
 } // namespace
@@ -62,7 +67,7 @@ listen(endpoint ep, int backlog)
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
     system::error_code ec = svc.open_acceptor(
         *wrapper.get_internal(), ep, backlog);
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL) || defined(BOOST_COROSIO_BACKEND_KQUEUE)
     system::error_code ec = svc.open_acceptor(wrapper, ep, backlog);
 #endif
     if (ec)
@@ -92,7 +97,7 @@ cancel()
     assert(impl_ != nullptr);
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
     static_cast<acceptor_impl_type*>(impl_)->get_internal()->cancel();
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL) || defined(BOOST_COROSIO_BACKEND_KQUEUE)
     static_cast<acceptor_impl_type*>(impl_)->cancel();
 #endif
 }

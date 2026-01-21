@@ -17,7 +17,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/signal_set.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/io_awaitable.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include "src/detail/intrusive.hpp"
 #include <boost/system/error_code.hpp>
@@ -28,32 +28,9 @@
 
 #include <coroutine>
 #include <cstddef>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 
 #include <signal.h>
-
-/*
-    Windows Signal Implementation - Header
-    ======================================
-
-    This header declares the internal types for Windows signal handling.
-    See signals.cpp for the full implementation overview.
-
-    Key Differences from POSIX:
-      - Uses C runtime signal() instead of sigaction() (Windows has no sigaction)
-      - Only `none` and `dont_care` flags are supported; other flags return
-        `operation_not_supported` (Windows has no equivalent to SA_* flags)
-      - Windows resets handler to SIG_DFL after each signal, so we must re-register
-      - Only supports: SIGINT, SIGTERM, SIGABRT, SIGFPE, SIGILL, SIGSEGV
-      - max_signal_number is 32 (vs 64 on Linux)
-
-    The data structures mirror the POSIX implementation for consistency:
-      - signal_op, signal_registration, win_signal_impl, win_signals
-
-    Threading note: Windows signal handling is synchronous (runs on faulting
-    thread), so we can safely acquire locks in the signal handler. This differs
-    from POSIX where the handler must be async-signal-safe.
-*/
 
 namespace boost {
 namespace corosio {
@@ -89,6 +66,7 @@ struct signal_op : scheduler_op
 struct signal_registration
 {
     int signal_number = 0;
+    signal_set::flags_t flags = signal_set::none;
     win_signal_impl* owner = nullptr;
     std::size_t undelivered = 0;
     signal_registration* next_in_table = nullptr;
@@ -181,7 +159,7 @@ public:
 
         @param impl The signal implementation to modify.
         @param signal_number The signal to register.
-        @param flags The flags to apply (ignored on Windows).
+        @param flags The flags to apply (only none/dont_care supported on Windows).
         @return Success, or an error.
     */
     system::result<void> add_signal(

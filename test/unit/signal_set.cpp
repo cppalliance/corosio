@@ -586,11 +586,10 @@ struct signal_set_test
         BOOST_TEST(result.has_value());
     }
 
-#if !defined(_WIN32)
+#if defined(__linux__)
     //--------------------------------------------
-    // Signal flags tests (POSIX only)
-    // Windows returns operation_not_supported for
-    // flags other than none/dont_care
+    // Signal flags tests (Linux only)
+    // Linux supports full sigaction flags via epoll backend
     //--------------------------------------------
 
     void
@@ -736,24 +735,25 @@ struct signal_set_test
         BOOST_TEST_EQ(received_signal, SIGINT);
     }
 
-#else // _WIN32
+#elif defined(__APPLE__) || defined(_WIN32)
     //--------------------------------------------
-    // Signal flags tests (Windows only)
+    // Signal flags tests (macOS and Windows)
+    // These platforms only support none/dont_care flags
     //--------------------------------------------
 
     void
-    testFlagsNotSupportedOnWindows()
+    testFlagsNotSupportedOnMacOSOrWindows()
     {
         io_context ioc;
         signal_set s(ioc);
 
-        // Windows returns operation_not_supported for actual flags
+        // macOS and Windows return operation_not_supported for actual flags
         auto result = s.add(SIGINT, signal_set::restart);
         BOOST_TEST(result.has_error());
         BOOST_TEST(result.error() == system::errc::operation_not_supported);
     }
 
-#endif // _WIN32
+#endif
 
     void
     run()
@@ -805,8 +805,8 @@ struct signal_set_test
         testAddWithNoneFlags();
         testAddWithDontCareFlags();
 
-#if !defined(_WIN32)
-        // Signal flags tests (POSIX only)
+#if defined(__linux__)
+        // Signal flags tests (Linux only)
         testAddWithFlags();
         testAddWithMultipleFlags();
         testAddSameSignalSameFlags();
@@ -817,9 +817,9 @@ struct signal_set_test
         testMultipleSetsIncompatibleFlags();
         testMultipleSetsWithDontCare();
         testWaitWithFlagsWorks();
-#else
-        // Signal flags tests (Windows only)
-        testFlagsNotSupportedOnWindows();
+#elif defined(__APPLE__) || defined(_WIN32)
+        // Signal flags tests (macOS and Windows)
+        testFlagsNotSupportedOnMacOSOrWindows();
 #endif
     }
 };

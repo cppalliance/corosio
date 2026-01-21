@@ -18,7 +18,7 @@
 #include "src/detail/make_err.hpp"
 
 #include <boost/corosio/detail/except.hpp>
-#include <boost/corosio/detail/thread_local_ptr.hpp>
+#include <boost/capy/detail/thread_local_ptr.hpp>
 
 #include <limits>
 
@@ -59,7 +59,7 @@ struct scheduler_context
 };
 
 // used for running_in_this_thread()
-corosio::detail::thread_local_ptr<scheduler_context> context_stack;
+capy::detail::thread_local_ptr<scheduler_context> context_stack;
 
 struct thread_context_guard
 {

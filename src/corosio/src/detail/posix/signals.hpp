@@ -62,7 +62,15 @@ namespace boost {
 namespace corosio {
 namespace detail {
 
+// Forward declare the appropriate scheduler based on backend
+#if defined(BOOST_COROSIO_BACKEND_EPOLL)
 class epoll_scheduler;
+using posix_scheduler = epoll_scheduler;
+#elif defined(BOOST_COROSIO_BACKEND_KQUEUE)
+class kqueue_scheduler;
+using posix_scheduler = kqueue_scheduler;
+#endif
+
 class posix_signals;
 class posix_signal_impl;
 
@@ -241,7 +249,7 @@ private:
     static void add_service(posix_signals* service);
     static void remove_service(posix_signals* service);
 
-    epoll_scheduler& sched_;
+    posix_scheduler& sched_;
     std::mutex mutex_;
     intrusive_list<posix_signal_impl> impl_list_;
 

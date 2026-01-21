@@ -15,6 +15,8 @@
 #include "src/detail/iocp/scheduler.hpp"
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)
 #include "src/detail/epoll/scheduler.hpp"
+#elif defined(BOOST_COROSIO_BACKEND_KQUEUE)
+#include "src/detail/kqueue/scheduler.hpp"
 #endif
 
 #include <thread>
@@ -26,6 +28,8 @@ namespace corosio {
 using scheduler_type = detail::win_scheduler;
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)
 using scheduler_type = detail::epoll_scheduler;
+#elif defined(BOOST_COROSIO_BACKEND_KQUEUE)
+using scheduler_type = detail::kqueue_scheduler;
 #endif
 
 io_context::

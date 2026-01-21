@@ -16,6 +16,8 @@
 #include "src/detail/iocp/sockets.hpp"
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)
 #include "src/detail/epoll/sockets.hpp"
+#elif defined(BOOST_COROSIO_BACKEND_KQUEUE)
+#include "src/detail/kqueue/sockets.hpp"
 #endif
 
 #include <cassert>
@@ -30,6 +32,9 @@ using socket_impl_type = detail::win_socket_impl;
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)
 using socket_service = detail::epoll_sockets;
 using socket_impl_type = detail::epoll_socket_impl;
+#elif defined(BOOST_COROSIO_BACKEND_KQUEUE)
+using socket_service = detail::kqueue_sockets;
+using socket_impl_type = detail::kqueue_socket_impl;
 #endif
 } // namespace
 
@@ -59,7 +64,7 @@ open()
 
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
     system::error_code ec = svc.open_socket(*wrapper.get_internal());
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL) || defined(BOOST_COROSIO_BACKEND_KQUEUE)
     system::error_code ec = svc.open_socket(wrapper);
 #endif
     if (ec)
@@ -89,7 +94,7 @@ cancel()
     assert(impl_ != nullptr);
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
     static_cast<socket_impl_type*>(impl_)->get_internal()->cancel();
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
+#elif defined(BOOST_COROSIO_BACKEND_EPOLL) || defined(BOOST_COROSIO_BACKEND_KQUEUE)
     static_cast<socket_impl_type*>(impl_)->cancel();
 #endif
 }

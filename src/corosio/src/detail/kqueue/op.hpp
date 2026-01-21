@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Cinar Gursoy
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -7,12 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_EPOLL_OP_HPP
-#define BOOST_COROSIO_DETAIL_EPOLL_OP_HPP
+#ifndef BOOST_COROSIO_DETAIL_KQUEUE_OP_HPP
+#define BOOST_COROSIO_DETAIL_KQUEUE_OP_HPP
 
 #include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_BACKEND_EPOLL)
+#if defined(BOOST_COROSIO_BACKEND_KQUEUE)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_object.hpp>
@@ -35,22 +35,24 @@
 #include <optional>
 #include <boost/capy/ex/stop_token.hpp>
 
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <sys/event.h>
 
 /*
-    epoll Operation State
-    =====================
+    kqueue Operation State
+    ======================
 
-    Each async I/O operation has a corresponding epoll_op-derived struct that
+    Each async I/O operation has a corresponding kqueue_op-derived struct that
     holds the operation's state while it's in flight. The socket impl owns
     fixed slots for each operation type (conn_, rd_, wr_), so only one
     operation of each type can be pending per socket at a time.
 
     Completion vs Cancellation Race
     -------------------------------
-    The `registered` atomic handles the race between epoll signaling ready
+    The `registered` atomic handles the race between kqueue signaling ready
     and cancel() being called. Whoever atomically exchanges it from true to
     false "claims" the operation and is responsible for completing it. The
     loser sees false and does nothing. This avoids double-completion bugs
@@ -73,20 +75,19 @@
 
     SIGPIPE Prevention
     ------------------
-    Writes use sendmsg() with MSG_NOSIGNAL instead of writev() to prevent
-    SIGPIPE when the peer has closed. This is the same approach Boost.Asio
-    uses on Linux.
+    On macOS, we use the SO_NOSIGPIPE socket option instead of MSG_NOSIGNAL
+    (which doesn't exist on macOS). This is set when the socket is created.
 */
 
 namespace boost {
 namespace corosio {
 namespace detail {
 
-struct epoll_op : scheduler_op
+struct kqueue_op : scheduler_op
 {
     struct canceller
     {
-        epoll_op* op;
+        kqueue_op* op;
         void operator()() const noexcept { op->request_cancel(); }
     };
 
@@ -96,19 +97,19 @@ struct epoll_op : scheduler_op
     std::size_t* bytes_out = nullptr;
 
     int fd = -1;
-    std::uint32_t events = 0;
+    int16_t filter = 0;  // EVFILT_READ or EVFILT_WRITE
     int errn = 0;
     std::size_t bytes_transferred = 0;
 
     std::atomic<bool> cancelled{false};
     std::atomic<bool> registered{false};
-    std::optional<std::stop_callback<canceller>> stop_cb;
+    std::optional<capy::stop_callback<canceller>> stop_cb;
 
     // Prevents use-after-free when socket is closed with pending ops.
     // See "Impl Lifetime Management" in file header.
     std::shared_ptr<void> impl_ptr;
 
-    epoll_op()
+    kqueue_op()
     {
         data_ = this;
     }
@@ -116,7 +117,7 @@ struct epoll_op : scheduler_op
     void reset() noexcept
     {
         fd = -1;
-        events = 0;
+        filter = 0;
         errn = 0;
         bytes_transferred = 0;
         cancelled.store(false, std::memory_order_relaxed);
@@ -178,15 +179,15 @@ struct epoll_op : scheduler_op
     virtual void perform_io() noexcept {}
 };
 
-inline epoll_op*
-get_epoll_op(scheduler_op* h) noexcept
+inline kqueue_op*
+get_kqueue_op(scheduler_op* h) noexcept
 {
-    return static_cast<epoll_op*>(h->data());
+    return static_cast<kqueue_op*>(h->data());
 }
 
 //------------------------------------------------------------------------------
 
-struct epoll_connect_op : epoll_op
+struct kqueue_connect_op : kqueue_op
 {
     void perform_io() noexcept override
     {
@@ -201,7 +202,7 @@ struct epoll_connect_op : epoll_op
 
 //------------------------------------------------------------------------------
 
-struct epoll_read_op : epoll_op
+struct kqueue_read_op : kqueue_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -215,7 +216,7 @@ struct epoll_read_op : epoll_op
 
     void reset() noexcept
     {
-        epoll_op::reset();
+        kqueue_op::reset();
         iovec_count = 0;
         empty_buffer_read = false;
     }
@@ -232,7 +233,7 @@ struct epoll_read_op : epoll_op
 
 //------------------------------------------------------------------------------
 
-struct epoll_write_op : epoll_op
+struct kqueue_write_op : kqueue_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -240,17 +241,15 @@ struct epoll_write_op : epoll_op
 
     void reset() noexcept
     {
-        epoll_op::reset();
+        kqueue_op::reset();
         iovec_count = 0;
     }
 
     void perform_io() noexcept override
     {
-        msghdr msg{};
-        msg.msg_iov = iovecs;
-        msg.msg_iovlen = static_cast<std::size_t>(iovec_count);
-
-        ssize_t n = ::sendmsg(fd, &msg, MSG_NOSIGNAL);
+        // On macOS, we use SO_NOSIGPIPE socket option instead of MSG_NOSIGNAL
+        // The socket option is set when the socket is created
+        ssize_t n = ::writev(fd, iovecs, iovec_count);
         if (n >= 0)
             complete(0, static_cast<std::size_t>(n));
         else
@@ -260,7 +259,7 @@ struct epoll_write_op : epoll_op
 
 //------------------------------------------------------------------------------
 
-struct epoll_accept_op : epoll_op
+struct kqueue_accept_op : kqueue_op
 {
     int accepted_fd = -1;
     io_object::io_object_impl* peer_impl = nullptr;
@@ -272,7 +271,7 @@ struct epoll_accept_op : epoll_op
 
     void reset() noexcept
     {
-        epoll_op::reset();
+        kqueue_op::reset();
         accepted_fd = -1;
         peer_impl = nullptr;
         impl_out = nullptr;
@@ -282,11 +281,25 @@ struct epoll_accept_op : epoll_op
     {
         sockaddr_in addr{};
         socklen_t addrlen = sizeof(addr);
-        int new_fd = ::accept4(fd, reinterpret_cast<sockaddr*>(&addr),
-                               &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
+        // macOS doesn't have accept4, use accept and set flags via fcntl
+        int new_fd = ::accept(fd, reinterpret_cast<sockaddr*>(&addr), &addrlen);
 
         if (new_fd >= 0)
         {
+            // Set non-blocking
+            int flags = ::fcntl(new_fd, F_GETFL, 0);
+            if (flags >= 0)
+                ::fcntl(new_fd, F_SETFL, flags | O_NONBLOCK);
+
+            // Set close-on-exec
+            flags = ::fcntl(new_fd, F_GETFD, 0);
+            if (flags >= 0)
+                ::fcntl(new_fd, F_SETFD, flags | FD_CLOEXEC);
+
+            // Set SO_NOSIGPIPE to prevent SIGPIPE on write to closed socket
+            int nosigpipe = 1;
+            ::setsockopt(new_fd, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, sizeof(nosigpipe));
+
             accepted_fd = new_fd;
             if (create_peer && service_ptr)
                 peer_impl = create_peer(service_ptr, new_fd);
@@ -347,6 +360,6 @@ struct epoll_accept_op : epoll_op
 } // namespace corosio
 } // namespace boost
 
-#endif // BOOST_COROSIO_BACKEND_EPOLL
+#endif // BOOST_COROSIO_BACKEND_KQUEUE
 
-#endif // BOOST_COROSIO_DETAIL_EPOLL_OP_HPP
+#endif // BOOST_COROSIO_DETAIL_KQUEUE_OP_HPP

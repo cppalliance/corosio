@@ -17,7 +17,7 @@
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/io_awaitable.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/system/error_code.hpp>
 #include <boost/system/result.hpp>
@@ -26,13 +26,17 @@
 #include <coroutine>
 #include <boost/capy/ex/stop_token.hpp>
 
+namespace boost {
+namespace corosio {
+
 /*
     Signal Set Public API
     =====================
 
     This header provides the public interface for asynchronous signal handling.
     The implementation is split across platform-specific files:
-      - posix/signals.cpp: Uses sigaction() for robust signal handling
+      - posix/signals.cpp: Uses sigaction() for robust signal handling (Linux)
+      - kqueue backend: Uses C signal() on macOS (no sigaction flag support)
       - win/signals.cpp: Uses C runtime signal() (Windows lacks sigaction)
 
     Key design decisions:
@@ -41,28 +45,26 @@
        (not SA_RESTART, etc.) to avoid including <signal.h> in public headers.
        The POSIX implementation maps these to actual SA_* constants internally.
 
-    2. Flag conflict detection: When multiple signal_sets register for the
+    2. Flag support varies by platform:
+       - Linux (epoll backend): Full sigaction flag support
+       - macOS (kqueue backend): Only `none` and `dont_care` supported
+       - Windows: Only `none` and `dont_care` supported
+
+    3. Flag conflict detection: When multiple signal_sets register for the
        same signal, they must use compatible flags. The first registration
        establishes the flags; subsequent registrations must match or use
        dont_care.
 
-    3. Polymorphic implementation: signal_set_impl is an abstract base that
-       platform-specific implementations (posix_signal_impl, win_signal_impl)
-       derive from. This allows the public API to be platform-agnostic.
-
-    4. The inline add(int) overload avoids a virtual call for the common case
-       of adding signals without flags (delegates to add(int, none)).
+    4. Polymorphic implementation: signal_set_impl is an abstract base that
+       platform-specific implementations derive from.
 */
-
-namespace boost {
-namespace corosio {
 
 /** An asynchronous signal set for coroutine I/O.
 
     This class provides the ability to perform an asynchronous wait
     for one or more signals to occur. The signal set registers for
-    signals using sigaction() on POSIX systems or the C runtime
-    signal() function on Windows.
+    signals using sigaction() on Linux, or the C runtime signal()
+    function on macOS and Windows.
 
     @par Thread Safety
     Distinct objects: Safe.@n
@@ -89,9 +91,9 @@ public:
         These flags control the behavior of signal handling. Multiple
         flags can be combined using the bitwise OR operator.
 
-        @note Flags only have effect on POSIX systems. On Windows,
-        only `none` and `dont_care` are supported; other flags return
-        `operation_not_supported`.
+        @note Full flag support is only available on Linux (epoll backend).
+        On macOS and Windows, only `none` and `dont_care` are supported;
+        other flags return `operation_not_supported`.
     */
     enum flags_t : unsigned
     {
@@ -106,22 +108,27 @@ public:
 
         /// Restart interrupted system calls.
         /// Equivalent to SA_RESTART on POSIX systems.
+        /// @note Only supported on Linux.
         restart = 1u << 0,
 
         /// Don't generate SIGCHLD when children stop.
         /// Equivalent to SA_NOCLDSTOP on POSIX systems.
+        /// @note Only supported on Linux.
         no_child_stop = 1u << 1,
 
         /// Don't create zombie processes on child termination.
         /// Equivalent to SA_NOCLDWAIT on POSIX systems.
+        /// @note Only supported on Linux.
         no_child_wait = 1u << 2,
 
         /// Don't block the signal while its handler runs.
         /// Equivalent to SA_NODEFER on POSIX systems.
+        /// @note Only supported on Linux.
         no_defer = 1u << 3,
 
         /// Reset handler to SIG_DFL after one invocation.
         /// Equivalent to SA_RESETHAND on POSIX systems.
+        /// @note Only supported on Linux.
         reset_handler = 1u << 4
     };
 
@@ -275,8 +282,9 @@ public:
 
         @param signal_number The signal to be added to the set.
         @param flags The flags to apply when registering the signal.
-            On POSIX systems, these map to sigaction() flags.
-            On Windows, flags are accepted but ignored.
+            On Linux, these map to sigaction() flags.
+            On macOS and Windows, only `none` and `dont_care` are
+            supported; other flags return `operation_not_supported`.
 
         @return Success, or an error if the signal could not be added.
             Returns `errc::invalid_argument` if the signal is already

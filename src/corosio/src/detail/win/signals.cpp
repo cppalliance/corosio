@@ -88,14 +88,6 @@
 
     If a signal was already queued (undelivered > 0), no work tracking is needed
     because completion is posted immediately.
-
-    Signal Flags
-    ------------
-
-    Windows only supports `none` and `dont_care` flags. Any other flags
-    (restart, no_child_stop, etc.) return `operation_not_supported`. The
-    C runtime signal() function has no equivalent to sigaction() flags
-    like SA_RESTART or SA_NOCLDSTOP.
 */
 
 namespace boost {
@@ -352,6 +344,7 @@ add_signal(
     // Create new registration
     auto* new_reg = new signal_registration;
     new_reg->signal_number = signal_number;
+    new_reg->flags = flags;
     new_reg->owner = &impl;
     new_reg->undelivered = 0;
 

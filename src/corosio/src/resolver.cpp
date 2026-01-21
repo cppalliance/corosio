@@ -15,6 +15,8 @@
 #include "src/detail/iocp/resolver_service.hpp"
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)
 #include "src/detail/epoll/resolver_service.hpp"
+#elif defined(BOOST_COROSIO_BACKEND_KQUEUE)
+#include "src/detail/kqueue/resolver_service.hpp"
 #endif
 
 namespace boost {
@@ -27,6 +29,9 @@ using resolver_impl_type = detail::win_resolver_impl;
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)
 using resolver_service = detail::epoll_resolver_service;
 using resolver_impl_type = detail::epoll_resolver_impl;
+#elif defined(BOOST_COROSIO_BACKEND_KQUEUE)
+using resolver_service = detail::kqueue_resolver_service;
+using resolver_impl_type = detail::kqueue_resolver_impl;
 #endif
 
 } // namespace
