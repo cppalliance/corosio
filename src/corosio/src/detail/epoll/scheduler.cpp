@@ -30,44 +30,55 @@
 #include <unistd.h>
 
 /*
-    epoll Scheduler
-    ===============
+    epoll Scheduler - Single Reactor Model
+    ======================================
 
-    The scheduler is the heart of the I/O event loop. It multiplexes I/O
-    readiness notifications from epoll with a completion queue for operations
-    that finished synchronously or were cancelled.
+    This scheduler uses a thread coordination strategy to provide handler
+    parallelism and avoid the thundering herd problem.
+    Instead of all threads blocking on epoll_wait(), one thread becomes the
+    "reactor" while others wait on a condition variable for handler work.
+
+    Thread Model
+    ------------
+    - ONE thread runs epoll_wait() at a time (the reactor thread)
+    - OTHER threads wait on wakeup_event_ (condition variable) for handlers
+    - When work is posted, exactly one waiting thread wakes via notify_one()
+    - This matches Windows IOCP semantics where N posted items wake N threads
 
     Event Loop Structure (do_one)
     -----------------------------
-    1. Check completion queue first (mutex-protected)
-    2. If empty, call epoll_wait with calculated timeout
-    3. Process timer expirations
-    4. For each ready fd, claim the operation and perform I/O
-    5. Push completed operations to completion queue
-    6. Pop one and invoke its handler
+    1. Lock mutex, try to pop handler from queue
+    2. If got handler: execute it (unlocked), return
+    3. If queue empty and no reactor running: become reactor
+       - Run epoll_wait (unlocked), queue I/O completions, loop back
+    4. If queue empty and reactor running: wait on condvar for work
 
-    The completion queue exists because handlers must run outside the epoll
-    processing loop. This allows handlers to safely start new operations
-    on the same fd without corrupting iteration state.
+    The reactor_running_ flag ensures only one thread owns epoll_wait().
+    After the reactor queues I/O completions, it loops back to try getting
+    a handler, giving priority to handler execution over more I/O polling.
 
-    Wakeup Mechanism
-    ----------------
-    An eventfd allows other threads (or cancel/post calls) to wake the
-    event loop from epoll_wait. We distinguish wakeup events from I/O by
-    storing nullptr in epoll_event.data.ptr for the eventfd.
+    Wake Coordination (wake_one_thread_and_unlock)
+    ----------------------------------------------
+    When posting work:
+    - If idle threads exist: notify_one() wakes exactly one worker
+    - Else if reactor running: interrupt via eventfd write
+    - Else: no-op (thread will find work when it checks queue)
+
+    This is critical for matching IOCP behavior. With the old model, posting
+    N handlers would wake all threads (thundering herd). Now each post()
+    wakes at most one thread, and that thread handles exactly one item.
 
     Work Counting
     -------------
     outstanding_work_ tracks pending operations. When it hits zero, run()
-    returns. This is how io_context knows there's nothing left to do.
-    Each operation increments on start, decrements on completion.
+    returns. Each operation increments on start, decrements on completion.
 
     Timer Integration
     -----------------
-    Timers are handled by timer_service. The scheduler adjusts epoll_wait
-    timeout to wake in time for the nearest timer expiry. When a new timer
-    is scheduled earlier than current, timer_service calls wakeup() to
-    re-evaluate the timeout.
+    Timers are handled by timer_service. The reactor adjusts epoll_wait
+    timeout to wake for the nearest timer expiry. When a new timer is
+    scheduled earlier than current, timer_service calls interrupt_reactor()
+    to re-evaluate the timeout.
 */
 
 namespace boost {
@@ -112,6 +123,9 @@ epoll_scheduler(
     , outstanding_work_(0)
     , stopped_(false)
     , shutdown_(false)
+    , reactor_running_(false)
+    , reactor_interrupted_(false)
+    , idle_thread_count_(0)
 {
     epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
     if (epoll_fd_ < 0)
@@ -140,7 +154,7 @@ epoll_scheduler(
     timer_svc_->set_on_earliest_changed(
         timer_service::callback(
             this,
-            [](void* p) { static_cast<epoll_scheduler*>(p)->wakeup(); }));
+            [](void* p) { static_cast<epoll_scheduler*>(p)->interrupt_reactor(); }));
 }
 
 epoll_scheduler::
@@ -166,6 +180,8 @@ shutdown()
         lock.lock();
     }
 
+    // Wake all waiting threads so they can exit
+    wakeup_event_.notify_all();
     outstanding_work_.store(0, std::memory_order_release);
 }
 
@@ -199,14 +215,12 @@ post(capy::coro h) const
         }
     };
 
-    auto* ph = new post_handler(h);
+    auto ph = std::make_unique<post_handler>(h);
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 
-    {
-        std::lock_guard lock(mutex_);
-        completed_ops_.push(ph);
-    }
-    wakeup();
+    std::unique_lock lock(mutex_);
+    completed_ops_.push(ph.release());
+    wake_one_thread_and_unlock(lock);
 }
 
 void
@@ -215,11 +229,9 @@ post(scheduler_op* h) const
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 
-    {
-        std::lock_guard lock(mutex_);
-        completed_ops_.push(h);
-    }
-    wakeup();
+    std::unique_lock lock(mutex_);
+    completed_ops_.push(h);
+    wake_one_thread_and_unlock(lock);
 }
 
 void
@@ -255,7 +267,12 @@ stop()
     if (stopped_.compare_exchange_strong(expected, true,
             std::memory_order_release, std::memory_order_relaxed))
     {
-        wakeup();
+        // Wake all threads so they notice stopped_ and exit
+        {
+            std::lock_guard lock(mutex_);
+            wakeup_event_.notify_all();
+        }
+        interrupt_reactor();
     }
 }
 
@@ -408,15 +425,55 @@ void
 epoll_scheduler::
 work_finished() const noexcept
 {
-    outstanding_work_.fetch_sub(1, std::memory_order_acq_rel);
+    if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
+    {
+        // Last work item completed - wake all threads so they can exit.
+        // notify_all() wakes threads waiting on the condvar.
+        // interrupt_reactor() wakes the reactor thread blocked in epoll_wait().
+        // Both are needed because they target different blocking mechanisms.
+        std::unique_lock lock(mutex_);
+        wakeup_event_.notify_all();
+        if (reactor_running_ && !reactor_interrupted_)
+        {
+            reactor_interrupted_ = true;
+            lock.unlock();
+            interrupt_reactor();
+        }
+    }
 }
 
 void
 epoll_scheduler::
-wakeup() const
+interrupt_reactor() const
 {
     std::uint64_t val = 1;
     [[maybe_unused]] auto r = ::write(event_fd_, &val, sizeof(val));
+}
+
+void
+epoll_scheduler::
+wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
+{
+    if (idle_thread_count_ > 0)
+    {
+        // Idle worker exists - wake it via condvar
+        wakeup_event_.notify_one();
+        lock.unlock();
+    }
+    else if (reactor_running_ && !reactor_interrupted_)
+    {
+        // No idle workers but reactor is running - interrupt it so it
+        // can re-check the queue after processing current epoll events
+        reactor_interrupted_ = true;
+        lock.unlock();
+        interrupt_reactor();
+    }
+    else
+    {
+        // No one to wake - either reactor will pick up work when it
+        // re-checks queue, or next thread to call run() will get it
+        lock.unlock();
+    }
 }
 
 struct work_guard
@@ -451,112 +508,153 @@ calculate_timeout(long requested_timeout_us) const
         static_cast<long long>(timer_timeout_us)));
 }
 
+void
+epoll_scheduler::
+run_reactor(std::unique_lock<std::mutex>& lock)
+{
+    // Calculate timeout considering timers, use 0 if interrupted
+    long effective_timeout_us = reactor_interrupted_ ? 0 : calculate_timeout(-1);
+
+    int timeout_ms;
+    if (effective_timeout_us < 0)
+        timeout_ms = -1;
+    else if (effective_timeout_us == 0)
+        timeout_ms = 0;
+    else
+        timeout_ms = static_cast<int>((effective_timeout_us + 999) / 1000);
+
+    lock.unlock();
+
+    epoll_event events[64];
+    int nfds = ::epoll_wait(epoll_fd_, events, 64, timeout_ms);
+    int saved_errno = errno;  // Save before process_expired() may overwrite
+
+    // Process timers outside the lock - timer completions may call post()
+    // which needs to acquire the lock
+    timer_svc_->process_expired();
+
+    if (nfds < 0 && saved_errno != EINTR)
+        detail::throw_system_error(make_err(saved_errno), "epoll_wait");
+
+    // Process I/O completions - these become handlers in the queue
+    // Must re-acquire lock before modifying completed_ops_
+    lock.lock();
+
+    int completions_queued = 0;
+    for (int i = 0; i < nfds; ++i)
+    {
+        if (events[i].data.ptr == nullptr)
+        {
+            // eventfd interrupt - just drain it
+            std::uint64_t val;
+            [[maybe_unused]] auto r = ::read(event_fd_, &val, sizeof(val));
+            continue;
+        }
+
+        auto* op = static_cast<epoll_op*>(events[i].data.ptr);
+
+        bool was_registered = op->registered.exchange(false, std::memory_order_acq_rel);
+        if (!was_registered)
+            continue;
+
+        unregister_fd(op->fd);
+
+        if (events[i].events & (EPOLLERR | EPOLLHUP))
+        {
+            int errn = 0;
+            socklen_t len = sizeof(errn);
+            if (::getsockopt(op->fd, SOL_SOCKET, SO_ERROR, &errn, &len) < 0)
+                errn = errno;
+            if (errn == 0)
+                errn = EIO;
+            op->complete(errn, 0);
+        }
+        else
+        {
+            op->perform_io();
+        }
+
+        completed_ops_.push(op);
+        ++completions_queued;
+    }
+
+    // Wake idle workers if we queued I/O completions
+    if (completions_queued > 0)
+    {
+        if (completions_queued >= idle_thread_count_)
+            wakeup_event_.notify_all();
+        else
+            for (int i = 0; i < completions_queued; ++i)
+                wakeup_event_.notify_one();
+    }
+}
+
 std::size_t
 epoll_scheduler::
 do_one(long timeout_us)
 {
+    std::unique_lock lock(mutex_);
+
+    using clock = std::chrono::steady_clock;
+    auto deadline = (timeout_us > 0)
+        ? clock::now() + std::chrono::microseconds(timeout_us)
+        : clock::time_point{};
+
     for (;;)
     {
         if (stopped_.load(std::memory_order_acquire))
             return 0;
 
-        scheduler_op* h = nullptr;
-        {
-            std::lock_guard lock(mutex_);
-            h = completed_ops_.pop();
-        }
+        // Try to get a handler from the queue
+        scheduler_op* op = completed_ops_.pop();
 
-        if (h)
+        if (op != nullptr)
         {
+            // Got a handler - execute it
+            lock.unlock();
             work_guard g{this};
-            (*h)();
+            (*op)();
             return 1;
         }
 
+        // Queue is empty - check if we should become reactor or wait
         if (outstanding_work_.load(std::memory_order_acquire) == 0)
             return 0;
 
-        long effective_timeout_us = calculate_timeout(timeout_us);
+        if (timeout_us == 0)
+            return 0;  // Non-blocking poll
 
-        int timeout_ms;
-        if (effective_timeout_us < 0)
-            timeout_ms = -1;
-        else if (effective_timeout_us == 0)
-            timeout_ms = 0;
-        else
-            timeout_ms = static_cast<int>((effective_timeout_us + 999) / 1000);
-
-        epoll_event events[64];
-        int nfds = ::epoll_wait(epoll_fd_, events, 64, timeout_ms);
-
-        if (nfds < 0)
+        // Check if timeout has expired (for positive timeout_us)
+        long remaining_us = timeout_us;
+        if (timeout_us > 0)
         {
-            if (errno == EINTR)
-            {
-                if (timeout_us < 0)
-                    continue;
+            auto now = clock::now();
+            if (now >= deadline)
                 return 0;
-            }
-            detail::throw_system_error(make_err(errno), "epoll_wait");
+            remaining_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                deadline - now).count();
         }
 
-        timer_svc_->process_expired();
-
-        for (int i = 0; i < nfds; ++i)
+        if (!reactor_running_)
         {
-            if (events[i].data.ptr == nullptr)
-            {
-                std::uint64_t val;
-                [[maybe_unused]] auto r = ::read(event_fd_, &val, sizeof(val));
-                continue;
-            }
+            // No reactor running and queue empty - become the reactor
+            reactor_running_ = true;
+            reactor_interrupted_ = false;
 
-            auto* op = static_cast<epoll_op*>(events[i].data.ptr);
+            run_reactor(lock);
 
-            bool was_registered = op->registered.exchange(false, std::memory_order_acq_rel);
-            if (!was_registered)
-                continue;
-
-            unregister_fd(op->fd);
-
-            if (events[i].events & (EPOLLERR | EPOLLHUP))
-            {
-                int errn = 0;
-                socklen_t len = sizeof(errn);
-                if (::getsockopt(op->fd, SOL_SOCKET, SO_ERROR, &errn, &len) < 0)
-                    errn = errno;
-                if (errn == 0)
-                    errn = EIO;
-                op->complete(errn, 0);
-            }
-            else
-            {
-                op->perform_io();
-            }
-
-            {
-                std::lock_guard lock(mutex_);
-                completed_ops_.push(op);
-            }
+            reactor_running_ = false;
+            // Loop back to check for handlers that reactor may have queued
+            continue;
         }
 
-        if (stopped_.load(std::memory_order_acquire))
-            return 0;
-
-        {
-            std::lock_guard lock(mutex_);
-            h = completed_ops_.pop();
-        }
-
-        if (h)
-        {
-            work_guard g{this};
-            (*h)();
-            return 1;
-        }
-
-        if (timeout_us >= 0)
-            return 0;
+        // Reactor is running in another thread - wait for work on condvar
+        ++idle_thread_count_;
+        if (timeout_us < 0)
+            wakeup_event_.wait(lock);
+        else
+            wakeup_event_.wait_for(lock, std::chrono::microseconds(remaining_us));
+        --idle_thread_count_;
     }
 }
 
