@@ -26,6 +26,34 @@
 #include <coroutine>
 #include <stop_token>
 
+/*
+    Signal Set Public API
+    =====================
+
+    This header provides the public interface for asynchronous signal handling.
+    The implementation is split across platform-specific files:
+      - posix/signals.cpp: Uses sigaction() for robust signal handling
+      - win/signals.cpp: Uses C runtime signal() (Windows lacks sigaction)
+
+    Key design decisions:
+
+    1. Abstract flag values: The flags_t enum uses arbitrary bit positions
+       (not SA_RESTART, etc.) to avoid including <signal.h> in public headers.
+       The POSIX implementation maps these to actual SA_* constants internally.
+
+    2. Flag conflict detection: When multiple signal_sets register for the
+       same signal, they must use compatible flags. The first registration
+       establishes the flags; subsequent registrations must match or use
+       dont_care.
+
+    3. Polymorphic implementation: signal_set_impl is an abstract base that
+       platform-specific implementations (posix_signal_impl, win_signal_impl)
+       derive from. This allows the public API to be platform-agnostic.
+
+    4. The inline add(int) overload avoids a virtual call for the common case
+       of adding signals without flags (delegates to add(int, none)).
+*/
+
 namespace boost {
 namespace corosio {
 
@@ -33,7 +61,8 @@ namespace corosio {
 
     This class provides the ability to perform an asynchronous wait
     for one or more signals to occur. The signal set registers for
-    signals using the C runtime signal() function.
+    signals using sigaction() on POSIX systems or the C runtime
+    signal() function on Windows.
 
     @par Thread Safety
     Distinct objects: Safe.@n
@@ -54,6 +83,81 @@ namespace corosio {
 */
 class BOOST_COROSIO_DECL signal_set : public io_object
 {
+public:
+    /** Flags for signal registration.
+
+        These flags control the behavior of signal handling. Multiple
+        flags can be combined using the bitwise OR operator.
+
+        @note Flags only have effect on POSIX systems. On Windows,
+        only `none` and `dont_care` are supported; other flags return
+        `operation_not_supported`.
+    */
+    enum flags_t : unsigned
+    {
+        /// Use existing flags if signal is already registered.
+        /// When adding a signal that's already registered by another
+        /// signal_set, this flag indicates acceptance of whatever
+        /// flags were used for the existing registration.
+        dont_care = 1u << 16,
+
+        /// No special flags.
+        none = 0,
+
+        /// Restart interrupted system calls.
+        /// Equivalent to SA_RESTART on POSIX systems.
+        restart = 1u << 0,
+
+        /// Don't generate SIGCHLD when children stop.
+        /// Equivalent to SA_NOCLDSTOP on POSIX systems.
+        no_child_stop = 1u << 1,
+
+        /// Don't create zombie processes on child termination.
+        /// Equivalent to SA_NOCLDWAIT on POSIX systems.
+        no_child_wait = 1u << 2,
+
+        /// Don't block the signal while its handler runs.
+        /// Equivalent to SA_NODEFER on POSIX systems.
+        no_defer = 1u << 3,
+
+        /// Reset handler to SIG_DFL after one invocation.
+        /// Equivalent to SA_RESETHAND on POSIX systems.
+        reset_handler = 1u << 4
+    };
+
+    /// Combine two flag values.
+    friend constexpr flags_t operator|(flags_t a, flags_t b) noexcept
+    {
+        return static_cast<flags_t>(
+            static_cast<unsigned>(a) | static_cast<unsigned>(b));
+    }
+
+    /// Mask two flag values.
+    friend constexpr flags_t operator&(flags_t a, flags_t b) noexcept
+    {
+        return static_cast<flags_t>(
+            static_cast<unsigned>(a) & static_cast<unsigned>(b));
+    }
+
+    /// Compound assignment OR.
+    friend constexpr flags_t& operator|=(flags_t& a, flags_t b) noexcept
+    {
+        return a = a | b;
+    }
+
+    /// Compound assignment AND.
+    friend constexpr flags_t& operator&=(flags_t& a, flags_t b) noexcept
+    {
+        return a = a & b;
+    }
+
+    /// Bitwise NOT (complement).
+    friend constexpr flags_t operator~(flags_t a) noexcept
+    {
+        return static_cast<flags_t>(~static_cast<unsigned>(a));
+    }
+
+private:
     struct wait_awaitable
     {
         signal_set& s_;
@@ -97,7 +201,7 @@ public:
             system::error_code*,
             int*) = 0;
 
-        virtual system::result<void> add(int signal_number) = 0;
+        virtual system::result<void> add(int signal_number, flags_t flags) = 0;
         virtual system::result<void> remove(int signal_number) = 0;
         virtual system::result<void> clear() = 0;
         virtual void cancel() = 0;
@@ -161,14 +265,37 @@ public:
 
     /** Add a signal to the signal set.
 
-        This function adds the specified signal to the set. It has no
-        effect if the signal is already in the set.
+        This function adds the specified signal to the set with the
+        specified flags. It has no effect if the signal is already
+        in the set with the same flags.
+
+        If the signal is already registered globally (by another
+        signal_set) and the flags differ, an error is returned
+        unless one of them has the `dont_care` flag.
+
+        @param signal_number The signal to be added to the set.
+        @param flags The flags to apply when registering the signal.
+            On POSIX systems, these map to sigaction() flags.
+            On Windows, flags are accepted but ignored.
+
+        @return Success, or an error if the signal could not be added.
+            Returns `errc::invalid_argument` if the signal is already
+            registered with different flags.
+    */
+    system::result<void> add(int signal_number, flags_t flags);
+
+    /** Add a signal to the signal set with default flags.
+
+        This is equivalent to calling `add(signal_number, none)`.
 
         @param signal_number The signal to be added to the set.
 
         @return Success, or an error if the signal could not be added.
     */
-    system::result<void> add(int signal_number);
+    system::result<void> add(int signal_number)
+    {
+        return add(signal_number, none);
+    }
 
     /** Remove a signal from the signal set.
 

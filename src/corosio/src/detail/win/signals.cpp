@@ -88,6 +88,14 @@
 
     If a signal was already queued (undelivered > 0), no work tracking is needed
     because completion is posted immediately.
+
+    Signal Flags
+    ------------
+
+    Windows only supports `none` and `dont_care` flags. Any other flags
+    (restart, no_child_stop, etc.) return `operation_not_supported`. The
+    C runtime signal() function has no equivalent to sigaction() flags
+    like SA_RESTART or SA_NOCLDSTOP.
 */
 
 namespace boost {
@@ -217,9 +225,9 @@ wait(
 
 system::result<void>
 win_signal_impl::
-add(int signal_number)
+add(int signal_number, signal_set::flags_t flags)
 {
-    return svc_.add_signal(*this, signal_number);
+    return svc_.add_signal(*this, signal_number, flags);
 }
 
 system::result<void>
@@ -314,10 +322,16 @@ system::result<void>
 win_signals::
 add_signal(
     win_signal_impl& impl,
-    int signal_number)
+    int signal_number,
+    signal_set::flags_t flags)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
         return make_error_code(system::errc::invalid_argument);
+
+    // Windows only supports none and dont_care flags
+    constexpr auto supported = signal_set::none | signal_set::dont_care;
+    if ((flags & ~supported) != signal_set::none)
+        return make_error_code(system::errc::operation_not_supported);
 
     signal_state* state = get_signal_state();
     std::lock_guard<std::mutex> state_lock(state->mutex);
@@ -668,9 +682,9 @@ operator=(signal_set&& other)
 
 system::result<void>
 signal_set::
-add(int signal_number)
+add(int signal_number, flags_t flags)
 {
-    return get().add(signal_number);
+    return get().add(signal_number, flags);
 }
 
 system::result<void>

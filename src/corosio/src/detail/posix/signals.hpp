@@ -32,6 +32,32 @@
 
 #include <signal.h>
 
+/*
+    POSIX Signal Implementation - Header
+    =====================================
+
+    This header declares the internal types for POSIX signal handling.
+    See signals.cpp for the full implementation overview.
+
+    Data Structure Summary:
+
+    signal_op           - Pending async_wait operation, posted to scheduler on signal
+    signal_registration - Links a signal to its owning signal_set; tracks queued signals
+    posix_signal_impl   - Per-signal_set state (derives from signal_set::signal_set_impl)
+    posix_signals       - Per-execution_context service managing all signal_sets
+
+    Pointer Relationships:
+
+    signal_registration has two linked list memberships:
+      - next_in_set: Singly-linked list of all signals in one signal_set (sorted)
+      - prev/next_in_table: Doubly-linked list of all registrations for one signal
+        number across all signal_sets in one execution_context
+
+    This dual-linking allows efficient:
+      - Per-set iteration (add/remove/clear operations)
+      - Per-signal iteration (signal delivery to all waiting sets)
+*/
+
 namespace boost {
 namespace corosio {
 namespace detail {
@@ -65,6 +91,7 @@ struct signal_op : scheduler_op
 struct signal_registration
 {
     int signal_number = 0;
+    signal_set::flags_t flags = signal_set::none;
     posix_signal_impl* owner = nullptr;
     std::size_t undelivered = 0;
     signal_registration* next_in_table = nullptr;
@@ -104,7 +131,7 @@ public:
         system::error_code*,
         int*) override;
 
-    system::result<void> add(int signal_number) override;
+    system::result<void> add(int signal_number, signal_set::flags_t flags) override;
     system::result<void> remove(int signal_number) override;
     system::result<void> clear() override;
     void cancel() override;
@@ -155,11 +182,13 @@ public:
 
         @param impl The signal implementation to modify.
         @param signal_number The signal to register.
+        @param flags The flags to apply when registering the signal.
         @return Success, or an error.
     */
     system::result<void> add_signal(
         posix_signal_impl& impl,
-        int signal_number);
+        int signal_number,
+        signal_set::flags_t flags);
 
     /** Remove a signal from a signal set.
 

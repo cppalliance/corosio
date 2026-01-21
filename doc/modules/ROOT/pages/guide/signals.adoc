@@ -100,15 +100,74 @@ Add a signal to the set:
 [source,cpp]
 ----
 signals.add(SIGUSR1);
-
-// With error code
-boost::system::error_code ec;
-signals.add(SIGUSR1, ec);
-if (ec)
-    std::cerr << "Failed to add signal: " << ec.message() << "\n";
 ----
 
 Adding a signal that's already in the set has no effect.
+
+==== Signal Flags (POSIX)
+
+On POSIX systems, you can specify signal flags when adding a signal:
+
+[source,cpp]
+----
+using flags = corosio::signal_set;
+
+// Restart interrupted system calls automatically
+signals.add(SIGCHLD, flags::restart);
+
+// Multiple flags can be combined
+signals.add(SIGCHLD, flags::restart | flags::no_child_stop);
+----
+
+Available flags:
+
+[cols="1,2"]
+|===
+| Flag | Description
+
+| `none`
+| No special flags (default)
+
+| `restart`
+| Automatically restart interrupted system calls (SA_RESTART)
+
+| `no_child_stop`
+| Don't generate SIGCHLD when children stop (SA_NOCLDSTOP)
+
+| `no_child_wait`
+| Don't create zombie processes on child termination (SA_NOCLDWAIT)
+
+| `no_defer`
+| Don't block the signal while its handler runs (SA_NODEFER)
+
+| `reset_handler`
+| Reset handler to SIG_DFL after one invocation (SA_RESETHAND)
+
+| `dont_care`
+| Accept existing flags if signal is already registered
+|===
+
+NOTE: On Windows, only `none` and `dont_care` flags are supported. On some POSIX
+systems, `no_child_wait` may not be available. Using unsupported flags returns
+`operation_not_supported`.
+
+==== Flag Compatibility
+
+When multiple `signal_set` objects register for the same signal, they must use
+compatible flags:
+
+[source,cpp]
+----
+corosio::signal_set s1(ioc);
+corosio::signal_set s2(ioc);
+
+s1.add(SIGINT, flags::restart);      // OK - first registration
+s2.add(SIGINT, flags::restart);      // OK - same flags
+s2.add(SIGINT, flags::no_defer);     // Error! - different flags
+
+// Use dont_care to accept existing flags
+s2.add(SIGINT, flags::dont_care);    // OK - accepts existing flags
+----
 
 === remove()
 
@@ -253,6 +312,32 @@ capy::task<void> config_reloader(
 }
 ----
 
+=== Child Process Management (POSIX)
+
+[source,cpp]
+----
+capy::task<void> child_reaper(corosio::io_context& ioc)
+{
+    using flags = corosio::signal_set;
+
+    corosio::signal_set signals(ioc);
+
+    // Only notify on child termination, not stop/continue
+    // Prevent zombie processes automatically
+    signals.add(SIGCHLD, flags::no_child_stop | flags::no_child_wait);
+
+    for (;;)
+    {
+        auto [ec, signum] = co_await signals.async_wait();
+        if (ec)
+            break;
+
+        // With no_child_wait, children are reaped automatically
+        std::cout << "Child process terminated\n";
+    }
+}
+----
+
 == Move Semantics
 
 Signal sets are move-only:
@@ -323,12 +408,19 @@ capy::task<void> run_server(corosio::io_context& ioc)
 === Windows
 
 Windows has limited signal support. The library uses `signal()` from the
-C runtime for compatibility.
+C runtime for compatibility. Only `none` and `dont_care` flags are supported;
+other flags return `operation_not_supported`.
 
 === POSIX
 
-On POSIX systems, signals are handled using platform-native mechanisms
-for reliable delivery.
+On POSIX systems, signals are handled using `sigaction()` which provides:
+
+* Reliable signal delivery (handler doesn't reset to SIG_DFL)
+* Support for signal flags (SA_RESTART, SA_NOCLDSTOP, etc.)
+* Proper signal masking during handler execution
+
+The `restart` flag is particularly useful—without it, blocking calls like
+`read()` can fail with `EINTR` when a signal arrives.
 
 == Next Steps
 
