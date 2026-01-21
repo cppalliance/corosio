@@ -32,6 +32,29 @@
 
 #include <signal.h>
 
+/*
+    Windows Signal Implementation - Header
+    ======================================
+
+    This header declares the internal types for Windows signal handling.
+    See signals.cpp for the full implementation overview.
+
+    Key Differences from POSIX:
+      - Uses C runtime signal() instead of sigaction() (Windows has no sigaction)
+      - Only `none` and `dont_care` flags are supported; other flags return
+        `operation_not_supported` (Windows has no equivalent to SA_* flags)
+      - Windows resets handler to SIG_DFL after each signal, so we must re-register
+      - Only supports: SIGINT, SIGTERM, SIGABRT, SIGFPE, SIGILL, SIGSEGV
+      - max_signal_number is 32 (vs 64 on Linux)
+
+    The data structures mirror the POSIX implementation for consistency:
+      - signal_op, signal_registration, win_signal_impl, win_signals
+
+    Threading note: Windows signal handling is synchronous (runs on faulting
+    thread), so we can safely acquire locks in the signal handler. This differs
+    from POSIX where the handler must be async-signal-safe.
+*/
+
 namespace boost {
 namespace corosio {
 namespace detail {
@@ -105,7 +128,7 @@ public:
         system::error_code*,
         int*) override;
 
-    system::result<void> add(int signal_number) override;
+    system::result<void> add(int signal_number, signal_set::flags_t flags) override;
     system::result<void> remove(int signal_number) override;
     system::result<void> clear() override;
     void cancel() override;
@@ -158,11 +181,13 @@ public:
 
         @param impl The signal implementation to modify.
         @param signal_number The signal to register.
+        @param flags The flags to apply (ignored on Windows).
         @return Success, or an error.
     */
     system::result<void> add_signal(
         win_signal_impl& impl,
-        int signal_number);
+        int signal_number,
+        signal_set::flags_t flags);
 
     /** Remove a signal from a signal set.
 

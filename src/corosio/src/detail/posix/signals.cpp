@@ -20,6 +20,103 @@
 
 #include <signal.h>
 
+/*
+    POSIX Signal Implementation
+    ===========================
+
+    This file implements signal handling for POSIX systems using sigaction().
+    The implementation supports signal flags (SA_RESTART, etc.) and integrates
+    with the epoll-based scheduler.
+
+    Architecture Overview
+    ---------------------
+
+    Three layers manage signal registrations:
+
+    1. signal_state (global singleton)
+       - Tracks the global service list and per-signal registration counts
+       - Stores the flags used for first registration of each signal (for
+         conflict detection when multiple signal_sets register same signal)
+       - Owns the mutex that protects signal handler installation/removal
+
+    2. posix_signals (one per execution_context)
+       - Maintains registrations_[] table indexed by signal number
+       - Each slot is a doubly-linked list of signal_registrations for that signal
+       - Also maintains impl_list_ of all posix_signal_impl objects it owns
+
+    3. posix_signal_impl (one per signal_set)
+       - Owns a singly-linked list (sorted by signal number) of signal_registrations
+       - Contains the pending_op_ used for async_wait operations
+
+    Signal Delivery Flow
+    --------------------
+
+    1. Signal arrives -> corosio_posix_signal_handler() (must be async-signal-safe)
+       -> deliver_signal()
+
+    2. deliver_signal() iterates all posix_signals services:
+       - If a signal_set is waiting (impl->waiting_ == true), post the signal_op
+         to the scheduler for immediate completion
+       - Otherwise, increment reg->undelivered to queue the signal
+
+    3. When async_wait() is called via start_wait():
+       - First check for queued signals (undelivered > 0); if found, post
+         immediate completion without blocking
+       - Otherwise, set waiting_ = true and call on_work_started() to keep
+         the io_context alive
+
+    Locking Protocol
+    ----------------
+
+    Two mutex levels exist (MUST acquire in this order to avoid deadlock):
+      1. signal_state::mutex - protects handler registration and service list
+      2. posix_signals::mutex_ - protects per-service registration tables
+
+    Async-Signal-Safety Limitation
+    ------------------------------
+
+    IMPORTANT: deliver_signal() is called from signal handler context and
+    acquires mutexes. This is NOT strictly async-signal-safe per POSIX.
+    The limitation:
+      - If a signal arrives while another thread holds state->mutex or
+        service->mutex_, and that same thread receives the signal, a
+        deadlock can occur (self-deadlock on non-recursive mutex).
+
+    This design trades strict async-signal-safety for implementation simplicity.
+    In practice, deadlocks are rare because:
+      - Mutexes are held only briefly during registration changes
+      - Most programs don't modify signal sets while signals are expected
+      - The window for signal arrival during mutex hold is small
+
+    A fully async-signal-safe implementation would require lock-free data
+    structures and atomic operations throughout, significantly increasing
+    complexity.
+
+    Flag Handling
+    -------------
+
+    - Flags are abstract values in the public API (signal_set::flags_t)
+    - flags_supported() validates that requested flags are available on
+      this platform; returns false if SA_NOCLDWAIT is unavailable and
+      no_child_wait is requested
+    - to_sigaction_flags() maps validated flags to actual SA_* constants
+    - First registration of a signal establishes the flags; subsequent
+      registrations must be compatible (same flags or dont_care)
+    - Requesting unavailable flags returns operation_not_supported
+
+    Work Tracking
+    -------------
+
+    When waiting for a signal:
+      - start_wait() calls sched_.on_work_started() to prevent io_context::run()
+        from returning while we wait
+      - signal_op::svc is set to point to the service
+      - signal_op::operator()() calls work_finished() after resuming the coroutine
+
+    If a signal was already queued (undelivered > 0), no work tracking is needed
+    because completion is posted immediately.
+*/
+
 namespace boost {
 namespace corosio {
 namespace detail {
@@ -37,6 +134,7 @@ struct signal_state
     std::mutex mutex;
     posix_signals* service_list = nullptr;
     std::size_t registration_count[max_signal_number] = {};
+    signal_set::flags_t registered_flags[max_signal_number] = {};
 };
 
 signal_state* get_signal_state()
@@ -45,13 +143,58 @@ signal_state* get_signal_state()
     return &state;
 }
 
+// Check if requested flags are supported on this platform.
+// Returns true if all flags are supported, false otherwise.
+bool flags_supported(signal_set::flags_t flags)
+{
+#ifndef SA_NOCLDWAIT
+    if (flags & signal_set::no_child_wait)
+        return false;
+#endif
+    return true;
+}
+
+// Map abstract flags to sigaction() flags.
+// Caller must ensure flags_supported() returns true first.
+int to_sigaction_flags(signal_set::flags_t flags)
+{
+    int sa_flags = 0;
+    if (flags & signal_set::restart)
+        sa_flags |= SA_RESTART;
+    if (flags & signal_set::no_child_stop)
+        sa_flags |= SA_NOCLDSTOP;
+#ifdef SA_NOCLDWAIT
+    if (flags & signal_set::no_child_wait)
+        sa_flags |= SA_NOCLDWAIT;
+#endif
+    if (flags & signal_set::no_defer)
+        sa_flags |= SA_NODEFER;
+    if (flags & signal_set::reset_handler)
+        sa_flags |= SA_RESETHAND;
+    return sa_flags;
+}
+
+// Check if two flag values are compatible
+bool flags_compatible(
+    signal_set::flags_t existing,
+    signal_set::flags_t requested)
+{
+    // dont_care is always compatible
+    if ((existing & signal_set::dont_care) ||
+        (requested & signal_set::dont_care))
+        return true;
+
+    // Mask out dont_care bit for comparison
+    constexpr auto mask = ~signal_set::dont_care;
+    return (existing & mask) == (requested & mask);
+}
+
 // C signal handler - must be async-signal-safe
 extern "C" void corosio_posix_signal_handler(int signal_number)
 {
     posix_signals::deliver_signal(signal_number);
-
-    // Re-register handler (some systems reset to SIG_DFL after each signal)
-    ::signal(signal_number, corosio_posix_signal_handler);
+    // Note: With sigaction(), the handler persists automatically
+    // (unlike some signal() implementations that reset to SIG_DFL)
 }
 
 } // namespace
@@ -140,9 +283,9 @@ wait(
 
 system::result<void>
 posix_signal_impl::
-add(int signal_number)
+add(int signal_number, signal_set::flags_t flags)
 {
-    return svc_.add_signal(*this, signal_number);
+    return svc_.add_signal(*this, signal_number, flags);
 }
 
 system::result<void>
@@ -238,10 +381,16 @@ system::result<void>
 posix_signals::
 add_signal(
     posix_signal_impl& impl,
-    int signal_number)
+    int signal_number,
+    signal_set::flags_t flags)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
         return make_error_code(system::errc::invalid_argument);
+
+    // Validate that requested flags are supported on this platform
+    // (e.g., SA_NOCLDWAIT may not be available on all POSIX systems)
+    if (!flags_supported(flags))
+        return make_error_code(system::errc::operation_not_supported);
 
     signal_state* state = get_signal_state();
     std::lock_guard state_lock(state->mutex);
@@ -256,22 +405,45 @@ add_signal(
         reg = reg->next_in_set;
     }
 
+    // Already registered in this set - check flag compatibility
+    // (same signal_set adding same signal twice with different flags)
     if (reg && reg->signal_number == signal_number)
+    {
+        if (!flags_compatible(reg->flags, flags))
+            return make_error_code(system::errc::invalid_argument);
         return {};
+    }
+
+    // Check flag compatibility with global registration
+    // (different signal_set already registered this signal with different flags)
+    if (state->registration_count[signal_number] > 0)
+    {
+        if (!flags_compatible(state->registered_flags[signal_number], flags))
+            return make_error_code(system::errc::invalid_argument);
+    }
 
     auto* new_reg = new signal_registration;
     new_reg->signal_number = signal_number;
+    new_reg->flags = flags;
     new_reg->owner = &impl;
     new_reg->undelivered = 0;
 
     // Install signal handler on first global registration
     if (state->registration_count[signal_number] == 0)
     {
-        if (::signal(signal_number, corosio_posix_signal_handler) == SIG_ERR)
+        struct sigaction sa = {};
+        sa.sa_handler = corosio_posix_signal_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = to_sigaction_flags(flags);
+
+        if (::sigaction(signal_number, &sa, nullptr) < 0)
         {
             delete new_reg;
             return make_error_code(system::errc::invalid_argument);
         }
+
+        // Store the flags used for first registration
+        state->registered_flags[signal_number] = flags;
     }
 
     new_reg->next_in_set = reg;
@@ -316,8 +488,16 @@ remove_signal(
     // Restore default handler on last global unregistration
     if (state->registration_count[signal_number] == 1)
     {
-        if (::signal(signal_number, SIG_DFL) == SIG_ERR)
+        struct sigaction sa = {};
+        sa.sa_handler = SIG_DFL;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+
+        if (::sigaction(signal_number, &sa, nullptr) < 0)
             return make_error_code(system::errc::invalid_argument);
+
+        // Clear stored flags
+        state->registered_flags[signal_number] = signal_set::none;
     }
 
     *deletion_point = reg->next_in_set;
@@ -352,8 +532,16 @@ clear_signals(posix_signal_impl& impl)
 
         if (state->registration_count[signal_number] == 1)
         {
-            if (::signal(signal_number, SIG_DFL) == SIG_ERR && !first_error)
+            struct sigaction sa = {};
+            sa.sa_handler = SIG_DFL;
+            sigemptyset(&sa.sa_mask);
+            sa.sa_flags = 0;
+
+            if (::sigaction(signal_number, &sa, nullptr) < 0 && !first_error)
                 first_error = make_error_code(system::errc::invalid_argument);
+
+            // Clear stored flags
+            state->registered_flags[signal_number] = signal_set::none;
         }
 
         impl.signals_ = reg->next_in_set;
@@ -411,6 +599,7 @@ start_wait(posix_signal_impl& impl, signal_op* op)
     {
         std::lock_guard lock(mutex_);
 
+        // Check for queued signals first (signal arrived before wait started)
         signal_registration* reg = impl.signals_;
         while (reg)
         {
@@ -418,6 +607,7 @@ start_wait(posix_signal_impl& impl, signal_op* op)
             {
                 --reg->undelivered;
                 op->signal_number = reg->signal_number;
+                // svc=nullptr: no work_finished needed since we never called work_started
                 op->svc = nullptr;
                 sched_.post(op);
                 return;
@@ -425,9 +615,9 @@ start_wait(posix_signal_impl& impl, signal_op* op)
             reg = reg->next_in_set;
         }
 
-        // No queued signals - wait for delivery.
-        // svc is set so signal_op::operator() calls work_finished().
+        // No queued signals - wait for delivery
         impl.waiting_ = true;
+        // svc=this: signal_op::operator() will call work_finished() to balance this
         op->svc = this;
         sched_.on_work_started();
     }
@@ -576,9 +766,9 @@ operator=(signal_set&& other)
 
 system::result<void>
 signal_set::
-add(int signal_number)
+add(int signal_number, flags_t flags)
 {
-    return get().add(signal_number);
+    return get().add(signal_number, flags);
 }
 
 system::result<void>

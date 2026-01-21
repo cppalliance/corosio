@@ -541,6 +541,220 @@ struct signal_set_test
         BOOST_TEST_EQ(captured_signal, SIGINT);
     }
 
+    //--------------------------------------------
+    // Signal flags tests (cross-platform)
+    //--------------------------------------------
+
+    void
+    testFlagsBitwiseOperations()
+    {
+        // Test OR
+        auto combined = signal_set::restart | signal_set::no_defer;
+        BOOST_TEST((combined & signal_set::restart) != signal_set::none);
+        BOOST_TEST((combined & signal_set::no_defer) != signal_set::none);
+        BOOST_TEST((combined & signal_set::no_child_stop) == signal_set::none);
+
+        // Test compound assignment
+        auto flags = signal_set::none;
+        flags |= signal_set::restart;
+        BOOST_TEST((flags & signal_set::restart) != signal_set::none);
+
+        // Test NOT
+        auto all_but_restart = ~signal_set::restart;
+        BOOST_TEST((all_but_restart & signal_set::restart) == signal_set::none);
+    }
+
+    void
+    testAddWithNoneFlags()
+    {
+        io_context ioc;
+        signal_set s(ioc);
+
+        // Add signal with none (default behavior) - works on all platforms
+        auto result = s.add(SIGINT, signal_set::none);
+        BOOST_TEST(result.has_value());
+    }
+
+    void
+    testAddWithDontCareFlags()
+    {
+        io_context ioc;
+        signal_set s(ioc);
+
+        // Add signal with dont_care - works on all platforms
+        auto result = s.add(SIGINT, signal_set::dont_care);
+        BOOST_TEST(result.has_value());
+    }
+
+#if !defined(_WIN32)
+    //--------------------------------------------
+    // Signal flags tests (POSIX only)
+    // Windows returns operation_not_supported for
+    // flags other than none/dont_care
+    //--------------------------------------------
+
+    void
+    testAddWithFlags()
+    {
+        io_context ioc;
+        signal_set s(ioc);
+
+        // Add signal with restart flag
+        auto result = s.add(SIGINT, signal_set::restart);
+        BOOST_TEST(result.has_value());
+    }
+
+    void
+    testAddWithMultipleFlags()
+    {
+        io_context ioc;
+        signal_set s(ioc);
+
+        // Add signal with combined flags
+        auto result = s.add(SIGINT, signal_set::restart | signal_set::no_defer);
+        BOOST_TEST(result.has_value());
+    }
+
+    void
+    testAddSameSignalSameFlags()
+    {
+        io_context ioc;
+        signal_set s(ioc);
+
+        // Add signal twice with same flags (should be no-op)
+        BOOST_TEST(s.add(SIGINT, signal_set::restart).has_value());
+        BOOST_TEST(s.add(SIGINT, signal_set::restart).has_value());
+    }
+
+    void
+    testAddSameSignalDifferentFlags()
+    {
+        io_context ioc;
+        signal_set s(ioc);
+
+        // Add signal with one flag, then try to add with different flag
+        BOOST_TEST(s.add(SIGINT, signal_set::restart).has_value());
+        auto result = s.add(SIGINT, signal_set::no_defer);
+        BOOST_TEST(result.has_error());  // Should fail due to flag mismatch
+    }
+
+    void
+    testAddSameSignalWithDontCare()
+    {
+        io_context ioc;
+        signal_set s(ioc);
+
+        // Add signal with specific flags, then add with dont_care
+        BOOST_TEST(s.add(SIGINT, signal_set::restart).has_value());
+        auto result = s.add(SIGINT, signal_set::dont_care);
+        BOOST_TEST(result.has_value());  // Should succeed with dont_care
+    }
+
+    void
+    testAddSameSignalDontCareFirst()
+    {
+        io_context ioc;
+        signal_set s(ioc);
+
+        // Add signal with dont_care, then add with specific flags
+        BOOST_TEST(s.add(SIGINT, signal_set::dont_care).has_value());
+        auto result = s.add(SIGINT, signal_set::restart);
+        BOOST_TEST(result.has_value());  // Should succeed
+    }
+
+    void
+    testMultipleSetsCompatibleFlags()
+    {
+        io_context ioc;
+        signal_set s1(ioc);
+        signal_set s2(ioc);
+
+        // Both sets add same signal with same flags
+        BOOST_TEST(s1.add(SIGINT, signal_set::restart).has_value());
+        BOOST_TEST(s2.add(SIGINT, signal_set::restart).has_value());
+    }
+
+    void
+    testMultipleSetsIncompatibleFlags()
+    {
+        io_context ioc;
+        signal_set s1(ioc);
+        signal_set s2(ioc);
+
+        // First set adds with one flag
+        BOOST_TEST(s1.add(SIGINT, signal_set::restart).has_value());
+        // Second set tries to add with different flag
+        auto result = s2.add(SIGINT, signal_set::no_defer);
+        BOOST_TEST(result.has_error());  // Should fail
+    }
+
+    void
+    testMultipleSetsWithDontCare()
+    {
+        io_context ioc;
+        signal_set s1(ioc);
+        signal_set s2(ioc);
+
+        // First set adds with specific flags
+        BOOST_TEST(s1.add(SIGINT, signal_set::restart).has_value());
+        // Second set adds with dont_care
+        BOOST_TEST(s2.add(SIGINT, signal_set::dont_care).has_value());
+    }
+
+    void
+    testWaitWithFlagsWorks()
+    {
+        io_context ioc;
+        signal_set s(ioc);
+        timer t(ioc);
+
+        // Add signal with restart flag and verify wait still works
+        BOOST_TEST(s.add(SIGINT, signal_set::restart).has_value());
+
+        bool completed = false;
+        int received_signal = 0;
+
+        auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
+        {
+            auto [ec, signum] = co_await s_ref.async_wait();
+            sig_out = signum;
+            done_out = true;
+            (void)ec;
+        };
+        capy::run_async(ioc.get_executor())(wait_task(s, received_signal, completed));
+
+        t.expires_after(std::chrono::milliseconds(10));
+        auto raise_task = [](timer& t_ref) -> capy::task<>
+        {
+            co_await t_ref.wait();
+            std::raise(SIGINT);
+        };
+        capy::run_async(ioc.get_executor())(raise_task(t));
+
+        ioc.run();
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(received_signal, SIGINT);
+    }
+
+#else // _WIN32
+    //--------------------------------------------
+    // Signal flags tests (Windows only)
+    //--------------------------------------------
+
+    void
+    testFlagsNotSupportedOnWindows()
+    {
+        io_context ioc;
+        signal_set s(ioc);
+
+        // Windows returns operation_not_supported for actual flags
+        auto result = s.add(SIGINT, signal_set::restart);
+        BOOST_TEST(result.has_error());
+        BOOST_TEST(result.error() == system::errc::operation_not_supported);
+    }
+
+#endif // _WIN32
+
     void
     run()
     {
@@ -585,6 +799,28 @@ struct signal_set_test
         testIoResultSuccess();
         testIoResultCanceled();
         testIoResultStructuredBinding();
+
+        // Signal flags tests (cross-platform)
+        testFlagsBitwiseOperations();
+        testAddWithNoneFlags();
+        testAddWithDontCareFlags();
+
+#if !defined(_WIN32)
+        // Signal flags tests (POSIX only)
+        testAddWithFlags();
+        testAddWithMultipleFlags();
+        testAddSameSignalSameFlags();
+        testAddSameSignalDifferentFlags();
+        testAddSameSignalWithDontCare();
+        testAddSameSignalDontCareFirst();
+        testMultipleSetsCompatibleFlags();
+        testMultipleSetsIncompatibleFlags();
+        testMultipleSetsWithDontCare();
+        testWaitWithFlagsWorks();
+#else
+        // Signal flags tests (Windows only)
+        testFlagsNotSupportedOnWindows();
+#endif
     }
 };
 
