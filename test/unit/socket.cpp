@@ -679,7 +679,95 @@ struct socket_test
         s2.close();
     }
 
-    // Data Integrity
+    /**
+     * @brief Verifies that shutting down the send direction delivers remaining data and then produces EOF on the peer.
+     *
+     * @details Creates a socket pair, sends a short payload from one peer, calls shutdown on the sender's send direction,
+     * then confirms the receiver reads the payload and that a subsequent read completes with EOF.
+     */
+
+    void
+    testShutdownSend()
+    {
+        io_context ioc;
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        auto task = [](socket& a, socket& b) -> capy::task<>
+        {
+            // Write data then shutdown send
+            co_await a.write_some(capy::const_buffer("hello", 5));
+            a.shutdown(socket::shutdown_send);
+
+            // Read the data
+            char buf[32] = {};
+            auto [ec1, n1] = co_await b.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(!ec1);
+            BOOST_TEST_EQ(std::string_view(buf, n1), "hello");
+
+            // Next read should get EOF
+            auto [ec2, n2] = co_await b.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(ec2 == capy::cond::eof);
+        };
+        capy::run_async(ioc.get_executor())(task(s1, s2));
+
+        ioc.run();
+        s1.close();
+        s2.close();
+    }
+
+    /**
+     * @brief Verifies that shutting down the receive direction does not prevent the peer from sending.
+     *
+     * Creates a socket pair, performs a receive-direction shutdown on one endpoint, sends data
+     * from that endpoint, and asserts the peer receives the sent data without error.
+     */
+    void
+    testShutdownReceive()
+    {
+        io_context ioc;
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        auto task = [](socket& a, socket& b) -> capy::task<>
+        {
+            // Shutdown receive on b
+            b.shutdown(socket::shutdown_receive);
+
+            // b can still send
+            co_await b.write_some(capy::const_buffer("from_b", 6));
+
+            char buf[32] = {};
+            auto [ec, n] = co_await a.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(std::string_view(buf, n), "from_b");
+        };
+        capy::run_async(ioc.get_executor())(task(s1, s2));
+
+        ioc.run();
+        s1.close();
+        s2.close();
+    }
+
+    void
+    testShutdownOnClosedSocket()
+    {
+        io_context ioc;
+        socket sock(ioc);
+
+        // Shutdown on closed socket should not crash
+        sock.shutdown(socket::shutdown_send);
+        sock.shutdown(socket::shutdown_receive);
+        sock.shutdown(socket::shutdown_both);
+    }
+
+    /**
+     * @brief Verifies that a 128 KB payload can be transmitted end-to-end between two connected sockets.
+     *
+     * Creates a socket pair, sends a 128 KiB patterned buffer from one endpoint to the other,
+     * and asserts the receiver obtains the exact same bytes. Closes both sockets after completion.
+     */
 
     void
     testLargeTransfer()
@@ -746,6 +834,14 @@ struct socket_test
         s2.close();
     }
 
+    /**
+     * @brief Executes the complete socket_test suite in a defined order.
+     *
+     * Runs all socket_test cases covering construction and move semantics; basic
+     * I/O operations; buffer-size variations; EOF and peer-closure behaviour;
+     * shutdown semantics; cancellation and close-while-reading scenarios;
+     * composed read/write operations; and data-integrity checks.
+     */
     void
     run()
     {
@@ -769,6 +865,11 @@ struct socket_test
         // EOF and closure
         testReadAfterPeerClose();
         testWriteAfterPeerClose();
+
+        // Shutdown
+        testShutdownSend();
+        testShutdownReceive();
+        testShutdownOnClosedSocket();
 
         // Cancellation
         testCancelRead();

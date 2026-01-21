@@ -46,12 +46,22 @@ socket(
 {
 }
 
+/**
+ * @brief Ensure the socket has an underlying implementation and open the native socket handle.
+ *
+ * Creates and stores the backend-specific socket implementation from the execution context
+ * and opens the associated native socket handle. If the socket is already open, the call
+ * returns immediately.
+ *
+ * @throws std::system_error If the underlying service fails to open the native socket; the
+ *         implementation is released before the exception is thrown.
+ */
 void
 socket::
 open()
 {
     if (impl_)
-        return; // Already open
+        return;
 
     auto& svc = ctx_->use_service<socket_service>();
     auto& wrapper = svc.create_impl();
@@ -70,18 +80,34 @@ open()
     }
 }
 
+/**
+ * @brief Releases the underlying socket implementation and resets the socket state.
+ *
+ * If the socket is not open, the call has no effect. Otherwise this releases the
+ * held implementation (closing the underlying resource) and clears the internal
+ * implementation pointer.
+ */
 void
 socket::
 close()
 {
     if (!impl_)
-        return; // Already closed
+        return;
 
     auto* wrapper = static_cast<socket_impl_type*>(impl_);
     wrapper->release();
     impl_ = nullptr;
 }
 
+/**
+ * @brief Cancel all outstanding asynchronous operations on the socket.
+ *
+ * Requires that the socket implementation has been created (socket is open).
+ * After calling this, any pending asynchronous I/O initiated on the underlying
+ * socket will be requested to cancel.
+ *
+ * @pre impl_ must be non-null (socket must be open).
+ */
 void
 socket::
 cancel()
@@ -92,6 +118,22 @@ cancel()
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)
     static_cast<socket_impl_type*>(impl_)->cancel();
 #endif
+}
+
+/**
+ * @brief Shuts down one or both directions of the underlying socket.
+ *
+ * If the socket has an active implementation, delegates the shutdown request
+ * to that implementation; otherwise the call is a no-op.
+ *
+ * @param what Specifies which direction(s) to shut down (for example: read, write, or both).
+ */
+void
+socket::
+shutdown(shutdown_type what)
+{
+    if (impl_)
+        get().shutdown(what);
 }
 
 } // namespace corosio

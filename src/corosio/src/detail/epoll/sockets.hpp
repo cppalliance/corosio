@@ -137,8 +137,41 @@ public:
         system::error_code*,
         std::size_t*) override;
 
-    int native_handle() const noexcept { return fd_; }
-    bool is_open() const noexcept { return fd_ >= 0; }
+    /**
+     * @brief Shut down one or both directions of the underlying socket.
+     *
+     * @param what Specifies which direction to shut down:
+     *             `socket::shutdown_receive` → receive (SHUT_RD),
+     *             `socket::shutdown_send`    → send (SHUT_WR),
+     *             `socket::shutdown_both`    → both (SHUT_RDWR).
+     * @return system::error_code Empty error code on success, otherwise an error code constructed from `errno` describing the failure.
+     */
+    system::error_code shutdown(socket::shutdown_type what) noexcept override
+    {
+        int how;
+        switch (what)
+        {
+        case socket::shutdown_receive: how = SHUT_RD;   break;
+        case socket::shutdown_send:    how = SHUT_WR;   break;
+        case socket::shutdown_both:    how = SHUT_RDWR; break;
+        }
+        if (::shutdown(fd_, how) != 0)
+            return make_err(errno);
+        return {};
+    }
+
+    /**
+ * @brief Retrieve the underlying native file descriptor for this socket.
+ *
+ * @return int The native file descriptor, or -1 if the socket is not open.
+ */
+int native_handle() const noexcept { return fd_; }
+    /**
+ * @brief Checks whether the underlying socket file descriptor is valid/open.
+ *
+ * @return `true` if the socket is open (file descriptor is greater than or equal to 0), `false` otherwise.
+ */
+bool is_open() const noexcept { return fd_ >= 0; }
     void cancel() noexcept;
     void close_socket() noexcept;
     void set_socket(int fd) noexcept { fd_ = fd; }

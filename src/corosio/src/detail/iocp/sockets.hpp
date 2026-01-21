@@ -214,6 +214,19 @@ public:
         internal_->read_some(h, d, buf, token, ec, bytes);
     }
 
+    /**
+     * @brief Initiates an asynchronous write operation using the socket's internal state.
+     *
+     * Starts or schedules a write of the provided buffer sequence and will resume the
+     * awaiting coroutine when the operation completes or is cancelled.
+     *
+     * @param h Coroutine handle to resume on completion.
+     * @param d Executor used to perform the operation.
+     * @param buf Mutable buffer sequence containing data to write.
+     * @param token Stop token that can request cancellation of the operation.
+     * @param ec Pointer to receive the resulting error code on completion (may be null).
+     * @param bytes Pointer to receive the number of bytes written on completion (may be null).
+     */
     void write_some(
         std::coroutine_handle<> h,
         capy::any_executor_ref d,
@@ -225,7 +238,32 @@ public:
         internal_->write_some(h, d, buf, token, ec, bytes);
     }
 
-    win_socket_impl_internal* get_internal() const noexcept { return internal_.get(); }
+    /**
+     * @brief Shuts down parts of the underlying socket according to the specified shutdown type.
+     *
+     * @param what Specifies which direction of the connection to disable: receive, send, or both.
+     * @return system::error_code `{}` on success; otherwise an error code representing the WinSock error (from WSAGetLastError).
+     */
+    system::error_code shutdown(socket::shutdown_type what) noexcept override
+    {
+        int how;
+        switch (what)
+        {
+        case socket::shutdown_receive: how = SD_RECEIVE; break;
+        case socket::shutdown_send:    how = SD_SEND;    break;
+        case socket::shutdown_both:    how = SD_BOTH;    break;
+        }
+        if (::shutdown(internal_->native_handle(), how) != 0)
+            return make_err(WSAGetLastError());
+        return {};
+    }
+
+    /**
+ * @brief Access the underlying internal socket implementation.
+ *
+ * @return win_socket_impl_internal* Pointer to the internal win_socket_impl_internal, or `nullptr` if no internal instance is present.
+ */
+win_socket_impl_internal* get_internal() const noexcept { return internal_.get(); }
 };
 
 //------------------------------------------------------------------------------
