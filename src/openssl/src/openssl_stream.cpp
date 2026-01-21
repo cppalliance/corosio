@@ -303,7 +303,7 @@ struct openssl_stream_impl_
     do_read_some(
         buffer_array dest_bufs,
         std::size_t buf_count,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec_out,
         std::size_t* bytes_out,
         std::coroutine_handle<> continuation,
@@ -407,7 +407,7 @@ struct openssl_stream_impl_
     do_write_some(
         buffer_array src_bufs,
         std::size_t buf_count,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec_out,
         std::size_t* bytes_out,
         std::coroutine_handle<> continuation,
@@ -486,7 +486,7 @@ struct openssl_stream_impl_
     capy::task<>
     do_handshake(
         int type,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec_out,
         std::coroutine_handle<> continuation,
         capy::executor_ref d)
@@ -551,7 +551,7 @@ struct openssl_stream_impl_
 
     capy::task<>
     do_shutdown(
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec_out,
         std::coroutine_handle<> continuation,
         capy::executor_ref d)
@@ -650,7 +650,7 @@ struct openssl_stream_impl_
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param param,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec,
         std::size_t* bytes) override
     {
@@ -665,7 +665,7 @@ struct openssl_stream_impl_
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param param,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec,
         std::size_t* bytes) override
     {
@@ -680,7 +680,7 @@ struct openssl_stream_impl_
         std::coroutine_handle<> h,
         capy::executor_ref d,
         int type,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec) override
     {
         capy::run_async(d)(
@@ -690,7 +690,7 @@ struct openssl_stream_impl_
     void shutdown(
         std::coroutine_handle<> h,
         capy::executor_ref d,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec) override
     {
         capy::run_async(d)(

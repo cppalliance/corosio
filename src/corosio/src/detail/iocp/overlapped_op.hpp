@@ -27,7 +27,7 @@
 #include <atomic>
 #include <cstddef>
 #include <optional>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 
 #include "src/detail/iocp/windows.hpp"
 
@@ -130,7 +130,7 @@ struct overlapped_op
     {
     }
 
-    void start(std::stop_token token)
+    void start(capy::stop_token token)
     {
         cancelled.store(false, std::memory_order_release);
         stop_cb.reset();

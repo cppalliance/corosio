@@ -19,7 +19,7 @@
 
 #include <coroutine>
 #include <cstddef>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 
 namespace boost {
 namespace corosio {
@@ -33,7 +33,7 @@ public:
         operation completes when at least one byte has been read, or
         an error occurs.
 
-        The operation supports cancellation via `std::stop_token` through
+        The operation supports cancellation via `capy::stop_token` through
         the affine awaitable protocol. If the associated stop token is
         triggered, the operation completes immediately with
         `errc::operation_canceled`.
@@ -68,7 +68,7 @@ public:
         completes when at least one byte has been written, or an
         error occurs.
 
-        The operation supports cancellation via `std::stop_token` through
+        The operation supports cancellation via `capy::stop_token` through
         the affine awaitable protocol. If the associated stop token is
         triggered, the operation completes immediately with
         `errc::operation_canceled`.
@@ -100,7 +100,7 @@ protected:
     {
         io_stream& ios_;
         MutableBufferSequence buffers_;
-        std::stop_token token_;
+        capy::stop_token token_;
         mutable system::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
 
@@ -137,7 +137,7 @@ protected:
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             ios_.get().read_some(h, ex, buffers_, token_, &ec_, &bytes_transferred_);
@@ -150,7 +150,7 @@ protected:
     {
         io_stream& ios_;
         ConstBufferSequence buffers_;
-        std::stop_token token_;
+        capy::stop_token token_;
         mutable system::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
 
@@ -187,7 +187,7 @@ protected:
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             ios_.get().write_some(h, ex, buffers_, token_, &ec_, &bytes_transferred_);
@@ -202,7 +202,7 @@ public:
             std::coroutine_handle<>,
             capy::executor_ref,
             io_buffer_param,
-            std::stop_token,
+            capy::stop_token,
             system::error_code*,
             std::size_t*) = 0;
 
@@ -210,7 +210,7 @@ public:
             std::coroutine_handle<>,
             capy::executor_ref,
             io_buffer_param,
-            std::stop_token,
+            capy::stop_token,
             system::error_code*,
             std::size_t*) = 0;
     };

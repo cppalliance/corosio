@@ -62,7 +62,7 @@ public:
         std::string_view /*host*/,
         std::string_view /*service*/,
         resolve_flags /*flags*/,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*,
         resolver_results*) override
     {

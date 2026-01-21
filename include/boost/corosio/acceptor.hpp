@@ -28,7 +28,7 @@
 #include <coroutine>
 #include <cstddef>
 #include <memory>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 #include <type_traits>
 
 namespace boost {
@@ -68,7 +68,7 @@ class BOOST_COROSIO_DECL acceptor : public io_object
     {
         acceptor& acc_;
         socket& peer_;
-        std::stop_token token_;
+        capy::stop_token token_;
         mutable system::error_code ec_;
         mutable io_object::io_object_impl* peer_impl_ = nullptr;
 
@@ -111,7 +111,7 @@ class BOOST_COROSIO_DECL acceptor : public io_object
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             acc_.get().accept(h, ex, token_, &ec_, &peer_impl_);
@@ -225,7 +225,7 @@ public:
         socket with the new connection. The acceptor must be listening
         before calling this function.
 
-        The operation supports cancellation via `std::stop_token` through
+        The operation supports cancellation via `capy::stop_token` through
         the affine awaitable protocol. If the associated stop token is
         triggered, the operation completes immediately with
         `errc::operation_canceled`.
@@ -270,7 +270,7 @@ public:
         virtual void accept(
             std::coroutine_handle<>,
             capy::executor_ref,
-            std::stop_token,
+            capy::stop_token,
             system::error_code*,
             io_object_impl**) = 0;
     };

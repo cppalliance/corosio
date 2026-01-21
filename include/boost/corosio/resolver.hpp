@@ -26,7 +26,7 @@
 #include <concepts>
 #include <coroutine>
 #include <cstdint>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -144,7 +144,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
         std::string host_;
         std::string service_;
         resolve_flags flags_;
-        std::stop_token token_;
+        capy::stop_token token_;
         mutable system::error_code ec_;
         mutable resolver_results results_;
 
@@ -185,7 +185,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             r_.get().resolve(h, ex, host_, service_, flags_, token_, &ec_, &results_);
@@ -323,7 +323,7 @@ public:
             std::string_view host,
             std::string_view service,
             resolve_flags flags,
-            std::stop_token,
+            capy::stop_token,
             system::error_code*,
             resolver_results*) = 0;
     };

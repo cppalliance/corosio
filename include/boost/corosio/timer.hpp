@@ -23,7 +23,7 @@
 #include <chrono>
 #include <concepts>
 #include <coroutine>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 #include <type_traits>
 
 namespace boost {
@@ -48,7 +48,7 @@ class BOOST_COROSIO_DECL timer : public io_object
     struct wait_awaitable
     {
         timer& t_;
-        std::stop_token token_;
+        capy::stop_token token_;
         mutable system::error_code ec_;
 
         explicit wait_awaitable(timer& t) noexcept : t_(t) {}
@@ -78,7 +78,7 @@ class BOOST_COROSIO_DECL timer : public io_object
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             t_.get().wait(h, ex, token_, &ec_);
@@ -92,7 +92,7 @@ public:
         virtual void wait(
             std::coroutine_handle<>,
             capy::executor_ref,
-            std::stop_token,
+            capy::stop_token,
             system::error_code*) = 0;
     };
 
@@ -187,7 +187,7 @@ public:
 
     /** Wait for the timer to expire.
 
-        The operation supports cancellation via `std::stop_token` through
+        The operation supports cancellation via `capy::stop_token` through
         the affine awaitable protocol. If the associated stop token is
         triggered, the operation completes immediately with
         `capy::error::canceled`.

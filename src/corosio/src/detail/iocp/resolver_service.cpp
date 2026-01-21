@@ -196,7 +196,7 @@ resolve(
     std::string_view host,
     std::string_view service,
     resolve_flags flags,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec,
     resolver_results* out)
 {

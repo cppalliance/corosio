@@ -28,7 +28,7 @@
 #include <coroutine>
 #include <cstddef>
 #include <memory>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 #include <type_traits>
 
 namespace boost {
@@ -41,7 +41,7 @@ namespace corosio {
     protocol, ensuring coroutines resume on the correct executor.
 
     The socket must be opened before performing I/O operations. Operations
-    support cancellation through `std::stop_token` via the affine protocol,
+    support cancellation through `capy::stop_token` via the affine protocol,
     or explicitly through the `cancel()` member function.
 
     @par Thread Safety
@@ -88,7 +88,7 @@ public:
             std::coroutine_handle<>,
             capy::executor_ref,
             endpoint,
-            std::stop_token,
+            capy::stop_token,
             system::error_code*) = 0;
 
         virtual system::error_code shutdown(shutdown_type) noexcept = 0;
@@ -98,7 +98,7 @@ public:
     {
         socket& s_;
         endpoint endpoint_;
-        std::stop_token token_;
+        capy::stop_token token_;
         mutable system::error_code ec_;
 
         connect_awaitable(socket& s, endpoint ep) noexcept
@@ -132,7 +132,7 @@ public:
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             s_.get().connect(h, ex, endpoint_, token_, &ec_);
@@ -239,7 +239,7 @@ public:
         Connects the socket to the specified remote endpoint. The socket
         must be open before calling this function.
 
-        The operation supports cancellation via `std::stop_token` through
+        The operation supports cancellation via `capy::stop_token` through
         the affine awaitable protocol. If the associated stop token is
         triggered, the operation completes immediately with
         `errc::operation_canceled`.

@@ -20,7 +20,7 @@
 
 #include <coroutine>
 #include <cstddef>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 #include <type_traits>
 
 namespace boost {
@@ -32,7 +32,7 @@ namespace corosio {
     stream. Unlike `write_some()`, this function continues writing
     until the entire buffer sequence is written or an error occurs.
 
-    The operation supports cancellation via `std::stop_token` through
+    The operation supports cancellation via `capy::stop_token` through
     the affine awaitable protocol. If the associated stop token is
     triggered, the operation completes immediately with
     `errc::operation_canceled`.

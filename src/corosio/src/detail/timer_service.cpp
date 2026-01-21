@@ -45,7 +45,7 @@ struct timer_impl
     std::coroutine_handle<> h_;
     capy::executor_ref d_;
     system::error_code* ec_out_ = nullptr;
-    std::stop_token token_;
+    capy::stop_token token_;
     bool waiting_ = false;
 
     explicit timer_impl(timer_service_impl& svc) noexcept
@@ -58,7 +58,7 @@ struct timer_impl
     void wait(
         std::coroutine_handle<>,
         capy::executor_ref,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*) override;
 };
 
@@ -381,7 +381,7 @@ timer_impl::
 wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec)
 {
     // Check if timer already expired (not in heap anymore)

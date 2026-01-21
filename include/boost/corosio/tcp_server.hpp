@@ -97,7 +97,7 @@ private:
                     auto await_suspend(std::coroutine_handle<promise_type> h)
                     {
                         static_assert(capy::IoAwaitable<std::decay_t<Awaitable>, Ex>);
-                        return aw.await_suspend(h, *ex_ptr, std::stop_token{});
+                        return aw.await_suspend(h, *ex_ptr, capy::stop_token{});
                     }
                 };
                 return adapter{std::forward<Awaitable>(a), &ex};
@@ -145,7 +145,7 @@ private:
 
         template<typename Ex>
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, Ex const&, std::stop_token) noexcept
+        await_suspend(std::coroutine_handle<> h, Ex const&, capy::stop_token) noexcept
         {
             // Dispatch to server's executor before touching shared state
             return self_.ex_.dispatch(h);
@@ -168,7 +168,7 @@ private:
 
         template<typename Ex>
         bool
-        await_suspend(std::coroutine_handle<> h, Ex const&, std::stop_token) noexcept
+        await_suspend(std::coroutine_handle<> h, Ex const&, capy::stop_token) noexcept
         {
             wait_.h = h;
             wait_.w = nullptr;

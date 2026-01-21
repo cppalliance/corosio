@@ -32,7 +32,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -157,7 +157,7 @@ struct epoll_op : scheduler_op
         cancelled.store(true, std::memory_order_release);
     }
 
-    void start(std::stop_token token)
+    void start(capy::stop_token token)
     {
         cancelled.store(false, std::memory_order_release);
         stop_cb.reset();

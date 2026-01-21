@@ -346,7 +346,7 @@ connect(
     capy::coro h,
     capy::executor_ref d,
     endpoint ep,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec)
 {
     // Keep internal alive during I/O
@@ -419,7 +419,7 @@ read_some(
     capy::coro h,
     capy::executor_ref d,
     io_buffer_param param,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_out)
 {
@@ -493,7 +493,7 @@ write_some(
     capy::coro h,
     capy::executor_ref d,
     io_buffer_param param,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_out)
 {
@@ -928,7 +928,7 @@ win_acceptor_impl_internal::
 accept(
     capy::coro h,
     capy::executor_ref d,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec,
     io_object::io_object_impl** impl_out)
 {

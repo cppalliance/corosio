@@ -91,7 +91,7 @@ public:
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param buffers,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec,
         std::size_t* bytes_transferred) override;
 
@@ -99,7 +99,7 @@ public:
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param buffers,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec,
         std::size_t* bytes_transferred) override;
 
@@ -258,7 +258,7 @@ read_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     io_buffer_param buffers,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_transferred)
 {
@@ -300,7 +300,7 @@ write_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     io_buffer_param buffers,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_transferred)
 {

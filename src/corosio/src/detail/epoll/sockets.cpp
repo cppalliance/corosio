@@ -51,7 +51,7 @@ connect(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     endpoint ep,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec)
 {
     auto& op = conn_;
@@ -90,7 +90,7 @@ read_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     io_buffer_param param,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_out)
 {
@@ -154,7 +154,7 @@ write_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     io_buffer_param param,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec,
     std::size_t* bytes_out)
 {
@@ -290,7 +290,7 @@ epoll_acceptor_impl::
 accept(
     std::coroutine_handle<> h,
     capy::executor_ref d,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec,
     io_object::io_object_impl** impl_out)
 {

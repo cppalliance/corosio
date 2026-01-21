@@ -258,7 +258,7 @@ posix_signal_impl::
 wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
-    std::stop_token token,
+    capy::stop_token token,
     system::error_code* ec,
     int* signal_out)
 {

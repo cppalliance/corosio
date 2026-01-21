@@ -107,14 +107,14 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         endpoint,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*) override;
 
     void read_some(
         std::coroutine_handle<>,
         capy::executor_ref,
         io_buffer_param,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*,
         std::size_t*) override;
 
@@ -122,7 +122,7 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         io_buffer_param,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*,
         std::size_t*) override;
 
@@ -160,7 +160,7 @@ public:
     void accept(
         std::coroutine_handle<>,
         capy::executor_ref,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*,
         io_object::io_object_impl**) override;
 

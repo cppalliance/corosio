@@ -124,7 +124,7 @@ public:
     void wait(
         std::coroutine_handle<>,
         capy::executor_ref,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*,
         int*) override;
 

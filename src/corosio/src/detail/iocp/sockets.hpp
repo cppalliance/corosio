@@ -144,14 +144,14 @@ public:
         capy::coro,
         capy::executor_ref,
         endpoint,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*);
 
     void read_some(
         capy::coro,
         capy::executor_ref,
         io_buffer_param,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*,
         std::size_t*);
 
@@ -159,7 +159,7 @@ public:
         capy::coro,
         capy::executor_ref,
         io_buffer_param,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*,
         std::size_t*);
 
@@ -197,7 +197,7 @@ public:
         std::coroutine_handle<> h,
         capy::executor_ref d,
         endpoint ep,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec) override
     {
         internal_->connect(h, d, ep, token, ec);
@@ -207,7 +207,7 @@ public:
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param buf,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec,
         std::size_t* bytes) override
     {
@@ -218,7 +218,7 @@ public:
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param buf,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec,
         std::size_t* bytes) override
     {
@@ -269,7 +269,7 @@ public:
     void accept(
         capy::coro,
         capy::executor_ref,
-        std::stop_token,
+        capy::stop_token,
         system::error_code*,
         io_object::io_object_impl**);
 
@@ -311,7 +311,7 @@ public:
     void accept(
         std::coroutine_handle<> h,
         capy::executor_ref d,
-        std::stop_token token,
+        capy::stop_token token,
         system::error_code* ec,
         io_object::io_object_impl** impl_out) override
     {

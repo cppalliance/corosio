@@ -21,7 +21,7 @@
 
 #include <coroutine>
 #include <cstddef>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 #include <string>
 #include <type_traits>
 
@@ -35,7 +35,7 @@ namespace corosio {
     until the entire buffer sequence is filled, an error occurs, or
     end-of-file is reached.
 
-    The operation supports cancellation via `std::stop_token` through
+    The operation supports cancellation via `capy::stop_token` through
     the affine awaitable protocol. If the associated stop token is
     triggered, the operation completes immediately with
     `errc::operation_canceled`.
@@ -110,7 +110,7 @@ read(io_stream& ios, MB const& bs)
     the string is resized to contain exactly the data read (plus any
     original content).
 
-    The operation supports cancellation via `std::stop_token` through
+    The operation supports cancellation via `capy::stop_token` through
     the affine awaitable protocol. If the associated stop token is
     triggered, the operation completes immediately with
     `errc::operation_canceled`.

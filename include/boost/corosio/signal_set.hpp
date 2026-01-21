@@ -24,7 +24,7 @@
 
 #include <concepts>
 #include <coroutine>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 
 /*
     Signal Set Public API
@@ -161,7 +161,7 @@ private:
     struct wait_awaitable
     {
         signal_set& s_;
-        std::stop_token token_;
+        capy::stop_token token_;
         mutable system::error_code ec_;
         mutable int signal_number_ = 0;
 
@@ -183,7 +183,7 @@ private:
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             s_.get().wait(h, ex, token_, &ec_, &signal_number_);
@@ -197,7 +197,7 @@ public:
         virtual void wait(
             std::coroutine_handle<>,
             capy::executor_ref,
-            std::stop_token,
+            capy::stop_token,
             system::error_code*,
             int*) = 0;
 
@@ -329,7 +329,7 @@ public:
 
     /** Wait for a signal to be delivered.
 
-        The operation supports cancellation via `std::stop_token` through
+        The operation supports cancellation via `capy::stop_token` through
         the affine awaitable protocol. If the associated stop token is
         triggered, the operation completes immediately with
         `capy::error::canceled`.

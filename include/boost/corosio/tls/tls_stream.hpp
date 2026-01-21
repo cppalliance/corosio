@@ -16,7 +16,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <coroutine>
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 
 namespace boost {
 namespace corosio {
@@ -40,7 +40,7 @@ class BOOST_COROSIO_DECL tls_stream : public io_stream
     {
         tls_stream& stream_;
         int type_;
-        std::stop_token token_;
+        capy::stop_token token_;
         mutable system::error_code ec_;
 
         handshake_awaitable(
@@ -76,7 +76,7 @@ class BOOST_COROSIO_DECL tls_stream : public io_stream
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             stream_.get().handshake(h, ex, type_, token_, &ec_);
@@ -87,7 +87,7 @@ class BOOST_COROSIO_DECL tls_stream : public io_stream
     struct shutdown_awaitable
     {
         tls_stream& stream_;
-        std::stop_token token_;
+        capy::stop_token token_;
         mutable system::error_code ec_;
 
         explicit
@@ -121,7 +121,7 @@ class BOOST_COROSIO_DECL tls_stream : public io_stream
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
             stream_.get().shutdown(h, ex, token_, &ec_);
@@ -147,7 +147,7 @@ public:
         server's response. For server connections, this waits for the
         ClientHello and sends the server's response.
 
-        The operation supports cancellation via `std::stop_token` through
+        The operation supports cancellation via `capy::stop_token` through
         the affine awaitable protocol. If the associated stop token is
         triggered, the operation completes immediately with
         `errc::operation_canceled`.
@@ -183,7 +183,7 @@ public:
         This function initiates the TLS shutdown sequence by sending a
         close_notify alert and waiting for the peer's close_notify response.
 
-        The operation supports cancellation via `std::stop_token` through
+        The operation supports cancellation via `capy::stop_token` through
         the affine awaitable protocol. If the associated stop token is
         triggered, the operation completes immediately with
         `errc::operation_canceled`.
@@ -232,13 +232,13 @@ public:
             std::coroutine_handle<>,
             capy::executor_ref,
             int,
-            std::stop_token,
+            capy::stop_token,
             system::error_code*) = 0;
 
         virtual void shutdown(
             std::coroutine_handle<>,
             capy::executor_ref,
-            std::stop_token,
+            capy::stop_token,
             system::error_code*) = 0;
     };
 
