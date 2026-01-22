@@ -142,14 +142,14 @@ The `consuming_buffers` wrapper tracks progress through a buffer sequence:
 
 [source,cpp]
 ----
-#include <boost/corosio/consuming_buffers.hpp>
+#include <boost/capy/buffers/consuming_buffers.hpp>
 
 std::array<capy::mutable_buffer, 2> bufs = {
     capy::mutable_buffer(header, 16),
     capy::mutable_buffer(body, 1024)
 };
 
-corosio::consuming_buffers<decltype(bufs)> consuming(bufs);
+capy::consuming_buffers<decltype(bufs)> consuming(bufs);
 
 // After reading 20 bytes:
 auto [ec, n] = co_await sock.read_some(consuming);
