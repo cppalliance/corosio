@@ -1,0 +1,58 @@
+# https://docs.coderabbit.ai/reference/configuration
+
+language: en
+
+early_access: false
+
+chat:
+  auto_reply: true
+
+reviews:
+  auto_review:
+    enabled: true
+    ignore_title_keywords:
+      - "WIP"
+    drafts: false
+    base_branches:
+      - master
+      - develop
+
+  high_level_summary: true
+
+  # Generate sequence diagrams for complex code flows
+  sequence_diagrams: true
+
+  poem: true
+  review_status: true
+  collapse_walkthrough: true
+  changed_files_summary: true
+  request_changes_workflow: false
+
+  pre_merge_checks:
+    description:
+      mode: warning # Options: off, warning, error
+    docstrings:
+      mode: off # Disabled: cannot exclude detail namespaces from coverage
+
+  path_filters:
+    - "!**/bench/**"
+    - "!**/build/**"
+    - "!**/context/**"
+    - "!**/doc/**"
+    - "!**/meta/**"
+    - "!**/papers/**"
+    - "!**/test/**"
+
+  # Custom review instructions for specific file patterns
+  path_instructions:
+    - path: "**/*.{cpp,hpp}"
+      instructions: |
+        Documentation Best Practices
+        - The top of the file after the includes, put a nice /* */ section
+          which gives a high level overview of how the implementation works.
+        - Single line // comments are to be used sparingly and judiciously
+          which explain the why (not the what or how) when it is non-obvious.
+        - Docstrings are required for all classes in public headers in
+          non detail namespaces. They are used for generating the Documentation
+          website. Please give warnings for any class or function that does
+          not have a docstring or has an insufficient docstring.
