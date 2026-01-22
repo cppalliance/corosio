@@ -21,10 +21,9 @@
 ** xref:guide/error-handling.adoc[Error Handling]
 ** xref:guide/buffers.adoc[Buffer Sequences]
 * Concepts
-** xref:concepts/affine-awaitables.adoc[Affine Awaitables]
-* Reference
 ** xref:reference/design-rationale.adoc[Design Rationale]
-** xref:reference/glossary.adoc[Glossary]
-** xref:reference:boost/corosio.adoc[API Reference]
+** xref:concepts/affine-awaitables.adoc[Affine Awaitables]
 * Testing
 ** xref:testing/mocket.adoc[Mock Sockets]
+* xref:reference:boost/corosio.adoc[Reference]
+* xref:reference/glossary.adoc[Glossary]
