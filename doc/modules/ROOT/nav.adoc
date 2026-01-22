@@ -25,5 +25,6 @@
 * Reference
 ** xref:reference/design-rationale.adoc[Design Rationale]
 ** xref:reference/glossary.adoc[Glossary]
+** xref:reference:boost/corosio.adoc[API Reference]
 * Testing
 ** xref:testing/mocket.adoc[Mock Sockets]
