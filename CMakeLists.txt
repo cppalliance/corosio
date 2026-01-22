@@ -65,7 +65,7 @@ foreach (BOOST_COROSIO_DEPENDENCY ${BOOST_COROSIO_DEPENDENCIES})
 endforeach ()
 
 # Include asio and filesystem which are needed by capy's tests
-if (BOOST_COROSIO_BUILD_TESTS)
+if (BOOST_COROSIO_BUILD_TESTS AND NOT BOOST_COROSIO_MRDOCS_BUILD)
     list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio filesystem)
 endif ()
 
