@@ -14,6 +14,8 @@
 #include "src/detail/epoll/scheduler.hpp"
 #include "src/detail/epoll/op.hpp"
 #include "src/detail/make_err.hpp"
+#include "src/detail/posix/resolver_service.hpp"
+#include "src/detail/posix/signals.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
@@ -155,6 +157,12 @@ epoll_scheduler(
         timer_service::callback(
             this,
             [](void* p) { static_cast<epoll_scheduler*>(p)->interrupt_reactor(); }));
+
+    // Initialize resolver service
+    get_resolver_service(ctx, *this);
+
+    // Initialize signal service
+    get_signal_service(ctx, *this);
 }
 
 epoll_scheduler::

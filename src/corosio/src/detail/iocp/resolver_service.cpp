@@ -26,6 +26,34 @@ INT WSAAPI GetAddrInfoExCancel(LPHANDLE lpHandle);
 }
 #endif
 
+/*
+    Windows IOCP Resolver Implementation
+    ====================================
+
+    See resolver_service.hpp for architecture overview.
+
+    Completion Flow
+    ---------------
+    1. resolve() converts host/service to wide strings (Windows API requirement)
+    2. GetAddrInfoExW() is called with our completion callback
+    3. If it returns WSA_IO_PENDING, completion comes later via callback
+    4. If it returns immediately (0 or error), we post completion manually
+    5. completion() callback stores error, calls work_finished(), posts op
+    6. op_() resumes the coroutine with results or error
+
+    String Conversion
+    -----------------
+    GetAddrInfoExW requires wide strings. We convert UTF-8 to UTF-16 using
+    MultiByteToWideChar. The wide strings are stored in the op to ensure
+    they outlive the async operation.
+
+    Work Tracking
+    -------------
+    work_started() is called before GetAddrInfoExW to keep io_context alive.
+    work_finished() is called in the completion callback (not in op_()) to
+    ensure proper ordering with the scheduler's work count.
+*/
+
 namespace boost {
 namespace corosio {
 namespace detail {
@@ -137,6 +165,8 @@ operator()()
             *ec_out = capy::error::canceled;
         else if (dwError != 0)
             *ec_out = make_err(dwError);
+        else
+            *ec_out = {};  // Clear on success
     }
 
     if (out && !cancelled.load(std::memory_order_acquire) && dwError == 0 && results)
@@ -218,6 +248,7 @@ resolve(
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = flags_to_hints(flags);
 
+    // Keep io_context alive while resolution is pending
     svc_.work_started();
 
     int result = ::GetAddrInfoExW(
@@ -234,6 +265,7 @@ resolve(
 
     if (result != WSA_IO_PENDING)
     {
+        // Completed synchronously - callback won't be invoked
         svc_.work_finished();
 
         if (result == 0)
@@ -268,9 +300,11 @@ cancel() noexcept
 
 win_resolver_service::
 win_resolver_service(
-    capy::execution_context& ctx)
-    : sched_(ctx.use_service<win_scheduler>())
+    capy::execution_context& ctx,
+    scheduler& sched)
+    : sched_(sched)
 {
+    (void)ctx;
 }
 
 win_resolver_service::

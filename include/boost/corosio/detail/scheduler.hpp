@@ -26,8 +26,20 @@ struct scheduler
     virtual ~scheduler() = default;
     virtual void post(capy::coro) const = 0;
     virtual void post(scheduler_op*) const = 0;
+
+    /** Notify scheduler of pending work (for executor use).
+        When the count reaches zero, the scheduler stops.
+    */
     virtual void on_work_started() noexcept = 0;
     virtual void on_work_finished() noexcept = 0;
+
+    /** Notify scheduler of pending I/O work (for services use).
+        Unlike on_work_finished, work_finished does not stop the scheduler
+        when the count reaches zero - it only wakes blocked threads.
+    */
+    virtual void work_started() const noexcept = 0;
+    virtual void work_finished() const noexcept = 0;
+
     virtual bool running_in_this_thread() const noexcept = 0;
     virtual void stop() = 0;
     virtual bool stopped() const noexcept = 0;

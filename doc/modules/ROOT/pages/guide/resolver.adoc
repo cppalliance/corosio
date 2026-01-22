@@ -272,7 +272,31 @@ IMPORTANT: Source and destination must share the same execution context.
 | NOT safe for concurrent operations
 |===
 
-Don't start multiple resolve operations on the same resolver concurrently.
+=== Single-Inflight Constraint
+
+Each resolver can only have ONE resolve operation in progress at a time.
+Starting a second resolve() while the first is still pending results in
+undefined behavior.
+
+[source,cpp]
+----
+// CORRECT: Sequential resolves on same resolver
+auto [ec1, r1] = co_await resolver.resolve("host1", "80");
+auto [ec2, r2] = co_await resolver.resolve("host2", "80");
+
+// CORRECT: Parallel resolves with separate resolver instances
+corosio::resolver r1(ioc), r2(ioc);
+// In separate coroutines:
+auto [ec1, res1] = co_await r1.resolve("host1", "80");
+auto [ec2, res2] = co_await r2.resolve("host2", "80");
+
+// WRONG: Concurrent resolves on same resolver - UNDEFINED BEHAVIOR
+auto f1 = resolver.resolve("host1", "80");
+auto f2 = resolver.resolve("host2", "80");  // BAD: overlaps with f1
+----
+
+If you need to resolve multiple hostnames concurrently, create a separate
+resolver instance for each.
 
 == Example: HTTP Client with Resolution
 

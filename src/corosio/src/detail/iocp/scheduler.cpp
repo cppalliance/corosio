@@ -15,6 +15,7 @@
 #include "src/detail/iocp/overlapped_op.hpp"
 #include "src/detail/iocp/timers.hpp"
 #include "src/detail/timer_service.hpp"
+#include "src/detail/iocp/resolver_service.hpp"
 #include "src/detail/make_err.hpp"
 
 #include <boost/corosio/detail/except.hpp>
@@ -150,6 +151,9 @@ win_scheduler(
 
     // Connect timer service to scheduler
     set_timer_service(&get_timer_service(ctx, *this));
+
+    // Initialize resolver service
+    ctx.make_service<win_resolver_service>(*this);
 }
 
 win_scheduler::
