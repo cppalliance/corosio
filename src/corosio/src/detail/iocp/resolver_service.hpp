@@ -21,6 +21,7 @@
 #error "corosio resolver requires Windows 8 or later (_WIN32_WINNT >= 0x0602)"
 #endif
 
+#include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/resolver_results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -37,11 +38,46 @@
 
 #include <string>
 
+/*
+    Windows IOCP Resolver Service
+    =============================
+
+    This header declares the Windows resolver implementation using the
+    GetAddrInfoExW API, which provides native async DNS resolution that
+    integrates with IOCP.
+
+    Unlike POSIX getaddrinfo() which blocks, GetAddrInfoExW accepts a
+    completion callback that Windows invokes when resolution finishes.
+    This avoids the need for worker threads.
+
+    Class Hierarchy
+    ---------------
+    - win_resolver_service (execution_context::service)
+        - Owns all win_resolver_impl instances
+        - Coordinates with win_scheduler for work tracking
+    - win_resolver_impl (one per resolver object)
+        - Contains embedded resolve_op for reuse
+    - resolve_op (overlapped_op subclass)
+        - OVERLAPPED base enables IOCP integration
+        - Static completion() callback invoked by Windows
+
+    Cancellation
+    ------------
+    GetAddrInfoExCancel() can cancel in-progress resolutions. The cancel()
+    method calls this API and sets an atomic cancelled flag. The completion
+    callback checks this flag to determine the error code.
+
+    Single-Inflight Constraint
+    --------------------------
+    Each resolver has ONE embedded op_. Concurrent resolve() calls on the
+    same resolver would corrupt op_ state. This is documented but not
+    enforced at runtime. Users must serialize resolve() calls per-resolver.
+*/
+
 namespace boost {
 namespace corosio {
 namespace detail {
 
-class win_scheduler;
 class win_resolver_service;
 class win_resolver_impl;
 
@@ -75,8 +111,42 @@ struct resolve_op : overlapped_op
 
 /** Resolver implementation for IOCP-based async DNS.
 
-    This class contains the state for a single resolver, including
-    the pending resolve operation.
+    Each resolver instance contains a single embedded operation object (op_)
+    that is reused for each resolve() call. This design avoids per-operation
+    heap allocation but imposes a critical constraint:
+
+    @par Single-Inflight Contract
+
+    Only ONE resolve operation may be in progress at a time per resolver
+    instance. Calling resolve() while a previous resolve() is still pending
+    results in undefined behavior:
+
+    - The new call overwrites op_ fields (host, service, coroutine handle)
+    - The pending GetAddrInfoExW callback reads corrupted state
+    - The wrong coroutine may be resumed, or resumed multiple times
+    - Data races occur on non-atomic op_ members
+
+    @par Safe Usage Patterns
+
+    @code
+    // CORRECT: Sequential resolves
+    auto [ec1, r1] = co_await resolver.resolve("host1", "80");
+    auto [ec2, r2] = co_await resolver.resolve("host2", "80");
+
+    // CORRECT: Parallel resolves with separate resolver instances
+    resolver r1(ctx), r2(ctx);
+    auto [ec1, res1] = co_await r1.resolve("host1", "80");  // in one coroutine
+    auto [ec2, res2] = co_await r2.resolve("host2", "80");  // in another
+
+    // WRONG: Concurrent resolves on same resolver
+    // These may run concurrently if launched in parallel - UNDEFINED BEHAVIOR
+    auto f1 = resolver.resolve("host1", "80");
+    auto f2 = resolver.resolve("host2", "80");  // BAD: overlaps with f1
+    @endcode
+
+    @par Thread Safety
+    Distinct objects: Safe.
+    Shared objects: Unsafe. See single-inflight contract above.
 
     @note Internal implementation detail. Users interact with resolver class.
 */
@@ -102,7 +172,7 @@ public:
         system::error_code*,
         resolver_results*) override;
 
-    void cancel() noexcept;
+    void cancel() noexcept override;
 
     resolve_op op_;
 
@@ -136,8 +206,9 @@ public:
     /** Construct the resolver service.
 
         @param ctx Reference to the owning execution_context.
+        @param sched Reference to the scheduler for posting completions.
     */
-    explicit win_resolver_service(capy::execution_context& ctx);
+    win_resolver_service(capy::execution_context& ctx, scheduler& sched);
 
     /** Destroy the resolver service. */
     ~win_resolver_service();
@@ -164,7 +235,7 @@ public:
     void work_finished() noexcept;
 
 private:
-    win_scheduler& sched_;
+    scheduler& sched_;
     win_mutex mutex_;
     intrusive_list<win_resolver_impl> resolver_list_;
 };

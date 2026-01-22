@@ -13,9 +13,28 @@
 
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
 #include "src/detail/iocp/resolver_service.hpp"
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
-#include "src/detail/epoll/resolver_service.hpp"
+#else
+#include "src/detail/posix/resolver_service.hpp"
 #endif
+
+#include <stdexcept>
+
+/*
+    Resolver Frontend
+    =================
+
+    This file implements the public resolver class, which delegates to
+    platform-specific services:
+    - Windows: win_resolver_service (uses GetAddrInfoExW)
+    - POSIX: posix_resolver_service (uses getaddrinfo + worker threads)
+
+    The resolver constructor uses find_service() to locate the resolver
+    service, which must have been previously created by the scheduler
+    during io_context construction. If not found, construction fails.
+
+    This separation allows the public API to be platform-agnostic while
+    the implementation details are hidden in the detail namespace.
+*/
 
 namespace boost {
 namespace corosio {
@@ -23,10 +42,8 @@ namespace {
 
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
 using resolver_service = detail::win_resolver_service;
-using resolver_impl_type = detail::win_resolver_impl;
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
-using resolver_service = detail::epoll_resolver_service;
-using resolver_impl_type = detail::epoll_resolver_impl;
+#else
+using resolver_service = detail::posix_resolver_service;
 #endif
 
 } // namespace
@@ -43,8 +60,15 @@ resolver(
     capy::execution_context& ctx)
     : io_object(ctx)
 {
-    auto& svc = ctx_->use_service<resolver_service>();
-    auto& impl = svc.create_impl();
+    auto* svc = ctx_->find_service<resolver_service>();
+    if (!svc)
+    {
+        // Resolver service not yet created - this happens if io_context
+        // hasn't been constructed yet, or if the scheduler didn't
+        // initialize the resolver service
+        throw std::runtime_error("resolver_service not found");
+    }
+    auto& impl = svc->create_impl();
     impl_ = &impl;
 }
 
@@ -53,7 +77,7 @@ resolver::
 cancel()
 {
     if (impl_)
-        static_cast<resolver_impl_type*>(impl_)->cancel();
+        get().cancel();
 }
 
 } // namespace corosio

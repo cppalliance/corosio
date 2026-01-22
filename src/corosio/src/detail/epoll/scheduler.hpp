@@ -123,10 +123,10 @@ public:
     void unregister_fd(int fd) const;
 
     /** For use by I/O operations to track pending work. */
-    void work_started() const noexcept;
+    void work_started() const noexcept override;
 
     /** For use by I/O operations to track completed work. */
-    void work_finished() const noexcept;
+    void work_finished() const noexcept override;
 
 private:
     std::size_t do_one(long timeout_us);

@@ -12,11 +12,22 @@
 #if defined(BOOST_COROSIO_SIGNAL_POSIX)
 
 #include "src/detail/posix/signals.hpp"
-#include "src/detail/epoll/scheduler.hpp"
 
+#include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/capy/coro.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/system/error_code.hpp>
+#include <boost/system/result.hpp>
+
+#include "src/detail/intrusive.hpp"
+#include "src/detail/scheduler_op.hpp"
+
+#include <coroutine>
+#include <cstddef>
 #include <mutex>
+#include <stop_token>
 
 #include <signal.h>
 
@@ -26,7 +37,7 @@
 
     This file implements signal handling for POSIX systems using sigaction().
     The implementation supports signal flags (SA_RESTART, etc.) and integrates
-    with the epoll-based scheduler.
+    with any POSIX-compatible scheduler via the abstract scheduler interface.
 
     Architecture Overview
     ---------------------
@@ -39,7 +50,7 @@
          conflict detection when multiple signal_sets register same signal)
        - Owns the mutex that protects signal handler installation/removal
 
-    2. posix_signals (one per execution_context)
+    2. posix_signals_impl (one per execution_context)
        - Maintains registrations_[] table indexed by signal number
        - Each slot is a doubly-linked list of signal_registrations for that signal
        - Also maintains impl_list_ of all posix_signal_impl objects it owns
@@ -54,7 +65,7 @@
     1. Signal arrives -> corosio_posix_signal_handler() (must be async-signal-safe)
        -> deliver_signal()
 
-    2. deliver_signal() iterates all posix_signals services:
+    2. deliver_signal() iterates all posix_signals_impl services:
        - If a signal_set is waiting (impl->waiting_ == true), post the signal_op
          to the scheduler for immediate completion
        - Otherwise, increment reg->undelivered to queue the signal
@@ -70,7 +81,7 @@
 
     Two mutex levels exist (MUST acquire in this order to avoid deadlock):
       1. signal_state::mutex - protects handler registration and service list
-      2. posix_signals::mutex_ - protects per-service registration tables
+      2. posix_signals_impl::mutex_ - protects per-service registration tables
 
     Async-Signal-Safety Limitation
     ------------------------------
@@ -108,7 +119,7 @@
     -------------
 
     When waiting for a signal:
-      - start_wait() calls sched_.on_work_started() to prevent io_context::run()
+      - start_wait() calls sched_->on_work_started() to prevent io_context::run()
         from returning while we wait
       - signal_op::svc is set to point to the service
       - signal_op::operator()() calls work_finished() after resuming the coroutine
@@ -121,10 +132,138 @@ namespace boost {
 namespace corosio {
 namespace detail {
 
+// Forward declarations
+class posix_signals_impl;
+
+// Maximum signal number supported (NSIG is typically 64 on Linux)
+enum { max_signal_number = 64 };
+
 //------------------------------------------------------------------------------
-//
+// signal_op - pending async_wait operation
+//------------------------------------------------------------------------------
+
+struct signal_op : scheduler_op
+{
+    capy::coro h;
+    capy::executor_ref d;
+    system::error_code* ec_out = nullptr;
+    int* signal_out = nullptr;
+    int signal_number = 0;
+    posix_signals_impl* svc = nullptr;  // For work_finished callback
+
+    void operator()() override;
+    void destroy() override;
+};
+
+//------------------------------------------------------------------------------
+// signal_registration - per-signal registration tracking
+//------------------------------------------------------------------------------
+
+struct signal_registration
+{
+    int signal_number = 0;
+    signal_set::flags_t flags = signal_set::none;
+    signal_set::signal_set_impl* owner = nullptr;
+    std::size_t undelivered = 0;
+    signal_registration* next_in_table = nullptr;
+    signal_registration* prev_in_table = nullptr;
+    signal_registration* next_in_set = nullptr;
+};
+
+//------------------------------------------------------------------------------
+// posix_signal_impl - per-signal_set implementation
+//------------------------------------------------------------------------------
+
+class posix_signal_impl
+    : public signal_set::signal_set_impl
+    , public intrusive_list<posix_signal_impl>::node
+{
+    friend class posix_signals_impl;
+
+    posix_signals_impl& svc_;
+    signal_registration* signals_ = nullptr;
+    signal_op pending_op_;
+    bool waiting_ = false;
+
+public:
+    explicit posix_signal_impl(posix_signals_impl& svc) noexcept;
+
+    void release() override;
+
+    void wait(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        std::stop_token,
+        system::error_code*,
+        int*) override;
+
+    system::result<void> add(int signal_number, signal_set::flags_t flags) override;
+    system::result<void> remove(int signal_number) override;
+    system::result<void> clear() override;
+    void cancel() override;
+};
+
+//------------------------------------------------------------------------------
+// posix_signals_impl - concrete service implementation
+//------------------------------------------------------------------------------
+
+class posix_signals_impl : public posix_signals
+{
+public:
+    using key_type = posix_signals;
+
+    posix_signals_impl(capy::execution_context& ctx, scheduler& sched);
+    ~posix_signals_impl();
+
+    posix_signals_impl(posix_signals_impl const&) = delete;
+    posix_signals_impl& operator=(posix_signals_impl const&) = delete;
+
+    void shutdown() override;
+    signal_set::signal_set_impl& create_impl() override;
+
+    void destroy_impl(posix_signal_impl& impl);
+
+    system::result<void> add_signal(
+        posix_signal_impl& impl,
+        int signal_number,
+        signal_set::flags_t flags);
+
+    system::result<void> remove_signal(
+        posix_signal_impl& impl,
+        int signal_number);
+
+    system::result<void> clear_signals(posix_signal_impl& impl);
+
+    void cancel_wait(posix_signal_impl& impl);
+    void start_wait(posix_signal_impl& impl, signal_op* op);
+
+    static void deliver_signal(int signal_number);
+
+    void work_started() noexcept;
+    void work_finished() noexcept;
+    void post(signal_op* op);
+
+private:
+    static void add_service(posix_signals_impl* service);
+    static void remove_service(posix_signals_impl* service);
+
+    scheduler* sched_;
+    std::mutex mutex_;
+    intrusive_list<posix_signal_impl> impl_list_;
+
+    // Per-signal registration table
+    signal_registration* registrations_[max_signal_number];
+
+    // Registration counts for each signal
+    std::size_t registration_count_[max_signal_number];
+
+    // Linked list of all posix_signals_impl services for signal delivery
+    posix_signals_impl* next_ = nullptr;
+    posix_signals_impl* prev_ = nullptr;
+};
+
+//------------------------------------------------------------------------------
 // Global signal state
-//
 //------------------------------------------------------------------------------
 
 namespace {
@@ -132,7 +271,7 @@ namespace {
 struct signal_state
 {
     std::mutex mutex;
-    posix_signals* service_list = nullptr;
+    posix_signals_impl* service_list = nullptr;
     std::size_t registration_count[max_signal_number] = {};
     signal_set::flags_t registered_flags[max_signal_number] = {};
 };
@@ -192,7 +331,7 @@ bool flags_compatible(
 // C signal handler - must be async-signal-safe
 extern "C" void corosio_posix_signal_handler(int signal_number)
 {
-    posix_signals::deliver_signal(signal_number);
+    posix_signals_impl::deliver_signal(signal_number);
     // Note: With sigaction(), the handler persists automatically
     // (unlike some signal() implementations that reset to SIG_DFL)
 }
@@ -200,9 +339,7 @@ extern "C" void corosio_posix_signal_handler(int signal_number)
 } // namespace
 
 //------------------------------------------------------------------------------
-//
-// signal_op
-//
+// signal_op implementation
 //------------------------------------------------------------------------------
 
 void
@@ -233,13 +370,11 @@ destroy()
 }
 
 //------------------------------------------------------------------------------
-//
-// posix_signal_impl
-//
+// posix_signal_impl implementation
 //------------------------------------------------------------------------------
 
 posix_signal_impl::
-posix_signal_impl(posix_signals& svc) noexcept
+posix_signal_impl(posix_signals_impl& svc) noexcept
     : svc_(svc)
 {
 }
@@ -310,14 +445,12 @@ cancel()
 }
 
 //------------------------------------------------------------------------------
-//
-// posix_signals
-//
+// posix_signals_impl implementation
 //------------------------------------------------------------------------------
 
-posix_signals::
-posix_signals(capy::execution_context& ctx)
-    : sched_(ctx.use_service<epoll_scheduler>())
+posix_signals_impl::
+posix_signals_impl(capy::execution_context&, scheduler& sched)
+    : sched_(&sched)
 {
     for (int i = 0; i < max_signal_number; ++i)
     {
@@ -327,14 +460,14 @@ posix_signals(capy::execution_context& ctx)
     add_service(this);
 }
 
-posix_signals::
-~posix_signals()
+posix_signals_impl::
+~posix_signals_impl()
 {
     remove_service(this);
 }
 
 void
-posix_signals::
+posix_signals_impl::
 shutdown()
 {
     std::lock_guard lock(mutex_);
@@ -351,8 +484,8 @@ shutdown()
     }
 }
 
-posix_signal_impl&
-posix_signals::
+signal_set::signal_set_impl&
+posix_signals_impl::
 create_impl()
 {
     auto* impl = new posix_signal_impl(*this);
@@ -366,7 +499,7 @@ create_impl()
 }
 
 void
-posix_signals::
+posix_signals_impl::
 destroy_impl(posix_signal_impl& impl)
 {
     {
@@ -378,7 +511,7 @@ destroy_impl(posix_signal_impl& impl)
 }
 
 system::result<void>
-posix_signals::
+posix_signals_impl::
 add_signal(
     posix_signal_impl& impl,
     int signal_number,
@@ -462,7 +595,7 @@ add_signal(
 }
 
 system::result<void>
-posix_signals::
+posix_signals_impl::
 remove_signal(
     posix_signal_impl& impl,
     int signal_number)
@@ -517,7 +650,7 @@ remove_signal(
 }
 
 system::result<void>
-posix_signals::
+posix_signals_impl::
 clear_signals(posix_signal_impl& impl)
 {
     signal_state* state = get_signal_state();
@@ -565,7 +698,7 @@ clear_signals(posix_signal_impl& impl)
 }
 
 void
-posix_signals::
+posix_signals_impl::
 cancel_wait(posix_signal_impl& impl)
 {
     bool was_waiting = false;
@@ -588,12 +721,12 @@ cancel_wait(posix_signal_impl& impl)
         if (op->signal_out)
             *op->signal_out = 0;
         op->d.post(op->h);
-        sched_.on_work_finished();
+        sched_->on_work_finished();
     }
 }
 
 void
-posix_signals::
+posix_signals_impl::
 start_wait(posix_signal_impl& impl, signal_op* op)
 {
     {
@@ -609,7 +742,7 @@ start_wait(posix_signal_impl& impl, signal_op* op)
                 op->signal_number = reg->signal_number;
                 // svc=nullptr: no work_finished needed since we never called work_started
                 op->svc = nullptr;
-                sched_.post(op);
+                sched_->post(op);
                 return;
             }
             reg = reg->next_in_set;
@@ -619,12 +752,12 @@ start_wait(posix_signal_impl& impl, signal_op* op)
         impl.waiting_ = true;
         // svc=this: signal_op::operator() will call work_finished() to balance this
         op->svc = this;
-        sched_.on_work_started();
+        sched_->on_work_started();
     }
 }
 
 void
-posix_signals::
+posix_signals_impl::
 deliver_signal(int signal_number)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
@@ -633,7 +766,7 @@ deliver_signal(int signal_number)
     signal_state* state = get_signal_state();
     std::lock_guard lock(state->mutex);
 
-    posix_signals* service = state->service_list;
+    posix_signals_impl* service = state->service_list;
     while (service)
     {
         std::lock_guard svc_lock(service->mutex_);
@@ -641,7 +774,7 @@ deliver_signal(int signal_number)
         signal_registration* reg = service->registrations_[signal_number];
         while (reg)
         {
-            posix_signal_impl* impl = reg->owner;
+            posix_signal_impl* impl = static_cast<posix_signal_impl*>(reg->owner);
 
             if (impl->waiting_)
             {
@@ -662,29 +795,29 @@ deliver_signal(int signal_number)
 }
 
 void
-posix_signals::
+posix_signals_impl::
 work_started() noexcept
 {
-    sched_.work_started();
+    sched_->work_started();
 }
 
 void
-posix_signals::
+posix_signals_impl::
 work_finished() noexcept
 {
-    sched_.work_finished();
+    sched_->work_finished();
 }
 
 void
-posix_signals::
+posix_signals_impl::
 post(signal_op* op)
 {
-    sched_.post(op);
+    sched_->post(op);
 }
 
 void
-posix_signals::
-add_service(posix_signals* service)
+posix_signals_impl::
+add_service(posix_signals_impl* service)
 {
     signal_state* state = get_signal_state();
     std::lock_guard lock(state->mutex);
@@ -697,8 +830,8 @@ add_service(posix_signals* service)
 }
 
 void
-posix_signals::
-remove_service(posix_signals* service)
+posix_signals_impl::
+remove_service(posix_signals_impl* service)
 {
     signal_state* state = get_signal_state();
     std::lock_guard lock(state->mutex);
@@ -716,12 +849,20 @@ remove_service(posix_signals* service)
     }
 }
 
+//------------------------------------------------------------------------------
+// get_signal_service - factory function
+//------------------------------------------------------------------------------
+
+posix_signals&
+get_signal_service(capy::execution_context& ctx, scheduler& sched)
+{
+    return ctx.make_service<posix_signals_impl>(sched);
+}
+
 } // namespace detail
 
 //------------------------------------------------------------------------------
-//
 // signal_set implementation
-//
 //------------------------------------------------------------------------------
 
 signal_set::
@@ -735,7 +876,10 @@ signal_set::
 signal_set(capy::execution_context& ctx)
     : io_object(ctx)
 {
-    impl_ = &ctx.use_service<detail::posix_signals>().create_impl();
+    auto* svc = ctx.find_service<detail::posix_signals>();
+    if (!svc)
+        detail::throw_logic_error("signal_set: signal service not initialized");
+    impl_ = &svc->create_impl();
 }
 
 signal_set::
@@ -795,4 +939,4 @@ cancel()
 } // namespace corosio
 } // namespace boost
 
-#endif // !_WIN32
+#endif // BOOST_COROSIO_SIGNAL_POSIX

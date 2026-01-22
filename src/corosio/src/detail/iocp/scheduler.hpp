@@ -70,8 +70,8 @@ public:
     void* native_handle() const noexcept { return iocp_; }
 
     // For use by I/O operations to track pending work
-    void work_started() const noexcept;
-    void work_finished() const noexcept;
+    void work_started() const noexcept override;
+    void work_finished() const noexcept override;
 
     // Timer service integration
     void set_timer_service(timer_service* svc);

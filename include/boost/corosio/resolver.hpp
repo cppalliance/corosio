@@ -326,6 +326,8 @@ public:
             std::stop_token,
             system::error_code*,
             resolver_results*) = 0;
+
+        virtual void cancel() noexcept = 0;
     };
 
 private:
