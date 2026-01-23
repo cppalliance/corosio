@@ -359,7 +359,7 @@ jobs:
           source-dir: boost-root
           modules: corosio
           toolset: ${{ matrix.b2-toolset }}
-          build-variant: ${{ matrix.build-type }}
+          build-variant: ${{ (matrix.compiler == 'msvc' && 'debug,release') || matrix.build-type }}
           cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx || '' }}
           cxxstd: ${{ matrix.cxxstd }}
           address-model: ${{ (matrix.x86 && '32') || '64' }}
