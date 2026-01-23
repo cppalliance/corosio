@@ -186,6 +186,10 @@ get_context_data( context const& ) noexcept;
 
     @see role
 */
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251)  // shared_ptr needs dll-interface
+#endif
 class BOOST_COROSIO_DECL context
 {
     struct impl;
@@ -900,6 +904,9 @@ public:
     void
     set_password_callback( Callback callback );
 };
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 template<typename Callback>
 void

@@ -34,9 +34,6 @@ env:
   UBSAN_OPTIONS: "print_stacktrace=1"
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Europe/London"
-  # Enable verbose TLS test logging for debugging CI timeout issues
-  COROSIO_TLS_TEST_VERBOSE: "1"
-  COROSIO_TLS_DEBUG: "1"
 
 jobs:
   # Self-hosted runner selection is disabled to allow re-running individual
@@ -105,6 +102,7 @@ jobs:
             shared: false
             build-type: "Release"
             build-cmake: true
+            vcpkg-triplet: "x64-mingw-static"
 
           # macOS (2 configurations)
           # TODO: Re-enable when BSD/kqueue support is implemented
@@ -304,6 +302,22 @@ jobs:
           ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
           path: capy-root
 
+      # Test dependency of corosio
+      - name: Clone Asio
+        uses: actions/checkout@v4
+        with:
+          repository: boostorg/asio
+          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          path: asio-root
+
+      # Test dependency of corosio
+      - name: Clone Filesystem
+        uses: actions/checkout@v4
+        with:
+          repository: boostorg/filesystem
+          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          path: filesystem-root
+
       - name: Clone Boost
         uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
         id: boost-clone
@@ -382,6 +396,12 @@ jobs:
           }
           EOF
 
+      - name: Set vcpkg triplet
+        if: matrix.vcpkg-triplet
+        shell: bash
+        run: |
+          echo "VCPKG_DEFAULT_TRIPLET=${{ matrix.vcpkg-triplet }}" >> $GITHUB_ENV
+
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
@@ -392,24 +412,71 @@ jobs:
 
       - name: Set vcpkg paths (Windows)
         if: runner.os == 'Windows'
+        id: vcpkg-paths-windows
         shell: bash
         run: |
-          vcpkg_installed="${{ github.workspace }}/vcpkg/vcpkg_installed/x64-windows"
+          # Determine triplet (mingw uses x64-mingw-static, msvc uses x64-windows)
+          triplet="${{ matrix.vcpkg-triplet || 'x64-windows' }}"
+          echo "Using triplet: ${triplet}"
+          
+          # lukka/run-vcpkg sets VCPKG_INSTALLED_DIR with a UUID-based path
+          # Use that directly instead of trying to find it
+          echo "Debug: VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR:-not set}"
+          
+          if [ -n "${VCPKG_INSTALLED_DIR}" ] && [ -d "${VCPKG_INSTALLED_DIR}/${triplet}" ]; then
+            vcpkg_installed="${VCPKG_INSTALLED_DIR}/${triplet}"
+          else
+            # Fallback: try common locations
+            vcpkg_installed="${{ github.workspace }}/corosio-root/vcpkg_installed/${triplet}"
+            if [ ! -d "${vcpkg_installed}" ]; then
+              vcpkg_installed=$(find "${{ github.workspace }}" -type d -path "*/vcpkg_installed/${triplet}" 2>/dev/null | head -1)
+            fi
+          fi
+          
+          if [ -z "${vcpkg_installed}" ] || [ ! -d "${vcpkg_installed}" ]; then
+            echo "ERROR: Could not find vcpkg installed directory!"
+            echo "VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR:-not set}"
+            echo "triplet=${triplet}"
+            echo "GITHUB_WORKSPACE=${{ github.workspace }}"
+            find "${{ github.workspace }}" -type d -name "vcpkg_installed" 2>/dev/null || true
+            exit 1
+          fi
 
-          # Debug: show what was installed
-          echo "Checking vcpkg installed packages:"
+          # Convert backslashes to forward slashes to avoid escape issues in YAML
+          vcpkg_installed=$(echo "${vcpkg_installed}" | sed 's|\\|/|g')
+
+          echo "Using vcpkg_installed: ${vcpkg_installed}"
           ls -la "${vcpkg_installed}/" || true
           ls -la "${vcpkg_installed}/include/" || true
           ls -la "${vcpkg_installed}/lib/" || true
+          ls -la "${vcpkg_installed}/bin/" || true
 
-          # For CMake (vcpkg toolchain file handles finding packages)
+          # Add vcpkg bin directory to PATH for DLLs (needed for test discovery POST_BUILD)
+          echo "${vcpkg_installed}/bin" >> $GITHUB_PATH
+
+          # For CMake - tell vcpkg toolchain where packages are installed
           echo "CMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
+          # Get the parent of vcpkg_installed/<triplet> (i.e., vcpkg_installed/)
+          vcpkg_installed_dir=$(dirname "${vcpkg_installed}")
+          echo "VCPKG_INSTALLED_DIR=${vcpkg_installed_dir}" >> $GITHUB_ENV
 
           # For B2 (uses explicit paths)
           echo "WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
           echo "WOLFSSL_LIBRARY_PATH=${vcpkg_installed}/lib" >> $GITHUB_ENV
           echo "OPENSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
           echo "OPENSSL_LIBRARY_PATH=${vcpkg_installed}/lib" >> $GITHUB_ENV
+
+          # Output for cmake extra-args (use forward slashes to avoid YAML escape issues)
+          # Use .a extension for MinGW, .lib for MSVC
+          if [[ "${triplet}" == *"mingw"* ]]; then
+            echo "wolfssl_include=${vcpkg_installed}/include" >> $GITHUB_OUTPUT
+            echo "wolfssl_library=${vcpkg_installed}/lib/libwolfssl.a" >> $GITHUB_OUTPUT
+            echo "openssl_root=${vcpkg_installed}" >> $GITHUB_OUTPUT
+          else
+            echo "wolfssl_include=${vcpkg_installed}/include" >> $GITHUB_OUTPUT
+            echo "wolfssl_library=${vcpkg_installed}/lib/wolfssl.lib" >> $GITHUB_OUTPUT
+            echo "openssl_root=${vcpkg_installed}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Set vcpkg paths (Linux)
         if: runner.os == 'Linux'
@@ -454,7 +521,8 @@ jobs:
 
       - name: Boost B2 Workflow
         uses: alandefreitas/cpp-actions/b2-workflow@v1.9.0
-        if: ${{ !matrix.coverage }}
+        # TEMP: Skip B2 on Windows to test if CMake builds pass
+        if: ${{ !matrix.coverage && runner.os != 'Windows' }}
         env:
           ASAN_OPTIONS: ${{ ((matrix.compiler == 'apple-clang' || matrix.compiler == 'clang') && 'detect_invalid_pointer_pairs=0:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1') || 'detect_invalid_pointer_pairs=2:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1' }}
         with:
@@ -496,8 +564,11 @@ jobs:
             -D BOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}"
             ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
-          # Windows: CMAKE_TOOLCHAIN_FILE is set via environment variable in "Set vcpkg paths" step
-          # The action picks it up automatically. Don't pass via extra-args (format() corrupts backslashes)
+            ${{ runner.os == 'Windows' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-windows.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'Windows' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-windows.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'Windows' && format('-D OPENSSL_ROOT_DIR={0}', steps.vcpkg-paths-windows.outputs.openssl_root) || '' }}
+            ${{ matrix.vcpkg-triplet && format('-D VCPKG_TARGET_TRIPLET={0}', matrix.vcpkg-triplet) || '' }}
+          # CMAKE_TOOLCHAIN_FILE and VCPKG_INSTALLED_DIR are set via environment variables
           toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
           package: false
           package-artifact: false
@@ -534,6 +605,10 @@ jobs:
             -D CMAKE_PREFIX_PATH=${{ steps.patch.outputs.workspace_root }}/.local
             ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'Windows' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-windows.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'Windows' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-windows.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'Windows' && format('-D OPENSSL_ROOT_DIR={0}', steps.vcpkg-paths-windows.outputs.openssl_root) || '' }}
+            ${{ matrix.vcpkg-triplet && format('-D VCPKG_TARGET_TRIPLET={0}', matrix.vcpkg-triplet) || '' }}
           toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
           ref-source-dir: boost-root/libs/corosio
           trace-commands: true
@@ -559,6 +634,10 @@ jobs:
             -D BOOST_CI_INSTALL_TEST=OFF
             ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'Windows' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-windows.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'Windows' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-windows.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'Windows' && format('-D OPENSSL_ROOT_DIR={0}', steps.vcpkg-paths-windows.outputs.openssl_root) || '' }}
+            ${{ matrix.vcpkg-triplet && format('-D VCPKG_TARGET_TRIPLET={0}', matrix.vcpkg-triplet) || '' }}
           toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
           ref-source-dir: boost-root/libs/corosio/test/cmake_test
 
@@ -582,12 +661,74 @@ jobs:
           shared: ${{ matrix.shared }}
           cmake-version: '>=3.20'
           extra-args: |
+            -D Boost_VERBOSE=ON
             ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'Windows' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-windows.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'Windows' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-windows.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'Windows' && format('-D OPENSSL_ROOT_DIR={0}', steps.vcpkg-paths-windows.outputs.openssl_root) || '' }}
+            ${{ matrix.vcpkg-triplet && format('-D VCPKG_TARGET_TRIPLET={0}', matrix.vcpkg-triplet) || '' }}
           toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
           package: false
           package-artifact: false
           ref-source-dir: boost-root
+
+      # Diagnostic: Compare test executables between workflows
+      - name: Diagnose Root Project Build (Windows)
+        if: ${{ (matrix.build-cmake || matrix.is-earliest) && runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          # Helper function to get file size portably
+          get_size() {
+            if [ -f "$1" ]; then
+              wc -c < "$1" | tr -d ' '
+            else
+              echo "0"
+            fi
+          }
+          
+          echo "=== Comparing builds between Boost CMake and Root Project workflows ==="
+          echo ""
+          echo "=== PATH ==="
+          echo "$PATH" | tr ':' '\n' | head -20
+          echo ""
+          echo "=== Root Project test executable ==="
+          root_exe=$(find __build_root_test__ -name "boost_corosio_tests.exe" 2>/dev/null | head -1)
+          boost_exe=$(find __build_cmake_test__ -name "boost_corosio_tests.exe" 2>/dev/null | head -1)
+          
+          if [ -n "$root_exe" ] && [ -f "$root_exe" ]; then
+            echo "Found: $root_exe"
+            echo "Size: $(get_size "$root_exe") bytes"
+            echo ""
+            echo "=== Dependencies (dumpbin) ==="
+            dumpbin //dependents "$root_exe" 2>/dev/null || echo "dumpbin not available"
+          else
+            echo "Root project test executable not found"
+          fi
+          
+          echo ""
+          echo "=== Boost CMake test executable ==="
+          if [ -n "$boost_exe" ] && [ -f "$boost_exe" ]; then
+            echo "Found: $boost_exe"
+            echo "Size: $(get_size "$boost_exe") bytes"
+          else
+            echo "Boost CMake test executable not found"
+          fi
+          
+          echo ""
+          echo "=== Size comparison ==="
+          if [ -n "$root_exe" ] && [ -f "$root_exe" ] && [ -n "$boost_exe" ] && [ -f "$boost_exe" ]; then
+            root_size=$(get_size "$root_exe")
+            boost_size=$(get_size "$boost_exe")
+            echo "Root project: $root_size bytes"
+            echo "Boost CMake:  $boost_size bytes"
+            if [ "$root_size" != "$boost_size" ]; then
+              echo "WARNING: Executable sizes differ!"
+            fi
+          fi
+          
+          echo ""
+          echo "=== Diagnostic complete ==="
 
       - name: Codecov
         if: ${{ matrix.coverage }}

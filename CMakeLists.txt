@@ -64,7 +64,7 @@ foreach (BOOST_COROSIO_DEPENDENCY ${BOOST_COROSIO_DEPENDENCIES})
     endif ()
 endforeach ()
 
-# Include asio and filesystem which are needed by capy's tests
+# Include asio and filesystem which are needed by corosio's tests
 if (BOOST_COROSIO_BUILD_TESTS)
     list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio filesystem)
 endif ()
@@ -209,7 +209,12 @@ if (WolfSSL_FOUND)
     add_library(Boost::corosio_wolfssl ALIAS boost_corosio_wolfssl)
     boost_corosio_setup_properties(boost_corosio_wolfssl)
     target_link_libraries(boost_corosio_wolfssl PUBLIC boost_corosio)
-    target_link_libraries(boost_corosio_wolfssl PRIVATE WolfSSL::WolfSSL)
+    # PUBLIC ensures WolfSSL is linked into final executables (static lib deps don't embed)
+    target_link_libraries(boost_corosio_wolfssl PUBLIC WolfSSL::WolfSSL)
+    # WolfSSL on Windows/MinGW needs crypt32 for certificate store access
+    if (WIN32)
+        target_link_libraries(boost_corosio_wolfssl PUBLIC crypt32)
+    endif ()
     target_compile_definitions(boost_corosio_wolfssl PUBLIC BOOST_COROSIO_HAS_WOLFSSL)
 endif ()
 
@@ -231,7 +236,12 @@ if (OpenSSL_FOUND)
     add_library(Boost::corosio_openssl ALIAS boost_corosio_openssl)
     boost_corosio_setup_properties(boost_corosio_openssl)
     target_link_libraries(boost_corosio_openssl PUBLIC boost_corosio)
-    target_link_libraries(boost_corosio_openssl PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    # PUBLIC ensures OpenSSL is linked into final executables (static lib deps don't embed)
+    target_link_libraries(boost_corosio_openssl PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+    # OpenSSL on Windows/MinGW needs ws2_32 and crypt32 for socket and cert APIs
+    if (WIN32)
+        target_link_libraries(boost_corosio_openssl PUBLIC ws2_32 crypt32)
+    endif ()
     target_compile_definitions(boost_corosio_openssl PUBLIC BOOST_COROSIO_HAS_OPENSSL)
 endif ()
 

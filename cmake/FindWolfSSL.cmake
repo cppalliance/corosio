@@ -10,8 +10,16 @@
 # Provides imported targets:
 #   WolfSSL::WolfSSL
 
-find_path(WolfSSL_INCLUDE_DIR "wolfssl/ssl.h")
-find_library(WolfSSL_LIBRARY NAMES "wolfssl" "libwolfssl")
+find_path(WolfSSL_INCLUDE_DIR "wolfssl/ssl.h"
+    HINTS
+        "$ENV{WOLFSSL_INCLUDE}"
+        "$ENV{WOLFSSL_ROOT}/include"
+)
+find_library(WolfSSL_LIBRARY NAMES "wolfssl" "libwolfssl"
+    HINTS
+        "$ENV{WOLFSSL_LIBRARY_PATH}"
+        "$ENV{WOLFSSL_ROOT}/lib"
+)
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(WolfSSL
