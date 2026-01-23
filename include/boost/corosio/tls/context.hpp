@@ -720,6 +720,47 @@ public:
     void
     set_hostname( std::string_view hostname );
 
+    /** Set a callback for Server Name Indication (SNI).
+
+        For server connections, this callback is invoked during the TLS
+        handshake when a client sends an SNI extension. The callback
+        receives the requested hostname and can accept or reject the
+        connection.
+
+        @tparam Callback A callable with signature
+            `bool( std::string_view hostname )`.
+
+        @param callback The SNI callback. Return `true` to accept the
+            connection or `false` to reject it with an alert.
+
+        @par Example
+        @code
+        // Accept connections for specific domains only
+        ctx.set_servername_callback(
+            []( std::string_view hostname ) -> bool
+            {
+                return hostname == "api.example.com" ||
+                       hostname == "www.example.com";
+            });
+        @endcode
+
+        @note For virtual hosting with different certificates per hostname,
+            create separate contexts and select the appropriate one before
+            creating the TLS stream.
+
+        @see set_hostname
+    */
+    template<typename Callback>
+    void
+    set_servername_callback( Callback callback );
+
+private:
+    void
+    set_servername_callback_impl(
+        std::function<bool( std::string_view )> callback );
+
+public:
+
     //--------------------------------------------------------------------------
     //
     // Revocation Checking
@@ -859,6 +900,14 @@ public:
     void
     set_password_callback( Callback callback );
 };
+
+template<typename Callback>
+void
+context::
+set_servername_callback( Callback callback )
+{
+    set_servername_callback_impl( std::move( callback ) );
+}
 
 } // namespace tls
 } // namespace corosio

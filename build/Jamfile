@@ -52,6 +52,22 @@ lib boost_corosio
     <include>../include
   ;
 
+# OpenSSL
+using openssl ;
+
+alias corosio_openssl_sources : [ glob-tree-ex src/openssl/src : *.cpp ] ;
+
+lib boost_corosio_openssl
+  : corosio_openssl_sources
+  : requirements
+    <library>/boost/corosio//boost_corosio
+    <include>../src/corosio
+    [ ac.check-library /openssl//ssl : <library>/openssl//ssl <library>/openssl//crypto : <build>no ]
+  : usage-requirements
+    <library>/boost/corosio//boost_corosio
+    <define>BOOST_COROSIO_HAS_OPENSSL
+  ;
+
 # WolfSSL
 using wolfssl ;
 
@@ -61,10 +77,11 @@ lib boost_corosio_wolfssl
   : corosio_wolfssl_sources
   : requirements
     <library>/boost/corosio//boost_corosio
+    <include>../src/corosio
     [ ac.check-library /wolfssl//wolfssl : <library>/wolfssl//wolfssl : <build>no ]
   : usage-requirements
     <library>/boost/corosio//boost_corosio
     <define>BOOST_COROSIO_HAS_WOLFSSL
   ;
 
-boost-install boost_corosio boost_corosio_wolfssl ;
+boost-install boost_corosio boost_corosio_openssl boost_corosio_wolfssl ;

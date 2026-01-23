@@ -72,6 +72,11 @@ struct context_data
     std::function<bool( bool, void* )> verify_callback;
 
     //--------------------------------------------
+    // SNI (Server Name Indication)
+
+    std::function<bool( std::string_view )> servername_callback;
+
+    //--------------------------------------------
     // Revocation
 
     std::vector<std::string> crls;

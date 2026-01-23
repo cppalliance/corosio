@@ -20,7 +20,34 @@ project boost/corosio/test/unit
       <toolset>gcc:<cxxflags>-fcoroutines
     ;
 
-for local f in [ glob-tree-ex . : *.cpp ]
+# Non-TLS tests
+for local f in [ glob *.cpp ] [ glob test/*.cpp ]
 {
     run $(f) ;
 }
+
+# OpenSSL tests - always link against boost_corosio_openssl
+# The library itself has <build>no if OpenSSL is not found
+# The test has static_assert to fail compilation if OpenSSL define is missing
+run tls/openssl_stream.cpp
+    : : :
+    <library>/boost/corosio//boost_corosio_openssl
+    ;
+
+# WolfSSL tests - always link against boost_corosio_wolfssl
+# The library itself has <build>no if WolfSSL is not found
+# The test has static_assert to fail compilation if WolfSSL define is missing
+run tls/wolfssl_stream.cpp
+    : : :
+    <library>/boost/corosio//boost_corosio_wolfssl
+    ;
+
+# Cross-SSL tests - need both OpenSSL and WolfSSL
+run tls/cross_ssl_stream.cpp
+    : : :
+    <library>/boost/corosio//boost_corosio_openssl
+    <library>/boost/corosio//boost_corosio_wolfssl
+    ;
+
+# TLS stream base tests (no specific TLS backend required)
+run tls/tls_stream.cpp ;

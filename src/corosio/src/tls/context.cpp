@@ -243,6 +243,14 @@ set_hostname( std::string_view hostname )
     impl_->hostname = std::string( hostname );
 }
 
+void
+context::
+set_servername_callback_impl(
+    std::function<bool( std::string_view )> callback )
+{
+    impl_->servername_callback = std::move( callback );
+}
+
 //------------------------------------------------------------------------------
 //
 // Revocation Checking

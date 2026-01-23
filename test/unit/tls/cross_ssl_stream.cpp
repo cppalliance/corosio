@@ -21,6 +21,7 @@
 
 #include "test_utils.hpp"
 #include "test_suite.hpp"
+#include <iostream>
 
 /*  Cross-Implementation TLS Tests
     ================================
@@ -167,6 +168,13 @@ struct cross_ssl_stream_test
         // Certificate verification failures are tested in same-implementation
         // tests where this issue doesn't occur.
         // testCrossImplFailure();
+#else
+#  if !defined(BOOST_COROSIO_HAS_OPENSSL)
+        std::cerr << "cross_ssl_stream tests SKIPPED: OpenSSL not found\n";
+#  endif
+#  if !defined(BOOST_COROSIO_HAS_WOLFSSL)
+        std::cerr << "cross_ssl_stream tests SKIPPED: WolfSSL not found\n";
+#  endif
 #endif
     }
 };

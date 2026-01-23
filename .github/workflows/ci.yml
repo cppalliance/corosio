@@ -34,6 +34,9 @@ env:
   UBSAN_OPTIONS: "print_stacktrace=1"
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Europe/London"
+  # Enable verbose TLS test logging for debugging CI timeout issues
+  COROSIO_TLS_TEST_VERBOSE: "1"
+  COROSIO_TLS_DEBUG: "1"
 
 jobs:
   # Self-hosted runner selection is disabled to allow re-running individual
@@ -290,6 +293,8 @@ jobs:
           apt-get: >-
             ${{ matrix.install }}
             build-essential
+            libssl-dev
+            curl zip unzip tar pkg-config
             ${{ matrix.x86 && '' || '' }}
 
       - name: Clone Capy
@@ -350,6 +355,103 @@ jobs:
           # Patch boost-root with capy dependency
           cp -r "$workspace_root"/capy-root "libs/capy"
 
+      # Use vcpkg for TLS libraries
+      # Windows: OpenSSL + WolfSSL from vcpkg
+      # Linux: system OpenSSL + vcpkg WolfSSL only (system wolfssl package lacks -fPIC)
+      - name: Create vcpkg.json (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cat > corosio-root/vcpkg.json << 'EOF'
+          {
+            "name": "boost-corosio-deps",
+            "version": "1.0.0",
+            "dependencies": ["openssl", "wolfssl"]
+          }
+          EOF
+
+      - name: Create vcpkg.json (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cat > corosio-root/vcpkg.json << 'EOF'
+          {
+            "name": "boost-corosio-deps",
+            "version": "1.0.0",
+            "dependencies": ["wolfssl"]
+          }
+          EOF
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: ${{ github.workspace }}/vcpkg
+          vcpkgGitCommitId: bd52fac7114fdaa2208de8dd1227212a6683e562
+          vcpkgJsonGlob: '**/corosio-root/vcpkg.json'
+          runVcpkgInstall: true
+
+      - name: Set vcpkg paths (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          vcpkg_installed="${{ github.workspace }}/vcpkg/vcpkg_installed/x64-windows"
+
+          # Debug: show what was installed
+          echo "Checking vcpkg installed packages:"
+          ls -la "${vcpkg_installed}/" || true
+          ls -la "${vcpkg_installed}/include/" || true
+          ls -la "${vcpkg_installed}/lib/" || true
+
+          # For CMake (vcpkg toolchain file handles finding packages)
+          echo "CMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
+
+          # For B2 (uses explicit paths)
+          echo "WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
+          echo "WOLFSSL_LIBRARY_PATH=${vcpkg_installed}/lib" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
+          echo "OPENSSL_LIBRARY_PATH=${vcpkg_installed}/lib" >> $GITHUB_ENV
+
+      - name: Set vcpkg paths (Linux)
+        if: runner.os == 'Linux'
+        id: vcpkg-paths-linux
+        shell: bash
+        run: |
+          # lukka/run-vcpkg sets VCPKG_INSTALLED_DIR with a UUID-based path
+          # Use that directly instead of trying to find it
+          echo "Debug: VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR:-not set}"
+          
+          if [ -n "${VCPKG_INSTALLED_DIR}" ] && [ -d "${VCPKG_INSTALLED_DIR}/x64-linux" ]; then
+            vcpkg_installed="${VCPKG_INSTALLED_DIR}/x64-linux"
+          else
+            # Fallback: try to find it
+            vcpkg_installed=$(find "${GITHUB_WORKSPACE}" -type d -path "*/vcpkg_installed/x64-linux" 2>/dev/null | head -1)
+            if [ -z "${vcpkg_installed}" ]; then
+              vcpkg_installed=$(find "/__w" -type d -path "*/vcpkg_installed/x64-linux" 2>/dev/null | head -1)
+            fi
+          fi
+          
+          if [ -z "${vcpkg_installed}" ] || [ ! -d "${vcpkg_installed}" ]; then
+            echo "ERROR: Could not find vcpkg installed directory!"
+            echo "VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR:-not set}"
+            echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
+            find "${GITHUB_WORKSPACE}" -type d -name "vcpkg_installed" 2>/dev/null || true
+            find "/__w" -type d -name "vcpkg_installed" 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Using vcpkg_installed: ${vcpkg_installed}"
+          ls -la "${vcpkg_installed}/" || true
+          ls -la "${vcpkg_installed}/include/" || true
+          ls -la "${vcpkg_installed}/lib/" || true
+
+          # Output for CMake steps (to pass WolfSSL paths explicitly)
+          echo "wolfssl_include=${vcpkg_installed}/include" >> $GITHUB_OUTPUT
+          echo "wolfssl_library=${vcpkg_installed}/lib/libwolfssl.a" >> $GITHUB_OUTPUT
+
+          # For B2 - WolfSSL from vcpkg, OpenSSL from system
+          echo "WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
+          echo "WOLFSSL_LIBRARY_PATH=${vcpkg_installed}/lib" >> $GITHUB_ENV
+
       - name: Boost B2 Workflow
         uses: alandefreitas/cpp-actions/b2-workflow@v1.9.0
         if: ${{ !matrix.coverage }}
@@ -392,6 +494,11 @@ jobs:
           extra-args: |
             -D Boost_VERBOSE=ON
             -D BOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}"
+            ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+          # Windows: CMAKE_TOOLCHAIN_FILE is set via environment variable in "Set vcpkg paths" step
+          # The action picks it up automatically. Don't pass via extra-args (format() corrupts backslashes)
+          toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
           package: false
           package-artifact: false
           ref-source-dir: boost-root/libs/corosio
@@ -425,6 +532,9 @@ jobs:
           extra-args: |
             -D BOOST_CI_INSTALL_TEST=ON
             -D CMAKE_PREFIX_PATH=${{ steps.patch.outputs.workspace_root }}/.local
+            ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+          toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
           ref-source-dir: boost-root/libs/corosio
           trace-commands: true
 
@@ -445,7 +555,11 @@ jobs:
           shared: ${{ matrix.shared }}
           install: false
           cmake-version: '>=3.15'
-          extra-args: -D BOOST_CI_INSTALL_TEST=OFF
+          extra-args: |
+            -D BOOST_CI_INSTALL_TEST=OFF
+            ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+          toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
           ref-source-dir: boost-root/libs/corosio/test/cmake_test
 
       - name: Root Project CMake Workflow
@@ -467,6 +581,10 @@ jobs:
           cxxflags: ${{ matrix.cxxflags }}
           shared: ${{ matrix.shared }}
           cmake-version: '>=3.20'
+          extra-args: |
+            ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+          toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
           package: false
           package-artifact: false
           ref-source-dir: boost-root
