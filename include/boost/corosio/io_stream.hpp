@@ -99,16 +99,16 @@ protected:
     struct read_some_awaitable
     {
         io_stream& ios_;
-        MutableBufferSequence buffers_;
+        MutableBufferSequence const& buffers_;
         std::stop_token token_;
         mutable system::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
 
         read_some_awaitable(
             io_stream& ios,
-            MutableBufferSequence buffers) noexcept
+            MutableBufferSequence const& buffers) noexcept
             : ios_(ios)
-            , buffers_(std::move(buffers))
+            , buffers_(buffers)
         {
         }
 
@@ -149,16 +149,16 @@ protected:
     struct write_some_awaitable
     {
         io_stream& ios_;
-        ConstBufferSequence buffers_;
+        ConstBufferSequence const& buffers_;
         std::stop_token token_;
         mutable system::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
 
         write_some_awaitable(
             io_stream& ios,
-            ConstBufferSequence buffers) noexcept
+            ConstBufferSequence const& buffers) noexcept
             : ios_(ios)
-            , buffers_(std::move(buffers))
+            , buffers_(buffers)
         {
         }
 
