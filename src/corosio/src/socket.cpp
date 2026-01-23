@@ -18,8 +18,6 @@
 #include "src/detail/epoll/sockets.hpp"
 #endif
 
-#include <cassert>
-
 namespace boost {
 namespace corosio {
 
@@ -86,7 +84,8 @@ void
 socket::
 cancel()
 {
-    assert(impl_ != nullptr);
+    if (!impl_)
+        return;
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
     static_cast<socket_impl_type*>(impl_)->get_internal()->cancel();
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)
@@ -115,6 +114,130 @@ native_handle() const noexcept
 #endif
     }
     return get().native_handle();
+}
+
+//------------------------------------------------------------------------------
+// Socket Options
+//------------------------------------------------------------------------------
+
+void
+socket::
+set_no_delay(bool value)
+{
+    if (!impl_)
+        detail::throw_logic_error("set_no_delay: socket not open");
+    system::error_code ec = get().set_no_delay(value);
+    if (ec)
+        detail::throw_system_error(ec, "socket::set_no_delay");
+}
+
+bool
+socket::
+no_delay() const
+{
+    if (!impl_)
+        detail::throw_logic_error("no_delay: socket not open");
+    system::error_code ec;
+    bool result = get().no_delay(ec);
+    if (ec)
+        detail::throw_system_error(ec, "socket::no_delay");
+    return result;
+}
+
+void
+socket::
+set_keep_alive(bool value)
+{
+    if (!impl_)
+        detail::throw_logic_error("set_keep_alive: socket not open");
+    system::error_code ec = get().set_keep_alive(value);
+    if (ec)
+        detail::throw_system_error(ec, "socket::set_keep_alive");
+}
+
+bool
+socket::
+keep_alive() const
+{
+    if (!impl_)
+        detail::throw_logic_error("keep_alive: socket not open");
+    system::error_code ec;
+    bool result = get().keep_alive(ec);
+    if (ec)
+        detail::throw_system_error(ec, "socket::keep_alive");
+    return result;
+}
+
+void
+socket::
+set_receive_buffer_size(int size)
+{
+    if (!impl_)
+        detail::throw_logic_error("set_receive_buffer_size: socket not open");
+    system::error_code ec = get().set_receive_buffer_size(size);
+    if (ec)
+        detail::throw_system_error(ec, "socket::set_receive_buffer_size");
+}
+
+int
+socket::
+receive_buffer_size() const
+{
+    if (!impl_)
+        detail::throw_logic_error("receive_buffer_size: socket not open");
+    system::error_code ec;
+    int result = get().receive_buffer_size(ec);
+    if (ec)
+        detail::throw_system_error(ec, "socket::receive_buffer_size");
+    return result;
+}
+
+void
+socket::
+set_send_buffer_size(int size)
+{
+    if (!impl_)
+        detail::throw_logic_error("set_send_buffer_size: socket not open");
+    system::error_code ec = get().set_send_buffer_size(size);
+    if (ec)
+        detail::throw_system_error(ec, "socket::set_send_buffer_size");
+}
+
+int
+socket::
+send_buffer_size() const
+{
+    if (!impl_)
+        detail::throw_logic_error("send_buffer_size: socket not open");
+    system::error_code ec;
+    int result = get().send_buffer_size(ec);
+    if (ec)
+        detail::throw_system_error(ec, "socket::send_buffer_size");
+    return result;
+}
+
+void
+socket::
+set_linger(bool enabled, int timeout)
+{
+    if (!impl_)
+        detail::throw_logic_error("set_linger: socket not open");
+    system::error_code ec = get().set_linger(enabled, timeout);
+    if (ec)
+        detail::throw_system_error(ec, "socket::set_linger");
+}
+
+socket::linger_options
+socket::
+linger() const
+{
+    if (!impl_)
+        detail::throw_logic_error("linger: socket not open");
+    system::error_code ec;
+    linger_options result = get().linger(ec);
+    if (ec)
+        detail::throw_system_error(ec, "socket::linger");
+    return result;
 }
 
 } // namespace corosio

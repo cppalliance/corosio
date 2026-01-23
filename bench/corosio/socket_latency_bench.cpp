@@ -17,31 +17,10 @@
 #include <iostream>
 #include <vector>
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#endif
-
 #include "../common/benchmark.hpp"
 
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
-
-// Helper to set TCP_NODELAY on a socket for low latency
-inline void set_nodelay(corosio::socket& s)
-{
-    int flag = 1;
-#ifdef _WIN32
-    ::setsockopt(static_cast<SOCKET>(s.native_handle()), IPPROTO_TCP, TCP_NODELAY,
-                 reinterpret_cast<const char*>(&flag), sizeof(flag));
-#else
-    ::setsockopt(s.native_handle(), IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
-#endif
-}
 
 // Ping-pong coroutine task
 capy::task<> pingpong_task(
@@ -109,8 +88,8 @@ void bench_pingpong_latency(std::size_t message_size, int iterations)
     auto [client, server] = corosio::test::make_socket_pair(ioc);
 
     // Disable Nagle's algorithm for low latency
-    set_nodelay(client);
-    set_nodelay(server);
+    client.set_no_delay(true);
+    server.set_no_delay(true);
 
     bench::statistics latency_stats;
 
@@ -146,8 +125,8 @@ void bench_concurrent_latency(int num_pairs, std::size_t message_size, int itera
     {
         auto [c, s] = corosio::test::make_socket_pair(ioc);
         // Disable Nagle's algorithm for low latency
-        set_nodelay(c);
-        set_nodelay(s);
+        c.set_no_delay(true);
+        s.set_no_delay(true);
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }

@@ -245,6 +245,124 @@ public:
         return static_cast<native_handle_type>(internal_->native_handle());
     }
 
+    // Socket options
+    system::error_code set_no_delay(bool value) noexcept override
+    {
+        BOOL flag = value ? TRUE : FALSE;
+        if (::setsockopt(internal_->native_handle(), IPPROTO_TCP, TCP_NODELAY,
+                         reinterpret_cast<char*>(&flag), sizeof(flag)) != 0)
+            return make_err(WSAGetLastError());
+        return {};
+    }
+
+    bool no_delay(system::error_code& ec) const noexcept override
+    {
+        BOOL flag = FALSE;
+        int len = sizeof(flag);
+        if (::getsockopt(internal_->native_handle(), IPPROTO_TCP, TCP_NODELAY,
+                         reinterpret_cast<char*>(&flag), &len) != 0)
+        {
+            ec = make_err(WSAGetLastError());
+            return false;
+        }
+        ec = {};
+        return flag != FALSE;
+    }
+
+    system::error_code set_keep_alive(bool value) noexcept override
+    {
+        BOOL flag = value ? TRUE : FALSE;
+        if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_KEEPALIVE,
+                         reinterpret_cast<char*>(&flag), sizeof(flag)) != 0)
+            return make_err(WSAGetLastError());
+        return {};
+    }
+
+    bool keep_alive(system::error_code& ec) const noexcept override
+    {
+        BOOL flag = FALSE;
+        int len = sizeof(flag);
+        if (::getsockopt(internal_->native_handle(), SOL_SOCKET, SO_KEEPALIVE,
+                         reinterpret_cast<char*>(&flag), &len) != 0)
+        {
+            ec = make_err(WSAGetLastError());
+            return false;
+        }
+        ec = {};
+        return flag != FALSE;
+    }
+
+    system::error_code set_receive_buffer_size(int size) noexcept override
+    {
+        if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_RCVBUF,
+                         reinterpret_cast<char*>(&size), sizeof(size)) != 0)
+            return make_err(WSAGetLastError());
+        return {};
+    }
+
+    int receive_buffer_size(system::error_code& ec) const noexcept override
+    {
+        int size = 0;
+        int len = sizeof(size);
+        if (::getsockopt(internal_->native_handle(), SOL_SOCKET, SO_RCVBUF,
+                         reinterpret_cast<char*>(&size), &len) != 0)
+        {
+            ec = make_err(WSAGetLastError());
+            return 0;
+        }
+        ec = {};
+        return size;
+    }
+
+    system::error_code set_send_buffer_size(int size) noexcept override
+    {
+        if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_SNDBUF,
+                         reinterpret_cast<char*>(&size), sizeof(size)) != 0)
+            return make_err(WSAGetLastError());
+        return {};
+    }
+
+    int send_buffer_size(system::error_code& ec) const noexcept override
+    {
+        int size = 0;
+        int len = sizeof(size);
+        if (::getsockopt(internal_->native_handle(), SOL_SOCKET, SO_SNDBUF,
+                         reinterpret_cast<char*>(&size), &len) != 0)
+        {
+            ec = make_err(WSAGetLastError());
+            return 0;
+        }
+        ec = {};
+        return size;
+    }
+
+    system::error_code set_linger(bool enabled, int timeout) noexcept override
+    {
+        if (timeout < 0 || timeout > 65535)
+            return make_err(WSAEINVAL);
+        struct ::linger lg;
+        lg.l_onoff = enabled ? 1 : 0;
+        lg.l_linger = static_cast<u_short>(timeout);
+        if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_LINGER,
+                         reinterpret_cast<char*>(&lg), sizeof(lg)) != 0)
+            return make_err(WSAGetLastError());
+        return {};
+    }
+
+    socket::linger_options linger(system::error_code& ec) const noexcept override
+    {
+        struct ::linger lg{};
+        int len = sizeof(lg);
+        if (::getsockopt(internal_->native_handle(), SOL_SOCKET, SO_LINGER,
+                         reinterpret_cast<char*>(&lg), &len) != 0)
+        {
+            ec = make_err(WSAGetLastError());
+            return {};
+        }
+        ec = {};
+        return {.enabled = lg.l_onoff != 0, .timeout = lg.l_linger};
+    }
+
     win_socket_impl_internal* get_internal() const noexcept { return internal_.get(); }
 };
 

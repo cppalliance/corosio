@@ -22,7 +22,6 @@
 
 #include <boost/system/error_code.hpp>
 
-#include <cassert>
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
@@ -253,7 +252,8 @@ public:
     */
     auto accept(socket& peer)
     {
-        assert(impl_ != nullptr);
+        if (!impl_)
+            detail::throw_logic_error("accept: acceptor not listening");
         return accept_awaitable(*this, peer);
     }
 

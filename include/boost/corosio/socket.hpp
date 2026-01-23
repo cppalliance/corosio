@@ -22,7 +22,6 @@
 
 #include <boost/system/error_code.hpp>
 
-#include <cassert>
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
@@ -83,6 +82,13 @@ public:
         shutdown_both
     };
 
+    /** Options for SO_LINGER socket option. */
+    struct linger_options
+    {
+        bool enabled = false;
+        int timeout = 0;  // seconds
+    };
+
     struct socket_impl : io_stream_impl
     {
         virtual void connect(
@@ -95,6 +101,22 @@ public:
         virtual system::error_code shutdown(shutdown_type) noexcept = 0;
 
         virtual native_handle_type native_handle() const noexcept = 0;
+
+        // Socket options
+        virtual system::error_code set_no_delay(bool value) noexcept = 0;
+        virtual bool no_delay(system::error_code& ec) const noexcept = 0;
+
+        virtual system::error_code set_keep_alive(bool value) noexcept = 0;
+        virtual bool keep_alive(system::error_code& ec) const noexcept = 0;
+
+        virtual system::error_code set_receive_buffer_size(int size) noexcept = 0;
+        virtual int receive_buffer_size(system::error_code& ec) const noexcept = 0;
+
+        virtual system::error_code set_send_buffer_size(int size) noexcept = 0;
+        virtual int send_buffer_size(system::error_code& ec) const noexcept = 0;
+
+        virtual system::error_code set_linger(bool enabled, int timeout) noexcept = 0;
+        virtual linger_options linger(system::error_code& ec) const noexcept = 0;
     };
 
     struct connect_awaitable
@@ -258,6 +280,8 @@ public:
             - operation_canceled: Cancelled via stop_token or cancel().
                 Check `ec == cond::canceled` for portable comparison.
 
+        @throws std::logic_error if the socket is not open.
+
         @par Preconditions
         The socket must be open (`is_open() == true`).
 
@@ -269,7 +293,8 @@ public:
     */
     auto connect(endpoint ep)
     {
-        assert(impl_ != nullptr);
+        if (!impl_)
+            detail::throw_logic_error("connect: socket not open");
         return connect_awaitable(*this, ep);
     }
 
@@ -333,6 +358,117 @@ public:
         @param what Determines what operations will no longer be allowed.
     */
     void shutdown(shutdown_type what);
+
+    //--------------------------------------------------------------------------
+    //
+    // Socket Options
+    //
+    //--------------------------------------------------------------------------
+
+    /** Enable or disable TCP_NODELAY (disable Nagle's algorithm).
+
+        When enabled, segments are sent as soon as possible even if
+        there is only a small amount of data. This reduces latency
+        at the potential cost of increased network traffic.
+
+        @param value `true` to disable Nagle's algorithm (enable no-delay).
+
+        @throws std::logic_error if the socket is not open.
+        @throws std::system_error on failure.
+    */
+    void set_no_delay(bool value);
+
+    /** Get the current TCP_NODELAY setting.
+
+        @return `true` if Nagle's algorithm is disabled.
+
+        @throws std::logic_error if the socket is not open.
+        @throws std::system_error on failure.
+    */
+    bool no_delay() const;
+
+    /** Enable or disable SO_KEEPALIVE.
+
+        When enabled, the socket will periodically send keepalive probes
+        to detect if the peer is still reachable.
+
+        @param value `true` to enable keepalive probes.
+
+        @throws std::logic_error if the socket is not open.
+        @throws std::system_error on failure.
+    */
+    void set_keep_alive(bool value);
+
+    /** Get the current SO_KEEPALIVE setting.
+
+        @return `true` if keepalive is enabled.
+
+        @throws std::logic_error if the socket is not open.
+        @throws std::system_error on failure.
+    */
+    bool keep_alive() const;
+
+    /** Set the receive buffer size (SO_RCVBUF).
+
+        @param size The desired receive buffer size in bytes.
+
+        @throws std::logic_error if the socket is not open.
+        @throws std::system_error on failure.
+
+        @note The operating system may adjust the actual buffer size.
+    */
+    void set_receive_buffer_size(int size);
+
+    /** Get the receive buffer size (SO_RCVBUF).
+
+        @return The current receive buffer size in bytes.
+
+        @throws std::logic_error if the socket is not open.
+        @throws std::system_error on failure.
+    */
+    int receive_buffer_size() const;
+
+    /** Set the send buffer size (SO_SNDBUF).
+
+        @param size The desired send buffer size in bytes.
+
+        @throws std::logic_error if the socket is not open.
+        @throws std::system_error on failure.
+
+        @note The operating system may adjust the actual buffer size.
+    */
+    void set_send_buffer_size(int size);
+
+    /** Get the send buffer size (SO_SNDBUF).
+
+        @return The current send buffer size in bytes.
+
+        @throws std::logic_error if the socket is not open.
+        @throws std::system_error on failure.
+    */
+    int send_buffer_size() const;
+
+    /** Set the SO_LINGER option.
+
+        Controls behavior when closing a socket with unsent data.
+
+        @param enabled If `true`, close() will block until data is sent
+            or the timeout expires. If `false`, close() returns immediately.
+        @param timeout The linger timeout in seconds (only used if enabled).
+
+        @throws std::logic_error if the socket is not open.
+        @throws std::system_error on failure.
+    */
+    void set_linger(bool enabled, int timeout);
+
+    /** Get the current SO_LINGER setting.
+
+        @return The current linger options.
+
+        @throws std::logic_error if the socket is not open.
+        @throws std::system_error on failure.
+    */
+    linger_options linger() const;
 
 private:
     friend class acceptor;

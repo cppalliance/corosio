@@ -19,8 +19,6 @@
 
 #include <boost/corosio/detail/except.hpp>
 
-#include <cassert>
-
 namespace boost {
 namespace corosio {
 namespace {
@@ -89,7 +87,8 @@ void
 acceptor::
 cancel()
 {
-    assert(impl_ != nullptr);
+    if (!impl_)
+        return;
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
     static_cast<acceptor_impl_type*>(impl_)->get_internal()->cancel();
 #elif defined(BOOST_COROSIO_BACKEND_EPOLL)

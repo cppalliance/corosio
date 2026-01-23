@@ -858,6 +858,163 @@ struct socket_test
         s2.close();
     }
 
+    // Socket Options
+
+    void
+    testNoDelay()
+    {
+        io_context ioc;
+        socket sock(ioc);
+        sock.open();
+
+        // Default state may vary by platform, just test set/get works
+        sock.set_no_delay(true);
+        BOOST_TEST_EQ(sock.no_delay(), true);
+
+        sock.set_no_delay(false);
+        BOOST_TEST_EQ(sock.no_delay(), false);
+
+        sock.set_no_delay(true);
+        BOOST_TEST_EQ(sock.no_delay(), true);
+
+        sock.close();
+    }
+
+    void
+    testKeepAlive()
+    {
+        io_context ioc;
+        socket sock(ioc);
+        sock.open();
+
+        sock.set_keep_alive(true);
+        BOOST_TEST_EQ(sock.keep_alive(), true);
+
+        sock.set_keep_alive(false);
+        BOOST_TEST_EQ(sock.keep_alive(), false);
+
+        sock.set_keep_alive(true);
+        BOOST_TEST_EQ(sock.keep_alive(), true);
+
+        sock.close();
+    }
+
+    void
+    testReceiveBufferSize()
+    {
+        io_context ioc;
+        socket sock(ioc);
+        sock.open();
+
+        // Get initial buffer size
+        int initial_size = sock.receive_buffer_size();
+        BOOST_TEST(initial_size > 0);
+
+        // Set a new size (OS may adjust the actual value)
+        sock.set_receive_buffer_size(65536);
+        int new_size = sock.receive_buffer_size();
+        // The OS may double the requested size or adjust it
+        BOOST_TEST(new_size > 0);
+
+        sock.close();
+    }
+
+    void
+    testSendBufferSize()
+    {
+        io_context ioc;
+        socket sock(ioc);
+        sock.open();
+
+        // Get initial buffer size
+        int initial_size = sock.send_buffer_size();
+        BOOST_TEST(initial_size > 0);
+
+        // Set a new size (OS may adjust the actual value)
+        sock.set_send_buffer_size(65536);
+        int new_size = sock.send_buffer_size();
+        // The OS may double the requested size or adjust it
+        BOOST_TEST(new_size > 0);
+
+        sock.close();
+    }
+
+    void
+    testLinger()
+    {
+        io_context ioc;
+        socket sock(ioc);
+        sock.open();
+
+        // Enable linger with 5 second timeout
+        sock.set_linger(true, 5);
+        auto opts = sock.linger();
+        BOOST_TEST_EQ(opts.enabled, true);
+        BOOST_TEST_EQ(opts.timeout, 5);
+
+        // Disable linger
+        sock.set_linger(false, 0);
+        opts = sock.linger();
+        BOOST_TEST_EQ(opts.enabled, false);
+
+        // Enable with different timeout
+        sock.set_linger(true, 10);
+        opts = sock.linger();
+        BOOST_TEST_EQ(opts.enabled, true);
+        BOOST_TEST_EQ(opts.timeout, 10);
+
+        sock.close();
+    }
+
+    void
+    testLingerValidation()
+    {
+        io_context ioc;
+        socket sock(ioc);
+        sock.open();
+
+        // Negative timeout should throw
+        bool threw = false;
+        try
+        {
+            sock.set_linger(true, -1);
+        }
+        catch (system::system_error const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(threw);
+
+        sock.close();
+    }
+
+    void
+    testSocketOptionsOnConnectedSocket()
+    {
+        io_context ioc;
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        // Test options work on connected sockets
+        s1.set_no_delay(true);
+        BOOST_TEST_EQ(s1.no_delay(), true);
+
+        s2.set_no_delay(true);
+        BOOST_TEST_EQ(s2.no_delay(), true);
+
+        s1.set_keep_alive(true);
+        BOOST_TEST_EQ(s1.keep_alive(), true);
+
+        // Buffer sizes on connected sockets
+        int recv_size = s1.receive_buffer_size();
+        BOOST_TEST(recv_size > 0);
+
+        int send_size = s1.send_buffer_size();
+        BOOST_TEST(send_size > 0);
+
+        s1.close();
+        s2.close();
+    }
+
     // Data Integrity
 
     void
@@ -959,6 +1116,15 @@ struct socket_test
         testCancelRead();
         testCloseWhileReading();
         testStopTokenCancellation();
+
+        // Socket options
+        testNoDelay();
+        testKeepAlive();
+        testReceiveBufferSize();
+        testSendBufferSize();
+        testLinger();
+        testLingerValidation();
+        testSocketOptionsOnConnectedSocket();
 
         // Composed operations
         testReadFull();

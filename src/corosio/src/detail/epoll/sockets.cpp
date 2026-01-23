@@ -19,6 +19,7 @@
 
 #include <errno.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -291,6 +292,137 @@ shutdown(socket::shutdown_type what) noexcept
     if (::shutdown(fd_, how) != 0)
         return make_err(errno);
     return {};
+}
+
+//------------------------------------------------------------------------------
+// Socket Options
+//------------------------------------------------------------------------------
+
+system::error_code
+epoll_socket_impl::
+set_no_delay(bool value) noexcept
+{
+    int flag = value ? 1 : 0;
+    if (::setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) != 0)
+        return make_err(errno);
+    return {};
+}
+
+bool
+epoll_socket_impl::
+no_delay(system::error_code& ec) const noexcept
+{
+    int flag = 0;
+    socklen_t len = sizeof(flag);
+    if (::getsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, &len) != 0)
+    {
+        ec = make_err(errno);
+        return false;
+    }
+    ec = {};
+    return flag != 0;
+}
+
+system::error_code
+epoll_socket_impl::
+set_keep_alive(bool value) noexcept
+{
+    int flag = value ? 1 : 0;
+    if (::setsockopt(fd_, SOL_SOCKET, SO_KEEPALIVE, &flag, sizeof(flag)) != 0)
+        return make_err(errno);
+    return {};
+}
+
+bool
+epoll_socket_impl::
+keep_alive(system::error_code& ec) const noexcept
+{
+    int flag = 0;
+    socklen_t len = sizeof(flag);
+    if (::getsockopt(fd_, SOL_SOCKET, SO_KEEPALIVE, &flag, &len) != 0)
+    {
+        ec = make_err(errno);
+        return false;
+    }
+    ec = {};
+    return flag != 0;
+}
+
+system::error_code
+epoll_socket_impl::
+set_receive_buffer_size(int size) noexcept
+{
+    if (::setsockopt(fd_, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) != 0)
+        return make_err(errno);
+    return {};
+}
+
+int
+epoll_socket_impl::
+receive_buffer_size(system::error_code& ec) const noexcept
+{
+    int size = 0;
+    socklen_t len = sizeof(size);
+    if (::getsockopt(fd_, SOL_SOCKET, SO_RCVBUF, &size, &len) != 0)
+    {
+        ec = make_err(errno);
+        return 0;
+    }
+    ec = {};
+    return size;
+}
+
+system::error_code
+epoll_socket_impl::
+set_send_buffer_size(int size) noexcept
+{
+    if (::setsockopt(fd_, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)) != 0)
+        return make_err(errno);
+    return {};
+}
+
+int
+epoll_socket_impl::
+send_buffer_size(system::error_code& ec) const noexcept
+{
+    int size = 0;
+    socklen_t len = sizeof(size);
+    if (::getsockopt(fd_, SOL_SOCKET, SO_SNDBUF, &size, &len) != 0)
+    {
+        ec = make_err(errno);
+        return 0;
+    }
+    ec = {};
+    return size;
+}
+
+system::error_code
+epoll_socket_impl::
+set_linger(bool enabled, int timeout) noexcept
+{
+    if (timeout < 0)
+        return make_err(EINVAL);
+    struct ::linger lg;
+    lg.l_onoff = enabled ? 1 : 0;
+    lg.l_linger = timeout;
+    if (::setsockopt(fd_, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg)) != 0)
+        return make_err(errno);
+    return {};
+}
+
+socket::linger_options
+epoll_socket_impl::
+linger(system::error_code& ec) const noexcept
+{
+    struct ::linger lg{};
+    socklen_t len = sizeof(lg);
+    if (::getsockopt(fd_, SOL_SOCKET, SO_LINGER, &lg, &len) != 0)
+    {
+        ec = make_err(errno);
+        return {};
+    }
+    ec = {};
+    return {.enabled = lg.l_onoff != 0, .timeout = lg.l_linger};
 }
 
 void

@@ -128,6 +128,22 @@ public:
     system::error_code shutdown(socket::shutdown_type what) noexcept override;
 
     native_handle_type native_handle() const noexcept override { return fd_; }
+
+    // Socket options
+    system::error_code set_no_delay(bool value) noexcept override;
+    bool no_delay(system::error_code& ec) const noexcept override;
+
+    system::error_code set_keep_alive(bool value) noexcept override;
+    bool keep_alive(system::error_code& ec) const noexcept override;
+
+    system::error_code set_receive_buffer_size(int size) noexcept override;
+    int receive_buffer_size(system::error_code& ec) const noexcept override;
+
+    system::error_code set_send_buffer_size(int size) noexcept override;
+    int send_buffer_size(system::error_code& ec) const noexcept override;
+
+    system::error_code set_linger(bool enabled, int timeout) noexcept override;
+    socket::linger_options linger(system::error_code& ec) const noexcept override;
     bool is_open() const noexcept { return fd_ >= 0; }
     void cancel() noexcept;
     void cancel_single_op(epoll_op& op) noexcept;
