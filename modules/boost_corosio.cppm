@@ -22,6 +22,10 @@ using corosio::socket;
 using corosio::tcp_server;
 using corosio::timer;
 using corosio::write;
+using corosio::operator|;
+using corosio::operator&;
+using corosio::operator&=;
+using corosio::operator|=;
 
 // I think this should be in tls
 using corosio::tls_stream;
@@ -38,4 +42,7 @@ using corosio::tls::verify_mode;
 using corosio::tls::version;
 } // namespace tls
 
+
 } // namespace boost::corosio
+
+

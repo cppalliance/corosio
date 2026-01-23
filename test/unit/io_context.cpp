@@ -11,6 +11,7 @@
 #include <boost/corosio/io_context.hpp>
 
 #include <boost/capy/concept/executor.hpp>
+#include <boost/capy/coro.hpp>
 
 #include <atomic>
 #include <chrono>
