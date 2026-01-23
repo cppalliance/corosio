@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_TLS_CONTEXT_HPP
 #define BOOST_COROSIO_TLS_CONTEXT_HPP
 
+#if !defined(BOOST_COROSIO_SOURCE) && defined(BOOST_COROSIO_USE_MODULES)
+import boost.corosio;
+#else
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/system/result.hpp>
 
@@ -864,4 +868,5 @@ public:
 } // namespace corosio
 } // namespace boost
 
+#endif
 #endif

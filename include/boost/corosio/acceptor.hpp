@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_ACCEPTOR_HPP
 #define BOOST_COROSIO_ACCEPTOR_HPP
 
+#if !defined(BOOST_COROSIO_SOURCE) && defined(BOOST_COROSIO_USE_MODULES)
+import boost.corosio;
+#else
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/io_object.hpp>
@@ -285,4 +289,5 @@ private:
 } // namespace corosio
 } // namespace boost
 
+#endif
 #endif

@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_IO_CONTEXT_HPP
 #define BOOST_COROSIO_IO_CONTEXT_HPP
 
+#if !defined(BOOST_COROSIO_SOURCE) && defined(BOOST_COROSIO_USE_MODULES)
+import boost.corosio;
+#else
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/unique_ptr.hpp>
@@ -432,4 +436,5 @@ get_executor() const noexcept ->
 } // namespace corosio
 } // namespace boost
 
+#endif
 #endif

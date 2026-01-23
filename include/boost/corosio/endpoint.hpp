@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_ENDPOINT_HPP
 #define BOOST_COROSIO_ENDPOINT_HPP
 
+#if !defined(BOOST_COROSIO_SOURCE) && defined(BOOST_COROSIO_USE_MODULES)
+import boost.corosio;
+#else
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/url/ipv4_address.hpp>
 #include <boost/url/ipv6_address.hpp>
@@ -186,4 +190,5 @@ private:
 } // namespace corosio
 } // namespace boost
 
+#endif
 #endif

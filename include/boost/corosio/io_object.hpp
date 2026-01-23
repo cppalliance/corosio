@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_IO_OBJECT_HPP
 #define BOOST_COROSIO_IO_OBJECT_HPP
 
+#if !defined(BOOST_COROSIO_SOURCE) && defined(BOOST_COROSIO_USE_MODULES)
+import boost.corosio;
+#else
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
@@ -69,4 +73,5 @@ protected:
 } // namespace corosio
 } // namespace boost
 
+#endif
 #endif

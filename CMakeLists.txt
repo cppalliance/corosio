@@ -38,6 +38,7 @@ option(BOOST_COROSIO_BUILD_BENCH "Build boost::corosio benchmarks" ${BOOST_COROS
 option(BOOST_COROSIO_BUILD_EXAMPLES "Build boost::corosio examples" ${BOOST_COROSIO_IS_ROOT})
 option(BOOST_COROSIO_BUILD_DOCS "Build boost::corosio documentation" OFF)
 option(BOOST_COROSIO_MRDOCS_BUILD "Building for MrDocs documentation generation" OFF)
+option(BOOST_COROSIO_USE_MODULES "Whether to build boost::corosio using C++20 modules or not" OFF)
 
 # Check if environment variable BOOST_SRC_DIR is set
 if (NOT DEFINED BOOST_SRC_DIR AND DEFINED ENV{BOOST_SRC_DIR})
@@ -184,6 +185,11 @@ endif()
 add_library(boost_corosio ${BOOST_COROSIO_HEADERS} ${BOOST_COROSIO_SOURCES})
 add_library(Boost::corosio ALIAS boost_corosio)
 boost_corosio_setup_properties(boost_corosio)
+
+if (BOOST_COROSIO_USE_MODULES)
+    target_sources(boost_corosio PUBLIC FILE_SET CXX_MODULES BASE_DIRS modules FILES modules/boost_corosio.cppm)
+    target_compile_definitions(boost_corosio PUBLIC BOOST_COROSIO_USE_MODULES)
+endif()
 
 #-------------------------------------------------
 #

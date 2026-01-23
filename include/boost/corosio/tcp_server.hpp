@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_TCP_SERVER_HPP
 #define BOOST_COROSIO_TCP_SERVER_HPP
 
+#if !defined(BOOST_COROSIO_SOURCE) && defined(BOOST_COROSIO_USE_MODULES)
+import boost.corosio;
+#else
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/socket.hpp>
@@ -334,4 +338,5 @@ public:
 } // corosio
 } // boost
 
+#endif
 #endif

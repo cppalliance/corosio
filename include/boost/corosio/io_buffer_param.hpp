@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_IO_BUFFER_PARAM_HPP
 #define BOOST_COROSIO_IO_BUFFER_PARAM_HPP
 
+#if !defined(BOOST_COROSIO_SOURCE) && defined(BOOST_COROSIO_USE_MODULES)
+import boost.corosio;
+#else
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 
@@ -382,4 +386,5 @@ private:
 } // namespace corosio
 } // namespace boost
 
+#endif
 #endif

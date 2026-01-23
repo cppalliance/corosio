@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_IO_STREAM_HPP
 #define BOOST_COROSIO_IO_STREAM_HPP
 
+#if !defined(BOOST_COROSIO_SOURCE) && defined(BOOST_COROSIO_USE_MODULES)
+import boost.corosio;
+#else
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_object.hpp>
 #include <boost/capy/io_result.hpp>
@@ -246,4 +250,5 @@ private:
 } // namespace corosio
 } // namespace boost
 
+#endif
 #endif

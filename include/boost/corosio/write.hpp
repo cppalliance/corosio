@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_WRITE_HPP
 #define BOOST_COROSIO_WRITE_HPP
 
+#if !defined(BOOST_COROSIO_SOURCE) && defined(BOOST_COROSIO_USE_MODULES)
+import boost.corosio;
+#else
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_stream.hpp>
 #include <boost/capy/io_result.hpp>
@@ -98,4 +102,5 @@ write(io_stream& ios, ConstBufferSequence const& buffers)
 } // namespace corosio
 } // namespace boost
 
+#endif
 #endif

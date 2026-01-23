@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_RESOLVER_RESULTS_HPP
 #define BOOST_COROSIO_RESOLVER_RESULTS_HPP
 
+#if !defined(BOOST_COROSIO_SOURCE) && defined(BOOST_COROSIO_USE_MODULES)
+import boost.corosio;
+#else
+
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/endpoint.hpp>
 
@@ -205,4 +209,5 @@ public:
 } // namespace corosio
 } // namespace boost
 
+#endif
 #endif
