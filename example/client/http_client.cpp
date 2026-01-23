@@ -35,8 +35,8 @@ do_request(
         "Host: " + std::string(host) + "\r\n"
         "Connection: close\r\n"
         "\r\n";
-    (co_await corosio::write(
-        stream, capy::const_buffer(request.data(), request.size()))).value();
+    co_await corosio::write(
+        stream, capy::const_buffer(request.data(), request.size()));
 
     // Read the entire response
     std::string response;
@@ -59,7 +59,7 @@ run_client(
     s.open();
 
     // Connect to the server (throws on error)
-    (co_await s.connect(corosio::endpoint(addr, port))).value();
+    co_await s.connect(corosio::endpoint(addr, port));
 
     co_await do_request(s, addr.to_string());
 }
