@@ -28,6 +28,24 @@ namespace corosio {
 namespace detail {
 
 //------------------------------------------------------------------------------
+// epoll_op::canceller - implements stop_token cancellation
+//------------------------------------------------------------------------------
+
+void
+epoll_op::canceller::
+operator()() const noexcept
+{
+    // When stop_token is signaled, we need to actually cancel the I/O operation,
+    // not just set a flag. Otherwise the operation stays blocked on epoll.
+    if (op->socket_impl_)
+        op->socket_impl_->cancel_single_op(*op);
+    else if (op->acceptor_impl_)
+        op->acceptor_impl_->cancel_single_op(*op);
+    else
+        op->request_cancel();  // fallback: just set flag (legacy behavior)
+}
+
+//------------------------------------------------------------------------------
 // epoll_socket_impl
 //------------------------------------------------------------------------------
 
@@ -60,7 +78,7 @@ connect(
     op.d = d;
     op.ec_out = ec;
     op.fd = fd_;
-    op.start(token);
+    op.start(token, this);
 
     sockaddr_in addr = detail::to_sockaddr_in(ep);
     int result = ::connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
@@ -68,6 +86,7 @@ connect(
     if (result == 0)
     {
         op.complete(0, 0);
+        op.impl_ptr = shared_from_this();
         svc_.post(&op);
         return;
     }
@@ -77,10 +96,24 @@ connect(
         svc_.work_started();
         op.registered.store(true, std::memory_order_release);
         svc_.scheduler().register_fd(fd_, &op, EPOLLOUT | EPOLLET);
+
+        // If cancelled was set before we registered, handle it now.
+        if (op.cancelled.load(std::memory_order_acquire))
+        {
+            bool was_registered = op.registered.exchange(false, std::memory_order_acq_rel);
+            if (was_registered)
+            {
+                svc_.scheduler().unregister_fd(fd_);
+                op.impl_ptr = shared_from_this();
+                svc_.post(&op);
+                svc_.work_finished();
+            }
+        }
         return;
     }
 
     op.complete(errno, 0);
+    op.impl_ptr = shared_from_this();
     svc_.post(&op);
 }
 
@@ -101,7 +134,7 @@ read_some(
     op.ec_out = ec;
     op.bytes_out = bytes_out;
     op.fd = fd_;
-    op.start(token);
+    op.start(token, this);
 
     capy::mutable_buffer bufs[epoll_read_op::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_read_op::max_buffers));
@@ -110,6 +143,7 @@ read_some(
     {
         op.empty_buffer_read = true;
         op.complete(0, 0);
+        op.impl_ptr = shared_from_this();
         svc_.post(&op);
         return;
     }
@@ -125,6 +159,7 @@ read_some(
     if (n > 0)
     {
         op.complete(0, static_cast<std::size_t>(n));
+        op.impl_ptr = shared_from_this();
         svc_.post(&op);
         return;
     }
@@ -132,6 +167,7 @@ read_some(
     if (n == 0)
     {
         op.complete(0, 0);
+        op.impl_ptr = shared_from_this();
         svc_.post(&op);
         return;
     }
@@ -141,10 +177,25 @@ read_some(
         svc_.work_started();
         op.registered.store(true, std::memory_order_release);
         svc_.scheduler().register_fd(fd_, &op, EPOLLIN | EPOLLET);
+
+        // If cancelled was set before we registered, the stop_callback couldn't
+        // post us because we weren't registered yet. Handle it now.
+        if (op.cancelled.load(std::memory_order_acquire))
+        {
+            bool was_registered = op.registered.exchange(false, std::memory_order_acq_rel);
+            if (was_registered)
+            {
+                svc_.scheduler().unregister_fd(fd_);
+                op.impl_ptr = shared_from_this();
+                svc_.post(&op);
+                svc_.work_finished();
+            }
+        }
         return;
     }
 
     op.complete(errno, 0);
+    op.impl_ptr = shared_from_this();
     svc_.post(&op);
 }
 
@@ -165,7 +216,7 @@ write_some(
     op.ec_out = ec;
     op.bytes_out = bytes_out;
     op.fd = fd_;
-    op.start(token);
+    op.start(token, this);
 
     capy::mutable_buffer bufs[epoll_write_op::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_write_op::max_buffers));
@@ -173,6 +224,7 @@ write_some(
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
         op.complete(0, 0);
+        op.impl_ptr = shared_from_this();
         svc_.post(&op);
         return;
     }
@@ -192,6 +244,7 @@ write_some(
     if (n > 0)
     {
         op.complete(0, static_cast<std::size_t>(n));
+        op.impl_ptr = shared_from_this();
         svc_.post(&op);
         return;
     }
@@ -201,10 +254,24 @@ write_some(
         svc_.work_started();
         op.registered.store(true, std::memory_order_release);
         svc_.scheduler().register_fd(fd_, &op, EPOLLOUT | EPOLLET);
+
+        // If cancelled was set before we registered, handle it now.
+        if (op.cancelled.load(std::memory_order_acquire))
+        {
+            bool was_registered = op.registered.exchange(false, std::memory_order_acq_rel);
+            if (was_registered)
+            {
+                svc_.scheduler().unregister_fd(fd_);
+                op.impl_ptr = shared_from_this();
+                svc_.post(&op);
+                svc_.work_finished();
+            }
+        }
         return;
     }
 
     op.complete(errno ? errno : EIO, 0);
+    op.impl_ptr = shared_from_this();
     svc_.post(&op);
 }
 
@@ -256,6 +323,31 @@ cancel() noexcept
 
 void
 epoll_socket_impl::
+cancel_single_op(epoll_op& op) noexcept
+{
+    // Called from stop_token callback to cancel a specific pending operation.
+    // This performs actual I/O cancellation, not just setting a flag.
+    bool was_registered = op.registered.exchange(false, std::memory_order_acq_rel);
+    op.request_cancel();
+
+    if (was_registered)
+    {
+        svc_.scheduler().unregister_fd(fd_);
+
+        // Keep impl alive until op completes
+        try {
+            op.impl_ptr = shared_from_this();
+        } catch (const std::bad_weak_ptr&) {
+            // Impl is being destroyed, op will be orphaned but that's ok
+        }
+
+        svc_.post(&op);
+        svc_.work_finished();
+    }
+}
+
+void
+epoll_socket_impl::
 close_socket() noexcept
 {
     cancel();
@@ -301,7 +393,7 @@ accept(
     op.ec_out = ec;
     op.impl_out = impl_out;
     op.fd = fd_;
-    op.start(token);
+    op.start(token, this);
 
     op.service_ptr = &svc_;
     op.create_peer = [](void* svc_ptr, int new_fd) -> io_object::io_object_impl* {
@@ -323,6 +415,7 @@ accept(
         op.accepted_fd = accepted;
         op.peer_impl = &peer_impl;
         op.complete(0, 0);
+        op.impl_ptr = shared_from_this();
         svc_.post(&op);
         return;
     }
@@ -332,10 +425,24 @@ accept(
         svc_.work_started();
         op.registered.store(true, std::memory_order_release);
         svc_.scheduler().register_fd(fd_, &op, EPOLLIN | EPOLLET);
+
+        // If cancelled was set before we registered, handle it now.
+        if (op.cancelled.load(std::memory_order_acquire))
+        {
+            bool was_registered = op.registered.exchange(false, std::memory_order_acq_rel);
+            if (was_registered)
+            {
+                svc_.scheduler().unregister_fd(fd_);
+                op.impl_ptr = shared_from_this();
+                svc_.post(&op);
+                svc_.work_finished();
+            }
+        }
         return;
     }
 
     op.complete(errno, 0);
+    op.impl_ptr = shared_from_this();
     svc_.post(&op);
 }
 
@@ -358,6 +465,30 @@ cancel() noexcept
         svc_.scheduler().unregister_fd(fd_);
         acc_.impl_ptr = self;
         svc_.post(&acc_);
+        svc_.work_finished();
+    }
+}
+
+void
+epoll_acceptor_impl::
+cancel_single_op(epoll_op& op) noexcept
+{
+    // Called from stop_token callback to cancel a specific pending operation.
+    bool was_registered = op.registered.exchange(false, std::memory_order_acq_rel);
+    op.request_cancel();
+
+    if (was_registered)
+    {
+        svc_.scheduler().unregister_fd(fd_);
+
+        // Keep impl alive until op completes
+        try {
+            op.impl_ptr = shared_from_this();
+        } catch (const std::bad_weak_ptr&) {
+            // Impl is being destroyed, op will be orphaned but that's ok
+        }
+
+        svc_.post(&op);
         svc_.work_finished();
     }
 }

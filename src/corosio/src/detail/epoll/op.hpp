@@ -80,12 +80,16 @@ namespace boost {
 namespace corosio {
 namespace detail {
 
+// Forward declarations for cancellation support
+class epoll_socket_impl;
+class epoll_acceptor_impl;
+
 struct epoll_op : scheduler_op
 {
     struct canceller
     {
         epoll_op* op;
-        void operator()() const noexcept { op->request_cancel(); }
+        void operator()() const noexcept;
     };
 
     capy::coro h;
@@ -105,6 +109,11 @@ struct epoll_op : scheduler_op
     // See "Impl Lifetime Management" in file header.
     std::shared_ptr<void> impl_ptr;
 
+    // For stop_token cancellation - pointer to owning socket/acceptor impl.
+    // When stop is requested, we call back to the impl to perform actual I/O cancellation.
+    epoll_socket_impl* socket_impl_ = nullptr;
+    epoll_acceptor_impl* acceptor_impl_ = nullptr;
+
     epoll_op()
     {
         data_ = this;
@@ -118,6 +127,8 @@ struct epoll_op : scheduler_op
         cancelled.store(false, std::memory_order_relaxed);
         registered.store(false, std::memory_order_relaxed);
         impl_ptr.reset();
+        socket_impl_ = nullptr;
+        acceptor_impl_ = nullptr;
     }
 
     void operator()() override
@@ -160,6 +171,30 @@ struct epoll_op : scheduler_op
     {
         cancelled.store(false, std::memory_order_release);
         stop_cb.reset();
+        socket_impl_ = nullptr;
+        acceptor_impl_ = nullptr;
+
+        if (token.stop_possible())
+            stop_cb.emplace(token, canceller{this});
+    }
+
+    void start(std::stop_token token, epoll_socket_impl* impl)
+    {
+        cancelled.store(false, std::memory_order_release);
+        stop_cb.reset();
+        socket_impl_ = impl;
+        acceptor_impl_ = nullptr;
+
+        if (token.stop_possible())
+            stop_cb.emplace(token, canceller{this});
+    }
+
+    void start(std::stop_token token, epoll_acceptor_impl* impl)
+    {
+        cancelled.store(false, std::memory_order_release);
+        stop_cb.reset();
+        socket_impl_ = nullptr;
+        acceptor_impl_ = impl;
 
         if (token.stop_possible())
             stop_cb.emplace(token, canceller{this});

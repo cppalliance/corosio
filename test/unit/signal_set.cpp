@@ -208,7 +208,7 @@ struct signal_set_test
         t.expires_after(std::chrono::milliseconds(10));
         auto raise_task = [](timer& t_ref) -> capy::task<>
         {
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             std::raise(SIGINT);
         };
         capy::run_async(ioc.get_executor())(raise_task(t));
@@ -241,7 +241,7 @@ struct signal_set_test
         t.expires_after(std::chrono::milliseconds(10));
         auto raise_task = [](timer& t_ref) -> capy::task<>
         {
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             std::raise(SIGTERM);
         };
         capy::run_async(ioc.get_executor())(raise_task(t));
@@ -277,7 +277,7 @@ struct signal_set_test
         cancel_timer.expires_after(std::chrono::milliseconds(10));
         auto cancel_task = [](timer& t_ref, signal_set& s_ref) -> capy::task<>
         {
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             s_ref.cancel();
         };
         capy::run_async(ioc.get_executor())(cancel_task(cancel_timer, s));
@@ -339,7 +339,7 @@ struct signal_set_test
         t.expires_after(std::chrono::milliseconds(10));
         auto raise_task = [](timer& t_ref) -> capy::task<>
         {
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             std::raise(SIGINT);
         };
         capy::run_async(ioc.get_executor())(raise_task(t));
@@ -374,7 +374,7 @@ struct signal_set_test
         t.expires_after(std::chrono::milliseconds(10));
         auto raise_task = [](timer& t_ref) -> capy::task<>
         {
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             std::raise(SIGTERM);
         };
         capy::run_async(ioc.get_executor())(raise_task(t));
@@ -431,7 +431,7 @@ struct signal_set_test
         {
             // First wait
             t_ref.expires_after(std::chrono::milliseconds(5));
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             std::raise(SIGINT);
 
             auto [ec1, sig1] = co_await s_ref.async_wait();
@@ -441,7 +441,7 @@ struct signal_set_test
 
             // Second wait
             t_ref.expires_after(std::chrono::milliseconds(5));
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             std::raise(SIGINT);
 
             auto [ec2, sig2] = co_await s_ref.async_wait();
@@ -471,7 +471,7 @@ struct signal_set_test
         auto task = [](signal_set& s_ref, timer& t_ref, bool& ok_out) -> capy::task<>
         {
             t_ref.expires_after(std::chrono::milliseconds(5));
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             std::raise(SIGINT);
 
             auto result = co_await s_ref.async_wait();
@@ -504,7 +504,7 @@ struct signal_set_test
         cancel_timer.expires_after(std::chrono::milliseconds(10));
         auto cancel_task = [](timer& t_ref, signal_set& s_ref) -> capy::task<>
         {
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             s_ref.cancel();
         };
         capy::run_async(ioc.get_executor())(cancel_task(cancel_timer, s));
@@ -527,7 +527,7 @@ struct signal_set_test
         auto task = [](signal_set& s_ref, timer& t_ref, system::error_code& ec_out, int& sig_out) -> capy::task<>
         {
             t_ref.expires_after(std::chrono::milliseconds(5));
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             std::raise(SIGINT);
 
             auto [ec, signum] = co_await s_ref.async_wait();
@@ -726,7 +726,7 @@ struct signal_set_test
         t.expires_after(std::chrono::milliseconds(10));
         auto raise_task = [](timer& t_ref) -> capy::task<>
         {
-            (void) co_await t_ref.wait();
+            (void)co_await t_ref.wait();
             std::raise(SIGINT);
         };
         capy::run_async(ioc.get_executor())(raise_task(t));

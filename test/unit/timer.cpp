@@ -297,7 +297,7 @@ struct timer_test
 
         auto cancel_task = [](timer& cancel_t_ref, timer& t_ref) -> capy::task<>
         {
-            (void) co_await cancel_t_ref.wait();
+            (void)co_await cancel_t_ref.wait();
             t_ref.cancel();
         };
         capy::run_async(ioc.get_executor())(cancel_task(cancel_timer, t));
@@ -356,7 +356,7 @@ struct timer_test
 
         auto delay_task = [](timer& delay_ref, timer& t_ref) -> capy::task<>
         {
-            (void) co_await delay_ref.wait();
+            (void)co_await delay_ref.wait();
             t_ref.expires_after(std::chrono::seconds(30));
         };
         capy::run_async(ioc.get_executor())(delay_task(delay_timer, t));
@@ -513,7 +513,7 @@ struct timer_test
 
         auto cancel_task = [](timer& cancel_t_ref, timer& t_ref) -> capy::task<>
         {
-            (void) co_await cancel_t_ref.wait();
+            (void)co_await cancel_t_ref.wait();
             t_ref.cancel();
         };
         capy::run_async(ioc.get_executor())(cancel_task(cancel_timer, t));

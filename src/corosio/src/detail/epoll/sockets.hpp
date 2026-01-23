@@ -130,6 +130,7 @@ public:
     native_handle_type native_handle() const noexcept override { return fd_; }
     bool is_open() const noexcept { return fd_ >= 0; }
     void cancel() noexcept;
+    void cancel_single_op(epoll_op& op) noexcept;
     void close_socket() noexcept;
     void set_socket(int fd) noexcept { fd_ = fd; }
 
@@ -166,6 +167,7 @@ public:
     int native_handle() const noexcept { return fd_; }
     bool is_open() const noexcept { return fd_ >= 0; }
     void cancel() noexcept;
+    void cancel_single_op(epoll_op& op) noexcept;
     void close_socket() noexcept;
 
     epoll_accept_op acc_;
