@@ -473,6 +473,8 @@ jobs:
 
       - name: Codecov
         if: ${{ matrix.coverage }}
+        env:
+            CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
           set -x
 
