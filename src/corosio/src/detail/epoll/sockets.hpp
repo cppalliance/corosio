@@ -128,7 +128,7 @@ public:
 
     system::error_code shutdown(socket::shutdown_type what) noexcept override;
 
-    int native_handle() const noexcept { return fd_; }
+    native_handle_type native_handle() const noexcept override { return fd_; }
     bool is_open() const noexcept { return fd_ >= 0; }
     void cancel() noexcept;
     void close_socket() noexcept;

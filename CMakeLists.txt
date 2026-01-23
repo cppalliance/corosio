@@ -69,6 +69,11 @@ if (BOOST_COROSIO_BUILD_TESTS)
     list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio filesystem)
 endif ()
 
+# Include asio for benchmarks (comparison benchmarks)
+if (BOOST_COROSIO_BUILD_BENCH)
+    list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio)
+endif ()
+
 # Complete dependency list
 set(BOOST_INCLUDE_LIBRARIES ${BOOST_COROSIO_INCLUDE_LIBRARIES})
 set(BOOST_EXCLUDE_LIBRARIES corosio)
@@ -246,4 +251,13 @@ endif ()
 #-------------------------------------------------
 if (BOOST_COROSIO_BUILD_EXAMPLES)
     add_subdirectory(example)
+endif ()
+
+#-------------------------------------------------
+#
+# Benchmarks
+#
+#-------------------------------------------------
+if (BOOST_COROSIO_BUILD_BENCH)
+    add_subdirectory(bench)
 endif ()

@@ -102,5 +102,20 @@ shutdown(shutdown_type what)
         get().shutdown(what);
 }
 
+native_handle_type
+socket::
+native_handle() const noexcept
+{
+    if (!impl_)
+    {
+#if defined(BOOST_COROSIO_BACKEND_IOCP)
+        return static_cast<native_handle_type>(~0ull);  // INVALID_SOCKET
+#else
+        return -1;
+#endif
+    }
+    return get().native_handle();
+}
+
 } // namespace corosio
 } // namespace boost

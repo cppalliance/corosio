@@ -34,6 +34,12 @@
 namespace boost {
 namespace corosio {
 
+#ifdef _WIN32
+using native_handle_type = std::uintptr_t;  // SOCKET
+#else
+using native_handle_type = int;
+#endif
+
 /** An asynchronous TCP socket for coroutine I/O.
 
     This class provides asynchronous TCP socket operations that return
@@ -92,6 +98,8 @@ public:
             system::error_code*) = 0;
 
         virtual system::error_code shutdown(shutdown_type) noexcept = 0;
+
+        virtual native_handle_type native_handle() const noexcept = 0;
     };
 
     struct connect_awaitable
@@ -280,6 +288,19 @@ public:
         Check `ec == cond::canceled` for portable comparison.
     */
     void cancel();
+
+    /** Get the native socket handle.
+
+        Returns the underlying platform-specific socket descriptor.
+        On POSIX systems this is an `int` file descriptor.
+        On Windows this is a `SOCKET` handle.
+
+        @return The native socket handle, or -1/INVALID_SOCKET if not open.
+
+        @par Preconditions
+        None. May be called on closed sockets.
+    */
+    native_handle_type native_handle() const noexcept;
 
     /** Disable sends or receives on the socket.
 

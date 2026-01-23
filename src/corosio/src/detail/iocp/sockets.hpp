@@ -241,6 +241,11 @@ public:
         return {};
     }
 
+    native_handle_type native_handle() const noexcept override
+    {
+        return static_cast<native_handle_type>(internal_->native_handle());
+    }
+
     win_socket_impl_internal* get_internal() const noexcept { return internal_.get(); }
 };
 
