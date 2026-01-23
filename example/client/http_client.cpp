@@ -23,7 +23,6 @@ namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 
 // Coroutine that performs the HTTP GET request
-// Demonstrates the concise exception-based pattern using .value()
 capy::task<void>
 do_request(
     corosio::io_stream& stream,
@@ -35,14 +34,15 @@ do_request(
         "Host: " + std::string(host) + "\r\n"
         "Connection: close\r\n"
         "\r\n";
-    (co_await corosio::write(
-        stream, capy::const_buffer(request.data(), request.size()))).value();
+    if (auto [ec, n] = co_await corosio::write(
+            stream, capy::const_buffer(request.data(), request.size())); ec.failed())
+        throw boost::system::system_error(ec);
 
     // Read the entire response
     std::string response;
     auto [ec, n] = co_await corosio::read(stream, response);
     // EOF is expected when server closes connection
-    if (ec && ec != capy::error::eof)
+    if (ec.failed() && ec != capy::error::eof)
         throw boost::system::system_error(ec);
 
     std::cout << response << std::endl;
@@ -58,8 +58,9 @@ run_client(
     corosio::socket s(ioc);
     s.open();
 
-    // Connect to the server (throws on error)
-    (co_await s.connect(corosio::endpoint(addr, port))).value();
+    // Connect to the server
+    if (auto [ec] = co_await s.connect(corosio::endpoint(addr, port)); ec.failed())
+        throw boost::system::system_error(ec);
 
     co_await do_request(s, addr.to_string());
 }
