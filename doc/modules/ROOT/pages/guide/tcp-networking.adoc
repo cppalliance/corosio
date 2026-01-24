@@ -13,10 +13,111 @@ This chapter introduces the networking concepts you need to understand before
 using Corosio. If you're already comfortable with TCP/IP, sockets, and the
 client-server model, you can skip to xref:io-context.adoc[I/O Context].
 
-== The Internet Protocol Suite
+== What is a Network?
 
-The Internet uses a layered protocol architecture. Data passes through these
-layers when sent across a network:
+A network is simply computers talking to each other. Your laptop sending a
+request to a web server, two game consoles playing together, a phone streaming
+video—all involve computers exchanging data over a network.
+
+=== Local vs Remote Communication
+
+Programs on the same machine communicate through shared memory, pipes, or local
+sockets. Network programming adds complexity because the communicating programs
+run on different machines, potentially thousands of miles apart, connected by
+unreliable links with varying latency.
+
+=== The Need for Protocols
+
+When two programs exchange data, they need to agree on the rules: How do you
+start a conversation? How do you know when a message ends? What happens if data
+gets corrupted? These rules form a _protocol_.
+
+The Internet uses a family of protocols called TCP/IP. Corosio implements the
+TCP portion, giving your programs reliable communication channels over the
+network.
+
+== Physical Foundation
+
+Data travels across networks as electrical signals, light pulses, or radio
+waves. Understanding the physical layer helps explain why network programming
+has certain constraints.
+
+=== Signals on Wires
+
+At the lowest level, networks transmit bits as voltage changes on copper wire,
+light pulses in fiber optic cables, or radio waves for wireless. These physical
+signals have limitations: maximum distance, susceptibility to interference, and
+finite propagation speed.
+
+=== NICs and MAC Addresses
+
+A Network Interface Card (NIC) connects your computer to the network. Each NIC
+has a globally unique Media Access Control (MAC) address—48 bits, typically
+written as six hexadecimal pairs like `00:1A:2B:3C:4D:5E`.
+
+MAC addresses identify devices on the local network segment. They matter for
+switches and local routing but are invisible to your application code.
+
+=== Ethernet
+
+Ethernet is the dominant local area network (LAN) technology. It defines how
+devices share a network medium, how frames are formatted, and how collisions
+are handled. Modern Ethernet runs at 1 Gbps or faster over twisted-pair cables.
+
+=== Network Devices
+
+[cols="1,3"]
+|===
+| Device | Purpose
+
+| Hub
+| Broadcasts all traffic to all connected devices (obsolete)
+
+| Switch
+| Forwards traffic only to the destination MAC address
+
+| Router
+| Forwards traffic between different networks using IP addresses
+|===
+
+Your home router typically combines a switch (for local devices) with a router
+(connecting to your ISP).
+
+== Network Models
+
+Networks use layered architectures where each layer provides services to the
+layer above while hiding implementation details.
+
+=== Why Layers?
+
+Layering provides modularity. You can replace Ethernet with Wi-Fi without
+changing your application. TCP can run over any network technology that
+supports IP. Each layer has a well-defined interface to the layers above and
+below.
+
+=== The OSI Model
+
+The Open Systems Interconnection (OSI) model defines seven layers:
+
+[cols="1,2,3"]
+|===
+| Layer | Name | Function
+
+| 7 | Application | User-facing protocols (HTTP, SMTP, DNS)
+| 6 | Presentation | Data encoding, encryption
+| 5 | Session | Connection management
+| 4 | Transport | End-to-end communication (TCP, UDP)
+| 3 | Network | Routing across networks (IP)
+| 2 | Data Link | Local network transmission (Ethernet)
+| 1 | Physical | Bits on the wire
+|===
+
+The OSI model is useful for discussion but doesn't perfectly map to real
+protocols.
+
+=== The TCP/IP Model
+
+The Internet uses a four-layer model that better reflects actual implementation:
 
 [cols="1,2,2"]
 |===
@@ -43,95 +144,40 @@ Corosio operates at the Transport layer, providing TCP sockets. Your
 application logic sits above, sending and receiving data through Corosio's
 abstractions.
 
-== TCP: The Transmission Control Protocol
+=== Encapsulation
 
-TCP provides _reliable, ordered, byte-stream_ delivery between two endpoints.
-
-=== Reliable
-
-TCP guarantees that data arrives. If a packet is lost, TCP automatically
-retransmits it. Your application never sees missing data.
-
-=== Ordered
-
-Data arrives in the order it was sent. If packets arrive out of order, TCP
-reassembles them before delivering to your application.
-
-=== Byte Stream
-
-TCP delivers a continuous stream of bytes with no inherent message boundaries.
-If you send "Hello" followed by "World", the receiver might read "HelloWorld"
-in one operation, or "Hel" then "loWorld", or any other split.
-
-This has important implications for protocol design. You must define your own
-message framing—typically using:
-
-* **Length prefixes**: Send the message size before the message body
-* **Delimiters**: End each message with a special character (like `\n`)
-* **Fixed-size messages**: All messages have the same length
-
-== The Client-Server Model
-
-Most network applications follow the client-server pattern:
+When you send data, each layer wraps it with its own header:
 
 ----
-┌────────┐     connect     ┌────────┐
-│ Client │ ───────────────→│ Server │
-└────────┘                 └────────┘
-                               │
-                           listening
-                           on a port
+Application Data: "Hello"
+         ↓
+TCP adds header: [TCP Header][Hello]
+         ↓
+IP adds header: [IP Header][TCP Header][Hello]
+         ↓
+Ethernet adds header/trailer: [Eth Header][IP Header][TCP Header][Hello][Eth Trailer]
 ----
 
-**Server**: Listens on a well-known port, waiting for clients to connect. When
-a client connects, the server creates a new socket for that specific
-connection.
+The receiving side reverses this process, stripping headers at each layer until
+the application data emerges.
 
-**Client**: Initiates a connection to a server's IP address and port. Once
-connected, the client and server communicate as peers.
+== Internet Protocol (IP)
 
-=== Connection Lifecycle
-
-A TCP connection goes through these stages:
-
-1. **Server Setup**
-   - Create a socket
-   - Bind to a local address and port
-   - Begin listening for connections
-
-2. **Client Connects**
-   - Create a socket
-   - Connect to the server's address and port
-   - TCP performs a three-way handshake
-
-3. **Data Exchange**
-   - Both sides can send and receive data
-   - Data flows as a bidirectional byte stream
-
-4. **Connection Close**
-   - Either side initiates close
-   - TCP performs a four-way handshake
-   - Resources are released
-
-== Addresses and Ports
-
-Every TCP connection is identified by four values:
-
-* Source IP address
-* Source port
-* Destination IP address
-* Destination port
+IP handles routing packets across networks. It provides addressing (where to
+send) and fragmentation (breaking large packets into smaller pieces).
 
 === IP Addresses
 
 An IP address identifies a host on the network.
 
 **IPv4 addresses** are 32 bits, written as four decimal numbers separated by
-dots: `192.168.1.100`. There are about 4 billion possible addresses.
+dots: `192.168.1.100`. There are about 4 billion possible addresses—not enough
+for the modern Internet.
 
 **IPv6 addresses** are 128 bits, written as eight groups of hexadecimal digits
-separated by colons: `2001:0db8:0000:0000:0000:0000:0000:0001` (often shortened
-to `2001:db8::1`).
+separated by colons: `2001:0db8:0000:0000:0000:0000:0000:0001`. Leading zeros
+can be omitted, and consecutive groups of zeros can be replaced with `::`, so
+this becomes `2001:db8::1`.
 
 === Special Addresses
 
@@ -152,73 +198,240 @@ to `2001:db8::1`).
 | All interfaces (for binding)
 |===
 
-=== Ports
+=== Subnets and CIDR
 
-A port is a 16-bit number (0–65535) that identifies an application on a host.
-Well-known services use standard ports:
+Networks are divided into subnets using a _netmask_. The netmask defines which
+bits of the address identify the network versus the host.
+
+CIDR (Classless Inter-Domain Routing) notation combines the address and prefix
+length: `192.168.1.0/24` means the first 24 bits identify the network, leaving
+8 bits (256 addresses) for hosts.
+
+Common prefix lengths:
+
+[cols="1,2,2"]
+|===
+| CIDR | Netmask | Hosts
+
+| /8
+| 255.0.0.0
+| 16 million
+
+| /16
+| 255.255.0.0
+| 65,534
+
+| /24
+| 255.255.255.0
+| 254
+
+| /32
+| 255.255.255.255
+| 1 (single host)
+|===
+
+=== Public vs Private Addresses
+
+Some address ranges are reserved for private networks and aren't routable on
+the public Internet:
 
 [cols="1,2"]
 |===
-| Port | Service
+| Range | Common Use
 
-| 80
-| HTTP
+| 10.0.0.0/8
+| Large enterprise networks
 
-| 443
-| HTTPS
+| 172.16.0.0/12
+| Medium networks
 
-| 22
-| SSH
-
-| 25
-| SMTP (email)
+| 192.168.0.0/16
+| Home and small office networks
 |===
 
-Ports below 1024 typically require administrator privileges to bind.
+Your home devices likely use 192.168.x.x addresses.
 
-== Endpoints in Corosio
+=== NAT
 
-Corosio represents addresses and ports using the `endpoint` class:
+Network Address Translation (NAT) allows multiple devices with private addresses
+to share a single public IP address. Your router maintains a translation table,
+mapping internal (private IP + port) to external (public IP + port).
 
-[source,cpp]
+NAT complicates peer-to-peer connections because devices behind NAT can't
+directly receive incoming connections without port forwarding or NAT traversal
+techniques.
+
+=== Packets and Fragmentation
+
+IP transmits data in packets (also called datagrams). Each packet is
+independent and may take a different route to the destination.
+
+If a packet is too large for a network link, IP can fragment it into smaller
+pieces. The receiving host reassembles fragments before delivering to the
+transport layer. Fragmentation adds overhead and can cause problems if any
+fragment is lost.
+
+=== Routing
+
+Routers forward packets toward their destination based on routing tables. Each
+router examines the destination IP address and forwards the packet to the next
+hop. The path from source to destination may traverse many routers.
+
+=== TTL and Hop Counts
+
+The Time To Live (TTL) field prevents packets from circulating forever due to
+routing loops. Each router decrements TTL; when it reaches zero, the packet is
+discarded. The sender sets the initial TTL (commonly 64 or 128).
+
+Tools like `traceroute` exploit TTL to discover the network path by sending
+packets with increasing TTL values and observing which router discards each one.
+
+== TCP: Reliable Streams
+
+TCP provides _reliable, ordered, byte-stream_ delivery between two endpoints.
+Understanding TCP's mechanisms helps explain timeout behaviors, performance
+characteristics, and error conditions.
+
+=== Connection-Oriented
+
+TCP establishes a connection before transferring data. Both sides maintain
+state about the connection: sequence numbers, window sizes, timers. This
+contrasts with UDP, which just sends packets without setup.
+
+=== Three-Way Handshake
+
+TCP connections begin with a three-way handshake:
+
 ----
-// Port only (all interfaces)
-corosio::endpoint server_ep(8080);
-
-// IPv4 address and port
-corosio::endpoint client_ep(
-    boost::urls::ipv4_address::loopback(), 8080);
-
-// IPv6 address and port
-corosio::endpoint ipv6_ep(
-    boost::urls::ipv6_address::loopback(), 8080);
+Client                     Server
+  |                          |
+  |------ SYN seq=x -------->|  "I want to connect, my sequence starts at x"
+  |                          |
+  |<-- SYN-ACK seq=y ack=x+1-|  "OK, my sequence starts at y, I got your x"
+  |                          |
+  |------ ACK ack=y+1 ------>|  "I got your y, connection established"
+  |                          |
 ----
 
-== Name Resolution
+After the handshake, both sides can send and receive data.
 
-Humans use domain names like `www.example.com`, but TCP requires IP addresses.
-The Domain Name System (DNS) translates names to addresses.
+=== Sequence Numbers and Acknowledgments
 
-Corosio provides the `resolver` class for asynchronous DNS lookups:
+TCP numbers each byte in the stream. The sender assigns sequence numbers; the
+receiver acknowledges which bytes it has received. This enables detection of
+lost, duplicated, or reordered data.
 
-[source,cpp]
+If the sender doesn't receive an acknowledgment within a timeout, it
+retransmits. The receiver uses sequence numbers to put out-of-order data back
+in sequence and discard duplicates.
+
+=== Flow Control
+
+The receiver advertises a _window size_: how many bytes it can buffer. The
+sender must not have more unacknowledged bytes in flight than the receiver's
+window allows. This prevents a fast sender from overwhelming a slow receiver.
+
+The window size dynamically adjusts. When the receiver processes data, it opens
+the window; when it falls behind, the window shrinks.
+
+=== Congestion Control
+
+TCP also limits sending rate to avoid overwhelming the network itself. Algorithms
+like slow start, congestion avoidance, and fast retransmit probe for available
+bandwidth.
+
+When packet loss occurs (detected by missing acknowledgments), TCP assumes
+network congestion and reduces its sending rate. This is why TCP throughput can
+vary significantly depending on network conditions.
+
+=== Retransmission
+
+When TCP detects packet loss (no acknowledgment received), it retransmits. The
+retransmission timeout (RTO) is calculated from measured round-trip times. On
+a slow or variable network, RTO can be several seconds.
+
+This is why network operations can take a long time to fail—TCP may retry
+multiple times before giving up.
+
+=== Connection Teardown
+
+TCP connections close with a four-way handshake:
+
 ----
-corosio::resolver r(ioc);
-auto [ec, results] = co_await r.resolve("www.example.com", "https");
-
-for (auto const& entry : results)
-{
-    auto ep = entry.get_endpoint();
-    // Try connecting to ep...
-}
+Client                     Server
+  |                          |
+  |------ FIN -------------->|  "I'm done sending"
+  |                          |
+  |<----- ACK ---------------|  "Got it"
+  |                          |
+  |<----- FIN ---------------|  "I'm done too"
+  |                          |
+  |------ ACK -------------->|  "Got it, goodbye"
+  |                          |
 ----
 
-A single hostname may resolve to multiple addresses (for load balancing or
-redundancy). Your application should try each address until one succeeds.
+Either side can initiate the close. The FIN indicates "I have no more data to
+send" but the connection remains half-open—the other side can still send.
 
-== TCP vs UDP
+A RST (reset) immediately terminates the connection without the graceful
+handshake, used when something goes wrong.
 
-Corosio currently supports only TCP. Here's why TCP is often the right choice:
+=== TCP States
+
+A TCP connection moves through states:
+
+[cols="1,3"]
+|===
+| State | Meaning
+
+| LISTEN
+| Server waiting for connections
+
+| SYN_SENT
+| Client has sent SYN, waiting for response
+
+| SYN_RECEIVED
+| Server has received SYN, sent SYN-ACK
+
+| ESTABLISHED
+| Connection open, data can flow
+
+| FIN_WAIT_1
+| Sent FIN, waiting for ACK
+
+| FIN_WAIT_2
+| FIN acknowledged, waiting for peer's FIN
+
+| CLOSE_WAIT
+| Received peer's FIN, waiting for application to close
+
+| TIME_WAIT
+| Waiting to ensure peer received final ACK
+
+| CLOSED
+| Connection fully terminated
+|===
+
+The TIME_WAIT state lasts 2× the maximum segment lifetime (typically 1-2
+minutes). This prevents old packets from a closed connection being mistaken
+for a new connection on the same port. It's why restarting a server may fail
+with "address already in use."
+
+== UDP: Unreliable Datagrams
+
+UDP provides a simpler, connectionless service. It sends datagrams without
+guaranteeing delivery, ordering, or duplicate detection.
+
+=== Connectionless Communication
+
+UDP doesn't establish connections. You just send a datagram to a destination
+address and port. There's no handshake, no state maintained, no guaranteed
+delivery.
+
+If a UDP packet is lost, the sender doesn't know (unless the application builds
+its own acknowledgment mechanism).
+
+=== When to Use UDP vs TCP
 
 [cols="1,2,2"]
 |===
@@ -236,15 +449,251 @@ Corosio currently supports only TCP. Here's why TCP is often the right choice:
 | Connection-oriented
 | Connectionless
 
+| Overhead
+| Higher (headers, state)
+| Lower
+
 | Use cases
 | Web, email, file transfer
 | Video streaming, gaming, DNS
 |===
 
-TCP's reliability and ordering come at the cost of latency (retransmissions
-take time) and overhead (connection setup, acknowledgments). For most
-applications—especially those involving requests and responses—TCP's
-guarantees outweigh these costs.
+UDP is appropriate when:
+
+* Timeliness matters more than reliability (live video—a late frame is useless)
+* The application can tolerate loss (VoIP—missing audio is better than delayed)
+* Messages are small and independent (DNS queries)
+* You need multicast or broadcast
+
+TCP is appropriate for most applications where correctness matters.
+
+=== Checksums
+
+UDP includes a checksum covering the header and data. The receiver verifies
+the checksum and discards corrupted packets. Unlike TCP, UDP doesn't
+retransmit—the data is simply lost.
+
+Corosio currently supports only TCP. UDP may be added in future versions.
+
+== Ports and Sockets
+
+Ports and sockets connect the transport layer to applications.
+
+=== Port Numbers
+
+A port is a 16-bit number (0–65535) identifying an application on a host.
+
+[cols="1,2"]
+|===
+| Range | Usage
+
+| 0–1023
+| Well-known ports (require admin privileges)
+
+| 1024–49151
+| Registered ports (user applications)
+
+| 49152–65535
+| Ephemeral (dynamic) ports
+|===
+
+Standard services use well-known ports:
+
+[cols="1,2"]
+|===
+| Port | Service
+
+| 22
+| SSH
+
+| 25
+| SMTP (email)
+
+| 53
+| DNS
+
+| 80
+| HTTP
+
+| 443
+| HTTPS
+|===
+
+=== Socket as (IP, Port) Pair
+
+A socket endpoint is the combination of an IP address and port number. A TCP
+connection is uniquely identified by four values:
+
+* Source IP address
+* Source port
+* Destination IP address
+* Destination port
+
+This means a server on port 80 can have thousands of simultaneous connections
+from different clients—each connection has a unique tuple.
+
+=== Listening vs Connected Sockets
+
+A _listening socket_ waits for incoming connections on a specific port. When
+a client connects, the operating system creates a new _connected socket_ for
+that specific connection. The listening socket continues accepting more
+connections.
+
+=== Socket API Primitives
+
+The traditional socket API has operations that map to TCP concepts:
+
+[cols="1,3"]
+|===
+| Operation | Purpose
+
+| socket()
+| Create a socket handle
+
+| bind()
+| Associate a local address and port
+
+| listen()
+| Mark socket as accepting connections
+
+| accept()
+| Wait for and accept an incoming connection
+
+| connect()
+| Initiate a connection to a remote endpoint
+
+| send()/recv()
+| Transfer data on a connected socket
+
+| close()
+| Terminate the connection
+|===
+
+Corosio wraps these operations in coroutine-friendly abstractions.
+
+== DNS
+
+The Domain Name System translates human-readable names to IP addresses.
+
+=== Hostname Resolution
+
+When you connect to `www.example.com`, your system must find its IP address.
+This involves querying DNS servers, which form a hierarchical, distributed
+database.
+
+=== Record Types
+
+[cols="1,3"]
+|===
+| Type | Purpose
+
+| A
+| Maps hostname to IPv4 address
+
+| AAAA
+| Maps hostname to IPv6 address
+
+| CNAME
+| Alias (canonical name) pointing to another hostname
+
+| MX
+| Mail server for a domain
+
+| TXT
+| Arbitrary text (often used for verification)
+|===
+
+=== DNS Lookup Flow
+
+1. Application calls `getaddrinfo()` (or Corosio's `resolver::resolve()`)
+2. System checks local cache
+3. If not cached, queries configured DNS server(s)
+4. DNS server may recursively query other servers
+5. Response returns IP address(es)
+
+DNS responses often include multiple addresses (for load balancing or
+redundancy). Your application should try each address until one succeeds.
+
+Corosio provides the `resolver` class for asynchronous DNS lookups:
+
+[source,cpp]
+----
+corosio::resolver r(ioc);
+auto [ec, results] = co_await r.resolve("www.example.com", "https");
+
+for (auto const& entry : results)
+{
+    auto ep = entry.get_endpoint();
+    // Try connecting to ep...
+}
+----
+
+== Practical Considerations
+
+Real-world network programming involves details that affect performance and
+correctness.
+
+=== Localhost and Loopback
+
+The loopback interface (`127.0.0.1` or `::1`) allows a machine to communicate
+with itself. Traffic never leaves the host, making it useful for testing and
+inter-process communication.
+
+Binding to loopback restricts access to local connections only—external hosts
+cannot connect.
+
+=== Firewalls and Port Blocking
+
+Firewalls filter network traffic based on addresses and ports. Corporate
+networks often block all incoming connections and restrict outgoing to specific
+ports (80, 443). Your application may need to work within these constraints.
+
+=== Keep-Alive
+
+TCP keep-alive sends periodic probes on idle connections to detect if the peer
+has disappeared. Without keep-alive, a connection to a crashed host may appear
+open indefinitely.
+
+Operating systems have configurable keep-alive intervals (often defaulting to
+hours). Applications needing faster detection should implement application-level
+heartbeats.
+
+=== Nagle's Algorithm
+
+Nagle's algorithm batches small writes. Instead of sending each small piece
+immediately, TCP waits briefly to accumulate more data, sending fewer, larger
+packets.
+
+This improves efficiency for bulk transfers but adds latency for interactive
+applications (like games or terminals) that send small, frequent messages.
+
+=== TCP_NODELAY
+
+The `TCP_NODELAY` socket option disables Nagle's algorithm, sending data
+immediately regardless of size. Use this for latency-sensitive applications
+where you're sending small packets that shouldn't be delayed.
+
+[source,cpp]
+----
+// Note: Corosio doesn't currently expose TCP_NODELAY directly
+----
+
+=== SO_REUSEADDR
+
+When a socket closes, its address may remain in TIME_WAIT state for minutes.
+`SO_REUSEADDR` allows a new socket to bind to an address that's in TIME_WAIT.
+
+This is essential for servers that restart—without it, the restart fails with
+"address already in use" until TIME_WAIT expires.
+
+=== SO_REUSEPORT
+
+`SO_REUSEPORT` (available on some operating systems) allows multiple sockets
+to bind to the same address and port. The operating system distributes incoming
+connections among them.
+
+This enables multi-process server architectures where each process has its own
+listening socket.
 
 == What Corosio Provides
 
@@ -286,8 +735,8 @@ and when servers restart.
 === Address Already in Use
 
 A server that terminates and immediately restarts may fail to bind because the
-OS keeps the old socket in `TIME_WAIT` state. Production servers typically set
-socket options to allow address reuse.
+OS keeps the old socket in TIME_WAIT state. Production servers typically enable
+SO_REUSEADDR.
 
 === Blocking the Event Loop
 

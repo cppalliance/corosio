@@ -9,85 +9,401 @@
 
 = TLS Encryption
 
-The `wolfssl_stream` class provides TLS encryption using the WolfSSL library.
-It wraps an existing stream (like `socket`) and provides encrypted I/O.
+Corosio provides TLS encryption through the `tls::context` configuration class
+and stream wrappers that add encryption to existing connections. This chapter
+covers context configuration, stream usage, and common TLS patterns.
 
 NOTE: Code snippets assume:
 [source,cpp]
 ----
+#include <boost/corosio/tls/context.hpp>
 #include <boost/corosio/tls/wolfssl_stream.hpp>
 #include <boost/corosio/socket.hpp>
 
 namespace corosio = boost::corosio;
+namespace tls = corosio::tls;
 ----
 
 == Overview
 
+TLS (Transport Layer Security) encrypts data on TCP connections, providing
+confidentiality, integrity, and authentication. Corosio supports TLS through:
+
+* **tls::context** — Portable configuration for certificates, keys, and options
+* **tls_stream** — Abstract base class adding handshake and shutdown
+* **wolfssl_stream** — TLS implementation using WolfSSL
+* **openssl_stream** — TLS implementation using OpenSSL
+
+The typical flow:
+
 [source,cpp]
 ----
-// Create and connect a socket
+// 1. Configure a context
+tls::context ctx;
+ctx.set_default_verify_paths().value();
+ctx.set_verify_mode(tls::verify_mode::peer).value();
+ctx.set_hostname("api.example.com");
+
+// 2. Connect a socket
 corosio::socket sock(ioc);
 sock.open();
 (co_await sock.connect(endpoint)).value();
 
-// Wrap in TLS
-corosio::wolfssl_stream secure(sock);
-(co_await secure.handshake(corosio::wolfssl_stream::client)).value();
+// 3. Wrap in TLS stream
+corosio::wolfssl_stream secure(sock, ctx);
+(co_await secure.handshake(tls::role::client)).value();
 
-// Use secure stream for encrypted I/O
+// 4. Use encrypted I/O
 auto [ec, n] = co_await secure.read_some(buffer);
 ----
 
-== Construction
+== tls::context
 
-A `wolfssl_stream` wraps an existing `io_stream`:
+The `tls::context` class stores TLS configuration: certificates, keys, trust
+anchors, protocol settings, and verification options. Contexts are shared
+handles—copies share the same underlying state.
+
+IMPORTANT: Don't modify a context after creating streams from it. The
+configuration is captured when the first stream is constructed.
+
+=== Creating a Context
 
 [source,cpp]
 ----
-corosio::socket sock(ioc);
-corosio::wolfssl_stream secure(sock);
+// Default context (TLS 1.2+ enabled)
+tls::context ctx;
 ----
 
-IMPORTANT: The underlying stream must remain valid for the lifetime of the
-`wolfssl_stream`. The `wolfssl_stream` does not take ownership.
+The default context has no certificates loaded and doesn't verify peers. You'll
+typically configure it before use.
+
+=== Credential Loading
+
+For servers (and clients using mutual TLS), load your certificate and private
+key.
+
+==== Loading Certificates
+
+[source,cpp]
+----
+// From file
+ctx.use_certificate_file("server.crt", tls::file_format::pem).value();
+
+// From memory
+std::string cert_data = /* ... */;
+ctx.use_certificate(cert_data, tls::file_format::pem).value();
+
+// Certificate chain (cert + intermediates)
+ctx.use_certificate_chain_file("fullchain.pem").value();
+----
+
+==== Loading Private Keys
+
+[source,cpp]
+----
+// From file
+ctx.use_private_key_file("server.key", tls::file_format::pem).value();
+
+// From memory
+ctx.use_private_key(key_data, tls::file_format::pem).value();
+----
+
+For encrypted private keys, set a password callback first:
+
+[source,cpp]
+----
+ctx.set_password_callback(
+    [](std::size_t max_len, tls::password_purpose purpose) {
+        return std::string("my-key-password");
+    });
+ctx.use_private_key_file("encrypted.key", tls::file_format::pem).value();
+----
+
+==== PKCS#12 Bundles
+
+PKCS#12 (`.pfx` or `.p12`) files bundle certificate, key, and chain together:
+
+[source,cpp]
+----
+ctx.use_pkcs12_file("credentials.pfx", "bundle-password").value();
+----
+
+=== Trust Anchors
+
+Configure which Certificate Authorities (CAs) to trust for peer verification.
+
+==== System Trust Store
+
+Use the operating system's default CA certificates:
+
+[source,cpp]
+----
+ctx.set_default_verify_paths().value();
+----
+
+This is the recommended approach for HTTPS clients connecting to public servers.
+
+==== Custom CA Certificates
+
+[source,cpp]
+----
+// Single CA from memory
+ctx.add_certificate_authority(ca_pem).value();
+
+// CA file (may contain multiple certs)
+ctx.load_verify_file("/etc/ssl/certs/ca-certificates.crt").value();
+
+// Directory of hashed CA files
+ctx.add_verify_path("/etc/ssl/certs").value();
+----
+
+=== Protocol Configuration
+
+==== TLS Version
+
+[source,cpp]
+----
+// Require TLS 1.3 minimum
+ctx.set_min_protocol_version(tls::version::tls_1_3).value();
+
+// Cap at TLS 1.2 (unusual, but possible)
+ctx.set_max_protocol_version(tls::version::tls_1_2).value();
+----
+
+Available versions:
+
+[cols="1,2"]
+|===
+| Version | Description
+
+| `tls::version::tls_1_2`
+| TLS 1.2 (RFC 5246)
+
+| `tls::version::tls_1_3`
+| TLS 1.3 (RFC 8446)
+|===
+
+==== Cipher Suites
+
+[source,cpp]
+----
+// OpenSSL-style cipher string
+ctx.set_ciphersuites("ECDHE+AESGCM:ECDHE+CHACHA20").value();
+----
+
+==== ALPN
+
+Application-Layer Protocol Negotiation selects the application protocol:
+
+[source,cpp]
+----
+// Prefer HTTP/2, fall back to HTTP/1.1
+ctx.set_alpn({"h2", "http/1.1"}).value();
+----
+
+=== Certificate Verification
+
+==== Verification Mode
+
+[source,cpp]
+----
+// Don't verify peer (not recommended for clients)
+ctx.set_verify_mode(tls::verify_mode::none).value();
+
+// Verify if peer presents certificate
+ctx.set_verify_mode(tls::verify_mode::peer).value();
+
+// Require peer certificate (fail if not presented)
+ctx.set_verify_mode(tls::verify_mode::require_peer).value();
+----
+
+For HTTPS clients, use `peer`. For servers requiring client certificates
+(mutual TLS), use `require_peer`.
+
+==== Hostname Verification (SNI)
+
+For clients, set the expected server hostname:
+
+[source,cpp]
+----
+ctx.set_hostname("api.example.com");
+----
+
+This does two things:
+
+1. Sends Server Name Indication (SNI) so the server knows which certificate
+   to present (important for virtual hosting)
+2. Verifies the server certificate matches this hostname
+
+==== Verification Depth
+
+Limit the certificate chain depth:
+
+[source,cpp]
+----
+ctx.set_verify_depth(10).value(); // Max 10 intermediate certs
+----
+
+==== Custom Verification Callback
+
+For advanced verification logic:
+
+[source,cpp]
+----
+ctx.set_verify_callback(
+    [](bool preverified, /* verify_context& */ auto& ctx) {
+        // Return true to accept, false to reject
+        if (!preverified)
+            return false; // Reject if basic checks failed
+
+        // Additional custom checks...
+        return true;
+    });
+----
+
+=== Revocation Checking
+
+==== Certificate Revocation Lists
+
+[source,cpp]
+----
+// Load CRL from file
+ctx.add_crl_file("issuer.crl").value();
+
+// Load CRL from memory
+ctx.add_crl(crl_data).value();
+----
+
+==== OCSP Stapling
+
+For servers, provide a stapled OCSP response:
+
+[source,cpp]
+----
+ctx.set_ocsp_staple(ocsp_response_data).value();
+----
+
+For clients, require the server to staple:
+
+[source,cpp]
+----
+ctx.set_require_ocsp_staple(true);
+----
+
+==== Revocation Policy
+
+[source,cpp]
+----
+// Don't check revocation (default)
+ctx.set_revocation_policy(tls::revocation_policy::disabled);
+
+// Check but allow if status unknown
+ctx.set_revocation_policy(tls::revocation_policy::soft_fail);
+
+// Fail if revocation status can't be determined
+ctx.set_revocation_policy(tls::revocation_policy::hard_fail);
+----
+
+== TLS Streams
+
+TLS streams wrap an underlying `io_stream` (like `socket`) to provide encrypted
+I/O.
+
+=== tls_stream Base Class
+
+The `tls_stream` class inherits from `io_stream` and adds:
+
+[source,cpp]
+----
+class tls_stream : public io_stream
+{
+public:
+    enum handshake_type { client, server };
+
+    auto handshake(handshake_type type);  // Perform TLS handshake
+    auto shutdown();                       // Graceful TLS shutdown
+
+    io_stream& next_layer();              // Access underlying stream
+};
+----
+
+=== wolfssl_stream
+
+The WolfSSL-based implementation:
+
+[source,cpp]
+----
+#include <boost/corosio/tls/wolfssl_stream.hpp>
+
+corosio::socket sock(ioc);
+// ... connect sock ...
+
+tls::context ctx;
+// ... configure ctx ...
+
+corosio::wolfssl_stream secure(sock, ctx);
+----
+
+=== openssl_stream
+
+The OpenSSL-based implementation:
+
+[source,cpp]
+----
+#include <boost/corosio/tls/openssl_stream.hpp>
+
+corosio::openssl_stream secure(sock, ctx);
+----
+
+Both implementations provide the same interface through `tls_stream`.
 
 == Handshake
 
-Before encrypted I/O can occur, you must perform the TLS handshake:
+Before encrypted communication, perform the TLS handshake:
 
 === Client Handshake
 
 [source,cpp]
 ----
-auto [ec] = co_await secure.handshake(corosio::wolfssl_stream::client);
+auto [ec] = co_await secure.handshake(tls_stream::client);
 if (ec)
+{
     std::cerr << "Handshake failed: " << ec.message() << "\n";
+    co_return;
+}
 ----
 
 === Server Handshake
 
 [source,cpp]
 ----
-auto [ec] = co_await secure.handshake(corosio::wolfssl_stream::server);
+auto [ec] = co_await secure.handshake(tls_stream::server);
 ----
 
-=== Handshake Types
+=== Handshake Errors
+
+Common handshake failures:
 
 [cols="1,2"]
 |===
-| Type | Description
+| Error | Cause
 
-| `client`
-| Perform TLS handshake as the connecting client
+| Certificate verification failure
+| Peer certificate invalid, expired, or untrusted
 
-| `server`
-| Perform TLS handshake as the accepting server
+| Protocol version mismatch
+| No common TLS version supported
+
+| Cipher negotiation failure
+| No common cipher suite
+
+| Hostname mismatch
+| Certificate doesn't match expected hostname
 |===
 
 == Reading and Writing
 
-The `wolfssl_stream` inherits from `io_stream`, providing the same interface
-as `socket`:
+After handshake, use the stream like any `io_stream`:
 
 [source,cpp]
 ----
@@ -104,7 +420,7 @@ auto [wec, wn] = co_await secure.write_some(
 
 === Composed Operations
 
-The free functions `read()` and `write()` work with `wolfssl_stream`:
+The `read()` and `write()` free functions work with TLS streams:
 
 [source,cpp]
 ----
@@ -115,10 +431,24 @@ auto [ec, n] = co_await corosio::read(secure, large_buffer);
 auto [wec, wn] = co_await corosio::write(secure, data_buffer);
 ----
 
+== Shutdown
+
+Graceful TLS shutdown sends a close_notify alert:
+
+[source,cpp]
+----
+auto [ec] = co_await secure.shutdown();
+// Then close the underlying socket
+sock.close();
+----
+
+Shutdown is optional but recommended. Without it, the peer can't distinguish
+between a graceful close and a truncation attack.
+
 == Polymorphic Use
 
-Because `wolfssl_stream` inherits from `io_stream`, you can write code that
-works with both encrypted and unencrypted streams:
+Because TLS streams inherit from `io_stream`, you can write code that works
+with both encrypted and unencrypted connections:
 
 [source,cpp]
 ----
@@ -130,8 +460,6 @@ capy::task<void> send_request(corosio::io_stream& stream)
 
     std::string response;
     co_await corosio::read(stream, response);
-
-    std::cout << response << "\n";
 }
 
 // Works with plain socket
@@ -139,28 +467,48 @@ corosio::socket sock(ioc);
 co_await send_request(sock);
 
 // Also works with TLS stream
-corosio::wolfssl_stream secure(sock);
+corosio::wolfssl_stream secure(sock, ctx);
 co_await send_request(secure);
 ----
 
 == HTTPS Client Example
 
+Complete example connecting to an HTTPS server:
+
 [source,cpp]
 ----
 capy::task<void> https_get(
     corosio::io_context& ioc,
-    boost::urls::ipv4_address addr,
-    std::uint16_t port,
-    std::string_view hostname)
+    std::string_view hostname,
+    std::uint16_t port)
 {
+    // Resolve hostname
+    corosio::resolver resolver(ioc);
+    auto [resolve_ec, results] = co_await resolver.resolve(
+        hostname, std::to_string(port));
+    if (resolve_ec)
+        throw boost::system::system_error(resolve_ec);
+
     // Connect TCP socket
     corosio::socket sock(ioc);
     sock.open();
-    (co_await sock.connect(corosio::endpoint(addr, port))).value();
+
+    for (auto const& entry : results)
+    {
+        auto [ec] = co_await sock.connect(entry.get_endpoint());
+        if (!ec)
+            break;
+    }
+
+    // Configure TLS
+    tls::context ctx;
+    ctx.set_default_verify_paths().value();
+    ctx.set_verify_mode(tls::verify_mode::peer).value();
+    ctx.set_hostname(hostname);
 
     // Wrap in TLS and handshake
-    corosio::wolfssl_stream secure(sock);
-    (co_await secure.handshake(corosio::wolfssl_stream::client)).value();
+    corosio::wolfssl_stream secure(sock, ctx);
+    (co_await secure.handshake(tls_stream::client)).value();
 
     // Send HTTP request
     std::string request =
@@ -176,67 +524,110 @@ capy::task<void> https_get(
     std::string response;
     auto [ec, n] = co_await corosio::read(secure, response);
 
-    // EOF is expected when server closes connection
+    // EOF expected when server closes
     if (ec && ec != capy::error::eof)
         throw boost::system::system_error(ec);
 
     std::cout << response << "\n";
+
+    // Graceful shutdown
+    co_await secure.shutdown();
 }
 ----
 
-== Error Handling
+== TLS Server Example
 
-TLS operations can fail with SSL-specific errors in addition to normal
-I/O errors:
+Server with certificate and key:
 
 [source,cpp]
 ----
-auto [ec] = co_await secure.handshake(corosio::wolfssl_stream::client);
-if (ec)
+capy::task<void> tls_server(
+    corosio::io_context& ioc,
+    std::uint16_t port)
 {
-    // Could be SSL error (certificate, protocol, etc.)
-    // or I/O error (connection reset, timeout, etc.)
-    std::cerr << "TLS error: " << ec.message() << "\n";
+    // Configure server TLS context
+    tls::context ctx;
+    ctx.use_certificate_chain_file("server-fullchain.pem").value();
+    ctx.use_private_key_file("server.key", tls::file_format::pem).value();
+
+    // Set up acceptor
+    corosio::acceptor acc(ioc);
+    acc.listen(corosio::endpoint(port));
+
+    for (;;)
+    {
+        corosio::socket peer(ioc);
+        auto [ec] = co_await acc.accept(peer);
+        if (ec) break;
+
+        // Spawn handler
+        capy::run_async(ioc.get_executor())(
+            handle_tls_client(std::move(peer), ctx));
+    }
+}
+
+capy::task<void> handle_tls_client(
+    corosio::socket sock,
+    tls::context ctx)
+{
+    corosio::wolfssl_stream secure(sock, ctx);
+
+    auto [ec] = co_await secure.handshake(tls_stream::server);
+    if (ec)
+        co_return;
+
+    // Handle encrypted connection...
+    char buf[1024];
+    auto [read_ec, n] = co_await secure.read_some(
+        capy::mutable_buffer(buf, sizeof(buf)));
+
+    // Graceful shutdown
+    co_await secure.shutdown();
 }
 ----
 
-Common TLS errors include:
+== Mutual TLS (mTLS)
 
-* Certificate validation failure
-* Protocol version mismatch
-* Cipher suite negotiation failure
-* Connection closed during handshake
+For client certificate authentication:
 
-== Cancellation
-
-TLS operations support cancellation:
+=== Server Side
 
 [source,cpp]
 ----
-auto [ec] = co_await secure.handshake(corosio::wolfssl_stream::client);
-if (ec == make_error_code(system::errc::operation_canceled))
-    std::cout << "Handshake cancelled\n";
+tls::context server_ctx;
+server_ctx.use_certificate_chain_file("server.pem").value();
+server_ctx.use_private_key_file("server.key", tls::file_format::pem).value();
+
+// Require client certificate
+server_ctx.set_verify_mode(tls::verify_mode::require_peer).value();
+server_ctx.load_verify_file("client-ca.pem").value();
 ----
 
-Stop token cancellation also works through the affine protocol.
+=== Client Side
 
-== Building with WolfSSL
-
-To use `wolfssl_stream`, you must link against WolfSSL:
-
-[source,cmake]
+[source,cpp]
 ----
-find_package(WolfSSL REQUIRED)
-target_link_libraries(my_target PRIVATE WolfSSL::WolfSSL)
-----
+tls::context client_ctx;
+client_ctx.set_default_verify_paths().value();
+client_ctx.set_verify_mode(tls::verify_mode::peer).value();
+client_ctx.set_hostname("server.example.com");
 
-The `cmake/FindWolfSSL.cmake` module is provided in the Corosio distribution.
+// Provide client certificate
+client_ctx.use_certificate_file("client.crt", tls::file_format::pem).value();
+client_ctx.use_private_key_file("client.key", tls::file_format::pem).value();
+----
 
 == Thread Safety
 
 [cols="1,2"]
 |===
 | Operation | Thread Safety
+
+| Distinct contexts
+| Safe from different threads
+
+| Shared context (read-only)
+| Safe after configuration complete
 
 | Distinct streams
 | Safe from different threads
@@ -246,18 +637,28 @@ The `cmake/FindWolfSSL.cmake` module is provided in the Corosio distribution.
 |===
 
 Don't perform concurrent read, write, or handshake operations on the same
-`wolfssl_stream`.
+TLS stream.
 
-== Limitations
+== Building with TLS Libraries
 
-* Server Name Indication (SNI) is not currently exposed
-* Client certificate authentication is not currently exposed
-* Session resumption is not currently exposed
+=== WolfSSL
 
-These features may be added in future versions.
+[source,cmake]
+----
+find_package(WolfSSL REQUIRED)
+target_link_libraries(my_target PRIVATE WolfSSL::WolfSSL)
+----
+
+=== OpenSSL
+
+[source,cmake]
+----
+find_package(OpenSSL REQUIRED)
+target_link_libraries(my_target PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+----
 
 == Next Steps
 
 * xref:sockets.adoc[Sockets] — The underlying stream
 * xref:composed-operations.adoc[Composed Operations] — read() and write()
-* xref:../tutorials/http-client.adoc[HTTP Client Tutorial] — HTTPS example
+* xref:../tutorials/tls-context.adoc[TLS Context Tutorial] — Step-by-step configuration

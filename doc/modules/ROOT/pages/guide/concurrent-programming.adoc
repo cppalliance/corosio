@@ -13,47 +13,214 @@ Network servers often handle many clients simultaneously. This chapter explains
 how Corosio supports concurrency using C++20 coroutines and the strand pattern
 for safe shared state access.
 
-== The Concurrency Challenge
+== Why Concurrency?
+
+Sequential programs execute one operation at a time. When a sequential program
+waits for a network response, it sits idle—wasting CPU cycles that could do
+useful work.
+
+=== Latency Hiding
+
+Network operations take time: a DNS lookup, a connection handshake, waiting for
+data to arrive. During these waits, a concurrent program can handle other
+clients, process other requests, or run background tasks.
+
+Consider a web server. If it handles one request at a time, every client waits
+for all previous clients to finish. With concurrency, the server processes
+multiple requests in parallel—while one client's request waits for a database
+response, another client's request is being sent.
+
+=== Throughput
+
+Concurrency increases throughput. A single-threaded server handling one
+connection at a time might manage 100 requests per second. The same server with
+concurrency might handle 10,000—not because any single request is faster, but
+because the server overlaps waiting time with useful work.
+
+=== Concurrency vs Parallelism
+
+These terms are related but distinct:
+
+* **Concurrency**: Managing multiple tasks, potentially interleaved, making
+  progress on each. A single CPU can run concurrent tasks by switching between
+  them.
+
+* **Parallelism**: Actually executing multiple tasks simultaneously on multiple
+  CPUs.
+
+Coroutines provide concurrency. Combined with multiple threads, they can also
+achieve parallelism. For I/O-bound workloads, concurrency alone often provides
+sufficient performance.
+
+== The Problem of Shared State
 
 When multiple operations run concurrently, they may access shared data. Without
-synchronization, this leads to data races:
+synchronization, this leads to data races—bugs that are subtle, intermittent,
+and hard to reproduce.
+
+=== Race Conditions
+
+A race condition occurs when program behavior depends on the timing of
+operations:
 
 [source,cpp]
 ----
 int counter = 0;
 
-// Thread 1                  // Thread 2
-++counter;                   ++counter;
+// Task 1                  // Task 2
+++counter;                 ++counter;
 // Both read 0, both write 1
 // Expected: 2, Actual: 1 (data race)
 ----
 
-Traditional solutions use mutexes:
+The `++counter` operation isn't atomic—it reads, modifies, then writes. If two
+tasks interleave, both may read the old value before either writes.
+
+=== The Read-Modify-Write Hazard
+
+The pattern read → modify → write is a classic source of races:
+
+[source,cpp]
+----
+if (resource_available)      // Read
+{
+    resource_available = false; // Write
+    use_resource();
+}
+----
+
+If two tasks check `resource_available` simultaneously, both may see `true`
+and proceed to use the resource—violating the intended mutual exclusion.
+
+=== Why Correct-Looking Code Fails
+
+Race conditions are insidious because the code looks correct. It works most of
+the time—only failing when operations interleave in specific ways. Bugs may
+appear only under load, on certain hardware, or after code changes that affect
+timing.
+
+== Traditional Solutions
+
+The traditional approach to safe concurrent access uses threads and mutexes.
+
+=== Threads and Their Costs
+
+Operating system threads provide parallelism but have costs:
+
+[cols="1,2"]
+|===
+| Cost | Details
+
+| Memory
+| Each thread needs a stack (often 1MB+ per thread)
+
+| Creation
+| Creating a thread involves kernel calls
+
+| Context switches
+| Switching between threads is expensive (save/restore registers, cache effects)
+|===
+
+A server with 10,000 connections can't afford 10,000 threads.
+
+=== Mutexes and Critical Sections
+
+A mutex (mutual exclusion) protects shared data by allowing only one thread to
+hold it at a time:
 
 [source,cpp]
 ----
 std::mutex m;
+int counter = 0;
+
+void increment()
 {
     std::lock_guard lock(m);
-    ++counter;
+    ++counter; // Safe: only one thread at a time
 }
 ----
 
-Mutexes work but have drawbacks:
+The region between lock acquisition and release is a _critical section_.
 
-* **Deadlock risk** — Taking multiple locks in different orders
-* **Blocking** — Threads wait even when work is available
-* **Scattered locking** — Every access site needs correct locking
+=== Deadlock
+
+When tasks acquire multiple locks, they risk deadlock:
+
+[source,cpp]
+----
+// Thread 1               // Thread 2
+lock(mutex_a);            lock(mutex_b);
+lock(mutex_b); // waits   lock(mutex_a); // waits
+// Both wait forever
+----
+
+Deadlock requires careful lock ordering to prevent—a maintenance burden as
+code evolves.
+
+=== Why Mutexes Are Error-Prone
+
+Mutex-based code has problems:
+
+* Every access site must remember to lock
+* Holding a lock while calling other code risks deadlock
+* Forgetting a lock causes subtle bugs discovered in production
+* Performance suffers from contention
 
 Corosio offers a better approach for I/O-bound code: coroutines with strands.
+
+== The Event Loop Model
+
+Instead of threads waiting on blocking calls, the event loop model uses a
+single thread processing events as they arrive.
+
+=== Single-Threaded Concurrency
+
+An event loop processes one event at a time:
+
+[source,cpp]
+----
+while (!stopped)
+{
+    wait_for_event();     // Blocks until I/O completes
+    handle_event();       // Run the handler
+}
+----
+
+Events might be: "data arrived on socket X," "timer expired," "new connection
+ready to accept." Each handler runs to completion before the next event is
+processed.
+
+=== Non-Blocking I/O
+
+Traditional I/O operations block: `read()` waits until data arrives. Non-blocking
+I/O returns immediately if no data is available, allowing the program to check
+other sockets or do other work.
+
+The event loop combines non-blocking I/O with OS notifications (select, poll,
+epoll, kqueue, IOCP) to efficiently wait for events across many connections.
+
+=== Run-to-Completion Semantics
+
+Each event handler runs without interruption. If you're processing a message,
+no other handler for your data structures runs until you finish. This provides
+implicit synchronization—no need for locks within single-threaded event
+handling.
+
+=== The Reactor Pattern
+
+Corosio uses the reactor pattern: register interest in I/O events, wait for
+events, dispatch handlers. The `io_context::run()` method implements this loop.
+
+The reactor is efficient because it waits for any of many events simultaneously,
+rather than polling each socket individually.
 
 == C++20 Coroutines
 
 A coroutine is a function that can suspend and resume execution. Unlike threads,
-coroutines don't block the thread when waiting—they yield control back to a
+coroutines don't block the thread when waiting—they yield control to a
 scheduler.
 
-=== The Language Features
+=== Language Mechanics
 
 C++20 adds three keywords:
 
@@ -71,6 +238,34 @@ C++20 adds three keywords:
 | Produce a value and suspend (for generators)
 |===
 
+Using any of these keywords makes a function a coroutine.
+
+=== Suspension Points as Yield Points
+
+When a coroutine hits `co_await`, it may suspend. The thread is free to run
+other coroutines or handle other events. When the awaited operation completes,
+the coroutine resumes—possibly on a different thread.
+
+[source,cpp]
+----
+capy::task<void> handle_client(corosio::socket sock)
+{
+    char buf[1024];
+
+    auto [ec, n] = co_await sock.read_some(
+        capy::mutable_buffer(buf, sizeof(buf)));
+    // Suspends here until data arrives
+
+    if (ec)
+        co_return;  // Exit on error
+
+    // Process data...
+}
+----
+
+Between `co_await` and resumption, no code in this coroutine runs. Other
+coroutines can make progress.
+
 === Coroutines vs Threads
 
 [cols="1,2,2"]
@@ -78,8 +273,8 @@ C++20 adds three keywords:
 | Property | Threads | Coroutines
 
 | Scheduling
-| Preemptive (OS)
-| Cooperative (explicit yield)
+| Preemptive (OS can interrupt anytime)
+| Cooperative (explicit yield at `co_await`)
 
 | Memory
 | Fixed stack (often 1MB+)
@@ -90,40 +285,32 @@ C++20 adds three keywords:
 | Cheap (allocation)
 
 | Context switch
-| Expensive (kernel)
+| Expensive (kernel, cache)
 | Cheap (save/restore frame)
 |===
 
-Coroutines excel for I/O-bound workloads where operations spend most time
-waiting. A single thread can manage thousands of coroutines.
+=== Why Coroutines Excel for I/O
 
-=== Using Coroutines with Corosio
+I/O-bound programs spend most time waiting. Coroutines make waiting cheap:
 
-Corosio operations return awaitables. You `co_await` them to get results:
+* Thousands of suspended coroutines use minimal memory
+* Resumption is just a function call
+* No kernel involvement until actual I/O
 
-[source,cpp]
-----
-capy::task<void> handle_client(corosio::socket sock)
-{
-    char buf[1024];
-
-    auto [ec, n] = co_await sock.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
-
-    if (ec)
-        co_return;  // Exit on error
-
-    // Process data...
-}
-----
-
-When `read_some` suspends, the thread can run other coroutines. When data
-arrives, `handle_client` resumes—possibly on a different thread.
+A single thread can manage thousands of concurrent connections using coroutines.
 
 == Executor Affinity
 
 A coroutine has _affinity_ to an executor—its resumptions go through that
-executor. This matters for thread safety:
+executor. This matters for thread safety.
+
+=== What Affinity Means
+
+When a coroutine suspends, it remembers which executor should resume it. The
+I/O completion notification posts the resumption to that executor, not
+necessarily the thread that started the operation.
+
+=== Resuming Through the Right Executor
 
 [source,cpp]
 ----
@@ -131,16 +318,22 @@ capy::run_async(ioc.get_executor())(my_coroutine());
 // my_coroutine resumes through ioc's executor
 ----
 
-Corosio uses the _affine awaitable protocol_ to propagate this automatically.
-When you `co_await` an I/O operation, it captures your executor and resumes
-through it.
+If `io_context::run()` is called from one thread, resumptions happen on that
+thread. With multiple threads calling `run()`, resumptions happen on whichever
+thread is available.
+
+=== The Affine Awaitable Protocol
+
+Corosio operations implement the affine awaitable protocol. When you `co_await`
+an I/O operation, it captures your executor and resumes through it. This
+happens automatically—you don't need explicit dispatch calls.
 
 See xref:../concepts/affine-awaitables.adoc[Affine Awaitables] for details.
 
-== Strands: Synchronization Without Mutexes
+== Strands: Synchronization Without Locks
 
 A _strand_ guarantees that handlers posted to it don't run concurrently. Even
-with multiple threads, strand operations execute one at a time:
+with multiple threads, strand operations execute one at a time.
 
 ----
         ┌───────────────┐
@@ -158,35 +351,28 @@ Thread D│   │ n │       │
           threads            handlers
 ----
 
-=== Why Strands Are Better Than Mutexes
+=== Sequential Execution Guarantees
 
-With mutexes, you explicitly lock around shared data:
+Handlers on the same strand never overlap. If handler A is running, handler B
+waits. This provides mutual exclusion without explicit locks.
+
+=== Implicit vs Explicit Synchronization
+
+With mutexes, synchronization is explicit—you lock before accessing shared data.
+With strands, synchronization is structural—all access goes through the strand.
 
 [source,cpp]
 ----
-// Mutex approach
+// Mutex approach: explicit locking at every access
 std::mutex m;
-
 void access_shared_data()
 {
     std::lock_guard lock(m);
     // Access data
 }
-----
 
-Problems:
-
-* Every caller must remember to lock
-* Calling another function while holding a lock risks deadlock
-* Forgetting a lock causes subtle bugs
-
-With strands, you post all related work to the same strand:
-
-[source,cpp]
-----
-// Strand approach
+// Strand approach: structural serialization
 auto strand = asio::make_strand(ioc);
-
 void access_shared_data()
 {
     asio::post(strand, [&] {
@@ -195,11 +381,19 @@ void access_shared_data()
 }
 ----
 
-Benefits:
+=== When Strands Replace Mutexes
 
-* Serialization is structural, not per-access
-* No deadlock risk
-* Forgetting to use the strand causes immediate errors (wrong executor)
+Strands work well when:
+
+* Access is already through asynchronous handlers
+* The critical section is the entire handler (not a small portion)
+* You want to avoid deadlock risk
+
+Strands work less well when:
+
+* You need synchronization in synchronous code
+* The critical section is a tiny portion of a large handler
+* You need to wait for shared state to reach a condition
 
 === Strands in Corosio
 
@@ -220,45 +414,34 @@ capy::task<void> session(corosio::socket sock)
 }
 ----
 
-For shared state across coroutines, ensure they share the same executor:
+With a single-threaded `io_context`, coroutines sharing that executor can
+safely access shared state without locks.
 
-[source,cpp]
-----
-auto ex = ioc.get_executor();
+== Scaling Strategies
 
-// Both coroutines resume through the same executor
-capy::run_async(ex)(coroutine_a(shared_state));
-capy::run_async(ex)(coroutine_b(shared_state));
-----
+Different applications need different concurrency strategies.
 
-With a single-threaded `io_context` (concurrency hint = 1), these coroutines
-can safely share state without locks.
+=== Single-Threaded: One Thread, Many Coroutines
 
-== The Event Loop Model
+The simplest model: one thread runs `io_context::run()`, handling all events.
+Coroutines provide concurrency without threads.
 
-Corosio uses an event loop that processes completions one at a time:
+Advantages:
 
-[source,cpp]
-----
-while (!stopped)
-{
-    wait_for_completion();  // OS notifies us
-    dispatch_handler();      // Resume coroutine
-}
-----
+* No thread synchronization needed
+* Deterministic behavior (easier debugging)
+* Lower overhead
 
-Each iteration either:
+Limitations:
 
-* Waits for I/O completion
-* Resumes a coroutine
-* Processes a posted task
+* Can't use multiple CPU cores
+* Long computation blocks all I/O
 
-This single-threaded processing means coroutines don't interleave within a
-single `run()` call—only at `co_await` points.
+This model handles thousands of I/O-bound connections efficiently.
 
-== Scaling with Multiple Threads
+=== Multi-Threaded: Thread Pools
 
-For higher throughput, run multiple threads on the same `io_context`:
+For CPU utilization or higher throughput:
 
 [source,cpp]
 ----
@@ -272,25 +455,33 @@ for (auto& t : threads)
     t.join();
 ----
 
-With multiple threads, coroutines may run on any thread. Two rules apply:
+With multiple threads:
 
-1. **Same coroutine, sequential**: A coroutine's code between `co_await`
-   points never overlaps with itself
+* Coroutines may run on any thread
+* Same-coroutine code between `co_await`s never overlaps with itself
+* Different coroutines can run simultaneously
 
-2. **Different coroutines, concurrent**: Multiple coroutines can run
-   simultaneously on different threads
-
-For shared state across coroutines with multiple threads, use one of:
+For shared state across coroutines with multiple threads, use:
 
 * External synchronization (mutex, atomic)
 * A dedicated single-thread executor for that state
 * Message passing between coroutines
 
-== Design Patterns
+=== Choosing the Right Model
+
+* **Single-threaded**: Most I/O-bound servers, simpler applications
+* **Multi-threaded**: CPU-bound processing, maximum throughput requirements
+* **Hybrid**: I/O on one thread, CPU work on thread pool
+
+Start simple. Profile before adding threads.
+
+== Patterns
+
+Common patterns for structuring concurrent applications.
 
 === One Coroutine Per Connection
 
-The simplest pattern: each client gets a coroutine:
+The simplest pattern: each client gets a coroutine.
 
 [source,cpp]
 ----
@@ -314,7 +505,13 @@ capy::task<void> accept_loop(
 Each `handle_client` coroutine runs independently. The accept loop continues
 immediately after spawning.
 
-=== Worker Pool
+This works well when:
+
+* Connections are independent
+* Memory per connection is reasonable
+* You don't need bounded concurrency
+
+=== Worker Pools
 
 For bounded resource usage, use a fixed pool of workers:
 
@@ -338,10 +535,10 @@ for (int i = 0; i < max_workers; ++i)
 // Assign connections to free workers
 ----
 
-See xref:../tutorials/echo-server.adoc[Echo Server Tutorial] for a complete
-example.
+Corosio's `tcp_server` class implements this pattern—see
+xref:tcp-server.adoc[TCP Server] for details.
 
-=== Pipeline
+=== Pipelines
 
 For multi-stage processing, chain coroutines:
 
@@ -357,7 +554,7 @@ capy::task<void> pipeline(corosio::socket sock)
 
 Each stage suspends independently, allowing other coroutines to run.
 
-== Avoiding Common Mistakes
+== Common Mistakes
 
 === Blocking in Coroutines
 
@@ -380,9 +577,12 @@ capy::task<void> good(corosio::io_context& ioc)
 }
 ----
 
-=== Detached Coroutines
+Blocking calls (sleep, mutex lock, synchronous I/O) prevent other coroutines
+from running.
 
-Spawned coroutines must complete before their resources are destroyed:
+=== Dangling References in Async Code
+
+Spawned coroutines must not hold references to destroyed objects:
 
 [source,cpp]
 ----
@@ -399,13 +599,16 @@ Spawned coroutines must complete before their resources are destroyed:
 }  // OK, coroutine owns the socket
 ----
 
+A coroutine may outlive the scope that spawned it. Ensure captured data lives
+long enough.
+
 === Cross-Executor Access
 
 Don't access an object from a coroutine with different executor affinity:
 
 [source,cpp]
 ----
-// Dangerous: timer created on ex1, used from ex2
+// Dangerous: timer created on ctx1, used from ex2
 corosio::timer timer(ctx1);
 capy::run_async(ex2)([&timer]() -> capy::task<void> {
     co_await timer.wait();  // Wrong executor!

@@ -501,8 +501,9 @@ tls::context make_https_client_context()
 
 // Usage with TLS stream
 tls::context ctx = make_https_client_context();
-tls::stream secure( sock, ctx );
-co_await secure.handshake( tls::role::client );
+ctx.set_hostname("api.example.com");  // Set before creating stream
+corosio::wolfssl_stream secure( sock, ctx );
+co_await secure.handshake( corosio::tls_stream::client );
 ----
 
 === TLS Server Context
