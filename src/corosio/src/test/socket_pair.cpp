@@ -19,6 +19,12 @@
 #include <cstdio>
 #include <stdexcept>
 
+#ifdef _WIN32
+#include <process.h>  // _getpid()
+#else
+#include <unistd.h>   // getpid()
+#endif
+
 namespace boost {
 namespace corosio {
 namespace test {
@@ -34,8 +40,21 @@ get_test_port() noexcept
     // Use a wide port range in the dynamic/ephemeral range (49152-65535)
     constexpr std::uint16_t port_base = 49152;
     constexpr std::uint16_t port_range = 16383;  // 49152-65535
+
+    // Include PID to avoid port collisions between parallel test processes.
+    // On Windows with SO_REUSEADDR, multiple processes can bind the same port,
+    // causing connections to go to the wrong listener ("port stealing").
+    // By using different port ranges per process, we avoid this issue.
+#ifdef _WIN32
+    auto pid = static_cast<std::uint32_t>(_getpid());
+#else
+    auto pid = static_cast<std::uint32_t>(getpid());
+#endif
+    // Mix the PID bits to spread processes across the port range
+    auto pid_offset = static_cast<std::uint16_t>((pid * 7919) % port_range);
+
     auto offset = next_test_port.fetch_add(1, std::memory_order_relaxed);
-    return static_cast<std::uint16_t>(port_base + (offset % port_range));
+    return static_cast<std::uint16_t>(port_base + ((pid_offset + offset) % port_range));
 }
 
 } // namespace
