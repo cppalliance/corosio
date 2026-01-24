@@ -34,6 +34,11 @@ if (OpenSSL_FOUND)
     target_compile_definitions(boost_corosio_tests PRIVATE BOOST_COROSIO_HAS_OPENSSL=1)
 endif()
 
+# MinGW linker is order-sensitive; system libs must come last
+if (MINGW)
+    target_link_libraries(boost_corosio_tests PRIVATE ws2_32 crypt32)
+endif()
+
 target_include_directories(boost_corosio_tests PRIVATE . ../../)
 
 # Register individual tests with CTest

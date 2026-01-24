@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <stdexcept>
 
 namespace boost {
@@ -70,7 +71,10 @@ make_socket_pair(io_context& ioc)
         }
     }
     if (!listening)
+    {
+        std::fprintf(stderr, "socket_pair: failed to find available port after 20 attempts\n");
         throw std::runtime_error("socket_pair: failed to find available port");
+    }
 
     socket s1(ioc);
     socket s2(ioc);
@@ -100,12 +104,16 @@ make_socket_pair(io_context& ioc)
 
     if (!accept_done || accept_ec)
     {
+        std::fprintf(stderr, "socket_pair: accept failed (done=%d, ec=%s)\n",
+            accept_done, accept_ec.message().c_str());
         acc.close();
         throw std::runtime_error("socket_pair accept failed");
     }
 
     if (!connect_done || connect_ec)
     {
+        std::fprintf(stderr, "socket_pair: connect failed (done=%d, ec=%s)\n",
+            connect_done, connect_ec.message().c_str());
         acc.close();
         s1.close();
         throw std::runtime_error("socket_pair connect failed");

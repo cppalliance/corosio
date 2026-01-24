@@ -562,6 +562,7 @@ jobs:
           extra-args: |
             -D Boost_VERBOSE=ON
             -D BOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}"
+            ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
             ${{ runner.os == 'Windows' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-windows.outputs.wolfssl_include) || '' }}
@@ -662,6 +663,7 @@ jobs:
           cmake-version: '>=3.20'
           extra-args: |
             -D Boost_VERBOSE=ON
+            ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
             ${{ runner.os == 'Windows' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-windows.outputs.wolfssl_include) || '' }}
@@ -693,8 +695,8 @@ jobs:
           echo "$PATH" | tr ':' '\n' | head -20
           echo ""
           echo "=== Root Project test executable ==="
-          root_exe=$(find __build_root_test__ -name "boost_corosio_tests.exe" 2>/dev/null | head -1)
-          boost_exe=$(find __build_cmake_test__ -name "boost_corosio_tests.exe" 2>/dev/null | head -1)
+          root_exe=$(find boost-root/libs/corosio/__build_root_test__ -name "boost_corosio_tests.exe" 2>/dev/null | head -1 || true)
+          boost_exe=$(find boost-root/__build_cmake_test__ -name "boost_corosio_tests.exe" 2>/dev/null | head -1 || true)
           
           if [ -n "$root_exe" ] && [ -f "$root_exe" ]; then
             echo "Found: $root_exe"

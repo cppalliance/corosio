@@ -20,6 +20,8 @@
 #include <boost/url/ipv4_address.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <cstdio>
 #include <cstring>
 #include <span>
 #include <stdexcept>
@@ -429,17 +431,17 @@ is_open() const noexcept
 
 namespace {
 
-// Test port range for mocket connections
-constexpr std::uint16_t test_port_base = 49200;
-constexpr std::uint16_t test_port_range = 100;
-std::uint16_t next_test_port = 0;
+// Use atomic for thread safety when tests run in parallel
+std::atomic<std::uint16_t> next_test_port{0};
 
 std::uint16_t
 get_test_port() noexcept
 {
-    auto port = test_port_base + (next_test_port % test_port_range);
-    ++next_test_port;
-    return static_cast<std::uint16_t>(port);
+    // Use a wide port range in the dynamic/ephemeral range (49152-65535)
+    constexpr std::uint16_t port_base = 49152;
+    constexpr std::uint16_t port_range = 16383;
+    auto offset = next_test_port.fetch_add(1, std::memory_order_relaxed);
+    return static_cast<std::uint16_t>(port_base + (offset % port_range));
 }
 
 } // namespace
@@ -460,16 +462,35 @@ make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
     auto& ioc = static_cast<io_context&>(ctx);
     auto ex = ioc.get_executor();
 
-    // Get a test port
-    std::uint16_t port = get_test_port();
     system::error_code accept_ec;
     system::error_code connect_ec;
     bool accept_done = false;
     bool connect_done = false;
 
-    // Set up loopback connection using acceptor
+    // Try multiple ports in case of conflicts (TIME_WAIT, parallel tests, etc.)
+    std::uint16_t port = 0;
     acceptor acc(ctx);
-    acc.listen(endpoint(urls::ipv4_address::loopback(), port));
+    bool listening = false;
+    for (int attempt = 0; attempt < 20; ++attempt)
+    {
+        port = get_test_port();
+        try
+        {
+            acc.listen(endpoint(urls::ipv4_address::loopback(), port));
+            listening = true;
+            break;
+        }
+        catch (const system::system_error&)
+        {
+            acc.close();
+            acc = acceptor(ctx);
+        }
+    }
+    if (!listening)
+    {
+        std::fprintf(stderr, "make_mockets: failed to find available port after 20 attempts\n");
+        throw std::runtime_error("make_mockets: failed to find available port");
+    }
 
     // Open impl2's socket for connect
     impl2.get_socket().open();
@@ -507,12 +528,16 @@ make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
     // Check for errors
     if (!accept_done || accept_ec)
     {
+        std::fprintf(stderr, "make_mockets: accept failed (done=%d, ec=%s)\n",
+            accept_done, accept_ec.message().c_str());
         acc.close();
         throw std::runtime_error("mocket accept failed");
     }
 
     if (!connect_done || connect_ec)
     {
+        std::fprintf(stderr, "make_mockets: connect failed (done=%d, ec=%s)\n",
+            connect_done, connect_ec.message().c_str());
         acc.close();
         accepted_socket.close();
         throw std::runtime_error("mocket connect failed");
