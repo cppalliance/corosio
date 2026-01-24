@@ -113,9 +113,12 @@ namespace detail {
 static int
 wolfssl_sni_callback( WOLFSSL* ssl, int* /* alert */, void* arg )
 {
-    char const* servername = wolfSSL_get_servername( ssl, WOLFSSL_SNI_HOST_NAME );
-    if( !servername )
+    void* sni_data = nullptr;
+    unsigned short sni_len = wolfSSL_SNI_GetRequest( ssl, WOLFSSL_SNI_HOST_NAME, &sni_data );
+    if( !sni_data || sni_len == 0 )
         return 0;  // No SNI sent, continue
+
+    std::string_view servername( static_cast<char const*>( sni_data ), sni_len );
 
     auto* cd = static_cast<context_data const*>( arg );
     if( cd && cd->servername_callback )
@@ -1043,7 +1046,7 @@ struct wolfssl_stream_impl_
             wolfSSL_UseSNI( ssl_, WOLFSSL_SNI_HOST_NAME,
                 impl.hostname.data(),
                 static_cast<unsigned short>( impl.hostname.size() ) );
-            
+
             // Enable hostname verification (checks CN/SAN in peer cert)
             wolfSSL_check_domain_name( ssl_, impl.hostname.c_str() );
         }
