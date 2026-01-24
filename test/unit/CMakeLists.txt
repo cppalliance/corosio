@@ -27,16 +27,15 @@ target_link_libraries(
 if (WolfSSL_FOUND)
     target_link_libraries(boost_corosio_tests PRIVATE boost_corosio_wolfssl)
     target_compile_definitions(boost_corosio_tests PRIVATE BOOST_COROSIO_HAS_WOLFSSL=1)
+else()
+    message(FATAL_ERROR "WolfSSL is required for corosio tests")
 endif()
 
 if (OpenSSL_FOUND)
     target_link_libraries(boost_corosio_tests PRIVATE boost_corosio_openssl)
     target_compile_definitions(boost_corosio_tests PRIVATE BOOST_COROSIO_HAS_OPENSSL=1)
-endif()
-
-# MinGW linker is order-sensitive; system libs must come last
-if (MINGW)
-    target_link_libraries(boost_corosio_tests PRIVATE ws2_32 crypt32)
+else()
+    message(FATAL_ERROR "OpenSSL is required for corosio tests")
 endif()
 
 target_include_directories(boost_corosio_tests PRIVATE . ../../)

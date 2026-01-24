@@ -197,6 +197,13 @@ boost_corosio_setup_properties(boost_corosio)
 #-------------------------------------------------
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(WolfSSL)
+# MinGW's linker is single-pass and order-sensitive; system libs must follow
+# the static libraries that reference them. Add as interface dependencies so
+# CMake's dependency ordering places them after WolfSSL in the link command.
+if (MINGW AND TARGET WolfSSL::WolfSSL)
+    set_property(TARGET WolfSSL::WolfSSL APPEND PROPERTY
+        INTERFACE_LINK_LIBRARIES ws2_32 crypt32)
+endif()
 if (WolfSSL_FOUND)
     file(GLOB_RECURSE BOOST_COROSIO_WOLFSSL_HEADERS CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/wolfssl/*.hpp")
@@ -211,8 +218,9 @@ if (WolfSSL_FOUND)
     target_link_libraries(boost_corosio_wolfssl PUBLIC boost_corosio)
     # PUBLIC ensures WolfSSL is linked into final executables (static lib deps don't embed)
     target_link_libraries(boost_corosio_wolfssl PUBLIC WolfSSL::WolfSSL)
-    # WolfSSL on Windows/MinGW needs crypt32 for certificate store access
-    if (WIN32)
+    # WolfSSL on Windows needs crypt32 for certificate store access.
+    # For MinGW, this is handled via WolfSSL::WolfSSL's interface deps (link order matters).
+    if (WIN32 AND NOT MINGW)
         target_link_libraries(boost_corosio_wolfssl PUBLIC crypt32)
     endif ()
     target_compile_definitions(boost_corosio_wolfssl PUBLIC BOOST_COROSIO_HAS_WOLFSSL)
@@ -224,6 +232,13 @@ endif ()
 #
 #-------------------------------------------------
 find_package(OpenSSL)
+# MinGW's linker is single-pass and order-sensitive; system libs must follow
+# the static libraries that reference them. Add as interface dependencies so
+# CMake's dependency ordering places them after OpenSSL in the link command.
+if (MINGW AND TARGET OpenSSL::Crypto)
+    set_property(TARGET OpenSSL::Crypto APPEND PROPERTY
+        INTERFACE_LINK_LIBRARIES ws2_32 crypt32)
+endif()
 if (OpenSSL_FOUND)
     file(GLOB_RECURSE BOOST_COROSIO_OPENSSL_HEADERS CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/openssl/*.hpp")
@@ -238,8 +253,9 @@ if (OpenSSL_FOUND)
     target_link_libraries(boost_corosio_openssl PUBLIC boost_corosio)
     # PUBLIC ensures OpenSSL is linked into final executables (static lib deps don't embed)
     target_link_libraries(boost_corosio_openssl PUBLIC OpenSSL::SSL OpenSSL::Crypto)
-    # OpenSSL on Windows/MinGW needs ws2_32 and crypt32 for socket and cert APIs
-    if (WIN32)
+    # OpenSSL on Windows needs ws2_32 and crypt32 for socket and cert APIs.
+    # For MinGW, this is handled via OpenSSL::Crypto's interface deps (link order matters).
+    if (WIN32 AND NOT MINGW)
         target_link_libraries(boost_corosio_openssl PUBLIC ws2_32 crypt32)
     endif ()
     target_compile_definitions(boost_corosio_openssl PUBLIC BOOST_COROSIO_HAS_OPENSSL)

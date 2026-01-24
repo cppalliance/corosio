@@ -31,6 +31,7 @@ project boost/corosio
 
 # System libraries
 lib ws2_32 ;
+lib crypt32 ;
 
 alias corosio_sources : [ glob-tree-ex src/corosio/src : *.cpp ] ;
 
@@ -79,9 +80,11 @@ lib boost_corosio_wolfssl
     <library>/boost/corosio//boost_corosio
     <include>../src/corosio
     [ ac.check-library /wolfssl//wolfssl : <library>/wolfssl//wolfssl : <build>no ]
+    <target-os>windows:<library>crypt32
   : usage-requirements
     <library>/boost/corosio//boost_corosio
     <define>BOOST_COROSIO_HAS_WOLFSSL
+    <target-os>windows:<library>crypt32
   ;
 
 boost-install boost_corosio boost_corosio_openssl boost_corosio_wolfssl ;
