@@ -566,11 +566,9 @@ struct openssl_stream_impl_
         capy::executor_ref d)
     {
         system::error_code ec;
-        int iteration = 0;
 
         while(!token.stop_requested())
         {
-            ++iteration;
             ERR_clear_error();
             int ret;
             if(type == openssl_stream::client)
