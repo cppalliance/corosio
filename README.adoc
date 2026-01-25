@@ -26,13 +26,31 @@
 
 == Boost.Corosio
 
-Boost.Corosio is a coroutine-first I/O library for C++20 that provides
-asynchronous networking primitives with automatic executor affinity propagation.
-
-Corosio provides asynchronous I/O operations designed from the ground up for
-C++20 coroutines. Every operation returns an awaitable that integrates with
-the _affine awaitable protocol_, ensuring your coroutines resume on the correct
+Boost.Corosio is a coroutine-only I/O library for C++20 that provides
+asynchronous networking primitives with automatic executor affinity
+propagation. Every operation returns an awaitable that integrates with
+the _IoAwaitable_ protocol, ensuring your coroutines resume on the correct
 executor without manual dispatch.
+
+=== Quick Start
+
+Clone and build with CMake (dependencies are fetched automatically):
+
+[source,bash]
+----
+git clone https://github.com/cppalliance/corosio.git
+cd corosio
+cmake --preset standalone
+cmake --build --preset standalone
+----
+
+This downloads Boost 1.90 and Capy automatically. The library is built to `out/standalone/`.
+
+=== Requirements
+
+* CMake 3.25 or later
+* C++20 compiler (GCC 12+, Clang 17+, MSVC 14.34+)
+* Ninja (recommended) or other CMake generator
 
 === License
 

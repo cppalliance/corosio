@@ -5,6 +5,26 @@
         "minor": 25,
         "patch": 0
     },
-    "configurePresets": [],
-    "buildPresets": []
+    "configurePresets": [
+        {
+            "name": "standalone",
+            "displayName": "Standalone Build",
+            "description": "Build with auto-fetched dependencies (no local Boost required)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/${presetName}",
+            "cacheVariables": {
+                "CMAKE_CXX_STANDARD": "20",
+                "CMAKE_BUILD_TYPE": "Release",
+                "BOOST_COROSIO_BUILD_TESTS": "OFF",
+                "BOOST_COROSIO_BUILD_BENCH": "OFF",
+                "BOOST_COROSIO_BUILD_EXAMPLES": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "standalone",
+            "configurePreset": "standalone"
+        }
+    ]
 }
