@@ -117,6 +117,12 @@ public:
 
         virtual system::error_code set_linger(bool enabled, int timeout) noexcept = 0;
         virtual linger_options linger(system::error_code& ec) const noexcept = 0;
+
+        /// Returns the cached local endpoint.
+        virtual endpoint local_endpoint() const noexcept = 0;
+
+        /// Returns the cached remote endpoint.
+        virtual endpoint remote_endpoint() const noexcept = 0;
     };
 
     struct connect_awaitable
@@ -469,6 +475,39 @@ public:
         @throws std::system_error on failure.
     */
     linger_options linger() const;
+
+    /** Get the local endpoint of the socket.
+
+        Returns the local address and port to which the socket is bound.
+        For a connected socket, this is the local side of the connection.
+        The endpoint is cached when the connection is established.
+
+        @return The local endpoint, or a default endpoint (0.0.0.0:0) if
+            the socket is not connected.
+
+        @par Thread Safety
+        The cached endpoint value is set during connect/accept completion
+        and cleared during close(). This function may be called concurrently
+        with I/O operations, but must not be called concurrently with
+        connect(), accept(), or close().
+    */
+    endpoint local_endpoint() const noexcept;
+
+    /** Get the remote endpoint of the socket.
+
+        Returns the remote address and port to which the socket is connected.
+        The endpoint is cached when the connection is established.
+
+        @return The remote endpoint, or a default endpoint (0.0.0.0:0) if
+            the socket is not connected.
+
+        @par Thread Safety
+        The cached endpoint value is set during connect/accept completion
+        and cleared during close(). This function may be called concurrently
+        with I/O operations, but must not be called concurrently with
+        connect(), accept(), or close().
+    */
+    endpoint remote_endpoint() const noexcept;
 
 private:
     friend class acceptor;

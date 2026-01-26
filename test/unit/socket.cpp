@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/corosio/socket.hpp>
 
+#include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/read.hpp>
 #include <boost/corosio/write.hpp>
@@ -23,7 +24,15 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <cstdint>
+#include <cstdio>
 #include <stop_token>
+
+#ifdef _WIN32
+#include <process.h>  // _getpid()
+#else
+#include <unistd.h>   // getpid()
+#endif
 
 #include "test_suite.hpp"
 
@@ -1082,6 +1091,308 @@ struct socket_test
         s2.close();
     }
 
+    // Endpoint Query Tests
+
+    void
+    testEndpointsEphemeralPort()
+    {
+        // Test with ephemeral port (port 0 - OS assigns)
+        io_context ioc;
+        acceptor acc(ioc);
+
+        // Bind to loopback with port 0 (ephemeral)
+        acc.listen(endpoint(urls::ipv4_address::loopback(), 0));
+
+        // Acceptor's local endpoint should have a non-zero OS-assigned port
+        auto acc_local = acc.local_endpoint();
+        BOOST_TEST(acc_local.port() != 0);
+        BOOST_TEST(acc_local.is_v4());
+
+        socket client(ioc);
+        socket server(ioc);
+        client.open();
+
+        auto task = [&]() -> capy::task<>
+        {
+            // Connect to the acceptor
+            auto [ec] = co_await client.connect(acc.local_endpoint());
+            BOOST_TEST(!ec);
+        };
+
+        auto accept_task = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await acc.accept(server);
+            BOOST_TEST(!ec);
+        };
+
+        capy::run_async(ioc.get_executor())(task());
+        capy::run_async(ioc.get_executor())(accept_task());
+
+        ioc.run();
+
+        // Client's remote endpoint should equal the endpoint passed to connect()
+        BOOST_TEST(client.remote_endpoint() == acc.local_endpoint());
+
+        // Client's local endpoint should have a non-zero OS-assigned port
+        BOOST_TEST(client.local_endpoint().port() != 0);
+        BOOST_TEST(client.local_endpoint().is_v4());
+
+        // Server's remote endpoint should equal client's local endpoint (peer consistency)
+        BOOST_TEST(server.remote_endpoint() == client.local_endpoint());
+
+        // Server's local endpoint should equal client's remote endpoint (peer consistency)
+        BOOST_TEST(server.local_endpoint() == client.remote_endpoint());
+
+        client.close();
+        server.close();
+        acc.close();
+    }
+
+    void
+    testEndpointsSpecifiedPort()
+    {
+        // Test with a specified port number
+        io_context ioc;
+        acceptor acc(ioc);
+
+        // Simple fast LCG random number generator seeded with PID
+#ifdef _WIN32
+        std::uint32_t rng_state = static_cast<std::uint32_t>(_getpid());
+#else
+        std::uint32_t rng_state = static_cast<std::uint32_t>(getpid());
+#endif
+        auto fast_rand = [&rng_state]() -> std::uint16_t {
+            rng_state = rng_state * 1103515245 + 12345;
+            return static_cast<std::uint16_t>((rng_state >> 16) & 0x3F) + 1;  // 1-64
+        };
+
+        // Try to find an available port outside the ephemeral range
+        std::uint16_t test_port = 18080;
+        bool found = false;
+        for (int attempt = 0; attempt < 100; ++attempt)
+        {
+            try
+            {
+                acc.listen(endpoint(urls::ipv4_address::loopback(), test_port));
+                found = true;
+                break;
+            }
+            catch (const system::system_error&)
+            {
+                acc.close();
+                acc = acceptor(ioc);
+                test_port += fast_rand();
+            }
+        }
+        if (!found)
+        {
+            std::fprintf(stderr, "testEndpointsSpecifiedPort: failed to find available port after 100 attempts\n");
+            return;
+        }
+
+        // Acceptor's local endpoint should have the specified port
+        BOOST_TEST(acc.local_endpoint().port() == test_port);
+
+        socket client(ioc);
+        socket server(ioc);
+        client.open();
+
+        auto task = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await client.connect(
+                endpoint(urls::ipv4_address::loopback(), test_port));
+            BOOST_TEST(!ec);
+        };
+
+        auto accept_task = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await acc.accept(server);
+            BOOST_TEST(!ec);
+        };
+
+        capy::run_async(ioc.get_executor())(task());
+        capy::run_async(ioc.get_executor())(accept_task());
+
+        ioc.run();
+
+        // Client's remote endpoint should equal the endpoint passed to connect()
+        BOOST_TEST(client.remote_endpoint().port() == test_port);
+        BOOST_TEST(client.remote_endpoint() ==
+            endpoint(urls::ipv4_address::loopback(), test_port));
+
+        // Server's local endpoint should have the specified port
+        BOOST_TEST(server.local_endpoint().port() == test_port);
+
+        client.close();
+        server.close();
+        acc.close();
+    }
+
+    void
+    testEndpointOnClosedSocket()
+    {
+        io_context ioc;
+        socket sock(ioc);
+
+        // Closed socket should return default endpoint
+        BOOST_TEST(sock.local_endpoint() == endpoint{});
+        BOOST_TEST(sock.remote_endpoint() == endpoint{});
+        BOOST_TEST(sock.local_endpoint().port() == 0);
+        BOOST_TEST(sock.remote_endpoint().port() == 0);
+    }
+
+    void
+    testEndpointBeforeConnect()
+    {
+        io_context ioc;
+        socket sock(ioc);
+        sock.open();
+
+        // Open but unconnected socket should return default endpoint
+        BOOST_TEST(sock.local_endpoint() == endpoint{});
+        BOOST_TEST(sock.remote_endpoint() == endpoint{});
+
+        sock.close();
+    }
+
+    void
+    testEndpointsAfterConnectFailure()
+    {
+        io_context ioc;
+        socket sock(ioc);
+        sock.open();
+
+        auto task = [&]() -> capy::task<>
+        {
+            // Connect to an unreachable address (localhost on unlikely port)
+            auto [ec] = co_await sock.connect(
+                endpoint(urls::ipv4_address::loopback(), 1));  // Port 1 is typically closed
+            // We expect this to fail (connection refused or similar)
+            BOOST_TEST(ec);
+        };
+
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+
+        // After failed connect, endpoints should remain default
+        BOOST_TEST(sock.local_endpoint() == endpoint{});
+        BOOST_TEST(sock.remote_endpoint() == endpoint{});
+
+        sock.close();
+    }
+
+    void
+    testEndpointsMoveConstruct()
+    {
+        io_context ioc;
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        // Get original endpoints
+        auto orig_local = s1.local_endpoint();
+        auto orig_remote = s1.remote_endpoint();
+
+        // Endpoints should be non-default after connection
+        BOOST_TEST(orig_local.port() != 0);
+        BOOST_TEST(orig_remote.port() != 0);
+
+        // Move construct
+        socket s3(std::move(s1));
+
+        // Moved-from socket should return default endpoints
+        BOOST_TEST(s1.local_endpoint() == endpoint{});
+        BOOST_TEST(s1.remote_endpoint() == endpoint{});
+
+        // Moved-to socket should have original endpoints
+        BOOST_TEST(s3.local_endpoint() == orig_local);
+        BOOST_TEST(s3.remote_endpoint() == orig_remote);
+
+        s1.close();
+        s2.close();
+        s3.close();
+    }
+
+    void
+    testEndpointsMoveAssign()
+    {
+        io_context ioc;
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        // Get original endpoints
+        auto orig_local = s1.local_endpoint();
+        auto orig_remote = s1.remote_endpoint();
+
+        // Create another socket to move-assign to
+        socket s3(ioc);
+
+        // Move assign
+        s3 = std::move(s1);
+
+        // Moved-from socket should return default endpoints
+        BOOST_TEST(s1.local_endpoint() == endpoint{});
+        BOOST_TEST(s1.remote_endpoint() == endpoint{});
+
+        // Moved-to socket should have original endpoints
+        BOOST_TEST(s3.local_endpoint() == orig_local);
+        BOOST_TEST(s3.remote_endpoint() == orig_remote);
+
+        s1.close();
+        s2.close();
+        s3.close();
+    }
+
+    void
+    testEndpointsConsistentReads()
+    {
+        io_context ioc;
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        // Multiple reads should return the same cached values
+        auto local1 = s1.local_endpoint();
+        auto local2 = s1.local_endpoint();
+        auto local3 = s1.local_endpoint();
+        BOOST_TEST(local1 == local2);
+        BOOST_TEST(local2 == local3);
+
+        auto remote1 = s1.remote_endpoint();
+        auto remote2 = s1.remote_endpoint();
+        auto remote3 = s1.remote_endpoint();
+        BOOST_TEST(remote1 == remote2);
+        BOOST_TEST(remote2 == remote3);
+
+        s1.close();
+        s2.close();
+    }
+
+    void
+    testEndpointsAfterCloseAndReopen()
+    {
+        io_context ioc;
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        // Get endpoints while connected
+        auto orig_local = s1.local_endpoint();
+        auto orig_remote = s1.remote_endpoint();
+        BOOST_TEST(orig_local.port() != 0);
+        BOOST_TEST(orig_remote.port() != 0);
+
+        // Close the socket
+        s1.close();
+
+        // After close, endpoints should be default
+        BOOST_TEST(s1.local_endpoint() == endpoint{});
+        BOOST_TEST(s1.remote_endpoint() == endpoint{});
+
+        // Reopen the socket
+        s1.open();
+
+        // After reopen (but before connect), endpoints should still be default
+        BOOST_TEST(s1.local_endpoint() == endpoint{});
+        BOOST_TEST(s1.remote_endpoint() == endpoint{});
+
+        s1.close();
+        s2.close();
+    }
+
     void
     run()
     {
@@ -1135,6 +1446,17 @@ struct socket_test
         // Data integrity
         testLargeTransfer();
         testBinaryData();
+
+        // Endpoint queries
+        testEndpointsEphemeralPort();
+        testEndpointsSpecifiedPort();
+        testEndpointOnClosedSocket();
+        testEndpointBeforeConnect();
+        testEndpointsAfterConnectFailure();
+        testEndpointsMoveConstruct();
+        testEndpointsMoveAssign();
+        testEndpointsConsistentReads();
+        testEndpointsAfterCloseAndReopen();
     }
 };
 

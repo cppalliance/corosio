@@ -144,11 +144,19 @@ public:
 
     system::error_code set_linger(bool enabled, int timeout) noexcept override;
     socket::linger_options linger(system::error_code& ec) const noexcept override;
+
+    endpoint local_endpoint() const noexcept override { return local_endpoint_; }
+    endpoint remote_endpoint() const noexcept override { return remote_endpoint_; }
     bool is_open() const noexcept { return fd_ >= 0; }
     void cancel() noexcept;
     void cancel_single_op(epoll_op& op) noexcept;
     void close_socket() noexcept;
     void set_socket(int fd) noexcept { fd_ = fd; }
+    void set_endpoints(endpoint local, endpoint remote) noexcept
+    {
+        local_endpoint_ = local;
+        remote_endpoint_ = remote;
+    }
 
     epoll_connect_op conn_;
     epoll_read_op rd_;
@@ -157,6 +165,8 @@ public:
 private:
     epoll_sockets& svc_;
     int fd_ = -1;
+    endpoint local_endpoint_;
+    endpoint remote_endpoint_;
 };
 
 //------------------------------------------------------------------------------
@@ -181,16 +191,19 @@ public:
         io_object::io_object_impl**) override;
 
     int native_handle() const noexcept { return fd_; }
+    endpoint local_endpoint() const noexcept override { return local_endpoint_; }
     bool is_open() const noexcept { return fd_ >= 0; }
     void cancel() noexcept;
     void cancel_single_op(epoll_op& op) noexcept;
     void close_socket() noexcept;
+    void set_local_endpoint(endpoint ep) noexcept { local_endpoint_ = ep; }
 
     epoll_accept_op acc_;
 
 private:
     epoll_sockets& svc_;
     int fd_ = -1;
+    endpoint local_endpoint_;
 };
 
 //------------------------------------------------------------------------------

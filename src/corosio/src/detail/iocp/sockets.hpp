@@ -50,6 +50,7 @@ struct connect_op : overlapped_op
 {
     win_socket_impl_internal& internal;
     std::shared_ptr<win_socket_impl_internal> internal_ptr;  // Keeps internal alive during I/O
+    endpoint target_endpoint;  // Stored for endpoint caching on success
 
     explicit connect_op(win_socket_impl_internal& internal_) noexcept : internal(internal_) {}
 
@@ -163,10 +164,21 @@ public:
         std::size_t*);
 
     SOCKET native_handle() const noexcept { return socket_; }
+    endpoint local_endpoint() const noexcept { return local_endpoint_; }
+    endpoint remote_endpoint() const noexcept { return remote_endpoint_; }
     bool is_open() const noexcept { return socket_ != INVALID_SOCKET; }
     void cancel() noexcept;
     void close_socket() noexcept;
     void set_socket(SOCKET s) noexcept { socket_ = s; }
+    void set_endpoints(endpoint local, endpoint remote) noexcept
+    {
+        local_endpoint_ = local;
+        remote_endpoint_ = remote;
+    }
+
+private:
+    endpoint local_endpoint_;
+    endpoint remote_endpoint_;
 };
 
 //------------------------------------------------------------------------------
@@ -363,6 +375,16 @@ public:
         return {.enabled = lg.l_onoff != 0, .timeout = lg.l_linger};
     }
 
+    endpoint local_endpoint() const noexcept override
+    {
+        return internal_->local_endpoint();
+    }
+
+    endpoint remote_endpoint() const noexcept override
+    {
+        return internal_->remote_endpoint();
+    }
+
     win_socket_impl_internal* get_internal() const noexcept { return internal_.get(); }
 };
 
@@ -396,15 +418,18 @@ public:
         io_object::io_object_impl**);
 
     SOCKET native_handle() const noexcept { return socket_; }
+    endpoint local_endpoint() const noexcept { return local_endpoint_; }
     bool is_open() const noexcept { return socket_ != INVALID_SOCKET; }
     void cancel() noexcept;
     void close_socket() noexcept;
+    void set_local_endpoint(endpoint ep) noexcept { local_endpoint_ = ep; }
 
     accept_op acc_;
 
 private:
     win_sockets& svc_;
     SOCKET socket_ = INVALID_SOCKET;
+    endpoint local_endpoint_;
 };
 
 //------------------------------------------------------------------------------
@@ -438,6 +463,11 @@ public:
         io_object::io_object_impl** impl_out) override
     {
         internal_->accept(h, d, token, ec, impl_out);
+    }
+
+    endpoint local_endpoint() const noexcept override
+    {
+        return internal_->local_endpoint();
     }
 
     win_acceptor_impl_internal* get_internal() const noexcept { return internal_.get(); }

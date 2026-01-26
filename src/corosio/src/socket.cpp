@@ -240,5 +240,23 @@ linger() const
     return result;
 }
 
+endpoint
+socket::
+local_endpoint() const noexcept
+{
+    if (!impl_)
+        return endpoint{};
+    return get().local_endpoint();
+}
+
+endpoint
+socket::
+remote_endpoint() const noexcept
+{
+    if (!impl_)
+        return endpoint{};
+    return get().remote_endpoint();
+}
+
 } // namespace corosio
 } // namespace boost

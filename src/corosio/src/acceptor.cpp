@@ -96,5 +96,14 @@ cancel()
 #endif
 }
 
+endpoint
+acceptor::
+local_endpoint() const noexcept
+{
+    if (!impl_)
+        return endpoint{};
+    return get().local_endpoint();
+}
+
 } // namespace corosio
 } // namespace boost

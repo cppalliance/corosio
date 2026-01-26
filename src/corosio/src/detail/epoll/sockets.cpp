@@ -47,6 +47,112 @@ operator()() const noexcept
 }
 
 //------------------------------------------------------------------------------
+// epoll_connect_op::operator() - caches endpoints on successful connect
+//------------------------------------------------------------------------------
+
+void
+epoll_connect_op::
+operator()()
+{
+    stop_cb.reset();
+
+    bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
+
+    // Cache endpoints on successful connect
+    if (success && socket_impl_)
+    {
+        // Query local endpoint via getsockname (may fail, but remote is always known)
+        endpoint local_ep;
+        sockaddr_in local_addr{};
+        socklen_t local_len = sizeof(local_addr);
+        if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+            local_ep = from_sockaddr_in(local_addr);
+        // Always cache remote endpoint; local may be default if getsockname failed
+        static_cast<epoll_socket_impl*>(socket_impl_)->set_endpoints(local_ep, target_endpoint);
+    }
+
+    if (ec_out)
+    {
+        if (cancelled.load(std::memory_order_acquire))
+            *ec_out = capy::error::canceled;
+        else if (errn != 0)
+            *ec_out = make_err(errn);
+    }
+
+    if (bytes_out)
+        *bytes_out = bytes_transferred;
+
+    auto saved_d = d;
+    auto saved_h = std::move(h);
+    impl_ptr.reset();
+    saved_d.dispatch(saved_h).resume();
+}
+
+//------------------------------------------------------------------------------
+// epoll_accept_op::operator() - caches endpoints on accepted socket
+//------------------------------------------------------------------------------
+
+void
+epoll_accept_op::
+operator()()
+{
+    stop_cb.reset();
+
+    bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
+
+    if (ec_out)
+    {
+        if (cancelled.load(std::memory_order_acquire))
+            *ec_out = capy::error::canceled;
+        else if (errn != 0)
+            *ec_out = make_err(errn);
+    }
+
+    if (success && accepted_fd >= 0 && peer_impl)
+    {
+        // Cache endpoints on the accepted socket
+        sockaddr_in local_addr{};
+        socklen_t local_len = sizeof(local_addr);
+        sockaddr_in remote_addr{};
+        socklen_t remote_len = sizeof(remote_addr);
+
+        endpoint local_ep, remote_ep;
+        if (::getsockname(accepted_fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+            local_ep = from_sockaddr_in(local_addr);
+        if (::getpeername(accepted_fd, reinterpret_cast<sockaddr*>(&remote_addr), &remote_len) == 0)
+            remote_ep = from_sockaddr_in(remote_addr);
+
+        static_cast<epoll_socket_impl*>(peer_impl)->set_endpoints(local_ep, remote_ep);
+
+        if (impl_out)
+            *impl_out = peer_impl;
+        peer_impl = nullptr;
+    }
+    else
+    {
+        if (accepted_fd >= 0)
+        {
+            ::close(accepted_fd);
+            accepted_fd = -1;
+        }
+
+        if (peer_impl)
+        {
+            peer_impl->release();
+            peer_impl = nullptr;
+        }
+
+        if (impl_out)
+            *impl_out = nullptr;
+    }
+
+    auto saved_d = d;
+    auto saved_h = std::move(h);
+    impl_ptr.reset();
+    saved_d.dispatch(saved_h).resume();
+}
+
+//------------------------------------------------------------------------------
 // epoll_socket_impl
 //------------------------------------------------------------------------------
 
@@ -79,6 +185,7 @@ connect(
     op.d = d;
     op.ec_out = ec;
     op.fd = fd_;
+    op.target_endpoint = ep;  // Store target for endpoint caching
     op.start(token, this);
 
     sockaddr_in addr = detail::to_sockaddr_in(ep);
@@ -86,6 +193,14 @@ connect(
 
     if (result == 0)
     {
+        // Sync success - cache endpoints immediately
+        // Remote is always known; local may fail but we still cache remote
+        sockaddr_in local_addr{};
+        socklen_t local_len = sizeof(local_addr);
+        if (::getsockname(fd_, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+            local_endpoint_ = detail::from_sockaddr_in(local_addr);
+        remote_endpoint_ = ep;
+
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
@@ -489,6 +604,10 @@ close_socket() noexcept
         ::close(fd_);
         fd_ = -1;
     }
+
+    // Clear cached endpoints
+    local_endpoint_ = endpoint{};
+    remote_endpoint_ = endpoint{};
 }
 
 //------------------------------------------------------------------------------
@@ -636,6 +755,9 @@ close_socket() noexcept
         ::close(fd_);
         fd_ = -1;
     }
+
+    // Clear cached endpoint
+    local_endpoint_ = endpoint{};
 }
 
 //------------------------------------------------------------------------------
@@ -765,6 +887,13 @@ open_acceptor(
     }
 
     impl.fd_ = fd;
+
+    // Cache the local endpoint (queries OS for ephemeral port if port was 0)
+    sockaddr_in local_addr{};
+    socklen_t local_len = sizeof(local_addr);
+    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+        impl.set_local_endpoint(detail::from_sockaddr_in(local_addr));
+
     return {};
 }
 

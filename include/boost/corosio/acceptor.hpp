@@ -264,6 +264,24 @@ public:
     */
     void cancel();
 
+    /** Get the local endpoint of the acceptor.
+
+        Returns the local address and port to which the acceptor is bound.
+        This is useful when binding to port 0 (ephemeral port) to discover
+        the OS-assigned port number. The endpoint is cached when listen()
+        is called.
+
+        @return The local endpoint, or a default endpoint (0.0.0.0:0) if
+            the acceptor is not listening.
+
+        @par Thread Safety
+        The cached endpoint value is set during listen() and cleared
+        during close(). This function may be called concurrently with
+        accept operations, but must not be called concurrently with
+        listen() or close().
+    */
+    endpoint local_endpoint() const noexcept;
+
     struct acceptor_impl : io_object_impl
     {
         virtual void accept(
@@ -272,6 +290,9 @@ public:
             std::stop_token,
             system::error_code*,
             io_object_impl**) = 0;
+
+        /// Returns the cached local endpoint.
+        virtual endpoint local_endpoint() const noexcept = 0;
     };
 
 private:

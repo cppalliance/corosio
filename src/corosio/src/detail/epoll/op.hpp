@@ -16,6 +16,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_object.hpp>
+#include <boost/corosio/endpoint.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/error.hpp>
@@ -23,6 +24,7 @@
 
 #include "src/detail/make_err.hpp"
 #include "src/detail/scheduler_op.hpp"
+#include "src/detail/endpoint_convert.hpp"
 
 #include <unistd.h>
 #include <errno.h>
@@ -213,6 +215,14 @@ struct epoll_op : scheduler_op
 
 struct epoll_connect_op : epoll_op
 {
+    endpoint target_endpoint;
+
+    void reset() noexcept
+    {
+        epoll_op::reset();
+        target_endpoint = endpoint{};
+    }
+
     void perform_io() noexcept override
     {
         // connect() completion status is retrieved via SO_ERROR, not return value
@@ -222,6 +232,9 @@ struct epoll_connect_op : epoll_op
             err = errno;
         complete(err, 0);
     }
+
+    // Defined in sockets.cpp where epoll_socket_impl is complete
+    void operator()() override;
 };
 
 //------------------------------------------------------------------------------
@@ -323,49 +336,8 @@ struct epoll_accept_op : epoll_op
         }
     }
 
-    void operator()() override
-    {
-        stop_cb.reset();
-
-        bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
-
-        if (ec_out)
-        {
-            if (cancelled.load(std::memory_order_acquire))
-                *ec_out = capy::error::canceled;
-            else if (errn != 0)
-                *ec_out = make_err(errn);
-        }
-
-        if (success && accepted_fd >= 0 && peer_impl)
-        {
-            if (impl_out)
-                *impl_out = peer_impl;
-            peer_impl = nullptr;
-        }
-        else
-        {
-            if (accepted_fd >= 0)
-            {
-                ::close(accepted_fd);
-                accepted_fd = -1;
-            }
-
-            if (peer_impl)
-            {
-                peer_impl->release();
-                peer_impl = nullptr;
-            }
-
-            if (impl_out)
-                *impl_out = nullptr;
-        }
-
-        auto saved_d = d;
-        auto saved_h = std::move(h);
-        impl_ptr.reset();
-        saved_d.dispatch(saved_h).resume();
-    }
+    // Defined in sockets.cpp where epoll_socket_impl is complete
+    void operator()() override;
 };
 
 } // namespace detail

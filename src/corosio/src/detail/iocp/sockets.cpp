@@ -200,6 +200,23 @@ operator()()
 
         // Transfer socket handle to peer impl internal
         peer_wrapper->get_internal()->set_socket(accepted_socket);
+
+        // Cache endpoints on the accepted socket
+        sockaddr_in local_addr{};
+        int local_len = sizeof(local_addr);
+        sockaddr_in remote_addr{};
+        int remote_len = sizeof(remote_addr);
+
+        endpoint local_ep, remote_ep;
+        if (::getsockname(accepted_socket,
+            reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+            local_ep = from_sockaddr_in(local_addr);
+        if (::getpeername(accepted_socket,
+            reinterpret_cast<sockaddr*>(&remote_addr), &remote_len) == 0)
+            remote_ep = from_sockaddr_in(remote_addr);
+
+        peer_wrapper->get_internal()->set_endpoints(local_ep, remote_ep);
+
         accepted_socket = INVALID_SOCKET;
 
         // Pass wrapper to awaitable for assignment to peer socket
@@ -253,6 +270,21 @@ void
 connect_op::
 operator()()
 {
+    // Cache endpoints on successful connect
+    bool success = (dwError == 0 && !cancelled.load(std::memory_order_acquire));
+    if (success && internal.is_open())
+    {
+        // Query local endpoint via getsockname (may fail, but remote is always known)
+        endpoint local_ep;
+        sockaddr_in local_addr{};
+        int local_len = sizeof(local_addr);
+        if (::getsockname(internal.native_handle(),
+            reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+            local_ep = from_sockaddr_in(local_addr);
+        // Always cache remote endpoint; local may be default if getsockname failed
+        internal.set_endpoints(local_ep, target_endpoint);
+    }
+
     overlapped_op::operator()();
     internal_ptr.reset();
 }
@@ -357,6 +389,7 @@ connect(
     op.h = h;
     op.d = d;
     op.ec_out = ec;
+    op.target_endpoint = ep;  // Store target for endpoint caching
     op.start(token);
 
     sockaddr_in bind_addr{};
@@ -604,6 +637,10 @@ close_socket() noexcept
         ::closesocket(socket_);
         socket_ = INVALID_SOCKET;
     }
+
+    // Clear cached endpoints
+    local_endpoint_ = endpoint{};
+    remote_endpoint_ = endpoint{};
 }
 
 void
@@ -913,6 +950,13 @@ open_acceptor(
     }
 
     impl.socket_ = sock;
+
+    // Cache the local endpoint (queries OS for ephemeral port if port was 0)
+    sockaddr_in local_addr{};
+    int local_len = sizeof(local_addr);
+    if (::getsockname(sock, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+        impl.set_local_endpoint(detail::from_sockaddr_in(local_addr));
+
     return {};
 }
 
@@ -1085,6 +1129,9 @@ close_socket() noexcept
         ::closesocket(socket_);
         socket_ = INVALID_SOCKET;
     }
+
+    // Clear cached endpoint
+    local_endpoint_ = endpoint{};
 }
 
 void
