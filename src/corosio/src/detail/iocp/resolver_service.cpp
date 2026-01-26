@@ -19,6 +19,9 @@
 #include <boost/url/ipv4_address.hpp>
 #include <boost/url/ipv6_address.hpp>
 
+#include <cstring>
+#include <thread>
+
 // MinGW may not have GetAddrInfoExCancel declared
 #if defined(__MINGW32__) || defined(__MINGW64__)
 extern "C" {
@@ -32,8 +35,8 @@ INT WSAAPI GetAddrInfoExCancel(LPHANDLE lpHandle);
 
     See resolver_service.hpp for architecture overview.
 
-    Completion Flow
-    ---------------
+    Forward Resolution (GetAddrInfoExW)
+    -----------------------------------
     1. resolve() converts host/service to wide strings (Windows API requirement)
     2. GetAddrInfoExW() is called with our completion callback
     3. If it returns WSA_IO_PENDING, completion comes later via callback
@@ -41,17 +44,29 @@ INT WSAAPI GetAddrInfoExCancel(LPHANDLE lpHandle);
     5. completion() callback stores error, calls work_finished(), posts op
     6. op_() resumes the coroutine with results or error
 
+    Reverse Resolution (GetNameInfoW)
+    ---------------------------------
+    Unlike GetAddrInfoExW, GetNameInfoW has no async variant. We use a worker
+    thread approach similar to POSIX:
+    1. reverse_resolve() spawns a detached worker thread
+    2. Worker calls GetNameInfoW() (blocking)
+    3. Worker converts wide results to UTF-8 via WideCharToMultiByte
+    4. Worker posts completion to scheduler
+    5. op_() resumes the coroutine with results
+
+    Thread tracking (thread_started/thread_finished) ensures safe shutdown
+    by waiting for all worker threads before destroying the service.
+
     String Conversion
     -----------------
-    GetAddrInfoExW requires wide strings. We convert UTF-8 to UTF-16 using
-    MultiByteToWideChar. The wide strings are stored in the op to ensure
-    they outlive the async operation.
+    Windows APIs require wide strings. We use MultiByteToWideChar for
+    UTF-8 to UTF-16 and WideCharToMultiByte for UTF-16 to UTF-8.
 
     Work Tracking
     -------------
-    work_started() is called before GetAddrInfoExW to keep io_context alive.
-    work_finished() is called in the completion callback (not in op_()) to
-    ensure proper ordering with the scheduler's work count.
+    work_started() is called before async operations to keep io_context alive.
+    work_finished() is called when the operation completes (in callback for
+    forward resolution, in worker thread for reverse resolution).
 */
 
 namespace boost {
@@ -104,6 +119,50 @@ flags_to_hints(resolve_flags flags)
         hints |= AI_ALL;
 
     return hints;
+}
+
+// Convert reverse_flags to getnameinfo NI_* flags
+int
+flags_to_ni_flags(reverse_flags flags)
+{
+    int ni_flags = 0;
+
+    if ((flags & reverse_flags::numeric_host) != reverse_flags::none)
+        ni_flags |= NI_NUMERICHOST;
+    if ((flags & reverse_flags::numeric_service) != reverse_flags::none)
+        ni_flags |= NI_NUMERICSERV;
+    if ((flags & reverse_flags::name_required) != reverse_flags::none)
+        ni_flags |= NI_NAMEREQD;
+    if ((flags & reverse_flags::datagram_service) != reverse_flags::none)
+        ni_flags |= NI_DGRAM;
+
+    return ni_flags;
+}
+
+// Convert wide string to UTF-8 string
+std::string
+from_wide(std::wstring_view s)
+{
+    if (s.empty())
+        return {};
+
+    int len = ::WideCharToMultiByte(
+        CP_UTF8, 0,
+        s.data(), static_cast<int>(s.size()),
+        nullptr, 0,
+        nullptr, nullptr);
+
+    if (len <= 0)
+        return {};
+
+    std::string result(static_cast<std::size_t>(len), '\0');
+    ::WideCharToMultiByte(
+        CP_UTF8, 0,
+        s.data(), static_cast<int>(s.size()),
+        result.data(), len,
+        nullptr, nullptr);
+
+    return result;
 }
 
 // Convert ADDRINFOEXW results to resolver_results
@@ -201,6 +260,42 @@ destroy()
 }
 
 //------------------------------------------------------------------------------
+// reverse_resolve_op
+//------------------------------------------------------------------------------
+
+void
+reverse_resolve_op::
+operator()()
+{
+    stop_cb.reset();
+
+    if (ec_out)
+    {
+        if (cancelled.load(std::memory_order_acquire))
+            *ec_out = capy::error::canceled;
+        else if (gai_error != 0)
+            *ec_out = make_err(static_cast<DWORD>(gai_error));
+        else
+            *ec_out = {};  // Clear on success
+    }
+
+    if (result_out && !cancelled.load(std::memory_order_acquire) && gai_error == 0)
+    {
+        *result_out = reverse_resolver_result(
+            ep, std::move(stored_host), std::move(stored_service));
+    }
+
+    d.dispatch(h).resume();
+}
+
+void
+reverse_resolve_op::
+destroy()
+{
+    stop_cb.reset();
+}
+
+//------------------------------------------------------------------------------
 // win_resolver_impl
 //------------------------------------------------------------------------------
 
@@ -284,9 +379,107 @@ resolve(
 
 void
 win_resolver_impl::
+reverse_resolve(
+    capy::coro h,
+    capy::executor_ref d,
+    endpoint const& ep,
+    reverse_flags flags,
+    std::stop_token token,
+    system::error_code* ec,
+    reverse_resolver_result* result_out)
+{
+    auto& op = reverse_op_;
+    op.reset();
+    op.h = h;
+    op.d = d;
+    op.ec_out = ec;
+    op.result_out = result_out;
+    op.impl = this;
+    op.ep = ep;
+    op.flags = flags;
+    op.start(token);
+
+    // Keep io_context alive while resolution is pending
+    svc_.work_started();
+
+    // Track thread for safe shutdown
+    svc_.thread_started();
+
+    try
+    {
+        // Prevent impl destruction while worker thread is running
+        auto self = this->shared_from_this();
+
+        // GetNameInfoW is synchronous, so we need to use a thread
+        std::thread worker([this, self = std::move(self)]() {
+            // Build sockaddr from endpoint
+            sockaddr_storage ss{};
+            int ss_len;
+
+            if (reverse_op_.ep.is_v4())
+            {
+                auto sa = to_sockaddr_in(reverse_op_.ep);
+                std::memcpy(&ss, &sa, sizeof(sa));
+                ss_len = sizeof(sockaddr_in);
+            }
+            else
+            {
+                auto sa = to_sockaddr_in6(reverse_op_.ep);
+                std::memcpy(&ss, &sa, sizeof(sa));
+                ss_len = sizeof(sockaddr_in6);
+            }
+
+            wchar_t host[NI_MAXHOST];
+            wchar_t service[NI_MAXSERV];
+
+            int result = ::GetNameInfoW(
+                reinterpret_cast<sockaddr*>(&ss), ss_len,
+                host, NI_MAXHOST,
+                service, NI_MAXSERV,
+                flags_to_ni_flags(reverse_op_.flags));
+
+            if (!reverse_op_.cancelled.load(std::memory_order_acquire))
+            {
+                if (result == 0)
+                {
+                    reverse_op_.stored_host = from_wide(host);
+                    reverse_op_.stored_service = from_wide(service);
+                    reverse_op_.gai_error = 0;
+                }
+                else
+                {
+                    reverse_op_.gai_error = result;
+                }
+            }
+
+            // Always post so the scheduler can properly drain the op
+            // during shutdown via destroy().
+            svc_.work_finished();
+            svc_.post(&reverse_op_);
+
+            // Signal thread completion for shutdown synchronization
+            svc_.thread_finished();
+        });
+        worker.detach();
+    }
+    catch (std::system_error const&)
+    {
+        // Thread creation failed - no thread was started
+        svc_.thread_finished();
+
+        // Set error and post completion to avoid hanging the coroutine
+        svc_.work_finished();
+        reverse_op_.gai_error = WSAENOBUFS;  // Map to "not enough memory"
+        svc_.post(&reverse_op_);
+    }
+}
+
+void
+win_resolver_impl::
 cancel() noexcept
 {
     op_.request_cancel();
+    reverse_op_.request_cancel();
 
     if (op_.cancel_handle)
     {
@@ -316,13 +509,28 @@ void
 win_resolver_service::
 shutdown()
 {
-    std::lock_guard<win_mutex> lock(mutex_);
-
-    for (auto* impl = resolver_list_.pop_front(); impl != nullptr;
-         impl = resolver_list_.pop_front())
     {
-        impl->cancel();
-        delete impl;
+        std::lock_guard<win_mutex> lock(mutex_);
+
+        // Signal threads to not access service after GetNameInfoW returns
+        shutting_down_.store(true, std::memory_order_release);
+
+        // Cancel all resolvers (sets cancelled flag checked by threads)
+        for (auto* impl = resolver_list_.pop_front(); impl != nullptr;
+             impl = resolver_list_.pop_front())
+        {
+            impl->cancel();
+        }
+
+        // Clear the map which releases shared_ptrs
+        // Note: impls may still be alive if worker threads hold references
+        resolver_ptrs_.clear();
+    }
+
+    // Wait for all worker threads to finish before service is destroyed
+    {
+        std::unique_lock<win_mutex> lock(mutex_);
+        cv_.wait(lock, [this] { return active_threads_ == 0; });
     }
 }
 
@@ -330,11 +538,13 @@ win_resolver_impl&
 win_resolver_service::
 create_impl()
 {
-    auto* impl = new win_resolver_impl(*this);
+    auto ptr = std::make_shared<win_resolver_impl>(*this);
+    auto* impl = ptr.get();
 
     {
         std::lock_guard<win_mutex> lock(mutex_);
         resolver_list_.push_back(impl);
+        resolver_ptrs_[impl] = std::move(ptr);
     }
 
     return *impl;
@@ -344,12 +554,9 @@ void
 win_resolver_service::
 destroy_impl(win_resolver_impl& impl)
 {
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        resolver_list_.remove(&impl);
-    }
-
-    delete &impl;
+    std::lock_guard<win_mutex> lock(mutex_);
+    resolver_list_.remove(&impl);
+    resolver_ptrs_.erase(&impl);
 }
 
 void
@@ -371,6 +578,30 @@ win_resolver_service::
 work_finished() noexcept
 {
     sched_.work_finished();
+}
+
+void
+win_resolver_service::
+thread_started() noexcept
+{
+    std::lock_guard<win_mutex> lock(mutex_);
+    ++active_threads_;
+}
+
+void
+win_resolver_service::
+thread_finished() noexcept
+{
+    std::lock_guard<win_mutex> lock(mutex_);
+    --active_threads_;
+    cv_.notify_one();
+}
+
+bool
+win_resolver_service::
+is_shutting_down() const noexcept
+{
+    return shutting_down_.load(std::memory_order_acquire);
 }
 
 } // namespace detail

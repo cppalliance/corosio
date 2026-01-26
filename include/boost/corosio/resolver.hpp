@@ -12,6 +12,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/resolver_results.hpp>
@@ -107,6 +108,68 @@ operator&=(resolve_flags& a, resolve_flags b) noexcept
 
 //------------------------------------------------------------------------------
 
+/** Bitmask flags for reverse resolver queries.
+
+    These flags correspond to the flags parameter of getnameinfo.
+*/
+enum class reverse_flags : unsigned int
+{
+    /// No flags.
+    none = 0,
+
+    /// Return the numeric form of the hostname instead of its name.
+    numeric_host = 0x01,
+
+    /// Return the numeric form of the service name instead of its name.
+    numeric_service = 0x02,
+
+    /// Return an error if the hostname cannot be resolved.
+    name_required = 0x04,
+
+    /// Lookup for datagram (UDP) service instead of stream (TCP).
+    datagram_service = 0x08
+};
+
+/** Combine two reverse_flags. */
+inline
+reverse_flags
+operator|(reverse_flags a, reverse_flags b) noexcept
+{
+    return static_cast<reverse_flags>(
+        static_cast<unsigned int>(a) |
+        static_cast<unsigned int>(b));
+}
+
+/** Combine two reverse_flags. */
+inline
+reverse_flags&
+operator|=(reverse_flags& a, reverse_flags b) noexcept
+{
+    a = a | b;
+    return a;
+}
+
+/** Intersect two reverse_flags. */
+inline
+reverse_flags
+operator&(reverse_flags a, reverse_flags b) noexcept
+{
+    return static_cast<reverse_flags>(
+        static_cast<unsigned int>(a) &
+        static_cast<unsigned int>(b));
+}
+
+/** Intersect two reverse_flags. */
+inline
+reverse_flags&
+operator&=(reverse_flags& a, reverse_flags b) noexcept
+{
+    a = a & b;
+    return a;
+}
+
+//------------------------------------------------------------------------------
+
 /** An asynchronous DNS resolver for coroutine I/O.
 
     This class provides asynchronous DNS resolution operations that return
@@ -188,6 +251,58 @@ class BOOST_COROSIO_DECL resolver : public io_object
         {
             token_ = std::move(token);
             r_.get().resolve(h, ex, host_, service_, flags_, token_, &ec_, &results_);
+            return std::noop_coroutine();
+        }
+    };
+
+    struct reverse_resolve_awaitable
+    {
+        resolver& r_;
+        endpoint ep_;
+        reverse_flags flags_;
+        std::stop_token token_;
+        mutable system::error_code ec_;
+        mutable reverse_resolver_result result_;
+
+        reverse_resolve_awaitable(
+            resolver& r,
+            endpoint const& ep,
+            reverse_flags flags) noexcept
+            : r_(r)
+            , ep_(ep)
+            , flags_(flags)
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return token_.stop_requested();
+        }
+
+        capy::io_result<reverse_resolver_result> await_resume() const noexcept
+        {
+            if (token_.stop_requested())
+                return {make_error_code(system::errc::operation_canceled), {}};
+            return {ec_, std::move(result_)};
+        }
+
+        template<typename Ex>
+        auto await_suspend(
+            std::coroutine_handle<> h,
+            Ex const& ex) -> std::coroutine_handle<>
+        {
+            r_.get().reverse_resolve(h, ex, ep_, flags_, token_, &ec_, &result_);
+            return std::noop_coroutine();
+        }
+
+        template<typename Ex>
+        auto await_suspend(
+            std::coroutine_handle<> h,
+            Ex const& ex,
+            std::stop_token token) -> std::coroutine_handle<>
+        {
+            token_ = std::move(token);
+            r_.get().reverse_resolve(h, ex, ep_, flags_, token_, &ec_, &result_);
             return std::noop_coroutine();
         }
     };
@@ -306,6 +421,46 @@ public:
         return resolve_awaitable(*this, host, service, flags);
     }
 
+    /** Initiate an asynchronous reverse resolve operation.
+
+        Resolves an endpoint into a hostname and service name using
+        reverse DNS lookup (PTR record query).
+
+        @param ep The endpoint to resolve.
+
+        @return An awaitable that completes with
+            `io_result<reverse_resolver_result>`.
+
+        @par Example
+        @code
+        endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 80);
+        auto [ec, result] = co_await r.resolve(ep);
+        if (!ec)
+            std::cout << result.host_name() << ":" << result.service_name();
+        @endcode
+    */
+    auto resolve(endpoint const& ep)
+    {
+        return reverse_resolve_awaitable(*this, ep, reverse_flags::none);
+    }
+
+    /** Initiate an asynchronous reverse resolve operation with flags.
+
+        Resolves an endpoint into a hostname and service name using
+        reverse DNS lookup (PTR record query).
+
+        @param ep The endpoint to resolve.
+
+        @param flags Flags controlling resolution behavior. See reverse_flags.
+
+        @return An awaitable that completes with
+            `io_result<reverse_resolver_result>`.
+    */
+    auto resolve(endpoint const& ep, reverse_flags flags)
+    {
+        return reverse_resolve_awaitable(*this, ep, flags);
+    }
+
     /** Cancel any pending asynchronous operations.
 
         All outstanding operations complete with `errc::operation_canceled`.
@@ -325,6 +480,15 @@ public:
             std::stop_token,
             system::error_code*,
             resolver_results*) = 0;
+
+        virtual void reverse_resolve(
+            std::coroutine_handle<>,
+            capy::executor_ref,
+            endpoint const& ep,
+            reverse_flags flags,
+            std::stop_token,
+            system::error_code*,
+            reverse_resolver_result*) = 0;
 
         virtual void cancel() noexcept = 0;
     };

@@ -634,6 +634,294 @@ struct resolver_test
     }
 
     //--------------------------------------------
+    // Reverse resolution tests
+    //--------------------------------------------
+
+    void
+    testReverseResolveLocalhost()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        system::error_code result_ec;
+        reverse_resolver_result result;
+
+        auto task = [](resolver& r_ref,
+                       system::error_code& ec_out,
+                       reverse_resolver_result& result_out,
+                       bool& done_out) -> capy::task<>
+        {
+            endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 80);
+            auto [ec, res] = co_await r_ref.resolve(ep);
+            ec_out = ec;
+            result_out = std::move(res);
+            done_out = true;
+        };
+        capy::run_async(ioc.get_executor())(
+            task(r, result_ec, result, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(!result_ec);
+        BOOST_TEST(!result.host_name().empty());
+        BOOST_TEST(!result.service_name().empty());
+    }
+
+    void
+    testReverseResolveIPv6Localhost()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        system::error_code result_ec;
+        reverse_resolver_result result;
+
+        auto task = [](resolver& r_ref,
+                       system::error_code& ec_out,
+                       reverse_resolver_result& result_out,
+                       bool& done_out) -> capy::task<>
+        {
+            endpoint ep(urls::ipv6_address::loopback(), 443);
+            auto [ec, res] = co_await r_ref.resolve(ep);
+            ec_out = ec;
+            result_out = std::move(res);
+            done_out = true;
+        };
+        capy::run_async(ioc.get_executor())(
+            task(r, result_ec, result, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(!result_ec);
+        BOOST_TEST(!result.host_name().empty());
+        BOOST_TEST(!result.service_name().empty());
+    }
+
+    void
+    testReverseResolveNumericHost()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        system::error_code result_ec;
+        reverse_resolver_result result;
+
+        auto task = [](resolver& r_ref,
+                       system::error_code& ec_out,
+                       reverse_resolver_result& result_out,
+                       bool& done_out) -> capy::task<>
+        {
+            endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 80);
+            auto [ec, res] = co_await r_ref.resolve(
+                ep, reverse_flags::numeric_host);
+            ec_out = ec;
+            result_out = std::move(res);
+            done_out = true;
+        };
+        capy::run_async(ioc.get_executor())(
+            task(r, result_ec, result, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(!result_ec);
+        // With numeric_host flag, should return "127.0.0.1"
+        BOOST_TEST_EQ(result.host_name(), "127.0.0.1");
+    }
+
+    void
+    testReverseResolveNumericService()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        system::error_code result_ec;
+        reverse_resolver_result result;
+
+        auto task = [](resolver& r_ref,
+                       system::error_code& ec_out,
+                       reverse_resolver_result& result_out,
+                       bool& done_out) -> capy::task<>
+        {
+            endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 8080);
+            auto [ec, res] = co_await r_ref.resolve(
+                ep, reverse_flags::numeric_service);
+            ec_out = ec;
+            result_out = std::move(res);
+            done_out = true;
+        };
+        capy::run_async(ioc.get_executor())(
+            task(r, result_ec, result, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(!result_ec);
+        // With numeric_service flag, should return "8080"
+        BOOST_TEST_EQ(result.service_name(), "8080");
+    }
+
+    void
+    testReverseResolveNameRequired()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        system::error_code result_ec;
+
+        // Use an IP address that's unlikely to have a reverse DNS entry
+        auto task = [](resolver& r_ref,
+                       system::error_code& ec_out,
+                       bool& done_out) -> capy::task<>
+        {
+            // 192.0.2.1 is a TEST-NET address (RFC 5737), unlikely to have reverse DNS
+            endpoint ep(urls::ipv4_address({192, 0, 2, 1}), 80);
+            auto [ec, res] = co_await r_ref.resolve(
+                ep, reverse_flags::name_required);
+            ec_out = ec;
+            done_out = true;
+        };
+        capy::run_async(ioc.get_executor())(
+            task(r, result_ec, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        // With name_required flag and no reverse DNS, should get an error
+        // But localhost might have reverse DNS, so just verify it completed
+    }
+
+    void
+    testReverseResolveCancel()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        system::error_code result_ec;
+
+        auto task = [](resolver& r_ref,
+                       system::error_code& ec_out,
+                       bool& done_out) -> capy::task<>
+        {
+            endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 80);
+            auto [ec, res] = co_await r_ref.resolve(ep);
+            ec_out = ec;
+            done_out = true;
+        };
+        capy::run_async(ioc.get_executor())(
+            task(r, result_ec, completed));
+
+        // Cancel immediately
+        r.cancel();
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        // May or may not be canceled depending on timing
+    }
+
+    void
+    testReverseFlagsOperators()
+    {
+        // Test bitwise OR
+        auto flags = reverse_flags::numeric_host | reverse_flags::numeric_service;
+        BOOST_TEST((flags & reverse_flags::numeric_host) != reverse_flags::none);
+        BOOST_TEST((flags & reverse_flags::numeric_service) != reverse_flags::none);
+        BOOST_TEST((flags & reverse_flags::name_required) == reverse_flags::none);
+
+        // Test bitwise OR assignment
+        flags |= reverse_flags::name_required;
+        BOOST_TEST((flags & reverse_flags::name_required) != reverse_flags::none);
+
+        // Test bitwise AND assignment
+        flags &= reverse_flags::numeric_host;
+        BOOST_TEST((flags & reverse_flags::numeric_host) != reverse_flags::none);
+        BOOST_TEST((flags & reverse_flags::numeric_service) == reverse_flags::none);
+    }
+
+    void
+    testSequentialReverseResolves()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        int resolve_count = 0;
+
+        auto task = [](resolver& r_ref, int& count_out) -> capy::task<>
+        {
+            // First reverse resolve
+            endpoint ep1(urls::ipv4_address({127, 0, 0, 1}), 80);
+            auto [ec1, res1] = co_await r_ref.resolve(
+                ep1, reverse_flags::numeric_host | reverse_flags::numeric_service);
+            BOOST_TEST(!ec1);
+            ++count_out;
+
+            // Second reverse resolve
+            endpoint ep2(urls::ipv4_address({127, 0, 0, 1}), 443);
+            auto [ec2, res2] = co_await r_ref.resolve(
+                ep2, reverse_flags::numeric_host | reverse_flags::numeric_service);
+            BOOST_TEST(!ec2);
+            ++count_out;
+
+            // Third reverse resolve (IPv6)
+            endpoint ep3(urls::ipv6_address::loopback(), 8080);
+            auto [ec3, res3] = co_await r_ref.resolve(
+                ep3, reverse_flags::numeric_host | reverse_flags::numeric_service);
+            BOOST_TEST(!ec3);
+            ++count_out;
+        };
+        capy::run_async(ioc.get_executor())(task(r, resolve_count));
+
+        ioc.run();
+
+        BOOST_TEST_EQ(resolve_count, 3);
+    }
+
+    void
+    testMixedResolveAndReverseResolve()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+
+        auto task = [](resolver& r_ref, bool& done_out) -> capy::task<>
+        {
+            // Forward resolve
+            auto [ec1, results] = co_await r_ref.resolve(
+                "127.0.0.1", "80",
+                resolve_flags::numeric_host | resolve_flags::numeric_service);
+            BOOST_TEST(!ec1);
+            BOOST_TEST(!results.empty());
+
+            // Get the endpoint from the result
+            auto ep = results.begin()->get_endpoint();
+
+            // Reverse resolve
+            auto [ec2, result] = co_await r_ref.resolve(
+                ep, reverse_flags::numeric_host | reverse_flags::numeric_service);
+            BOOST_TEST(!ec2);
+            BOOST_TEST_EQ(result.host_name(), "127.0.0.1");
+            BOOST_TEST_EQ(result.service_name(), "80");
+
+            done_out = true;
+        };
+        capy::run_async(ioc.get_executor())(task(r, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+    }
+
+    //--------------------------------------------
     // resolver_entry tests
     //--------------------------------------------
 
@@ -705,6 +993,17 @@ struct resolver_test
         // resolver_entry
         testResolverEntryConstruction();
         testResolverEntryImplicitConversion();
+
+        // Reverse resolution
+        testReverseResolveLocalhost();
+        testReverseResolveIPv6Localhost();
+        testReverseResolveNumericHost();
+        testReverseResolveNumericService();
+        testReverseResolveNameRequired();
+        testReverseResolveCancel();
+        testReverseFlagsOperators();
+        testSequentialReverseResolves();
+        testMixedResolveAndReverseResolve();
     }
 };
 

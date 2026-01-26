@@ -200,6 +200,65 @@ public:
     }
 };
 
+//------------------------------------------------------------------------------
+
+/** The result of a reverse DNS resolution.
+
+    This class holds the result of resolving an endpoint
+    into a hostname and service name.
+
+    @par Thread Safety
+    Distinct objects: Safe.@n
+    Shared objects: Safe.
+*/
+class reverse_resolver_result
+{
+    corosio::endpoint ep_;
+    std::string host_;
+    std::string service_;
+
+public:
+    /** Default constructor. */
+    reverse_resolver_result() = default;
+
+    /** Construct with endpoint, host name, and service name.
+
+        @param ep The endpoint that was resolved.
+        @param host The resolved host name.
+        @param service The resolved service name.
+    */
+    reverse_resolver_result(
+        corosio::endpoint ep,
+        std::string host,
+        std::string service)
+        : ep_(ep)
+        , host_(std::move(host))
+        , service_(std::move(service))
+    {
+    }
+
+    /** Get the endpoint that was resolved. */
+    corosio::endpoint
+    endpoint() const noexcept
+    {
+        return ep_;
+    }
+
+    /** Get the resolved host name. */
+    std::string const&
+    host_name() const noexcept
+    {
+        return host_;
+    }
+
+    /** Get the resolved service name. */
+    std::string const&
+    service_name() const noexcept
+    {
+        return service_;
+    }
+};
+
 } // namespace corosio
 } // namespace boost
 

@@ -22,6 +22,7 @@
 #endif
 
 #include <boost/corosio/detail/scheduler.hpp>
+#include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/resolver_results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -35,42 +36,64 @@
 
 #include <WS2tcpip.h>
 
+#include <atomic>
+#include <condition_variable>
+#include <memory>
 #include <string>
+#include <unordered_map>
 
 /*
     Windows IOCP Resolver Service
     =============================
 
-    This header declares the Windows resolver implementation using the
-    GetAddrInfoExW API, which provides native async DNS resolution that
-    integrates with IOCP.
+    This header declares the Windows resolver implementation.
 
-    Unlike POSIX getaddrinfo() which blocks, GetAddrInfoExW accepts a
-    completion callback that Windows invokes when resolution finishes.
-    This avoids the need for worker threads.
+    Forward Resolution (GetAddrInfoExW)
+    -----------------------------------
+    Uses the native async GetAddrInfoExW API which provides completion
+    callbacks that integrate with IOCP. This avoids worker threads for
+    forward DNS lookups.
+
+    Reverse Resolution (GetNameInfoW)
+    ---------------------------------
+    Unlike GetAddrInfoExW, GetNameInfoW has no async variant. Reverse
+    resolution spawns a detached worker thread that calls GetNameInfoW
+    and posts the result to the scheduler upon completion.
 
     Class Hierarchy
     ---------------
     - win_resolver_service (execution_context::service)
-        - Owns all win_resolver_impl instances
+        - Owns all win_resolver_impl instances via shared_ptr
         - Coordinates with win_scheduler for work tracking
+        - Tracks active worker threads for safe shutdown
     - win_resolver_impl (one per resolver object)
-        - Contains embedded resolve_op for reuse
+        - Contains embedded resolve_op and reverse_resolve_op
+        - Inherits from enable_shared_from_this for thread safety
     - resolve_op (overlapped_op subclass)
         - OVERLAPPED base enables IOCP integration
         - Static completion() callback invoked by Windows
+    - reverse_resolve_op (overlapped_op subclass)
+        - Used by worker thread for reverse resolution
+
+    Shutdown Synchronization
+    ------------------------
+    The service uses condition_variable_any and win_mutex to track active
+    worker threads. During shutdown(), the service waits for all threads
+    to complete before destroying resources. Worker threads always post
+    their completions so the scheduler can properly drain them via destroy().
 
     Cancellation
     ------------
-    GetAddrInfoExCancel() can cancel in-progress resolutions. The cancel()
-    method calls this API and sets an atomic cancelled flag. The completion
-    callback checks this flag to determine the error code.
+    GetAddrInfoExCancel() can cancel in-progress forward resolutions.
+    Reverse resolution checks an atomic cancelled flag after GetNameInfoW
+    returns. The cancel() method sets flags and calls the Windows cancel API.
 
     Single-Inflight Constraint
     --------------------------
-    Each resolver has ONE embedded op_. Concurrent resolve() calls on the
-    same resolver would corrupt op_ state. This is documented but not
-    enforced at runtime. Users must serialize resolve() calls per-resolver.
+    Each resolver has ONE embedded op_ for forward resolution and ONE
+    reverse_op_ for reverse resolution. Concurrent operations of the same
+    type on the same resolver would corrupt state. Users must serialize
+    operations per-resolver.
 */
 
 namespace boost {
@@ -101,6 +124,23 @@ struct resolve_op : overlapped_op
         OVERLAPPED* ov);
 
     /** Resume the coroutine after resolve completes. */
+    void operator()() override;
+
+    void destroy() override;
+};
+
+/** Reverse resolve operation state. */
+struct reverse_resolve_op : overlapped_op
+{
+    reverse_resolver_result* result_out = nullptr;
+    endpoint ep;
+    reverse_flags flags = reverse_flags::none;
+    std::string stored_host;
+    std::string stored_service;
+    int gai_error = 0;
+    win_resolver_impl* impl = nullptr;
+
+    /** Resume the coroutine after reverse resolve completes. */
     void operator()() override;
 
     void destroy() override;
@@ -151,6 +191,7 @@ struct resolve_op : overlapped_op
 */
 class win_resolver_impl
     : public resolver::resolver_impl
+    , public std::enable_shared_from_this<win_resolver_impl>
     , public intrusive_list<win_resolver_impl>::node
 {
     friend class win_resolver_service;
@@ -171,9 +212,19 @@ public:
         system::error_code*,
         resolver_results*) override;
 
+    void reverse_resolve(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        endpoint const& ep,
+        reverse_flags flags,
+        std::stop_token,
+        system::error_code*,
+        reverse_resolver_result*) override;
+
     void cancel() noexcept override;
 
     resolve_op op_;
+    reverse_resolve_op reverse_op_;
 
 private:
     win_resolver_service& svc_;
@@ -233,10 +284,24 @@ public:
     /** Notify scheduler that I/O work completed. */
     void work_finished() noexcept;
 
+    /** Track worker thread start for safe shutdown. */
+    void thread_started() noexcept;
+
+    /** Track worker thread completion for safe shutdown. */
+    void thread_finished() noexcept;
+
+    /** Check if service is shutting down. */
+    bool is_shutting_down() const noexcept;
+
 private:
     scheduler& sched_;
     win_mutex mutex_;
+    std::condition_variable_any cv_;
+    std::atomic<bool> shutting_down_{false};
+    std::size_t active_threads_ = 0;
     intrusive_list<win_resolver_impl> resolver_list_;
+    std::unordered_map<win_resolver_impl*,
+        std::shared_ptr<win_resolver_impl>> resolver_ptrs_;
 };
 
 } // namespace detail

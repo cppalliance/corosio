@@ -30,6 +30,7 @@
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -54,11 +55,12 @@
         - Owns all posix_resolver_impl instances via shared_ptr
         - Stores scheduler* for posting completions
     - posix_resolver_impl (one per resolver object)
-        - Contains embedded posix_resolve_op for reuse
+        - Contains embedded resolve_op and reverse_resolve_op for reuse
         - Uses shared_from_this to prevent premature destruction
-    - posix_resolve_op (operation state)
-        - Inherits scheduler_op for completion posting
-        - Stores copies of host/service (worker thread reads them)
+    - resolve_op (forward resolution state)
+        - Uses getaddrinfo() to resolve host/service to endpoints
+    - reverse_resolve_op (reverse resolution state)
+        - Uses getnameinfo() to resolve endpoint to host/service
 
     Worker Thread Lifetime
     ----------------------
@@ -68,17 +70,26 @@
 
     Completion Flow
     ---------------
+    Forward resolution:
     1. resolve() sets up op_, spawns worker thread
     2. Worker runs getaddrinfo() (blocking)
     3. Worker stores results in op_.stored_results
     4. Worker calls svc_.post(&op_) to queue completion
     5. Scheduler invokes op_() which resumes the coroutine
 
+    Reverse resolution follows the same pattern using getnameinfo().
+
     Single-Inflight Constraint
     --------------------------
-    Each resolver has ONE embedded op_. Concurrent resolve() calls on the
-    same resolver would corrupt op_ state. This is documented but not
-    enforced at runtime. Users must serialize resolve() calls per-resolver.
+    Each resolver has ONE embedded op_ for forward and ONE reverse_op_ for
+    reverse resolution. Concurrent operations of the same type on the same
+    resolver would corrupt state. Users must serialize operations per-resolver.
+
+    Shutdown Synchronization
+    ------------------------
+    The service tracks active worker threads via thread_started()/thread_finished().
+    During shutdown(), the service sets shutting_down_ flag and waits for all
+    threads to complete before destroying resources.
 */
 
 namespace boost {
@@ -107,6 +118,24 @@ flags_to_hints(resolve_flags flags)
         hints |= AI_ALL;
 
     return hints;
+}
+
+// Convert reverse_flags to getnameinfo NI_* flags
+int
+flags_to_ni_flags(reverse_flags flags)
+{
+    int ni_flags = 0;
+
+    if ((flags & reverse_flags::numeric_host) != reverse_flags::none)
+        ni_flags |= NI_NUMERICHOST;
+    if ((flags & reverse_flags::numeric_service) != reverse_flags::none)
+        ni_flags |= NI_NUMERICSERV;
+    if ((flags & reverse_flags::name_required) != reverse_flags::none)
+        ni_flags |= NI_NAMEREQD;
+    if ((flags & reverse_flags::datagram_service) != reverse_flags::none)
+        ni_flags |= NI_DGRAM;
+
+    return ni_flags;
 }
 
 // Convert addrinfo results to resolver_results
@@ -309,6 +338,52 @@ public:
         void start(std::stop_token token);
     };
 
+    //--------------------------------------------------------------------------
+    // reverse_resolve_op - operation state for reverse DNS resolution
+    //--------------------------------------------------------------------------
+
+    struct reverse_resolve_op : scheduler_op
+    {
+        struct canceller
+        {
+            reverse_resolve_op* op;
+            void operator()() const noexcept { op->request_cancel(); }
+        };
+
+        // Coroutine state
+        capy::coro h;
+        capy::executor_ref ex;
+        posix_resolver_impl* impl = nullptr;
+
+        // Output parameters
+        system::error_code* ec_out = nullptr;
+        reverse_resolver_result* result_out = nullptr;
+
+        // Input parameters
+        endpoint ep;
+        reverse_flags flags = reverse_flags::none;
+
+        // Result storage (populated by worker thread)
+        std::string stored_host;
+        std::string stored_service;
+        int gai_error = 0;
+
+        // Thread coordination
+        std::atomic<bool> cancelled{false};
+        std::optional<std::stop_callback<canceller>> stop_cb;
+
+        reverse_resolve_op()
+        {
+            data_ = this;
+        }
+
+        void reset() noexcept;
+        void operator()() override;
+        void destroy() override;
+        void request_cancel() noexcept;
+        void start(std::stop_token token);
+    };
+
     explicit posix_resolver_impl(posix_resolver_service_impl& svc) noexcept
         : svc_(svc)
     {
@@ -326,9 +401,19 @@ public:
         system::error_code*,
         resolver_results*) override;
 
+    void reverse_resolve(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        endpoint const& ep,
+        reverse_flags flags,
+        std::stop_token,
+        system::error_code*,
+        reverse_resolver_result*) override;
+
     void cancel() noexcept override;
 
     resolve_op op_;
+    reverse_resolve_op reverse_op_;
 
 private:
     posix_resolver_service_impl& svc_;
@@ -451,6 +536,78 @@ start(std::stop_token token)
 }
 
 //------------------------------------------------------------------------------
+// posix_resolver_impl::reverse_resolve_op implementation
+//------------------------------------------------------------------------------
+
+void
+posix_resolver_impl::reverse_resolve_op::
+reset() noexcept
+{
+    ep = endpoint{};
+    flags = reverse_flags::none;
+    stored_host.clear();
+    stored_service.clear();
+    gai_error = 0;
+    cancelled.store(false, std::memory_order_relaxed);
+    stop_cb.reset();
+    ec_out = nullptr;
+    result_out = nullptr;
+}
+
+void
+posix_resolver_impl::reverse_resolve_op::
+operator()()
+{
+    stop_cb.reset();  // Disconnect stop callback
+
+    bool const was_cancelled = cancelled.load(std::memory_order_acquire);
+
+    if (ec_out)
+    {
+        if (was_cancelled)
+            *ec_out = capy::error::canceled;
+        else if (gai_error != 0)
+            *ec_out = make_gai_error(gai_error);
+        else
+            *ec_out = {};  // Clear on success
+    }
+
+    if (result_out && !was_cancelled && gai_error == 0)
+    {
+        *result_out = reverse_resolver_result(
+            ep, std::move(stored_host), std::move(stored_service));
+    }
+
+    impl->svc_.work_finished();
+    ex.dispatch(h).resume();
+}
+
+void
+posix_resolver_impl::reverse_resolve_op::
+destroy()
+{
+    stop_cb.reset();
+}
+
+void
+posix_resolver_impl::reverse_resolve_op::
+request_cancel() noexcept
+{
+    cancelled.store(true, std::memory_order_release);
+}
+
+void
+posix_resolver_impl::reverse_resolve_op::
+start(std::stop_token token)
+{
+    cancelled.store(false, std::memory_order_release);
+    stop_cb.reset();
+
+    if (token.stop_possible())
+        stop_cb.emplace(token, canceller{this});
+}
+
+//------------------------------------------------------------------------------
 // posix_resolver_impl implementation
 //------------------------------------------------------------------------------
 
@@ -524,12 +681,9 @@ resolve(
             if (ai)
                 ::freeaddrinfo(ai);
 
-            // Only access service methods if not shutting down
-            // (service may be destroyed during shutdown)
-            if (!svc_.is_shutting_down())
-            {
-                svc_.post(&op_);
-            }
+            // Always post so the scheduler can properly drain the op
+            // during shutdown via destroy().
+            svc_.post(&op_);
 
             // Signal thread completion for shutdown synchronization
             svc_.thread_finished();
@@ -549,9 +703,103 @@ resolve(
 
 void
 posix_resolver_impl::
+reverse_resolve(
+    std::coroutine_handle<> h,
+    capy::executor_ref ex,
+    endpoint const& ep,
+    reverse_flags flags,
+    std::stop_token token,
+    system::error_code* ec,
+    reverse_resolver_result* result_out)
+{
+    auto& op = reverse_op_;
+    op.reset();
+    op.h = h;
+    op.ex = ex;
+    op.impl = this;
+    op.ec_out = ec;
+    op.result_out = result_out;
+    op.ep = ep;
+    op.flags = flags;
+    op.start(token);
+
+    // Keep io_context alive while resolution is pending
+    op.ex.on_work_started();
+
+    // Track thread for safe shutdown
+    svc_.thread_started();
+
+    try
+    {
+        // Prevent impl destruction while worker thread is running
+        auto self = this->shared_from_this();
+        std::thread worker([this, self = std::move(self)]() {
+            // Build sockaddr from endpoint
+            sockaddr_storage ss{};
+            socklen_t ss_len;
+
+            if (reverse_op_.ep.is_v4())
+            {
+                auto sa = to_sockaddr_in(reverse_op_.ep);
+                std::memcpy(&ss, &sa, sizeof(sa));
+                ss_len = sizeof(sockaddr_in);
+            }
+            else
+            {
+                auto sa = to_sockaddr_in6(reverse_op_.ep);
+                std::memcpy(&ss, &sa, sizeof(sa));
+                ss_len = sizeof(sockaddr_in6);
+            }
+
+            char host[NI_MAXHOST];
+            char service[NI_MAXSERV];
+
+            int result = ::getnameinfo(
+                reinterpret_cast<sockaddr*>(&ss), ss_len,
+                host, sizeof(host),
+                service, sizeof(service),
+                flags_to_ni_flags(reverse_op_.flags));
+
+            if (!reverse_op_.cancelled.load(std::memory_order_acquire))
+            {
+                if (result == 0)
+                {
+                    reverse_op_.stored_host = host;
+                    reverse_op_.stored_service = service;
+                    reverse_op_.gai_error = 0;
+                }
+                else
+                {
+                    reverse_op_.gai_error = result;
+                }
+            }
+
+            // Always post so the scheduler can properly drain the op
+            // during shutdown via destroy().
+            svc_.post(&reverse_op_);
+
+            // Signal thread completion for shutdown synchronization
+            svc_.thread_finished();
+        });
+        worker.detach();
+    }
+    catch (std::system_error const&)
+    {
+        // Thread creation failed - no thread was started
+        svc_.thread_finished();
+
+        // Set error and post completion to avoid hanging the coroutine
+        reverse_op_.gai_error = EAI_MEMORY;
+        svc_.post(&reverse_op_);
+    }
+}
+
+void
+posix_resolver_impl::
 cancel() noexcept
 {
     op_.request_cancel();
+    reverse_op_.request_cancel();
 }
 
 //------------------------------------------------------------------------------
