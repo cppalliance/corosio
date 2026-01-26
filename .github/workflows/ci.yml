@@ -759,6 +759,8 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           verbose: true
+          disable_search: true
+          plugins: ''
 
       - name: Coverage Summary
         if: ${{ matrix.coverage }}
