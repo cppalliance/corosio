@@ -751,21 +751,24 @@ jobs:
             --include "*/boost-root/libs/${{steps.patch.outputs.module}}/src/*" \
             --gcov-tool "$gcov_tool"
 
-          # Fix paths in coverage.info to match repo structure
-          # Strips everything up to and including boost-root/libs/corosio/ so codecov can map to repo files
-          # Preserves the SF: prefix required by lcov format while removing the workspace path
-          sed -i 's|^SF:.*/boost-root/libs/${{steps.patch.outputs.module}}/|SF:|g' boost-root/__build_cmake_test__/coverage.info
-
       - name: Upload to Codecov
         if: ${{ matrix.coverage }}
-        uses: codecov/codecov-action@v5
-        with:
-          files: boost-root/__build_cmake_test__/coverage.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-          verbose: true
-          disable_search: true
-          plugins: noop
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          set -x
+
+          if [ -z "$CODECOV_TOKEN" ]; then
+              echo "CODECOV_TOKEN is not set. Skipping coverage report."
+              exit 0
+          fi
+
+          # Debug: show coverage file paths before upload
+          echo "=== Coverage file paths (first 20 SF lines) ==="
+          grep "^SF:" boost-root/__build_cmake_test__/coverage.info | head -20
+
+          # Upload using bash uploader (same approach as Boost.URL)
+          bash <(curl -s https://codecov.io/bash) -f "boost-root/__build_cmake_test__/coverage.info" -v
 
       - name: Coverage Summary
         if: ${{ matrix.coverage }}
