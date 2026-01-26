@@ -13,7 +13,7 @@
 # Project
 #
 #-------------------------------------------------
-cmake_minimum_required(VERSION 3.8...3.20)
+cmake_minimum_required(VERSION 3.8...3.31)
 set(BOOST_COROSIO_VERSION 1)
 if (BOOST_SUPERPROJECT_VERSION)
     set(BOOST_COROSIO_VERSION ${BOOST_SUPERPROJECT_VERSION})
