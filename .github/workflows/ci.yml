@@ -745,7 +745,11 @@ jobs:
           elif command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}" &> /dev/null; then
               gcov_tool="gcov-${{ steps.setup-cpp.outputs.version-major }}"
           fi
-          lcov -c -q -o "boost-root/__build_cmake_test__/coverage.info" -d "boost-root/__build_cmake_test__" --include "$(pwd)/boost-root/libs/${{steps.patch.outputs.module}}/*" --gcov-tool "$gcov_tool"
+          lcov -c -q -o "boost-root/__build_cmake_test__/coverage.info" \
+            -d "boost-root/__build_cmake_test__" \
+            --include "*/boost-root/libs/${{steps.patch.outputs.module}}/include/*" \
+            --include "*/boost-root/libs/${{steps.patch.outputs.module}}/src/*" \
+            --gcov-tool "$gcov_tool"
 
       - name: Upload to Codecov
         if: ${{ matrix.coverage }}
