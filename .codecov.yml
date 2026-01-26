@@ -16,7 +16,7 @@ codecov:
 # Coverage paths look like: /home/runner/work/corosio/corosio/boost-root/libs/corosio/include/...
 # Strip everything up to and including boost-root/libs/corosio/
 fixes:
-  - "**/boost-root/libs/corosio/::"
+  - "boost-root/libs/corosio/::"
 
 # Make coverage checks informational (report but never fail CI)
 coverage:
