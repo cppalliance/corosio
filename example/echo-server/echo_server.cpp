@@ -10,6 +10,7 @@
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/write.hpp>
 
 #include <cstdlib>
 #include <iostream>
@@ -60,7 +61,7 @@ class echo_server : public corosio::tcp_server
                 buf_.resize(n);
 
                 // Echo it back
-                auto [wec, wn] = co_await corosio::write(
+                auto [wec, wn] = co_await capy::write(
                     sock_, capy::const_buffer(buf_.data(), buf_.size()));
 
                 if (wec)
