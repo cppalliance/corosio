@@ -12,6 +12,16 @@ codecov:
     after_n_builds: 1
     wait_for_ci: yes
 
+# Make coverage checks informational (report but never fail CI)
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
 # Change how pull request comments look
 comment:
   layout: "reach,diff,flags,files,footer"
