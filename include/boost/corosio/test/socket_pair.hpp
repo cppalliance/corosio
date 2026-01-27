@@ -11,14 +11,13 @@
 #define BOOST_COROSIO_TEST_SOCKET_PAIR_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket.hpp>
 
 #include <utility>
 
 namespace boost {
 namespace corosio {
-
-class io_context;
 
 namespace test {
 
