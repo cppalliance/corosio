@@ -23,9 +23,7 @@
 # endif
 #endif
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 /** A thread-local pointer.
 
@@ -204,8 +202,6 @@ thread_local T* thread_local_ptr<T>::ptr_ = nullptr;
 
 #endif
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

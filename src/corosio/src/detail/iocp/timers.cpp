@@ -15,9 +15,7 @@
 #include "src/detail/iocp/timers_nt.hpp"
 #include "src/detail/iocp/timers_thread.hpp"
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 std::unique_ptr<win_timers>
 make_win_timers(void* iocp, long* dispatch_required)
@@ -30,8 +28,6 @@ make_win_timers(void* iocp, long* dispatch_required)
     return std::make_unique<win_timers_thread>(iocp, dispatch_required);
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

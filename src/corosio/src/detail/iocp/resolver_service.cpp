@@ -69,9 +69,7 @@ INT WSAAPI GetAddrInfoExCancel(LPHANDLE lpHandle);
     forward resolution, in worker thread for reverse resolution).
 */
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 namespace {
 
@@ -604,8 +602,6 @@ is_shutting_down() const noexcept
     return shutting_down_.load(std::memory_order_acquire);
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // _WIN32

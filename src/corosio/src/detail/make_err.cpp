@@ -21,9 +21,7 @@
 #include <errno.h>
 #endif
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 #if defined(_WIN32)
 
@@ -61,6 +59,4 @@ make_err(int errn) noexcept
 
 #endif
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail

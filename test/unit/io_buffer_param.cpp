@@ -16,8 +16,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 struct io_buffer_param_test
 {
@@ -343,5 +342,4 @@ TEST_SUITE(
     io_buffer_param_test,
     "boost.corosio.io_buffer_param");
 
-} // corosio
-} // boost
+} // namespace boost::corosio

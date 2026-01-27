@@ -18,9 +18,7 @@
 
 #include "src/detail/iocp/windows.hpp"
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 /** RAII class for Winsock initialization.
 
@@ -43,9 +41,7 @@ private:
     static long count_;
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_IOCP
 

@@ -59,8 +59,7 @@
     - do_read_some, do_write_some             -- inner coroutines with WANT_* loops
 */
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 namespace {
 
@@ -81,8 +80,7 @@ using buffer_array = std::array<capy::mutable_buffer, max_buffers>;
 //
 //------------------------------------------------------------------------------
 
-namespace tls {
-namespace detail {
+namespace tls::detail {
 
 // Ex data index for storing context_data pointer in SSL_CTX
 static int sni_ctx_data_index = -1;
@@ -281,8 +279,7 @@ get_openssl_context( context_data const& cd )
     return static_cast<openssl_native_context*>( p )->ctx_;
 }
 
-} // namespace detail
-} // namespace tls
+} // namespace tls::detail
 
 //------------------------------------------------------------------------------
 
@@ -851,5 +848,4 @@ openssl_stream::
         impl_->release();
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

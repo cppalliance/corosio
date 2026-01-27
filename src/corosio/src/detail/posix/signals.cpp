@@ -128,8 +128,8 @@
     because completion is posted immediately.
 */
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
+
 namespace detail {
 
 // Forward declarations
@@ -936,7 +936,6 @@ cancel()
     get().cancel();
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif // BOOST_COROSIO_SIGNAL_POSIX

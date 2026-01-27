@@ -13,9 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/system/error_code.hpp>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 #if defined(_WIN32)
 /** Convert a Windows error code to system::error_code.
@@ -38,8 +36,6 @@ system::error_code make_err(unsigned long dwError) noexcept;
 system::error_code make_err(int errn) noexcept;
 #endif
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

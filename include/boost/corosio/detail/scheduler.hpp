@@ -15,9 +15,7 @@
 
 #include <cstddef>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 class scheduler_op;
 
@@ -51,8 +49,6 @@ struct scheduler
     virtual std::size_t poll_one() = 0;
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

@@ -17,8 +17,7 @@
 
 #include <boost/corosio/basic_io_context.hpp>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** I/O context using Linux epoll for event multiplexing.
 
@@ -67,8 +66,7 @@ public:
     epoll_context& operator=(epoll_context const&) = delete;
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif // defined(__linux__)
 

@@ -17,9 +17,8 @@
 #include <string>
 #include <vector>
 
-namespace boost {
-namespace corosio {
-namespace tls {
+namespace boost::corosio::tls {
+
 namespace detail {
 
 /** Abstract base for cached native SSL contexts.
@@ -93,7 +92,7 @@ struct context_data
     // Cached native contexts (intrusive list)
 
     mutable std::mutex native_contexts_mutex_;
-    mutable detail::native_context_base* native_contexts_ = nullptr;
+    mutable native_context_base* native_contexts_ = nullptr;
 
     /** Find or insert a cached native context.
 
@@ -103,7 +102,7 @@ struct context_data
         @return Pointer to the cached native context.
     */
     template<typename Factory>
-    detail::native_context_base*
+    native_context_base*
     find( void const* service, Factory&& create ) const
     {
         std::lock_guard<std::mutex> lock( native_contexts_mutex_ );
@@ -131,7 +130,6 @@ struct context_data
         }
     }
 };
-
 
 } // namespace detail
 
@@ -166,8 +164,7 @@ get_context_data( context const& ctx ) noexcept
 }
 
 } // namespace detail
-} // namespace tls
-} // namespace corosio
-} // namespace boost
+
+} // namespace boost::corosio::tls
 
 #endif

@@ -24,8 +24,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 struct resolver_test
 {
@@ -1009,5 +1008,4 @@ struct resolver_test
 
 TEST_SUITE(resolver_test, "boost.corosio.resolver");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

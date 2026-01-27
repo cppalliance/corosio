@@ -10,9 +10,7 @@
 #ifndef BOOST_COROSIO_DETAIL_INTRUSIVE_HPP
 #define BOOST_COROSIO_DETAIL_INTRUSIVE_HPP
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 //------------------------------------------------
 
@@ -223,8 +221,6 @@ public:
     }
 };
 
-} // detail
-} // corosio
-} // boost
+} // namespace boost::corosio::detail
 
 #endif

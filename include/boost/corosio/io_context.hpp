@@ -29,8 +29,7 @@
 #include <boost/corosio/epoll_context.hpp>  // Placeholder - select not yet implemented
 #endif
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** An I/O context for running asynchronous operations.
 
@@ -87,7 +86,6 @@ using io_context = epoll_context;  // Placeholder
 using io_context = epoll_context;  // Placeholder
 #endif
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif // BOOST_COROSIO_IO_CONTEXT_HPP

@@ -9,8 +9,7 @@
 
 #include <boost/corosio/tcp_server.hpp>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 tcp_server::
 push_awaitable::
@@ -144,5 +143,4 @@ start()
         capy::run_async(ex_)(do_accept(t));
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

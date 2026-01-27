@@ -12,8 +12,7 @@
 
 #include <boost/config.hpp>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 //------------------------------------------------
 
@@ -40,7 +39,6 @@ namespace corosio {
 
 //------------------------------------------------
 
-} // corosio
-} // boost
+} // namespace boost::corosio
 
 #endif

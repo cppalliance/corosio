@@ -18,9 +18,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
-namespace test {
+namespace boost::corosio::test {
 
 struct socket_pair_test
 {
@@ -90,6 +88,4 @@ struct socket_pair_test
 
 TEST_SUITE(socket_pair_test, "boost.corosio.socket_pair");
 
-} // namespace test
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::test

@@ -15,8 +15,7 @@
 
 #include <cstddef>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** A type-erased buffer sequence for I/O system call boundaries.
 
@@ -379,7 +378,6 @@ private:
     fn_t fn_;
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

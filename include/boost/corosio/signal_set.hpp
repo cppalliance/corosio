@@ -53,8 +53,7 @@
        of adding signals without flags (delegates to add(int, none)).
 */
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** An asynchronous signal set for coroutine I/O.
 
@@ -350,7 +349,6 @@ private:
     }
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

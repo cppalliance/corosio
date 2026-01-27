@@ -31,8 +31,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** Bitmask flags for resolver queries.
 
@@ -500,7 +499,6 @@ private:
     }
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

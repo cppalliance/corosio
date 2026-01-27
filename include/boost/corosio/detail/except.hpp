@@ -14,9 +14,7 @@
 #include <boost/assert/source_location.hpp>
 #include <boost/system/error_code.hpp>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 BOOST_COROSIO_DECL void BOOST_NORETURN throw_logic_error(
     char const* what,
@@ -48,8 +46,6 @@ BOOST_COROSIO_DECL void BOOST_NORETURN throw_system_error(
     char const* what,
     source_location const& loc = BOOST_CURRENT_LOCATION);
 
-} // detail
-} // corosio
-} // boost
+} // namespace boost::corosio::detail
 
 #endif

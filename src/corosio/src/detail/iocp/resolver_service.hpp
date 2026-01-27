@@ -96,9 +96,7 @@
     operations per-resolver.
 */
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 class win_resolver_service;
 class win_resolver_impl;
@@ -304,9 +302,7 @@ private:
         std::shared_ptr<win_resolver_impl>> resolver_ptrs_;
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_IOCP
 

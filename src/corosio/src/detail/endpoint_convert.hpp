@@ -28,9 +28,7 @@
 #include <arpa/inet.h>
 #endif
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 /** Convert IPv4 endpoint to sockaddr_in.
 
@@ -94,8 +92,6 @@ from_sockaddr_in6(sockaddr_in6 const& sa) noexcept
     return endpoint(urls::ipv6_address(bytes), ntohs(sa.sin6_port));
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

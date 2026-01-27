@@ -26,8 +26,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -476,7 +475,6 @@ public:
 #pragma warning(pop)
 #endif
 
-} // corosio
-} // boost
+} // namespace boost::corosio
 
 #endif

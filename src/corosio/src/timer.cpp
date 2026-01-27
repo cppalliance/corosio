@@ -11,8 +11,8 @@
 
 #include <boost/corosio/detail/except.hpp>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
+
 namespace detail {
 
 // Defined in timer_service.cpp
@@ -92,5 +92,4 @@ expires_after(duration d)
     detail::timer_service_expires_after(get(), d);
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

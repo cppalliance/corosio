@@ -18,9 +18,7 @@
 
 #include "src/detail/iocp/windows.hpp"
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 /** Recursive mutex using Windows CRITICAL_SECTION.
 
@@ -69,9 +67,7 @@ private:
     ::CRITICAL_SECTION cs_;
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_IOCP
 

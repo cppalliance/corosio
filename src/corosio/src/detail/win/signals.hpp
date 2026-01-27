@@ -54,9 +54,7 @@
     from POSIX where the handler must be async-signal-safe.
 */
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 class win_scheduler;
 class win_signals;
@@ -251,9 +249,7 @@ private:
     win_signals* prev_ = nullptr;
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_SIGNAL_WIN
 

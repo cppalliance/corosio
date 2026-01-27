@@ -22,8 +22,7 @@
 #include "test_suite.hpp"
 #include <iostream>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 struct wolfssl_stream_test
 {
@@ -343,5 +342,4 @@ struct wolfssl_stream_test
 
 TEST_SUITE(wolfssl_stream_test, "boost.corosio.wolfssl_stream");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

@@ -19,8 +19,7 @@
 #include <cstddef>
 #include <limits>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** Base class for I/O context implementations.
 
@@ -404,7 +403,6 @@ get_executor() const noexcept
     return executor_type(const_cast<basic_io_context&>(*this));
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif // BOOST_COROSIO_BASIC_IO_CONTEXT_HPP

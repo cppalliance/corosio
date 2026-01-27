@@ -12,8 +12,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 struct tcp_server_test
 {
@@ -24,5 +23,4 @@ struct tcp_server_test
 
 TEST_SUITE(tcp_server_test, "boost.corosio.tcp_server");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

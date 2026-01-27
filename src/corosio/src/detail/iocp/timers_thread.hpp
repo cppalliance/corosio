@@ -17,9 +17,7 @@
 #include "src/detail/iocp/timers.hpp"
 #include <thread>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 class win_timers_thread final : public win_timers
 {
@@ -43,9 +41,7 @@ private:
     void thread_func();
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_IOCP
 

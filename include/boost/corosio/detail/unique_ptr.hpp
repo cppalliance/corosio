@@ -13,9 +13,7 @@
 #include <memory>
 #include <utility>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 /** A unique_ptr with a function pointer deleter.
 
@@ -47,8 +45,6 @@ make_unique(Args&&... args)
         });
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

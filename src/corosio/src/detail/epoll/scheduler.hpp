@@ -28,9 +28,7 @@
 #include <cstdint>
 #include <mutex>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 struct epoll_op;
 
@@ -151,9 +149,7 @@ private:
     mutable int idle_thread_count_ = 0;
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_EPOLL
 

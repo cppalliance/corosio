@@ -12,9 +12,7 @@
 #include <boost/throw_exception.hpp>
 #include <stdexcept>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 void throw_logic_error(
     char const* what,
@@ -38,6 +36,4 @@ void throw_system_error(
     throw_exception(system::system_error(ec, what), loc);
 }
 
-} // detail
-} // corosio
-} // boost
+} // namespace boost::corosio::detail

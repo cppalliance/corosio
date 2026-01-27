@@ -19,8 +19,7 @@
 
 #include <boost/corosio/detail/except.hpp>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 namespace {
 
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
@@ -105,5 +104,4 @@ local_endpoint() const noexcept
     return get().local_endpoint();
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

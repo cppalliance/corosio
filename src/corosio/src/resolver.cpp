@@ -36,8 +36,7 @@
     the implementation details are hidden in the detail namespace.
 */
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 namespace {
 
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
@@ -80,5 +79,4 @@ cancel()
         get().cancel();
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

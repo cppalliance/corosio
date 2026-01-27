@@ -83,8 +83,7 @@
     - do_read_some, do_write_some             -- inner coroutines with WANT_* loops
 */
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 namespace {
 
@@ -105,8 +104,7 @@ using buffer_array = std::array<capy::mutable_buffer, max_buffers>;
 //
 //------------------------------------------------------------------------------
 
-namespace tls {
-namespace detail {
+namespace tls::detail {
 
 // SNI callback invoked by WolfSSL during handshake (server-side)
 // Returns SNICbReturn enum: 0 = OK, fatal_return (2) = abort
@@ -250,8 +248,7 @@ get_wolfssl_native_context( context_data const& cd )
     return static_cast<wolfssl_native_context*>( p );
 }
 
-} // namespace detail
-} // namespace tls
+} // namespace tls::detail
 
 //------------------------------------------------------------------------------
 
@@ -1072,5 +1069,4 @@ wolfssl_stream::
         impl_->release();
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

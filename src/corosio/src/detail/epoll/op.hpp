@@ -78,9 +78,7 @@
     uses on Linux.
 */
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 // Forward declarations for cancellation support
 class epoll_socket_impl;
@@ -340,9 +338,7 @@ struct epoll_accept_op : epoll_op
     void operator()() override;
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_EPOLL
 

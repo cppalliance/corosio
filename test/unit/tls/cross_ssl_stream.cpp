@@ -67,8 +67,7 @@
     All combinations tested: OpenSSL client <-> WolfSSL server and vice versa.
 */
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 struct cross_ssl_stream_test
 {
@@ -181,5 +180,4 @@ struct cross_ssl_stream_test
 
 TEST_SUITE(cross_ssl_stream_test, "boost.corosio.cross_ssl_stream");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

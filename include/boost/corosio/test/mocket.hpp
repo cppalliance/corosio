@@ -17,19 +17,16 @@
 #include <string>
 #include <utility>
 
-namespace boost {
-namespace capy {
-
+namespace boost::capy {
 class execution_context;
 
 namespace test {
 class fuse;
-} // test
+} // namespace test
 
-} // capy
+} // namespace boost::capy::test
 
-namespace corosio {
-namespace test {
+namespace boost::corosio::test {
 
 class mocket_impl;
 
@@ -144,8 +141,6 @@ BOOST_COROSIO_DECL
 std::pair<mocket, mocket>
 make_mockets(capy::execution_context& ctx, capy::test::fuse& f);
 
-} // namespace test
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::test
 
 #endif

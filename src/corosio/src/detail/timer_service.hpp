@@ -16,9 +16,7 @@
 #include <chrono>
 #include <cstddef>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 struct scheduler;
 
@@ -65,8 +63,6 @@ timer_service&
 get_timer_service(
     capy::execution_context& ctx, scheduler& sched);
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

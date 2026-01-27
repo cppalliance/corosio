@@ -20,8 +20,7 @@
 #include <iostream>
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 struct openssl_stream_test
 {
@@ -337,5 +336,4 @@ struct openssl_stream_test
 
 TEST_SUITE(openssl_stream_test, "boost.corosio.openssl_stream");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

@@ -17,8 +17,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** An IP endpoint (address + port) supporting both IPv4 and IPv6.
 
@@ -183,7 +182,6 @@ private:
     bool is_v4_ = true;
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

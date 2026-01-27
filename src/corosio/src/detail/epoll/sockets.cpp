@@ -24,9 +24,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 //------------------------------------------------------------------------------
 // epoll_op::canceller - implements stop_token cancellation
@@ -918,8 +916,6 @@ work_finished() noexcept
     sched_.work_finished();
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

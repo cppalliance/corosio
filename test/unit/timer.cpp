@@ -19,8 +19,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 //------------------------------------------------
 // Timer-specific tests
@@ -659,5 +658,4 @@ struct timer_test
 
 TEST_SUITE(timer_test, "boost.corosio.timer");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

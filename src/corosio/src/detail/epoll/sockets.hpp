@@ -80,9 +80,7 @@
     will complete and release their refs, allowing final destruction.
 */
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 class epoll_sockets;
 class epoll_socket_impl;
@@ -248,9 +246,7 @@ private:
     std::unordered_map<epoll_acceptor_impl*, std::shared_ptr<epoll_acceptor_impl>> acceptor_ptrs_;
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_EPOLL
 

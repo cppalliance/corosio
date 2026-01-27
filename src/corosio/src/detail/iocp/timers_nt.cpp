@@ -14,9 +14,7 @@
 #include "src/detail/iocp/timers_nt.hpp"
 #include "src/detail/iocp/windows.hpp"
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 // NT API type definitions
 using NTSTATUS = LONG;
@@ -189,8 +187,6 @@ associate_timer()
         repost(iocp_);
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

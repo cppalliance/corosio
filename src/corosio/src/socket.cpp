@@ -18,8 +18,7 @@
 #include "src/detail/epoll/sockets.hpp"
 #endif
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 namespace {
 #if defined(BOOST_COROSIO_BACKEND_IOCP)
@@ -258,5 +257,4 @@ remote_endpoint() const noexcept
     return get().remote_endpoint();
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

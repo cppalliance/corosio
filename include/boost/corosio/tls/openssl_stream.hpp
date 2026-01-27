@@ -13,8 +13,7 @@
 #include <boost/corosio/tls/context.hpp>
 #include <boost/corosio/tls/tls_stream.hpp>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** A TLS stream using OpenSSL.
 
@@ -65,7 +64,6 @@ public:
     ~openssl_stream();
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

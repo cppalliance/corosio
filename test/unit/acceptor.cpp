@@ -18,8 +18,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 //------------------------------------------------
 // Acceptor-specific tests
@@ -206,5 +205,4 @@ struct acceptor_test
 
 TEST_SUITE(acceptor_test, "boost.corosio.acceptor");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

@@ -27,10 +27,7 @@
 #include <stop_token>
 #include <vector>
 
-namespace boost {
-namespace corosio {
-namespace tls {
-namespace test {
+namespace boost::corosio::tls::test {
 
 //------------------------------------------------------------------------------
 //
@@ -1706,9 +1703,6 @@ run_socket_cancel_test(
     if( s2.is_open() ) s2.close();
 }
 
-} // namespace test
-} // namespace tls
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::tls::test
 
 #endif

@@ -14,8 +14,7 @@
 #include <boost/corosio/tls/context.hpp>
 #include <boost/corosio/tls/tls_stream.hpp>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** A TLS stream using WolfSSL.
 
@@ -67,7 +66,6 @@ public:
     ~wolfssl_stream();
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

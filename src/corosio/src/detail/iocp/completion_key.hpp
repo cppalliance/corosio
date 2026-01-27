@@ -16,9 +16,7 @@
 
 #include "src/detail/iocp/windows.hpp"
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 class win_scheduler;
 
@@ -79,9 +77,7 @@ struct completion_key
     virtual ~completion_key() = default;
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_IOCP
 

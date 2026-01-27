@@ -30,9 +30,7 @@
 
 #include "src/detail/iocp/windows.hpp"
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 struct overlapped_op
     : OVERLAPPED
@@ -151,9 +149,7 @@ get_overlapped_op(scheduler_op* h) noexcept
     return static_cast<overlapped_op*>(h->data());
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_IOCP
 

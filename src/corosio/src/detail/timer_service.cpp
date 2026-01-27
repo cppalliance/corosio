@@ -23,9 +23,7 @@
 #include <stop_token>
 #include <vector>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 class timer_service_impl;
 
@@ -469,6 +467,4 @@ get_timer_service(capy::execution_context& ctx, scheduler& sched)
     return ctx.make_service<timer_service_impl>(sched);
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail

@@ -18,8 +18,7 @@
 #include <coroutine>
 #include <stop_token>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** Abstract base class for TLS streams.
 
@@ -259,7 +258,6 @@ private:
     }
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

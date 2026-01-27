@@ -13,9 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include "src/detail/intrusive.hpp"
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 /** Abstract base class for completion handlers.
 
@@ -220,8 +218,6 @@ public:
     }
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

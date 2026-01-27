@@ -21,8 +21,7 @@
 #include <cstddef>
 #include <stop_token>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 class BOOST_COROSIO_DECL io_stream : public io_object
 {
@@ -245,7 +244,6 @@ private:
     }
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

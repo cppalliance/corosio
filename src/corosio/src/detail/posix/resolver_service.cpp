@@ -92,9 +92,7 @@
     threads to complete before destroying resources.
 */
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 namespace {
 
@@ -914,8 +912,6 @@ get_resolver_service(capy::execution_context& ctx, scheduler& sched)
     return ctx.make_service<posix_resolver_service_impl>(sched);
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // !BOOST_COROSIO_BACKEND_IOCP

@@ -16,9 +16,7 @@
 
 #include "src/detail/iocp/timers.hpp"
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 // No-op timer wakeup for debugging/disabling timer support.
 // Not automatically selected by make_win_timers.
@@ -32,9 +30,7 @@ public:
     void update_timeout(time_point) override {}
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_IOCP
 

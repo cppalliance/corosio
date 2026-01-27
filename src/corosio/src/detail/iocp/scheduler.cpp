@@ -44,9 +44,7 @@
     must be mindful of this mixed content.
 */
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 namespace {
 
@@ -528,8 +526,6 @@ update_timeout()
         timers_->update_timeout(timer_svc_->nearest_expiry());
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

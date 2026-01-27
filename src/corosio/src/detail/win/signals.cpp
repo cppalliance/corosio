@@ -98,8 +98,8 @@
     like SA_RESTART or SA_NOCLDSTOP.
 */
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
+
 namespace detail {
 
 //------------------------------------------------------------------------------
@@ -708,7 +708,6 @@ cancel()
     get().cancel();
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif // _WIN32

@@ -32,9 +32,7 @@
 #include <unistd.h>   // getpid()
 #endif
 
-namespace boost {
-namespace corosio {
-namespace test {
+namespace boost::corosio::test {
 
 namespace {
 
@@ -574,6 +572,4 @@ make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
     return {std::move(m1), std::move(m2)};
 }
 
-} // namespace test
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::test

@@ -19,8 +19,7 @@
 #include <string_view>
 #include <vector>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** A single entry produced by a resolver.
 
@@ -259,7 +258,6 @@ public:
     }
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

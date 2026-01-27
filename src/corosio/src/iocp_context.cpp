@@ -17,8 +17,7 @@
 
 #include <thread>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 iocp_context::
 iocp_context()
@@ -41,7 +40,6 @@ iocp_context::
     destroy();
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif // BOOST_COROSIO_BACKEND_IOCP

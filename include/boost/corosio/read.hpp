@@ -25,8 +25,7 @@
 #include <string>
 #include <type_traits>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** Read from a stream until the buffer is full or an error occurs.
 
@@ -206,7 +205,6 @@ read(io_stream& ios, std::string& s)
     }
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

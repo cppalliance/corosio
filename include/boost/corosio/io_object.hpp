@@ -13,8 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** Base class for I/O objects in the library hierarchy.
 
@@ -66,7 +65,6 @@ protected:
     io_object_impl* impl_ = nullptr;
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

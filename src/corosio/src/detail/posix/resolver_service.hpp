@@ -46,9 +46,7 @@
     after getaddrinfo() returns and reports the appropriate error.
 */
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 struct scheduler;
 
@@ -84,9 +82,7 @@ protected:
 posix_resolver_service&
 get_resolver_service(capy::execution_context& ctx, scheduler& sched);
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // !BOOST_COROSIO_BACKEND_IOCP
 

@@ -29,8 +29,7 @@
 #include <stop_token>
 #include <type_traits>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** An asynchronous TCP acceptor for coroutine I/O.
 
@@ -302,7 +301,6 @@ private:
     }
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

@@ -16,9 +16,7 @@
 
 #include <boost/corosio/detail/except.hpp>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 long win_wsa_init::count_ = 0;
 
@@ -42,8 +40,6 @@ win_wsa_init::~win_wsa_init()
         ::WSACleanup();
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // _WIN32

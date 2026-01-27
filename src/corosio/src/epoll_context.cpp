@@ -17,8 +17,7 @@
 
 #include <thread>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 epoll_context::
 epoll_context()
@@ -41,7 +40,6 @@ epoll_context::
     destroy();
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif // BOOST_COROSIO_BACKEND_EPOLL

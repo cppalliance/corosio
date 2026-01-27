@@ -19,9 +19,7 @@
 #include <chrono>
 #include <memory>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 /** Abstract interface for timer wakeup mechanisms.
 
@@ -61,9 +59,7 @@ public:
 std::unique_ptr<win_timers> make_win_timers(
     void* iocp, long* dispatch_required);
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_IOCP
 

@@ -83,9 +83,7 @@
     to re-evaluate the timeout.
 */
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 namespace {
 
@@ -666,8 +664,6 @@ do_one(long timeout_us)
     }
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

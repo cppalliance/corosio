@@ -20,8 +20,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 // Coroutine that increments a counter when resumed
 struct counter_coro
@@ -478,5 +477,4 @@ struct io_context_test
 
 TEST_SUITE(io_context_test, "boost.corosio.io_context");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

@@ -14,9 +14,7 @@
 #include "src/detail/iocp/timers_thread.hpp"
 #include "src/detail/iocp/windows.hpp"
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 win_timers_thread::
 win_timers_thread(void* iocp, long* dispatch_required) noexcept
@@ -114,8 +112,6 @@ thread_func()
     }
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif

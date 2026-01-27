@@ -25,9 +25,7 @@
 #include <unistd.h>   // getpid()
 #endif
 
-namespace boost {
-namespace corosio {
-namespace test {
+namespace boost::corosio::test {
 
 namespace {
 
@@ -143,6 +141,4 @@ make_socket_pair(io_context& ioc)
     return {std::move(s1), std::move(s2)};
 }
 
-} // namespace test
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::test

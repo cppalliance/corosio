@@ -16,10 +16,7 @@
 
 #include <utility>
 
-namespace boost {
-namespace corosio {
-
-namespace test {
+namespace boost::corosio::test {
 
 /** Create a connected pair of sockets.
 
@@ -34,8 +31,6 @@ BOOST_COROSIO_DECL
 std::pair<socket, socket>
 make_socket_pair(io_context& ioc);
 
-} // namespace test
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::test
 
 #endif

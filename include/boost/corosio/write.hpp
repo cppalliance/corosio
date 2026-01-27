@@ -23,8 +23,7 @@
 #include <stop_token>
 #include <type_traits>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 /** Write to a stream until the buffer is empty or an error occurs.
 
@@ -91,7 +90,6 @@ write(io_stream& ios, ConstBufferSequence const& buffers)
     co_return {{}, total_written};
 }
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

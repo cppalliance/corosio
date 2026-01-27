@@ -17,9 +17,7 @@
 #include <memory>
 #include <string_view>
 
-namespace boost {
-namespace corosio {
-namespace tls {
+namespace boost::corosio::tls {
 
 //------------------------------------------------------------------------------
 //
@@ -916,8 +914,6 @@ set_servername_callback( Callback callback )
     set_servername_callback_impl( std::move( callback ) );
 }
 
-} // namespace tls
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::tls
 
 #endif

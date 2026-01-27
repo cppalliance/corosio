@@ -21,8 +21,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 //------------------------------------------------
 // Signal set tests
@@ -826,6 +825,5 @@ struct signal_set_test
 
 TEST_SUITE(signal_set_test, "boost.corosio.signal_set");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 

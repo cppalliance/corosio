@@ -29,9 +29,7 @@
 
 #include "src/detail/iocp/windows.hpp"
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 // Forward declarations
 struct overlapped_op;
@@ -125,9 +123,7 @@ private:
     timer_service* timer_svc_ = nullptr;                                   // timer service for processing
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_IOCP
 

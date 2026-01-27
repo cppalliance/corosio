@@ -12,8 +12,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 struct tls_stream_test
 {
@@ -25,5 +24,4 @@ struct tls_stream_test
 
 TEST_SUITE(tls_stream_test, "boost.corosio.tls_stream");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

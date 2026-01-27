@@ -32,9 +32,7 @@
 #include <MSWSock.h>
 #include <Ws2tcpip.h>
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 class win_scheduler;
 class win_sockets;
@@ -611,9 +609,7 @@ private:
     LPFN_ACCEPTEX accept_ex_ = nullptr;
 };
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_BACKEND_IOCP
 

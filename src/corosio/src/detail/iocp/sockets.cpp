@@ -136,9 +136,7 @@
       have concurrent operations of the same type on a single socket
 */
 
-namespace boost {
-namespace corosio {
-namespace detail {
+namespace boost::corosio::detail {
 
 completion_key::result
 win_sockets::overlapped_key::
@@ -1147,8 +1145,6 @@ release()
     }
 }
 
-} // namespace detail
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::detail
 
 #endif // _WIN32

@@ -36,8 +36,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 // Verify socket satisfies stream concepts
 
@@ -1462,5 +1461,4 @@ struct socket_test
 
 TEST_SUITE(socket_test, "boost.corosio.socket");
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio

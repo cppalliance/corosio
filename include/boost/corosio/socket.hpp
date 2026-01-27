@@ -29,8 +29,7 @@
 #include <stop_token>
 #include <type_traits>
 
-namespace boost {
-namespace corosio {
+namespace boost::corosio {
 
 #ifdef _WIN32
 using native_handle_type = std::uintptr_t;  // SOCKET
@@ -518,7 +517,6 @@ private:
     }
 };
 
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio
 
 #endif

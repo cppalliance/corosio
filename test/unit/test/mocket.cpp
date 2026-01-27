@@ -19,9 +19,7 @@
 
 #include "test_suite.hpp"
 
-namespace boost {
-namespace corosio {
-namespace test {
+namespace boost::corosio::test {
 
 //------------------------------------------------
 // Mocket-specific tests
@@ -160,6 +158,4 @@ struct mocket_test
 
 TEST_SUITE(mocket_test, "boost.corosio.mocket");
 
-} // namespace test
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::test

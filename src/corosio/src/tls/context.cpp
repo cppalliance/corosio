@@ -14,9 +14,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace boost {
-namespace corosio {
-namespace tls {
+namespace boost::corosio::tls {
 
 //------------------------------------------------------------------------------
 
@@ -301,6 +299,4 @@ set_revocation_policy( revocation_policy policy )
     impl_->revocation = policy;
 }
 
-} // namespace tls
-} // namespace corosio
-} // namespace boost
+} // namespace boost::corosio::tls
