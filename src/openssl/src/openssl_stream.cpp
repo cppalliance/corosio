@@ -8,7 +8,7 @@
 //
 
 #include <boost/corosio/tls/openssl_stream.hpp>
-#include <boost/capy/ex/async_mutex.hpp>
+#include <boost/capy/ex/coro_lock.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/task.hpp>
@@ -296,7 +296,7 @@ struct openssl_stream_impl_
     std::vector<char> out_buf_;
 
     // Renegotiation can cause both TLS read/write to access the socket
-    capy::async_mutex io_mutex_;
+    capy::coro_lock io_cm_;
 
     //--------------------------------------------------------------------------
 
@@ -333,7 +333,7 @@ struct openssl_stream_impl_
                 break;
 
             // Write to underlying stream
-            auto guard = co_await io_mutex_.scoped_lock();
+            auto guard = co_await io_cm_.scoped_lock();
             auto [ec, written] = co_await s_.write_some(
                 capy::mutable_buffer(out_buf_.data(), static_cast<std::size_t>(n)));
             if(ec)
@@ -353,7 +353,7 @@ struct openssl_stream_impl_
         {
             co_return make_error_code(system::errc::operation_canceled);
         }
-        auto guard = co_await io_mutex_.scoped_lock();
+        auto guard = co_await io_cm_.scoped_lock();
         auto [ec, n] = co_await s_.read_some(
             capy::mutable_buffer(in_buf_.data(), in_buf_.size()));
         if(ec)
