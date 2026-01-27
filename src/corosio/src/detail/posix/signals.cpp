@@ -7,9 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_SIGNAL_POSIX)
+#if !defined(_WIN32)
 
 #include "src/detail/posix/signals.hpp"
 
@@ -938,4 +937,4 @@ cancel()
 
 } // namespace boost::corosio
 
-#endif // BOOST_COROSIO_SIGNAL_POSIX
+#endif // !defined(_WIN32)

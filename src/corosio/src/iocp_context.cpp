@@ -9,9 +9,8 @@
 
 #include <boost/corosio/iocp_context.hpp>
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
 
 #include "src/detail/iocp/scheduler.hpp"
 
@@ -42,4 +41,4 @@ iocp_context::
 
 } // namespace boost::corosio
 
-#endif // BOOST_COROSIO_BACKEND_IOCP
+#endif // _WIN32

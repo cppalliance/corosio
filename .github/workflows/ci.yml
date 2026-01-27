@@ -105,35 +105,38 @@ jobs:
             vcpkg-triplet: "x64-mingw-static"
 
           # macOS (2 configurations)
-          # TODO: Re-enable when BSD/kqueue support is implemented
-          #
-          # - compiler: "apple-clang"
-          #   version: "*"
-          #   cxxstd: "20"
-          #   latest-cxxstd: "20"
-          #   cxx: "clang++"
-          #   cc: "clang"
-          #   runs-on: "macos-26"
-          #   b2-toolset: "clang"
-          #   is-latest: true
-          #   name: "Apple-Clang (macOS 26, asan+ubsan): C++20"
-          #   shared: true
-          #   build-type: "RelWithDebInfo"
-          #   asan: true
-          #   ubsan: true
-          #
-          # - compiler: "apple-clang"
-          #   version: "*"
-          #   cxxstd: "20"
-          #   latest-cxxstd: "20"
-          #   cxx: "clang++"
-          #   cc: "clang"
-          #   runs-on: "macos-14"
-          #   b2-toolset: "clang"
-          #   name: "Apple-Clang (macOS 14): C++20"
-          #   shared: true
-          #   build-type: "Release"
-          #   build-cmake: true
+          # Uses select backend (kqueue support planned for future)
+          # Requires -fexperimental-library for std::stop_token support in libc++
+
+          - compiler: "apple-clang"
+            version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++"
+            cc: "clang"
+            runs-on: "macos-15"
+            b2-toolset: "clang"
+            is-latest: true
+            name: "Apple-Clang (macOS 15, asan+ubsan): C++20"
+            shared: true
+            build-type: "RelWithDebInfo"
+            asan: true
+            ubsan: true
+            cxxflags: "-fexperimental-library"
+
+          - compiler: "apple-clang"
+            version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++"
+            cc: "clang"
+            runs-on: "macos-14"
+            b2-toolset: "clang"
+            name: "Apple-Clang (macOS 14): C++20"
+            shared: true
+            build-type: "Release"
+            build-cmake: true
+            cxxflags: "-fexperimental-library"
 
           # Linux GCC (4 configurations)
 
@@ -396,6 +399,19 @@ jobs:
           }
           EOF
 
+      # macOS: OpenSSL from Homebrew (pre-installed), WolfSSL from vcpkg
+      - name: Create vcpkg.json (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cat > corosio-root/vcpkg.json << 'EOF'
+          {
+            "name": "boost-corosio-deps",
+            "version": "1.0.0",
+            "dependencies": ["wolfssl"]
+          }
+          EOF
+
       - name: Set vcpkg triplet
         if: matrix.vcpkg-triplet
         shell: bash
@@ -486,7 +502,7 @@ jobs:
           # lukka/run-vcpkg sets VCPKG_INSTALLED_DIR with a UUID-based path
           # Use that directly instead of trying to find it
           echo "Debug: VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR:-not set}"
-          
+
           if [ -n "${VCPKG_INSTALLED_DIR}" ] && [ -d "${VCPKG_INSTALLED_DIR}/x64-linux" ]; then
             vcpkg_installed="${VCPKG_INSTALLED_DIR}/x64-linux"
           else
@@ -496,7 +512,7 @@ jobs:
               vcpkg_installed=$(find "/__w" -type d -path "*/vcpkg_installed/x64-linux" 2>/dev/null | head -1)
             fi
           fi
-          
+
           if [ -z "${vcpkg_installed}" ] || [ ! -d "${vcpkg_installed}" ]; then
             echo "ERROR: Could not find vcpkg installed directory!"
             echo "VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR:-not set}"
@@ -519,6 +535,51 @@ jobs:
           echo "WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
           echo "WOLFSSL_LIBRARY_PATH=${vcpkg_installed}/lib" >> $GITHUB_ENV
 
+      - name: Set vcpkg paths (macOS)
+        if: runner.os == 'macOS'
+        id: vcpkg-paths-macos
+        shell: bash
+        run: |
+          # Determine triplet based on architecture
+          if [[ "$(uname -m)" == "arm64" ]]; then
+            triplet="arm64-osx"
+          else
+            triplet="x64-osx"
+          fi
+          echo "Using triplet: ${triplet}"
+
+          # lukka/run-vcpkg sets VCPKG_INSTALLED_DIR with a UUID-based path
+          echo "Debug: VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR:-not set}"
+
+          if [ -n "${VCPKG_INSTALLED_DIR}" ] && [ -d "${VCPKG_INSTALLED_DIR}/${triplet}" ]; then
+            vcpkg_installed="${VCPKG_INSTALLED_DIR}/${triplet}"
+          else
+            # Fallback: try to find it
+            vcpkg_installed=$(find "${GITHUB_WORKSPACE}" -type d -path "*/vcpkg_installed/${triplet}" 2>/dev/null | head -1)
+          fi
+
+          if [ -z "${vcpkg_installed}" ] || [ ! -d "${vcpkg_installed}" ]; then
+            echo "ERROR: Could not find vcpkg installed directory!"
+            echo "VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR:-not set}"
+            echo "triplet=${triplet}"
+            echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
+            find "${GITHUB_WORKSPACE}" -type d -name "vcpkg_installed" 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Using vcpkg_installed: ${vcpkg_installed}"
+          ls -la "${vcpkg_installed}/" || true
+          ls -la "${vcpkg_installed}/include/" || true
+          ls -la "${vcpkg_installed}/lib/" || true
+
+          # Output for CMake steps (to pass WolfSSL paths explicitly)
+          echo "wolfssl_include=${vcpkg_installed}/include" >> $GITHUB_OUTPUT
+          echo "wolfssl_library=${vcpkg_installed}/lib/libwolfssl.a" >> $GITHUB_OUTPUT
+
+          # For B2 - WolfSSL from vcpkg, OpenSSL from Homebrew
+          echo "WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
+          echo "WOLFSSL_LIBRARY_PATH=${vcpkg_installed}/lib" >> $GITHUB_ENV
+
       - name: Boost B2 Workflow
         uses: alandefreitas/cpp-actions/b2-workflow@v1.9.0
         # TEMP: Skip B2 on Windows to test if CMake builds pass
@@ -538,7 +599,7 @@ jobs:
           ubsan: ${{ matrix.ubsan }}
           shared: ${{ matrix.shared }}
           rtti: on
-          cxxflags: ${{ (matrix.asan && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
+          cxxflags: ${{ matrix.cxxflags }} ${{ (matrix.asan && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
           stop-on-error: true
 
       - name: Boost CMake Workflow
@@ -566,6 +627,8 @@ jobs:
             ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'macOS' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-macos.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'macOS' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-macos.outputs.wolfssl_library) || '' }}
             ${{ runner.os == 'Windows' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-windows.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Windows' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-windows.outputs.wolfssl_library) || '' }}
             ${{ runner.os == 'Windows' && format('-D OPENSSL_ROOT_DIR={0}', steps.vcpkg-paths-windows.outputs.openssl_root) || '' }}
@@ -607,6 +670,8 @@ jobs:
             -D CMAKE_PREFIX_PATH=${{ steps.patch.outputs.workspace_root }}/.local
             ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'macOS' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-macos.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'macOS' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-macos.outputs.wolfssl_library) || '' }}
             ${{ runner.os == 'Windows' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-windows.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Windows' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-windows.outputs.wolfssl_library) || '' }}
             ${{ runner.os == 'Windows' && format('-D OPENSSL_ROOT_DIR={0}', steps.vcpkg-paths-windows.outputs.openssl_root) || '' }}
@@ -636,6 +701,8 @@ jobs:
             -D BOOST_CI_INSTALL_TEST=OFF
             ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'macOS' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-macos.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'macOS' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-macos.outputs.wolfssl_library) || '' }}
             ${{ runner.os == 'Windows' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-windows.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Windows' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-windows.outputs.wolfssl_library) || '' }}
             ${{ runner.os == 'Windows' && format('-D OPENSSL_ROOT_DIR={0}', steps.vcpkg-paths-windows.outputs.openssl_root) || '' }}
@@ -667,6 +734,8 @@ jobs:
             ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-linux.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Linux' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-linux.outputs.wolfssl_library) || '' }}
+            ${{ runner.os == 'macOS' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-macos.outputs.wolfssl_include) || '' }}
+            ${{ runner.os == 'macOS' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-macos.outputs.wolfssl_library) || '' }}
             ${{ runner.os == 'Windows' && format('-D WolfSSL_INCLUDE_DIR={0}', steps.vcpkg-paths-windows.outputs.wolfssl_include) || '' }}
             ${{ runner.os == 'Windows' && format('-D WolfSSL_LIBRARY={0}', steps.vcpkg-paths-windows.outputs.wolfssl_library) || '' }}
             ${{ runner.os == 'Windows' && format('-D OPENSSL_ROOT_DIR={0}', steps.vcpkg-paths-windows.outputs.openssl_root) || '' }}

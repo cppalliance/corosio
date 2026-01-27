@@ -7,10 +7,9 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include "src/detail/config_backend.hpp"
 
 // This implementation works for all POSIX backends (epoll, kqueue, io_uring, poll)
-#if !defined(BOOST_COROSIO_BACKEND_IOCP)
+#if !defined(_WIN32)
 
 #include "src/detail/posix/resolver_service.hpp"
 #include "src/detail/endpoint_convert.hpp"
@@ -914,4 +913,4 @@ get_resolver_service(capy::execution_context& ctx, scheduler& sched)
 
 } // namespace boost::corosio::detail
 
-#endif // !BOOST_COROSIO_BACKEND_IOCP
+#endif // !_WIN32

@@ -16,6 +16,11 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+// Include platform-specific context headers for multi-backend testing
+#if !defined(_WIN32)
+#include <boost/corosio/select_context.hpp>
+#endif
+
 #include <csignal>
 #include <chrono>
 
@@ -26,9 +31,12 @@ namespace boost::corosio {
 //------------------------------------------------
 // Signal set tests
 // Focus: construction, add/remove, wait, and cancellation
+//
+// Tests are templated on the context type to run with all available backends.
 //------------------------------------------------
 
-struct signal_set_test
+template<class Context>
+struct signal_set_test_impl
 {
     //--------------------------------------------
     // Construction and move semantics
@@ -37,7 +45,7 @@ struct signal_set_test
     void
     testConstruction()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         BOOST_TEST_PASS();
@@ -46,7 +54,7 @@ struct signal_set_test
     void
     testConstructWithOneSignal()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT);
 
         BOOST_TEST_PASS();
@@ -55,7 +63,7 @@ struct signal_set_test
     void
     testConstructWithTwoSignals()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT, SIGTERM);
 
         BOOST_TEST_PASS();
@@ -64,7 +72,7 @@ struct signal_set_test
     void
     testConstructWithThreeSignals()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT, SIGTERM, SIGABRT);
 
         BOOST_TEST_PASS();
@@ -73,7 +81,7 @@ struct signal_set_test
     void
     testMoveConstruct()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s1(ioc, SIGINT);
 
         signal_set s2(std::move(s1));
@@ -83,7 +91,7 @@ struct signal_set_test
     void
     testMoveAssign()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s1(ioc, SIGINT);
         signal_set s2(ioc);
 
@@ -94,8 +102,8 @@ struct signal_set_test
     void
     testMoveAssignCrossContextThrows()
     {
-        io_context ioc1;
-        io_context ioc2;
+        Context ioc1;
+        Context ioc2;
         signal_set s1(ioc1);
         signal_set s2(ioc2);
 
@@ -109,7 +117,7 @@ struct signal_set_test
     void
     testAdd()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         auto result = s.add(SIGINT);
@@ -119,7 +127,7 @@ struct signal_set_test
     void
     testAddDuplicate()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         BOOST_TEST(s.add(SIGINT).has_value());
@@ -130,7 +138,7 @@ struct signal_set_test
     void
     testAddInvalidSignal()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         auto result = s.add(-1);
@@ -140,7 +148,7 @@ struct signal_set_test
     void
     testRemove()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         BOOST_TEST(s.add(SIGINT).has_value());
@@ -151,7 +159,7 @@ struct signal_set_test
     void
     testRemoveNotPresent()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         // Removing signal not in set should be a no-op
@@ -162,7 +170,7 @@ struct signal_set_test
     void
     testClear()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         BOOST_TEST(s.add(SIGINT).has_value());
@@ -173,7 +181,7 @@ struct signal_set_test
     void
     testClearEmpty()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         BOOST_TEST(s.clear().has_value());  // Should be no-op
@@ -186,7 +194,7 @@ struct signal_set_test
     void
     testWaitWithSignal()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT);
         timer t(ioc);
 
@@ -221,7 +229,7 @@ struct signal_set_test
     void
     testWaitWithDifferentSignal()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGTERM);
         timer t(ioc);
 
@@ -257,7 +265,7 @@ struct signal_set_test
     void
     testCancel()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT);
         timer cancel_timer(ioc);
 
@@ -289,7 +297,7 @@ struct signal_set_test
     void
     testCancelNoWaiters()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT);
 
         s.cancel();  // Should be no-op
@@ -299,7 +307,7 @@ struct signal_set_test
     void
     testCancelMultipleTimes()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT);
 
         s.cancel();
@@ -315,7 +323,7 @@ struct signal_set_test
     void
     testMultipleSignalSetsOnSameSignal()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s1(ioc, SIGINT);
         signal_set s2(ioc, SIGINT);
         timer t(ioc);
@@ -353,7 +361,7 @@ struct signal_set_test
     void
     testSignalSetWithMultipleSignals()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT, SIGTERM);
         timer t(ioc);
 
@@ -390,7 +398,7 @@ struct signal_set_test
     void
     testQueuedSignal()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT);
 
         // Raise signal before starting wait
@@ -420,7 +428,7 @@ struct signal_set_test
     void
     testSequentialWaits()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT);
         timer t(ioc);
 
@@ -461,7 +469,7 @@ struct signal_set_test
     void
     testIoResultSuccess()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT);
         timer t(ioc);
 
@@ -485,7 +493,7 @@ struct signal_set_test
     void
     testIoResultCanceled()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT);
         timer cancel_timer(ioc);
 
@@ -516,7 +524,7 @@ struct signal_set_test
     void
     testIoResultStructuredBinding()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc, SIGINT);
         timer t(ioc);
 
@@ -566,7 +574,7 @@ struct signal_set_test
     void
     testAddWithNoneFlags()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         // Add signal with none (default behavior) - works on all platforms
@@ -577,7 +585,7 @@ struct signal_set_test
     void
     testAddWithDontCareFlags()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         // Add signal with dont_care - works on all platforms
@@ -595,7 +603,7 @@ struct signal_set_test
     void
     testAddWithFlags()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         // Add signal with restart flag
@@ -606,7 +614,7 @@ struct signal_set_test
     void
     testAddWithMultipleFlags()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         // Add signal with combined flags
@@ -617,7 +625,7 @@ struct signal_set_test
     void
     testAddSameSignalSameFlags()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         // Add signal twice with same flags (should be no-op)
@@ -628,7 +636,7 @@ struct signal_set_test
     void
     testAddSameSignalDifferentFlags()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         // Add signal with one flag, then try to add with different flag
@@ -640,7 +648,7 @@ struct signal_set_test
     void
     testAddSameSignalWithDontCare()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         // Add signal with specific flags, then add with dont_care
@@ -652,7 +660,7 @@ struct signal_set_test
     void
     testAddSameSignalDontCareFirst()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         // Add signal with dont_care, then add with specific flags
@@ -664,7 +672,7 @@ struct signal_set_test
     void
     testMultipleSetsCompatibleFlags()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s1(ioc);
         signal_set s2(ioc);
 
@@ -676,7 +684,7 @@ struct signal_set_test
     void
     testMultipleSetsIncompatibleFlags()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s1(ioc);
         signal_set s2(ioc);
 
@@ -690,7 +698,7 @@ struct signal_set_test
     void
     testMultipleSetsWithDontCare()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s1(ioc);
         signal_set s2(ioc);
 
@@ -703,7 +711,7 @@ struct signal_set_test
     void
     testWaitWithFlagsWorks()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
         timer t(ioc);
 
@@ -743,7 +751,7 @@ struct signal_set_test
     void
     testFlagsNotSupportedOnWindows()
     {
-        io_context ioc;
+        Context ioc;
         signal_set s(ioc);
 
         // Windows returns operation_not_supported for actual flags
@@ -823,7 +831,18 @@ struct signal_set_test
     }
 };
 
+//------------------------------------------------
+// Register test suites for each available backend
+//------------------------------------------------
+
+// Default io_context (platform default backend)
+struct signal_set_test : signal_set_test_impl<io_context> {};
 TEST_SUITE(signal_set_test, "boost.corosio.signal_set");
 
-} // namespace boost::corosio
+// POSIX: also test with select_context explicitly
+#if !defined(_WIN32)
+struct signal_set_test_select : signal_set_test_impl<select_context> {};
+TEST_SUITE(signal_set_test_select, "boost.corosio.signal_set.select");
+#endif
 
+} // namespace boost::corosio

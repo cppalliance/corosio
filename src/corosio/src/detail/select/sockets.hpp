@@ -7,11 +7,11 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_EPOLL_SOCKETS_HPP
-#define BOOST_COROSIO_DETAIL_EPOLL_SOCKETS_HPP
+#ifndef BOOST_COROSIO_DETAIL_SELECT_SOCKETS_HPP
+#define BOOST_COROSIO_DETAIL_SELECT_SOCKETS_HPP
 
 
-#if defined(__linux__)
+#if !defined(_WIN32)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/acceptor.hpp>
@@ -21,33 +21,22 @@
 #include "src/detail/intrusive.hpp"
 #include "src/detail/socket_service.hpp"
 
-#include "src/detail/epoll/op.hpp"
-#include "src/detail/epoll/scheduler.hpp"
+#include "src/detail/select/op.hpp"
+#include "src/detail/select/scheduler.hpp"
 
 #include <memory>
 #include <mutex>
 #include <unordered_map>
 
 /*
-    epoll Socket Implementation
-    ===========================
+    select Socket Implementation
+    ============================
 
+    This mirrors the epoll_sockets design for behavioral consistency.
     Each I/O operation follows the same pattern:
       1. Try the syscall immediately (non-blocking socket)
       2. If it succeeds or fails with a real error, post to completion queue
-      3. If EAGAIN/EWOULDBLOCK, register with epoll and wait
-
-    This "try first" approach avoids unnecessary epoll round-trips for
-    operations that can complete immediately (common for small reads/writes
-    on fast local connections).
-
-    One-Shot Registration
-    ---------------------
-    We use one-shot epoll registration: each operation registers, waits for
-    one event, then unregisters. This simplifies the state machine since we
-    don't need to track whether an fd is currently registered or handle
-    re-arming. The tradeoff is slightly more epoll_ctl calls, but the
-    simplicity is worth it.
+      3. If EAGAIN/EWOULDBLOCK, register with select scheduler and wait
 
     Cancellation
     ------------
@@ -72,33 +61,35 @@
     The intrusive_list (socket_list_, acceptor_list_) provides fast iteration
     for shutdown cleanup alongside the shared_ptr ownership in the maps.
 
-    Service Ownership
-    -----------------
-    epoll_sockets owns all socket impls. destroy_impl() removes the shared_ptr
-    from the vector, but the impl may survive if ops still hold impl_ptr refs.
-    shutdown() closes all sockets and clears the vectors; any in-flight ops
-    will complete and release their refs, allowing final destruction.
+    Service Lookup
+    --------------
+    Both services inherit from abstract base classes (socket_service,
+    acceptor_service) with their respective key_type. This enables runtime
+    polymorphism: find_service<socket_service>() returns whichever
+    implementation (epoll_socket_service or select_socket_service) was
+    installed first. The acceptor service uses this to look up the socket
+    service when creating peer sockets during accept.
 */
 
 namespace boost::corosio::detail {
 
-class epoll_socket_service;
-class epoll_acceptor_service;
-class epoll_socket_impl;
-class epoll_acceptor_impl;
+class select_socket_service;
+class select_acceptor_service;
+class select_socket_impl;
+class select_acceptor_impl;
 
 //------------------------------------------------------------------------------
 
-class epoll_socket_impl
+class select_socket_impl
     : public socket::socket_impl
-    , public std::enable_shared_from_this<epoll_socket_impl>
-    , public intrusive_list<epoll_socket_impl>::node
+    , public std::enable_shared_from_this<select_socket_impl>
+    , public intrusive_list<select_socket_impl>::node
 {
-    friend class epoll_socket_service;
-    friend class epoll_acceptor_service;
+    friend class select_socket_service;
+    friend class select_acceptor_service;
 
 public:
-    explicit epoll_socket_impl(epoll_socket_service& svc) noexcept;
+    explicit select_socket_impl(select_socket_service& svc) noexcept;
 
     void release() override;
 
@@ -149,7 +140,7 @@ public:
     endpoint remote_endpoint() const noexcept override { return remote_endpoint_; }
     bool is_open() const noexcept { return fd_ >= 0; }
     void cancel() noexcept override;
-    void cancel_single_op(epoll_op& op) noexcept;
+    void cancel_single_op(select_op& op) noexcept;
     void close_socket() noexcept;
     void set_socket(int fd) noexcept { fd_ = fd; }
     void set_endpoints(endpoint local, endpoint remote) noexcept
@@ -158,12 +149,12 @@ public:
         remote_endpoint_ = remote;
     }
 
-    epoll_connect_op conn_;
-    epoll_read_op rd_;
-    epoll_write_op wr_;
+    select_connect_op conn_;
+    select_read_op rd_;
+    select_write_op wr_;
 
 private:
-    epoll_socket_service& svc_;
+    select_socket_service& svc_;
     int fd_ = -1;
     endpoint local_endpoint_;
     endpoint remote_endpoint_;
@@ -171,15 +162,15 @@ private:
 
 //------------------------------------------------------------------------------
 
-class epoll_acceptor_impl
+class select_acceptor_impl
     : public acceptor::acceptor_impl
-    , public std::enable_shared_from_this<epoll_acceptor_impl>
-    , public intrusive_list<epoll_acceptor_impl>::node
+    , public std::enable_shared_from_this<select_acceptor_impl>
+    , public intrusive_list<select_acceptor_impl>::node
 {
-    friend class epoll_acceptor_service;
+    friend class select_acceptor_service;
 
 public:
-    explicit epoll_acceptor_impl(epoll_acceptor_service& svc) noexcept;
+    explicit select_acceptor_impl(select_acceptor_service& svc) noexcept;
 
     void release() override;
 
@@ -194,66 +185,66 @@ public:
     endpoint local_endpoint() const noexcept override { return local_endpoint_; }
     bool is_open() const noexcept { return fd_ >= 0; }
     void cancel() noexcept override;
-    void cancel_single_op(epoll_op& op) noexcept;
+    void cancel_single_op(select_op& op) noexcept;
     void close_socket() noexcept;
     void set_local_endpoint(endpoint ep) noexcept { local_endpoint_ = ep; }
 
-    epoll_acceptor_service& service() noexcept { return svc_; }
+    select_acceptor_service& service() noexcept { return svc_; }
 
-    epoll_accept_op acc_;
+    select_accept_op acc_;
 
 private:
-    epoll_acceptor_service& svc_;
+    select_acceptor_service& svc_;
     int fd_ = -1;
     endpoint local_endpoint_;
 };
 
 //------------------------------------------------------------------------------
-class epoll_acceptor_service;
+class select_acceptor_service;
 
-/** State for epoll socket service. */
-class epoll_socket_state
+/** State for select socket service. */
+class select_socket_state
 {
 public:
-    explicit epoll_socket_state(epoll_scheduler& sched) noexcept
+    explicit select_socket_state(select_scheduler& sched) noexcept
         : sched_(sched)
     {
     }
 
-    epoll_scheduler& sched_;
+    select_scheduler& sched_;
     std::mutex mutex_;
-    intrusive_list<epoll_socket_impl> socket_list_;
-    std::unordered_map<epoll_socket_impl*, std::shared_ptr<epoll_socket_impl>> socket_ptrs_;
+    intrusive_list<select_socket_impl> socket_list_;
+    std::unordered_map<select_socket_impl*, std::shared_ptr<select_socket_impl>> socket_ptrs_;
 };
 
-/** State for epoll acceptor service. */
-class epoll_acceptor_state
+/** State for select acceptor service. */
+class select_acceptor_state
 {
 public:
-    explicit epoll_acceptor_state(epoll_scheduler& sched) noexcept
+    explicit select_acceptor_state(select_scheduler& sched) noexcept
         : sched_(sched)
     {
     }
 
-    epoll_scheduler& sched_;
+    select_scheduler& sched_;
     std::mutex mutex_;
-    intrusive_list<epoll_acceptor_impl> acceptor_list_;
-    std::unordered_map<epoll_acceptor_impl*, std::shared_ptr<epoll_acceptor_impl>> acceptor_ptrs_;
+    intrusive_list<select_acceptor_impl> acceptor_list_;
+    std::unordered_map<select_acceptor_impl*, std::shared_ptr<select_acceptor_impl>> acceptor_ptrs_;
 };
 
-/** epoll socket service implementation.
+/** select socket service implementation.
 
     Inherits from socket_service to enable runtime polymorphism.
     Uses key_type = socket_service for service lookup.
 */
-class epoll_socket_service : public socket_service
+class select_socket_service : public socket_service
 {
 public:
-    explicit epoll_socket_service(capy::execution_context& ctx);
-    ~epoll_socket_service();
+    explicit select_socket_service(capy::execution_context& ctx);
+    ~select_socket_service();
 
-    epoll_socket_service(epoll_socket_service const&) = delete;
-    epoll_socket_service& operator=(epoll_socket_service const&) = delete;
+    select_socket_service(select_socket_service const&) = delete;
+    select_socket_service& operator=(select_socket_service const&) = delete;
 
     void shutdown() override;
 
@@ -261,28 +252,28 @@ public:
     void destroy_impl(socket::socket_impl& impl) override;
     system::error_code open_socket(socket::socket_impl& impl) override;
 
-    epoll_scheduler& scheduler() const noexcept { return state_->sched_; }
-    void post(epoll_op* op);
+    select_scheduler& scheduler() const noexcept { return state_->sched_; }
+    void post(select_op* op);
     void work_started() noexcept;
     void work_finished() noexcept;
 
 private:
-    std::unique_ptr<epoll_socket_state> state_;
+    std::unique_ptr<select_socket_state> state_;
 };
 
-/** epoll acceptor service implementation.
+/** select acceptor service implementation.
 
     Inherits from acceptor_service to enable runtime polymorphism.
     Uses key_type = acceptor_service for service lookup.
 */
-class epoll_acceptor_service : public acceptor_service
+class select_acceptor_service : public acceptor_service
 {
 public:
-    explicit epoll_acceptor_service(capy::execution_context& ctx);
-    ~epoll_acceptor_service();
+    explicit select_acceptor_service(capy::execution_context& ctx);
+    ~select_acceptor_service();
 
-    epoll_acceptor_service(epoll_acceptor_service const&) = delete;
-    epoll_acceptor_service& operator=(epoll_acceptor_service const&) = delete;
+    select_acceptor_service(select_acceptor_service const&) = delete;
+    select_acceptor_service& operator=(select_acceptor_service const&) = delete;
 
     void shutdown() override;
 
@@ -293,24 +284,24 @@ public:
         endpoint ep,
         int backlog) override;
 
-    epoll_scheduler& scheduler() const noexcept { return state_->sched_; }
-    void post(epoll_op* op);
+    select_scheduler& scheduler() const noexcept { return state_->sched_; }
+    void post(select_op* op);
     void work_started() noexcept;
     void work_finished() noexcept;
 
     /** Get the socket service for creating peer sockets during accept. */
-    epoll_socket_service* socket_service() const noexcept;
+    select_socket_service* socket_service() const noexcept;
 
 private:
     capy::execution_context& ctx_;
-    std::unique_ptr<epoll_acceptor_state> state_;
+    std::unique_ptr<select_acceptor_state> state_;
 };
 
 // Backward compatibility alias
-using epoll_sockets = epoll_socket_service;
+using select_sockets = select_socket_service;
 
 } // namespace boost::corosio::detail
 
-#endif // __linux__
+#endif // !defined(_WIN32)
 
-#endif // BOOST_COROSIO_DETAIL_EPOLL_SOCKETS_HPP
+#endif // BOOST_COROSIO_DETAIL_SELECT_SOCKETS_HPP

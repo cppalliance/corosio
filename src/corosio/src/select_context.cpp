@@ -7,40 +7,40 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <boost/corosio/epoll_context.hpp>
+#include <boost/corosio/select_context.hpp>
 
 
-#if defined(__linux__)
+#if !defined(_WIN32)
 
-#include "src/detail/epoll/scheduler.hpp"
-#include "src/detail/epoll/sockets.hpp"
+#include "src/detail/select/scheduler.hpp"
+#include "src/detail/select/sockets.hpp"
 
 #include <thread>
 
 namespace boost::corosio {
 
-epoll_context::
-epoll_context()
-    : epoll_context(std::thread::hardware_concurrency())
+select_context::
+select_context()
+    : select_context(std::thread::hardware_concurrency())
 {
 }
 
-epoll_context::
-epoll_context(
+select_context::
+select_context(
     unsigned concurrency_hint)
 {
-    sched_ = &make_service<detail::epoll_scheduler>(
+    sched_ = &make_service<detail::select_scheduler>(
         static_cast<int>(concurrency_hint));
 
     // Install socket/acceptor services.
     // These use socket_service and acceptor_service as key_type,
     // enabling runtime polymorphism.
-    make_service<detail::epoll_socket_service>();
-    make_service<detail::epoll_acceptor_service>();
+    make_service<detail::select_socket_service>();
+    make_service<detail::select_acceptor_service>();
 }
 
-epoll_context::
-~epoll_context()
+select_context::
+~select_context()
 {
     shutdown();
     destroy();
@@ -48,4 +48,4 @@ epoll_context::
 
 } // namespace boost::corosio
 
-#endif // __linux__
+#endif // !defined(_WIN32)

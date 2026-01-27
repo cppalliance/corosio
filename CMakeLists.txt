@@ -262,6 +262,10 @@ if (WolfSSL_FOUND)
     if (WIN32 AND NOT MINGW)
         target_link_libraries(boost_corosio_wolfssl PUBLIC crypt32)
     endif ()
+    # WolfSSL on macOS uses Apple Security framework for certificate validation
+    if (APPLE)
+        target_link_libraries(boost_corosio_wolfssl PUBLIC "-framework CoreFoundation" "-framework Security")
+    endif ()
     target_compile_definitions(boost_corosio_wolfssl PUBLIC BOOST_COROSIO_HAS_WOLFSSL)
 endif ()
 

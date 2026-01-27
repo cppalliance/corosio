@@ -10,9 +10,8 @@
 #ifndef BOOST_COROSIO_DETAIL_IOCP_SCHEDULER_HPP
 #define BOOST_COROSIO_DETAIL_IOCP_SCHEDULER_HPP
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
@@ -125,6 +124,6 @@ private:
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_BACKEND_IOCP
+#endif // _WIN32
 
 #endif // BOOST_COROSIO_DETAIL_IOCP_SCHEDULER_HPP

@@ -101,6 +101,13 @@ public:
 
         virtual native_handle_type native_handle() const noexcept = 0;
 
+        /** Request cancellation of pending asynchronous operations.
+
+            All outstanding operations complete with operation_canceled error.
+            Check `ec == cond::canceled` for portable comparison.
+        */
+        virtual void cancel() noexcept = 0;
+
         // Socket options
         virtual system::error_code set_no_delay(bool value) noexcept = 0;
         virtual bool no_delay(system::error_code& ec) const noexcept = 0;

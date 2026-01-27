@@ -7,9 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
 
 #include "src/detail/iocp/wsa_init.hpp"
 #include "src/detail/make_err.hpp"

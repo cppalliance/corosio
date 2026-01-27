@@ -10,25 +10,15 @@
 #include <boost/corosio/socket.hpp>
 #include <boost/corosio/detail/except.hpp>
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
 #include "src/detail/iocp/sockets.hpp"
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
-#include "src/detail/epoll/sockets.hpp"
+#else
+// POSIX backends use the abstract socket_service interface
+#include "src/detail/socket_service.hpp"
 #endif
 
 namespace boost::corosio {
-
-namespace {
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
-using socket_service = detail::win_sockets;
-using socket_impl_type = detail::win_socket_impl;
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
-using socket_service = detail::epoll_sockets;
-using socket_impl_type = detail::epoll_socket_impl;
-#endif
-} // namespace
 
 socket::
 ~socket()
@@ -50,14 +40,21 @@ open()
     if (impl_)
         return;
 
-    auto& svc = ctx_->use_service<socket_service>();
+#if defined(_WIN32)
+    auto& svc = ctx_->use_service<detail::win_sockets>();
     auto& wrapper = svc.create_impl();
     impl_ = &wrapper;
-
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
     system::error_code ec = svc.open_socket(*wrapper.get_internal());
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
-    system::error_code ec = svc.open_socket(wrapper);
+#else
+    // POSIX backends use abstract socket_service for runtime polymorphism.
+    // The concrete service (epoll_sockets or select_sockets) must be installed
+    // by the context constructor before any socket operations.
+    auto* svc = ctx_->find_service<detail::socket_service>();
+    if (!svc)
+        detail::throw_logic_error("socket::open: no socket service installed");
+    auto& wrapper = svc->create_impl();
+    impl_ = &wrapper;
+    system::error_code ec = svc->open_socket(wrapper);
 #endif
     if (ec)
     {
@@ -74,8 +71,8 @@ close()
     if (!impl_)
         return;
 
-    auto* wrapper = static_cast<socket_impl_type*>(impl_);
-    wrapper->release();
+    // socket_impl has virtual release() method
+    impl_->release();
     impl_ = nullptr;
 }
 
@@ -85,10 +82,11 @@ cancel()
 {
     if (!impl_)
         return;
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
-    static_cast<socket_impl_type*>(impl_)->get_internal()->cancel();
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
-    static_cast<socket_impl_type*>(impl_)->cancel();
+#if defined(_WIN32)
+    static_cast<detail::win_socket_impl*>(impl_)->get_internal()->cancel();
+#else
+    // socket_impl has virtual cancel() method
+    get().cancel();
 #endif
 }
 
@@ -106,7 +104,7 @@ native_handle() const noexcept
 {
     if (!impl_)
     {
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
         return static_cast<native_handle_type>(~0ull);  // INVALID_SOCKET
 #else
         return -1;

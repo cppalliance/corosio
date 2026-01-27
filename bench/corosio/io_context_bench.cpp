@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <coroutine>
+#include <cstring>
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -19,6 +20,35 @@
 
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
+
+// Backend names for display
+inline const char* default_backend_name()
+{
+#if defined(_WIN32)
+    return "iocp";
+#elif defined(__linux__)
+    return "epoll";
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+    return "select";  // kqueue planned for future
+#else
+    return "select";
+#endif
+}
+
+inline void print_available_backends()
+{
+    std::cout << "Available backends on this platform:\n";
+#if defined(_WIN32)
+    std::cout << "  iocp     - Windows I/O Completion Ports (default)\n";
+#endif
+#if defined(__linux__)
+    std::cout << "  epoll    - Linux epoll (default)\n";
+    std::cout << "  select   - POSIX select (portable)\n";
+#elif !defined(_WIN32)
+    std::cout << "  select   - POSIX select (default)\n";
+#endif
+    std::cout << "\nDefault backend: " << default_backend_name() << "\n";
+}
 
 // Coroutine that increments a counter when resumed
 struct counter_coro
@@ -93,11 +123,12 @@ inline atomic_counter_coro make_atomic_coro(std::atomic<int>& counter)
 }
 
 // Benchmark: Single-threaded handler posting rate
+template <typename Context>
 void bench_single_threaded_post(int num_handlers)
 {
     bench::print_header("Single-threaded Handler Post");
 
-    corosio::io_context ioc;
+    Context ioc;
     auto ex = ioc.get_executor();
     int counter = 0;
 
@@ -124,6 +155,7 @@ void bench_single_threaded_post(int num_handlers)
 }
 
 // Benchmark: Multi-threaded scaling
+template <typename Context>
 void bench_multithreaded_scaling(int num_handlers, int max_threads)
 {
     bench::print_header("Multi-threaded Scaling");
@@ -132,7 +164,7 @@ void bench_multithreaded_scaling(int num_handlers, int max_threads)
 
     for (int num_threads = 1; num_threads <= max_threads; num_threads *= 2)
     {
-        corosio::io_context ioc;
+        Context ioc;
         auto ex = ioc.get_executor();
         std::atomic<int> counter{0};
 
@@ -177,11 +209,12 @@ void bench_multithreaded_scaling(int num_handlers, int max_threads)
 }
 
 // Benchmark: Post and run interleaved
+template <typename Context>
 void bench_interleaved_post_run(int iterations, int handlers_per_iteration)
 {
     bench::print_header("Interleaved Post/Run");
 
-    corosio::io_context ioc;
+    Context ioc;
     auto ex = ioc.get_executor();
     int counter = 0;
     int total_handlers = iterations * handlers_per_iteration;
@@ -218,11 +251,12 @@ void bench_interleaved_post_run(int iterations, int handlers_per_iteration)
 }
 
 // Benchmark: Multi-threaded concurrent posting and running
+template <typename Context>
 void bench_concurrent_post_run(int num_threads, int handlers_per_thread)
 {
     bench::print_header("Concurrent Post and Run");
 
-    corosio::io_context ioc;
+    Context ioc;
     auto ex = ioc.get_executor();
     std::atomic<int> counter{0};
     int total_handlers = num_threads * handlers_per_thread;
@@ -261,14 +295,17 @@ void bench_concurrent_post_run(int num_threads, int handlers_per_thread)
     }
 }
 
-int main()
+// Run all benchmarks for a specific context type
+template <typename Context>
+void run_all_benchmarks(const char* backend_name)
 {
     std::cout << "Boost.Corosio io_context Benchmarks\n";
     std::cout << "====================================\n";
+    std::cout << "Backend: " << backend_name << "\n\n";
 
     // Warm up
     {
-        corosio::io_context ioc;
+        Context ioc;
         auto ex = ioc.get_executor();
         int counter = 0;
         for (int i = 0; i < 1000; ++i)
@@ -277,11 +314,95 @@ int main()
     }
 
     // Run benchmarks
-    bench_single_threaded_post(1000000);
-    bench_multithreaded_scaling(1000000, 8);
-    bench_interleaved_post_run(10000, 100);
-    bench_concurrent_post_run(4, 250000);
+    bench_single_threaded_post<Context>(1000000);
+    bench_multithreaded_scaling<Context>(1000000, 8);
+    bench_interleaved_post_run<Context>(10000, 100);
+    bench_concurrent_post_run<Context>(4, 250000);
 
     std::cout << "\nBenchmarks complete.\n";
-    return 0;
+}
+
+void print_usage(const char* program_name)
+{
+    std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
+    std::cout << "Options:\n";
+    std::cout << "  --backend <name>   Select I/O backend (default: platform default)\n";
+    std::cout << "  --list             List available backends\n";
+    std::cout << "  --help             Show this help message\n";
+    std::cout << "\n";
+    print_available_backends();
+}
+
+int main(int argc, char* argv[])
+{
+    const char* backend = nullptr;
+
+    // Parse command-line arguments
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], "--backend") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                backend = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --backend requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--list") == 0)
+        {
+            print_available_backends();
+            return 0;
+        }
+        else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
+        {
+            print_usage(argv[0]);
+            return 0;
+        }
+        else
+        {
+            std::cerr << "Unknown option: " << argv[i] << "\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    // If no backend specified, use platform default
+    if (!backend)
+    {
+        backend = default_backend_name();
+    }
+
+    // Run benchmarks for the selected backend
+#if defined(__linux__)
+    if (std::strcmp(backend, "epoll") == 0)
+    {
+        run_all_benchmarks<corosio::epoll_context>("epoll");
+        return 0;
+    }
+#endif
+
+#if !defined(_WIN32)
+    if (std::strcmp(backend, "select") == 0)
+    {
+        run_all_benchmarks<corosio::select_context>("select");
+        return 0;
+    }
+#endif
+
+#if defined(_WIN32)
+    if (std::strcmp(backend, "iocp") == 0)
+    {
+        run_all_benchmarks<corosio::iocp_context>("iocp");
+        return 0;
+    }
+#endif
+
+    // If we get here, the backend is not available
+    std::cerr << "Error: Backend '" << backend << "' is not available on this platform.\n\n";
+    print_available_backends();
+    return 1;
 }

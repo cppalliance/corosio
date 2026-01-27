@@ -7,11 +7,11 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_EPOLL_OP_HPP
-#define BOOST_COROSIO_DETAIL_EPOLL_OP_HPP
+#ifndef BOOST_COROSIO_DETAIL_SELECT_OP_HPP
+#define BOOST_COROSIO_DETAIL_SELECT_OP_HPP
 
 
-#if defined(__linux__)
+#if !defined(_WIN32)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_object.hpp>
@@ -27,6 +27,7 @@
 
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include <atomic>
 #include <cstddef>
@@ -35,17 +36,20 @@
 #include <stop_token>
 
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 
 /*
-    epoll Operation State
-    =====================
+    select Operation State
+    ======================
 
-    Each async I/O operation has a corresponding epoll_op-derived struct that
+    Each async I/O operation has a corresponding select_op-derived struct that
     holds the operation's state while it's in flight. The socket impl owns
     fixed slots for each operation type (conn_, rd_, wr_), so only one
     operation of each type can be pending per socket at a time.
+
+    This mirrors the epoll_op design for consistency across backends.
 
     Completion vs Cancellation Race
     -------------------------------
@@ -61,36 +65,31 @@
     and is responsible for completing it. The loser sees unregistered and
     does nothing. The initiating thread uses compare_exchange to transition
     from registering to registered; if this fails, the reactor or cancel
-    already claimed the op. This avoids double-completion bugs without
-    requiring a mutex in the hot path.
+    already claimed the op.
 
     Impl Lifetime Management
     ------------------------
     When cancel() posts an op to the scheduler's ready queue, the socket impl
     might be destroyed before the scheduler processes the op. The `impl_ptr`
     member holds a shared_ptr to the impl, keeping it alive until the op
-    completes. This is set by cancel() in sockets.hpp and cleared in operator()
-    after the coroutine is resumed. Without this, closing a socket with pending
-    operations causes use-after-free.
+    completes.
 
     EOF Detection
     -------------
     For reads, 0 bytes with no error means EOF. But an empty user buffer also
-    returns 0 bytes. The `empty_buffer_read` flag distinguishes these cases
-    so we don't spuriously report EOF when the user just passed an empty buffer.
+    returns 0 bytes. The `empty_buffer_read` flag distinguishes these cases.
 
     SIGPIPE Prevention
     ------------------
     Writes use sendmsg() with MSG_NOSIGNAL instead of writev() to prevent
-    SIGPIPE when the peer has closed. This is the same approach Boost.Asio
-    uses on Linux.
+    SIGPIPE when the peer has closed.
 */
 
 namespace boost::corosio::detail {
 
 // Forward declarations for cancellation support
-class epoll_socket_impl;
-class epoll_acceptor_impl;
+class select_socket_impl;
+class select_acceptor_impl;
 
 /** Registration state for async operations.
 
@@ -99,18 +98,18 @@ class epoll_acceptor_impl;
     calling register_fd() ensures events delivered during the
     registration window are not dropped.
 */
-enum class registration_state : std::uint8_t
+enum class select_registration_state : std::uint8_t
 {
     unregistered,  ///< Not registered with reactor
     registering,   ///< register_fd() called, not yet confirmed
     registered     ///< Fully registered, ready for events
 };
 
-struct epoll_op : scheduler_op
+struct select_op : scheduler_op
 {
     struct canceller
     {
-        epoll_op* op;
+        select_op* op;
         void operator()() const noexcept;
     };
 
@@ -124,19 +123,17 @@ struct epoll_op : scheduler_op
     std::size_t bytes_transferred = 0;
 
     std::atomic<bool> cancelled{false};
-    std::atomic<registration_state> registered{registration_state::unregistered};
+    std::atomic<select_registration_state> registered{select_registration_state::unregistered};
     std::optional<std::stop_callback<canceller>> stop_cb;
 
     // Prevents use-after-free when socket is closed with pending ops.
-    // See "Impl Lifetime Management" in file header.
     std::shared_ptr<void> impl_ptr;
 
     // For stop_token cancellation - pointer to owning socket/acceptor impl.
-    // When stop is requested, we call back to the impl to perform actual I/O cancellation.
-    epoll_socket_impl* socket_impl_ = nullptr;
-    epoll_acceptor_impl* acceptor_impl_ = nullptr;
+    select_socket_impl* socket_impl_ = nullptr;
+    select_acceptor_impl* acceptor_impl_ = nullptr;
 
-    epoll_op()
+    select_op()
     {
         data_ = this;
     }
@@ -147,7 +144,7 @@ struct epoll_op : scheduler_op
         errn = 0;
         bytes_transferred = 0;
         cancelled.store(false, std::memory_order_relaxed);
-        registered.store(registration_state::unregistered, std::memory_order_relaxed);
+        registered.store(select_registration_state::unregistered, std::memory_order_relaxed);
         impl_ptr.reset();
         socket_impl_ = nullptr;
         acceptor_impl_ = nullptr;
@@ -200,7 +197,7 @@ struct epoll_op : scheduler_op
             stop_cb.emplace(token, canceller{this});
     }
 
-    void start(std::stop_token token, epoll_socket_impl* impl)
+    void start(std::stop_token token, select_socket_impl* impl)
     {
         cancelled.store(false, std::memory_order_release);
         stop_cb.reset();
@@ -211,7 +208,7 @@ struct epoll_op : scheduler_op
             stop_cb.emplace(token, canceller{this});
     }
 
-    void start(std::stop_token token, epoll_acceptor_impl* impl)
+    void start(std::stop_token token, select_acceptor_impl* impl)
     {
         cancelled.store(false, std::memory_order_release);
         stop_cb.reset();
@@ -233,13 +230,13 @@ struct epoll_op : scheduler_op
 
 //------------------------------------------------------------------------------
 
-struct epoll_connect_op : epoll_op
+struct select_connect_op : select_op
 {
     endpoint target_endpoint;
 
     void reset() noexcept
     {
-        epoll_op::reset();
+        select_op::reset();
         target_endpoint = endpoint{};
     }
 
@@ -253,13 +250,13 @@ struct epoll_connect_op : epoll_op
         complete(err, 0);
     }
 
-    // Defined in sockets.cpp where epoll_socket_impl is complete
+    // Defined in sockets.cpp where select_socket_impl is complete
     void operator()() override;
 };
 
 //------------------------------------------------------------------------------
 
-struct epoll_read_op : epoll_op
+struct select_read_op : select_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -273,7 +270,7 @@ struct epoll_read_op : epoll_op
 
     void reset() noexcept
     {
-        epoll_op::reset();
+        select_op::reset();
         iovec_count = 0;
         empty_buffer_read = false;
     }
@@ -290,7 +287,7 @@ struct epoll_read_op : epoll_op
 
 //------------------------------------------------------------------------------
 
-struct epoll_write_op : epoll_op
+struct select_write_op : select_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -298,7 +295,7 @@ struct epoll_write_op : epoll_op
 
     void reset() noexcept
     {
-        epoll_op::reset();
+        select_op::reset();
         iovec_count = 0;
     }
 
@@ -318,7 +315,7 @@ struct epoll_write_op : epoll_op
 
 //------------------------------------------------------------------------------
 
-struct epoll_accept_op : epoll_op
+struct select_accept_op : select_op
 {
     int accepted_fd = -1;
     io_object::io_object_impl* peer_impl = nullptr;
@@ -326,7 +323,7 @@ struct epoll_accept_op : epoll_op
 
     void reset() noexcept
     {
-        epoll_op::reset();
+        select_op::reset();
         accepted_fd = -1;
         peer_impl = nullptr;
         impl_out = nullptr;
@@ -336,11 +333,50 @@ struct epoll_accept_op : epoll_op
     {
         sockaddr_in addr{};
         socklen_t addrlen = sizeof(addr);
-        int new_fd = ::accept4(fd, reinterpret_cast<sockaddr*>(&addr),
-                               &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
+
+        // Note: select backend uses accept() + fcntl instead of accept4()
+        // for broader POSIX compatibility
+        int new_fd = ::accept(fd, reinterpret_cast<sockaddr*>(&addr), &addrlen);
 
         if (new_fd >= 0)
         {
+            // Reject fds that exceed select()'s FD_SETSIZE limit.
+            // Better to fail now than during later async operations.
+            if (new_fd >= FD_SETSIZE)
+            {
+                ::close(new_fd);
+                complete(EINVAL, 0);
+                return;
+            }
+
+            // Set non-blocking and close-on-exec flags.
+            // A non-blocking socket is essential for the async reactor;
+            // if we can't configure it, fail rather than risk blocking.
+            int flags = ::fcntl(new_fd, F_GETFL, 0);
+            if (flags == -1)
+            {
+                int err = errno;
+                ::close(new_fd);
+                complete(err, 0);
+                return;
+            }
+
+            if (::fcntl(new_fd, F_SETFL, flags | O_NONBLOCK) == -1)
+            {
+                int err = errno;
+                ::close(new_fd);
+                complete(err, 0);
+                return;
+            }
+
+            if (::fcntl(new_fd, F_SETFD, FD_CLOEXEC) == -1)
+            {
+                int err = errno;
+                ::close(new_fd);
+                complete(err, 0);
+                return;
+            }
+
             accepted_fd = new_fd;
             complete(0, 0);
         }
@@ -350,12 +386,12 @@ struct epoll_accept_op : epoll_op
         }
     }
 
-    // Defined in sockets.cpp where epoll_socket_impl is complete
+    // Defined in sockets.cpp where select_socket_impl is complete
     void operator()() override;
 };
 
 } // namespace boost::corosio::detail
 
-#endif // __linux__
+#endif // !defined(_WIN32)
 
-#endif // BOOST_COROSIO_DETAIL_EPOLL_OP_HPP
+#endif // BOOST_COROSIO_DETAIL_SELECT_OP_HPP

@@ -9,9 +9,8 @@
 
 #include <boost/corosio/resolver.hpp>
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
 #include "src/detail/iocp/resolver_service.hpp"
 #else
 #include "src/detail/posix/resolver_service.hpp"
@@ -39,7 +38,7 @@
 namespace boost::corosio {
 namespace {
 
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
 using resolver_service = detail::win_resolver_service;
 #else
 using resolver_service = detail::posix_resolver_service;

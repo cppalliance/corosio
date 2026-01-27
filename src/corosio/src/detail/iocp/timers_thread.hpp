@@ -10,9 +10,8 @@
 #ifndef BOOST_COROSIO_DETAIL_IOCP_TIMERS_THREAD_HPP
 #define BOOST_COROSIO_DETAIL_IOCP_TIMERS_THREAD_HPP
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
 
 #include "src/detail/iocp/timers.hpp"
 #include <thread>
@@ -43,6 +42,6 @@ private:
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_BACKEND_IOCP
+#endif // _WIN32
 
 #endif // BOOST_COROSIO_DETAIL_IOCP_TIMERS_THREAD_HPP

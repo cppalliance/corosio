@@ -81,10 +81,14 @@ lib boost_corosio_wolfssl
     <include>../src/corosio
     [ ac.check-library /wolfssl//wolfssl : <library>/wolfssl//wolfssl : <build>no ]
     <target-os>windows:<library>crypt32
+    <target-os>darwin:<linkflags>"-framework CoreFoundation"
+    <target-os>darwin:<linkflags>"-framework Security"
   : usage-requirements
     <library>/boost/corosio//boost_corosio
     <define>BOOST_COROSIO_HAS_WOLFSSL
     <target-os>windows:<library>crypt32
+    <target-os>darwin:<linkflags>"-framework CoreFoundation"
+    <target-os>darwin:<linkflags>"-framework Security"
   ;
 
 boost-install boost_corosio boost_corosio_openssl boost_corosio_wolfssl ;

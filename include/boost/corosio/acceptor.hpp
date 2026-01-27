@@ -292,6 +292,12 @@ public:
 
         /// Returns the cached local endpoint.
         virtual endpoint local_endpoint() const noexcept = 0;
+
+        /** Cancel any pending asynchronous operations.
+
+            All outstanding operations complete with operation_canceled error.
+        */
+        virtual void cancel() noexcept = 0;
     };
 
 private:

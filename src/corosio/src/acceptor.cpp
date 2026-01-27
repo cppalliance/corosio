@@ -9,28 +9,17 @@
 
 #include <boost/corosio/acceptor.hpp>
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
 #include "src/detail/iocp/sockets.hpp"
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
-#include "src/detail/epoll/sockets.hpp"
+#else
+// POSIX backends use the abstract acceptor_service interface
+#include "src/detail/socket_service.hpp"
 #endif
 
 #include <boost/corosio/detail/except.hpp>
 
 namespace boost::corosio {
-namespace {
-
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
-using acceptor_service = detail::win_sockets;
-using acceptor_impl_type = detail::win_acceptor_impl;
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
-using acceptor_service = detail::epoll_sockets;
-using acceptor_impl_type = detail::epoll_acceptor_impl;
-#endif
-
-} // namespace
 
 acceptor::
 ~acceptor()
@@ -52,15 +41,22 @@ listen(endpoint ep, int backlog)
     if (impl_)
         close();
 
-    auto& svc = ctx_->use_service<acceptor_service>();
+#if defined(_WIN32)
+    auto& svc = ctx_->use_service<detail::win_sockets>();
     auto& wrapper = svc.create_acceptor_impl();
     impl_ = &wrapper;
-
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
     system::error_code ec = svc.open_acceptor(
         *wrapper.get_internal(), ep, backlog);
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
-    system::error_code ec = svc.open_acceptor(wrapper, ep, backlog);
+#else
+    // POSIX backends use abstract acceptor_service for runtime polymorphism.
+    // The concrete service (epoll_sockets or select_sockets) must be installed
+    // by the context constructor before any acceptor operations.
+    auto* svc = ctx_->find_service<detail::acceptor_service>();
+    if (!svc)
+        detail::throw_logic_error("acceptor::listen: no acceptor service installed");
+    auto& wrapper = svc->create_acceptor_impl();
+    impl_ = &wrapper;
+    system::error_code ec = svc->open_acceptor(wrapper, ep, backlog);
 #endif
     if (ec)
     {
@@ -77,8 +73,8 @@ close()
     if (!impl_)
         return;
 
-    auto* wrapper = static_cast<acceptor_impl_type*>(impl_);
-    wrapper->release();
+    // acceptor_impl has virtual release() method
+    impl_->release();
     impl_ = nullptr;
 }
 
@@ -88,10 +84,11 @@ cancel()
 {
     if (!impl_)
         return;
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
-    static_cast<acceptor_impl_type*>(impl_)->get_internal()->cancel();
-#elif defined(BOOST_COROSIO_BACKEND_EPOLL)
-    static_cast<acceptor_impl_type*>(impl_)->cancel();
+#if defined(_WIN32)
+    static_cast<detail::win_acceptor_impl*>(impl_)->get_internal()->cancel();
+#else
+    // acceptor_impl has virtual cancel() method
+    get().cancel();
 #endif
 }
 

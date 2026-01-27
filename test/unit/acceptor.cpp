@@ -16,6 +16,11 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+// Include platform-specific context headers for multi-backend testing
+#if !defined(_WIN32)
+#include <boost/corosio/select_context.hpp>
+#endif
+
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -23,14 +28,17 @@ namespace boost::corosio {
 //------------------------------------------------
 // Acceptor-specific tests
 // Focus: acceptor construction, basic interface, and cancellation
+//
+// Tests are templated on the context type to run with all available backends.
 //------------------------------------------------
 
-struct acceptor_test
+template<class Context>
+struct acceptor_test_impl
 {
     void
     testConstruction()
     {
-        io_context ioc;
+        Context ioc;
         acceptor acc(ioc);
 
         // Acceptor should not be open initially
@@ -40,7 +48,7 @@ struct acceptor_test
     void
     testListen()
     {
-        io_context ioc;
+        Context ioc;
         acceptor acc(ioc);
 
         // Listen on a port
@@ -55,7 +63,7 @@ struct acceptor_test
     void
     testMoveConstruct()
     {
-        io_context ioc;
+        Context ioc;
         acceptor acc1(ioc);
         acc1.listen(endpoint(0));
         BOOST_TEST_EQ(acc1.is_open(), true);
@@ -71,7 +79,7 @@ struct acceptor_test
     void
     testMoveAssign()
     {
-        io_context ioc;
+        Context ioc;
         acceptor acc1(ioc);
         acceptor acc2(ioc);
         acc1.listen(endpoint(0));
@@ -96,7 +104,7 @@ struct acceptor_test
         // Tests that cancel() properly cancels a pending accept operation.
         // This exercises the acceptor_ptr shared_ptr that keeps the
         // acceptor impl alive until IOCP delivers the cancellation.
-        io_context ioc;
+        Context ioc;
         acceptor acc(ioc);
         acc.listen(endpoint(0));
 
@@ -147,7 +155,7 @@ struct acceptor_test
         // when close() is called, CancelIoEx is invoked, the socket is closed,
         // but the impl must stay alive until IOCP delivers the cancellation.
         // The acceptor_ptr shared_ptr in accept_op ensures this.
-        io_context ioc;
+        Context ioc;
         acceptor acc(ioc);
         acc.listen(endpoint(0));
 
@@ -203,6 +211,18 @@ struct acceptor_test
     }
 };
 
+//------------------------------------------------
+// Register test suites for each available backend
+//------------------------------------------------
+
+// Default io_context (platform default backend)
+struct acceptor_test : acceptor_test_impl<io_context> {};
 TEST_SUITE(acceptor_test, "boost.corosio.acceptor");
+
+// POSIX: also test with select_context explicitly
+#if !defined(_WIN32)
+struct acceptor_test_select : acceptor_test_impl<select_context> {};
+TEST_SUITE(acceptor_test_select, "boost.corosio.acceptor.select");
+#endif
 
 } // namespace boost::corosio

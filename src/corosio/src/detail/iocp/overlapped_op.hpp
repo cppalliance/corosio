@@ -10,9 +10,8 @@
 #ifndef BOOST_COROSIO_DETAIL_IOCP_OVERLAPPED_OP_HPP
 #define BOOST_COROSIO_DETAIL_IOCP_OVERLAPPED_OP_HPP
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -151,6 +150,6 @@ get_overlapped_op(scheduler_op* h) noexcept
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_BACKEND_IOCP
+#endif // _WIN32
 
 #endif // BOOST_COROSIO_DETAIL_IOCP_OVERLAPPED_OP_HPP

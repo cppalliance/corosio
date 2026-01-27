@@ -15,6 +15,11 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+// Include platform-specific context headers for multi-backend testing
+#if !defined(_WIN32)
+#include <boost/corosio/select_context.hpp>
+#endif
+
 #include <chrono>
 
 #include "test_suite.hpp"
@@ -24,9 +29,12 @@ namespace boost::corosio {
 //------------------------------------------------
 // Timer-specific tests
 // Focus: timer construction, expiry, wait, and cancellation
+//
+// Tests are templated on the context type to run with all available backends.
 //------------------------------------------------
 
-struct timer_test
+template<class Context>
+struct timer_test_impl
 {
     //--------------------------------------------
     // Construction and move semantics
@@ -35,7 +43,7 @@ struct timer_test
     void
     testConstruction()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         BOOST_TEST_PASS();
@@ -44,7 +52,7 @@ struct timer_test
     void
     testMoveConstruct()
     {
-        io_context ioc;
+        Context ioc;
         timer t1(ioc);
         t1.expires_after(std::chrono::milliseconds(100));
         auto expiry = t1.expiry();
@@ -56,7 +64,7 @@ struct timer_test
     void
     testMoveAssign()
     {
-        io_context ioc;
+        Context ioc;
         timer t1(ioc);
         timer t2(ioc);
 
@@ -70,8 +78,8 @@ struct timer_test
     void
     testMoveAssignCrossContextThrows()
     {
-        io_context ioc1;
-        io_context ioc2;
+        Context ioc1;
+        Context ioc2;
         timer t1(ioc1);
         timer t2(ioc2);
 
@@ -85,7 +93,7 @@ struct timer_test
     void
     testDefaultExpiry()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         auto expiry = t.expiry();
@@ -95,7 +103,7 @@ struct timer_test
     void
     testExpiresAfter()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         auto before = timer::clock_type::now();
@@ -110,7 +118,7 @@ struct timer_test
     void
     testExpiresAfterDifferentDurations()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         auto before = timer::clock_type::now();
@@ -132,7 +140,7 @@ struct timer_test
     void
     testExpiresAt()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         auto target = timer::clock_type::now() + std::chrono::milliseconds(200);
@@ -144,7 +152,7 @@ struct timer_test
     void
     testExpiresAtPast()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         auto target = timer::clock_type::now() - std::chrono::seconds(1);
@@ -156,7 +164,7 @@ struct timer_test
     void
     testExpiresAtReplace()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         auto first = timer::clock_type::now() + std::chrono::seconds(10);
@@ -175,7 +183,7 @@ struct timer_test
     void
     testWaitBasic()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         bool completed = false;
@@ -199,7 +207,7 @@ struct timer_test
     void
     testWaitTimingAccuracy()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         auto start = timer::clock_type::now();
@@ -224,7 +232,7 @@ struct timer_test
     void
     testWaitExpiredTimer()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         bool completed = false;
@@ -248,7 +256,7 @@ struct timer_test
     void
     testWaitZeroDuration()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         bool completed = false;
@@ -276,7 +284,7 @@ struct timer_test
     void
     testCancel()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
         timer cancel_timer(ioc);
 
@@ -309,7 +317,7 @@ struct timer_test
     void
     testCancelNoWaiters()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         t.expires_after(std::chrono::seconds(60));
@@ -321,7 +329,7 @@ struct timer_test
     void
     testCancelMultipleTimes()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         t.expires_after(std::chrono::seconds(60));
@@ -335,7 +343,7 @@ struct timer_test
     void
     testExpiresAtCancelsWaiter()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
         timer delay_timer(ioc);
 
@@ -372,7 +380,7 @@ struct timer_test
     void
     testMultipleTimersDifferentExpiry()
     {
-        io_context ioc;
+        Context ioc;
         timer t1(ioc);
         timer t2(ioc);
         timer t3(ioc);
@@ -404,7 +412,7 @@ struct timer_test
     void
     testMultipleTimersSameExpiry()
     {
-        io_context ioc;
+        Context ioc;
         timer t1(ioc);
         timer t2(ioc);
 
@@ -436,7 +444,7 @@ struct timer_test
     void
     testSequentialWaits()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         int wait_count = 0;
@@ -471,7 +479,7 @@ struct timer_test
     void
     testIoResultSuccess()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         bool result_ok = false;
@@ -492,7 +500,7 @@ struct timer_test
     void
     testIoResultCanceled()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
         timer cancel_timer(ioc);
 
@@ -525,7 +533,7 @@ struct timer_test
     void
     testIoResultStructuredBinding()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         system::error_code captured_ec;
@@ -550,7 +558,7 @@ struct timer_test
     void
     testLongDuration()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         t.expires_after(std::chrono::hours(24 * 365));
@@ -565,7 +573,7 @@ struct timer_test
     void
     testNegativeDuration()
     {
-        io_context ioc;
+        Context ioc;
         timer t(ioc);
 
         bool completed = false;
@@ -656,6 +664,18 @@ struct timer_test
     }
 };
 
+//------------------------------------------------
+// Register test suites for each available backend
+//------------------------------------------------
+
+// Default io_context (platform default backend)
+struct timer_test : timer_test_impl<io_context> {};
 TEST_SUITE(timer_test, "boost.corosio.timer");
+
+// POSIX: also test with select_context explicitly
+#if !defined(_WIN32)
+struct timer_test_select : timer_test_impl<select_context> {};
+TEST_SUITE(timer_test_select, "boost.corosio.timer.select");
+#endif
 
 } // namespace boost::corosio

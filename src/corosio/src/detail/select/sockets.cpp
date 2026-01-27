@@ -8,34 +8,33 @@
 //
 
 
-#if defined(__linux__)
+#if !defined(_WIN32)
 
-#include "src/detail/epoll/sockets.hpp"
+#include "src/detail/select/sockets.hpp"
 #include "src/detail/endpoint_convert.hpp"
 #include "src/detail/make_err.hpp"
 
-#include <boost/corosio/detail/except.hpp>
 #include <boost/capy/buffers.hpp>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 namespace boost::corosio::detail {
 
 //------------------------------------------------------------------------------
-// epoll_op::canceller - implements stop_token cancellation
+// select_op::canceller - implements stop_token cancellation
 //------------------------------------------------------------------------------
 
 void
-epoll_op::canceller::
+select_op::canceller::
 operator()() const noexcept
 {
     // When stop_token is signaled, we need to actually cancel the I/O operation,
-    // not just set a flag. Otherwise the operation stays blocked on epoll.
+    // not just set a flag. Otherwise the operation stays blocked on select.
     if (op->socket_impl_)
         op->socket_impl_->cancel_single_op(*op);
     else if (op->acceptor_impl_)
@@ -45,11 +44,11 @@ operator()() const noexcept
 }
 
 //------------------------------------------------------------------------------
-// epoll_connect_op::operator() - caches endpoints on successful connect
+// select_connect_op::operator() - caches endpoints on successful connect
 //------------------------------------------------------------------------------
 
 void
-epoll_connect_op::
+select_connect_op::
 operator()()
 {
     stop_cb.reset();
@@ -66,7 +65,7 @@ operator()()
         if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
             local_ep = from_sockaddr_in(local_addr);
         // Always cache remote endpoint; local may be default if getsockname failed
-        static_cast<epoll_socket_impl*>(socket_impl_)->set_endpoints(local_ep, target_endpoint);
+        static_cast<select_socket_impl*>(socket_impl_)->set_endpoints(local_ep, target_endpoint);
     }
 
     if (ec_out)
@@ -87,11 +86,11 @@ operator()()
 }
 
 //------------------------------------------------------------------------------
-// epoll_accept_op::operator() - creates peer socket and caches endpoints
+// select_accept_op::operator() - creates peer socket and caches endpoints
 //------------------------------------------------------------------------------
 
 void
-epoll_accept_op::
+select_accept_op::
 operator()()
 {
     stop_cb.reset();
@@ -110,11 +109,11 @@ operator()()
     {
         if (acceptor_impl_)
         {
-            auto* socket_svc = static_cast<epoll_acceptor_impl*>(acceptor_impl_)
+            auto* socket_svc = static_cast<select_acceptor_impl*>(acceptor_impl_)
                 ->service().socket_service();
             if (socket_svc)
             {
-                auto& impl = static_cast<epoll_socket_impl&>(socket_svc->create_impl());
+                auto& impl = static_cast<select_socket_impl&>(socket_svc->create_impl());
                 impl.set_socket(accepted_fd);
 
                 sockaddr_in local_addr{};
@@ -178,17 +177,17 @@ operator()()
 }
 
 //------------------------------------------------------------------------------
-// epoll_socket_impl
+// select_socket_impl
 //------------------------------------------------------------------------------
 
-epoll_socket_impl::
-epoll_socket_impl(epoll_socket_service& svc) noexcept
+select_socket_impl::
+select_socket_impl(select_socket_service& svc) noexcept
     : svc_(svc)
 {
 }
 
 void
-epoll_socket_impl::
+select_socket_impl::
 release()
 {
     close_socket();
@@ -196,7 +195,7 @@ release()
 }
 
 void
-epoll_socket_impl::
+select_socket_impl::
 connect(
     std::coroutine_handle<> h,
     capy::executor_ref d,
@@ -219,7 +218,6 @@ connect(
     if (result == 0)
     {
         // Sync success - cache endpoints immediately
-        // Remote is always known; local may fail but we still cache remote
         sockaddr_in local_addr{};
         socklen_t local_len = sizeof(local_addr);
         if (::getsockname(fd_, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
@@ -238,18 +236,18 @@ connect(
         // Set registering BEFORE register_fd to close the race window where
         // reactor sees an event before we set registered. The reactor treats
         // registering the same as registered when claiming the op.
-        op.registered.store(registration_state::registering, std::memory_order_release);
-        svc_.scheduler().register_fd(fd_, &op, EPOLLOUT | EPOLLET);
+        op.registered.store(select_registration_state::registering, std::memory_order_release);
+        svc_.scheduler().register_fd(fd_, &op, select_scheduler::event_write);
 
         // Transition to registered. If this fails, reactor or cancel already
         // claimed the op (state is now unregistered), so we're done. However,
-        // we must still unregister the fd because cancel's unregister_fd may
-        // have run before our register_fd, leaving the fd orphaned in epoll.
-        auto expected = registration_state::registering;
+        // we must still deregister the fd because cancel's deregister_fd may
+        // have run before our register_fd, leaving the fd orphaned.
+        auto expected = select_registration_state::registering;
         if (!op.registered.compare_exchange_strong(
-                expected, registration_state::registered, std::memory_order_acq_rel))
+                expected, select_registration_state::registered, std::memory_order_acq_rel))
         {
-            svc_.scheduler().unregister_fd(fd_);
+            svc_.scheduler().deregister_fd(fd_, select_scheduler::event_write);
             return;
         }
 
@@ -257,10 +255,10 @@ connect(
         if (op.cancelled.load(std::memory_order_acquire))
         {
             auto prev = op.registered.exchange(
-                registration_state::unregistered, std::memory_order_acq_rel);
-            if (prev != registration_state::unregistered)
+                select_registration_state::unregistered, std::memory_order_acq_rel);
+            if (prev != select_registration_state::unregistered)
             {
-                svc_.scheduler().unregister_fd(fd_);
+                svc_.scheduler().deregister_fd(fd_, select_scheduler::event_write);
                 op.impl_ptr = shared_from_this();
                 svc_.post(&op);
                 svc_.work_finished();
@@ -275,7 +273,7 @@ connect(
 }
 
 void
-epoll_socket_impl::
+select_socket_impl::
 read_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
@@ -293,8 +291,8 @@ read_some(
     op.fd = fd_;
     op.start(token, this);
 
-    capy::mutable_buffer bufs[epoll_read_op::max_buffers];
-    op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_read_op::max_buffers));
+    capy::mutable_buffer bufs[select_read_op::max_buffers];
+    op.iovec_count = static_cast<int>(param.copy_to(bufs, select_read_op::max_buffers));
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
@@ -334,18 +332,18 @@ read_some(
         svc_.work_started();
         // Set registering BEFORE register_fd to close the race window where
         // reactor sees an event before we set registered.
-        op.registered.store(registration_state::registering, std::memory_order_release);
-        svc_.scheduler().register_fd(fd_, &op, EPOLLIN | EPOLLET);
+        op.registered.store(select_registration_state::registering, std::memory_order_release);
+        svc_.scheduler().register_fd(fd_, &op, select_scheduler::event_read);
 
         // Transition to registered. If this fails, reactor or cancel already
         // claimed the op (state is now unregistered), so we're done. However,
-        // we must still unregister the fd because cancel's unregister_fd may
-        // have run before our register_fd, leaving the fd orphaned in epoll.
-        auto expected = registration_state::registering;
+        // we must still deregister the fd because cancel's deregister_fd may
+        // have run before our register_fd, leaving the fd orphaned.
+        auto expected = select_registration_state::registering;
         if (!op.registered.compare_exchange_strong(
-                expected, registration_state::registered, std::memory_order_acq_rel))
+                expected, select_registration_state::registered, std::memory_order_acq_rel))
         {
-            svc_.scheduler().unregister_fd(fd_);
+            svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
             return;
         }
 
@@ -353,10 +351,10 @@ read_some(
         if (op.cancelled.load(std::memory_order_acquire))
         {
             auto prev = op.registered.exchange(
-                registration_state::unregistered, std::memory_order_acq_rel);
-            if (prev != registration_state::unregistered)
+                select_registration_state::unregistered, std::memory_order_acq_rel);
+            if (prev != select_registration_state::unregistered)
             {
-                svc_.scheduler().unregister_fd(fd_);
+                svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
                 op.impl_ptr = shared_from_this();
                 svc_.post(&op);
                 svc_.work_finished();
@@ -371,7 +369,7 @@ read_some(
 }
 
 void
-epoll_socket_impl::
+select_socket_impl::
 write_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
@@ -389,8 +387,8 @@ write_some(
     op.fd = fd_;
     op.start(token, this);
 
-    capy::mutable_buffer bufs[epoll_write_op::max_buffers];
-    op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_write_op::max_buffers));
+    capy::mutable_buffer bufs[select_write_op::max_buffers];
+    op.iovec_count = static_cast<int>(param.copy_to(bufs, select_write_op::max_buffers));
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
@@ -425,18 +423,18 @@ write_some(
         svc_.work_started();
         // Set registering BEFORE register_fd to close the race window where
         // reactor sees an event before we set registered.
-        op.registered.store(registration_state::registering, std::memory_order_release);
-        svc_.scheduler().register_fd(fd_, &op, EPOLLOUT | EPOLLET);
+        op.registered.store(select_registration_state::registering, std::memory_order_release);
+        svc_.scheduler().register_fd(fd_, &op, select_scheduler::event_write);
 
         // Transition to registered. If this fails, reactor or cancel already
         // claimed the op (state is now unregistered), so we're done. However,
-        // we must still unregister the fd because cancel's unregister_fd may
-        // have run before our register_fd, leaving the fd orphaned in epoll.
-        auto expected = registration_state::registering;
+        // we must still deregister the fd because cancel's deregister_fd may
+        // have run before our register_fd, leaving the fd orphaned.
+        auto expected = select_registration_state::registering;
         if (!op.registered.compare_exchange_strong(
-                expected, registration_state::registered, std::memory_order_acq_rel))
+                expected, select_registration_state::registered, std::memory_order_acq_rel))
         {
-            svc_.scheduler().unregister_fd(fd_);
+            svc_.scheduler().deregister_fd(fd_, select_scheduler::event_write);
             return;
         }
 
@@ -444,10 +442,10 @@ write_some(
         if (op.cancelled.load(std::memory_order_acquire))
         {
             auto prev = op.registered.exchange(
-                registration_state::unregistered, std::memory_order_acq_rel);
-            if (prev != registration_state::unregistered)
+                select_registration_state::unregistered, std::memory_order_acq_rel);
+            if (prev != select_registration_state::unregistered)
             {
-                svc_.scheduler().unregister_fd(fd_);
+                svc_.scheduler().deregister_fd(fd_, select_scheduler::event_write);
                 op.impl_ptr = shared_from_this();
                 svc_.post(&op);
                 svc_.work_finished();
@@ -462,7 +460,7 @@ write_some(
 }
 
 system::error_code
-epoll_socket_impl::
+select_socket_impl::
 shutdown(socket::shutdown_type what) noexcept
 {
     int how;
@@ -484,7 +482,7 @@ shutdown(socket::shutdown_type what) noexcept
 //------------------------------------------------------------------------------
 
 system::error_code
-epoll_socket_impl::
+select_socket_impl::
 set_no_delay(bool value) noexcept
 {
     int flag = value ? 1 : 0;
@@ -494,7 +492,7 @@ set_no_delay(bool value) noexcept
 }
 
 bool
-epoll_socket_impl::
+select_socket_impl::
 no_delay(system::error_code& ec) const noexcept
 {
     int flag = 0;
@@ -509,7 +507,7 @@ no_delay(system::error_code& ec) const noexcept
 }
 
 system::error_code
-epoll_socket_impl::
+select_socket_impl::
 set_keep_alive(bool value) noexcept
 {
     int flag = value ? 1 : 0;
@@ -519,7 +517,7 @@ set_keep_alive(bool value) noexcept
 }
 
 bool
-epoll_socket_impl::
+select_socket_impl::
 keep_alive(system::error_code& ec) const noexcept
 {
     int flag = 0;
@@ -534,7 +532,7 @@ keep_alive(system::error_code& ec) const noexcept
 }
 
 system::error_code
-epoll_socket_impl::
+select_socket_impl::
 set_receive_buffer_size(int size) noexcept
 {
     if (::setsockopt(fd_, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) != 0)
@@ -543,7 +541,7 @@ set_receive_buffer_size(int size) noexcept
 }
 
 int
-epoll_socket_impl::
+select_socket_impl::
 receive_buffer_size(system::error_code& ec) const noexcept
 {
     int size = 0;
@@ -558,7 +556,7 @@ receive_buffer_size(system::error_code& ec) const noexcept
 }
 
 system::error_code
-epoll_socket_impl::
+select_socket_impl::
 set_send_buffer_size(int size) noexcept
 {
     if (::setsockopt(fd_, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)) != 0)
@@ -567,7 +565,7 @@ set_send_buffer_size(int size) noexcept
 }
 
 int
-epoll_socket_impl::
+select_socket_impl::
 send_buffer_size(system::error_code& ec) const noexcept
 {
     int size = 0;
@@ -582,7 +580,7 @@ send_buffer_size(system::error_code& ec) const noexcept
 }
 
 system::error_code
-epoll_socket_impl::
+select_socket_impl::
 set_linger(bool enabled, int timeout) noexcept
 {
     if (timeout < 0)
@@ -596,7 +594,7 @@ set_linger(bool enabled, int timeout) noexcept
 }
 
 socket::linger_options
-epoll_socket_impl::
+select_socket_impl::
 linger(system::error_code& ec) const noexcept
 {
     struct ::linger lg{};
@@ -611,47 +609,53 @@ linger(system::error_code& ec) const noexcept
 }
 
 void
-epoll_socket_impl::
+select_socket_impl::
 cancel() noexcept
 {
-    std::shared_ptr<epoll_socket_impl> self;
+    std::shared_ptr<select_socket_impl> self;
     try {
         self = shared_from_this();
     } catch (const std::bad_weak_ptr&) {
         return;
     }
 
-    auto cancel_op = [this, &self](epoll_op& op) {
+    auto cancel_op = [this, &self](select_op& op, int events) {
         auto prev = op.registered.exchange(
-            registration_state::unregistered, std::memory_order_acq_rel);
+            select_registration_state::unregistered, std::memory_order_acq_rel);
         op.request_cancel();
-        if (prev != registration_state::unregistered)
+        if (prev != select_registration_state::unregistered)
         {
-            svc_.scheduler().unregister_fd(fd_);
+            svc_.scheduler().deregister_fd(fd_, events);
             op.impl_ptr = self;
             svc_.post(&op);
             svc_.work_finished();
         }
     };
 
-    cancel_op(conn_);
-    cancel_op(rd_);
-    cancel_op(wr_);
+    cancel_op(conn_, select_scheduler::event_write);
+    cancel_op(rd_, select_scheduler::event_read);
+    cancel_op(wr_, select_scheduler::event_write);
 }
 
 void
-epoll_socket_impl::
-cancel_single_op(epoll_op& op) noexcept
+select_socket_impl::
+cancel_single_op(select_op& op) noexcept
 {
     // Called from stop_token callback to cancel a specific pending operation.
-    // This performs actual I/O cancellation, not just setting a flag.
     auto prev = op.registered.exchange(
-        registration_state::unregistered, std::memory_order_acq_rel);
+        select_registration_state::unregistered, std::memory_order_acq_rel);
     op.request_cancel();
 
-    if (prev != registration_state::unregistered)
+    if (prev != select_registration_state::unregistered)
     {
-        svc_.scheduler().unregister_fd(fd_);
+        // Determine which event type to deregister
+        int events = 0;
+        if (&op == &conn_ || &op == &wr_)
+            events = select_scheduler::event_write;
+        else if (&op == &rd_)
+            events = select_scheduler::event_read;
+
+        svc_.scheduler().deregister_fd(fd_, events);
 
         // Keep impl alive until op completes
         try {
@@ -666,18 +670,18 @@ cancel_single_op(epoll_op& op) noexcept
 }
 
 void
-epoll_socket_impl::
+select_socket_impl::
 close_socket() noexcept
 {
     cancel();
 
     if (fd_ >= 0)
     {
-        // Unconditionally remove from epoll to handle edge cases where
-        // the fd might be registered but cancel() didn't clean it up
-        // due to race conditions. Note: kernel auto-removes on close,
-        // but this is defensive and makes behavior consistent with select.
-        svc_.scheduler().unregister_fd(fd_);
+        // Unconditionally remove from registered_fds_ to handle edge cases
+        // where the fd might be registered but cancel() didn't clean it up
+        // due to race conditions.
+        svc_.scheduler().deregister_fd(fd_,
+            select_scheduler::event_read | select_scheduler::event_write);
         ::close(fd_);
         fd_ = -1;
     }
@@ -688,17 +692,17 @@ close_socket() noexcept
 }
 
 //------------------------------------------------------------------------------
-// epoll_acceptor_impl
+// select_acceptor_impl
 //------------------------------------------------------------------------------
 
-epoll_acceptor_impl::
-epoll_acceptor_impl(epoll_acceptor_service& svc) noexcept
+select_acceptor_impl::
+select_acceptor_impl(select_acceptor_service& svc) noexcept
     : svc_(svc)
 {
 }
 
 void
-epoll_acceptor_impl::
+select_acceptor_impl::
 release()
 {
     close_socket();
@@ -706,7 +710,7 @@ release()
 }
 
 void
-epoll_acceptor_impl::
+select_acceptor_impl::
 accept(
     std::coroutine_handle<> h,
     capy::executor_ref d,
@@ -725,11 +729,59 @@ accept(
 
     sockaddr_in addr{};
     socklen_t addrlen = sizeof(addr);
-    int accepted = ::accept4(fd_, reinterpret_cast<sockaddr*>(&addr),
-                             &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
+    int accepted = ::accept(fd_, reinterpret_cast<sockaddr*>(&addr), &addrlen);
 
     if (accepted >= 0)
     {
+        // Reject fds that exceed select()'s FD_SETSIZE limit.
+        // Better to fail now than during later async operations.
+        if (accepted >= FD_SETSIZE)
+        {
+            ::close(accepted);
+            op.accepted_fd = -1;
+            op.complete(EINVAL, 0);
+            op.impl_ptr = shared_from_this();
+            svc_.post(&op);
+            return;
+        }
+
+        // Set non-blocking and close-on-exec flags.
+        // A non-blocking socket is essential for the async reactor;
+        // if we can't configure it, fail rather than risk blocking.
+        int flags = ::fcntl(accepted, F_GETFL, 0);
+        if (flags == -1)
+        {
+            int err = errno;
+            ::close(accepted);
+            op.accepted_fd = -1;
+            op.complete(err, 0);
+            op.impl_ptr = shared_from_this();
+            svc_.post(&op);
+            return;
+        }
+
+        if (::fcntl(accepted, F_SETFL, flags | O_NONBLOCK) == -1)
+        {
+            int err = errno;
+            ::close(accepted);
+            op.accepted_fd = -1;
+            op.complete(err, 0);
+            op.impl_ptr = shared_from_this();
+            svc_.post(&op);
+            return;
+        }
+
+        if (::fcntl(accepted, F_SETFD, FD_CLOEXEC) == -1)
+        {
+            int err = errno;
+            ::close(accepted);
+            op.accepted_fd = -1;
+            op.complete(err, 0);
+            op.impl_ptr = shared_from_this();
+            svc_.post(&op);
+            return;
+        }
+
         op.accepted_fd = accepted;
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
@@ -742,18 +794,18 @@ accept(
         svc_.work_started();
         // Set registering BEFORE register_fd to close the race window where
         // reactor sees an event before we set registered.
-        op.registered.store(registration_state::registering, std::memory_order_release);
-        svc_.scheduler().register_fd(fd_, &op, EPOLLIN | EPOLLET);
+        op.registered.store(select_registration_state::registering, std::memory_order_release);
+        svc_.scheduler().register_fd(fd_, &op, select_scheduler::event_read);
 
         // Transition to registered. If this fails, reactor or cancel already
         // claimed the op (state is now unregistered), so we're done. However,
-        // we must still unregister the fd because cancel's unregister_fd may
-        // have run before our register_fd, leaving the fd orphaned in epoll.
-        auto expected = registration_state::registering;
+        // we must still deregister the fd because cancel's deregister_fd may
+        // have run before our register_fd, leaving the fd orphaned.
+        auto expected = select_registration_state::registering;
         if (!op.registered.compare_exchange_strong(
-                expected, registration_state::registered, std::memory_order_acq_rel))
+                expected, select_registration_state::registered, std::memory_order_acq_rel))
         {
-            svc_.scheduler().unregister_fd(fd_);
+            svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
             return;
         }
 
@@ -761,10 +813,10 @@ accept(
         if (op.cancelled.load(std::memory_order_acquire))
         {
             auto prev = op.registered.exchange(
-                registration_state::unregistered, std::memory_order_acq_rel);
-            if (prev != registration_state::unregistered)
+                select_registration_state::unregistered, std::memory_order_acq_rel);
+            if (prev != select_registration_state::unregistered)
             {
-                svc_.scheduler().unregister_fd(fd_);
+                svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
                 op.impl_ptr = shared_from_this();
                 svc_.post(&op);
                 svc_.work_finished();
@@ -779,10 +831,10 @@ accept(
 }
 
 void
-epoll_acceptor_impl::
+select_acceptor_impl::
 cancel() noexcept
 {
-    std::shared_ptr<epoll_acceptor_impl> self;
+    std::shared_ptr<select_acceptor_impl> self;
     try {
         self = shared_from_this();
     } catch (const std::bad_weak_ptr&) {
@@ -790,12 +842,12 @@ cancel() noexcept
     }
 
     auto prev = acc_.registered.exchange(
-        registration_state::unregistered, std::memory_order_acq_rel);
+        select_registration_state::unregistered, std::memory_order_acq_rel);
     acc_.request_cancel();
 
-    if (prev != registration_state::unregistered)
+    if (prev != select_registration_state::unregistered)
     {
-        svc_.scheduler().unregister_fd(fd_);
+        svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
         acc_.impl_ptr = self;
         svc_.post(&acc_);
         svc_.work_finished();
@@ -803,17 +855,17 @@ cancel() noexcept
 }
 
 void
-epoll_acceptor_impl::
-cancel_single_op(epoll_op& op) noexcept
+select_acceptor_impl::
+cancel_single_op(select_op& op) noexcept
 {
     // Called from stop_token callback to cancel a specific pending operation.
     auto prev = op.registered.exchange(
-        registration_state::unregistered, std::memory_order_acq_rel);
+        select_registration_state::unregistered, std::memory_order_acq_rel);
     op.request_cancel();
 
-    if (prev != registration_state::unregistered)
+    if (prev != select_registration_state::unregistered)
     {
-        svc_.scheduler().unregister_fd(fd_);
+        svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
 
         // Keep impl alive until op completes
         try {
@@ -828,15 +880,15 @@ cancel_single_op(epoll_op& op) noexcept
 }
 
 void
-epoll_acceptor_impl::
+select_acceptor_impl::
 close_socket() noexcept
 {
     cancel();
 
     if (fd_ >= 0)
     {
-        // Unconditionally remove from epoll to handle edge cases
-        svc_.scheduler().unregister_fd(fd_);
+        // Unconditionally remove from registered_fds_ to handle edge cases
+        svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
         ::close(fd_);
         fd_ = -1;
     }
@@ -846,22 +898,22 @@ close_socket() noexcept
 }
 
 //------------------------------------------------------------------------------
-// epoll_socket_service
+// select_socket_service
 //------------------------------------------------------------------------------
 
-epoll_socket_service::
-epoll_socket_service(capy::execution_context& ctx)
-    : state_(std::make_unique<epoll_socket_state>(ctx.use_service<epoll_scheduler>()))
+select_socket_service::
+select_socket_service(capy::execution_context& ctx)
+    : state_(std::make_unique<select_socket_state>(ctx.use_service<select_scheduler>()))
 {
 }
 
-epoll_socket_service::
-~epoll_socket_service()
+select_socket_service::
+~select_socket_service()
 {
 }
 
 void
-epoll_socket_service::
+select_socket_service::
 shutdown()
 {
     std::lock_guard lock(state_->mutex_);
@@ -873,10 +925,10 @@ shutdown()
 }
 
 socket::socket_impl&
-epoll_socket_service::
+select_socket_service::
 create_impl()
 {
-    auto impl = std::make_shared<epoll_socket_impl>(*this);
+    auto impl = std::make_shared<select_socket_impl>(*this);
     auto* raw = impl.get();
 
     {
@@ -889,69 +941,97 @@ create_impl()
 }
 
 void
-epoll_socket_service::
+select_socket_service::
 destroy_impl(socket::socket_impl& impl)
 {
-    auto* epoll_impl = static_cast<epoll_socket_impl*>(&impl);
+    auto* select_impl = static_cast<select_socket_impl*>(&impl);
     std::lock_guard lock(state_->mutex_);
-    state_->socket_list_.remove(epoll_impl);
-    state_->socket_ptrs_.erase(epoll_impl);
+    state_->socket_list_.remove(select_impl);
+    state_->socket_ptrs_.erase(select_impl);
 }
 
 system::error_code
-epoll_socket_service::
+select_socket_service::
 open_socket(socket::socket_impl& impl)
 {
-    auto* epoll_impl = static_cast<epoll_socket_impl*>(&impl);
-    epoll_impl->close_socket();
+    auto* select_impl = static_cast<select_socket_impl*>(&impl);
+    select_impl->close_socket();
 
-    int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
         return make_err(errno);
 
-    epoll_impl->fd_ = fd;
+    // Set non-blocking and close-on-exec
+    int flags = ::fcntl(fd, F_GETFL, 0);
+    if (flags == -1)
+    {
+        int errn = errno;
+        ::close(fd);
+        return make_err(errn);
+    }
+    if (::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+    {
+        int errn = errno;
+        ::close(fd);
+        return make_err(errn);
+    }
+    if (::fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
+    {
+        int errn = errno;
+        ::close(fd);
+        return make_err(errn);
+    }
+
+    // Check fd is within select() limits
+    if (fd >= FD_SETSIZE)
+    {
+        ::close(fd);
+        return make_err(EMFILE);  // Too many open files
+    }
+
+    select_impl->fd_ = fd;
     return {};
 }
 
 void
-epoll_socket_service::
-post(epoll_op* op)
+select_socket_service::
+post(select_op* op)
 {
     state_->sched_.post(op);
 }
 
 void
-epoll_socket_service::
+select_socket_service::
 work_started() noexcept
 {
     state_->sched_.work_started();
 }
 
 void
-epoll_socket_service::
+select_socket_service::
 work_finished() noexcept
 {
     state_->sched_.work_finished();
 }
 
 //------------------------------------------------------------------------------
-// epoll_acceptor_service
+// select_acceptor_service
 //------------------------------------------------------------------------------
 
-epoll_acceptor_service::
-epoll_acceptor_service(capy::execution_context& ctx)
+select_acceptor_service::
+select_acceptor_service(capy::execution_context& ctx)
     : ctx_(ctx)
-    , state_(std::make_unique<epoll_acceptor_state>(ctx.use_service<epoll_scheduler>()))
+    , state_(std::make_unique<select_acceptor_state>(ctx.use_service<select_scheduler>()))
 {
 }
 
-epoll_acceptor_service::
-~epoll_acceptor_service()
+select_acceptor_service::
+~select_acceptor_service()
 {
 }
 
 void
-epoll_acceptor_service::
+select_acceptor_service::
 shutdown()
 {
     std::lock_guard lock(state_->mutex_);
@@ -963,10 +1043,10 @@ shutdown()
 }
 
 acceptor::acceptor_impl&
-epoll_acceptor_service::
+select_acceptor_service::
 create_acceptor_impl()
 {
-    auto impl = std::make_shared<epoll_acceptor_impl>(*this);
+    auto impl = std::make_shared<select_acceptor_impl>(*this);
     auto* raw = impl.get();
 
     std::lock_guard lock(state_->mutex_);
@@ -977,28 +1057,56 @@ create_acceptor_impl()
 }
 
 void
-epoll_acceptor_service::
+select_acceptor_service::
 destroy_acceptor_impl(acceptor::acceptor_impl& impl)
 {
-    auto* epoll_impl = static_cast<epoll_acceptor_impl*>(&impl);
+    auto* select_impl = static_cast<select_acceptor_impl*>(&impl);
     std::lock_guard lock(state_->mutex_);
-    state_->acceptor_list_.remove(epoll_impl);
-    state_->acceptor_ptrs_.erase(epoll_impl);
+    state_->acceptor_list_.remove(select_impl);
+    state_->acceptor_ptrs_.erase(select_impl);
 }
 
 system::error_code
-epoll_acceptor_service::
+select_acceptor_service::
 open_acceptor(
     acceptor::acceptor_impl& impl,
     endpoint ep,
     int backlog)
 {
-    auto* epoll_impl = static_cast<epoll_acceptor_impl*>(&impl);
-    epoll_impl->close_socket();
+    auto* select_impl = static_cast<select_acceptor_impl*>(&impl);
+    select_impl->close_socket();
 
-    int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
         return make_err(errno);
+
+    // Set non-blocking and close-on-exec
+    int flags = ::fcntl(fd, F_GETFL, 0);
+    if (flags == -1)
+    {
+        int errn = errno;
+        ::close(fd);
+        return make_err(errn);
+    }
+    if (::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+    {
+        int errn = errno;
+        ::close(fd);
+        return make_err(errn);
+    }
+    if (::fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
+    {
+        int errn = errno;
+        ::close(fd);
+        return make_err(errn);
+    }
+
+    // Check fd is within select() limits
+    if (fd >= FD_SETSIZE)
+    {
+        ::close(fd);
+        return make_err(EMFILE);
+    }
 
     int reuse = 1;
     ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
@@ -1018,46 +1126,46 @@ open_acceptor(
         return make_err(errn);
     }
 
-    epoll_impl->fd_ = fd;
+    select_impl->fd_ = fd;
 
     // Cache the local endpoint (queries OS for ephemeral port if port was 0)
     sockaddr_in local_addr{};
     socklen_t local_len = sizeof(local_addr);
     if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
-        epoll_impl->set_local_endpoint(detail::from_sockaddr_in(local_addr));
+        select_impl->set_local_endpoint(detail::from_sockaddr_in(local_addr));
 
     return {};
 }
 
 void
-epoll_acceptor_service::
-post(epoll_op* op)
+select_acceptor_service::
+post(select_op* op)
 {
     state_->sched_.post(op);
 }
 
 void
-epoll_acceptor_service::
+select_acceptor_service::
 work_started() noexcept
 {
     state_->sched_.work_started();
 }
 
 void
-epoll_acceptor_service::
+select_acceptor_service::
 work_finished() noexcept
 {
     state_->sched_.work_finished();
 }
 
-epoll_socket_service*
-epoll_acceptor_service::
+select_socket_service*
+select_acceptor_service::
 socket_service() const noexcept
 {
     auto* svc = ctx_.find_service<detail::socket_service>();
-    return svc ? dynamic_cast<epoll_socket_service*>(svc) : nullptr;
+    return svc ? dynamic_cast<select_socket_service*>(svc) : nullptr;
 }
 
 } // namespace boost::corosio::detail
 
-#endif
+#endif // !defined(_WIN32)

@@ -10,9 +10,8 @@
 #ifndef BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP
 #define BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_SIGNAL_WIN)
+#if defined(_WIN32)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/signal_set.hpp>
@@ -251,6 +250,6 @@ private:
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_SIGNAL_WIN
+#endif // _WIN32
 
 #endif // BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP

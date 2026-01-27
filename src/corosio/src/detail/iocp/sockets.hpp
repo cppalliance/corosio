@@ -10,9 +10,8 @@
 #ifndef BOOST_COROSIO_DETAIL_IOCP_SOCKETS_HPP
 #define BOOST_COROSIO_DETAIL_IOCP_SOCKETS_HPP
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_BACKEND_IOCP)
+#if defined(_WIN32)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/acceptor.hpp>
@@ -383,6 +382,11 @@ public:
         return internal_->remote_endpoint();
     }
 
+    void cancel() noexcept override
+    {
+        internal_->cancel();
+    }
+
     win_socket_impl_internal* get_internal() const noexcept { return internal_.get(); }
 };
 
@@ -466,6 +470,11 @@ public:
     endpoint local_endpoint() const noexcept override
     {
         return internal_->local_endpoint();
+    }
+
+    void cancel() noexcept override
+    {
+        internal_->cancel();
     }
 
     win_acceptor_impl_internal* get_internal() const noexcept { return internal_.get(); }
@@ -611,6 +620,6 @@ private:
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_BACKEND_IOCP
+#endif // _WIN32
 
 #endif // BOOST_COROSIO_DETAIL_IOCP_SOCKETS_HPP

@@ -10,9 +10,8 @@
 #ifndef BOOST_COROSIO_DETAIL_POSIX_SIGNALS_HPP
 #define BOOST_COROSIO_DETAIL_POSIX_SIGNALS_HPP
 
-#include "src/detail/config_backend.hpp"
 
-#if defined(BOOST_COROSIO_SIGNAL_POSIX)
+#if !defined(_WIN32)
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/signal_set.hpp>
@@ -71,6 +70,6 @@ get_signal_service(capy::execution_context& ctx, scheduler& sched);
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_SIGNAL_POSIX
+#endif // !defined(_WIN32)
 
 #endif // BOOST_COROSIO_DETAIL_POSIX_SIGNALS_HPP
