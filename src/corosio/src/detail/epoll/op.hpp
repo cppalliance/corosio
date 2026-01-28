@@ -115,7 +115,7 @@ struct epoll_op : scheduler_op
     };
 
     capy::coro h;
-    capy::executor_ref d;
+    capy::executor_ref ex;
     system::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
 
@@ -170,10 +170,11 @@ struct epoll_op : scheduler_op
         if (bytes_out)
             *bytes_out = bytes_transferred;
 
-        auto saved_d = d;
-        auto saved_h = std::move(h);
+        // Move to stack before destroying the frame
+        capy::executor_ref saved_ex( std::move( ex ) );
+        capy::coro saved_h( std::move( h ) );
         impl_ptr.reset();
-        saved_d.dispatch(saved_h).resume();
+        saved_ex.dispatch( saved_h ).resume();
     }
 
     virtual bool is_read_operation() const noexcept { return false; }
