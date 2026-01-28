@@ -12,7 +12,9 @@
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/read.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/write.hpp>
 
 #include <iostream>
 #include <vector>
@@ -38,8 +40,8 @@ capy::task<> pingpong_task(
         bench::stopwatch sw;
 
         // Client sends ping
-        auto [ec1, n1] = co_await client.write_some(
-            capy::const_buffer(send_buf.data(), send_buf.size()));
+        auto [ec1, n1] = co_await capy::write(
+            client, capy::const_buffer(send_buf.data(), send_buf.size()));
         if (ec1)
         {
             std::cerr << "    Write error: " << ec1.message() << "\n";
@@ -47,8 +49,8 @@ capy::task<> pingpong_task(
         }
 
         // Server receives ping
-        auto [ec2, n2] = co_await server.read_some(
-            capy::mutable_buffer(recv_buf.data(), recv_buf.size()));
+        auto [ec2, n2] = co_await capy::read(
+            server, capy::mutable_buffer(recv_buf.data(), recv_buf.size()));
         if (ec2)
         {
             std::cerr << "    Server read error: " << ec2.message() << "\n";
@@ -56,8 +58,8 @@ capy::task<> pingpong_task(
         }
 
         // Server sends pong
-        auto [ec3, n3] = co_await server.write_some(
-            capy::const_buffer(recv_buf.data(), n2));
+        auto [ec3, n3] = co_await capy::write(
+            server, capy::const_buffer(recv_buf.data(), n2));
         if (ec3)
         {
             std::cerr << "    Server write error: " << ec3.message() << "\n";
@@ -65,8 +67,8 @@ capy::task<> pingpong_task(
         }
 
         // Client receives pong
-        auto [ec4, n4] = co_await client.read_some(
-            capy::mutable_buffer(recv_buf.data(), recv_buf.size()));
+        auto [ec4, n4] = co_await capy::read(
+            client, capy::mutable_buffer(recv_buf.data(), recv_buf.size()));
         if (ec4)
         {
             std::cerr << "    Client read error: " << ec4.message() << "\n";

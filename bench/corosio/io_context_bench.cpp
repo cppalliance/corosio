@@ -9,9 +9,10 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/detail/platform.hpp>
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/task.hpp>
 
 #include <atomic>
-#include <coroutine>
 #include <cstring>
 #include <iostream>
 #include <thread>
@@ -56,76 +57,18 @@ inline void print_available_backends()
     std::cout << "\nDefault backend: " << default_backend_name() << "\n";
 }
 
-// Coroutine that increments a counter when resumed
-struct counter_coro
+// Coroutine that increments a counter
+capy::task<> increment_task(int& counter)
 {
-    struct promise_type
-    {
-        int* counter_ = nullptr;
-
-        counter_coro get_return_object()
-        {
-            return {std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
-
-        void return_void()
-        {
-            if (counter_)
-                ++(*counter_);
-        }
-
-        void unhandled_exception() { std::terminate(); }
-    };
-
-    std::coroutine_handle<promise_type> h;
-
-    operator capy::coro() const { return h; }
-};
-
-inline counter_coro make_coro(int& counter)
-{
-    auto c = []() -> counter_coro { co_return; }();
-    c.h.promise().counter_ = &counter;
-    return c;
+    ++counter;
+    co_return;
 }
 
-// Coroutine that increments an atomic counter when resumed
-struct atomic_counter_coro
+// Coroutine that increments an atomic counter
+capy::task<> atomic_increment_task(std::atomic<int>& counter)
 {
-    struct promise_type
-    {
-        std::atomic<int>* counter_ = nullptr;
-
-        atomic_counter_coro get_return_object()
-        {
-            return {std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
-
-        void return_void()
-        {
-            if (counter_)
-                counter_->fetch_add(1, std::memory_order_relaxed);
-        }
-
-        void unhandled_exception() { std::terminate(); }
-    };
-
-    std::coroutine_handle<promise_type> h;
-
-    operator capy::coro() const { return h; }
-};
-
-inline atomic_counter_coro make_atomic_coro(std::atomic<int>& counter)
-{
-    auto c = []() -> atomic_counter_coro { co_return; }();
-    c.h.promise().counter_ = &counter;
-    return c;
+    counter.fetch_add(1, std::memory_order_relaxed);
+    co_return;
 }
 
 // Benchmark: Single-threaded handler posting rate
@@ -141,7 +84,7 @@ void bench_single_threaded_post(int num_handlers)
     bench::stopwatch sw;
 
     for (int i = 0; i < num_handlers; ++i)
-        ex.post(make_coro(counter));
+        capy::run_async(ex)(increment_task(counter));
 
     ioc.run();
 
@@ -176,7 +119,7 @@ void bench_multithreaded_scaling(int num_handlers, int max_threads)
 
         // Post all handlers first
         for (int i = 0; i < num_handlers; ++i)
-            ex.post(make_atomic_coro(counter));
+            capy::run_async(ex)(atomic_increment_task(counter));
 
         bench::stopwatch sw;
 
@@ -230,7 +173,7 @@ void bench_interleaved_post_run(int iterations, int handlers_per_iteration)
     for (int iter = 0; iter < iterations; ++iter)
     {
         for (int i = 0; i < handlers_per_iteration; ++i)
-            ex.post(make_coro(counter));
+            capy::run_async(ex)(increment_task(counter));
 
         ioc.poll();
         ioc.restart();
@@ -276,7 +219,7 @@ void bench_concurrent_post_run(int num_threads, int handlers_per_thread)
         workers.emplace_back([&ex, &ioc, &counter, handlers_per_thread]()
         {
             for (int i = 0; i < handlers_per_thread; ++i)
-                ex.post(make_atomic_coro(counter));
+                capy::run_async(ex)(atomic_increment_task(counter));
             ioc.run();
         });
     }
@@ -315,7 +258,7 @@ void run_all_benchmarks(const char* backend_name)
         auto ex = ioc.get_executor();
         int counter = 0;
         for (int i = 0; i < 1000; ++i)
-            ex.post(make_coro(counter));
+            capy::run_async(ex)(increment_task(counter));
         ioc.run();
     }
 

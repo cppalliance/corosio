@@ -11,14 +11,11 @@
 // rather than plain callbacks.
 
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/post.hpp>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/awaitable.hpp>
-#include <boost/asio/use_awaitable.hpp>
 
 #include <atomic>
-#include <coroutine>
 #include <iomanip>
 #include <iostream>
 #include <thread>
@@ -28,80 +25,18 @@
 
 namespace asio = boost::asio;
 
-// Minimal coroutine that increments a counter when it completes
-// This mirrors the counter_coro pattern used in Corosio benchmarks
-struct counter_coro
+// Coroutine that increments a counter
+asio::awaitable<void> increment_task(int& counter)
 {
-    struct promise_type
-    {
-        int* counter_ = nullptr;
-
-        counter_coro get_return_object()
-        {
-            return {std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
-
-        void return_void()
-        {
-            if (counter_)
-                ++(*counter_);
-        }
-
-        void unhandled_exception() { std::terminate(); }
-    };
-
-    std::coroutine_handle<promise_type> h;
-};
-
-inline counter_coro make_coro(int& counter)
-{
-    auto c = []() -> counter_coro { co_return; }();
-    c.h.promise().counter_ = &counter;
-    return c;
+    ++counter;
+    co_return;
 }
 
-// Atomic version for multi-threaded benchmarks
-struct atomic_counter_coro
+// Coroutine that increments an atomic counter
+asio::awaitable<void> atomic_increment_task(std::atomic<int>& counter)
 {
-    struct promise_type
-    {
-        std::atomic<int>* counter_ = nullptr;
-
-        atomic_counter_coro get_return_object()
-        {
-            return {std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
-
-        void return_void()
-        {
-            if (counter_)
-                counter_->fetch_add(1, std::memory_order_relaxed);
-        }
-
-        void unhandled_exception() { std::terminate(); }
-    };
-
-    std::coroutine_handle<promise_type> h;
-};
-
-inline atomic_counter_coro make_atomic_coro(std::atomic<int>& counter)
-{
-    auto c = []() -> atomic_counter_coro { co_return; }();
-    c.h.promise().counter_ = &counter;
-    return c;
-}
-
-// Post a coroutine handle to the io_context
-// This mimics how Corosio posts coroutines
-inline void post_coro(asio::io_context& ioc, std::coroutine_handle<> h)
-{
-    asio::post(ioc, [h]() { h.resume(); });
+    counter.fetch_add(1, std::memory_order_relaxed);
+    co_return;
 }
 
 // Benchmark: Single-threaded coroutine posting rate
@@ -115,10 +50,7 @@ void bench_single_threaded_post(int num_handlers)
     bench::stopwatch sw;
 
     for (int i = 0; i < num_handlers; ++i)
-    {
-        auto coro = make_coro(counter);
-        post_coro(ioc, coro.h);
-    }
+        asio::co_spawn(ioc, increment_task(counter), asio::detached);
 
     ioc.run();
 
@@ -153,10 +85,7 @@ void bench_multithreaded_scaling(int num_handlers, int max_threads)
 
         // Post all coroutines first
         for (int i = 0; i < num_handlers; ++i)
-        {
-            auto coro = make_atomic_coro(counter);
-            post_coro(ioc, coro.h);
-        }
+            asio::co_spawn(ioc, atomic_increment_task(counter), asio::detached);
 
         bench::stopwatch sw;
 
@@ -204,10 +133,7 @@ void bench_interleaved_post_run(int iterations, int handlers_per_iteration)
     for (int iter = 0; iter < iterations; ++iter)
     {
         for (int i = 0; i < handlers_per_iteration; ++i)
-        {
-            auto coro = make_coro(counter);
-            post_coro(ioc, coro.h);
-        }
+            asio::co_spawn(ioc, increment_task(counter), asio::detached);
 
         ioc.poll();
         ioc.restart();
@@ -251,10 +177,7 @@ void bench_concurrent_post_run(int num_threads, int handlers_per_thread)
         workers.emplace_back([&ioc, &counter, handlers_per_thread]()
         {
             for (int i = 0; i < handlers_per_thread; ++i)
-            {
-                auto coro = make_atomic_coro(counter);
-                post_coro(ioc, coro.h);
-            }
+                asio::co_spawn(ioc, atomic_increment_task(counter), asio::detached);
             ioc.run();
         });
     }
@@ -290,10 +213,7 @@ int main()
         asio::io_context ioc;
         int counter = 0;
         for (int i = 0; i < 1000; ++i)
-        {
-            auto coro = make_coro(counter);
-            post_coro(ioc, coro.h);
-        }
+            asio::co_spawn(ioc, increment_task(counter), asio::detached);
         ioc.run();
     }
 

@@ -14,6 +14,8 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/buffer.hpp>
+#include <boost/asio/read.hpp>
+#include <boost/asio/write.hpp>
 
 #include <iostream>
 #include <vector>
@@ -61,22 +63,26 @@ asio::awaitable<void> pingpong_task(
             bench::stopwatch sw;
 
             // Client sends ping
-            co_await client.async_write_some(
+            co_await asio::async_write(
+                client,
                 asio::buffer(send_buf.data(), send_buf.size()),
                 asio::use_awaitable);
 
             // Server receives ping
-            auto n = co_await server.async_read_some(
+            co_await asio::async_read(
+                server,
                 asio::buffer(recv_buf.data(), recv_buf.size()),
                 asio::use_awaitable);
 
             // Server sends pong
-            co_await server.async_write_some(
-                asio::buffer(recv_buf.data(), n),
+            co_await asio::async_write(
+                server,
+                asio::buffer(recv_buf.data(), recv_buf.size()),
                 asio::use_awaitable);
 
             // Client receives pong
-            co_await client.async_read_some(
+            co_await asio::async_read(
+                client,
                 asio::buffer(recv_buf.data(), recv_buf.size()),
                 asio::use_awaitable);
 
