@@ -182,15 +182,24 @@ private:
         worker_base* w;
     };
 
-    class BOOST_COROSIO_DECL
-        push_awaitable
+    class push_awaitable
     {
         tcp_server& self_;
         worker_base& w_;
 
     public:
-        push_awaitable(tcp_server& self, worker_base& w) noexcept;
-        bool await_ready() const noexcept;
+        push_awaitable(
+            tcp_server& self,
+            worker_base& w) noexcept
+            : self_(self)
+            , w_(w)
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return false;
+        }
 
         template<typename Ex>
         std::coroutine_handle<>
@@ -200,21 +209,39 @@ private:
             return self_.ex_.dispatch(h);
         }
 
-        void await_resume() noexcept;
-
-    private:
-        std::coroutine_handle<> await_suspend_impl(std::coroutine_handle<> h) noexcept;
+        void await_resume() noexcept
+        {
+            // Wake a waiting acceptor if one exists, otherwise add to idle list
+            if(self_.waiters_)
+            {
+                auto* wait = self_.waiters_;
+                self_.waiters_ = wait->next;
+                wait->w = &w_;
+                self_.ex_.post(wait->h);
+            }
+            else
+            {
+                self_.wv_.push(w_);
+            }
+        }
     };
 
-    class BOOST_COROSIO_DECL
-        pop_awaitable
+    class pop_awaitable
     {
         tcp_server& self_;
         waiter wait_;
 
     public:
-        pop_awaitable(tcp_server& self) noexcept;
-        bool await_ready() const noexcept;
+        pop_awaitable(tcp_server& self) noexcept
+            : self_(self)
+            , wait_{}
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return self_.wv_.idle_ != nullptr;
+        }
 
         template<typename Ex>
         bool
@@ -227,17 +254,39 @@ private:
             return true;
         }
 
-        system::result<worker_base&> await_resume() noexcept;
-
-    private:
-        bool await_suspend_impl(std::coroutine_handle<> h) noexcept;
+        system::result<worker_base&> await_resume() noexcept
+        {
+            if(wait_.w)
+                return *wait_.w;
+            return *self_.wv_.try_pop();
+        }
     };
 
-    push_awaitable push(worker_base& w);
+    push_awaitable push(worker_base& w)
+    {
+        return push_awaitable{*this, w};
+    }
 
-    void push_sync(worker_base& w) noexcept;
+    // Synchronous version for destructor/guard paths
+    void push_sync(worker_base& w) noexcept
+    {
+        if(waiters_)
+        {
+            auto* wait = waiters_;
+            waiters_ = wait->next;
+            wait->w = &w;
+            ex_.post(wait->h);
+        }
+        else
+        {
+            wv_.push(w);
+        }
+    }
 
-    pop_awaitable pop();
+    pop_awaitable pop()
+    {
+        return pop_awaitable{*this};
+    }
 
     capy::task<void> do_accept(acceptor& acc);
 
