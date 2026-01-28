@@ -11,7 +11,9 @@
 #define BOOST_COROSIO_DETAIL_IOCP_TIMERS_NONE_HPP
 
 
-#if defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/timers.hpp"
 
@@ -31,6 +33,6 @@ public:
 
 } // namespace boost::corosio::detail
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_HAS_IOCP
 
 #endif // BOOST_COROSIO_DETAIL_IOCP_TIMERS_NONE_HPP

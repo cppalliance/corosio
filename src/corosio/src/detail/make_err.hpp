@@ -11,11 +11,12 @@
 #define SRC_DETAIL_MAKE_ERR_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/platform.hpp>
 #include <boost/system/error_code.hpp>
 
 namespace boost::corosio::detail {
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
 /** Convert a Windows error code to system::error_code.
 
     Maps ERROR_OPERATION_ABORTED and ERROR_CANCELLED to capy::error::canceled.

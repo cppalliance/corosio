@@ -10,7 +10,7 @@
 #include <boost/corosio/select_context.hpp>
 
 
-#if !defined(_WIN32)
+#if BOOST_COROSIO_HAS_SELECT
 
 #include "src/detail/select/scheduler.hpp"
 #include "src/detail/select/sockets.hpp"
@@ -48,4 +48,4 @@ select_context::
 
 } // namespace boost::corosio
 
-#endif // !defined(_WIN32)
+#endif // BOOST_COROSIO_HAS_SELECT

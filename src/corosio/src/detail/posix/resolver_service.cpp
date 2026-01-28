@@ -8,8 +8,9 @@
 //
 
 
-// This implementation works for all POSIX backends (epoll, kqueue, io_uring, poll)
-#if !defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_POSIX
 
 #include "src/detail/posix/resolver_service.hpp"
 #include "src/detail/endpoint_convert.hpp"
@@ -913,4 +914,4 @@ get_resolver_service(capy::execution_context& ctx, scheduler& sched)
 
 } // namespace boost::corosio::detail
 
-#endif // !_WIN32
+#endif // BOOST_COROSIO_POSIX

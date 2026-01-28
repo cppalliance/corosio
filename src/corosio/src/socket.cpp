@@ -9,9 +9,10 @@
 
 #include <boost/corosio/socket.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/detail/platform.hpp>
 
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
 #include "src/detail/iocp/sockets.hpp"
 #else
 // POSIX backends use the abstract socket_service interface
@@ -40,7 +41,7 @@ open()
     if (impl_)
         return;
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
     auto& svc = ctx_->use_service<detail::win_sockets>();
     auto& wrapper = svc.create_impl();
     impl_ = &wrapper;
@@ -82,7 +83,7 @@ cancel()
 {
     if (!impl_)
         return;
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
     static_cast<detail::win_socket_impl*>(impl_)->get_internal()->cancel();
 #else
     // socket_impl has virtual cancel() method
@@ -104,7 +105,7 @@ native_handle() const noexcept
 {
     if (!impl_)
     {
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
         return static_cast<native_handle_type>(~0ull);  // INVALID_SOCKET
 #else
         return -1;

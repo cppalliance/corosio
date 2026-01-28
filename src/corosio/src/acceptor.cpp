@@ -8,9 +8,10 @@
 //
 
 #include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/detail/platform.hpp>
 
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
 #include "src/detail/iocp/sockets.hpp"
 #else
 // POSIX backends use the abstract acceptor_service interface
@@ -41,7 +42,7 @@ listen(endpoint ep, int backlog)
     if (impl_)
         close();
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
     auto& svc = ctx_->use_service<detail::win_sockets>();
     auto& wrapper = svc.create_acceptor_impl();
     impl_ = &wrapper;
@@ -84,7 +85,7 @@ cancel()
 {
     if (!impl_)
         return;
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
     static_cast<detail::win_acceptor_impl*>(impl_)->get_internal()->cancel();
 #else
     // acceptor_impl has virtual cancel() method

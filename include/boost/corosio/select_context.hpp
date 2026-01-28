@@ -11,9 +11,9 @@
 #define BOOST_COROSIO_SELECT_CONTEXT_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/platform.hpp>
 
-// select_context is available on all POSIX platforms
-#if !defined(_WIN32)
+#if BOOST_COROSIO_HAS_SELECT
 
 #include <boost/corosio/basic_io_context.hpp>
 
@@ -82,6 +82,6 @@ public:
 
 } // namespace boost::corosio
 
-#endif // !defined(_WIN32)
+#endif // BOOST_COROSIO_HAS_SELECT
 
 #endif // BOOST_COROSIO_SELECT_CONTEXT_HPP

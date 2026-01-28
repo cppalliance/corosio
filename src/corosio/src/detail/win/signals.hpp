@@ -11,7 +11,9 @@
 #define BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP
 
 
-#if defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/signal_set.hpp>
@@ -250,6 +252,6 @@ private:
 
 } // namespace boost::corosio::detail
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_HAS_IOCP
 
 #endif // BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP

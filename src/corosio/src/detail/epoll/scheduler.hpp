@@ -11,7 +11,9 @@
 #define BOOST_COROSIO_DETAIL_EPOLL_SCHEDULER_HPP
 
 
-#if defined(__linux__)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_EPOLL
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
@@ -150,6 +152,6 @@ private:
 
 } // namespace boost::corosio::detail
 
-#endif // __linux__
+#endif // BOOST_COROSIO_HAS_EPOLL
 
 #endif // BOOST_COROSIO_DETAIL_EPOLL_SCHEDULER_HPP

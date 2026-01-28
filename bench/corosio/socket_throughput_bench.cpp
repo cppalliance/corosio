@@ -8,6 +8,7 @@
 //
 
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/socket.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
@@ -18,7 +19,7 @@
 #include <iostream>
 #include <vector>
 
-#ifdef _WIN32
+#if BOOST_COROSIO_HAS_IOCP
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
@@ -36,7 +37,7 @@ namespace capy = boost::capy;
 inline void set_nodelay(corosio::socket& s)
 {
     int flag = 1;
-#ifdef _WIN32
+#if BOOST_COROSIO_HAS_IOCP
     ::setsockopt(static_cast<SOCKET>(s.native_handle()), IPPROTO_TCP, TCP_NODELAY,
                  reinterpret_cast<const char*>(&flag), sizeof(flag));
 #else

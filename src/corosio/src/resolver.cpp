@@ -8,11 +8,12 @@
 //
 
 #include <boost/corosio/resolver.hpp>
+#include <boost/corosio/detail/platform.hpp>
 
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
 #include "src/detail/iocp/resolver_service.hpp"
-#else
+#elif BOOST_COROSIO_POSIX
 #include "src/detail/posix/resolver_service.hpp"
 #endif
 
@@ -38,9 +39,9 @@
 namespace boost::corosio {
 namespace {
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
 using resolver_service = detail::win_resolver_service;
-#else
+#elif BOOST_COROSIO_POSIX
 using resolver_service = detail::posix_resolver_service;
 #endif
 

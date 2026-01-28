@@ -8,7 +8,9 @@
 //
 
 
-#if defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/scheduler.hpp"
 #include "src/detail/iocp/overlapped_op.hpp"

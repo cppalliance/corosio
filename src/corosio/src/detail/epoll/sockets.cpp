@@ -8,7 +8,9 @@
 //
 
 
-#if defined(__linux__)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_EPOLL
 
 #include "src/detail/epoll/sockets.hpp"
 #include "src/detail/endpoint_convert.hpp"
@@ -1062,4 +1064,4 @@ socket_service() const noexcept
 
 } // namespace boost::corosio::detail
 
-#endif
+#endif // BOOST_COROSIO_HAS_EPOLL

@@ -12,20 +12,23 @@
 #define BOOST_COROSIO_IO_CONTEXT_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/basic_io_context.hpp>
 
 // Include the platform-specific context headers
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/iocp_context.hpp>
-#elif defined(__linux__)
+#endif
+
+#if BOOST_COROSIO_HAS_EPOLL
 #include <boost/corosio/epoll_context.hpp>
-#include <boost/corosio/select_context.hpp>  // Also available on Linux
-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || defined(__APPLE__)
-// kqueue_context would be included here when implemented
+#endif
+
+#if BOOST_COROSIO_HAS_KQUEUE
 // #include <boost/corosio/kqueue_context.hpp>
-#include <boost/corosio/select_context.hpp>  // Available as fallback
-#else
-// Other POSIX platforms use select as the default
+#endif
+
+#if BOOST_COROSIO_HAS_SELECT
 #include <boost/corosio/select_context.hpp>
 #endif
 
@@ -74,15 +77,14 @@ namespace boost::corosio {
     }
     @endcode
 */
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
 using io_context = iocp_context;
-#elif defined(__linux__)
+#elif BOOST_COROSIO_HAS_EPOLL
 using io_context = epoll_context;
-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || defined(__APPLE__)
-// kqueue_context when implemented, select_context as fallback
-using io_context = select_context;
-#else
-// Other POSIX platforms use select as the default
+#elif BOOST_COROSIO_HAS_KQUEUE
+// using io_context = kqueue_context;
+using io_context = select_context;  // fallback until kqueue implemented
+#elif BOOST_COROSIO_HAS_SELECT
 using io_context = select_context;
 #endif
 

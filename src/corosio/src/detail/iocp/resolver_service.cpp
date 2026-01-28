@@ -8,7 +8,9 @@
 //
 
 
-#if defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/resolver_service.hpp"
 #include "src/detail/iocp/scheduler.hpp"
@@ -603,4 +605,4 @@ is_shutting_down() const noexcept
 
 } // namespace boost::corosio::detail
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_HAS_IOCP

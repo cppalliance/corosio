@@ -12,18 +12,32 @@
 #include <boost/capy/error.hpp>
 #include <boost/system/system_category.hpp>
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_POSIX
+#include <errno.h>
+#else
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
-#else
-#include <errno.h>
 #endif
 
 namespace boost::corosio::detail {
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_POSIX
+
+system::error_code
+make_err(int errn) noexcept
+{
+    if (errn == 0)
+        return {};
+
+    if (errn == ECANCELED)
+        return capy::error::canceled;
+
+    return system::error_code(errn, system::system_category());
+}
+
+#else
 
 system::error_code
 make_err(unsigned long dwError) noexcept
@@ -41,20 +55,6 @@ make_err(unsigned long dwError) noexcept
     return system::error_code(
         static_cast<int>(dwError),
         system::system_category());
-}
-
-#else
-
-system::error_code
-make_err(int errn) noexcept
-{
-    if (errn == 0)
-        return {};
-
-    if (errn == ECANCELED)
-        return capy::error::canceled;
-
-    return system::error_code(errn, system::system_category());
 }
 
 #endif

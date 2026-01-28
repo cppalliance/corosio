@@ -11,7 +11,9 @@
 #define BOOST_COROSIO_DETAIL_IOCP_WINDOWS_HPP
 
 
-#if defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
 
 #if defined(_WIN32_WINNT) && (_WIN32_WINNT < 0x0600)
 #error "corosio requires Windows Vista or later (_WIN32_WINNT >= 0x0600)"
@@ -28,6 +30,6 @@
 #include <WinSock2.h>
 #include <Windows.h>
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_HAS_IOCP
 
 #endif // BOOST_COROSIO_DETAIL_IOCP_WINDOWS_HPP

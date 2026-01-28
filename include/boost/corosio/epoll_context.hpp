@@ -11,9 +11,9 @@
 #define BOOST_COROSIO_EPOLL_CONTEXT_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/platform.hpp>
 
-// epoll_context is only available on Linux
-#if defined(__linux__)
+#if BOOST_COROSIO_HAS_EPOLL
 
 #include <boost/corosio/basic_io_context.hpp>
 
@@ -68,6 +68,6 @@ public:
 
 } // namespace boost::corosio
 
-#endif // defined(__linux__)
+#endif // BOOST_COROSIO_HAS_EPOLL
 
 #endif // BOOST_COROSIO_EPOLL_CONTEXT_HPP

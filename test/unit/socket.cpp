@@ -12,7 +12,8 @@
 
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/io_context.hpp>
-#if !defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+#if BOOST_COROSIO_HAS_SELECT
 #include <boost/corosio/select_context.hpp>
 #endif
 #include <boost/corosio/read.hpp>
@@ -34,10 +35,10 @@
 #include <stop_token>
 #include <stdexcept>
 
-#ifdef _WIN32
-#include <process.h>  // _getpid()
-#else
+#if BOOST_COROSIO_POSIX
 #include <unistd.h>   // getpid()
+#else
+#include <process.h>  // _getpid()
 #endif
 
 #include "test_suite.hpp"
@@ -55,10 +56,10 @@ get_socket_test_port() noexcept
     constexpr std::uint16_t port_base = 49152;
     constexpr std::uint16_t port_range = 16383;
 
-#ifdef _WIN32
-    auto pid = static_cast<std::uint32_t>(_getpid());
-#else
+#if BOOST_COROSIO_POSIX
     auto pid = static_cast<std::uint32_t>(getpid());
+#else
+    auto pid = static_cast<std::uint32_t>(_getpid());
 #endif
     auto pid_offset = static_cast<std::uint16_t>((pid * 7919) % port_range);
     auto offset = next_socket_test_port.fetch_add(1, std::memory_order_relaxed);
@@ -1256,10 +1257,10 @@ struct socket_test_impl
         acceptor acc(ioc);
 
         // Simple fast LCG random number generator seeded with PID
-#ifdef _WIN32
-        std::uint32_t rng_state = static_cast<std::uint32_t>(_getpid());
-#else
+#if BOOST_COROSIO_POSIX
         std::uint32_t rng_state = static_cast<std::uint32_t>(getpid());
+#else
+        std::uint32_t rng_state = static_cast<std::uint32_t>(_getpid());
 #endif
         auto fast_rand = [&rng_state]() -> std::uint16_t {
             rng_state = rng_state * 1103515245 + 12345;
@@ -1564,7 +1565,7 @@ struct socket_test_impl
 struct socket_test : socket_test_impl<io_context> {};
 TEST_SUITE(socket_test, "boost.corosio.socket");
 
-#if !defined(_WIN32)
+#if BOOST_COROSIO_HAS_SELECT
 // Select backend test (POSIX platforms)
 struct socket_test_select : socket_test_impl<select_context> {};
 TEST_SUITE(socket_test_select, "boost.corosio.socket.select");

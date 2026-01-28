@@ -8,7 +8,9 @@
 //
 
 
-#if defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/sockets.hpp"
 #include "src/detail/iocp/scheduler.hpp"
@@ -1146,4 +1148,4 @@ release()
 
 } // namespace boost::corosio::detail
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_HAS_IOCP

@@ -8,7 +8,9 @@
 //
 
 
-#if !defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_POSIX
 
 #include "src/detail/posix/signals.hpp"
 
@@ -937,4 +939,4 @@ cancel()
 
 } // namespace boost::corosio
 
-#endif // !defined(_WIN32)
+#endif // BOOST_COROSIO_POSIX
