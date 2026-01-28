@@ -80,10 +80,11 @@ operator()()
     if (bytes_out)
         *bytes_out = bytes_transferred;
 
-    auto saved_d = d;
-    auto saved_h = std::move(h);
+    // Move to stack before destroying the frame
+    capy::executor_ref saved_ex( std::move( ex ) );
+    capy::coro saved_h( std::move( h ) );
     impl_ptr.reset();
-    saved_d.dispatch(saved_h).resume();
+    saved_ex.dispatch( saved_h ).resume();
 }
 
 //------------------------------------------------------------------------------
@@ -171,10 +172,11 @@ operator()()
             *impl_out = nullptr;
     }
 
-    auto saved_d = d;
-    auto saved_h = std::move(h);
+    // Move to stack before destroying the frame
+    capy::executor_ref saved_ex( std::move( ex ) );
+    capy::coro saved_h( std::move( h ) );
     impl_ptr.reset();
-    saved_d.dispatch(saved_h).resume();
+    saved_ex.dispatch( saved_h ).resume();
 }
 
 //------------------------------------------------------------------------------
@@ -199,7 +201,7 @@ void
 epoll_socket_impl::
 connect(
     std::coroutine_handle<> h,
-    capy::executor_ref d,
+    capy::executor_ref ex,
     endpoint ep,
     std::stop_token token,
     system::error_code* ec)
@@ -207,7 +209,7 @@ connect(
     auto& op = conn_;
     op.reset();
     op.h = h;
-    op.d = d;
+    op.ex = ex;
     op.ec_out = ec;
     op.fd = fd_;
     op.target_endpoint = ep;  // Store target for endpoint caching
@@ -278,7 +280,7 @@ void
 epoll_socket_impl::
 read_some(
     std::coroutine_handle<> h,
-    capy::executor_ref d,
+    capy::executor_ref ex,
     io_buffer_param param,
     std::stop_token token,
     system::error_code* ec,
@@ -287,7 +289,7 @@ read_some(
     auto& op = rd_;
     op.reset();
     op.h = h;
-    op.d = d;
+    op.ex = ex;
     op.ec_out = ec;
     op.bytes_out = bytes_out;
     op.fd = fd_;
@@ -374,7 +376,7 @@ void
 epoll_socket_impl::
 write_some(
     std::coroutine_handle<> h,
-    capy::executor_ref d,
+    capy::executor_ref ex,
     io_buffer_param param,
     std::stop_token token,
     system::error_code* ec,
@@ -383,7 +385,7 @@ write_some(
     auto& op = wr_;
     op.reset();
     op.h = h;
-    op.d = d;
+    op.ex = ex;
     op.ec_out = ec;
     op.bytes_out = bytes_out;
     op.fd = fd_;
@@ -709,7 +711,7 @@ void
 epoll_acceptor_impl::
 accept(
     std::coroutine_handle<> h,
-    capy::executor_ref d,
+    capy::executor_ref ex,
     std::stop_token token,
     system::error_code* ec,
     io_object::io_object_impl** impl_out)
@@ -717,7 +719,7 @@ accept(
     auto& op = acc_;
     op.reset();
     op.h = h;
-    op.d = d;
+    op.ex = ex;
     op.ec_out = ec;
     op.impl_out = impl_out;
     op.fd = fd_;
