@@ -10,7 +10,6 @@
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
-
 #if BOOST_COROSIO_HAS_IOCP
 #include "src/detail/iocp/resolver_service.hpp"
 #elif BOOST_COROSIO_POSIX

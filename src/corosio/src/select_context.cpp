@@ -9,7 +9,6 @@
 
 #include <boost/corosio/select_context.hpp>
 
-
 #if BOOST_COROSIO_HAS_SELECT
 
 #include "src/detail/select/scheduler.hpp"

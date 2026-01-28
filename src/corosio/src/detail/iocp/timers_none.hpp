@@ -10,7 +10,6 @@
 #ifndef BOOST_COROSIO_DETAIL_IOCP_TIMERS_NONE_HPP
 #define BOOST_COROSIO_DETAIL_IOCP_TIMERS_NONE_HPP
 
-
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP

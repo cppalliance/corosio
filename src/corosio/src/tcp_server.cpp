@@ -24,7 +24,7 @@ tcp_server::do_accept(acceptor& acc)
             continue;
         auto& w = rv.value();
         auto [ec] = co_await acc.accept(w.socket());
-        if(ec.failed())
+        if(ec)
         {
             co_await push(w);
             continue;

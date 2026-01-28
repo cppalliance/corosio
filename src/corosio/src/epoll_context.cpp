@@ -9,7 +9,6 @@
 
 #include <boost/corosio/epoll_context.hpp>
 
-
 #if BOOST_COROSIO_HAS_EPOLL
 
 #include "src/detail/epoll/scheduler.hpp"

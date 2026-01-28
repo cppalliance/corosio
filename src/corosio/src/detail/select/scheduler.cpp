@@ -7,7 +7,6 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_SELECT
