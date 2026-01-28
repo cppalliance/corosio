@@ -17,7 +17,8 @@
 #include <boost/capy/task.hpp>
 
 // Include platform-specific context headers for multi-backend testing
-#if !defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+#if BOOST_COROSIO_HAS_SELECT
 #include <boost/corosio/select_context.hpp>
 #endif
 
@@ -593,7 +594,7 @@ struct signal_set_test_impl
         BOOST_TEST(result.has_value());
     }
 
-#if !defined(_WIN32)
+#if BOOST_COROSIO_POSIX
     //--------------------------------------------
     // Signal flags tests (POSIX only)
     // Windows returns operation_not_supported for
@@ -743,7 +744,7 @@ struct signal_set_test_impl
         BOOST_TEST_EQ(received_signal, SIGINT);
     }
 
-#else // _WIN32
+#else // !BOOST_COROSIO_POSIX
     //--------------------------------------------
     // Signal flags tests (Windows only)
     //--------------------------------------------
@@ -760,7 +761,7 @@ struct signal_set_test_impl
         BOOST_TEST(result.error() == system::errc::operation_not_supported);
     }
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_POSIX
 
     void
     run()
@@ -812,7 +813,7 @@ struct signal_set_test_impl
         testAddWithNoneFlags();
         testAddWithDontCareFlags();
 
-#if !defined(_WIN32)
+#if BOOST_COROSIO_POSIX
         // Signal flags tests (POSIX only)
         testAddWithFlags();
         testAddWithMultipleFlags();
@@ -840,7 +841,7 @@ struct signal_set_test : signal_set_test_impl<io_context> {};
 TEST_SUITE(signal_set_test, "boost.corosio.signal_set");
 
 // POSIX: also test with select_context explicitly
-#if !defined(_WIN32)
+#if BOOST_COROSIO_HAS_SELECT
 struct signal_set_test_select : signal_set_test_impl<select_context> {};
 TEST_SUITE(signal_set_test_select, "boost.corosio.signal_set.select");
 #endif

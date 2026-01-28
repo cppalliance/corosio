@@ -8,6 +8,7 @@
 //
 
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/detail/platform.hpp>
 
 #include <atomic>
 #include <coroutine>
@@ -24,28 +25,33 @@ namespace capy = boost::capy;
 // Backend names for display
 inline const char* default_backend_name()
 {
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
     return "iocp";
-#elif defined(__linux__)
+#elif BOOST_COROSIO_HAS_EPOLL
     return "epoll";
-#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
-    return "select";  // kqueue planned for future
-#else
+#elif BOOST_COROSIO_HAS_KQUEUE
+    return "kqueue";
+#elif BOOST_COROSIO_HAS_SELECT
     return "select";
+#else
+    return "unknown";
 #endif
 }
 
 inline void print_available_backends()
 {
     std::cout << "Available backends on this platform:\n";
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
     std::cout << "  iocp     - Windows I/O Completion Ports (default)\n";
 #endif
-#if defined(__linux__)
+#if BOOST_COROSIO_HAS_EPOLL
     std::cout << "  epoll    - Linux epoll (default)\n";
+#endif
+#if BOOST_COROSIO_HAS_KQUEUE
+    std::cout << "  kqueue   - BSD/macOS kqueue (default)\n";
+#endif
+#if BOOST_COROSIO_HAS_SELECT
     std::cout << "  select   - POSIX select (portable)\n";
-#elif !defined(_WIN32)
-    std::cout << "  select   - POSIX select (default)\n";
 #endif
     std::cout << "\nDefault backend: " << default_backend_name() << "\n";
 }
@@ -377,7 +383,7 @@ int main(int argc, char* argv[])
     }
 
     // Run benchmarks for the selected backend
-#if defined(__linux__)
+#if BOOST_COROSIO_HAS_EPOLL
     if (std::strcmp(backend, "epoll") == 0)
     {
         run_all_benchmarks<corosio::epoll_context>("epoll");
@@ -385,7 +391,7 @@ int main(int argc, char* argv[])
     }
 #endif
 
-#if !defined(_WIN32)
+#if BOOST_COROSIO_HAS_SELECT
     if (std::strcmp(backend, "select") == 0)
     {
         run_all_benchmarks<corosio::select_context>("select");
@@ -393,7 +399,7 @@ int main(int argc, char* argv[])
     }
 #endif
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
     if (std::strcmp(backend, "iocp") == 0)
     {
         run_all_benchmarks<corosio::iocp_context>("iocp");

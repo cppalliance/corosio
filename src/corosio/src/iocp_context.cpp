@@ -10,7 +10,7 @@
 #include <boost/corosio/iocp_context.hpp>
 
 
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/scheduler.hpp"
 
@@ -41,4 +41,4 @@ iocp_context::
 
 } // namespace boost::corosio
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_HAS_IOCP

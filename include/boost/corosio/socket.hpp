@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_SOCKET_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/io_stream.hpp>
 #include <boost/capy/io_result.hpp>
@@ -31,7 +32,7 @@
 
 namespace boost::corosio {
 
-#ifdef _WIN32
+#if BOOST_COROSIO_HAS_IOCP
 using native_handle_type = std::uintptr_t;  // SOCKET
 #else
 using native_handle_type = int;

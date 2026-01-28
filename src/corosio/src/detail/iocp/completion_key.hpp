@@ -11,7 +11,9 @@
 #define BOOST_COROSIO_DETAIL_IOCP_COMPLETION_KEY_HPP
 
 
-#if defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/windows.hpp"
 
@@ -78,6 +80,6 @@ struct completion_key
 
 } // namespace boost::corosio::detail
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_HAS_IOCP
 
 #endif // BOOST_COROSIO_DETAIL_IOCP_COMPLETION_KEY_HPP

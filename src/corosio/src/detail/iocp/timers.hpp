@@ -11,7 +11,9 @@
 #define BOOST_COROSIO_DETAIL_IOCP_TIMERS_HPP
 
 
-#if defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/completion_key.hpp"
 
@@ -60,6 +62,6 @@ std::unique_ptr<win_timers> make_win_timers(
 
 } // namespace boost::corosio::detail
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_HAS_IOCP
 
 #endif // BOOST_COROSIO_DETAIL_IOCP_TIMERS_HPP

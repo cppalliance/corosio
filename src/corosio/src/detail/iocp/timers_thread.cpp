@@ -8,7 +8,9 @@
 //
 
 
-#if defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/timers_thread.hpp"
 #include "src/detail/iocp/windows.hpp"

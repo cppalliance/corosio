@@ -16,7 +16,8 @@
 #include <boost/capy/task.hpp>
 
 // Include platform-specific context headers for multi-backend testing
-#if !defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+#if BOOST_COROSIO_HAS_SELECT
 #include <boost/corosio/select_context.hpp>
 #endif
 
@@ -673,7 +674,7 @@ struct timer_test : timer_test_impl<io_context> {};
 TEST_SUITE(timer_test, "boost.corosio.timer");
 
 // POSIX: also test with select_context explicitly
-#if !defined(_WIN32)
+#if BOOST_COROSIO_HAS_SELECT
 struct timer_test_select : timer_test_impl<select_context> {};
 TEST_SUITE(timer_test_select, "boost.corosio.timer.select");
 #endif

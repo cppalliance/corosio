@@ -11,8 +11,9 @@
 #define BOOST_COROSIO_DETAIL_POSIX_RESOLVER_SERVICE_HPP
 
 
-// This implementation works for all POSIX backends (epoll, kqueue, io_uring, poll)
-#if !defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/resolver.hpp>
@@ -83,6 +84,6 @@ get_resolver_service(capy::execution_context& ctx, scheduler& sched);
 
 } // namespace boost::corosio::detail
 
-#endif // !_WIN32
+#endif // BOOST_COROSIO_POSIX
 
 #endif // BOOST_COROSIO_DETAIL_POSIX_RESOLVER_SERVICE_HPP

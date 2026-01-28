@@ -11,9 +11,9 @@
 #define BOOST_COROSIO_IOCP_CONTEXT_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/platform.hpp>
 
-// iocp_context is only available on Windows
-#if defined(_WIN32)
+#if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/basic_io_context.hpp>
 
@@ -68,6 +68,6 @@ public:
 
 } // namespace boost::corosio
 
-#endif // defined(_WIN32)
+#endif // BOOST_COROSIO_HAS_IOCP
 
 #endif // BOOST_COROSIO_IOCP_CONTEXT_HPP

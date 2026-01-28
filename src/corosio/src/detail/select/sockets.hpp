@@ -11,7 +11,9 @@
 #define BOOST_COROSIO_DETAIL_SELECT_SOCKETS_HPP
 
 
-#if !defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_SELECT
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/acceptor.hpp>
@@ -302,6 +304,6 @@ using select_sockets = select_socket_service;
 
 } // namespace boost::corosio::detail
 
-#endif // !defined(_WIN32)
+#endif // BOOST_COROSIO_HAS_SELECT
 
 #endif // BOOST_COROSIO_DETAIL_SELECT_SOCKETS_HPP

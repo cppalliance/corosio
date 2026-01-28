@@ -8,7 +8,9 @@
 //
 
 
-#if defined(__linux__)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_EPOLL
 
 #include "src/detail/epoll/scheduler.hpp"
 #include "src/detail/epoll/op.hpp"

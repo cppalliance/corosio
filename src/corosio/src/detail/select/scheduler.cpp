@@ -8,7 +8,9 @@
 //
 
 
-#if !defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_SELECT
 
 #include "src/detail/select/scheduler.hpp"
 #include "src/detail/select/op.hpp"
@@ -769,4 +771,4 @@ do_one(long timeout_us)
 
 } // namespace boost::corosio::detail
 
-#endif // !defined(_WIN32)
+#endif // BOOST_COROSIO_HAS_SELECT

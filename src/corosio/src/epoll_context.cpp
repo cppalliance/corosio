@@ -10,7 +10,7 @@
 #include <boost/corosio/epoll_context.hpp>
 
 
-#if defined(__linux__)
+#if BOOST_COROSIO_HAS_EPOLL
 
 #include "src/detail/epoll/scheduler.hpp"
 #include "src/detail/epoll/sockets.hpp"
@@ -48,4 +48,4 @@ epoll_context::
 
 } // namespace boost::corosio
 
-#endif // __linux__
+#endif // BOOST_COROSIO_HAS_EPOLL

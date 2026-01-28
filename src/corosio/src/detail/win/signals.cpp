@@ -8,7 +8,9 @@
 //
 
 
-#if defined(_WIN32)
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/win/signals.hpp"
 #include "src/detail/iocp/scheduler.hpp"
@@ -709,4 +711,4 @@ cancel()
 
 } // namespace boost::corosio
 
-#endif // _WIN32
+#endif // BOOST_COROSIO_HAS_IOCP

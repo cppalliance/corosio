@@ -11,10 +11,14 @@
 #define BOOST_COROSIO_DETAIL_ENDPOINT_CONVERT_HPP
 
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/detail/platform.hpp>
 
 #include <cstring>
 
-#ifdef _WIN32
+#if BOOST_COROSIO_POSIX
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#else
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -23,9 +27,6 @@
 #endif
 #include <WinSock2.h>
 #include <Ws2tcpip.h>
-#else
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #endif
 
 namespace boost::corosio::detail {

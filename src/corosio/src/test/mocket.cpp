@@ -19,6 +19,8 @@
 #include <boost/capy/test/fuse.hpp>
 #include <boost/url/ipv4_address.hpp>
 
+#include <boost/corosio/detail/platform.hpp>
+
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -26,10 +28,10 @@
 #include <span>
 #include <stdexcept>
 
-#ifdef _WIN32
-#include <process.h>  // _getpid()
-#else
+#if BOOST_COROSIO_POSIX
 #include <unistd.h>   // getpid()
+#else
+#include <process.h>  // _getpid()
 #endif
 
 namespace boost::corosio::test {
@@ -449,10 +451,10 @@ get_test_port() noexcept
     // On Windows with SO_REUSEADDR, multiple processes can bind the same port,
     // causing connections to go to the wrong listener ("port stealing").
     // By using different port ranges per process, we avoid this issue.
-#ifdef _WIN32
-    auto pid = static_cast<std::uint32_t>(_getpid());
-#else
+#if BOOST_COROSIO_POSIX
     auto pid = static_cast<std::uint32_t>(getpid());
+#else
+    auto pid = static_cast<std::uint32_t>(_getpid());
 #endif
     // Mix the PID bits to spread processes across the port range
     auto pid_offset = static_cast<std::uint16_t>((pid * 7919) % port_range);
