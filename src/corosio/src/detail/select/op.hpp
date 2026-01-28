@@ -177,6 +177,7 @@ struct select_op : scheduler_op
     }
 
     virtual bool is_read_operation() const noexcept { return false; }
+    virtual void cancel() noexcept = 0;
 
     void destroy() override
     {
@@ -255,6 +256,7 @@ struct select_connect_op : select_op
 
     // Defined in sockets.cpp where select_socket_impl is complete
     void operator()() override;
+    void cancel() noexcept override;
 };
 
 //------------------------------------------------------------------------------
@@ -286,6 +288,8 @@ struct select_read_op : select_op
         else
             complete(errno, 0);
     }
+
+    void cancel() noexcept override;
 };
 
 //------------------------------------------------------------------------------
@@ -314,6 +318,8 @@ struct select_write_op : select_op
         else
             complete(errno, 0);
     }
+
+    void cancel() noexcept override;
 };
 
 //------------------------------------------------------------------------------
@@ -389,8 +395,9 @@ struct select_accept_op : select_op
         }
     }
 
-    // Defined in sockets.cpp where select_socket_impl is complete
+    // Defined in acceptors.cpp where select_acceptor_impl is complete
     void operator()() override;
+    void cancel() noexcept override;
 };
 
 } // namespace boost::corosio::detail

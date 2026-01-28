@@ -16,7 +16,6 @@
 #if BOOST_COROSIO_HAS_EPOLL
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -60,10 +59,10 @@
 
     Impl Lifetime with shared_ptr
     -----------------------------
-    Socket and acceptor impls use enable_shared_from_this. The service owns
-    impls via shared_ptr maps (socket_ptrs_, acceptor_ptrs_) keyed by raw
-    pointer for O(1) lookup and removal. When a user calls close(), we call
-    cancel() which posts pending ops to the scheduler.
+    Socket impls use enable_shared_from_this. The service owns impls via
+    shared_ptr maps (socket_ptrs_) keyed by raw pointer for O(1) lookup and
+    removal. When a user calls close(), we call cancel() which posts pending
+    ops to the scheduler.
 
     CRITICAL: The posted ops must keep the impl alive until they complete.
     Otherwise the scheduler would process a freed op (use-after-free). The
@@ -71,23 +70,18 @@
     posting. When the op completes, impl_ptr is cleared, allowing the impl
     to be destroyed if no other references exist.
 
-    The intrusive_list (socket_list_, acceptor_list_) provides fast iteration
-    for shutdown cleanup alongside the shared_ptr ownership in the maps.
-
     Service Ownership
     -----------------
-    epoll_sockets owns all socket impls. destroy_impl() removes the shared_ptr
-    from the vector, but the impl may survive if ops still hold impl_ptr refs.
-    shutdown() closes all sockets and clears the vectors; any in-flight ops
-    will complete and release their refs, allowing final destruction.
+    epoll_socket_service owns all socket impls. destroy_impl() removes the
+    shared_ptr from the map, but the impl may survive if ops still hold
+    impl_ptr refs. shutdown() closes all sockets and clears the map; any
+    in-flight ops will complete and release their refs.
 */
 
 namespace boost::corosio::detail {
 
 class epoll_socket_service;
-class epoll_acceptor_service;
 class epoll_socket_impl;
-class epoll_acceptor_impl;
 
 //------------------------------------------------------------------------------
 
@@ -97,7 +91,6 @@ class epoll_socket_impl
     , public intrusive_list<epoll_socket_impl>::node
 {
     friend class epoll_socket_service;
-    friend class epoll_acceptor_service;
 
 public:
     explicit epoll_socket_impl(epoll_socket_service& svc) noexcept;
@@ -173,46 +166,6 @@ private:
 
 //------------------------------------------------------------------------------
 
-class epoll_acceptor_impl
-    : public acceptor::acceptor_impl
-    , public std::enable_shared_from_this<epoll_acceptor_impl>
-    , public intrusive_list<epoll_acceptor_impl>::node
-{
-    friend class epoll_acceptor_service;
-
-public:
-    explicit epoll_acceptor_impl(epoll_acceptor_service& svc) noexcept;
-
-    void release() override;
-
-    void accept(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        std::stop_token,
-        system::error_code*,
-        io_object::io_object_impl**) override;
-
-    int native_handle() const noexcept { return fd_; }
-    endpoint local_endpoint() const noexcept override { return local_endpoint_; }
-    bool is_open() const noexcept { return fd_ >= 0; }
-    void cancel() noexcept override;
-    void cancel_single_op(epoll_op& op) noexcept;
-    void close_socket() noexcept;
-    void set_local_endpoint(endpoint ep) noexcept { local_endpoint_ = ep; }
-
-    epoll_acceptor_service& service() noexcept { return svc_; }
-
-    epoll_accept_op acc_;
-
-private:
-    epoll_acceptor_service& svc_;
-    int fd_ = -1;
-    endpoint local_endpoint_;
-};
-
-//------------------------------------------------------------------------------
-class epoll_acceptor_service;
-
 /** State for epoll socket service. */
 class epoll_socket_state
 {
@@ -226,21 +179,6 @@ public:
     std::mutex mutex_;
     intrusive_list<epoll_socket_impl> socket_list_;
     std::unordered_map<epoll_socket_impl*, std::shared_ptr<epoll_socket_impl>> socket_ptrs_;
-};
-
-/** State for epoll acceptor service. */
-class epoll_acceptor_state
-{
-public:
-    explicit epoll_acceptor_state(epoll_scheduler& sched) noexcept
-        : sched_(sched)
-    {
-    }
-
-    epoll_scheduler& sched_;
-    std::mutex mutex_;
-    intrusive_list<epoll_acceptor_impl> acceptor_list_;
-    std::unordered_map<epoll_acceptor_impl*, std::shared_ptr<epoll_acceptor_impl>> acceptor_ptrs_;
 };
 
 /** epoll socket service implementation.
@@ -270,42 +208,6 @@ public:
 
 private:
     std::unique_ptr<epoll_socket_state> state_;
-};
-
-/** epoll acceptor service implementation.
-
-    Inherits from acceptor_service to enable runtime polymorphism.
-    Uses key_type = acceptor_service for service lookup.
-*/
-class epoll_acceptor_service : public acceptor_service
-{
-public:
-    explicit epoll_acceptor_service(capy::execution_context& ctx);
-    ~epoll_acceptor_service();
-
-    epoll_acceptor_service(epoll_acceptor_service const&) = delete;
-    epoll_acceptor_service& operator=(epoll_acceptor_service const&) = delete;
-
-    void shutdown() override;
-
-    acceptor::acceptor_impl& create_acceptor_impl() override;
-    void destroy_acceptor_impl(acceptor::acceptor_impl& impl) override;
-    system::error_code open_acceptor(
-        acceptor::acceptor_impl& impl,
-        endpoint ep,
-        int backlog) override;
-
-    epoll_scheduler& scheduler() const noexcept { return state_->sched_; }
-    void post(epoll_op* op);
-    void work_started() noexcept;
-    void work_finished() noexcept;
-
-    /** Get the socket service for creating peer sockets during accept. */
-    epoll_socket_service* socket_service() const noexcept;
-
-private:
-    capy::execution_context& ctx_;
-    std::unique_ptr<epoll_acceptor_state> state_;
 };
 
 // Backward compatibility alias

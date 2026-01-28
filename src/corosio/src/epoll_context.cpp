@@ -14,6 +14,7 @@
 
 #include "src/detail/epoll/scheduler.hpp"
 #include "src/detail/epoll/sockets.hpp"
+#include "src/detail/epoll/acceptors.hpp"
 
 #include <thread>
 

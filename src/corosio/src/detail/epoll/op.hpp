@@ -180,6 +180,7 @@ struct epoll_op : scheduler_op
     }
 
     virtual bool is_read_operation() const noexcept { return false; }
+    virtual void cancel() noexcept = 0;
 
     void destroy() override
     {
@@ -258,6 +259,7 @@ struct epoll_connect_op : epoll_op
 
     // Defined in sockets.cpp where epoll_socket_impl is complete
     void operator()() override;
+    void cancel() noexcept override;
 };
 
 //------------------------------------------------------------------------------
@@ -289,6 +291,8 @@ struct epoll_read_op : epoll_op
         else
             complete(errno, 0);
     }
+
+    void cancel() noexcept override;
 };
 
 //------------------------------------------------------------------------------
@@ -317,6 +321,8 @@ struct epoll_write_op : epoll_op
         else
             complete(errno, 0);
     }
+
+    void cancel() noexcept override;
 };
 
 //------------------------------------------------------------------------------
@@ -353,8 +359,9 @@ struct epoll_accept_op : epoll_op
         }
     }
 
-    // Defined in sockets.cpp where epoll_socket_impl is complete
+    // Defined in acceptors.cpp where epoll_acceptor_impl is complete
     void operator()() override;
+    void cancel() noexcept override;
 };
 
 } // namespace boost::corosio::detail

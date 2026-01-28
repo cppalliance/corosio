@@ -14,6 +14,7 @@
 
 #include "src/detail/select/scheduler.hpp"
 #include "src/detail/select/sockets.hpp"
+#include "src/detail/select/acceptors.hpp"
 
 #include <thread>
 
