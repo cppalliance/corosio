@@ -166,6 +166,8 @@ struct epoll_op : scheduler_op
                 *ec_out = make_err(errn);
             else if (is_read_operation() && bytes_transferred == 0)
                 *ec_out = capy::error::eof;
+            else
+                *ec_out = {};
         }
 
         if (bytes_out)
