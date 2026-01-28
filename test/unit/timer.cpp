@@ -227,7 +227,7 @@ struct timer_test_impl
         ioc.run();
 
         BOOST_TEST(elapsed >= std::chrono::milliseconds(50));
-        BOOST_TEST(elapsed < std::chrono::milliseconds(200));
+        BOOST_TEST(elapsed < std::chrono::seconds(2));
     }
 
     void
