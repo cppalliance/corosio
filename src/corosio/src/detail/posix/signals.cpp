@@ -197,9 +197,9 @@ public:
         system::error_code*,
         int*) override;
 
-    system::result<void> add(int signal_number, signal_set::flags_t flags) override;
-    system::result<void> remove(int signal_number) override;
-    system::result<void> clear() override;
+    std::error_code add(int signal_number, signal_set::flags_t flags) override;
+    std::error_code remove(int signal_number) override;
+    std::error_code clear() override;
     void cancel() override;
 };
 
@@ -223,16 +223,16 @@ public:
 
     void destroy_impl(posix_signal_impl& impl);
 
-    system::result<void> add_signal(
+    std::error_code add_signal(
         posix_signal_impl& impl,
         int signal_number,
         signal_set::flags_t flags);
 
-    system::result<void> remove_signal(
+    std::error_code remove_signal(
         posix_signal_impl& impl,
         int signal_number);
 
-    system::result<void> clear_signals(posix_signal_impl& impl);
+    std::error_code clear_signals(posix_signal_impl& impl);
 
     void cancel_wait(posix_signal_impl& impl);
     void start_wait(posix_signal_impl& impl, signal_op* op);
@@ -416,21 +416,21 @@ wait(
     svc_.start_wait(*this, &pending_op_);
 }
 
-system::result<void>
+std::error_code
 posix_signal_impl::
 add(int signal_number, signal_set::flags_t flags)
 {
     return svc_.add_signal(*this, signal_number, flags);
 }
 
-system::result<void>
+std::error_code
 posix_signal_impl::
 remove(int signal_number)
 {
     return svc_.remove_signal(*this, signal_number);
 }
 
-system::result<void>
+std::error_code
 posix_signal_impl::
 clear()
 {
@@ -510,7 +510,7 @@ destroy_impl(posix_signal_impl& impl)
     delete &impl;
 }
 
-system::result<void>
+std::error_code
 posix_signals_impl::
 add_signal(
     posix_signal_impl& impl,
@@ -518,12 +518,12 @@ add_signal(
     signal_set::flags_t flags)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
-        return make_error_code(system::errc::invalid_argument);
+        return make_error_code(std::errc::invalid_argument);
 
     // Validate that requested flags are supported on this platform
     // (e.g., SA_NOCLDWAIT may not be available on all POSIX systems)
     if (!flags_supported(flags))
-        return make_error_code(system::errc::operation_not_supported);
+        return make_error_code(std::errc::operation_not_supported);
 
     signal_state* state = get_signal_state();
     std::lock_guard state_lock(state->mutex);
@@ -543,7 +543,7 @@ add_signal(
     if (reg && reg->signal_number == signal_number)
     {
         if (!flags_compatible(reg->flags, flags))
-            return make_error_code(system::errc::invalid_argument);
+            return make_error_code(std::errc::invalid_argument);
         return {};
     }
 
@@ -552,7 +552,7 @@ add_signal(
     if (state->registration_count[signal_number] > 0)
     {
         if (!flags_compatible(state->registered_flags[signal_number], flags))
-            return make_error_code(system::errc::invalid_argument);
+            return make_error_code(std::errc::invalid_argument);
     }
 
     auto* new_reg = new signal_registration;
@@ -572,7 +572,7 @@ add_signal(
         if (::sigaction(signal_number, &sa, nullptr) < 0)
         {
             delete new_reg;
-            return make_error_code(system::errc::invalid_argument);
+            return make_error_code(std::errc::invalid_argument);
         }
 
         // Store the flags used for first registration
@@ -594,14 +594,14 @@ add_signal(
     return {};
 }
 
-system::result<void>
+std::error_code
 posix_signals_impl::
 remove_signal(
     posix_signal_impl& impl,
     int signal_number)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
-        return make_error_code(system::errc::invalid_argument);
+        return make_error_code(std::errc::invalid_argument);
 
     signal_state* state = get_signal_state();
     std::lock_guard state_lock(state->mutex);
@@ -627,7 +627,7 @@ remove_signal(
         sa.sa_flags = 0;
 
         if (::sigaction(signal_number, &sa, nullptr) < 0)
-            return make_error_code(system::errc::invalid_argument);
+            return make_error_code(std::errc::invalid_argument);
 
         // Clear stored flags
         state->registered_flags[signal_number] = signal_set::none;
@@ -649,7 +649,7 @@ remove_signal(
     return {};
 }
 
-system::result<void>
+std::error_code
 posix_signals_impl::
 clear_signals(posix_signal_impl& impl)
 {
@@ -657,7 +657,7 @@ clear_signals(posix_signal_impl& impl)
     std::lock_guard state_lock(state->mutex);
     std::lock_guard lock(mutex_);
 
-    system::error_code first_error;
+    std::error_code first_error;
 
     while (signal_registration* reg = impl.signals_)
     {
@@ -671,7 +671,7 @@ clear_signals(posix_signal_impl& impl)
             sa.sa_flags = 0;
 
             if (::sigaction(signal_number, &sa, nullptr) < 0 && !first_error)
-                first_error = make_error_code(system::errc::invalid_argument);
+                first_error = make_error_code(std::errc::invalid_argument);
 
             // Clear stored flags
             state->registered_flags[signal_number] = signal_set::none;
@@ -908,21 +908,21 @@ operator=(signal_set&& other)
     return *this;
 }
 
-system::result<void>
+std::error_code
 signal_set::
 add(int signal_number, flags_t flags)
 {
     return get().add(signal_number, flags);
 }
 
-system::result<void>
+std::error_code
 signal_set::
 remove(int signal_number)
 {
     return get().remove(signal_number);
 }
 
-system::result<void>
+std::error_code
 signal_set::
 clear()
 {

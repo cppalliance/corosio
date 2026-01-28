@@ -140,7 +140,7 @@ private:
                     Ex* ex_ptr;
 
                     bool await_ready() { return aw.await_ready(); }
-                    auto await_resume() { return aw.await_resume(); }
+                    decltype(auto) await_resume() { return aw.await_resume(); }
 
                     auto await_suspend(std::coroutine_handle<promise_type> h)
                     {
@@ -254,7 +254,7 @@ private:
             return true;
         }
 
-        system::result<worker_base&> await_resume() noexcept
+        worker_base& await_resume() noexcept
         {
             if(wait_.w)
                 return *wait_.w;

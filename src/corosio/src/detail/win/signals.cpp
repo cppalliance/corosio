@@ -223,21 +223,21 @@ wait(
     svc_.start_wait(*this, &pending_op_);
 }
 
-system::result<void>
+std::error_code
 win_signal_impl::
 add(int signal_number, signal_set::flags_t flags)
 {
     return svc_.add_signal(*this, signal_number, flags);
 }
 
-system::result<void>
+std::error_code
 win_signal_impl::
 remove(int signal_number)
 {
     return svc_.remove_signal(*this, signal_number);
 }
 
-system::result<void>
+std::error_code
 win_signal_impl::
 clear()
 {
@@ -318,7 +318,7 @@ destroy_impl(win_signal_impl& impl)
     delete &impl;
 }
 
-system::result<void>
+std::error_code
 win_signals::
 add_signal(
     win_signal_impl& impl,
@@ -326,12 +326,12 @@ add_signal(
     signal_set::flags_t flags)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
-        return make_error_code(system::errc::invalid_argument);
+        return make_error_code(std::errc::invalid_argument);
 
     // Windows only supports none and dont_care flags
     constexpr auto supported = signal_set::none | signal_set::dont_care;
     if ((flags & ~supported) != signal_set::none)
-        return make_error_code(system::errc::operation_not_supported);
+        return make_error_code(std::errc::operation_not_supported);
 
     signal_state* state = get_signal_state();
     std::lock_guard<std::mutex> state_lock(state->mutex);
@@ -361,7 +361,7 @@ add_signal(
         if (::signal(signal_number, corosio_signal_handler) == SIG_ERR)
         {
             delete new_reg;
-            return make_error_code(system::errc::invalid_argument);
+            return make_error_code(std::errc::invalid_argument);
         }
     }
 
@@ -381,14 +381,14 @@ add_signal(
     return {};
 }
 
-system::result<void>
+std::error_code
 win_signals::
 remove_signal(
     win_signal_impl& impl,
     int signal_number)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
-        return make_error_code(system::errc::invalid_argument);
+        return make_error_code(std::errc::invalid_argument);
 
     signal_state* state = get_signal_state();
     std::lock_guard<std::mutex> state_lock(state->mutex);
@@ -410,7 +410,7 @@ remove_signal(
     if (state->registration_count[signal_number] == 1)
     {
         if (::signal(signal_number, SIG_DFL) == SIG_ERR)
-            return make_error_code(system::errc::invalid_argument);
+            return make_error_code(std::errc::invalid_argument);
     }
 
     // Remove from set's list
@@ -430,7 +430,7 @@ remove_signal(
     return {};
 }
 
-system::result<void>
+std::error_code
 win_signals::
 clear_signals(win_signal_impl& impl)
 {
@@ -438,7 +438,7 @@ clear_signals(win_signal_impl& impl)
     std::lock_guard<std::mutex> state_lock(state->mutex);
     std::lock_guard<win_mutex> lock(mutex_);
 
-    system::error_code first_error;
+    std::error_code first_error;
 
     while (signal_registration* reg = impl.signals_)
     {
@@ -448,7 +448,7 @@ clear_signals(win_signal_impl& impl)
         if (state->registration_count[signal_number] == 1)
         {
             if (::signal(signal_number, SIG_DFL) == SIG_ERR && !first_error)
-                first_error = make_error_code(system::errc::invalid_argument);
+                first_error = make_error_code(std::errc::invalid_argument);
         }
 
         // Remove from set's list
@@ -680,21 +680,21 @@ operator=(signal_set&& other)
     return *this;
 }
 
-system::result<void>
+std::error_code
 signal_set::
 add(int signal_number, flags_t flags)
 {
     return get().add(signal_number, flags);
 }
 
-system::result<void>
+std::error_code
 signal_set::
 remove(int signal_number)
 {
     return get().remove(signal_number);
 }
 
-system::result<void>
+std::error_code
 signal_set::
 clear()
 {

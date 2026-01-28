@@ -71,8 +71,10 @@ run_client(
     // Configure TLS context
     corosio::tls::context ctx;
     ctx.set_hostname(hostname);
-    ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode(corosio::tls::verify_mode::peer).value();
+    if (auto ec = ctx.set_default_verify_paths(); ec)
+        throw boost::system::system_error(ec);
+    if (auto ec = ctx.set_verify_mode(corosio::tls::verify_mode::peer); ec)
+        throw boost::system::system_error(ec);
 
     // Wrap socket in TLS stream
     corosio::wolfssl_stream secure(s, ctx);

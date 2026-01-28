@@ -20,7 +20,8 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include "src/detail/intrusive.hpp"
 #include <boost/system/error_code.hpp>
-#include <boost/system/result.hpp>
+
+#include <system_error>
 
 #include "src/detail/iocp/mutex.hpp"
 #include "src/detail/scheduler_op.hpp"
@@ -125,9 +126,9 @@ public:
         system::error_code*,
         int*) override;
 
-    system::result<void> add(int signal_number, signal_set::flags_t flags) override;
-    system::result<void> remove(int signal_number) override;
-    system::result<void> clear() override;
+    std::error_code add(int signal_number, signal_set::flags_t flags) override;
+    std::error_code remove(int signal_number) override;
+    std::error_code clear() override;
     void cancel() override;
 };
 
@@ -181,7 +182,7 @@ public:
         @param flags The flags to apply (ignored on Windows).
         @return Success, or an error.
     */
-    system::result<void> add_signal(
+    std::error_code add_signal(
         win_signal_impl& impl,
         int signal_number,
         signal_set::flags_t flags);
@@ -192,7 +193,7 @@ public:
         @param signal_number The signal to unregister.
         @return Success, or an error.
     */
-    system::result<void> remove_signal(
+    std::error_code remove_signal(
         win_signal_impl& impl,
         int signal_number);
 
@@ -201,7 +202,7 @@ public:
         @param impl The signal implementation to clear.
         @return Success, or an error.
     */
-    system::result<void> clear_signals(win_signal_impl& impl);
+    std::error_code clear_signals(win_signal_impl& impl);
 
     /** Cancel pending wait operations.
 

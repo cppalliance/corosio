@@ -122,7 +122,7 @@ struct signal_set_test_impl
         signal_set s(ioc);
 
         auto result = s.add(SIGINT);
-        BOOST_TEST(result.has_value());
+        BOOST_TEST(!result);
     }
 
     void
@@ -131,9 +131,9 @@ struct signal_set_test_impl
         Context ioc;
         signal_set s(ioc);
 
-        BOOST_TEST(s.add(SIGINT).has_value());
+        BOOST_TEST(!s.add(SIGINT));
         auto result = s.add(SIGINT);  // Should be no-op
-        BOOST_TEST(result.has_value());
+        BOOST_TEST(!result);
     }
 
     void
@@ -143,7 +143,7 @@ struct signal_set_test_impl
         signal_set s(ioc);
 
         auto result = s.add(-1);
-        BOOST_TEST(result.has_error());
+        BOOST_TEST(!!result);
     }
 
     void
@@ -152,9 +152,9 @@ struct signal_set_test_impl
         Context ioc;
         signal_set s(ioc);
 
-        BOOST_TEST(s.add(SIGINT).has_value());
+        BOOST_TEST(!s.add(SIGINT));
         auto result = s.remove(SIGINT);
-        BOOST_TEST(result.has_value());
+        BOOST_TEST(!result);
     }
 
     void
@@ -165,7 +165,7 @@ struct signal_set_test_impl
 
         // Removing signal not in set should be a no-op
         auto result = s.remove(SIGINT);
-        BOOST_TEST(result.has_value());
+        BOOST_TEST(!result);
     }
 
     void
@@ -174,9 +174,9 @@ struct signal_set_test_impl
         Context ioc;
         signal_set s(ioc);
 
-        BOOST_TEST(s.add(SIGINT).has_value());
-        BOOST_TEST(s.add(SIGTERM).has_value());
-        BOOST_TEST(s.clear().has_value());
+        BOOST_TEST(!s.add(SIGINT));
+        BOOST_TEST(!s.add(SIGTERM));
+        BOOST_TEST(!s.clear());
     }
 
     void
@@ -185,7 +185,7 @@ struct signal_set_test_impl
         Context ioc;
         signal_set s(ioc);
 
-        BOOST_TEST(s.clear().has_value());  // Should be no-op
+        BOOST_TEST(!s.clear());  // Should be no-op
     }
 
     //--------------------------------------------
@@ -580,7 +580,7 @@ struct signal_set_test_impl
 
         // Add signal with none (default behavior) - works on all platforms
         auto result = s.add(SIGINT, signal_set::none);
-        BOOST_TEST(result.has_value());
+        BOOST_TEST(!result);
     }
 
     void
@@ -591,7 +591,7 @@ struct signal_set_test_impl
 
         // Add signal with dont_care - works on all platforms
         auto result = s.add(SIGINT, signal_set::dont_care);
-        BOOST_TEST(result.has_value());
+        BOOST_TEST(!result);
     }
 
 #if BOOST_COROSIO_POSIX
@@ -609,7 +609,7 @@ struct signal_set_test_impl
 
         // Add signal with restart flag
         auto result = s.add(SIGINT, signal_set::restart);
-        BOOST_TEST(result.has_value());
+        BOOST_TEST(!result);
     }
 
     void
@@ -620,7 +620,7 @@ struct signal_set_test_impl
 
         // Add signal with combined flags
         auto result = s.add(SIGINT, signal_set::restart | signal_set::no_defer);
-        BOOST_TEST(result.has_value());
+        BOOST_TEST(!result);
     }
 
     void
@@ -630,8 +630,8 @@ struct signal_set_test_impl
         signal_set s(ioc);
 
         // Add signal twice with same flags (should be no-op)
-        BOOST_TEST(s.add(SIGINT, signal_set::restart).has_value());
-        BOOST_TEST(s.add(SIGINT, signal_set::restart).has_value());
+        BOOST_TEST(!s.add(SIGINT, signal_set::restart));
+        BOOST_TEST(!s.add(SIGINT, signal_set::restart));
     }
 
     void
@@ -641,9 +641,9 @@ struct signal_set_test_impl
         signal_set s(ioc);
 
         // Add signal with one flag, then try to add with different flag
-        BOOST_TEST(s.add(SIGINT, signal_set::restart).has_value());
+        BOOST_TEST(!s.add(SIGINT, signal_set::restart));
         auto result = s.add(SIGINT, signal_set::no_defer);
-        BOOST_TEST(result.has_error());  // Should fail due to flag mismatch
+        BOOST_TEST(!!result);  // Should fail due to flag mismatch
     }
 
     void
@@ -653,9 +653,9 @@ struct signal_set_test_impl
         signal_set s(ioc);
 
         // Add signal with specific flags, then add with dont_care
-        BOOST_TEST(s.add(SIGINT, signal_set::restart).has_value());
+        BOOST_TEST(!s.add(SIGINT, signal_set::restart));
         auto result = s.add(SIGINT, signal_set::dont_care);
-        BOOST_TEST(result.has_value());  // Should succeed with dont_care
+        BOOST_TEST(!result);  // Should succeed with dont_care
     }
 
     void
@@ -665,9 +665,9 @@ struct signal_set_test_impl
         signal_set s(ioc);
 
         // Add signal with dont_care, then add with specific flags
-        BOOST_TEST(s.add(SIGINT, signal_set::dont_care).has_value());
+        BOOST_TEST(!s.add(SIGINT, signal_set::dont_care));
         auto result = s.add(SIGINT, signal_set::restart);
-        BOOST_TEST(result.has_value());  // Should succeed
+        BOOST_TEST(!result);  // Should succeed
     }
 
     void
@@ -678,8 +678,8 @@ struct signal_set_test_impl
         signal_set s2(ioc);
 
         // Both sets add same signal with same flags
-        BOOST_TEST(s1.add(SIGINT, signal_set::restart).has_value());
-        BOOST_TEST(s2.add(SIGINT, signal_set::restart).has_value());
+        BOOST_TEST(!s1.add(SIGINT, signal_set::restart));
+        BOOST_TEST(!s2.add(SIGINT, signal_set::restart));
     }
 
     void
@@ -690,10 +690,10 @@ struct signal_set_test_impl
         signal_set s2(ioc);
 
         // First set adds with one flag
-        BOOST_TEST(s1.add(SIGINT, signal_set::restart).has_value());
+        BOOST_TEST(!s1.add(SIGINT, signal_set::restart));
         // Second set tries to add with different flag
         auto result = s2.add(SIGINT, signal_set::no_defer);
-        BOOST_TEST(result.has_error());  // Should fail
+        BOOST_TEST(!!result);  // Should fail
     }
 
     void
@@ -704,9 +704,9 @@ struct signal_set_test_impl
         signal_set s2(ioc);
 
         // First set adds with specific flags
-        BOOST_TEST(s1.add(SIGINT, signal_set::restart).has_value());
+        BOOST_TEST(!s1.add(SIGINT, signal_set::restart));
         // Second set adds with dont_care
-        BOOST_TEST(s2.add(SIGINT, signal_set::dont_care).has_value());
+        BOOST_TEST(!s2.add(SIGINT, signal_set::dont_care));
     }
 
     void
@@ -717,7 +717,7 @@ struct signal_set_test_impl
         timer t(ioc);
 
         // Add signal with restart flag and verify wait still works
-        BOOST_TEST(s.add(SIGINT, signal_set::restart).has_value());
+        BOOST_TEST(!s.add(SIGINT, signal_set::restart));
 
         bool completed = false;
         int received_signal = 0;
@@ -757,8 +757,8 @@ struct signal_set_test_impl
 
         // Windows returns operation_not_supported for actual flags
         auto result = s.add(SIGINT, signal_set::restart);
-        BOOST_TEST(result.has_error());
-        BOOST_TEST(result.error() == system::errc::operation_not_supported);
+        BOOST_TEST(!!result);
+        BOOST_TEST(result == std::errc::operation_not_supported);
     }
 
 #endif // BOOST_COROSIO_POSIX

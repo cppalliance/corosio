@@ -19,11 +19,11 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/system/error_code.hpp>
-#include <boost/system/result.hpp>
 
 #include <concepts>
 #include <coroutine>
 #include <stop_token>
+#include <system_error>
 
 /*
     Signal Set Public API
@@ -199,9 +199,9 @@ public:
             system::error_code*,
             int*) = 0;
 
-        virtual system::result<void> add(int signal_number, flags_t flags) = 0;
-        virtual system::result<void> remove(int signal_number) = 0;
-        virtual system::result<void> clear() = 0;
+        virtual std::error_code add(int signal_number, flags_t flags) = 0;
+        virtual std::error_code remove(int signal_number) = 0;
+        virtual std::error_code clear() = 0;
         virtual void cancel() = 0;
     };
 
@@ -232,8 +232,12 @@ public:
         Signals... signals)
         : signal_set(ctx)
     {
-        add(signal).value();
-        (add(signals).value(), ...);
+        auto check = [](std::error_code ec) {
+            if( ec )
+                throw std::system_error(ec);
+        };
+        check(add(signal));
+        (check(add(signals)), ...);
     }
 
     /** Move constructor.
@@ -280,7 +284,7 @@ public:
             Returns `errc::invalid_argument` if the signal is already
             registered with different flags.
     */
-    system::result<void> add(int signal_number, flags_t flags);
+    std::error_code add(int signal_number, flags_t flags);
 
     /** Add a signal to the signal set with default flags.
 
@@ -290,7 +294,7 @@ public:
 
         @return Success, or an error if the signal could not be added.
     */
-    system::result<void> add(int signal_number)
+    std::error_code add(int signal_number)
     {
         return add(signal_number, none);
     }
@@ -304,7 +308,7 @@ public:
 
         @return Success, or an error if the signal could not be removed.
     */
-    system::result<void> remove(int signal_number);
+    std::error_code remove(int signal_number);
 
     /** Remove all signals from the signal set.
 
@@ -313,7 +317,7 @@ public:
 
         @return Success, or an error if resetting any signal handler fails.
     */
-    system::result<void> clear();
+    std::error_code clear();
 
     /** Cancel all operations associated with the signal set.
 

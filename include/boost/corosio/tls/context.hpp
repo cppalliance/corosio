@@ -11,9 +11,9 @@
 #define BOOST_COROSIO_TLS_CONTEXT_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/system/result.hpp>
 
 #include <functional>
+#include <system_error>
 #include <memory>
 #include <string_view>
 
@@ -173,8 +173,8 @@ get_context_data( context const& ) noexcept;
     @code
     // Create a client context with system trust anchors
     corosio::tls::context ctx;
-    ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode( corosio::tls::verify_mode::peer ).value();
+    ctx.set_default_verify_paths();
+    ctx.set_verify_mode( corosio::tls::verify_mode::peer );
     ctx.set_hostname( "example.com" );
 
     // Use with a TLS stream
@@ -286,7 +286,7 @@ public:
         @see use_certificate_file
         @see use_private_key
     */
-    system::result<void>
+    std::error_code
     use_certificate(
         std::string_view certificate,
         file_format format );
@@ -306,13 +306,13 @@ public:
 
         @par Example
         @code
-        ctx.use_certificate_file( "server.crt", tls::file_format::pem ).value();
+        ctx.use_certificate_file( "server.crt", tls::file_format::pem );
         @endcode
 
         @see use_certificate
         @see use_private_key_file
     */
-    system::result<void>
+    std::error_code
     use_certificate_file(
         std::string_view filename,
         file_format format );
@@ -330,7 +330,7 @@ public:
 
         @see use_certificate_chain_file
     */
-    system::result<void>
+    std::error_code
     use_certificate_chain( std::string_view chain );
 
     /** Load a certificate chain from a file.
@@ -346,12 +346,12 @@ public:
         @par Example
         @code
         // Load certificate chain (cert + intermediates)
-        ctx.use_certificate_chain_file( "fullchain.pem" ).value();
+        ctx.use_certificate_chain_file( "fullchain.pem" );
         @endcode
 
         @see use_certificate_chain
     */
-    system::result<void>
+    std::error_code
     use_certificate_chain_file( std::string_view filename );
 
     /** Load the private key from a memory buffer.
@@ -374,7 +374,7 @@ public:
         @see use_private_key_file
         @see set_password_callback
     */
-    system::result<void>
+    std::error_code
     use_private_key(
         std::string_view private_key,
         file_format format );
@@ -397,13 +397,13 @@ public:
 
         @par Example
         @code
-        ctx.use_private_key_file( "server.key", tls::file_format::pem ).value();
+        ctx.use_private_key_file( "server.key", tls::file_format::pem );
         @endcode
 
         @see use_private_key
         @see set_password_callback
     */
-    system::result<void>
+    std::error_code
     use_private_key_file(
         std::string_view filename,
         file_format format );
@@ -423,7 +423,7 @@ public:
 
         @see use_pkcs12_file
     */
-    system::result<void>
+    std::error_code
     use_pkcs12(
         std::string_view data,
         std::string_view passphrase );
@@ -444,12 +444,12 @@ public:
 
         @par Example
         @code
-        ctx.use_pkcs12_file( "credentials.pfx", "secret" ).value();
+        ctx.use_pkcs12_file( "credentials.pfx", "secret" );
         @endcode
 
         @see use_pkcs12
     */
-    system::result<void>
+    std::error_code
     use_pkcs12_file(
         std::string_view filename,
         std::string_view passphrase );
@@ -473,7 +473,7 @@ public:
         @see load_verify_file
         @see set_default_verify_paths
     */
-    system::result<void>
+    std::error_code
     add_certificate_authority( std::string_view ca );
 
     /** Load CA certificates from a file.
@@ -488,13 +488,13 @@ public:
         @par Example
         @code
         // Load a custom CA bundle
-        ctx.load_verify_file( "/etc/ssl/certs/ca-certificates.crt" ).value();
+        ctx.load_verify_file( "/etc/ssl/certs/ca-certificates.crt" );
         @endcode
 
         @see add_certificate_authority
         @see add_verify_path
     */
-    system::result<void>
+    std::error_code
     load_verify_file( std::string_view filename );
 
     /** Add a directory of CA certificates for verification.
@@ -510,13 +510,13 @@ public:
 
         @par Example
         @code
-        ctx.add_verify_path( "/etc/ssl/certs" ).value();
+        ctx.add_verify_path( "/etc/ssl/certs" );
         @endcode
 
         @see load_verify_file
         @see set_default_verify_paths
     */
-    system::result<void>
+    std::error_code
     add_verify_path( std::string_view path );
 
     /** Use the system default CA certificate store.
@@ -536,13 +536,13 @@ public:
         @par Example
         @code
         // Trust the same CAs as the system
-        ctx.set_default_verify_paths().value();
+        ctx.set_default_verify_paths();
         @endcode
 
         @see load_verify_file
         @see add_verify_path
     */
-    system::result<void>
+    std::error_code
     set_default_verify_paths();
 
     //--------------------------------------------------------------------------
@@ -564,12 +564,12 @@ public:
         @par Example
         @code
         // Require TLS 1.3 minimum
-        ctx.set_min_protocol_version( tls::version::tls_1_3 ).value();
+        ctx.set_min_protocol_version( tls::version::tls_1_3 );
         @endcode
 
         @see set_max_protocol_version
     */
-    system::result<void>
+    std::error_code
     set_min_protocol_version( version v );
 
     /** Set the maximum TLS protocol version.
@@ -584,7 +584,7 @@ public:
 
         @see set_min_protocol_version
     */
-    system::result<void>
+    std::error_code
     set_max_protocol_version( version v );
 
     /** Set the allowed cipher suites.
@@ -600,13 +600,13 @@ public:
         @par Example
         @code
         // TLS 1.2 cipher suites (OpenSSL format)
-        ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" ).value();
+        ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" );
         @endcode
 
         @note For TLS 1.3, use `set_ciphersuites_tls13()` on backends
             that distinguish between TLS 1.2 and 1.3 cipher configuration.
     */
-    system::result<void>
+    std::error_code
     set_ciphersuites( std::string_view ciphers );
 
     /** Set the ALPN protocol list.
@@ -625,10 +625,10 @@ public:
         @par Example
         @code
         // Prefer HTTP/2, fall back to HTTP/1.1
-        ctx.set_alpn( { "h2", "http/1.1" } ).value();
+        ctx.set_alpn( { "h2", "http/1.1" } );
         @endcode
     */
-    system::result<void>
+    std::error_code
     set_alpn( std::initializer_list<std::string_view> protocols );
 
     //--------------------------------------------------------------------------
@@ -649,15 +649,15 @@ public:
         @par Example
         @code
         // Verify peer certificate (typical for clients)
-        ctx.set_verify_mode( tls::verify_mode::peer ).value();
+        ctx.set_verify_mode( tls::verify_mode::peer );
 
         // Require client certificate (server-side mTLS)
-        ctx.set_verify_mode( tls::verify_mode::require_peer ).value();
+        ctx.set_verify_mode( tls::verify_mode::require_peer );
         @endcode
 
         @see verify_mode
     */
-    system::result<void>
+    std::error_code
     set_verify_mode( verify_mode mode );
 
     /** Set the maximum certificate chain verification depth.
@@ -670,7 +670,7 @@ public:
 
         @return Success, or an error if the depth is invalid.
     */
-    system::result<void>
+    std::error_code
     set_verify_depth( int depth );
 
     /** Set a custom certificate verification callback.
@@ -696,7 +696,7 @@ public:
             depends on the TLS backend.
     */
     template<typename Callback>
-    system::result<void>
+    std::error_code
     set_verify_callback( Callback callback );
 
     /** Set the expected server hostname for verification.
@@ -783,7 +783,7 @@ public:
         @see add_crl_file
         @see set_revocation_policy
     */
-    system::result<void>
+    std::error_code
     add_crl( std::string_view crl );
 
     /** Add a Certificate Revocation List from a file.
@@ -798,13 +798,13 @@ public:
 
         @par Example
         @code
-        ctx.add_crl_file( "issuer.crl" ).value();
+        ctx.add_crl_file( "issuer.crl" );
         @endcode
 
         @see add_crl
         @see set_revocation_policy
     */
-    system::result<void>
+    std::error_code
     add_crl_file( std::string_view filename );
 
     /** Set the OCSP staple response for server-side stapling.
@@ -824,7 +824,7 @@ public:
         @note This is a server-side operation. Clients use
             `set_require_ocsp_staple()` to require stapled responses.
     */
-    system::result<void>
+    std::error_code
     set_ocsp_staple( std::string_view response );
 
     /** Require OCSP stapling from the server.
@@ -893,7 +893,7 @@ public:
             });
 
         // Now load encrypted key
-        ctx.use_private_key_file( "encrypted.key", tls::file_format::pem ).value();
+        ctx.use_private_key_file( "encrypted.key", tls::file_format::pem );
         @endcode
 
         @see password_purpose

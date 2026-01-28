@@ -91,7 +91,7 @@ make_socket_pair_t(Context& ctx)
             listening = true;
             break;
         }
-        catch (const system::system_error&)
+        catch (const std::system_error&)
         {
             acc.close();
             acc = acceptor(ctx);
@@ -1088,7 +1088,7 @@ struct socket_test_impl
         {
             sock.set_linger(true, -1);
         }
-        catch (system::system_error const&)
+        catch (std::system_error const&)
         {
             threw = true;
         }
@@ -1277,7 +1277,7 @@ struct socket_test_impl
                 found = true;
                 break;
             }
-            catch (const system::system_error&)
+            catch (const std::system_error&)
             {
                 acc.close();
                 acc = acceptor(ioc);

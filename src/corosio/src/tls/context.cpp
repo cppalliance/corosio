@@ -30,7 +30,7 @@ context()
 //
 //------------------------------------------------------------------------------
 
-system::result<void>
+std::error_code
 context::
 use_certificate(
     std::string_view certificate,
@@ -41,7 +41,7 @@ use_certificate(
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 use_certificate_file(
     std::string_view filename,
@@ -49,7 +49,7 @@ use_certificate_file(
 {
     std::ifstream file( std::string( filename ), std::ios::binary );
     if( !file )
-        return system::error_code( ENOENT, system::generic_category() );
+        return std::error_code( ENOENT, std::generic_category() );
 
     std::ostringstream ss;
     ss << file.rdbuf();
@@ -58,7 +58,7 @@ use_certificate_file(
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 use_certificate_chain( std::string_view chain )
 {
@@ -66,13 +66,13 @@ use_certificate_chain( std::string_view chain )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 use_certificate_chain_file( std::string_view filename )
 {
     std::ifstream file( std::string( filename ), std::ios::binary );
     if( !file )
-        return system::error_code( ENOENT, system::generic_category() );
+        return std::error_code( ENOENT, std::generic_category() );
 
     std::ostringstream ss;
     ss << file.rdbuf();
@@ -80,7 +80,7 @@ use_certificate_chain_file( std::string_view filename )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 use_private_key(
     std::string_view private_key,
@@ -91,7 +91,7 @@ use_private_key(
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 use_private_key_file(
     std::string_view filename,
@@ -99,7 +99,7 @@ use_private_key_file(
 {
     std::ifstream file( std::string( filename ), std::ios::binary );
     if( !file )
-        return system::error_code( ENOENT, system::generic_category() );
+        return std::error_code( ENOENT, std::generic_category() );
 
     std::ostringstream ss;
     ss << file.rdbuf();
@@ -108,24 +108,24 @@ use_private_key_file(
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 use_pkcs12(
     std::string_view /*data*/,
     std::string_view /*passphrase*/ )
 {
     // TODO: Implement PKCS#12 parsing
-    return system::error_code( ENOTSUP, system::generic_category() );
+    return std::error_code( ENOTSUP, std::generic_category() );
 }
 
-system::result<void>
+std::error_code
 context::
 use_pkcs12_file(
     std::string_view /*filename*/,
     std::string_view /*passphrase*/ )
 {
     // TODO: Implement PKCS#12 file loading
-    return system::error_code( ENOTSUP, system::generic_category() );
+    return std::error_code( ENOTSUP, std::generic_category() );
 }
 
 //------------------------------------------------------------------------------
@@ -134,7 +134,7 @@ use_pkcs12_file(
 //
 //------------------------------------------------------------------------------
 
-system::result<void>
+std::error_code
 context::
 add_certificate_authority( std::string_view ca )
 {
@@ -142,13 +142,13 @@ add_certificate_authority( std::string_view ca )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 load_verify_file( std::string_view filename )
 {
     std::ifstream file( std::string( filename ), std::ios::binary );
     if( !file )
-        return system::error_code( ENOENT, system::generic_category() );
+        return std::error_code( ENOENT, std::generic_category() );
 
     std::ostringstream ss;
     ss << file.rdbuf();
@@ -156,7 +156,7 @@ load_verify_file( std::string_view filename )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 add_verify_path( std::string_view path )
 {
@@ -164,7 +164,7 @@ add_verify_path( std::string_view path )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 set_default_verify_paths()
 {
@@ -178,7 +178,7 @@ set_default_verify_paths()
 //
 //------------------------------------------------------------------------------
 
-system::result<void>
+std::error_code
 context::
 set_min_protocol_version( version v )
 {
@@ -186,7 +186,7 @@ set_min_protocol_version( version v )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 set_max_protocol_version( version v )
 {
@@ -194,7 +194,7 @@ set_max_protocol_version( version v )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 set_ciphersuites( std::string_view ciphers )
 {
@@ -202,7 +202,7 @@ set_ciphersuites( std::string_view ciphers )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 set_alpn( std::initializer_list<std::string_view> protocols )
 {
@@ -218,7 +218,7 @@ set_alpn( std::initializer_list<std::string_view> protocols )
 //
 //------------------------------------------------------------------------------
 
-system::result<void>
+std::error_code
 context::
 set_verify_mode( verify_mode mode )
 {
@@ -226,7 +226,7 @@ set_verify_mode( verify_mode mode )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 set_verify_depth( int depth )
 {
@@ -255,7 +255,7 @@ set_servername_callback_impl(
 //
 //------------------------------------------------------------------------------
 
-system::result<void>
+std::error_code
 context::
 add_crl( std::string_view crl )
 {
@@ -263,13 +263,13 @@ add_crl( std::string_view crl )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 add_crl_file( std::string_view filename )
 {
     std::ifstream file( std::string( filename ), std::ios::binary );
     if( !file )
-        return system::error_code( ENOENT, system::generic_category() );
+        return std::error_code( ENOENT, std::generic_category() );
 
     std::ostringstream ss;
     ss << file.rdbuf();
@@ -277,7 +277,7 @@ add_crl_file( std::string_view filename )
     return {};
 }
 
-system::result<void>
+std::error_code
 context::
 set_ocsp_staple( std::string_view response )
 {

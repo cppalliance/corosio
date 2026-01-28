@@ -547,18 +547,19 @@ tls::context make_mtls_client_context()
 
 == Error Handling
 
-All fallible operations return `system::result<void>`. Use `.value()` to
-throw on error, or check explicitly:
+All fallible operations return `std::error_code`. Check the return value
+to detect errors:
 
 [source,cpp]
 ----
 // Throw on error
-ctx.use_certificate_file( "cert.pem", tls::file_format::pem ).value();
+if( auto ec = ctx.use_certificate_file( "cert.pem", tls::file_format::pem ) )
+    throw std::system_error(ec);
 
 // Check error explicitly
-if( auto r = ctx.load_verify_file( "ca.crt" ); !r )
+if( auto ec = ctx.load_verify_file( "ca.crt" ) )
 {
-    std::cerr << "Failed to load CA: " << r.error().message() << "\n";
+    std::cerr << "Failed to load CA: " << ec.message() << "\n";
     return;
 }
 ----

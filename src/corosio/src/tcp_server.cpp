@@ -19,10 +19,7 @@ tcp_server::do_accept(acceptor& acc)
     while(! st.stop_requested())
     {
         // Wait for an idle worker before blocking on accept
-        auto rv = co_await pop();
-        if(rv.has_error())
-            continue;
-        auto& w = rv.value();
+        auto& w = co_await pop();
         auto [ec] = co_await acc.accept(w.socket());
         if(ec)
         {
