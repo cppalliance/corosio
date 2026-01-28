@@ -184,6 +184,8 @@ operator()()
             *ec_out = capy::error::canceled;
         else if (dwError != 0)
             *ec_out = make_err(dwError);
+        else
+            *ec_out = {};
     }
 
     if (success && accepted_socket != INVALID_SOCKET && peer_wrapper)

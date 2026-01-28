@@ -56,6 +56,8 @@ operator()()
             *ec_out = capy::error::canceled;
         else if (errn != 0)
             *ec_out = make_err(errn);
+        else
+            *ec_out = {};
     }
 
     if (success && accepted_fd >= 0)

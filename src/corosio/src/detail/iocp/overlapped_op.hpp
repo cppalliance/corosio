@@ -101,6 +101,10 @@ struct overlapped_op
                 // (but not if we intentionally read with an empty buffer)
                 *ec_out = capy::error::eof;
             }
+            else
+            {
+                *ec_out = {};
+            }
         }
 
         if (bytes_out)
