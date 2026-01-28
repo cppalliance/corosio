@@ -12,7 +12,10 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/read.hpp>
+#include <boost/capy/write.hpp>
 #include <boost/url/ipv4_address.hpp>
 
 #include <cstdlib>
@@ -35,13 +38,14 @@ do_request(
         "Host: " + std::string(host) + "\r\n"
         "Connection: close\r\n"
         "\r\n";
-    if (auto [ec, n] = co_await corosio::write(
+    if (auto [ec, n] = co_await capy::write(
             stream, capy::const_buffer(request.data(), request.size())); ec)
         throw boost::system::system_error(ec);
 
-    // Read the entire response
+    // Read entire response until EOF
     std::string response;
-    auto [ec, n] = co_await corosio::read(stream, response);
+    auto [ec, n] = co_await capy::read(
+            stream, capy::string_dynamic_buffer(&response));
     // EOF is expected when server closes connection
     if (ec && ec != capy::error::eof)
         throw boost::system::system_error(ec);

@@ -10,18 +10,15 @@
 #ifndef BOOST_COROSIO_HPP
 #define BOOST_COROSIO_HPP
 
-#include <boost/corosio/io_context.hpp>
-#include <boost/capy/io_result.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/endpoint.hpp>
-#include <boost/corosio/read.hpp>
+#include <boost/corosio/io_context.hpp>
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/resolver_results.hpp>
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/socket.hpp>
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/corosio/timer.hpp>
-#include <boost/corosio/write.hpp>
 
 #include <boost/corosio/tls/context.hpp>
 #include <boost/corosio/tls/openssl_stream.hpp>

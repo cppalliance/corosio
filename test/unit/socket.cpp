@@ -16,11 +16,13 @@
 #if BOOST_COROSIO_HAS_SELECT
 #include <boost/corosio/select_context.hpp>
 #endif
-#include <boost/corosio/read.hpp>
-#include <boost/corosio/write.hpp>
+#include <boost/capy/buffers/string_dynamic_buffer.hpp>
+#include <boost/capy/read.hpp>
+#include <boost/capy/write.hpp>
 #include <boost/corosio/timer.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
@@ -44,7 +46,6 @@
 #include "test_suite.hpp"
 
 namespace boost::corosio {
-
 namespace {
 
 // Thread-safe port counter for multi-backend tests
@@ -761,12 +762,12 @@ struct socket_test_impl
         {
             // Write exactly 100 bytes
             std::string send_data(100, 'X');
-            (void)co_await write(a, capy::const_buffer(
+            (void)co_await capy::write(a, capy::const_buffer(
                 send_data.data(), send_data.size()));
 
             // Read exactly 100 bytes using corosio::read
             char buf[100] = {};
-            auto [ec, n] = co_await read(b, capy::mutable_buffer(
+            auto [ec, n] = co_await capy::read(b, capy::mutable_buffer(
                 buf, sizeof(buf)));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 100u);
@@ -788,14 +789,14 @@ struct socket_test_impl
         auto task = [](socket& a, socket& b) -> capy::task<>
         {
             std::string send_data(500, 'Y');
-            auto [ec1, n1] = co_await write(a, capy::const_buffer(
+            auto [ec1, n1] = co_await capy::write(a, capy::const_buffer(
                 send_data.data(), send_data.size()));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, 500u);
 
             // Read it back
             std::string recv_data(500, 0);
-            auto [ec2, n2] = co_await read(b, capy::mutable_buffer(
+            auto [ec2, n2] = co_await capy::read(b, capy::mutable_buffer(
                 recv_data.data(), recv_data.size()));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(n2, 500u);
@@ -817,15 +818,13 @@ struct socket_test_impl
         auto task = [](socket& a, socket& b) -> capy::task<>
         {
             std::string send_data = "Hello, this is a test message!";
-            (void)co_await write(a, capy::const_buffer(
-                send_data.data(), send_data.size()));
+            (void)co_await capy::write(a, capy::make_buffer(send_data));
             a.close();
 
-            // Read into string until EOF
+            // Read into string until EOF using dynamic buffer
             std::string result;
-            auto [ec, n] = co_await read(b, result);
-            // EOF is expected
-            BOOST_TEST(ec == capy::error::eof);
+            auto [ec, n] = co_await capy::read(b, capy::string_dynamic_buffer(&result));
+            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, send_data.size());
             BOOST_TEST_EQ(result, send_data);
         };
@@ -846,12 +845,12 @@ struct socket_test_impl
         {
             // Send 50 bytes but try to read 100
             std::string send_data(50, 'Z');
-            (void)co_await write(a, capy::const_buffer(
+            (void)co_await capy::write(a, capy::const_buffer(
                 send_data.data(), send_data.size()));
             a.close();
 
             char buf[100] = {};
-            auto [ec, n] = co_await read(b, capy::mutable_buffer(
+            auto [ec, n] = co_await capy::read(b, capy::mutable_buffer(
                 buf, sizeof(buf)));
             // Should get EOF after reading available data
             BOOST_TEST(ec == capy::error::eof);
@@ -1141,13 +1140,13 @@ struct socket_test_impl
             for (std::size_t i = 0; i < size; ++i)
                 send_data[i] = static_cast<char>((i * 7 + 13) & 0xFF);
 
-            auto [ec1, n1] = co_await write(a, capy::const_buffer(
+            auto [ec1, n1] = co_await capy::write(a, capy::const_buffer(
                 send_data.data(), send_data.size()));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, size);
 
             std::vector<char> recv_data(size);
-            auto [ec2, n2] = co_await read(b, capy::mutable_buffer(
+            auto [ec2, n2] = co_await capy::read(b, capy::mutable_buffer(
                 recv_data.data(), recv_data.size()));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(n2, size);
@@ -1173,13 +1172,13 @@ struct socket_test_impl
             for (int i = 0; i < 256; ++i)
                 send_data[i] = static_cast<unsigned char>(i);
 
-            auto [ec1, n1] = co_await write(a, capy::const_buffer(
+            auto [ec1, n1] = co_await capy::write(a, capy::const_buffer(
                 send_data.data(), send_data.size()));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, 256u);
 
             std::array<unsigned char, 256> recv_data = {};
-            auto [ec2, n2] = co_await read(b, capy::mutable_buffer(
+            auto [ec2, n2] = co_await capy::read(b, capy::mutable_buffer(
                 recv_data.data(), recv_data.size()));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(n2, 256u);
