@@ -10,7 +10,6 @@
 #ifndef BOOST_COROSIO_DETAIL_POSIX_SIGNALS_HPP
 #define BOOST_COROSIO_DETAIL_POSIX_SIGNALS_HPP
 
-
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_POSIX

@@ -11,7 +11,6 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
-
 #if BOOST_COROSIO_HAS_IOCP
 #include "src/detail/iocp/sockets.hpp"
 #else

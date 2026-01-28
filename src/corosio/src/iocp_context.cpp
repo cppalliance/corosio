@@ -9,7 +9,6 @@
 
 #include <boost/corosio/iocp_context.hpp>
 
-
 #if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/scheduler.hpp"

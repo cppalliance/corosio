@@ -36,14 +36,14 @@ do_request(
         "Connection: close\r\n"
         "\r\n";
     if (auto [ec, n] = co_await corosio::write(
-            stream, capy::const_buffer(request.data(), request.size())); ec.failed())
+            stream, capy::const_buffer(request.data(), request.size())); ec)
         throw boost::system::system_error(ec);
 
     // Read the entire response
     std::string response;
     auto [ec, n] = co_await corosio::read(stream, response);
     // EOF is expected when server closes connection
-    if (ec.failed() && ec != capy::error::eof)
+    if (ec && ec != capy::error::eof)
         throw boost::system::system_error(ec);
 
     std::cout << response << std::endl;
@@ -61,7 +61,7 @@ run_client(
     s.open();
 
     // Connect to the server
-    if (auto [ec] = co_await s.connect(corosio::endpoint(addr, port)); ec.failed())
+    if (auto [ec] = co_await s.connect(corosio::endpoint(addr, port)); ec)
         throw boost::system::system_error(ec);
 
     // Configure TLS context
@@ -74,7 +74,7 @@ run_client(
     corosio::wolfssl_stream secure(s, ctx);
 
     // Perform TLS handshake
-    if (auto [ec] = co_await secure.handshake(corosio::wolfssl_stream::client); ec.failed())
+    if (auto [ec] = co_await secure.handshake(corosio::wolfssl_stream::client); ec)
         throw boost::system::system_error(ec);
 
     co_await do_request(secure, hostname);

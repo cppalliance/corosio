@@ -10,7 +10,6 @@
 #ifndef BOOST_COROSIO_DETAIL_EPOLL_SCHEDULER_HPP
 #define BOOST_COROSIO_DETAIL_EPOLL_SCHEDULER_HPP
 
-
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_EPOLL
