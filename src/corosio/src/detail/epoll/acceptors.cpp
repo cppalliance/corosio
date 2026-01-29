@@ -71,6 +71,13 @@ operator()()
                 auto& impl = static_cast<epoll_socket_impl&>(socket_svc->create_impl());
                 impl.set_socket(accepted_fd);
 
+                // Register accepted socket for persistent epoll monitoring
+                impl.desc_data_.fd = accepted_fd;
+                impl.desc_data_.read_op = nullptr;
+                impl.desc_data_.write_op = nullptr;
+                impl.desc_data_.connect_op = nullptr;
+                socket_svc->scheduler().register_descriptor(accepted_fd, &impl.desc_data_);
+
                 sockaddr_in local_addr{};
                 socklen_t local_len = sizeof(local_addr);
                 sockaddr_in remote_addr{};
@@ -144,6 +151,16 @@ epoll_acceptor_impl(epoll_acceptor_service& svc) noexcept
 
 void
 epoll_acceptor_impl::
+update_epoll_events() noexcept
+{
+    std::uint32_t events = 0;
+    if (desc_data_.read_op)  // accept uses EPOLLIN
+        events |= EPOLLIN;
+    svc_.scheduler().update_descriptor_events(fd_, &desc_data_, events);
+}
+
+void
+epoll_acceptor_impl::
 release()
 {
     close_socket();
@@ -185,35 +202,16 @@ accept(
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
         svc_.work_started();
-        // Set registering BEFORE register_fd to close the race window where
-        // reactor sees an event before we set registered.
-        op.registered.store(registration_state::registering, std::memory_order_release);
-        svc_.scheduler().register_fd(fd_, &op, EPOLLIN | EPOLLET);
+        op.impl_ptr = shared_from_this();
+        desc_data_.read_op = &op;  // accept uses read_op slot (EPOLLIN)
+        update_epoll_events();
 
-        // Transition to registered. If this fails, reactor or cancel already
-        // claimed the op (state is now unregistered), so we're done. However,
-        // we must still unregister the fd because cancel's unregister_fd may
-        // have run before our register_fd, leaving the fd orphaned in epoll.
-        auto expected = registration_state::registering;
-        if (!op.registered.compare_exchange_strong(
-                expected, registration_state::registered, std::memory_order_acq_rel))
-        {
-            svc_.scheduler().unregister_fd(fd_);
-            return;
-        }
-
-        // If cancelled was set before we registered, handle it now.
         if (op.cancelled.load(std::memory_order_acquire))
         {
-            auto prev = op.registered.exchange(
-                registration_state::unregistered, std::memory_order_acq_rel);
-            if (prev != registration_state::unregistered)
-            {
-                svc_.scheduler().unregister_fd(fd_);
-                op.impl_ptr = shared_from_this();
-                svc_.post(&op);
-                svc_.work_finished();
-            }
+            desc_data_.read_op = nullptr;
+            update_epoll_events();
+            svc_.post(&op);
+            svc_.work_finished();
         }
         return;
     }
@@ -234,13 +232,12 @@ cancel() noexcept
         return;
     }
 
-    auto prev = acc_.registered.exchange(
-        registration_state::unregistered, std::memory_order_acq_rel);
     acc_.request_cancel();
-
-    if (prev != registration_state::unregistered)
+    if (desc_data_.read_op == &acc_)
     {
-        svc_.scheduler().unregister_fd(fd_);
+        desc_data_.read_op = nullptr;
+        if (desc_data_.is_registered)
+            update_epoll_events();
         acc_.impl_ptr = self;
         svc_.post(&acc_);
         svc_.work_finished();
@@ -251,22 +248,16 @@ void
 epoll_acceptor_impl::
 cancel_single_op(epoll_op& op) noexcept
 {
-    // Called from stop_token callback to cancel a specific pending operation.
-    auto prev = op.registered.exchange(
-        registration_state::unregistered, std::memory_order_acq_rel);
     op.request_cancel();
 
-    if (prev != registration_state::unregistered)
+    if (desc_data_.read_op == &op)
     {
-        svc_.scheduler().unregister_fd(fd_);
-
-        // Keep impl alive until op completes
+        desc_data_.read_op = nullptr;
+        if (desc_data_.is_registered)
+            update_epoll_events();
         try {
             op.impl_ptr = shared_from_this();
-        } catch (const std::bad_weak_ptr&) {
-            // Impl is being destroyed, op will be orphaned but that's ok
-        }
-
+        } catch (const std::bad_weak_ptr&) {}
         svc_.post(&op);
         svc_.work_finished();
     }
@@ -280,11 +271,16 @@ close_socket() noexcept
 
     if (fd_ >= 0)
     {
-        // Unconditionally remove from epoll to handle edge cases
-        svc_.scheduler().unregister_fd(fd_);
+        if (desc_data_.registered_events != 0)
+            svc_.scheduler().deregister_descriptor(fd_);
         ::close(fd_);
         fd_ = -1;
     }
+
+    desc_data_.fd = -1;
+    desc_data_.is_registered = false;
+    desc_data_.read_op = nullptr;
+    desc_data_.registered_events = 0;
 
     // Clear cached endpoint
     local_endpoint_ = endpoint{};
@@ -375,6 +371,11 @@ open_acceptor(
     }
 
     epoll_impl->fd_ = fd;
+
+    // Register fd for persistent epoll monitoring (lazy registration)
+    epoll_impl->desc_data_.fd = fd;
+    epoll_impl->desc_data_.read_op = nullptr;
+    scheduler().register_descriptor(fd, &epoll_impl->desc_data_);
 
     // Cache the local endpoint (queries OS for ephemeral port if port was 0)
     sockaddr_in local_addr{};

@@ -49,63 +49,64 @@
     fixed slots for each operation type (conn_, rd_, wr_), so only one
     operation of each type can be pending per socket at a time.
 
-    Completion vs Cancellation Race
-    -------------------------------
-    The `registered` atomic uses a tri-state (unregistered, registering,
-    registered) to handle two races: (1) between register_fd() and the
-    reactor seeing an event, and (2) between reactor completion and cancel().
-
-    The registering state closes the window where an event could arrive
-    after register_fd() but before the boolean was set. The reactor and
-    cancel() both treat registering the same as registered when claiming.
-
-    Whoever atomically exchanges to unregistered "claims" the operation
-    and is responsible for completing it. The loser sees unregistered and
-    does nothing. The initiating thread uses compare_exchange to transition
-    from registering to registered; if this fails, the reactor or cancel
-    already claimed the op. This avoids double-completion bugs without
-    requiring a mutex in the hot path.
+    Persistent Registration
+    -----------------------
+    File descriptors are registered with epoll once (via descriptor_data) and
+    stay registered until closed. The descriptor_data tracks which operations
+    are pending (read_op, write_op, connect_op). When an event arrives, the
+    reactor dispatches to the appropriate pending operation.
 
     Impl Lifetime Management
     ------------------------
     When cancel() posts an op to the scheduler's ready queue, the socket impl
     might be destroyed before the scheduler processes the op. The `impl_ptr`
     member holds a shared_ptr to the impl, keeping it alive until the op
-    completes. This is set by cancel() in sockets.hpp and cleared in operator()
-    after the coroutine is resumed. Without this, closing a socket with pending
-    operations causes use-after-free.
+    completes. This is set by cancel() and cleared in operator() after the
+    coroutine is resumed.
 
     EOF Detection
     -------------
     For reads, 0 bytes with no error means EOF. But an empty user buffer also
-    returns 0 bytes. The `empty_buffer_read` flag distinguishes these cases
-    so we don't spuriously report EOF when the user just passed an empty buffer.
+    returns 0 bytes. The `empty_buffer_read` flag distinguishes these cases.
 
     SIGPIPE Prevention
     ------------------
     Writes use sendmsg() with MSG_NOSIGNAL instead of writev() to prevent
-    SIGPIPE when the peer has closed. This is the same approach Boost.Asio
-    uses on Linux.
+    SIGPIPE when the peer has closed.
 */
 
 namespace boost::corosio::detail {
 
-// Forward declarations for cancellation support
+// Forward declarations
 class epoll_socket_impl;
 class epoll_acceptor_impl;
+struct epoll_op;
 
-/** Registration state for async operations.
+/** Per-descriptor state for persistent epoll registration.
 
-    Tri-state enum to handle the race between register_fd() and
-    run_reactor() seeing an event. Setting REGISTERING before
-    calling register_fd() ensures events delivered during the
-    registration window are not dropped.
+    Tracks pending operations for a file descriptor. The fd is registered
+    once with epoll and stays registered until closed. Events are dispatched
+    to the appropriate pending operation (EPOLLIN -> read_op, etc.).
 */
-enum class registration_state : std::uint8_t
+struct descriptor_data
 {
-    unregistered,  ///< Not registered with reactor
-    registering,   ///< register_fd() called, not yet confirmed
-    registered     ///< Fully registered, ready for events
+    /// Currently registered events (EPOLLIN, EPOLLOUT, etc.)
+    std::uint32_t registered_events = 0;
+
+    /// Pending read operation (nullptr if none)
+    epoll_op* read_op = nullptr;
+
+    /// Pending write operation (nullptr if none)
+    epoll_op* write_op = nullptr;
+
+    /// Pending connect operation (nullptr if none)
+    epoll_op* connect_op = nullptr;
+
+    /// The file descriptor
+    int fd = -1;
+
+    /// Whether this descriptor is managed by persistent registration
+    bool is_registered = false;
 };
 
 struct epoll_op : scheduler_op
@@ -126,7 +127,6 @@ struct epoll_op : scheduler_op
     std::size_t bytes_transferred = 0;
 
     std::atomic<bool> cancelled{false};
-    std::atomic<registration_state> registered{registration_state::unregistered};
     std::optional<std::stop_callback<canceller>> stop_cb;
 
     // Prevents use-after-free when socket is closed with pending ops.
@@ -149,7 +149,6 @@ struct epoll_op : scheduler_op
         errn = 0;
         bytes_transferred = 0;
         cancelled.store(false, std::memory_order_relaxed);
-        registered.store(registration_state::unregistered, std::memory_order_relaxed);
         impl_ptr.reset();
         socket_impl_ = nullptr;
         acceptor_impl_ = nullptr;

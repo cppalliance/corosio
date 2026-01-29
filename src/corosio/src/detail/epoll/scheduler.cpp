@@ -400,29 +400,34 @@ poll_one()
 
 void
 epoll_scheduler::
-register_fd(int fd, epoll_op* op, std::uint32_t events) const
+register_descriptor(int fd, descriptor_data* desc) const
 {
-    epoll_event ev{};
-    ev.events = events;
-    ev.data.ptr = op;
-    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0)
-        detail::throw_system_error(make_err(errno), "epoll_ctl ADD");
+    // Don't register yet - we'll register lazily when first operation waits
+    desc->registered_events = 0;
+    desc->is_registered = true;
+    desc->fd = fd;
 }
 
 void
 epoll_scheduler::
-modify_fd(int fd, epoll_op* op, std::uint32_t events) const
+update_descriptor_events(int fd, descriptor_data* desc, std::uint32_t events) const
 {
+    // Always include error/hangup events and oneshot for auto-disarm
+    events |= EPOLLERR | EPOLLHUP | EPOLLONESHOT;
+
     epoll_event ev{};
     ev.events = events;
-    ev.data.ptr = op;
-    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev) < 0)
-        detail::throw_system_error(make_err(errno), "epoll_ctl MOD");
+    ev.data.ptr = desc;
+
+    int op = (desc->registered_events == 0) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
+    if (::epoll_ctl(epoll_fd_, op, fd, &ev) < 0)
+        detail::throw_system_error(make_err(errno), "epoll_ctl (persistent)");
+    desc->registered_events = events;
 }
 
 void
 epoll_scheduler::
-unregister_fd(int fd) const
+deregister_descriptor(int fd) const
 {
     ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
 }
@@ -538,8 +543,8 @@ run_reactor(std::unique_lock<std::mutex>& lock)
 
     lock.unlock();
 
-    epoll_event events[64];
-    int nfds = ::epoll_wait(epoll_fd_, events, 64, timeout_ms);
+    epoll_event events[128];
+    int nfds = ::epoll_wait(epoll_fd_, events, 128, timeout_ms);
     int saved_errno = errno;  // Save before process_expired() may overwrite
 
     // Process timers outside the lock - timer completions may call post()
@@ -564,35 +569,86 @@ run_reactor(std::unique_lock<std::mutex>& lock)
             continue;
         }
 
-        auto* op = static_cast<epoll_op*>(events[i].data.ptr);
+        auto* desc = static_cast<descriptor_data*>(events[i].data.ptr);
+        std::uint32_t ev = events[i].events;
+        int err = 0;
 
-        // Claim the op by exchanging to unregistered. Both registering and
-        // registered states mean the op is ours to complete. If already
-        // unregistered, cancel or another thread handled it.
-        auto prev = op->registered.exchange(
-            registration_state::unregistered, std::memory_order_acq_rel);
-        if (prev == registration_state::unregistered)
-            continue;
-
-        unregister_fd(op->fd);
-
-        if (events[i].events & (EPOLLERR | EPOLLHUP))
+        if (ev & (EPOLLERR | EPOLLHUP))
         {
-            int errn = 0;
-            socklen_t len = sizeof(errn);
-            if (::getsockopt(op->fd, SOL_SOCKET, SO_ERROR, &errn, &len) < 0)
-                errn = errno;
-            if (errn == 0)
-                errn = EIO;
-            op->complete(errn, 0);
-        }
-        else
-        {
-            op->perform_io();
+            socklen_t len = sizeof(err);
+            if (::getsockopt(desc->fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
+                err = errno;
+            if (err == 0)
+                err = EIO;
         }
 
-        completed_ops_.push(op);
-        ++completions_queued;
+        // Handle read events (including accept)
+        if ((ev & EPOLLIN) && desc->read_op)
+        {
+            auto* op = desc->read_op;
+            desc->read_op = nullptr;
+            if (err)
+                op->complete(err, 0);
+            else
+                op->perform_io();
+            completed_ops_.push(op);
+            ++completions_queued;
+        }
+
+        // Handle write events
+        if ((ev & EPOLLOUT) && desc->write_op)
+        {
+            auto* op = desc->write_op;
+            desc->write_op = nullptr;
+            if (err)
+                op->complete(err, 0);
+            else
+                op->perform_io();
+            completed_ops_.push(op);
+            ++completions_queued;
+        }
+
+        // Handle connect events
+        if ((ev & EPOLLOUT) && desc->connect_op)
+        {
+            auto* op = desc->connect_op;
+            desc->connect_op = nullptr;
+            if (err)
+                op->complete(err, 0);
+            else
+                op->perform_io();
+            completed_ops_.push(op);
+            ++completions_queued;
+        }
+
+        // Handle errors for pending ops even if no specific event
+        if (err)
+        {
+            if (desc->read_op)
+            {
+                auto* op = desc->read_op;
+                desc->read_op = nullptr;
+                op->complete(err, 0);
+                completed_ops_.push(op);
+                ++completions_queued;
+            }
+            if (desc->write_op)
+            {
+                auto* op = desc->write_op;
+                desc->write_op = nullptr;
+                op->complete(err, 0);
+                completed_ops_.push(op);
+                ++completions_queued;
+            }
+            if (desc->connect_op)
+            {
+                auto* op = desc->connect_op;
+                desc->connect_op = nullptr;
+                op->complete(err, 0);
+                completed_ops_.push(op);
+                ++completions_queued;
+            }
+        }
     }
 
     // Wake idle workers if we queued I/O completions
@@ -603,6 +659,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
         else
             for (int i = 0; i < completions_queued; ++i)
                 wakeup_event_.notify_one();
+
     }
 }
 
@@ -656,7 +713,8 @@ do_one(long timeout_us)
         {
             // No reactor running and queue empty - become the reactor
             reactor_running_ = true;
-            reactor_interrupted_ = false;
+            // If handlers arrived since our last check, don't block in epoll_wait
+            reactor_interrupted_ = !completed_ops_.empty();
 
             run_reactor(lock);
 
