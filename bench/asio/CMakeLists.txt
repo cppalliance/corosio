@@ -65,3 +65,17 @@ target_compile_options(asio_bench_socket_latency
         $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
 set_property(TARGET asio_bench_socket_latency
     PROPERTY FOLDER "benchmarks/asio")
+
+# http server benchmark
+add_executable(asio_bench_http_server
+    http_server_bench.cpp)
+target_link_libraries(asio_bench_http_server
+    PRIVATE
+        Boost::asio
+        Threads::Threads)
+target_compile_features(asio_bench_http_server PUBLIC cxx_std_20)
+target_compile_options(asio_bench_http_server
+    PRIVATE
+        $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+set_property(TARGET asio_bench_http_server
+    PROPERTY FOLDER "benchmarks/asio")
