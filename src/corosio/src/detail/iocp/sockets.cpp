@@ -446,9 +446,14 @@ connect(
         // certain conditions, IOCP might still deliver a completion. Use CAS
         // to race with IOCP: only set fields and post if we win (CAS returns 0).
         // If IOCP wins, it already set the fields via complete() and processed.
-        svc_.work_finished();
+        //
+        // CRITICAL: Must call work_finished() ONLY if we win the CAS, and must
+        // not access op after CAS fails. If IOCP wins, it processes the op
+        // (which may destroy it), so any access to op is use-after-free.
+        // The IOCP handler calls work_finished() via its work_guard.
         if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
         {
+            svc_.work_finished();
             op.dwError = 0;
             svc_.post(&op);
         }
@@ -527,9 +532,14 @@ read_some(
         // certain conditions, IOCP might still deliver a completion. Use CAS
         // to race with IOCP: only set fields and post if we win (CAS returns 0).
         // If IOCP wins, it already set the fields via complete() and processed.
-        svc_.work_finished();
+        //
+        // CRITICAL: Must call work_finished() ONLY if we win the CAS, and must
+        // not access op after CAS fails. If IOCP wins, it processes the op
+        // (which may destroy it), so any access to op is use-after-free.
+        // The IOCP handler calls work_finished() via its work_guard.
         if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
         {
+            svc_.work_finished();
             op.bytes_transferred = static_cast<DWORD>(op.InternalHigh);
             op.dwError = 0;
             svc_.post(&op);
@@ -603,9 +613,14 @@ write_some(
     {
         // Synchronous completion - use CAS to race with IOCP.
         // See read_some for detailed explanation.
-        svc_.work_finished();
+        //
+        // CRITICAL: Must call work_finished() ONLY if we win the CAS, and must
+        // not access op after CAS fails. If IOCP wins, it processes the op
+        // (which may destroy it), so any access to op is use-after-free.
+        // The IOCP handler calls work_finished() via its work_guard.
         if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
         {
+            svc_.work_finished();
             op.bytes_transferred = static_cast<DWORD>(op.InternalHigh);
             op.dwError = 0;
             svc_.post(&op);
@@ -1098,9 +1113,14 @@ accept(
     {
         // Synchronous completion - use CAS to race with IOCP.
         // See win_socket_impl_internal::read_some for detailed explanation.
-        svc_.work_finished();
+        //
+        // CRITICAL: Must call work_finished() ONLY if we win the CAS, and must
+        // not access op after CAS fails. If IOCP wins, it processes the op
+        // (which may destroy it), so any access to op is use-after-free.
+        // The IOCP handler calls work_finished() via its work_guard.
         if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
         {
+            svc_.work_finished();
             op.dwError = 0;
             svc_.post(&op);
         }
