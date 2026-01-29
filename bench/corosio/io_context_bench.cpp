@@ -18,44 +18,11 @@
 #include <thread>
 #include <vector>
 
+#include "../common/backend_selection.hpp"
 #include "../common/benchmark.hpp"
 
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
-
-// Backend names for display
-inline const char* default_backend_name()
-{
-#if BOOST_COROSIO_HAS_IOCP
-    return "iocp";
-#elif BOOST_COROSIO_HAS_EPOLL
-    return "epoll";
-#elif BOOST_COROSIO_HAS_KQUEUE
-    return "kqueue";
-#elif BOOST_COROSIO_HAS_SELECT
-    return "select";
-#else
-    return "unknown";
-#endif
-}
-
-inline void print_available_backends()
-{
-    std::cout << "Available backends on this platform:\n";
-#if BOOST_COROSIO_HAS_IOCP
-    std::cout << "  iocp     - Windows I/O Completion Ports (default)\n";
-#endif
-#if BOOST_COROSIO_HAS_EPOLL
-    std::cout << "  epoll    - Linux epoll (default)\n";
-#endif
-#if BOOST_COROSIO_HAS_KQUEUE
-    std::cout << "  kqueue   - BSD/macOS kqueue (default)\n";
-#endif
-#if BOOST_COROSIO_HAS_SELECT
-    std::cout << "  select   - POSIX select (portable)\n";
-#endif
-    std::cout << "\nDefault backend: " << default_backend_name() << "\n";
-}
 
 // Coroutine that increments a counter
 capy::task<> increment_task(int& counter)
@@ -346,7 +313,7 @@ void print_usage(const char* program_name)
     std::cout << "  concurrent         Concurrent post and run\n";
     std::cout << "  all                Run all benchmarks (default)\n";
     std::cout << "\n";
-    print_available_backends();
+    bench::print_available_backends();
 }
 
 int main(int argc, char* argv[])
@@ -396,7 +363,7 @@ int main(int argc, char* argv[])
         }
         else if (std::strcmp(argv[i], "--list") == 0)
         {
-            print_available_backends();
+            bench::print_available_backends();
             return 0;
         }
         else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
@@ -414,37 +381,12 @@ int main(int argc, char* argv[])
 
     // If no backend specified, use platform default
     if (!backend)
-    {
-        backend = default_backend_name();
-    }
+        backend = bench::default_backend_name();
 
-    // Run benchmarks for the selected backend
-#if BOOST_COROSIO_HAS_EPOLL
-    if (std::strcmp(backend, "epoll") == 0)
-    {
-        run_benchmarks<corosio::epoll_context>("epoll", output_file, bench_filter);
-        return 0;
-    }
-#endif
-
-#if BOOST_COROSIO_HAS_SELECT
-    if (std::strcmp(backend, "select") == 0)
-    {
-        run_benchmarks<corosio::select_context>("select", output_file, bench_filter);
-        return 0;
-    }
-#endif
-
-#if BOOST_COROSIO_HAS_IOCP
-    if (std::strcmp(backend, "iocp") == 0)
-    {
-        run_benchmarks<corosio::iocp_context>("iocp", output_file, bench_filter);
-        return 0;
-    }
-#endif
-
-    // If we get here, the backend is not available
-    std::cerr << "Error: Backend '" << backend << "' is not available on this platform.\n\n";
-    print_available_backends();
-    return 1;
+    // Dispatch to the selected backend using a generic lambda
+    return bench::dispatch_backend(backend,
+        [=]<typename Context>(const char* name)
+        {
+            run_benchmarks<Context>(name, output_file, bench_filter);
+        });
 }
