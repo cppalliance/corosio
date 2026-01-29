@@ -39,3 +39,13 @@ target_link_libraries(corosio_bench_socket_latency
         Threads::Threads)
 set_property(TARGET corosio_bench_socket_latency
     PROPERTY FOLDER "benchmarks/corosio")
+
+# http server benchmark
+add_executable(corosio_bench_http_server
+    http_server_bench.cpp)
+target_link_libraries(corosio_bench_http_server
+    PRIVATE
+        Boost::corosio
+        Threads::Threads)
+set_property(TARGET corosio_bench_http_server
+    PROPERTY FOLDER "benchmarks/corosio")
