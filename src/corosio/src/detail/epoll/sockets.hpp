@@ -145,6 +145,7 @@ public:
     void cancel() noexcept override;
     void cancel_single_op(epoll_op& op) noexcept;
     void close_socket() noexcept;
+    void update_epoll_events() noexcept;
     void set_socket(int fd) noexcept { fd_ = fd; }
     void set_endpoints(endpoint local, endpoint remote) noexcept
     {
@@ -155,6 +156,9 @@ public:
     epoll_connect_op conn_;
     epoll_read_op rd_;
     epoll_write_op wr_;
+
+    /// Per-descriptor state for persistent epoll registration
+    descriptor_data desc_data_;
 
 private:
     epoll_socket_service& svc_;

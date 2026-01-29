@@ -31,6 +31,7 @@
 namespace boost::corosio::detail {
 
 struct epoll_op;
+struct descriptor_data;
 
 /** Linux scheduler using epoll for I/O multiplexing.
 
@@ -98,27 +99,30 @@ public:
     */
     int epoll_fd() const noexcept { return epoll_fd_; }
 
-    /** Register a file descriptor with epoll.
+    /** Register a descriptor for persistent monitoring.
+
+        The fd is registered once and stays registered until explicitly
+        deregistered. Events are dispatched via descriptor_data which
+        tracks pending read/write/connect operations.
 
         @param fd The file descriptor to register.
-        @param op The operation associated with this fd.
-        @param events The epoll events to monitor (EPOLLIN, EPOLLOUT, etc.).
+        @param desc Pointer to descriptor data (stored in epoll_event.data.ptr).
     */
-    void register_fd(int fd, epoll_op* op, std::uint32_t events) const;
+    void register_descriptor(int fd, descriptor_data* desc) const;
 
-    /** Modify epoll registration for a file descriptor.
+    /** Update events for a persistently registered descriptor.
 
-        @param fd The file descriptor to modify.
-        @param op The operation associated with this fd.
-        @param events The new epoll events to monitor.
+        @param fd The file descriptor.
+        @param desc Pointer to descriptor data.
+        @param events The new events to monitor.
     */
-    void modify_fd(int fd, epoll_op* op, std::uint32_t events) const;
+    void update_descriptor_events(int fd, descriptor_data* desc, std::uint32_t events) const;
 
-    /** Unregister a file descriptor from epoll.
+    /** Deregister a persistently registered descriptor.
 
-        @param fd The file descriptor to unregister.
+        @param fd The file descriptor to deregister.
     */
-    void unregister_fd(int fd) const;
+    void deregister_descriptor(int fd) const;
 
     /** For use by I/O operations to track pending work. */
     void work_started() const noexcept override;
