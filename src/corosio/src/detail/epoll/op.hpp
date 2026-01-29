@@ -174,10 +174,14 @@ struct epoll_op : scheduler_op
         if (bytes_out)
             *bytes_out = bytes_transferred;
 
-        // Move to stack before destroying the frame
+        // Move to stack before resuming coroutine. The coroutine might close
+        // the socket, releasing the last wrapper ref. If impl_ptr were the
+        // last ref and we destroyed it while still in operator(), we'd have
+        // use-after-free. Moving to local ensures destruction happens at
+        // function exit, after all member accesses are complete.
         capy::executor_ref saved_ex( std::move( ex ) );
         capy::coro saved_h( std::move( h ) );
-        impl_ptr.reset();
+        auto prevent_premature_destruction = std::move(impl_ptr);
         resume_coro(saved_ex, saved_h);
     }
 

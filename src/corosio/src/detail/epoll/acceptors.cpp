@@ -125,10 +125,10 @@ operator()()
             *impl_out = nullptr;
     }
 
-    // Move to stack before destroying the frame
+    // Move to stack before resuming. See epoll_op::operator()() for rationale.
     capy::executor_ref saved_ex( std::move( ex ) );
     capy::coro saved_h( std::move( h ) );
-    impl_ptr.reset();
+    auto prevent_premature_destruction = std::move(impl_ptr);
     saved_ex.dispatch( saved_h ).resume();
 }
 

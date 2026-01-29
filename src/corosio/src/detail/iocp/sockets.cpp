@@ -243,14 +243,16 @@ operator()()
             *impl_out = nullptr;
     }
 
-    // Save h and d before resetting acceptor_ptr, because acceptor_ptr
+    // Save h and d before moving acceptor_ptr, because acceptor_ptr
     // may be the last reference to the internal, and this accept_op is a
     // member of the internal. Destroying the internal would invalidate h and d.
     auto saved_h = h;
     auto saved_d = d;
 
-    // Release the acceptor reference now that I/O is complete
-    acceptor_ptr.reset();
+    // Move acceptor_ptr to local BEFORE resuming. When the local's destructor
+    // runs at function exit, it may destroy the internal (and 'this'). Moving
+    // to local ensures this happens after all member accesses are complete.
+    auto prevent_premature_destruction = std::move(acceptor_ptr);
 
     resume_coro(saved_d, saved_h);
 }
@@ -286,8 +288,13 @@ operator()()
         internal.set_endpoints(local_ep, target_endpoint);
     }
 
+    // Move internal_ptr to local BEFORE resuming coroutine. The coroutine might
+    // close the socket, releasing the last wrapper ref. If internal_ptr were the
+    // last ref and we reset it after resuming, we'd destroy 'this' while still
+    // executing. Moving to local ensures destruction happens after all member
+    // accesses, when the local's destructor runs at function exit.
+    auto prevent_premature_destruction = std::move(internal_ptr);
     overlapped_op::operator()();
-    internal_ptr.reset();
 }
 
 void
@@ -306,8 +313,9 @@ void
 read_op::
 operator()()
 {
+    // Move internal_ptr to local BEFORE resuming. See connect_op::operator()().
+    auto prevent_premature_destruction = std::move(internal_ptr);
     overlapped_op::operator()();
-    internal_ptr.reset();
 }
 
 void
@@ -326,8 +334,9 @@ void
 write_op::
 operator()()
 {
+    // Move internal_ptr to local BEFORE resuming. See connect_op::operator()().
+    auto prevent_premature_destruction = std::move(internal_ptr);
     overlapped_op::operator()();
-    internal_ptr.reset();
 }
 
 void

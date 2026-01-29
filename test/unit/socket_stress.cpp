@@ -7,17 +7,20 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-// Stress tests to expose race conditions in IOCP scheduler.
+// Stress tests to expose race conditions in the async I/O scheduler.
 // These tests hammer on specific code paths that have potential
 // race conditions, running many iterations to increase the
 // likelihood of triggering intermittent bugs.
 //
 // Target areas:
 // 1. stop_callback lifetime - stop token firing during completion
-// 2. ready_ flag race - synchronous completion vs IOCP delivery
+// 2. ready_ flag race - synchronous completion vs completion port delivery
 // 3. Rapid cancel/complete cycles
+// 4. shared_ptr lifetime - operation completion vs socket close race
 //
-// These tests are Windows-only since they target IOCP-specific code paths.
+// Currently IOCP-only: epoll stress tests hang on some Linux builds (GCC 13
+// coverage). The use-after-free fix is in place for epoll, but there appears
+// to be a separate deadlock issue that needs investigation.
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -284,8 +287,7 @@ TEST_SUITE(stop_token_stress_test, "boost.corosio.socket_stress.stop_token");
 // Stress Test 2: Synchronous Completion Race (ready_ flag)
 //
 // This test forces many synchronous completions to stress the
-// InterlockedCompareExchange race between the initiating thread
-// and IOCP thread.
+// race between the initiating thread and completion handler thread.
 //------------------------------------------------------------------------------
 
 struct sync_completion_stress_test
@@ -312,7 +314,7 @@ struct sync_completion_stress_test
             {
                 try
                 {
-                    // Rapid small I/O - these often complete synchronously on Windows
+                    // Rapid small I/O - these often complete synchronously
                     for (int i = 0; i < 1000 && !stop_flag.load(std::memory_order_relaxed); ++i)
                     {
                         char data = static_cast<char>(i & 0xFF);
@@ -506,7 +508,7 @@ TEST_SUITE(cancel_close_stress_test, "boost.corosio.socket_stress.cancel_close")
 // Stress Test 4: Concurrent Operations
 //
 // This test runs multiple concurrent socket operations to stress
-// thread safety and IOCP completion dispatch.
+// thread safety and completion dispatch.
 //------------------------------------------------------------------------------
 
 struct concurrent_ops_stress_test
@@ -608,7 +610,7 @@ TEST_SUITE(concurrent_ops_stress_test, "boost.corosio.socket_stress.concurrent_o
 // Stress Test 5: Accept/Connect Race
 //
 // This test rapidly accepts and connects to stress the acceptor
-// code path and AcceptEx completion handling.
+// code path and accept completion handling.
 //------------------------------------------------------------------------------
 
 struct accept_stress_test

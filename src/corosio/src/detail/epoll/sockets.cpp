@@ -111,10 +111,10 @@ operator()()
     if (bytes_out)
         *bytes_out = bytes_transferred;
 
-    // Move to stack before destroying the frame
+    // Move to stack before resuming. See epoll_op::operator()() for rationale.
     capy::executor_ref saved_ex( std::move( ex ) );
     capy::coro saved_h( std::move( h ) );
-    impl_ptr.reset();
+    auto prevent_premature_destruction = std::move(impl_ptr);
     resume_coro(saved_ex, saved_h);
 }
 
