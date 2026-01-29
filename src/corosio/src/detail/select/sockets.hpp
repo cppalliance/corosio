@@ -90,14 +90,14 @@ public:
         capy::executor_ref,
         endpoint,
         std::stop_token,
-        system::error_code*) override;
+        std::error_code*) override;
 
     void read_some(
         std::coroutine_handle<>,
         capy::executor_ref,
         io_buffer_param,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         std::size_t*) override;
 
     void write_some(
@@ -105,28 +105,28 @@ public:
         capy::executor_ref,
         io_buffer_param,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         std::size_t*) override;
 
-    system::error_code shutdown(socket::shutdown_type what) noexcept override;
+    std::error_code shutdown(socket::shutdown_type what) noexcept override;
 
     native_handle_type native_handle() const noexcept override { return fd_; }
 
     // Socket options
-    system::error_code set_no_delay(bool value) noexcept override;
-    bool no_delay(system::error_code& ec) const noexcept override;
+    std::error_code set_no_delay(bool value) noexcept override;
+    bool no_delay(std::error_code& ec) const noexcept override;
 
-    system::error_code set_keep_alive(bool value) noexcept override;
-    bool keep_alive(system::error_code& ec) const noexcept override;
+    std::error_code set_keep_alive(bool value) noexcept override;
+    bool keep_alive(std::error_code& ec) const noexcept override;
 
-    system::error_code set_receive_buffer_size(int size) noexcept override;
-    int receive_buffer_size(system::error_code& ec) const noexcept override;
+    std::error_code set_receive_buffer_size(int size) noexcept override;
+    int receive_buffer_size(std::error_code& ec) const noexcept override;
 
-    system::error_code set_send_buffer_size(int size) noexcept override;
-    int send_buffer_size(system::error_code& ec) const noexcept override;
+    std::error_code set_send_buffer_size(int size) noexcept override;
+    int send_buffer_size(std::error_code& ec) const noexcept override;
 
-    system::error_code set_linger(bool enabled, int timeout) noexcept override;
-    socket::linger_options linger(system::error_code& ec) const noexcept override;
+    std::error_code set_linger(bool enabled, int timeout) noexcept override;
+    socket::linger_options linger(std::error_code& ec) const noexcept override;
 
     endpoint local_endpoint() const noexcept override { return local_endpoint_; }
     endpoint remote_endpoint() const noexcept override { return remote_endpoint_; }
@@ -187,7 +187,7 @@ public:
 
     socket::socket_impl& create_impl() override;
     void destroy_impl(socket::socket_impl& impl) override;
-    system::error_code open_socket(socket::socket_impl& impl) override;
+    std::error_code open_socket(socket::socket_impl& impl) override;
 
     select_scheduler& scheduler() const noexcept { return state_->sched_; }
     void post(select_op* op);

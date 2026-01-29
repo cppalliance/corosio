@@ -52,7 +52,7 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         io_object::io_object_impl**) override;
 
     int native_handle() const noexcept { return fd_; }
@@ -108,7 +108,7 @@ public:
 
     acceptor::acceptor_impl& create_acceptor_impl() override;
     void destroy_acceptor_impl(acceptor::acceptor_impl& impl) override;
-    system::error_code open_acceptor(
+    std::error_code open_acceptor(
         acceptor::acceptor_impl& impl,
         endpoint ep,
         int backlog) override;

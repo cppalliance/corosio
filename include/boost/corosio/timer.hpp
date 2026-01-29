@@ -18,7 +18,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <chrono>
 #include <concepts>
@@ -48,7 +48,7 @@ class BOOST_COROSIO_DECL timer : public io_object
     {
         timer& t_;
         std::stop_token token_;
-        mutable system::error_code ec_;
+        mutable std::error_code ec_;
 
         explicit wait_awaitable(timer& t) noexcept : t_(t) {}
 
@@ -92,7 +92,7 @@ public:
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,
-            system::error_code*) = 0;
+            std::error_code*) = 0;
     };
 
 public:

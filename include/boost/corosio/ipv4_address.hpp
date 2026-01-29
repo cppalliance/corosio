@@ -259,6 +259,7 @@ public:
         @return The output stream.
     */
     friend
+    BOOST_COROSIO_DECL
     std::ostream&
     operator<<(std::ostream& os, ipv4_address const& addr);
 

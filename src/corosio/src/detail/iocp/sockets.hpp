@@ -143,14 +143,14 @@ public:
         capy::executor_ref,
         endpoint,
         std::stop_token,
-        system::error_code*);
+        std::error_code*);
 
     void read_some(
         capy::coro,
         capy::executor_ref,
         io_buffer_param,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         std::size_t*);
 
     void write_some(
@@ -158,7 +158,7 @@ public:
         capy::executor_ref,
         io_buffer_param,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         std::size_t*);
 
     SOCKET native_handle() const noexcept { return socket_; }
@@ -207,7 +207,7 @@ public:
         capy::executor_ref d,
         endpoint ep,
         std::stop_token token,
-        system::error_code* ec) override
+        std::error_code* ec) override
     {
         internal_->connect(h, d, ep, token, ec);
     }
@@ -217,7 +217,7 @@ public:
         capy::executor_ref d,
         io_buffer_param buf,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* bytes) override
     {
         internal_->read_some(h, d, buf, token, ec, bytes);
@@ -228,13 +228,13 @@ public:
         capy::executor_ref d,
         io_buffer_param buf,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* bytes) override
     {
         internal_->write_some(h, d, buf, token, ec, bytes);
     }
 
-    system::error_code shutdown(socket::shutdown_type what) noexcept override
+    std::error_code shutdown(socket::shutdown_type what) noexcept override
     {
         int how;
         switch (what)
@@ -256,7 +256,7 @@ public:
     }
 
     // Socket options
-    system::error_code set_no_delay(bool value) noexcept override
+    std::error_code set_no_delay(bool value) noexcept override
     {
         BOOL flag = value ? TRUE : FALSE;
         if (::setsockopt(internal_->native_handle(), IPPROTO_TCP, TCP_NODELAY,
@@ -265,7 +265,7 @@ public:
         return {};
     }
 
-    bool no_delay(system::error_code& ec) const noexcept override
+    bool no_delay(std::error_code& ec) const noexcept override
     {
         BOOL flag = FALSE;
         int len = sizeof(flag);
@@ -279,7 +279,7 @@ public:
         return flag != FALSE;
     }
 
-    system::error_code set_keep_alive(bool value) noexcept override
+    std::error_code set_keep_alive(bool value) noexcept override
     {
         BOOL flag = value ? TRUE : FALSE;
         if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_KEEPALIVE,
@@ -288,7 +288,7 @@ public:
         return {};
     }
 
-    bool keep_alive(system::error_code& ec) const noexcept override
+    bool keep_alive(std::error_code& ec) const noexcept override
     {
         BOOL flag = FALSE;
         int len = sizeof(flag);
@@ -302,7 +302,7 @@ public:
         return flag != FALSE;
     }
 
-    system::error_code set_receive_buffer_size(int size) noexcept override
+    std::error_code set_receive_buffer_size(int size) noexcept override
     {
         if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_RCVBUF,
                          reinterpret_cast<char*>(&size), sizeof(size)) != 0)
@@ -310,7 +310,7 @@ public:
         return {};
     }
 
-    int receive_buffer_size(system::error_code& ec) const noexcept override
+    int receive_buffer_size(std::error_code& ec) const noexcept override
     {
         int size = 0;
         int len = sizeof(size);
@@ -324,7 +324,7 @@ public:
         return size;
     }
 
-    system::error_code set_send_buffer_size(int size) noexcept override
+    std::error_code set_send_buffer_size(int size) noexcept override
     {
         if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_SNDBUF,
                          reinterpret_cast<char*>(&size), sizeof(size)) != 0)
@@ -332,7 +332,7 @@ public:
         return {};
     }
 
-    int send_buffer_size(system::error_code& ec) const noexcept override
+    int send_buffer_size(std::error_code& ec) const noexcept override
     {
         int size = 0;
         int len = sizeof(size);
@@ -346,7 +346,7 @@ public:
         return size;
     }
 
-    system::error_code set_linger(bool enabled, int timeout) noexcept override
+    std::error_code set_linger(bool enabled, int timeout) noexcept override
     {
         if (timeout < 0 || timeout > 65535)
             return make_err(WSAEINVAL);
@@ -359,7 +359,7 @@ public:
         return {};
     }
 
-    socket::linger_options linger(system::error_code& ec) const noexcept override
+    socket::linger_options linger(std::error_code& ec) const noexcept override
     {
         struct ::linger lg{};
         int len = sizeof(lg);
@@ -417,7 +417,7 @@ public:
         capy::coro,
         capy::executor_ref,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         io_object::io_object_impl**);
 
     SOCKET native_handle() const noexcept { return socket_; }
@@ -462,7 +462,7 @@ public:
         std::coroutine_handle<> h,
         capy::executor_ref d,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         io_object::io_object_impl** impl_out) override
     {
         internal_->accept(h, d, token, ec, impl_out);
@@ -543,7 +543,7 @@ public:
         @param impl The socket implementation internal to initialize.
         @return Error code, or success.
     */
-    system::error_code open_socket(win_socket_impl_internal& impl);
+    std::error_code open_socket(win_socket_impl_internal& impl);
 
     /** Create a new acceptor implementation wrapper.
         The service owns the returned object.
@@ -567,7 +567,7 @@ public:
         @param backlog The listen backlog.
         @return Error code, or success.
     */
-    system::error_code open_acceptor(
+    std::error_code open_acceptor(
         win_acceptor_impl_internal& impl,
         endpoint ep,
         int backlog);

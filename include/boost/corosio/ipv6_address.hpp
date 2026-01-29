@@ -300,6 +300,7 @@ public:
         @param addr The address to write.
     */
     friend
+    BOOST_COROSIO_DECL
     std::ostream&
     operator<<(std::ostream& os, ipv6_address const& addr);
 

@@ -34,6 +34,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <stop_token>
 #include <stdexcept>
 
@@ -74,8 +75,8 @@ make_socket_pair_t(Context& ctx)
 {
     auto ex = ctx.get_executor();
 
-    system::error_code accept_ec;
-    system::error_code connect_ec;
+    std::error_code accept_ec;
+    std::error_code connect_ec;
     bool accept_done = false;
     bool connect_done = false;
 
@@ -106,7 +107,7 @@ make_socket_pair_t(Context& ctx)
 
     capy::run_async(ex)(
         [](acceptor& a, socket& s,
-           system::error_code& ec_out, bool& done_out) -> capy::task<>
+           std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await a.accept(s);
             ec_out = ec;
@@ -115,7 +116,7 @@ make_socket_pair_t(Context& ctx)
 
     capy::run_async(ex)(
         [](socket& s, endpoint ep,
-           system::error_code& ec_out, bool& done_out) -> capy::task<>
+           std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await s.connect(ep);
             ec_out = ec;
@@ -560,7 +561,7 @@ struct socket_test_impl
             // Writing to closed peer should eventually fail.
             // We need to write enough data to fill the socket buffer and
             // trigger the error. macOS has larger buffers than Linux.
-            system::error_code last_ec;
+            std::error_code last_ec;
             std::array<char, 8192> buf{};  // Larger buffer per write
             for (int i = 0; i < 100; ++i)  // More iterations
             {
@@ -596,7 +597,7 @@ struct socket_test_impl
 
             // Launch read that will block (no data available)
             bool read_done = false;
-            system::error_code read_ec;
+            std::error_code read_ec;
 
             // Store lambda in variable to ensure it outlives the coroutine.
             // Lambda coroutines capture 'this' by reference, so the lambda
@@ -642,7 +643,7 @@ struct socket_test_impl
             t.expires_after(std::chrono::milliseconds(50));
 
             bool read_done = false;
-            system::error_code read_ec;
+            std::error_code read_ec;
 
             // Store lambda in variable to ensure it outlives the coroutine.
             // Lambda coroutines capture 'this' by reference, so the lambda
@@ -689,7 +690,7 @@ struct socket_test_impl
         std::stop_source stop_src;
         bool read_done = false;
         bool failsafe_hit = false;
-        system::error_code read_ec;
+        std::error_code read_ec;
 
         // Reader task - signals ready then blocks waiting for data
         auto reader_task = [&]() -> capy::task<>

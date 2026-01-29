@@ -111,7 +111,7 @@ struct acceptor_test_impl
 
         // These must outlive the coroutines
         bool accept_done = false;
-        system::error_code accept_ec;
+        std::error_code accept_ec;
         socket peer(ioc);
 
         auto task = [&]() -> capy::task<>
@@ -162,7 +162,7 @@ struct acceptor_test_impl
 
         socket peer(ioc);
         bool accept_done = false;
-        system::error_code accept_ec;
+        std::error_code accept_ec;
 
         // Pattern from socket tests: run a single coroutine that manages
         // the nested coroutine and close operation

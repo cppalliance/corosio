@@ -94,11 +94,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
         resolver_results results;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        resolver_results& results_out,
                        bool& done_out) -> capy::task<>
         {
@@ -151,11 +151,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
         resolver_results results;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        resolver_results& results_out,
                        bool& done_out) -> capy::task<>
         {
@@ -190,11 +190,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
         resolver_results results;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        resolver_results& results_out,
                        bool& done_out) -> capy::task<>
         {
@@ -229,11 +229,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
         resolver_results results;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        resolver_results& results_out,
                        bool& done_out) -> capy::task<>
         {
@@ -303,11 +303,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
         resolver_results results;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        resolver_results& results_out,
                        bool& done_out) -> capy::task<>
         {
@@ -335,11 +335,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
         resolver_results results;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        resolver_results& results_out,
                        bool& done_out) -> capy::task<>
         {
@@ -372,12 +372,12 @@ struct resolver_test
         timer cancel_timer(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
         // Use a hostname that might take time to resolve (or timeout)
         // But cancel immediately
         auto wait_task = [](resolver& r_ref,
-                            system::error_code& ec_out,
+                            std::error_code& ec_out,
                             bool& done_out) -> capy::task<>
         {
             auto [ec, res] = co_await r_ref.resolve("localhost", "80");
@@ -488,10 +488,10 @@ struct resolver_test
         resolver r(ioc);
 
         bool got_error = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
         auto task = [](resolver& r_ref, bool& error_out,
-                       system::error_code& ec_out) -> capy::task<>
+                       std::error_code& ec_out) -> capy::task<>
         {
             auto result = co_await r_ref.resolve(
                 "not-a-valid-ip", "80",
@@ -513,11 +513,11 @@ struct resolver_test
         io_context ioc;
         resolver r(ioc);
 
-        system::error_code captured_ec;
+        std::error_code captured_ec;
         std::size_t result_size = 0;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        std::size_t& size_out) -> capy::task<>
         {
             auto [ec, results] = co_await r_ref.resolve(
@@ -643,11 +643,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
         reverse_resolver_result result;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        reverse_resolver_result& result_out,
                        bool& done_out) -> capy::task<>
         {
@@ -675,11 +675,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
         reverse_resolver_result result;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        reverse_resolver_result& result_out,
                        bool& done_out) -> capy::task<>
         {
@@ -707,11 +707,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
         reverse_resolver_result result;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        reverse_resolver_result& result_out,
                        bool& done_out) -> capy::task<>
         {
@@ -740,11 +740,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
         reverse_resolver_result result;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        reverse_resolver_result& result_out,
                        bool& done_out) -> capy::task<>
         {
@@ -773,11 +773,11 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
         // Use an IP address that's unlikely to have a reverse DNS entry
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        bool& done_out) -> capy::task<>
         {
             // 192.0.2.1 is a TEST-NET address (RFC 5737), unlikely to have reverse DNS
@@ -804,10 +804,10 @@ struct resolver_test
         resolver r(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
         auto task = [](resolver& r_ref,
-                       system::error_code& ec_out,
+                       std::error_code& ec_out,
                        bool& done_out) -> capy::task<>
         {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 80);

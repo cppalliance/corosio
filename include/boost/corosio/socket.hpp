@@ -21,7 +21,7 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <coroutine>
@@ -96,9 +96,9 @@ public:
             capy::executor_ref,
             endpoint,
             std::stop_token,
-            system::error_code*) = 0;
+            std::error_code*) = 0;
 
-        virtual system::error_code shutdown(shutdown_type) noexcept = 0;
+        virtual std::error_code shutdown(shutdown_type) noexcept = 0;
 
         virtual native_handle_type native_handle() const noexcept = 0;
 
@@ -110,20 +110,20 @@ public:
         virtual void cancel() noexcept = 0;
 
         // Socket options
-        virtual system::error_code set_no_delay(bool value) noexcept = 0;
-        virtual bool no_delay(system::error_code& ec) const noexcept = 0;
+        virtual std::error_code set_no_delay(bool value) noexcept = 0;
+        virtual bool no_delay(std::error_code& ec) const noexcept = 0;
 
-        virtual system::error_code set_keep_alive(bool value) noexcept = 0;
-        virtual bool keep_alive(system::error_code& ec) const noexcept = 0;
+        virtual std::error_code set_keep_alive(bool value) noexcept = 0;
+        virtual bool keep_alive(std::error_code& ec) const noexcept = 0;
 
-        virtual system::error_code set_receive_buffer_size(int size) noexcept = 0;
-        virtual int receive_buffer_size(system::error_code& ec) const noexcept = 0;
+        virtual std::error_code set_receive_buffer_size(int size) noexcept = 0;
+        virtual int receive_buffer_size(std::error_code& ec) const noexcept = 0;
 
-        virtual system::error_code set_send_buffer_size(int size) noexcept = 0;
-        virtual int send_buffer_size(system::error_code& ec) const noexcept = 0;
+        virtual std::error_code set_send_buffer_size(int size) noexcept = 0;
+        virtual int send_buffer_size(std::error_code& ec) const noexcept = 0;
 
-        virtual system::error_code set_linger(bool enabled, int timeout) noexcept = 0;
-        virtual linger_options linger(system::error_code& ec) const noexcept = 0;
+        virtual std::error_code set_linger(bool enabled, int timeout) noexcept = 0;
+        virtual linger_options linger(std::error_code& ec) const noexcept = 0;
 
         /// Returns the cached local endpoint.
         virtual endpoint local_endpoint() const noexcept = 0;
@@ -137,7 +137,7 @@ public:
         socket& s_;
         endpoint endpoint_;
         std::stop_token token_;
-        mutable system::error_code ec_;
+        mutable std::error_code ec_;
 
         connect_awaitable(socket& s, endpoint ep) noexcept
             : s_(s)
@@ -153,7 +153,7 @@ public:
         capy::io_result<> await_resume() const noexcept
         {
             if (token_.stop_requested())
-                return {make_error_code(system::errc::operation_canceled)};
+                return {make_error_code(std::errc::operation_canceled)};
             return {ec_};
         }
 

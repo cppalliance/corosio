@@ -200,7 +200,7 @@ wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     int* signal_out)
 {
     pending_op_.h = h;

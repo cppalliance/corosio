@@ -335,7 +335,6 @@ struct wolfssl_stream_test
         testCertificateChain();
 #else
         std::cerr << "wolfssl_stream tests SKIPPED: WolfSSL not found\n";
-	static_assert(false, "WolfSSL not found");
 #endif
     }
 };

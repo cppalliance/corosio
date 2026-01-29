@@ -19,7 +19,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include "src/detail/intrusive.hpp"
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <system_error>
 
@@ -71,7 +71,7 @@ struct signal_op : scheduler_op
 {
     capy::coro h;
     capy::executor_ref d;
-    system::error_code* ec_out = nullptr;
+    std::error_code* ec_out = nullptr;
     int* signal_out = nullptr;
     int signal_number = 0;
     signal_op* next_in_queue = nullptr;
@@ -123,7 +123,7 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         int*) override;
 
     std::error_code add(int signal_number, signal_set::flags_t flags) override;

@@ -40,7 +40,7 @@ class BOOST_COROSIO_DECL tls_stream : public io_stream
         tls_stream& stream_;
         int type_;
         std::stop_token token_;
-        mutable system::error_code ec_;
+        mutable std::error_code ec_;
 
         handshake_awaitable(
             tls_stream& stream,
@@ -58,7 +58,7 @@ class BOOST_COROSIO_DECL tls_stream : public io_stream
         capy::io_result<> await_resume() const noexcept
         {
             if(token_.stop_requested())
-                return {make_error_code(system::errc::operation_canceled)};
+                return {make_error_code(std::errc::operation_canceled)};
             return {ec_};
         }
 
@@ -87,7 +87,7 @@ class BOOST_COROSIO_DECL tls_stream : public io_stream
     {
         tls_stream& stream_;
         std::stop_token token_;
-        mutable system::error_code ec_;
+        mutable std::error_code ec_;
 
         explicit
         shutdown_awaitable(tls_stream& stream) noexcept
@@ -103,7 +103,7 @@ class BOOST_COROSIO_DECL tls_stream : public io_stream
         capy::io_result<> await_resume() const noexcept
         {
             if(token_.stop_requested())
-                return {make_error_code(system::errc::operation_canceled)};
+                return {make_error_code(std::errc::operation_canceled)};
             return {ec_};
         }
 
@@ -232,13 +232,13 @@ public:
             capy::executor_ref,
             int,
             std::stop_token,
-            system::error_code*) = 0;
+            std::error_code*) = 0;
 
         virtual void shutdown(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,
-            system::error_code*) = 0;
+            std::error_code*) = 0;
     };
 
 protected:

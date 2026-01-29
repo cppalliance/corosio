@@ -329,7 +329,6 @@ struct openssl_stream_test
         testCertificateChain();
 #else
         std::cerr << "openssl_stream tests SKIPPED: OpenSSL not found\n";
-	static_assert(false, "OpenSSL not found");
 #endif
     }
 };

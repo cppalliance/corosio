@@ -9,7 +9,7 @@
 
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/corosio/acceptor.hpp>
-#include <boost/system/system_error.hpp>
+#include <system_error>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -63,8 +63,8 @@ make_socket_pair(io_context& ioc)
 {
     auto ex = ioc.get_executor();
 
-    system::error_code accept_ec;
-    system::error_code connect_ec;
+    std::error_code accept_ec;
+    std::error_code connect_ec;
     bool accept_done = false;
     bool connect_done = false;
 
@@ -81,7 +81,7 @@ make_socket_pair(io_context& ioc)
             listening = true;
             break;
         }
-        catch (const system::system_error&)
+        catch (const std::system_error&)
         {
             // Port in use, try another
             acc.close();
@@ -100,7 +100,7 @@ make_socket_pair(io_context& ioc)
 
     capy::run_async(ex)(
         [](acceptor& a, socket& s,
-           system::error_code& ec_out, bool& done_out) -> capy::task<>
+           std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await a.accept(s);
             ec_out = ec;
@@ -109,7 +109,7 @@ make_socket_pair(io_context& ioc)
 
     capy::run_async(ex)(
         [](socket& s, endpoint ep,
-           system::error_code& ec_out, bool& done_out) -> capy::task<>
+           std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await s.connect(ep);
             ec_out = ec;

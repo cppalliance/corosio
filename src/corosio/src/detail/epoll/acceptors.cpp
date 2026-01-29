@@ -156,7 +156,7 @@ accept(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     io_object::io_object_impl** impl_out)
 {
     auto& op = acc_;
@@ -342,7 +342,7 @@ destroy_acceptor_impl(acceptor::acceptor_impl& impl)
     state_->acceptor_ptrs_.erase(epoll_impl);
 }
 
-system::error_code
+std::error_code
 epoll_acceptor_service::
 open_acceptor(
     acceptor::acceptor_impl& impl,

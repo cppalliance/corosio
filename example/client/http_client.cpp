@@ -8,7 +8,7 @@
 //
 
 #include <boost/corosio.hpp>
-#include <boost/system/system_error.hpp>
+#include <system_error>
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/buffers.hpp>
@@ -38,7 +38,7 @@ do_request(
         "\r\n";
     if (auto [ec, n] = co_await capy::write(
             stream, capy::const_buffer(request.data(), request.size())); ec)
-        throw boost::system::system_error(ec);
+        throw std::system_error(ec);
 
     // Read the entire response until EOF
     std::string response;
@@ -46,7 +46,7 @@ do_request(
             stream, capy::string_dynamic_buffer(&response));
     // EOF is expected when server closes connection
     if (ec && ec != capy::error::eof)
-        throw boost::system::system_error(ec);
+        throw std::system_error(ec);
 
     std::cout << response << std::endl;
 }
@@ -63,7 +63,7 @@ run_client(
 
     // Connect to the server
     if (auto [ec] = co_await s.connect(corosio::endpoint(addr, port)); ec)
-        throw boost::system::system_error(ec);
+        throw std::system_error(ec);
 
     co_await do_request(s, addr.to_string());
 }

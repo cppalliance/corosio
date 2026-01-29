@@ -9,7 +9,7 @@
 
 #include <boost/corosio.hpp>
 #include <boost/corosio/tls/wolfssl_stream.hpp>
-#include <boost/system/system_error.hpp>
+#include <system_error>
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/buffers.hpp>
@@ -40,7 +40,7 @@ do_request(
         "\r\n";
     if (auto [ec, n] = co_await capy::write(
             stream, capy::const_buffer(request.data(), request.size())); ec)
-        throw boost::system::system_error(ec);
+        throw std::system_error(ec);
 
     // Read entire response until EOF
     std::string response;
@@ -48,7 +48,7 @@ do_request(
             stream, capy::string_dynamic_buffer(&response));
     // EOF is expected when server closes connection
     if (ec && ec != capy::error::eof)
-        throw boost::system::system_error(ec);
+        throw std::system_error(ec);
 
     std::cout << response << std::endl;
 }
@@ -66,22 +66,22 @@ run_client(
 
     // Connect to the server
     if (auto [ec] = co_await s.connect(corosio::endpoint(addr, port)); ec)
-        throw boost::system::system_error(ec);
+        throw std::system_error(ec);
 
     // Configure TLS context
     corosio::tls::context ctx;
     ctx.set_hostname(hostname);
     if (auto ec = ctx.set_default_verify_paths(); ec)
-        throw boost::system::system_error(ec);
+        throw std::system_error(ec);
     if (auto ec = ctx.set_verify_mode(corosio::tls::verify_mode::peer); ec)
-        throw boost::system::system_error(ec);
+        throw std::system_error(ec);
 
     // Wrap socket in TLS stream
     corosio::wolfssl_stream secure(s, ctx);
 
     // Perform TLS handshake
     if (auto [ec] = co_await secure.handshake(corosio::wolfssl_stream::client); ec)
-        throw boost::system::system_error(ec);
+        throw std::system_error(ec);
 
     co_await do_request(secure, hostname);
 }
@@ -126,7 +126,7 @@ main(int argc, char* argv[])
             run_client(ioc, addr, port, hostname));
         ioc.run();
     }
-    catch(boost::system::system_error const& e)
+    catch(std::system_error const& e)
     {
         std::cerr << "Error: " << e.what() << "\n";
         return EXIT_FAILURE;

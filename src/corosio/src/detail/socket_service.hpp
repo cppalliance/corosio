@@ -15,7 +15,7 @@
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 /*
     Abstract Socket Service
@@ -78,7 +78,7 @@ public:
         @param impl The socket implementation to open.
         @return Error code on failure, empty on success.
     */
-    virtual system::error_code open_socket(socket::socket_impl& impl) = 0;
+    virtual std::error_code open_socket(socket::socket_impl& impl) = 0;
 
 protected:
     socket_service() = default;
@@ -122,7 +122,7 @@ public:
         @param backlog The maximum length of the queue of pending connections.
         @return Error code on failure, empty on success.
     */
-    virtual system::error_code open_acceptor(
+    virtual std::error_code open_acceptor(
         acceptor::acceptor_impl& impl,
         endpoint ep,
         int backlog) = 0;

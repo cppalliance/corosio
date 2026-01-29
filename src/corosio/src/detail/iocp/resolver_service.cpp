@@ -318,7 +318,7 @@ resolve(
     std::string_view service,
     resolve_flags flags,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     resolver_results* out)
 {
     auto& op = op_;
@@ -381,7 +381,7 @@ reverse_resolve(
     endpoint const& ep,
     reverse_flags flags,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     reverse_resolver_result* result_out)
 {
     auto& op = reverse_op_;

@@ -12,29 +12,29 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 namespace boost::corosio::detail {
 
 #if BOOST_COROSIO_HAS_IOCP
-/** Convert a Windows error code to system::error_code.
+/** Convert a Windows error code to std::error_code.
 
     Maps ERROR_OPERATION_ABORTED and ERROR_CANCELLED to capy::error::canceled.
     Maps ERROR_HANDLE_EOF to capy::error::eof.
 
     @param dwError The Windows error code (DWORD).
-    @return The corresponding system::error_code.
+    @return The corresponding std::error_code.
 */
-system::error_code make_err(unsigned long dwError) noexcept;
+std::error_code make_err(unsigned long dwError) noexcept;
 #else
-/** Convert a POSIX errno value to system::error_code.
+/** Convert a POSIX errno value to std::error_code.
 
     Maps ECANCELED to capy::error::canceled.
 
     @param errn The errno value.
-    @return The corresponding system::error_code.
+    @return The corresponding std::error_code.
 */
-system::error_code make_err(int errn) noexcept;
+std::error_code make_err(int errn) noexcept;
 #endif
 
 } // namespace boost::corosio::detail

@@ -505,7 +505,7 @@ public:
 
         @return The error code if binding fails.
     */
-    system::error_code
+    std::error_code
     bind(endpoint ep);
 
     /** Start accepting connections.

@@ -18,7 +18,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include "src/detail/make_err.hpp"
 #include "src/detail/resume_coro.hpp"
@@ -49,7 +49,7 @@ struct overlapped_op
 
     capy::coro h;
     capy::executor_ref d;
-    system::error_code* ec_out = nullptr;
+    std::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
     DWORD dwError = 0;
     DWORD bytes_transferred = 0;

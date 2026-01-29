@@ -12,7 +12,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_stream.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <string>
 #include <utility>
@@ -106,7 +106,7 @@ public:
         @return An error code indicating success or failure.
             Returns `error::test_failure` if buffers are not empty.
     */
-    system::error_code close();
+    std::error_code close();
 
     /** Check if the mocket is open.
 

@@ -44,7 +44,7 @@ open()
     auto& svc = ctx_->use_service<detail::win_sockets>();
     auto& wrapper = svc.create_impl();
     impl_ = &wrapper;
-    system::error_code ec = svc.open_socket(*wrapper.get_internal());
+    std::error_code ec = svc.open_socket(*wrapper.get_internal());
 #else
     // POSIX backends use abstract socket_service for runtime polymorphism.
     // The concrete service (epoll_sockets or select_sockets) must be installed
@@ -54,7 +54,7 @@ open()
         detail::throw_logic_error("socket::open: no socket service installed");
     auto& wrapper = svc->create_impl();
     impl_ = &wrapper;
-    system::error_code ec = svc->open_socket(wrapper);
+    std::error_code ec = svc->open_socket(wrapper);
 #endif
     if (ec)
     {
@@ -123,7 +123,7 @@ set_no_delay(bool value)
 {
     if (!impl_)
         detail::throw_logic_error("set_no_delay: socket not open");
-    system::error_code ec = get().set_no_delay(value);
+    std::error_code ec = get().set_no_delay(value);
     if (ec)
         detail::throw_system_error(ec, "socket::set_no_delay");
 }
@@ -134,7 +134,7 @@ no_delay() const
 {
     if (!impl_)
         detail::throw_logic_error("no_delay: socket not open");
-    system::error_code ec;
+    std::error_code ec;
     bool result = get().no_delay(ec);
     if (ec)
         detail::throw_system_error(ec, "socket::no_delay");
@@ -147,7 +147,7 @@ set_keep_alive(bool value)
 {
     if (!impl_)
         detail::throw_logic_error("set_keep_alive: socket not open");
-    system::error_code ec = get().set_keep_alive(value);
+    std::error_code ec = get().set_keep_alive(value);
     if (ec)
         detail::throw_system_error(ec, "socket::set_keep_alive");
 }
@@ -158,7 +158,7 @@ keep_alive() const
 {
     if (!impl_)
         detail::throw_logic_error("keep_alive: socket not open");
-    system::error_code ec;
+    std::error_code ec;
     bool result = get().keep_alive(ec);
     if (ec)
         detail::throw_system_error(ec, "socket::keep_alive");
@@ -171,7 +171,7 @@ set_receive_buffer_size(int size)
 {
     if (!impl_)
         detail::throw_logic_error("set_receive_buffer_size: socket not open");
-    system::error_code ec = get().set_receive_buffer_size(size);
+    std::error_code ec = get().set_receive_buffer_size(size);
     if (ec)
         detail::throw_system_error(ec, "socket::set_receive_buffer_size");
 }
@@ -182,7 +182,7 @@ receive_buffer_size() const
 {
     if (!impl_)
         detail::throw_logic_error("receive_buffer_size: socket not open");
-    system::error_code ec;
+    std::error_code ec;
     int result = get().receive_buffer_size(ec);
     if (ec)
         detail::throw_system_error(ec, "socket::receive_buffer_size");
@@ -195,7 +195,7 @@ set_send_buffer_size(int size)
 {
     if (!impl_)
         detail::throw_logic_error("set_send_buffer_size: socket not open");
-    system::error_code ec = get().set_send_buffer_size(size);
+    std::error_code ec = get().set_send_buffer_size(size);
     if (ec)
         detail::throw_system_error(ec, "socket::set_send_buffer_size");
 }
@@ -206,7 +206,7 @@ send_buffer_size() const
 {
     if (!impl_)
         detail::throw_logic_error("send_buffer_size: socket not open");
-    system::error_code ec;
+    std::error_code ec;
     int result = get().send_buffer_size(ec);
     if (ec)
         detail::throw_system_error(ec, "socket::send_buffer_size");
@@ -219,7 +219,7 @@ set_linger(bool enabled, int timeout)
 {
     if (!impl_)
         detail::throw_logic_error("set_linger: socket not open");
-    system::error_code ec = get().set_linger(enabled, timeout);
+    std::error_code ec = get().set_linger(enabled, timeout);
     if (ec)
         detail::throw_system_error(ec, "socket::set_linger");
 }
@@ -230,7 +230,7 @@ linger() const
 {
     if (!impl_)
         detail::throw_logic_error("linger: socket not open");
-    system::error_code ec;
+    std::error_code ec;
     linger_options result = get().linger(ec);
     if (ec)
         detail::throw_system_error(ec, "socket::linger");

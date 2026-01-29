@@ -165,8 +165,8 @@ convert_results(
     return resolver_results(std::move(entries));
 }
 
-// Convert getaddrinfo error codes to system::error_code
-system::error_code
+// Convert getaddrinfo error codes to std::error_code
+std::error_code
 make_gai_error(int gai_err)
 {
     // Map GAI errors to appropriate generic error codes
@@ -174,61 +174,61 @@ make_gai_error(int gai_err)
     {
     case EAI_AGAIN:
         // Temporary failure - try again later
-        return system::error_code(
+        return std::error_code(
             static_cast<int>(std::errc::resource_unavailable_try_again),
-            system::generic_category());
+            std::generic_category());
 
     case EAI_BADFLAGS:
         // Invalid flags
-        return system::error_code(
+        return std::error_code(
             static_cast<int>(std::errc::invalid_argument),
-            system::generic_category());
+            std::generic_category());
 
     case EAI_FAIL:
         // Non-recoverable failure
-        return system::error_code(
+        return std::error_code(
             static_cast<int>(std::errc::io_error),
-            system::generic_category());
+            std::generic_category());
 
     case EAI_FAMILY:
         // Address family not supported
-        return system::error_code(
+        return std::error_code(
             static_cast<int>(std::errc::address_family_not_supported),
-            system::generic_category());
+            std::generic_category());
 
     case EAI_MEMORY:
         // Memory allocation failure
-        return system::error_code(
+        return std::error_code(
             static_cast<int>(std::errc::not_enough_memory),
-            system::generic_category());
+            std::generic_category());
 
     case EAI_NONAME:
         // Host or service not found
-        return system::error_code(
+        return std::error_code(
             static_cast<int>(std::errc::no_such_device_or_address),
-            system::generic_category());
+            std::generic_category());
 
     case EAI_SERVICE:
         // Service not supported for socket type
-        return system::error_code(
+        return std::error_code(
             static_cast<int>(std::errc::invalid_argument),
-            system::generic_category());
+            std::generic_category());
 
     case EAI_SOCKTYPE:
         // Socket type not supported
-        return system::error_code(
+        return std::error_code(
             static_cast<int>(std::errc::not_supported),
-            system::generic_category());
+            std::generic_category());
 
     case EAI_SYSTEM:
         // System error - use errno
-        return system::error_code(errno, system::generic_category());
+        return std::error_code(errno, std::generic_category());
 
     default:
         // Unknown error
-        return system::error_code(
+        return std::error_code(
             static_cast<int>(std::errc::io_error),
-            system::generic_category());
+            std::generic_category());
     }
 }
 
@@ -308,7 +308,7 @@ public:
         posix_resolver_impl* impl = nullptr;
 
         // Output parameters
-        system::error_code* ec_out = nullptr;
+        std::error_code* ec_out = nullptr;
         resolver_results* out = nullptr;
 
         // Input parameters (owned copies for thread safety)
@@ -354,7 +354,7 @@ public:
         posix_resolver_impl* impl = nullptr;
 
         // Output parameters
-        system::error_code* ec_out = nullptr;
+        std::error_code* ec_out = nullptr;
         reverse_resolver_result* result_out = nullptr;
 
         // Input parameters
@@ -396,7 +396,7 @@ public:
         std::string_view service,
         resolve_flags flags,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         resolver_results*) override;
 
     void reverse_resolve(
@@ -405,7 +405,7 @@ public:
         endpoint const& ep,
         reverse_flags flags,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         reverse_resolver_result*) override;
 
     void cancel() noexcept override;
@@ -626,7 +626,7 @@ resolve(
     std::string_view service,
     resolve_flags flags,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     resolver_results* out)
 {
     auto& op = op_;
@@ -707,7 +707,7 @@ reverse_resolve(
     endpoint const& ep,
     reverse_flags flags,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     reverse_resolver_result* result_out)
 {
     auto& op = reverse_op_;

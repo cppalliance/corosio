@@ -143,7 +143,7 @@ connect(
     capy::executor_ref ex,
     endpoint ep,
     std::stop_token token,
-    system::error_code* ec)
+    std::error_code* ec)
 {
     auto& op = conn_;
     op.reset();
@@ -222,7 +222,7 @@ read_some(
     capy::executor_ref ex,
     io_buffer_param param,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     std::size_t* bytes_out)
 {
     auto& op = rd_;
@@ -318,7 +318,7 @@ write_some(
     capy::executor_ref ex,
     io_buffer_param param,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     std::size_t* bytes_out)
 {
     auto& op = wr_;
@@ -402,7 +402,7 @@ write_some(
     svc_.post(&op);
 }
 
-system::error_code
+std::error_code
 epoll_socket_impl::
 shutdown(socket::shutdown_type what) noexcept
 {
@@ -424,7 +424,7 @@ shutdown(socket::shutdown_type what) noexcept
 // Socket Options
 //------------------------------------------------------------------------------
 
-system::error_code
+std::error_code
 epoll_socket_impl::
 set_no_delay(bool value) noexcept
 {
@@ -436,7 +436,7 @@ set_no_delay(bool value) noexcept
 
 bool
 epoll_socket_impl::
-no_delay(system::error_code& ec) const noexcept
+no_delay(std::error_code& ec) const noexcept
 {
     int flag = 0;
     socklen_t len = sizeof(flag);
@@ -449,7 +449,7 @@ no_delay(system::error_code& ec) const noexcept
     return flag != 0;
 }
 
-system::error_code
+std::error_code
 epoll_socket_impl::
 set_keep_alive(bool value) noexcept
 {
@@ -461,7 +461,7 @@ set_keep_alive(bool value) noexcept
 
 bool
 epoll_socket_impl::
-keep_alive(system::error_code& ec) const noexcept
+keep_alive(std::error_code& ec) const noexcept
 {
     int flag = 0;
     socklen_t len = sizeof(flag);
@@ -474,7 +474,7 @@ keep_alive(system::error_code& ec) const noexcept
     return flag != 0;
 }
 
-system::error_code
+std::error_code
 epoll_socket_impl::
 set_receive_buffer_size(int size) noexcept
 {
@@ -485,7 +485,7 @@ set_receive_buffer_size(int size) noexcept
 
 int
 epoll_socket_impl::
-receive_buffer_size(system::error_code& ec) const noexcept
+receive_buffer_size(std::error_code& ec) const noexcept
 {
     int size = 0;
     socklen_t len = sizeof(size);
@@ -498,7 +498,7 @@ receive_buffer_size(system::error_code& ec) const noexcept
     return size;
 }
 
-system::error_code
+std::error_code
 epoll_socket_impl::
 set_send_buffer_size(int size) noexcept
 {
@@ -509,7 +509,7 @@ set_send_buffer_size(int size) noexcept
 
 int
 epoll_socket_impl::
-send_buffer_size(system::error_code& ec) const noexcept
+send_buffer_size(std::error_code& ec) const noexcept
 {
     int size = 0;
     socklen_t len = sizeof(size);
@@ -522,7 +522,7 @@ send_buffer_size(system::error_code& ec) const noexcept
     return size;
 }
 
-system::error_code
+std::error_code
 epoll_socket_impl::
 set_linger(bool enabled, int timeout) noexcept
 {
@@ -538,7 +538,7 @@ set_linger(bool enabled, int timeout) noexcept
 
 socket::linger_options
 epoll_socket_impl::
-linger(system::error_code& ec) const noexcept
+linger(std::error_code& ec) const noexcept
 {
     struct ::linger lg{};
     socklen_t len = sizeof(lg);
@@ -681,7 +681,7 @@ destroy_impl(socket::socket_impl& impl)
     state_->socket_ptrs_.erase(epoll_impl);
 }
 
-system::error_code
+std::error_code
 epoll_socket_service::
 open_socket(socket::socket_impl& impl)
 {

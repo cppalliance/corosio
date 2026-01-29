@@ -20,7 +20,7 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <cassert>
 #include <concepts>
@@ -206,7 +206,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
         std::string service_;
         resolve_flags flags_;
         std::stop_token token_;
-        mutable system::error_code ec_;
+        mutable std::error_code ec_;
         mutable resolver_results results_;
 
         resolve_awaitable(
@@ -229,7 +229,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
         capy::io_result<resolver_results> await_resume() const noexcept
         {
             if (token_.stop_requested())
-                return {make_error_code(system::errc::operation_canceled), {}};
+                return {make_error_code(std::errc::operation_canceled), {}};
             return {ec_, std::move(results_)};
         }
 
@@ -260,7 +260,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
         endpoint ep_;
         reverse_flags flags_;
         std::stop_token token_;
-        mutable system::error_code ec_;
+        mutable std::error_code ec_;
         mutable reverse_resolver_result result_;
 
         reverse_resolve_awaitable(
@@ -281,7 +281,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
         capy::io_result<reverse_resolver_result> await_resume() const noexcept
         {
             if (token_.stop_requested())
-                return {make_error_code(system::errc::operation_canceled), {}};
+                return {make_error_code(std::errc::operation_canceled), {}};
             return {ec_, std::move(result_)};
         }
 
@@ -477,7 +477,7 @@ public:
             std::string_view service,
             resolve_flags flags,
             std::stop_token,
-            system::error_code*,
+            std::error_code*,
             resolver_results*) = 0;
 
         virtual void reverse_resolve(
@@ -486,7 +486,7 @@ public:
             endpoint const& ep,
             reverse_flags flags,
             std::stop_token,
-            system::error_code*,
+            std::error_code*,
             reverse_resolver_result*) = 0;
 
         virtual void cancel() noexcept = 0;

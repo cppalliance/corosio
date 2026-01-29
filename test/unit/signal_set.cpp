@@ -201,9 +201,9 @@ struct signal_set_test_impl
 
         bool completed = false;
         int received_signal = 0;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
-        auto wait_task = [](signal_set& s_ref, system::error_code& ec_out, int& sig_out, bool& done_out) -> capy::task<>
+        auto wait_task = [](signal_set& s_ref, std::error_code& ec_out, int& sig_out, bool& done_out) -> capy::task<>
         {
             auto [ec, signum] = co_await s_ref.async_wait();
             ec_out = ec;
@@ -271,9 +271,9 @@ struct signal_set_test_impl
         timer cancel_timer(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
-        auto wait_task = [](signal_set& s_ref, system::error_code& ec_out, bool& done_out) -> capy::task<>
+        auto wait_task = [](signal_set& s_ref, std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec, signum] = co_await s_ref.async_wait();
             ec_out = ec;
@@ -499,9 +499,9 @@ struct signal_set_test_impl
         timer cancel_timer(ioc);
 
         bool result_ok = true;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
-        auto wait_task = [](signal_set& s_ref, bool& ok_out, system::error_code& ec_out) -> capy::task<>
+        auto wait_task = [](signal_set& s_ref, bool& ok_out, std::error_code& ec_out) -> capy::task<>
         {
             auto result = co_await s_ref.async_wait();
             ok_out = !result.ec;
@@ -529,10 +529,10 @@ struct signal_set_test_impl
         signal_set s(ioc, SIGINT);
         timer t(ioc);
 
-        system::error_code captured_ec;
+        std::error_code captured_ec;
         int captured_signal = 0;
 
-        auto task = [](signal_set& s_ref, timer& t_ref, system::error_code& ec_out, int& sig_out) -> capy::task<>
+        auto task = [](signal_set& s_ref, timer& t_ref, std::error_code& ec_out, int& sig_out) -> capy::task<>
         {
             t_ref.expires_after(std::chrono::milliseconds(5));
             (void)co_await t_ref.wait();

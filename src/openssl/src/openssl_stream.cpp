@@ -323,7 +323,7 @@ struct openssl_stream_impl_
     // Helper to flush pending output from BIO to network
     //--------------------------------------------------------------------------
 
-    capy::task<system::error_code>
+    capy::task<std::error_code>
     flush_output(std::stop_token token)
     {
         while(BIO_ctrl_pending(ext_bio_) > 0 && !token.stop_requested())
@@ -343,17 +343,17 @@ struct openssl_stream_impl_
         }
         if(token.stop_requested())
         {
-            co_return make_error_code(system::errc::operation_canceled);
+            co_return make_error_code(std::errc::operation_canceled);
         }
-        co_return system::error_code{};
+        co_return std::error_code{};
     }
 
-    capy::task<system::error_code>
+    capy::task<std::error_code>
     read_input(std::stop_token token)
     {
         if(token.stop_requested())
         {
-            co_return make_error_code(system::errc::operation_canceled);
+            co_return make_error_code(std::errc::operation_canceled);
         }
         auto guard = co_await io_cm_.scoped_lock();
         auto [ec, n] = co_await s_.read_some(
@@ -365,7 +365,7 @@ struct openssl_stream_impl_
         int written = BIO_write(ext_bio_, in_buf_.data(), static_cast<int>(n));
         (void)written;
 
-        co_return system::error_code{};
+        co_return std::error_code{};
     }
 
     //--------------------------------------------------------------------------
@@ -377,12 +377,12 @@ struct openssl_stream_impl_
         buffer_array dest_bufs,
         std::size_t buf_count,
         std::stop_token token,
-        system::error_code* ec_out,
+        std::error_code* ec_out,
         std::size_t* bytes_out,
         std::coroutine_handle<> continuation,
         capy::executor_ref d)
     {
-        system::error_code ec;
+        std::error_code ec;
         std::size_t total_read = 0;
 
         // Process each destination buffer
@@ -450,15 +450,15 @@ struct openssl_stream_impl_
                         if(ssl_err == 0)
                             ec = make_error_code(capy::error::stream_truncated);
                         else
-                            ec = system::error_code(
-                                static_cast<int>(ssl_err), system::system_category());
+                            ec = std::error_code(
+                                static_cast<int>(ssl_err), std::system_category());
                         goto done;
                     }
                     else
                     {
                         unsigned long ssl_err = ERR_get_error();
-                        ec = system::error_code(
-                            static_cast<int>(ssl_err), system::system_category());
+                        ec = std::error_code(
+                            static_cast<int>(ssl_err), std::system_category());
                         goto done;
                     }
                 }
@@ -467,7 +467,7 @@ struct openssl_stream_impl_
 
     done:
         if(token.stop_requested())
-            ec = make_error_code(system::errc::operation_canceled);
+            ec = make_error_code(std::errc::operation_canceled);
 
         *ec_out = ec;
         *bytes_out = total_read;
@@ -481,12 +481,12 @@ struct openssl_stream_impl_
         buffer_array src_bufs,
         std::size_t buf_count,
         std::stop_token token,
-        system::error_code* ec_out,
+        std::error_code* ec_out,
         std::size_t* bytes_out,
         std::coroutine_handle<> continuation,
         capy::executor_ref d)
     {
-        system::error_code ec;
+        std::error_code ec;
         std::size_t total_written = 0;
 
         // Process each source buffer
@@ -537,8 +537,8 @@ struct openssl_stream_impl_
                     else
                     {
                         unsigned long ssl_err = ERR_get_error();
-                        ec = system::error_code(
-                            static_cast<int>(ssl_err), system::system_category());
+                        ec = std::error_code(
+                            static_cast<int>(ssl_err), std::system_category());
                         goto done;
                     }
                 }
@@ -547,7 +547,7 @@ struct openssl_stream_impl_
 
     done:
         if(token.stop_requested())
-            ec = make_error_code(system::errc::operation_canceled);
+            ec = make_error_code(std::errc::operation_canceled);
 
         *ec_out = ec;
         *bytes_out = total_written;
@@ -560,11 +560,11 @@ struct openssl_stream_impl_
     do_handshake(
         int type,
         std::stop_token token,
-        system::error_code* ec_out,
+        std::error_code* ec_out,
         std::coroutine_handle<> continuation,
         capy::executor_ref d)
     {
-        system::error_code ec;
+        std::error_code ec;
 
         while(!token.stop_requested())
         {
@@ -605,8 +605,8 @@ struct openssl_stream_impl_
                 else
                 {
                     unsigned long ssl_err = ERR_get_error();
-                    ec = system::error_code(
-                        static_cast<int>(ssl_err), system::system_category());
+                    ec = std::error_code(
+                        static_cast<int>(ssl_err), std::system_category());
                     break;
                 }
             }
@@ -614,7 +614,7 @@ struct openssl_stream_impl_
 
         if(token.stop_requested())
         {
-            ec = make_error_code(system::errc::operation_canceled);
+            ec = make_error_code(std::errc::operation_canceled);
         }
         *ec_out = ec;
 
@@ -625,11 +625,11 @@ struct openssl_stream_impl_
     capy::task<>
     do_shutdown(
         std::stop_token token,
-        system::error_code* ec_out,
+        std::error_code* ec_out,
         std::coroutine_handle<> continuation,
         capy::executor_ref d)
     {
-        system::error_code ec;
+        std::error_code ec;
 
         while(!token.stop_requested())
         {
@@ -693,8 +693,8 @@ struct openssl_stream_impl_
                     }
                     else
                     {
-                        ec = system::error_code(
-                            static_cast<int>(ssl_err), system::system_category());
+                        ec = std::error_code(
+                            static_cast<int>(ssl_err), std::system_category());
                     }
                     break;
                 }
@@ -702,7 +702,7 @@ struct openssl_stream_impl_
         }
 
         if(token.stop_requested())
-            ec = make_error_code(system::errc::operation_canceled);
+            ec = make_error_code(std::errc::operation_canceled);
 
         *ec_out = ec;
 
@@ -724,7 +724,7 @@ struct openssl_stream_impl_
         capy::executor_ref d,
         io_buffer_param param,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* bytes) override
     {
         buffer_array bufs{};
@@ -739,7 +739,7 @@ struct openssl_stream_impl_
         capy::executor_ref d,
         io_buffer_param param,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* bytes) override
     {
         buffer_array bufs{};
@@ -754,7 +754,7 @@ struct openssl_stream_impl_
         capy::executor_ref d,
         int type,
         std::stop_token token,
-        system::error_code* ec) override
+        std::error_code* ec) override
     {
         capy::run_async(d, token)(
             do_handshake(type, token, ec, h, d));
@@ -764,7 +764,7 @@ struct openssl_stream_impl_
         std::coroutine_handle<> h,
         capy::executor_ref d,
         std::stop_token token,
-        system::error_code* ec) override
+        std::error_code* ec) override
     {
         capy::run_async(d, token)(
             do_shutdown(token, ec, h, d));
@@ -774,7 +774,7 @@ struct openssl_stream_impl_
     // Initialization
     //--------------------------------------------------------------------------
 
-    system::error_code
+    std::error_code
     init_ssl()
     {
         // Get cached SSL_CTX from tls::context
@@ -783,8 +783,8 @@ struct openssl_stream_impl_
         if( !native_ctx )
         {
             unsigned long err = ERR_get_error();
-            return system::error_code(
-                static_cast<int>( err ), system::system_category() );
+            return std::error_code(
+                static_cast<int>( err ), std::system_category() );
         }
 
         // Create SSL session from cached context
@@ -792,8 +792,8 @@ struct openssl_stream_impl_
         if( !ssl_ )
         {
             unsigned long err = ERR_get_error();
-            return system::error_code(
-                static_cast<int>( err ), system::system_category() );
+            return std::error_code(
+                static_cast<int>( err ), std::system_category() );
         }
 
         // Create BIO pair for I/O
@@ -803,8 +803,8 @@ struct openssl_stream_impl_
             unsigned long err = ERR_get_error();
             SSL_free( ssl_ );
             ssl_ = nullptr;
-            return system::error_code(
-                static_cast<int>( err ), system::system_category() );
+            return std::error_code(
+                static_cast<int>( err ), std::system_category() );
         }
 
         // Attach internal BIO to SSL (SSL takes ownership)

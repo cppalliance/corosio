@@ -15,7 +15,7 @@
 #include <boost/capy/error.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <coroutine>
 #include <limits>
@@ -43,7 +43,7 @@ struct timer_impl
     // Wait operation state
     std::coroutine_handle<> h_;
     capy::executor_ref d_;
-    system::error_code* ec_out_ = nullptr;
+    std::error_code* ec_out_ = nullptr;
     std::stop_token token_;
     bool waiting_ = false;
 
@@ -58,7 +58,7 @@ struct timer_impl
         std::coroutine_handle<>,
         capy::executor_ref,
         std::stop_token,
-        system::error_code*) override;
+        std::error_code*) override;
 };
 
 //------------------------------------------------------------------------------
@@ -144,7 +144,7 @@ public:
         bool was_waiting = false;
         std::coroutine_handle<> h;
         capy::executor_ref d;
-        system::error_code* ec_out = nullptr;
+        std::error_code* ec_out = nullptr;
 
         {
             std::lock_guard lock(mutex_);
@@ -206,7 +206,7 @@ public:
     {
         std::coroutine_handle<> h;
         capy::executor_ref d;
-        system::error_code* ec_out = nullptr;
+        std::error_code* ec_out = nullptr;
         bool was_waiting = false;
 
         {
@@ -252,7 +252,7 @@ public:
         {
             std::coroutine_handle<> h;
             capy::executor_ref d;
-            system::error_code* ec_out;
+            std::error_code* ec_out;
         };
         std::vector<expired_entry> expired;
 
@@ -371,7 +371,7 @@ wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
-    system::error_code* ec)
+    std::error_code* ec)
 {
     // Check if timer already expired (not in heap anymore)
     bool already_expired = (heap_index_ == (std::numeric_limits<std::size_t>::max)());

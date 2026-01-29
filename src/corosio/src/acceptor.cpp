@@ -45,7 +45,7 @@ listen(endpoint ep, int backlog)
     auto& svc = ctx_->use_service<detail::win_sockets>();
     auto& wrapper = svc.create_acceptor_impl();
     impl_ = &wrapper;
-    system::error_code ec = svc.open_acceptor(
+    std::error_code ec = svc.open_acceptor(
         *wrapper.get_internal(), ep, backlog);
 #else
     // POSIX backends use abstract acceptor_service for runtime polymorphism.
@@ -56,7 +56,7 @@ listen(endpoint ep, int backlog)
         detail::throw_logic_error("acceptor::listen: no acceptor service installed");
     auto& wrapper = svc->create_acceptor_impl();
     impl_ = &wrapper;
-    system::error_code ec = svc->open_acceptor(wrapper, ep, backlog);
+    std::error_code ec = svc->open_acceptor(wrapper, ep, backlog);
 #endif
     if (ec)
     {

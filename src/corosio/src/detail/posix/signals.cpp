@@ -18,8 +18,7 @@
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/system/error_code.hpp>
-#include <boost/system/result.hpp>
+#include <system_error>
 
 #include "src/detail/intrusive.hpp"
 #include "src/detail/scheduler_op.hpp"
@@ -146,7 +145,7 @@ struct signal_op : scheduler_op
 {
     capy::coro h;
     capy::executor_ref d;
-    system::error_code* ec_out = nullptr;
+    std::error_code* ec_out = nullptr;
     int* signal_out = nullptr;
     int signal_number = 0;
     posix_signals_impl* svc = nullptr;  // For work_finished callback
@@ -194,7 +193,7 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         int*) override;
 
     std::error_code add(int signal_number, signal_set::flags_t flags) override;
@@ -394,7 +393,7 @@ wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     int* signal_out)
 {
     pending_op_.h = h;

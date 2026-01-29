@@ -52,10 +52,9 @@ set(BOOST_SRC_DIR ${DEFAULT_BOOST_SRC_DIR} CACHE STRING "Boost source dir to use
 # Boost modules
 #
 #-------------------------------------------------
-# corosio depends on capy and system
+# corosio depends on capy
 set(BOOST_COROSIO_DEPENDENCIES
-    Boost::capy
-    Boost::system)
+    Boost::capy)
 
 foreach (BOOST_COROSIO_DEPENDENCY ${BOOST_COROSIO_DEPENDENCIES})
     if (BOOST_COROSIO_DEPENDENCY MATCHES "^[ ]*Boost::([A-Za-z0-9_]+)[ ]*$")
@@ -112,7 +111,7 @@ if (BOOST_COROSIO_IS_ROOT)
         set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${BOOST_SRC_DIR}/tools/cmake/include")
     else ()
         # Try installed Boost package first
-        find_package(Boost QUIET COMPONENTS url system)
+        find_package(Boost QUIET)
         if (Boost_FOUND)
             message(STATUS "Using installed Boost package")
             foreach (BOOST_INCLUDE_LIBRARY ${BOOST_COROSIO_INCLUDE_LIBRARIES})

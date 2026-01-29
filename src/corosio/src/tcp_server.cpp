@@ -30,7 +30,7 @@ tcp_server::do_accept(acceptor& acc)
     }
 }
 
-system::error_code
+std::error_code
 tcp_server::bind(endpoint ep)
 {
     ports_.emplace_back(ctx_);

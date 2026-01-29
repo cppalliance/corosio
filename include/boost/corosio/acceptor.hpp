@@ -20,7 +20,7 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <coroutine>
@@ -66,7 +66,7 @@ class BOOST_COROSIO_DECL acceptor : public io_object
         acceptor& acc_;
         socket& peer_;
         std::stop_token token_;
-        mutable system::error_code ec_;
+        mutable std::error_code ec_;
         mutable io_object::io_object_impl* peer_impl_ = nullptr;
 
         accept_awaitable(acceptor& acc, socket& peer) noexcept
@@ -83,7 +83,7 @@ class BOOST_COROSIO_DECL acceptor : public io_object
         capy::io_result<> await_resume() const noexcept
         {
             if (token_.stop_requested())
-                return {make_error_code(system::errc::operation_canceled)};
+                return {make_error_code(std::errc::operation_canceled)};
             
             // Transfer the accepted impl to the peer socket
             // (acceptor is a friend of socket, so we can access impl_)
@@ -287,7 +287,7 @@ public:
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,
-            system::error_code*,
+            std::error_code*,
             io_object_impl**) = 0;
 
         /// Returns the cached local endpoint.

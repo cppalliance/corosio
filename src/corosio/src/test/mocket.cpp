@@ -9,7 +9,7 @@
 
 #include <boost/corosio/test/mocket.hpp>
 #include <boost/corosio/acceptor.hpp>
-#include <boost/system/system_error.hpp>
+#include <system_error>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket.hpp>
 #include "src/detail/intrusive.hpp"
@@ -86,7 +86,7 @@ public:
         expect_.append(std::move(s));
     }
 
-    system::error_code close();
+    std::error_code close();
 
     bool is_open() const noexcept
     {
@@ -100,7 +100,7 @@ public:
         capy::executor_ref d,
         io_buffer_param buffers,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* bytes_transferred) override;
 
     void write_some(
@@ -108,7 +108,7 @@ public:
         capy::executor_ref d,
         io_buffer_param buffers,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* bytes_transferred) override;
 
 private:
@@ -176,7 +176,7 @@ mocket_impl(
 {
 }
 
-system::error_code
+std::error_code
 mocket_impl::
 close()
 {
@@ -267,7 +267,7 @@ read_some(
     capy::executor_ref d,
     io_buffer_param buffers,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     std::size_t* bytes_transferred)
 {
     (void)token;
@@ -309,7 +309,7 @@ write_some(
     capy::executor_ref d,
     io_buffer_param buffers,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     std::size_t* bytes_transferred)
 {
     (void)token;
@@ -417,7 +417,7 @@ expect(std::string s)
     get_impl()->expect(std::move(s));
 }
 
-system::error_code
+std::error_code
 mocket::
 close()
 {
@@ -481,8 +481,8 @@ make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
     auto& ioc = static_cast<io_context&>(ctx);
     auto ex = ioc.get_executor();
 
-    system::error_code accept_ec;
-    system::error_code connect_ec;
+    std::error_code accept_ec;
+    std::error_code connect_ec;
     bool accept_done = false;
     bool connect_done = false;
 
@@ -499,7 +499,7 @@ make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
             listening = true;
             break;
         }
-        catch (const system::system_error&)
+        catch (const std::system_error&)
         {
             acc.close();
             acc = acceptor(ctx);
@@ -522,7 +522,7 @@ make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
     // avoiding use-after-scope when the lambda temporary is destroyed.
     capy::run_async(ex)(
         [](acceptor& a, socket& s,
-           system::error_code& ec_out, bool& done_out) -> capy::task<>
+           std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await a.accept(s);
             ec_out = ec;
@@ -532,7 +532,7 @@ make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
     // Launch connect operation
     capy::run_async(ex)(
         [](socket& s, endpoint ep,
-           system::error_code& ec_out, bool& done_out) -> capy::task<>
+           std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await s.connect(ep);
             ec_out = ec;

@@ -20,7 +20,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include "src/detail/make_err.hpp"
 #include "src/detail/scheduler_op.hpp"
@@ -116,7 +116,7 @@ struct select_op : scheduler_op
 
     capy::coro h;
     capy::executor_ref ex;
-    system::error_code* ec_out = nullptr;
+    std::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
 
     int fd = -1;

@@ -10,7 +10,6 @@
 #include "src/detail/make_err.hpp"
 
 #include <boost/capy/error.hpp>
-#include <boost/system/system_category.hpp>
 
 #if BOOST_COROSIO_POSIX
 #include <errno.h>
@@ -25,7 +24,7 @@ namespace boost::corosio::detail {
 
 #if BOOST_COROSIO_POSIX
 
-system::error_code
+std::error_code
 make_err(int errn) noexcept
 {
     if (errn == 0)
@@ -34,12 +33,12 @@ make_err(int errn) noexcept
     if (errn == ECANCELED)
         return capy::error::canceled;
 
-    return system::error_code(errn, system::system_category());
+    return std::error_code(errn, std::system_category());
 }
 
 #else
 
-system::error_code
+std::error_code
 make_err(unsigned long dwError) noexcept
 {
     if (dwError == 0)
@@ -52,9 +51,9 @@ make_err(unsigned long dwError) noexcept
     if (dwError == ERROR_HANDLE_EOF)
         return capy::error::eof;
 
-    return system::error_code(
+    return std::error_code(
         static_cast<int>(dwError),
-        system::system_category());
+        std::system_category());
 }
 
 #endif

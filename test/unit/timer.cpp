@@ -188,11 +188,11 @@ struct timer_test_impl
         timer t(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
         t.expires_after(std::chrono::milliseconds(10));
 
-        auto task = [](timer& t_ref, system::error_code& ec_out, bool& done_out) -> capy::task<>
+        auto task = [](timer& t_ref, std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await t_ref.wait();
             ec_out = ec;
@@ -237,11 +237,11 @@ struct timer_test_impl
         timer t(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
         t.expires_at(timer::clock_type::now() - std::chrono::seconds(1));
 
-        auto task = [](timer& t_ref, system::error_code& ec_out, bool& done_out) -> capy::task<>
+        auto task = [](timer& t_ref, std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await t_ref.wait();
             ec_out = ec;
@@ -261,11 +261,11 @@ struct timer_test_impl
         timer t(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
         t.expires_after(std::chrono::milliseconds(0));
 
-        auto task = [](timer& t_ref, system::error_code& ec_out, bool& done_out) -> capy::task<>
+        auto task = [](timer& t_ref, std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await t_ref.wait();
             ec_out = ec;
@@ -290,12 +290,12 @@ struct timer_test_impl
         timer cancel_timer(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
         t.expires_after(std::chrono::seconds(60));
         cancel_timer.expires_after(std::chrono::milliseconds(10));
 
-        auto wait_task = [](timer& t_ref, system::error_code& ec_out, bool& done_out) -> capy::task<>
+        auto wait_task = [](timer& t_ref, std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await t_ref.wait();
             ec_out = ec;
@@ -349,12 +349,12 @@ struct timer_test_impl
         timer delay_timer(ioc);
 
         bool completed = false;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
         t.expires_after(std::chrono::seconds(60));
         delay_timer.expires_after(std::chrono::milliseconds(10));
 
-        auto wait_task = [](timer& t_ref, system::error_code& ec_out, bool& done_out) -> capy::task<>
+        auto wait_task = [](timer& t_ref, std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await t_ref.wait();
             ec_out = ec;
@@ -506,12 +506,12 @@ struct timer_test_impl
         timer cancel_timer(ioc);
 
         bool result_ok = true;
-        system::error_code result_ec;
+        std::error_code result_ec;
 
         t.expires_after(std::chrono::seconds(60));
         cancel_timer.expires_after(std::chrono::milliseconds(10));
 
-        auto wait_task = [](timer& t_ref, bool& ok_out, system::error_code& ec_out) -> capy::task<>
+        auto wait_task = [](timer& t_ref, bool& ok_out, std::error_code& ec_out) -> capy::task<>
         {
             auto result = co_await t_ref.wait();
             ok_out = !result.ec;
@@ -537,11 +537,11 @@ struct timer_test_impl
         Context ioc;
         timer t(ioc);
 
-        system::error_code captured_ec;
+        std::error_code captured_ec;
 
         t.expires_after(std::chrono::milliseconds(5));
 
-        auto task = [](timer& t_ref, system::error_code& ec_out) -> capy::task<>
+        auto task = [](timer& t_ref, std::error_code& ec_out) -> capy::task<>
         {
             auto [ec] = co_await t_ref.wait();
             ec_out = ec;

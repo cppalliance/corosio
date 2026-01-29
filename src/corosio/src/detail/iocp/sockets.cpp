@@ -380,7 +380,7 @@ connect(
     capy::executor_ref d,
     endpoint ep,
     std::stop_token token,
-    system::error_code* ec)
+    std::error_code* ec)
 {
     // Keep internal alive during I/O
     conn_.internal_ptr = shared_from_this();
@@ -462,7 +462,7 @@ read_some(
     capy::executor_ref d,
     io_buffer_param param,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     std::size_t* bytes_out)
 {
     // Keep internal alive during I/O
@@ -544,7 +544,7 @@ write_some(
     capy::executor_ref d,
     io_buffer_param param,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     std::size_t* bytes_out)
 {
     // Keep internal alive during I/O
@@ -746,7 +746,7 @@ unregister_impl(win_socket_impl_internal& impl)
     socket_list_.remove(&impl);
 }
 
-system::error_code
+std::error_code
 win_sockets::
 open_socket(win_socket_impl_internal& impl)
 {
@@ -889,7 +889,7 @@ unregister_acceptor_impl(win_acceptor_impl_internal& impl)
     acceptor_list_.remove(&impl);
 }
 
-system::error_code
+std::error_code
 win_sockets::
 open_acceptor(
     win_acceptor_impl_internal& impl,
@@ -995,7 +995,7 @@ accept(
     capy::coro h,
     capy::executor_ref d,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     io_object::io_object_impl** impl_out)
 {
     // Keep acceptor internal alive during I/O

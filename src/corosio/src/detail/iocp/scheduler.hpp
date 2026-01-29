@@ -17,7 +17,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include "src/detail/scheduler_op.hpp"
 #include "src/detail/iocp/completion_key.hpp"

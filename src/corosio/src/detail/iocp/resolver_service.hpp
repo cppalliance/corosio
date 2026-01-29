@@ -207,7 +207,7 @@ public:
         std::string_view service,
         resolve_flags flags,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         resolver_results*) override;
 
     void reverse_resolve(
@@ -216,7 +216,7 @@ public:
         endpoint const& ep,
         reverse_flags flags,
         std::stop_token,
-        system::error_code*,
+        std::error_code*,
         reverse_resolver_result*) override;
 
     void cancel() noexcept override;

@@ -18,7 +18,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <coroutine>
@@ -160,7 +160,7 @@ private:
     {
         signal_set& s_;
         std::stop_token token_;
-        mutable system::error_code ec_;
+        mutable std::error_code ec_;
         mutable int signal_number_ = 0;
 
         explicit wait_awaitable(signal_set& s) noexcept : s_(s) {}
@@ -196,7 +196,7 @@ public:
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,
-            system::error_code*,
+            std::error_code*,
             int*) = 0;
 
         virtual std::error_code add(int signal_number, flags_t flags) = 0;
@@ -223,7 +223,7 @@ public:
         @param signal First signal number to add.
         @param signals Additional signal numbers to add.
 
-        @throws boost::system::system_error Thrown on failure.
+        @throws std::system_error Thrown on failure.
     */
     template<std::convertible_to<int>... Signals>
     signal_set(

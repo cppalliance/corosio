@@ -389,7 +389,7 @@ struct wolfssl_stream_impl_
     {
         if(token.stop_requested())
             co_return capy::io_result<std::size_t>{
-                make_error_code(system::errc::operation_canceled), 0};
+                make_error_code(std::errc::operation_canceled), 0};
 
         auto guard = co_await io_cm_.scoped_lock();
         co_return co_await s_.read_some(buf);
@@ -400,7 +400,7 @@ struct wolfssl_stream_impl_
     {
         if(token.stop_requested())
             co_return capy::io_result<std::size_t>{
-                make_error_code(system::errc::operation_canceled), 0};
+                make_error_code(std::errc::operation_canceled), 0};
 
         auto guard = co_await io_cm_.scoped_lock();
         co_return co_await s_.write_some(buf);
@@ -420,12 +420,12 @@ struct wolfssl_stream_impl_
         buffer_array dest_bufs,
         std::size_t buf_count,
         std::stop_token token,
-        system::error_code* ec_out,
+        std::error_code* ec_out,
         std::size_t* bytes_out,
         std::coroutine_handle<> continuation,
         capy::executor_ref d)
     {
-        system::error_code ec;
+        std::error_code ec;
         std::size_t total_read = 0;
 
         // Set up operation buffers for callbacks
@@ -509,7 +509,7 @@ struct wolfssl_stream_impl_
                     else
                     {
                         // Other error
-                        ec = system::error_code(err, system::system_category());
+                        ec = std::error_code(err, std::system_category());
                         goto done;
                     }
                 }
@@ -520,7 +520,7 @@ struct wolfssl_stream_impl_
         current_op_ = nullptr;
 
         if(token.stop_requested())
-            ec = make_error_code(system::errc::operation_canceled);
+            ec = make_error_code(std::errc::operation_canceled);
 
         *ec_out = ec;
         *bytes_out = total_read;
@@ -540,12 +540,12 @@ struct wolfssl_stream_impl_
         buffer_array src_bufs,
         std::size_t buf_count,
         std::stop_token token,
-        system::error_code* ec_out,
+        std::error_code* ec_out,
         std::size_t* bytes_out,
         std::coroutine_handle<> continuation,
         capy::executor_ref d)
     {
-        system::error_code ec;
+        std::error_code ec;
         std::size_t total_written = 0;
 
         // Set up operation buffers for callbacks
@@ -620,7 +620,7 @@ struct wolfssl_stream_impl_
                     else
                     {
                         // Other error
-                        ec = system::error_code(err, system::system_category());
+                        ec = std::error_code(err, std::system_category());
                         goto done;
                     }
                 }
@@ -631,7 +631,7 @@ struct wolfssl_stream_impl_
         current_op_ = nullptr;
 
         if(token.stop_requested())
-            ec = make_error_code(system::errc::operation_canceled);
+            ec = make_error_code(std::errc::operation_canceled);
 
         *ec_out = ec;
         *bytes_out = total_written;
@@ -650,11 +650,11 @@ struct wolfssl_stream_impl_
     do_handshake(
         int type,
         std::stop_token token,
-        system::error_code* ec_out,
+        std::error_code* ec_out,
         std::coroutine_handle<> continuation,
         capy::executor_ref d)
     {
-        system::error_code ec;
+        std::error_code ec;
 
         // Initialize SSL object for the specified role (deferred from construction)
         ec = init_ssl_for_role( type );
@@ -761,7 +761,7 @@ struct wolfssl_stream_impl_
                 else
                 {
                     // Other error
-                    ec = system::error_code(err, system::system_category());
+                    ec = std::error_code(err, std::system_category());
                     break;
                 }
             }
@@ -771,7 +771,7 @@ struct wolfssl_stream_impl_
         current_op_ = nullptr;
 
         if(token.stop_requested())
-            ec = make_error_code(system::errc::operation_canceled);
+            ec = make_error_code(std::errc::operation_canceled);
 
         *ec_out = ec;
 
@@ -788,11 +788,11 @@ struct wolfssl_stream_impl_
     capy::task<>
     do_shutdown(
         std::stop_token token,
-        system::error_code* ec_out,
+        std::error_code* ec_out,
         std::coroutine_handle<> continuation,
         capy::executor_ref d)
     {
-        system::error_code ec;
+        std::error_code ec;
 
         // Set up operation buffers for callbacks (use read buffers for shutdown)
         op_buffers op{
@@ -891,14 +891,14 @@ struct wolfssl_stream_impl_
                 else
                 {
                     // Unexpected error
-                    ec = system::error_code(err, system::system_category());
+                    ec = std::error_code(err, std::system_category());
                     break;
                 }
             }
             else
             {
                 // SSL_FATAL_ERROR or negative return
-                ec = system::error_code(err, system::system_category());
+                ec = std::error_code(err, std::system_category());
                 break;
             }
         }
@@ -907,7 +907,7 @@ struct wolfssl_stream_impl_
         current_op_ = nullptr;
 
         if(token.stop_requested())
-            ec = make_error_code(system::errc::operation_canceled);
+            ec = make_error_code(std::errc::operation_canceled);
 
         *ec_out = ec;
 
@@ -930,7 +930,7 @@ struct wolfssl_stream_impl_
         capy::executor_ref d,
         io_buffer_param param,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* bytes) override
     {
         // Extract buffers from type-erased parameter
@@ -948,7 +948,7 @@ struct wolfssl_stream_impl_
         capy::executor_ref d,
         io_buffer_param param,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* bytes) override
     {
         // Extract buffers from type-erased parameter
@@ -966,7 +966,7 @@ struct wolfssl_stream_impl_
         capy::executor_ref d,
         int type,
         std::stop_token token,
-        system::error_code* ec) override
+        std::error_code* ec) override
     {
         // Launch inner coroutine via run_async with stop_token for cancellation
         capy::run_async(d, token)(
@@ -977,7 +977,7 @@ struct wolfssl_stream_impl_
         std::coroutine_handle<> h,
         capy::executor_ref d,
         std::stop_token token,
-        system::error_code* ec) override
+        std::error_code* ec) override
     {
         // Launch inner coroutine via run_async with stop_token for cancellation
         capy::run_async(d, token)(
@@ -993,7 +993,7 @@ struct wolfssl_stream_impl_
         @param type wolfssl_stream::client or wolfssl_stream::server
         @return Error code if initialization failed.
     */
-    system::error_code
+    std::error_code
     init_ssl_for_role( int type )
     {
         // Already initialized?
@@ -1005,9 +1005,9 @@ struct wolfssl_stream_impl_
         auto* native = tls::detail::get_wolfssl_native_context( impl );
         if( !native )
         {
-            return system::error_code(
+            return std::error_code(
                 wolfSSL_get_error( nullptr, 0 ),
-                system::system_category() );
+                std::system_category() );
         }
 
         // Select appropriate context based on role
@@ -1017,9 +1017,9 @@ struct wolfssl_stream_impl_
 
         if( !native_ctx )
         {
-            return system::error_code(
+            return std::error_code(
                 wolfSSL_get_error( nullptr, 0 ),
-                system::system_category() );
+                std::system_category() );
         }
 
         // Create SSL session from the role-specific context
@@ -1027,7 +1027,7 @@ struct wolfssl_stream_impl_
         if( !ssl_ )
         {
             int err = wolfSSL_get_error( nullptr, 0 );
-            return system::error_code( err, system::system_category() );
+            return std::error_code( err, std::system_category() );
         }
 
         // Set custom I/O callbacks

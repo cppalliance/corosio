@@ -15,7 +15,7 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/io_buffer_param.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <coroutine>
 #include <cstddef>
@@ -100,7 +100,7 @@ protected:
         io_stream& ios_;
         MutableBufferSequence buffers_;
         std::stop_token token_;
-        mutable system::error_code ec_;
+        mutable std::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
 
         read_some_awaitable(
@@ -119,7 +119,7 @@ protected:
         capy::io_result<std::size_t> await_resume() const noexcept
         {
             if (token_.stop_requested())
-                return {make_error_code(system::errc::operation_canceled), 0};
+                return {make_error_code(std::errc::operation_canceled), 0};
             return {ec_, bytes_transferred_};
         }
 
@@ -151,7 +151,7 @@ protected:
         io_stream& ios_;
         ConstBufferSequence buffers_;
         std::stop_token token_;
-        mutable system::error_code ec_;
+        mutable std::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
 
         write_some_awaitable(
@@ -170,7 +170,7 @@ protected:
         capy::io_result<std::size_t> await_resume() const noexcept
         {
             if (token_.stop_requested())
-                return {make_error_code(system::errc::operation_canceled), 0};
+                return {make_error_code(std::errc::operation_canceled), 0};
             return {ec_, bytes_transferred_};
         }
 
@@ -204,7 +204,7 @@ public:
             capy::executor_ref,
             io_buffer_param,
             std::stop_token,
-            system::error_code*,
+            std::error_code*,
             std::size_t*) = 0;
 
         virtual void write_some(
@@ -212,7 +212,7 @@ public:
             capy::executor_ref,
             io_buffer_param,
             std::stop_token,
-            system::error_code*,
+            std::error_code*,
             std::size_t*) = 0;
     };
 
