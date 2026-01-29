@@ -71,9 +71,12 @@ capy::task<> atomic_increment_task(std::atomic<int>& counter)
     co_return;
 }
 
-// Benchmark: Single-threaded handler posting rate
+// Measures the raw throughput of posting and executing coroutines from a single
+// thread. This establishes a baseline for the scheduler's best-case performance
+// without any synchronization overhead. Useful for comparing coroutine dispatch
+// efficiency against other async frameworks and identifying per-handler overhead.
 template <typename Context>
-void bench_single_threaded_post(int num_handlers)
+bench::benchmark_result bench_single_threaded_post(int num_handlers)
 {
     bench::print_header("Single-threaded Handler Post");
 
@@ -101,16 +104,29 @@ void bench_single_threaded_post(int num_handlers)
         std::cerr << "  ERROR: counter mismatch! Expected " << num_handlers
                   << ", got " << counter << "\n";
     }
+
+    return bench::benchmark_result("single_threaded_post")
+        .add("handlers", num_handlers)
+        .add("elapsed_s", elapsed)
+        .add("ops_per_sec", ops_per_sec);
 }
 
-// Benchmark: Multi-threaded scaling
+// Measures how throughput scales when multiple threads call run() on the same
+// io_context. Pre-posts all work, then times execution across 1, 2, 4, 8 threads.
+// Reveals lock contention in the scheduler's work queue. Ideal scaling would show
+// linear speedup; sub-linear or negative scaling indicates contention issues that
+// may need strand-based partitioning in real applications.
 template <typename Context>
-void bench_multithreaded_scaling(int num_handlers, int max_threads)
+bench::benchmark_result bench_multithreaded_scaling(int num_handlers, int max_threads)
 {
     bench::print_header("Multi-threaded Scaling");
 
     std::cout << "  Handlers per test: " << num_handlers << "\n\n";
 
+    bench::benchmark_result result("multithreaded_scaling");
+    result.add("handlers", num_handlers);
+
+    double baseline_ops = 0;
     for (int num_threads = 1; num_threads <= max_threads; num_threads *= 2)
     {
         Context ioc;
@@ -137,17 +153,15 @@ void bench_multithreaded_scaling(int num_handlers, int max_threads)
         std::cout << "  " << num_threads << " thread(s): "
                   << bench::format_rate(ops_per_sec);
 
-        if (num_threads > 1)
-        {
-            // Calculate speedup vs single-threaded baseline
-            static double baseline_ops = 0;
-            if (num_threads == 1)
-                baseline_ops = ops_per_sec;
-            else if (baseline_ops > 0)
-                std::cout << " (speedup: " << std::fixed << std::setprecision(2)
-                          << (ops_per_sec / baseline_ops) << "x)";
-        }
+        if (num_threads == 1)
+            baseline_ops = ops_per_sec;
+        else if (baseline_ops > 0)
+            std::cout << " (speedup: " << std::fixed << std::setprecision(2)
+                      << (ops_per_sec / baseline_ops) << "x)";
         std::cout << "\n";
+
+        // Record per-thread results
+        result.add("threads_" + std::to_string(num_threads) + "_ops_per_sec", ops_per_sec);
 
         if (counter.load() != num_handlers)
         {
@@ -155,11 +169,17 @@ void bench_multithreaded_scaling(int num_handlers, int max_threads)
                       << ", got " << counter.load() << "\n";
         }
     }
+
+    return result;
 }
 
-// Benchmark: Post and run interleaved
+// Measures performance when posting and polling are interleaved, simulating a
+// game loop or GUI event pump that processes available work each frame. Posts a
+// batch of handlers, calls poll() to execute ready work, then repeats. Tests the
+// efficiency of poll() with small work batches and frequent context restarts,
+// which is common in latency-sensitive applications that can't block on run().
 template <typename Context>
-void bench_interleaved_post_run(int iterations, int handlers_per_iteration)
+bench::benchmark_result bench_interleaved_post_run(int iterations, int handlers_per_iteration)
 {
     bench::print_header("Interleaved Post/Run");
 
@@ -197,11 +217,23 @@ void bench_interleaved_post_run(int iterations, int handlers_per_iteration)
         std::cerr << "  ERROR: counter mismatch! Expected " << total_handlers
                   << ", got " << counter << "\n";
     }
+
+    return bench::benchmark_result("interleaved_post_run")
+        .add("iterations", iterations)
+        .add("handlers_per_iteration", handlers_per_iteration)
+        .add("total_handlers", total_handlers)
+        .add("elapsed_s", elapsed)
+        .add("ops_per_sec", ops_per_sec);
 }
 
-// Benchmark: Multi-threaded concurrent posting and running
+// Measures performance under realistic concurrent load where multiple threads
+// simultaneously post work AND execute it. This is the most stressful test for
+// the scheduler's synchronization, as threads contend for both the submission
+// and completion paths. Simulates server workloads where worker threads both
+// generate new tasks and process existing ones, revealing producer-consumer
+// bottlenecks.
 template <typename Context>
-void bench_concurrent_post_run(int num_threads, int handlers_per_thread)
+bench::benchmark_result bench_concurrent_post_run(int num_threads, int handlers_per_thread)
 {
     bench::print_header("Concurrent Post and Run");
 
@@ -242,15 +274,26 @@ void bench_concurrent_post_run(int num_threads, int handlers_per_thread)
         std::cerr << "  ERROR: counter mismatch! Expected " << total_handlers
                   << ", got " << counter.load() << "\n";
     }
+
+    return bench::benchmark_result("concurrent_post_run")
+        .add("threads", num_threads)
+        .add("handlers_per_thread", handlers_per_thread)
+        .add("total_handlers", total_handlers)
+        .add("elapsed_s", elapsed)
+        .add("ops_per_sec", ops_per_sec);
 }
 
-// Run all benchmarks for a specific context type
+// Run benchmarks for a specific context type
 template <typename Context>
-void run_all_benchmarks(const char* backend_name)
+void run_benchmarks(const char* backend_name, const char* output_file, const char* bench_filter)
 {
     std::cout << "Boost.Corosio io_context Benchmarks\n";
     std::cout << "====================================\n";
     std::cout << "Backend: " << backend_name << "\n\n";
+
+    bench::result_collector collector(backend_name);
+
+    bool run_all = !bench_filter || std::strcmp(bench_filter, "all") == 0;
 
     // Warm up
     {
@@ -262,13 +305,28 @@ void run_all_benchmarks(const char* backend_name)
         ioc.run();
     }
 
-    // Run benchmarks
-    bench_single_threaded_post<Context>(1000000);
-    bench_multithreaded_scaling<Context>(1000000, 8);
-    bench_interleaved_post_run<Context>(10000, 100);
-    bench_concurrent_post_run<Context>(4, 250000);
+    // Run selected benchmarks
+    if (run_all || std::strcmp(bench_filter, "single_threaded") == 0)
+        collector.add(bench_single_threaded_post<Context>(1000000));
+
+    if (run_all || std::strcmp(bench_filter, "multithreaded") == 0)
+        collector.add(bench_multithreaded_scaling<Context>(1000000, 8));
+
+    if (run_all || std::strcmp(bench_filter, "interleaved") == 0)
+        collector.add(bench_interleaved_post_run<Context>(10000, 100));
+
+    if (run_all || std::strcmp(bench_filter, "concurrent") == 0)
+        collector.add(bench_concurrent_post_run<Context>(4, 250000));
 
     std::cout << "\nBenchmarks complete.\n";
+
+    if (output_file)
+    {
+        if (collector.write_json(output_file))
+            std::cout << "Results written to: " << output_file << "\n";
+        else
+            std::cerr << "Error: Failed to write results to: " << output_file << "\n";
+    }
 }
 
 void print_usage(const char* program_name)
@@ -276,8 +334,17 @@ void print_usage(const char* program_name)
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
     std::cout << "Options:\n";
     std::cout << "  --backend <name>   Select I/O backend (default: platform default)\n";
+    std::cout << "  --bench <name>     Run only the specified benchmark\n";
+    std::cout << "  --output <file>    Write JSON results to file\n";
     std::cout << "  --list             List available backends\n";
     std::cout << "  --help             Show this help message\n";
+    std::cout << "\n";
+    std::cout << "Available benchmarks:\n";
+    std::cout << "  single_threaded    Single-threaded handler post throughput\n";
+    std::cout << "  multithreaded      Multi-threaded scaling test\n";
+    std::cout << "  interleaved        Interleaved post/poll pattern\n";
+    std::cout << "  concurrent         Concurrent post and run\n";
+    std::cout << "  all                Run all benchmarks (default)\n";
     std::cout << "\n";
     print_available_backends();
 }
@@ -285,6 +352,8 @@ void print_usage(const char* program_name)
 int main(int argc, char* argv[])
 {
     const char* backend = nullptr;
+    const char* output_file = nullptr;
+    const char* bench_filter = nullptr;
 
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i)
@@ -298,6 +367,30 @@ int main(int argc, char* argv[])
             else
             {
                 std::cerr << "Error: --backend requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--bench") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                bench_filter = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --bench requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--output") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                output_file = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --output requires an argument\n";
                 return 1;
             }
         }
@@ -329,7 +422,7 @@ int main(int argc, char* argv[])
 #if BOOST_COROSIO_HAS_EPOLL
     if (std::strcmp(backend, "epoll") == 0)
     {
-        run_all_benchmarks<corosio::epoll_context>("epoll");
+        run_benchmarks<corosio::epoll_context>("epoll", output_file, bench_filter);
         return 0;
     }
 #endif
@@ -337,7 +430,7 @@ int main(int argc, char* argv[])
 #if BOOST_COROSIO_HAS_SELECT
     if (std::strcmp(backend, "select") == 0)
     {
-        run_all_benchmarks<corosio::select_context>("select");
+        run_benchmarks<corosio::select_context>("select", output_file, bench_filter);
         return 0;
     }
 #endif
@@ -345,7 +438,7 @@ int main(int argc, char* argv[])
 #if BOOST_COROSIO_HAS_IOCP
     if (std::strcmp(backend, "iocp") == 0)
     {
-        run_all_benchmarks<corosio::iocp_context>("iocp");
+        run_benchmarks<corosio::iocp_context>("iocp", output_file, bench_filter);
         return 0;
     }
 #endif

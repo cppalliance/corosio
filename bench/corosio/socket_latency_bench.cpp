@@ -16,6 +16,7 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/write.hpp>
 
+#include <cstring>
 #include <iostream>
 #include <vector>
 
@@ -80,8 +81,12 @@ capy::task<> pingpong_task(
     }
 }
 
-// Benchmark: Ping-pong latency measurement
-void bench_pingpong_latency(std::size_t message_size, int iterations)
+// Measures round-trip latency for a request-response pattern over loopback sockets.
+// Client sends a message, server echoes it back, measuring the complete cycle time.
+// This is the fundamental latency metric for RPC-style protocols. Reports mean,
+// median (p50), and tail latencies (p99, p99.9) which are critical for SLA compliance.
+// Different message sizes reveal fixed overhead vs. size-dependent costs.
+bench::benchmark_result bench_pingpong_latency(std::size_t message_size, int iterations)
 {
     std::cout << "  Message size: " << message_size << " bytes, ";
     std::cout << "Iterations: " << iterations << "\n";
@@ -104,10 +109,20 @@ void bench_pingpong_latency(std::size_t message_size, int iterations)
 
     client.close();
     server.close();
+
+    return bench::benchmark_result("pingpong_" + std::to_string(message_size))
+        .add("message_size", static_cast<double>(message_size))
+        .add("iterations", iterations)
+        .add_latency_stats("rtt", latency_stats);
 }
 
-// Benchmark: Multiple concurrent socket pairs
-void bench_concurrent_latency(int num_pairs, std::size_t message_size, int iterations)
+// Measures latency degradation under concurrent connection load. Multiple socket
+// pairs perform ping-pong simultaneously, revealing how latency increases as the
+// scheduler multiplexes more connections. Critical for capacity planning: shows
+// how many concurrent connections can be sustained before latency becomes
+// unacceptable. A well-designed scheduler should show gradual degradation rather
+// than sudden latency spikes.
+bench::benchmark_result bench_concurrent_latency(int num_pairs, std::size_t message_size, int iterations)
 {
     std::cout << "  Concurrent pairs: " << num_pairs << ", ";
     std::cout << "Message size: " << message_size << " bytes, ";
@@ -170,29 +185,113 @@ void bench_concurrent_latency(int num_pairs, std::size_t message_size, int itera
         c.close();
     for (auto& s : servers)
         s.close();
+
+    return bench::benchmark_result("concurrent_" + std::to_string(num_pairs) + "_pairs")
+        .add("num_pairs", num_pairs)
+        .add("message_size", static_cast<double>(message_size))
+        .add("iterations", iterations)
+        .add("avg_mean_latency_us", total_mean / num_pairs)
+        .add("avg_p99_latency_us", total_p99 / num_pairs);
 }
 
-int main()
+// Run benchmarks
+void run_benchmarks(const char* output_file, const char* bench_filter)
 {
     std::cout << "Boost.Corosio Socket Latency Benchmarks\n";
     std::cout << "=======================================\n";
 
-    bench::print_header("Ping-Pong Round-Trip Latency");
+    bench::result_collector collector("corosio");
+
+    bool run_all = !bench_filter || std::strcmp(bench_filter, "all") == 0;
 
     // Variable message sizes
     std::vector<std::size_t> message_sizes = {1, 64, 1024};
     int iterations = 1000;
 
-    for (auto size : message_sizes)
-        bench_pingpong_latency(size, iterations);
+    if (run_all || std::strcmp(bench_filter, "pingpong") == 0)
+    {
+        bench::print_header("Ping-Pong Round-Trip Latency");
+        for (auto size : message_sizes)
+            collector.add(bench_pingpong_latency(size, iterations));
+    }
 
-    bench::print_header("Concurrent Socket Pairs Latency");
-
-    // Multiple concurrent connections
-    bench_concurrent_latency(1, 64, 1000);
-    bench_concurrent_latency(4, 64, 500);
-    bench_concurrent_latency(16, 64, 250);
+    if (run_all || std::strcmp(bench_filter, "concurrent") == 0)
+    {
+        bench::print_header("Concurrent Socket Pairs Latency");
+        collector.add(bench_concurrent_latency(1, 64, 1000));
+        collector.add(bench_concurrent_latency(4, 64, 500));
+        collector.add(bench_concurrent_latency(16, 64, 250));
+    }
 
     std::cout << "\nBenchmarks complete.\n";
+
+    if (output_file)
+    {
+        if (collector.write_json(output_file))
+            std::cout << "Results written to: " << output_file << "\n";
+        else
+            std::cerr << "Error: Failed to write results to: " << output_file << "\n";
+    }
+}
+
+void print_usage(const char* program_name)
+{
+    std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
+    std::cout << "Options:\n";
+    std::cout << "  --bench <name>     Run only the specified benchmark\n";
+    std::cout << "  --output <file>    Write JSON results to file\n";
+    std::cout << "  --help             Show this help message\n";
+    std::cout << "\n";
+    std::cout << "Available benchmarks:\n";
+    std::cout << "  pingpong           Ping-pong round-trip latency (various message sizes)\n";
+    std::cout << "  concurrent         Concurrent socket pairs latency\n";
+    std::cout << "  all                Run all benchmarks (default)\n";
+}
+
+int main(int argc, char* argv[])
+{
+    const char* output_file = nullptr;
+    const char* bench_filter = nullptr;
+
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], "--bench") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                bench_filter = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --bench requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--output") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                output_file = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --output requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
+        {
+            print_usage(argv[0]);
+            return 0;
+        }
+        else
+        {
+            std::cerr << "Unknown option: " << argv[i] << "\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    run_benchmarks(output_file, bench_filter);
     return 0;
 }
