@@ -16,6 +16,7 @@
 #include <boost/asio/awaitable.hpp>
 
 #include <atomic>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <thread>
@@ -39,8 +40,11 @@ asio::awaitable<void> atomic_increment_task(std::atomic<int>& counter)
     co_return;
 }
 
-// Benchmark: Single-threaded coroutine posting rate
-void bench_single_threaded_post(int num_handlers)
+// Measures single-threaded coroutine throughput using Asio's awaitable/co_spawn.
+// This is a direct apples-to-apples comparison with Corosio since both use C++20
+// coroutines. Differences reveal the overhead of each framework's coroutine
+// integration rather than callback vs. coroutine differences.
+bench::benchmark_result bench_single_threaded_post(int num_handlers)
 {
     bench::print_header("Single-threaded Coroutine Post (Asio)");
 
@@ -67,14 +71,24 @@ void bench_single_threaded_post(int num_handlers)
         std::cerr << "  ERROR: counter mismatch! Expected " << num_handlers
                   << ", got " << counter << "\n";
     }
+
+    return bench::benchmark_result("single_threaded_post")
+        .add("handlers", num_handlers)
+        .add("elapsed_s", elapsed)
+        .add("ops_per_sec", ops_per_sec);
 }
 
-// Benchmark: Multi-threaded scaling with coroutines
-void bench_multithreaded_scaling(int num_handlers, int max_threads)
+// Measures multi-threaded scaling using Asio coroutines. Tests how Asio's
+// scheduler handles coroutine resumption across threads. Compare against Corosio
+// to evaluate coroutine dispatch efficiency under thread contention.
+bench::benchmark_result bench_multithreaded_scaling(int num_handlers, int max_threads)
 {
     bench::print_header("Multi-threaded Scaling (Asio Coroutines)");
 
     std::cout << "  Handlers per test: " << num_handlers << "\n\n";
+
+    bench::benchmark_result result("multithreaded_scaling");
+    result.add("handlers", num_handlers);
 
     double baseline_ops = 0;
 
@@ -111,16 +125,22 @@ void bench_multithreaded_scaling(int num_handlers, int max_threads)
 
         std::cout << "\n";
 
+        result.add("threads_" + std::to_string(num_threads) + "_ops_per_sec", ops_per_sec);
+
         if (counter.load() != num_handlers)
         {
             std::cerr << "  ERROR: counter mismatch! Expected " << num_handlers
                       << ", got " << counter.load() << "\n";
         }
     }
+
+    return result;
 }
 
-// Benchmark: Interleaved post and run with coroutines
-void bench_interleaved_post_run(int iterations, int handlers_per_iteration)
+// Measures poll() efficiency with Asio coroutines in a game-loop pattern.
+// Tests how Asio handles frequent context restarts with coroutine-based work.
+// Compare against Corosio for latency-sensitive polling scenarios.
+bench::benchmark_result bench_interleaved_post_run(int iterations, int handlers_per_iteration)
 {
     bench::print_header("Interleaved Post/Run (Asio Coroutines)");
 
@@ -157,10 +177,19 @@ void bench_interleaved_post_run(int iterations, int handlers_per_iteration)
         std::cerr << "  ERROR: counter mismatch! Expected " << total_handlers
                   << ", got " << counter << "\n";
     }
+
+    return bench::benchmark_result("interleaved_post_run")
+        .add("iterations", iterations)
+        .add("handlers_per_iteration", handlers_per_iteration)
+        .add("total_handlers", total_handlers)
+        .add("elapsed_s", elapsed)
+        .add("ops_per_sec", ops_per_sec);
 }
 
-// Benchmark: Concurrent posting and running with coroutines
-void bench_concurrent_post_run(int num_threads, int handlers_per_thread)
+// Measures Asio coroutine performance under concurrent producer-consumer load.
+// Multiple threads spawn and execute coroutines simultaneously. Compare against
+// Corosio to evaluate coroutine dispatch under realistic server workloads.
+bench::benchmark_result bench_concurrent_post_run(int num_threads, int handlers_per_thread)
 {
     bench::print_header("Concurrent Post and Run (Asio Coroutines)");
 
@@ -200,13 +229,25 @@ void bench_concurrent_post_run(int num_threads, int handlers_per_thread)
         std::cerr << "  ERROR: counter mismatch! Expected " << total_handlers
                   << ", got " << counter.load() << "\n";
     }
+
+    return bench::benchmark_result("concurrent_post_run")
+        .add("threads", num_threads)
+        .add("handlers_per_thread", handlers_per_thread)
+        .add("total_handlers", total_handlers)
+        .add("elapsed_s", elapsed)
+        .add("ops_per_sec", ops_per_sec);
 }
 
-int main()
+// Run benchmarks
+void run_benchmarks(const char* output_file, const char* bench_filter)
 {
     std::cout << "Boost.Asio io_context Benchmarks (Coroutine Version)\n";
     std::cout << "====================================================\n";
     std::cout << "Using coroutines for fair comparison with Corosio\n";
+
+    bench::result_collector collector("asio_coro");
+
+    bool run_all = !bench_filter || std::strcmp(bench_filter, "all") == 0;
 
     // Warm up
     {
@@ -217,12 +258,90 @@ int main()
         ioc.run();
     }
 
-    // Run benchmarks
-    bench_single_threaded_post(1000000);
-    bench_multithreaded_scaling(1000000, 8);
-    bench_interleaved_post_run(10000, 100);
-    bench_concurrent_post_run(4, 250000);
+    // Run selected benchmarks
+    if (run_all || std::strcmp(bench_filter, "single_threaded") == 0)
+        collector.add(bench_single_threaded_post(1000000));
+
+    if (run_all || std::strcmp(bench_filter, "multithreaded") == 0)
+        collector.add(bench_multithreaded_scaling(1000000, 8));
+
+    if (run_all || std::strcmp(bench_filter, "interleaved") == 0)
+        collector.add(bench_interleaved_post_run(10000, 100));
+
+    if (run_all || std::strcmp(bench_filter, "concurrent") == 0)
+        collector.add(bench_concurrent_post_run(4, 250000));
 
     std::cout << "\nBenchmarks complete.\n";
+
+    if (output_file)
+    {
+        if (collector.write_json(output_file))
+            std::cout << "Results written to: " << output_file << "\n";
+        else
+            std::cerr << "Error: Failed to write results to: " << output_file << "\n";
+    }
+}
+
+void print_usage(const char* program_name)
+{
+    std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
+    std::cout << "Options:\n";
+    std::cout << "  --bench <name>     Run only the specified benchmark\n";
+    std::cout << "  --output <file>    Write JSON results to file\n";
+    std::cout << "  --help             Show this help message\n";
+    std::cout << "\n";
+    std::cout << "Available benchmarks:\n";
+    std::cout << "  single_threaded    Single-threaded coroutine post throughput\n";
+    std::cout << "  multithreaded      Multi-threaded scaling test\n";
+    std::cout << "  interleaved        Interleaved post/poll pattern\n";
+    std::cout << "  concurrent         Concurrent post and run\n";
+    std::cout << "  all                Run all benchmarks (default)\n";
+}
+
+int main(int argc, char* argv[])
+{
+    const char* output_file = nullptr;
+    const char* bench_filter = nullptr;
+
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], "--bench") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                bench_filter = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --bench requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--output") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                output_file = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --output requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
+        {
+            print_usage(argv[0]);
+            return 0;
+        }
+        else
+        {
+            std::cerr << "Unknown option: " << argv[i] << "\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    run_benchmarks(output_file, bench_filter);
     return 0;
 }

@@ -45,8 +45,12 @@ inline void set_nodelay(corosio::socket& s)
 #endif
 }
 
-// Benchmark: Socket throughput with varying buffer sizes
-void bench_throughput(std::size_t chunk_size, std::size_t total_bytes)
+// Measures maximum unidirectional data transfer rate over a loopback socket pair.
+// One coroutine writes while another reads, testing the efficiency of async I/O
+// operations. Runs with different buffer sizes to reveal the optimal chunk size
+// for this platform. Small buffers stress syscall overhead; large buffers approach
+// memory bandwidth limits. Useful for tuning buffer sizes in streaming protocols.
+bench::benchmark_result bench_throughput(std::size_t chunk_size, std::size_t total_bytes)
 {
     std::cout << "  Buffer size: " << chunk_size << " bytes, ";
     std::cout << "Transfer: " << (total_bytes / (1024 * 1024)) << " MB\n";
@@ -121,10 +125,22 @@ void bench_throughput(std::size_t chunk_size, std::size_t total_bytes)
 
     writer.close();
     reader.close();
+
+    return bench::benchmark_result("throughput_" + std::to_string(chunk_size))
+        .add("chunk_size", static_cast<double>(chunk_size))
+        .add("total_bytes", static_cast<double>(total_bytes))
+        .add("bytes_written", static_cast<double>(total_written))
+        .add("bytes_read", static_cast<double>(total_read))
+        .add("elapsed_s", elapsed)
+        .add("throughput_bytes_per_sec", throughput);
 }
 
-// Benchmark: Bidirectional throughput
-void bench_bidirectional_throughput(std::size_t chunk_size, std::size_t total_bytes)
+// Measures full-duplex throughput with both endpoints sending and receiving
+// simultaneously. Four concurrent coroutines (two writers, two readers) stress
+// the scheduler's ability to multiplex I/O efficiently. This pattern is common
+// in protocols like WebSocket or gRPC where data flows in both directions.
+// Combined throughput should ideally approach 2x unidirectional throughput.
+bench::benchmark_result bench_bidirectional_throughput(std::size_t chunk_size, std::size_t total_bytes)
 {
     std::cout << "  Buffer size: " << chunk_size << " bytes, ";
     std::cout << "Transfer: " << (total_bytes / (1024 * 1024)) << " MB each direction\n";
@@ -218,28 +234,114 @@ void bench_bidirectional_throughput(std::size_t chunk_size, std::size_t total_by
 
     sock1.close();
     sock2.close();
+
+    return bench::benchmark_result("bidirectional_" + std::to_string(chunk_size))
+        .add("chunk_size", static_cast<double>(chunk_size))
+        .add("total_bytes_per_direction", static_cast<double>(total_bytes))
+        .add("bytes_direction1", static_cast<double>(read1))
+        .add("bytes_direction2", static_cast<double>(read2))
+        .add("total_transferred", static_cast<double>(total_transferred))
+        .add("elapsed_s", elapsed)
+        .add("throughput_bytes_per_sec", throughput);
 }
 
-int main()
+// Run benchmarks
+void run_benchmarks(const char* output_file, const char* bench_filter)
 {
     std::cout << "Boost.Corosio Socket Throughput Benchmarks\n";
     std::cout << "==========================================\n";
 
-    bench::print_header("Unidirectional Throughput");
+    bench::result_collector collector("corosio");
+
+    bool run_all = !bench_filter || std::strcmp(bench_filter, "all") == 0;
 
     // Variable buffer sizes
     std::vector<std::size_t> buffer_sizes = {1024, 4096, 16384, 65536};
     std::size_t transfer_size = 64 * 1024 * 1024; // 64 MB
 
-    for (auto size : buffer_sizes)
-        bench_throughput(size, transfer_size);
+    if (run_all || std::strcmp(bench_filter, "unidirectional") == 0)
+    {
+        bench::print_header("Unidirectional Throughput");
+        for (auto size : buffer_sizes)
+            collector.add(bench_throughput(size, transfer_size));
+    }
 
-    bench::print_header("Bidirectional Throughput");
-
-    // Bidirectional with different buffer sizes
-    for (auto size : buffer_sizes)
-        bench_bidirectional_throughput(size, transfer_size / 2);
+    if (run_all || std::strcmp(bench_filter, "bidirectional") == 0)
+    {
+        bench::print_header("Bidirectional Throughput");
+        for (auto size : buffer_sizes)
+            collector.add(bench_bidirectional_throughput(size, transfer_size / 2));
+    }
 
     std::cout << "\nBenchmarks complete.\n";
+
+    if (output_file)
+    {
+        if (collector.write_json(output_file))
+            std::cout << "Results written to: " << output_file << "\n";
+        else
+            std::cerr << "Error: Failed to write results to: " << output_file << "\n";
+    }
+}
+
+void print_usage(const char* program_name)
+{
+    std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
+    std::cout << "Options:\n";
+    std::cout << "  --bench <name>     Run only the specified benchmark\n";
+    std::cout << "  --output <file>    Write JSON results to file\n";
+    std::cout << "  --help             Show this help message\n";
+    std::cout << "\n";
+    std::cout << "Available benchmarks:\n";
+    std::cout << "  unidirectional     Unidirectional throughput (various buffer sizes)\n";
+    std::cout << "  bidirectional      Bidirectional throughput (various buffer sizes)\n";
+    std::cout << "  all                Run all benchmarks (default)\n";
+}
+
+int main(int argc, char* argv[])
+{
+    const char* output_file = nullptr;
+    const char* bench_filter = nullptr;
+
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], "--bench") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                bench_filter = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --bench requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--output") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                output_file = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --output requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
+        {
+            print_usage(argv[0]);
+            return 0;
+        }
+        else
+        {
+            std::cerr << "Unknown option: " << argv[i] << "\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
+    run_benchmarks(output_file, bench_filter);
     return 0;
 }

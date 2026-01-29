@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <ctime>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <numeric>
@@ -234,6 +236,148 @@ inline void print_latency_stats(statistics const& stats, char const* label)
     std::cout << "    min:   " << format_latency((stats.min)()) << "\n";
     std::cout << "    max:   " << format_latency((stats.max)()) << "\n";
 }
+
+/** A single metric with a name and numeric value. */
+struct metric
+{
+    std::string name;
+    double value;
+
+    metric(std::string n, double v)
+        : name(std::move(n))
+        , value(v)
+    {
+    }
+};
+
+/** Result from a single benchmark run. */
+struct benchmark_result
+{
+    std::string name;
+    std::vector<metric> metrics;
+
+    explicit benchmark_result(std::string n)
+        : name(std::move(n))
+    {
+    }
+
+    benchmark_result& add(std::string metric_name, double value)
+    {
+        metrics.emplace_back(std::move(metric_name), value);
+        return *this;
+    }
+
+    /** Add all statistics from a statistics object with a prefix. */
+    benchmark_result& add_latency_stats(std::string prefix, statistics const& stats)
+    {
+        add(prefix + "_mean_us", stats.mean());
+        add(prefix + "_p50_us", stats.p50());
+        add(prefix + "_p90_us", stats.p90());
+        add(prefix + "_p99_us", stats.p99());
+        add(prefix + "_p999_us", stats.p999());
+        add(prefix + "_min_us", (stats.min)());
+        add(prefix + "_max_us", (stats.max)());
+        return *this;
+    }
+};
+
+/** Collect benchmark results and serialize to JSON. */
+class result_collector
+{
+    std::string backend_;
+    std::string timestamp_;
+    std::vector<benchmark_result> results_;
+
+    static std::string escape_json(std::string const& s)
+    {
+        std::ostringstream oss;
+        for (char c : s)
+        {
+            switch (c)
+            {
+            case '"':  oss << "\\\""; break;
+            case '\\': oss << "\\\\"; break;
+            case '\b': oss << "\\b";  break;
+            case '\f': oss << "\\f";  break;
+            case '\n': oss << "\\n";  break;
+            case '\r': oss << "\\r";  break;
+            case '\t': oss << "\\t";  break;
+            default:   oss << c;      break;
+            }
+        }
+        return oss.str();
+    }
+
+    static std::string current_timestamp()
+    {
+        auto now = std::chrono::system_clock::now();
+        auto time = std::chrono::system_clock::to_time_t(now);
+        std::tm tm_buf;
+#ifdef _WIN32
+        localtime_s(&tm_buf, &time);
+#else
+        localtime_r(&time, &tm_buf);
+#endif
+        std::ostringstream oss;
+        oss << std::put_time(&tm_buf, "%Y-%m-%dT%H:%M:%S");
+        return oss.str();
+    }
+
+public:
+    explicit result_collector(std::string backend = "")
+        : backend_(std::move(backend))
+        , timestamp_(current_timestamp())
+    {
+    }
+
+    void set_backend(std::string backend) { backend_ = std::move(backend); }
+
+    void add(benchmark_result result) { results_.push_back(std::move(result)); }
+
+    /** Serialize all results to JSON. */
+    std::string to_json() const
+    {
+        std::ostringstream oss;
+        oss << std::setprecision(10);
+
+        oss << "{\n";
+        oss << "  \"metadata\": {\n";
+        oss << "    \"backend\": \"" << escape_json(backend_) << "\",\n";
+        oss << "    \"timestamp\": \"" << escape_json(timestamp_) << "\"\n";
+        oss << "  },\n";
+        oss << "  \"benchmarks\": [\n";
+
+        for (std::size_t i = 0; i < results_.size(); ++i)
+        {
+            auto const& r = results_[i];
+            oss << "    {\n";
+            oss << "      \"name\": \"" << escape_json(r.name) << "\"";
+
+            for (auto const& m : r.metrics)
+                oss << ",\n      \"" << escape_json(m.name) << "\": " << m.value;
+
+            oss << "\n    }";
+            if (i + 1 < results_.size())
+                oss << ",";
+            oss << "\n";
+        }
+
+        oss << "  ]\n";
+        oss << "}\n";
+
+        return oss.str();
+    }
+
+    /** Write JSON to a file. Returns true on success. */
+    bool write_json(std::string const& path) const
+    {
+        std::ofstream out(path);
+        if (!out)
+            return false;
+        out << to_json();
+        return out.good();
+    }
+};
 
 } // namespace bench
 
