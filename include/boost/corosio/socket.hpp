@@ -62,7 +62,7 @@ using native_handle_type = int;
 
     // Using structured bindings
     auto [ec] = co_await s.connect(
-        endpoint(urls::ipv4_address::loopback(), 8080));
+        endpoint(ipv4_address::loopback(), 8080));
     if (ec)
         co_return;
 

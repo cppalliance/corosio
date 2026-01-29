@@ -9,6 +9,7 @@
 
 #include <boost/corosio.hpp>
 #include <boost/corosio/tls/wolfssl_stream.hpp>
+#include <boost/system/system_error.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/buffers.hpp>
@@ -16,7 +17,6 @@
 #include <boost/capy/error.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>
-#include <boost/url/ipv4_address.hpp>
 
 #include <cstdlib>
 #include <iostream>
@@ -57,7 +57,7 @@ do_request(
 capy::task<void>
 run_client(
     corosio::io_context& ioc,
-    boost::urls::ipv4_address addr,
+    corosio::ipv4_address addr,
     std::uint16_t port,
     std::string_view hostname)
 {
@@ -102,8 +102,8 @@ main(int argc, char* argv[])
     std::string hostname = (argc == 4) ? argv[3] : argv[1];
 
     // Parse IP address
-    auto addr_result = boost::urls::parse_ipv4_address(argv[1]);
-    if (!addr_result)
+    corosio::ipv4_address addr;
+    if (auto ec = corosio::parse_ipv4_address(argv[1], addr); ec)
     {
         std::cerr << "Invalid IP address: " << argv[1] << "\n";
         return EXIT_FAILURE;
@@ -123,7 +123,7 @@ main(int argc, char* argv[])
     {
         corosio::io_context ioc;
         capy::run_async(ioc.get_executor())(
-            run_client(ioc, *addr_result, port, hostname));
+            run_client(ioc, addr, port, hostname));
         ioc.run();
     }
     catch(boost::system::system_error const& e)

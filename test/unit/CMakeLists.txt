@@ -22,7 +22,8 @@ add_executable(boost_corosio_tests ${PFILES})
 target_link_libraries(
     boost_corosio_tests PRIVATE
     boost_url_test_suite_with_main
-    Boost::corosio)
+    Boost::corosio
+    Boost::core)
 
 if (WolfSSL_FOUND)
     target_link_libraries(boost_corosio_tests PRIVATE boost_corosio_wolfssl)

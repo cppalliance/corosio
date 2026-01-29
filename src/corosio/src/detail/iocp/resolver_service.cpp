@@ -17,9 +17,6 @@
 #include "src/detail/make_err.hpp"
 #include "src/detail/resume_coro.hpp"
 
-#include <boost/url/ipv4_address.hpp>
-#include <boost/url/ipv6_address.hpp>
-
 #include <cstring>
 #include <thread>
 

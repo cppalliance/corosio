@@ -9,6 +9,7 @@
 
 #include <boost/corosio/test/mocket.hpp>
 #include <boost/corosio/acceptor.hpp>
+#include <boost/system/system_error.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket.hpp>
 #include "src/detail/intrusive.hpp"
@@ -17,7 +18,6 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
-#include <boost/url/ipv4_address.hpp>
 
 #include <boost/corosio/detail/platform.hpp>
 #include "src/detail/resume_coro.hpp"
@@ -495,7 +495,7 @@ make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
         port = get_test_port();
         try
         {
-            acc.listen(endpoint(urls::ipv4_address::loopback(), port));
+            acc.listen(endpoint(ipv4_address::loopback(), port));
             listening = true;
             break;
         }
@@ -537,7 +537,7 @@ make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
             auto [ec] = co_await s.connect(ep);
             ec_out = ec;
             done_out = true;
-        }(impl2.get_socket(), endpoint(urls::ipv4_address::loopback(), port),
+        }(impl2.get_socket(), endpoint(ipv4_address::loopback(), port),
           connect_ec, connect_done));
 
     // Run until both complete

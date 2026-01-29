@@ -87,7 +87,7 @@ make_socket_pair_t(Context& ctx)
         port = get_socket_test_port();
         try
         {
-            acc.listen(endpoint(urls::ipv4_address::loopback(), port));
+            acc.listen(endpoint(ipv4_address::loopback(), port));
             listening = true;
             break;
         }
@@ -120,7 +120,7 @@ make_socket_pair_t(Context& ctx)
             auto [ec] = co_await s.connect(ep);
             ec_out = ec;
             done_out = true;
-        }(s2, endpoint(urls::ipv4_address::loopback(), port),
+        }(s2, endpoint(ipv4_address::loopback(), port),
           connect_ec, connect_done));
 
     ctx.run();
@@ -1201,7 +1201,7 @@ struct socket_test_impl
         acceptor acc(ioc);
 
         // Bind to loopback with port 0 (ephemeral)
-        acc.listen(endpoint(urls::ipv4_address::loopback(), 0));
+        acc.listen(endpoint(ipv4_address::loopback(), 0));
 
         // Acceptor's local endpoint should have a non-zero OS-assigned port
         auto acc_local = acc.local_endpoint();
@@ -1273,7 +1273,7 @@ struct socket_test_impl
         {
             try
             {
-                acc.listen(endpoint(urls::ipv4_address::loopback(), test_port));
+                acc.listen(endpoint(ipv4_address::loopback(), test_port));
                 found = true;
                 break;
             }
@@ -1300,7 +1300,7 @@ struct socket_test_impl
         auto task = [&]() -> capy::task<>
         {
             auto [ec] = co_await client.connect(
-                endpoint(urls::ipv4_address::loopback(), test_port));
+                endpoint(ipv4_address::loopback(), test_port));
             BOOST_TEST(!ec);
         };
 
@@ -1318,7 +1318,7 @@ struct socket_test_impl
         // Client's remote endpoint should equal the endpoint passed to connect()
         BOOST_TEST(client.remote_endpoint().port() == test_port);
         BOOST_TEST(client.remote_endpoint() ==
-            endpoint(urls::ipv4_address::loopback(), test_port));
+            endpoint(ipv4_address::loopback(), test_port));
 
         // Server's local endpoint should have the specified port
         BOOST_TEST(server.local_endpoint().port() == test_port);
@@ -1366,7 +1366,7 @@ struct socket_test_impl
         {
             // Connect to an unreachable address (localhost on unlikely port)
             auto [ec] = co_await sock.connect(
-                endpoint(urls::ipv4_address::loopback(), 1));  // Port 1 is typically closed
+                endpoint(ipv4_address::loopback(), 1));  // Port 1 is typically closed
             // We expect this to fail (connection refused or similar)
             BOOST_TEST(ec);
         };

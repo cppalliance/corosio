@@ -74,9 +74,9 @@ inline
 endpoint
 from_sockaddr_in(sockaddr_in const& sa) noexcept
 {
-    urls::ipv4_address::bytes_type bytes;
+    ipv4_address::bytes_type bytes;
     std::memcpy(bytes.data(), &sa.sin_addr, 4);
-    return endpoint(urls::ipv4_address(bytes), ntohs(sa.sin_port));
+    return endpoint(ipv4_address(bytes), ntohs(sa.sin_port));
 }
 
 /** Create endpoint from sockaddr_in6.
@@ -88,9 +88,9 @@ inline
 endpoint
 from_sockaddr_in6(sockaddr_in6 const& sa) noexcept
 {
-    urls::ipv6_address::bytes_type bytes;
+    ipv6_address::bytes_type bytes;
     std::memcpy(bytes.data(), &sa.sin6_addr, 16);
-    return endpoint(urls::ipv6_address(bytes), ntohs(sa.sin6_port));
+    return endpoint(ipv6_address(bytes), ntohs(sa.sin6_port));
 }
 
 } // namespace boost::corosio::detail

@@ -9,11 +9,11 @@
 
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/corosio/acceptor.hpp>
+#include <boost/system/system_error.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
-#include <boost/url/ipv4_address.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -77,7 +77,7 @@ make_socket_pair(io_context& ioc)
         port = get_test_port();
         try
         {
-            acc.listen(endpoint(urls::ipv4_address::loopback(), port));
+            acc.listen(endpoint(ipv4_address::loopback(), port));
             listening = true;
             break;
         }
@@ -114,7 +114,7 @@ make_socket_pair(io_context& ioc)
             auto [ec] = co_await s.connect(ep);
             ec_out = ec;
             done_out = true;
-        }(s2, endpoint(urls::ipv4_address::loopback(), port),
+        }(s2, endpoint(ipv4_address::loopback(), port),
           connect_ec, connect_done));
 
     ioc.run();

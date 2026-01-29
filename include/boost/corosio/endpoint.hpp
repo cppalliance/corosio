@@ -11,11 +11,12 @@
 #define BOOST_COROSIO_ENDPOINT_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/url/ipv4_address.hpp>
-#include <boost/url/ipv6_address.hpp>
+#include <boost/corosio/ipv4_address.hpp>
+#include <boost/corosio/ipv6_address.hpp>
 
 #include <cstdint>
-#include <cstring>
+#include <string_view>
+#include <system_error>
 
 namespace boost::corosio {
 
@@ -35,24 +36,35 @@ namespace boost::corosio {
     @par Example
     @code
     // IPv4 endpoint
-    endpoint ep4(urls::ipv4_address::loopback(), 8080);
+    endpoint ep4(ipv4_address::loopback(), 8080);
 
     // IPv6 endpoint
-    endpoint ep6(urls::ipv6_address::loopback(), 8080);
+    endpoint ep6(ipv6_address::loopback(), 8080);
 
     // Port only (defaults to IPv4 any address)
     endpoint bind_addr(8080);
+
+    // Parse from string
+    endpoint ep;
+    if (auto ec = parse_endpoint("192.168.1.1:8080", ep); !ec) {
+        // use ep
+    }
     @endcode
 */
 class endpoint
 {
+    ipv4_address v4_address_;
+    ipv6_address v6_address_;
+    std::uint16_t port_ = 0;
+    bool is_v4_ = true;
+
 public:
     /** Default constructor.
 
         Creates an endpoint with the IPv4 any address (0.0.0.0) and port 0.
     */
     endpoint() noexcept
-        : v4_address_(urls::ipv4_address::any())
+        : v4_address_(ipv4_address::any())
         , v6_address_{}
         , port_(0)
         , is_v4_(true)
@@ -64,7 +76,7 @@ public:
         @param addr The IPv4 address.
         @param p The port number in host byte order.
     */
-    endpoint(urls::ipv4_address addr, std::uint16_t p) noexcept
+    endpoint(ipv4_address addr, std::uint16_t p) noexcept
         : v4_address_(addr)
         , v6_address_{}
         , port_(p)
@@ -77,8 +89,8 @@ public:
         @param addr The IPv6 address.
         @param p The port number in host byte order.
     */
-    endpoint(urls::ipv6_address addr, std::uint16_t p) noexcept
-        : v4_address_(urls::ipv4_address::any())
+    endpoint(ipv6_address addr, std::uint16_t p) noexcept
+        : v4_address_(ipv4_address::any())
         , v6_address_(addr)
         , port_(p)
         , is_v4_(false)
@@ -93,7 +105,7 @@ public:
         @param p The port number in host byte order.
     */
     explicit endpoint(std::uint16_t p) noexcept
-        : v4_address_(urls::ipv4_address::any())
+        : v4_address_(ipv4_address::any())
         , v6_address_{}
         , port_(p)
         , is_v4_(true)
@@ -123,7 +135,7 @@ public:
         @return The IPv4 address. The value is valid even if
         the endpoint is using IPv6 (it will be the default any address).
     */
-    urls::ipv4_address v4_address() const noexcept
+    ipv4_address v4_address() const noexcept
     {
         return v4_address_;
     }
@@ -133,7 +145,7 @@ public:
         @return The IPv6 address. The value is valid even if
         the endpoint is using IPv4 (it will be the default any address).
     */
-    urls::ipv6_address v6_address() const noexcept
+    ipv6_address v6_address() const noexcept
     {
         return v6_address_;
     }
@@ -174,13 +186,73 @@ public:
     {
         return !(a == b);
     }
-
-private:
-    urls::ipv4_address v4_address_;
-    urls::ipv6_address v6_address_;
-    std::uint16_t port_ = 0;
-    bool is_v4_ = true;
 };
+
+//------------------------------------------------
+
+/** Endpoint format detection result.
+
+    Used internally by parse_endpoint to determine
+    the format of an endpoint string.
+*/
+enum class endpoint_format
+{
+    ipv4_no_port,      ///< "192.168.1.1"
+    ipv4_with_port,    ///< "192.168.1.1:8080"
+    ipv6_no_port,      ///< "::1" or "1:2:3:4:5:6:7:8"
+    ipv6_bracketed     ///< "[::1]" or "[::1]:8080"
+};
+
+/** Detect the format of an endpoint string.
+
+    This helper function determines the endpoint format
+    based on simple rules:
+    1. Starts with `[` -> `ipv6_bracketed`
+    2. Else count `:` characters:
+       - 0 colons -> `ipv4_no_port`
+       - 1 colon -> `ipv4_with_port`
+       - 2+ colons -> `ipv6_no_port`
+
+    @param s The string to analyze.
+    @return The detected endpoint format.
+*/
+BOOST_COROSIO_DECL
+endpoint_format
+detect_endpoint_format(std::string_view s) noexcept;
+
+/** Parse an endpoint from a string.
+
+    This function parses an endpoint string in one of
+    the following formats:
+
+    @li IPv4 without port: `192.168.1.1`
+    @li IPv4 with port: `192.168.1.1:8080`
+    @li IPv6 without port: `::1` or `2001:db8::1`
+    @li IPv6 with port (bracketed): `[::1]:8080`
+
+    @par Example
+    @code
+    endpoint ep;
+    if (auto ec = parse_endpoint("192.168.1.1:8080", ep); !ec) {
+        // ep.is_v4() == true
+        // ep.port() == 8080
+    }
+
+    if (auto ec = parse_endpoint("[::1]:443", ep); !ec) {
+        // ep.is_v6() == true
+        // ep.port() == 443
+    }
+    @endcode
+
+    @param s The string to parse.
+    @param ep The endpoint to store the result.
+    @return An error code (empty on success).
+*/
+[[nodiscard]] BOOST_COROSIO_DECL
+std::error_code
+parse_endpoint(
+    std::string_view s,
+    endpoint& ep) noexcept;
 
 } // namespace boost::corosio
 

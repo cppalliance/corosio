@@ -52,10 +52,9 @@ set(BOOST_SRC_DIR ${DEFAULT_BOOST_SRC_DIR} CACHE STRING "Boost source dir to use
 # Boost modules
 #
 #-------------------------------------------------
-# corosio depends on capy, url, and system
+# corosio depends on capy and system
 set(BOOST_COROSIO_DEPENDENCIES
     Boost::capy
-    Boost::url
     Boost::system)
 
 foreach (BOOST_COROSIO_DEPENDENCY ${BOOST_COROSIO_DEPENDENCIES})
@@ -64,9 +63,9 @@ foreach (BOOST_COROSIO_DEPENDENCY ${BOOST_COROSIO_DEPENDENCIES})
     endif ()
 endforeach ()
 
-# Include asio and filesystem which are needed by corosio's tests
+# Include asio, filesystem, and core which are needed by corosio's tests
 if (BOOST_COROSIO_BUILD_TESTS)
-    list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio filesystem)
+    list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio filesystem core)
 endif ()
 
 # Include asio for benchmarks (comparison benchmarks)

@@ -432,7 +432,7 @@ public:
 
         @par Example
         @code
-        endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 80);
+        endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
         auto [ec, result] = co_await r.resolve(ep);
         if (!ec)
             std::cout << result.host_name() << ":" << result.service_name();

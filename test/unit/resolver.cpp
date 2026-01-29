@@ -131,13 +131,13 @@ struct resolver_test
             if (ep.is_v4())
             {
                 auto addr = ep.v4_address();
-                if (addr == urls::ipv4_address({127, 0, 0, 1}))
+                if (addr == ipv4_address({127, 0, 0, 1}))
                     found_valid = true;
             }
             else if (ep.is_v6())
             {
                 auto addr = ep.v6_address();
-                if (addr == urls::ipv6_address::loopback())
+                if (addr == ipv6_address::loopback())
                     found_valid = true;
             }
         }
@@ -180,7 +180,7 @@ struct resolver_test
         auto ep = entry.get_endpoint();
         BOOST_TEST(ep.is_v4());
         BOOST_TEST_EQ(ep.port(), 8080);
-        BOOST_TEST(ep.v4_address() == urls::ipv4_address({127, 0, 0, 1}));
+        BOOST_TEST(ep.v4_address() == ipv4_address({127, 0, 0, 1}));
     }
 
     void
@@ -219,7 +219,7 @@ struct resolver_test
         auto ep = entry.get_endpoint();
         BOOST_TEST(ep.is_v6());
         BOOST_TEST_EQ(ep.port(), 443);
-        BOOST_TEST(ep.v6_address() == urls::ipv6_address::loopback());
+        BOOST_TEST(ep.v6_address() == ipv6_address::loopback());
     }
 
     void
@@ -609,15 +609,15 @@ struct resolver_test
     {
         std::vector<resolver_entry> entries1;
         entries1.emplace_back(
-            endpoint(urls::ipv4_address({127, 0, 0, 1}), 80),
+            endpoint(ipv4_address({127, 0, 0, 1}), 80),
             "host1", "80");
 
         std::vector<resolver_entry> entries2;
         entries2.emplace_back(
-            endpoint(urls::ipv4_address({192, 168, 1, 1}), 443),
+            endpoint(ipv4_address({192, 168, 1, 1}), 443),
             "host2", "443");
         entries2.emplace_back(
-            endpoint(urls::ipv4_address({192, 168, 1, 2}), 443),
+            endpoint(ipv4_address({192, 168, 1, 2}), 443),
             "host2", "443");
 
         resolver_results r1(std::move(entries1));
@@ -651,7 +651,7 @@ struct resolver_test
                        reverse_resolver_result& result_out,
                        bool& done_out) -> capy::task<>
         {
-            endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 80);
+            endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
             auto [ec, res] = co_await r_ref.resolve(ep);
             ec_out = ec;
             result_out = std::move(res);
@@ -683,7 +683,7 @@ struct resolver_test
                        reverse_resolver_result& result_out,
                        bool& done_out) -> capy::task<>
         {
-            endpoint ep(urls::ipv6_address::loopback(), 443);
+            endpoint ep(ipv6_address::loopback(), 443);
             auto [ec, res] = co_await r_ref.resolve(ep);
             ec_out = ec;
             result_out = std::move(res);
@@ -715,7 +715,7 @@ struct resolver_test
                        reverse_resolver_result& result_out,
                        bool& done_out) -> capy::task<>
         {
-            endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 80);
+            endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
             auto [ec, res] = co_await r_ref.resolve(
                 ep, reverse_flags::numeric_host);
             ec_out = ec;
@@ -748,7 +748,7 @@ struct resolver_test
                        reverse_resolver_result& result_out,
                        bool& done_out) -> capy::task<>
         {
-            endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 8080);
+            endpoint ep(ipv4_address({127, 0, 0, 1}), 8080);
             auto [ec, res] = co_await r_ref.resolve(
                 ep, reverse_flags::numeric_service);
             ec_out = ec;
@@ -781,7 +781,7 @@ struct resolver_test
                        bool& done_out) -> capy::task<>
         {
             // 192.0.2.1 is a TEST-NET address (RFC 5737), unlikely to have reverse DNS
-            endpoint ep(urls::ipv4_address({192, 0, 2, 1}), 80);
+            endpoint ep(ipv4_address({192, 0, 2, 1}), 80);
             auto [ec, res] = co_await r_ref.resolve(
                 ep, reverse_flags::name_required);
             ec_out = ec;
@@ -810,7 +810,7 @@ struct resolver_test
                        system::error_code& ec_out,
                        bool& done_out) -> capy::task<>
         {
-            endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 80);
+            endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
             auto [ec, res] = co_await r_ref.resolve(ep);
             ec_out = ec;
             done_out = true;
@@ -857,21 +857,21 @@ struct resolver_test
         auto task = [](resolver& r_ref, int& count_out) -> capy::task<>
         {
             // First reverse resolve
-            endpoint ep1(urls::ipv4_address({127, 0, 0, 1}), 80);
+            endpoint ep1(ipv4_address({127, 0, 0, 1}), 80);
             auto [ec1, res1] = co_await r_ref.resolve(
                 ep1, reverse_flags::numeric_host | reverse_flags::numeric_service);
             BOOST_TEST(!ec1);
             ++count_out;
 
             // Second reverse resolve
-            endpoint ep2(urls::ipv4_address({127, 0, 0, 1}), 443);
+            endpoint ep2(ipv4_address({127, 0, 0, 1}), 443);
             auto [ec2, res2] = co_await r_ref.resolve(
                 ep2, reverse_flags::numeric_host | reverse_flags::numeric_service);
             BOOST_TEST(!ec2);
             ++count_out;
 
             // Third reverse resolve (IPv6)
-            endpoint ep3(urls::ipv6_address::loopback(), 8080);
+            endpoint ep3(ipv6_address::loopback(), 8080);
             auto [ec3, res3] = co_await r_ref.resolve(
                 ep3, reverse_flags::numeric_host | reverse_flags::numeric_service);
             BOOST_TEST(!ec3);
@@ -927,7 +927,7 @@ struct resolver_test
     void
     testResolverEntryConstruction()
     {
-        endpoint ep(urls::ipv4_address({127, 0, 0, 1}), 8080);
+        endpoint ep(ipv4_address({127, 0, 0, 1}), 8080);
         resolver_entry entry(ep, "myhost", "myservice");
 
         BOOST_TEST(entry.get_endpoint() == ep);
@@ -938,7 +938,7 @@ struct resolver_test
     void
     testResolverEntryImplicitConversion()
     {
-        endpoint ep(urls::ipv4_address({10, 0, 0, 1}), 9000);
+        endpoint ep(ipv4_address({10, 0, 0, 1}), 9000);
         resolver_entry entry(ep, "test", "9000");
 
         // Test implicit conversion to endpoint
