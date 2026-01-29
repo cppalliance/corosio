@@ -15,48 +15,10 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
-#include <atomic>
-#include <cstdint>
 #include <cstdio>
 #include <stdexcept>
 
-#if BOOST_COROSIO_POSIX
-#include <unistd.h>   // getpid()
-#else
-#include <process.h>  // _getpid()
-#endif
-
 namespace boost::corosio::test {
-
-namespace {
-
-// Use atomic for thread safety when tests run in parallel
-std::atomic<std::uint16_t> next_test_port{0};
-
-std::uint16_t
-get_test_port() noexcept
-{
-    // Use a wide port range in the dynamic/ephemeral range (49152-65535)
-    constexpr std::uint16_t port_base = 49152;
-    constexpr std::uint16_t port_range = 16383;  // 49152-65535
-
-    // Include PID to avoid port collisions between parallel test processes.
-    // On Windows with SO_REUSEADDR, multiple processes can bind the same port,
-    // causing connections to go to the wrong listener ("port stealing").
-    // By using different port ranges per process, we avoid this issue.
-#if BOOST_COROSIO_POSIX
-    auto pid = static_cast<std::uint32_t>(getpid());
-#else
-    auto pid = static_cast<std::uint32_t>(_getpid());
-#endif
-    // Mix the PID bits to spread processes across the port range
-    auto pid_offset = static_cast<std::uint16_t>((pid * 7919) % port_range);
-
-    auto offset = next_test_port.fetch_add(1, std::memory_order_relaxed);
-    return static_cast<std::uint16_t>(port_base + ((pid_offset + offset) % port_range));
-}
-
-} // namespace
 
 std::pair<socket, socket>
 make_socket_pair(basic_io_context& ctx)
@@ -68,31 +30,10 @@ make_socket_pair(basic_io_context& ctx)
     bool accept_done = false;
     bool connect_done = false;
 
-    // Try multiple ports in case of conflicts (TIME_WAIT, parallel tests, etc.)
-    std::uint16_t port = 0;
+    // Use ephemeral port (0) - OS assigns an available port
     acceptor acc(ctx);
-    bool listening = false;
-    for (int attempt = 0; attempt < 20; ++attempt)
-    {
-        port = get_test_port();
-        try
-        {
-            acc.listen(endpoint(ipv4_address::loopback(), port));
-            listening = true;
-            break;
-        }
-        catch (const std::system_error&)
-        {
-            // Port in use, try another
-            acc.close();
-            acc = acceptor(ctx);
-        }
-    }
-    if (!listening)
-    {
-        std::fprintf(stderr, "socket_pair: failed to find available port after 20 attempts\n");
-        throw std::runtime_error("socket_pair: failed to find available port");
-    }
+    acc.listen(endpoint(ipv4_address::loopback(), 0));
+    auto port = acc.local_endpoint().port();
 
     socket s1(ctx);
     socket s2(ctx);
