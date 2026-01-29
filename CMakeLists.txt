@@ -62,9 +62,9 @@ foreach (BOOST_COROSIO_DEPENDENCY ${BOOST_COROSIO_DEPENDENCIES})
     endif ()
 endforeach ()
 
-# Include asio, filesystem, and core which are needed by corosio's tests
+# Include asio which is needed by corosio's benchmarks
 if (BOOST_COROSIO_BUILD_TESTS)
-    list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio filesystem core)
+    list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio)
 endif ()
 
 # Include asio for benchmarks (comparison benchmarks)

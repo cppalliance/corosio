@@ -313,22 +313,6 @@ jobs:
           ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
           path: asio-root
 
-      # Test dependency of corosio
-      - name: Clone Filesystem
-        uses: actions/checkout@v4
-        with:
-          repository: boostorg/filesystem
-          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
-          path: filesystem-root
-
-      # Test dependency of corosio (test_suite)
-      - name: Clone URL
-        uses: actions/checkout@v4
-        with:
-          repository: boostorg/url
-          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
-          path: url-root
-
       - name: Clone Boost
         uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
         id: boost-clone
@@ -337,7 +321,7 @@ jobs:
           boost-dir: boost-source
           modules-exclude-paths: ''
           scan-modules-dir: corosio-root
-          scan-modules-ignore: corosio,capy,url
+          scan-modules-ignore: corosio,capy
 
       - name: ASLR Fix
         if: ${{ startsWith(matrix.runs-on, 'ubuntu' )}}
@@ -364,7 +348,6 @@ jobs:
           # Remove module from boost-source
           rm -r "boost-source/libs/$module" || true
           rm -r "boost-source/libs/capy" || true
-          rm -r "boost-source/libs/url" || true
 
           # boost-clone uses sparse checkout which excludes CMakeLists.txt files
           # Disable sparse checkout to get full source trees for add_subdirectory in cmake_test
@@ -394,9 +377,6 @@ jobs:
 
           # Patch boost-root with capy dependency
           cp -r "$workspace_root"/capy-root "libs/capy"
-
-          # Patch boost-root with url dependency (for test_suite)
-          cp -r "$workspace_root"/url-root "libs/url"
 
       # Use vcpkg for TLS libraries
       # Windows: OpenSSL + WolfSSL from vcpkg
@@ -923,14 +903,6 @@ jobs:
           ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
           path: capy-root
 
-      # Test dependency of corosio (test_suite)
-      - name: Clone URL
-        uses: actions/checkout@v4
-        with:
-          repository: boostorg/url
-          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
-          path: url-root
-
       - name: Clone Boost
         uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
         id: boost-clone
@@ -939,7 +911,7 @@ jobs:
           boost-dir: boost-source
           modules-exclude-paths: ''
           scan-modules-dir: corosio-root
-          scan-modules-ignore: corosio,capy,url
+          scan-modules-ignore: corosio,capy
 
       - name: Patch Boost
         id: patch
@@ -961,7 +933,6 @@ jobs:
           # Remove module from boost-source
           rm -r "boost-source/libs/$module" || true
           rm -r "boost-source/libs/capy" || true
-          rm -r "boost-source/libs/url" || true
 
           # boost-clone uses sparse checkout which excludes CMakeLists.txt files
           # Disable sparse checkout to get full source trees for add_subdirectory in cmake_test
@@ -991,9 +962,6 @@ jobs:
 
           # Patch boost-root with capy dependency
           cp -r "$workspace_root"/capy-root "libs/capy"
-
-          # Patch boost-root with url dependency (for test_suite)
-          cp -r "$workspace_root"/url-root "libs/url"
 
       - uses: actions/setup-node@v4
         with:

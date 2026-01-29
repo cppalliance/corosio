@@ -11,7 +11,7 @@
 #include <boost/corosio/io_buffer_param.hpp>
 
 #include <boost/capy/buffers/buffer_pair.hpp>
-#include <boost/core/span.hpp>
+#include <span>
 #include <array>
 
 #include "test_suite.hpp"
@@ -94,7 +94,7 @@ struct io_buffer_param_test
             capy::const_buffer(data1, 3),
             capy::const_buffer(data2, 3),
             capy::const_buffer(data3, 5) };
-        span<capy::const_buffer const> s(arr, 3);
+        std::span<capy::const_buffer const> s(arr, 3);
         check_copy(s, {{data1, 3}, {data2, 3}, {data3, 5}});
     }
 
@@ -241,7 +241,7 @@ struct io_buffer_param_test
     testEmptySpan()
     {
         // Empty span (no buffers at all)
-        span<capy::const_buffer const> s;
+        std::span<capy::const_buffer const> s;
         check_empty(s);
     }
 

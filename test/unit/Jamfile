@@ -12,9 +12,9 @@ import testing ;
 project boost/corosio/test/unit
     : requirements
       <library>/boost/corosio//boost_corosio
-      <source>../../../url/extra/test_suite/test_main.cpp
-      <source>../../../url/extra/test_suite/test_suite.cpp
-      <include>../../../url/extra/test_suite
+      <source>../../../capy/extra/test_suite/test_main.cpp
+      <source>../../../capy/extra/test_suite/test_suite.cpp
+      <include>../../../capy/extra/test_suite
       <include>.
       <include>../..
       <toolset>gcc:<cxxflags>-fcoroutines

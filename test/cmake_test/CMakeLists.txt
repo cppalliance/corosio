@@ -36,7 +36,6 @@ else()
 
     # Primary dependencies (corosio)
     system
-    url
     capy
   )
 
