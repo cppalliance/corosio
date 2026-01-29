@@ -11,7 +11,7 @@
 #define BOOST_COROSIO_TEST_SOCKET_PAIR_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/basic_io_context.hpp>
 #include <boost/corosio/socket.hpp>
 
 #include <utility>
@@ -23,13 +23,13 @@ namespace boost::corosio::test {
     Creates two sockets connected via loopback TCP sockets.
     Data written to one socket can be read from the other.
 
-    @param ioc The io_context for the sockets.
+    @param ctx The I/O context for the sockets.
 
     @return A pair of connected sockets.
 */
 BOOST_COROSIO_DECL
 std::pair<socket, socket>
-make_socket_pair(io_context& ioc);
+make_socket_pair(basic_io_context& ctx);
 
 } // namespace boost::corosio::test
 

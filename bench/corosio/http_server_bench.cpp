@@ -8,7 +8,6 @@
 //
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/epoll_context.hpp>
 #include <boost/corosio/socket.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
@@ -26,6 +25,7 @@
 #include <thread>
 #include <vector>
 
+#include "../common/backend_selection.hpp"
 #include "../common/benchmark.hpp"
 #include "../common/http_protocol.hpp"
 
@@ -118,11 +118,12 @@ capy::task<> client_task(
 }
 
 // Single connection benchmark
+template<typename Context>
 bench::benchmark_result bench_single_connection(int num_requests)
 {
     std::cout << "  Requests: " << num_requests << "\n";
 
-    corosio::io_context ioc;
+    Context ioc;
     auto [client, server] = corosio::test::make_socket_pair(ioc);
 
     client.set_no_delay(true);
@@ -161,6 +162,7 @@ bench::benchmark_result bench_single_connection(int num_requests)
 }
 
 // Concurrent connections benchmark
+template<typename Context>
 bench::benchmark_result bench_concurrent_connections(int num_connections, int requests_per_conn)
 {
     int total_requests = num_connections * requests_per_conn;
@@ -168,7 +170,7 @@ bench::benchmark_result bench_concurrent_connections(int num_connections, int re
               << ", Requests per connection: " << requests_per_conn
               << ", Total: " << total_requests << "\n";
 
-    corosio::io_context ioc;
+    Context ioc;
 
     std::vector<corosio::socket> clients;
     std::vector<corosio::socket> servers;
@@ -235,6 +237,7 @@ bench::benchmark_result bench_concurrent_connections(int num_connections, int re
 }
 
 // Multi-threaded benchmark: multiple threads calling run()
+template<typename Context>
 bench::benchmark_result bench_multithread(int num_threads, int num_connections, int requests_per_conn)
 {
     int total_requests = num_connections * requests_per_conn;
@@ -243,8 +246,7 @@ bench::benchmark_result bench_multithread(int num_threads, int num_connections, 
               << ", Requests per connection: " << requests_per_conn
               << ", Total: " << total_requests << "\n";
 
-    // Use default io_context for socket creation (make_socket_pair calls run() internally)
-    corosio::io_context ioc;
+    Context ioc;
 
     std::vector<corosio::socket> clients;
     std::vector<corosio::socket> servers;
@@ -323,19 +325,22 @@ bench::benchmark_result bench_multithread(int num_threads, int num_connections, 
         .add("avg_p99_latency_us", total_p99 / num_connections);
 }
 
-void run_benchmarks(char const* output_file, char const* bench_filter)
+// Run benchmarks for a specific context type
+template<typename Context>
+void run_benchmarks(char const* backend_name, char const* output_file, char const* bench_filter)
 {
     std::cout << "Boost.Corosio HTTP Server Benchmarks\n";
     std::cout << "====================================\n";
+    std::cout << "Backend: " << backend_name << "\n\n";
 
-    bench::result_collector collector("corosio");
+    bench::result_collector collector(backend_name);
 
     bool run_all = !bench_filter || std::strcmp(bench_filter, "all") == 0;
 
     if (run_all || std::strcmp(bench_filter, "single_conn") == 0)
     {
         bench::print_header("Single Connection (Sequential Requests)");
-        collector.add(bench_single_connection(10000));
+        collector.add(bench_single_connection<Context>(10000));
     }
 
     if (run_all || std::strcmp(bench_filter, "concurrent") == 0)
@@ -343,10 +348,10 @@ void run_benchmarks(char const* output_file, char const* bench_filter)
         if (run_all)
             std::this_thread::sleep_for(std::chrono::seconds(5));
         bench::print_header("Concurrent Connections");
-        collector.add(bench_concurrent_connections(1, 10000));
-        collector.add(bench_concurrent_connections(4, 2500));
-        collector.add(bench_concurrent_connections(16, 625));
-        collector.add(bench_concurrent_connections(32, 312));
+        collector.add(bench_concurrent_connections<Context>(1, 10000));
+        collector.add(bench_concurrent_connections<Context>(4, 2500));
+        collector.add(bench_concurrent_connections<Context>(16, 625));
+        collector.add(bench_concurrent_connections<Context>(32, 312));
     }
 
     if (run_all || std::strcmp(bench_filter, "multithread") == 0)
@@ -354,10 +359,10 @@ void run_benchmarks(char const* output_file, char const* bench_filter)
         if (run_all)
             std::this_thread::sleep_for(std::chrono::seconds(5));
         bench::print_header("Multi-threaded (32 connections, varying threads)");
-        collector.add(bench_multithread(1, 32, 312));
-        collector.add(bench_multithread(2, 32, 312));
-        collector.add(bench_multithread(4, 32, 312));
-        collector.add(bench_multithread(8, 32, 312));
+        collector.add(bench_multithread<Context>(1, 32, 312));
+        collector.add(bench_multithread<Context>(2, 32, 312));
+        collector.add(bench_multithread<Context>(4, 32, 312));
+        collector.add(bench_multithread<Context>(8, 32, 312));
     }
 
     std::cout << "\nBenchmarks complete.\n";
@@ -375,8 +380,10 @@ void print_usage(char const* program_name)
 {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
     std::cout << "Options:\n";
+    std::cout << "  --backend <name>   Select I/O backend (default: platform default)\n";
     std::cout << "  --bench <name>     Run only the specified benchmark\n";
     std::cout << "  --output <file>    Write JSON results to file\n";
+    std::cout << "  --list             List available backends\n";
     std::cout << "  --help             Show this help message\n";
     std::cout << "\n";
     std::cout << "Available benchmarks:\n";
@@ -384,16 +391,31 @@ void print_usage(char const* program_name)
     std::cout << "  concurrent         Multiple concurrent connections\n";
     std::cout << "  multithread        Multi-threaded with varying thread counts\n";
     std::cout << "  all                Run all benchmarks (default)\n";
+    std::cout << "\n";
+    bench::print_available_backends();
 }
 
 int main(int argc, char* argv[])
 {
+    char const* backend = nullptr;
     char const* output_file = nullptr;
     char const* bench_filter = nullptr;
 
     for (int i = 1; i < argc; ++i)
     {
-        if (std::strcmp(argv[i], "--bench") == 0)
+        if (std::strcmp(argv[i], "--backend") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                backend = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --backend requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--bench") == 0)
         {
             if (i + 1 < argc)
             {
@@ -417,6 +439,11 @@ int main(int argc, char* argv[])
                 return 1;
             }
         }
+        else if (std::strcmp(argv[i], "--list") == 0)
+        {
+            bench::print_available_backends();
+            return 0;
+        }
         else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
         {
             print_usage(argv[0]);
@@ -430,6 +457,14 @@ int main(int argc, char* argv[])
         }
     }
 
-    run_benchmarks(output_file, bench_filter);
-    return 0;
+    // If no backend specified, use platform default
+    if (!backend)
+        backend = bench::default_backend_name();
+
+    // Dispatch to the selected backend using a generic lambda
+    return bench::dispatch_backend(backend,
+        [=]<typename Context>(const char* name)
+        {
+            run_benchmarks<Context>(name, output_file, bench_filter);
+        });
 }

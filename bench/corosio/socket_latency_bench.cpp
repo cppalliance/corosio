@@ -20,6 +20,7 @@
 #include <iostream>
 #include <vector>
 
+#include "../common/backend_selection.hpp"
 #include "../common/benchmark.hpp"
 
 namespace corosio = boost::corosio;
@@ -86,12 +87,13 @@ capy::task<> pingpong_task(
 // This is the fundamental latency metric for RPC-style protocols. Reports mean,
 // median (p50), and tail latencies (p99, p99.9) which are critical for SLA compliance.
 // Different message sizes reveal fixed overhead vs. size-dependent costs.
+template<typename Context>
 bench::benchmark_result bench_pingpong_latency(std::size_t message_size, int iterations)
 {
     std::cout << "  Message size: " << message_size << " bytes, ";
     std::cout << "Iterations: " << iterations << "\n";
 
-    corosio::io_context ioc;
+    Context ioc;
     auto [client, server] = corosio::test::make_socket_pair(ioc);
 
     // Disable Nagle's algorithm for low latency
@@ -122,13 +124,14 @@ bench::benchmark_result bench_pingpong_latency(std::size_t message_size, int ite
 // how many concurrent connections can be sustained before latency becomes
 // unacceptable. A well-designed scheduler should show gradual degradation rather
 // than sudden latency spikes.
+template<typename Context>
 bench::benchmark_result bench_concurrent_latency(int num_pairs, std::size_t message_size, int iterations)
 {
     std::cout << "  Concurrent pairs: " << num_pairs << ", ";
     std::cout << "Message size: " << message_size << " bytes, ";
     std::cout << "Iterations: " << iterations << "\n";
 
-    corosio::io_context ioc;
+    Context ioc;
 
     // Store sockets and stats separately for safe reference passing
     std::vector<corosio::socket> clients;
@@ -194,13 +197,15 @@ bench::benchmark_result bench_concurrent_latency(int num_pairs, std::size_t mess
         .add("avg_p99_latency_us", total_p99 / num_pairs);
 }
 
-// Run benchmarks
-void run_benchmarks(const char* output_file, const char* bench_filter)
+// Run benchmarks for a specific context type
+template<typename Context>
+void run_benchmarks(const char* backend_name, const char* output_file, const char* bench_filter)
 {
     std::cout << "Boost.Corosio Socket Latency Benchmarks\n";
     std::cout << "=======================================\n";
+    std::cout << "Backend: " << backend_name << "\n\n";
 
-    bench::result_collector collector("corosio");
+    bench::result_collector collector(backend_name);
 
     bool run_all = !bench_filter || std::strcmp(bench_filter, "all") == 0;
 
@@ -212,15 +217,15 @@ void run_benchmarks(const char* output_file, const char* bench_filter)
     {
         bench::print_header("Ping-Pong Round-Trip Latency");
         for (auto size : message_sizes)
-            collector.add(bench_pingpong_latency(size, iterations));
+            collector.add(bench_pingpong_latency<Context>(size, iterations));
     }
 
     if (run_all || std::strcmp(bench_filter, "concurrent") == 0)
     {
         bench::print_header("Concurrent Socket Pairs Latency");
-        collector.add(bench_concurrent_latency(1, 64, 1000));
-        collector.add(bench_concurrent_latency(4, 64, 500));
-        collector.add(bench_concurrent_latency(16, 64, 250));
+        collector.add(bench_concurrent_latency<Context>(1, 64, 1000));
+        collector.add(bench_concurrent_latency<Context>(4, 64, 500));
+        collector.add(bench_concurrent_latency<Context>(16, 64, 250));
     }
 
     std::cout << "\nBenchmarks complete.\n";
@@ -238,24 +243,41 @@ void print_usage(const char* program_name)
 {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
     std::cout << "Options:\n";
+    std::cout << "  --backend <name>   Select I/O backend (default: platform default)\n";
     std::cout << "  --bench <name>     Run only the specified benchmark\n";
     std::cout << "  --output <file>    Write JSON results to file\n";
+    std::cout << "  --list             List available backends\n";
     std::cout << "  --help             Show this help message\n";
     std::cout << "\n";
     std::cout << "Available benchmarks:\n";
     std::cout << "  pingpong           Ping-pong round-trip latency (various message sizes)\n";
     std::cout << "  concurrent         Concurrent socket pairs latency\n";
     std::cout << "  all                Run all benchmarks (default)\n";
+    std::cout << "\n";
+    bench::print_available_backends();
 }
 
 int main(int argc, char* argv[])
 {
+    const char* backend = nullptr;
     const char* output_file = nullptr;
     const char* bench_filter = nullptr;
 
     for (int i = 1; i < argc; ++i)
     {
-        if (std::strcmp(argv[i], "--bench") == 0)
+        if (std::strcmp(argv[i], "--backend") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                backend = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --backend requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--bench") == 0)
         {
             if (i + 1 < argc)
             {
@@ -279,6 +301,11 @@ int main(int argc, char* argv[])
                 return 1;
             }
         }
+        else if (std::strcmp(argv[i], "--list") == 0)
+        {
+            bench::print_available_backends();
+            return 0;
+        }
         else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
         {
             print_usage(argv[0]);
@@ -292,6 +319,14 @@ int main(int argc, char* argv[])
         }
     }
 
-    run_benchmarks(output_file, bench_filter);
-    return 0;
+    // If no backend specified, use platform default
+    if (!backend)
+        backend = bench::default_backend_name();
+
+    // Dispatch to the selected backend using a generic lambda
+    return bench::dispatch_backend(backend,
+        [=]<typename Context>(const char* name)
+        {
+            run_benchmarks<Context>(name, output_file, bench_filter);
+        });
 }

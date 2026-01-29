@@ -10,7 +10,7 @@
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/corosio/acceptor.hpp>
 #include <system_error>
-#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/basic_io_context.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -59,9 +59,9 @@ get_test_port() noexcept
 } // namespace
 
 std::pair<socket, socket>
-make_socket_pair(io_context& ioc)
+make_socket_pair(basic_io_context& ctx)
 {
-    auto ex = ioc.get_executor();
+    auto ex = ctx.get_executor();
 
     std::error_code accept_ec;
     std::error_code connect_ec;
@@ -70,7 +70,7 @@ make_socket_pair(io_context& ioc)
 
     // Try multiple ports in case of conflicts (TIME_WAIT, parallel tests, etc.)
     std::uint16_t port = 0;
-    acceptor acc(ioc);
+    acceptor acc(ctx);
     bool listening = false;
     for (int attempt = 0; attempt < 20; ++attempt)
     {
@@ -85,7 +85,7 @@ make_socket_pair(io_context& ioc)
         {
             // Port in use, try another
             acc.close();
-            acc = acceptor(ioc);
+            acc = acceptor(ctx);
         }
     }
     if (!listening)
@@ -94,8 +94,8 @@ make_socket_pair(io_context& ioc)
         throw std::runtime_error("socket_pair: failed to find available port");
     }
 
-    socket s1(ioc);
-    socket s2(ioc);
+    socket s1(ctx);
+    socket s2(ctx);
     s2.open();
 
     capy::run_async(ex)(
@@ -117,8 +117,8 @@ make_socket_pair(io_context& ioc)
         }(s2, endpoint(ipv4_address::loopback(), port),
           connect_ec, connect_done));
 
-    ioc.run();
-    ioc.restart();
+    ctx.run();
+    ctx.restart();
 
     if (!accept_done || accept_ec)
     {

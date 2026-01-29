@@ -28,6 +28,7 @@
 #include <sys/socket.h>
 #endif
 
+#include "../common/backend_selection.hpp"
 #include "../common/benchmark.hpp"
 
 namespace corosio = boost::corosio;
@@ -50,12 +51,13 @@ inline void set_nodelay(corosio::socket& s)
 // operations. Runs with different buffer sizes to reveal the optimal chunk size
 // for this platform. Small buffers stress syscall overhead; large buffers approach
 // memory bandwidth limits. Useful for tuning buffer sizes in streaming protocols.
+template<typename Context>
 bench::benchmark_result bench_throughput(std::size_t chunk_size, std::size_t total_bytes)
 {
     std::cout << "  Buffer size: " << chunk_size << " bytes, ";
     std::cout << "Transfer: " << (total_bytes / (1024 * 1024)) << " MB\n";
 
-    corosio::io_context ioc;
+    Context ioc;
     auto [writer, reader] = corosio::test::make_socket_pair(ioc);
 
     // Disable Nagle's algorithm for fair comparison with Asio
@@ -140,12 +142,13 @@ bench::benchmark_result bench_throughput(std::size_t chunk_size, std::size_t tot
 // the scheduler's ability to multiplex I/O efficiently. This pattern is common
 // in protocols like WebSocket or gRPC where data flows in both directions.
 // Combined throughput should ideally approach 2x unidirectional throughput.
+template<typename Context>
 bench::benchmark_result bench_bidirectional_throughput(std::size_t chunk_size, std::size_t total_bytes)
 {
     std::cout << "  Buffer size: " << chunk_size << " bytes, ";
     std::cout << "Transfer: " << (total_bytes / (1024 * 1024)) << " MB each direction\n";
 
-    corosio::io_context ioc;
+    Context ioc;
     auto [sock1, sock2] = corosio::test::make_socket_pair(ioc);
 
     // Disable Nagle's algorithm for fair comparison with Asio
@@ -245,13 +248,15 @@ bench::benchmark_result bench_bidirectional_throughput(std::size_t chunk_size, s
         .add("throughput_bytes_per_sec", throughput);
 }
 
-// Run benchmarks
-void run_benchmarks(const char* output_file, const char* bench_filter)
+// Run benchmarks for a specific context type
+template<typename Context>
+void run_benchmarks(const char* backend_name, const char* output_file, const char* bench_filter)
 {
     std::cout << "Boost.Corosio Socket Throughput Benchmarks\n";
     std::cout << "==========================================\n";
+    std::cout << "Backend: " << backend_name << "\n\n";
 
-    bench::result_collector collector("corosio");
+    bench::result_collector collector(backend_name);
 
     bool run_all = !bench_filter || std::strcmp(bench_filter, "all") == 0;
 
@@ -263,14 +268,14 @@ void run_benchmarks(const char* output_file, const char* bench_filter)
     {
         bench::print_header("Unidirectional Throughput");
         for (auto size : buffer_sizes)
-            collector.add(bench_throughput(size, transfer_size));
+            collector.add(bench_throughput<Context>(size, transfer_size));
     }
 
     if (run_all || std::strcmp(bench_filter, "bidirectional") == 0)
     {
         bench::print_header("Bidirectional Throughput");
         for (auto size : buffer_sizes)
-            collector.add(bench_bidirectional_throughput(size, transfer_size / 2));
+            collector.add(bench_bidirectional_throughput<Context>(size, transfer_size / 2));
     }
 
     std::cout << "\nBenchmarks complete.\n";
@@ -288,24 +293,41 @@ void print_usage(const char* program_name)
 {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
     std::cout << "Options:\n";
+    std::cout << "  --backend <name>   Select I/O backend (default: platform default)\n";
     std::cout << "  --bench <name>     Run only the specified benchmark\n";
     std::cout << "  --output <file>    Write JSON results to file\n";
+    std::cout << "  --list             List available backends\n";
     std::cout << "  --help             Show this help message\n";
     std::cout << "\n";
     std::cout << "Available benchmarks:\n";
     std::cout << "  unidirectional     Unidirectional throughput (various buffer sizes)\n";
     std::cout << "  bidirectional      Bidirectional throughput (various buffer sizes)\n";
     std::cout << "  all                Run all benchmarks (default)\n";
+    std::cout << "\n";
+    bench::print_available_backends();
 }
 
 int main(int argc, char* argv[])
 {
+    const char* backend = nullptr;
     const char* output_file = nullptr;
     const char* bench_filter = nullptr;
 
     for (int i = 1; i < argc; ++i)
     {
-        if (std::strcmp(argv[i], "--bench") == 0)
+        if (std::strcmp(argv[i], "--backend") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                backend = argv[++i];
+            }
+            else
+            {
+                std::cerr << "Error: --backend requires an argument\n";
+                return 1;
+            }
+        }
+        else if (std::strcmp(argv[i], "--bench") == 0)
         {
             if (i + 1 < argc)
             {
@@ -329,6 +351,11 @@ int main(int argc, char* argv[])
                 return 1;
             }
         }
+        else if (std::strcmp(argv[i], "--list") == 0)
+        {
+            bench::print_available_backends();
+            return 0;
+        }
         else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
         {
             print_usage(argv[0]);
@@ -342,6 +369,14 @@ int main(int argc, char* argv[])
         }
     }
 
-    run_benchmarks(output_file, bench_filter);
-    return 0;
+    // If no backend specified, use platform default
+    if (!backend)
+        backend = bench::default_backend_name();
+
+    // Dispatch to the selected backend using a generic lambda
+    return bench::dispatch_backend(backend,
+        [=]<typename Context>(const char* name)
+        {
+            run_benchmarks<Context>(name, output_file, bench_filter);
+        });
 }
