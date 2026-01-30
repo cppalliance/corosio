@@ -715,6 +715,14 @@ do_one(long timeout_us)
         if (stopped_.load(std::memory_order_acquire))
             return 0;
 
+        // Prevents timer starvation when handlers are continuously posted
+        if (timer_svc_->nearest_expiry() <= std::chrono::steady_clock::now())
+        {
+            lock.unlock();
+            timer_svc_->process_expired();
+            lock.lock();
+        }
+
         // Try to get a handler from the queue
         scheduler_op* op = completed_ops_.pop();
 

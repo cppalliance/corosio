@@ -18,15 +18,16 @@
 // 3. Rapid cancel/complete cycles
 // 4. shared_ptr lifetime - operation completion vs socket close race
 //
-// Currently IOCP-only: epoll stress tests hang on some Linux builds (GCC 13
-// coverage). The use-after-free fix is in place for epoll, but there appears
-// to be a separate deadlock issue that needs investigation.
+// Tests run on all backends (epoll, IOCP, select).
 
 #include <boost/corosio/detail/platform.hpp>
 
 #include <boost/corosio/socket.hpp>
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/io_context.hpp>
+#if BOOST_COROSIO_HAS_SELECT
+#include <boost/corosio/select_context.hpp>
+#endif
 #include <boost/corosio/timer.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -81,9 +82,10 @@ get_stress_port() noexcept
 }
 
 // Create a connected socket pair for stress testing.
-// Must be called BEFORE io_context::run().
+// Must be called BEFORE context::run().
+template<class Context>
 std::pair<socket, socket>
-make_stress_pair(io_context& ctx)
+make_stress_pair(Context& ctx)
 {
     auto ex = ctx.get_executor();
 
@@ -161,7 +163,8 @@ make_stress_pair(io_context& ctx)
 // - During operator() execution
 //------------------------------------------------------------------------------
 
-struct stop_token_stress_test
+template<class Context>
+struct stop_token_stress_test_impl
 {
     void
     run()
@@ -169,11 +172,11 @@ struct stop_token_stress_test
         int duration = get_stress_duration();
         std::fprintf(stderr, "  stop_token_stress: running for %d seconds...\n", duration);
 
-        io_context ioc;
+        Context ioc;
         auto ex = ioc.get_executor();
 
         // Pre-create socket pair BEFORE ioc.run()
-        auto [s1, s2] = make_stress_pair(ioc);
+        auto [s1, s2] = make_stress_pair<Context>(ioc);
 
         std::atomic<std::size_t> iterations{0};
         std::atomic<std::size_t> cancellations{0};
@@ -279,7 +282,13 @@ struct stop_token_stress_test
     }
 };
 
+struct stop_token_stress_test : stop_token_stress_test_impl<io_context> {};
 TEST_SUITE(stop_token_stress_test, "boost.corosio.socket_stress.stop_token");
+
+#if BOOST_COROSIO_HAS_SELECT
+struct stop_token_stress_test_select : stop_token_stress_test_impl<select_context> {};
+TEST_SUITE(stop_token_stress_test_select, "boost.corosio.socket_stress.stop_token.select");
+#endif
 
 //------------------------------------------------------------------------------
 // Stress Test 2: Synchronous Completion Race (ready_ flag)
@@ -288,7 +297,8 @@ TEST_SUITE(stop_token_stress_test, "boost.corosio.socket_stress.stop_token");
 // race between the initiating thread and completion handler thread.
 //------------------------------------------------------------------------------
 
-struct sync_completion_stress_test
+template<class Context>
+struct sync_completion_stress_test_impl
 {
     void
     run()
@@ -296,11 +306,11 @@ struct sync_completion_stress_test
         int duration = get_stress_duration();
         std::fprintf(stderr, "  sync_completion_stress: running for %d seconds...\n", duration);
 
-        io_context ioc;
+        Context ioc;
         auto ex = ioc.get_executor();
 
         // Pre-create socket pair BEFORE ioc.run()
-        auto [s1, s2] = make_stress_pair(ioc);
+        auto [s1, s2] = make_stress_pair<Context>(ioc);
 
         std::atomic<std::size_t> iterations{0};
         std::atomic<bool> stop_flag{false};
@@ -362,7 +372,13 @@ struct sync_completion_stress_test
     }
 };
 
+struct sync_completion_stress_test : sync_completion_stress_test_impl<io_context> {};
 TEST_SUITE(sync_completion_stress_test, "boost.corosio.socket_stress.sync_completion");
+
+#if BOOST_COROSIO_HAS_SELECT
+struct sync_completion_stress_test_select : sync_completion_stress_test_impl<select_context> {};
+TEST_SUITE(sync_completion_stress_test_select, "boost.corosio.socket_stress.sync_completion.select");
+#endif
 
 //------------------------------------------------------------------------------
 // Stress Test 3: Rapid Cancel/Close Cycles
@@ -371,7 +387,8 @@ TEST_SUITE(sync_completion_stress_test, "boost.corosio.socket_stress.sync_comple
 // cleanup paths and ensure no use-after-free or double-free.
 //------------------------------------------------------------------------------
 
-struct cancel_close_stress_test
+template<class Context>
+struct cancel_close_stress_test_impl
 {
     void
     run()
@@ -379,11 +396,11 @@ struct cancel_close_stress_test
         int duration = get_stress_duration();
         std::fprintf(stderr, "  cancel_close_stress: running for %d seconds...\n", duration);
 
-        io_context ioc;
+        Context ioc;
         auto ex = ioc.get_executor();
 
         // Pre-create socket pair BEFORE ioc.run()
-        auto [s1, s2] = make_stress_pair(ioc);
+        auto [s1, s2] = make_stress_pair<Context>(ioc);
 
         std::atomic<std::size_t> iterations{0};
         std::atomic<std::size_t> cancels{0};
@@ -500,7 +517,13 @@ struct cancel_close_stress_test
     }
 };
 
+struct cancel_close_stress_test : cancel_close_stress_test_impl<io_context> {};
 TEST_SUITE(cancel_close_stress_test, "boost.corosio.socket_stress.cancel_close");
+
+#if BOOST_COROSIO_HAS_SELECT
+struct cancel_close_stress_test_select : cancel_close_stress_test_impl<select_context> {};
+TEST_SUITE(cancel_close_stress_test_select, "boost.corosio.socket_stress.cancel_close.select");
+#endif
 
 //------------------------------------------------------------------------------
 // Stress Test 4: Concurrent Operations
@@ -509,7 +532,8 @@ TEST_SUITE(cancel_close_stress_test, "boost.corosio.socket_stress.cancel_close")
 // thread safety and completion dispatch.
 //------------------------------------------------------------------------------
 
-struct concurrent_ops_stress_test
+template<class Context>
+struct concurrent_ops_stress_test_impl
 {
     void
     run()
@@ -517,7 +541,7 @@ struct concurrent_ops_stress_test
         int duration = get_stress_duration();
         std::fprintf(stderr, "  concurrent_ops_stress: running for %d seconds...\n", duration);
 
-        io_context ioc;
+        Context ioc;
         auto ex = ioc.get_executor();
 
         std::atomic<std::size_t> total_bytes{0};
@@ -529,7 +553,7 @@ struct concurrent_ops_stress_test
         std::vector<std::pair<socket, socket>> pairs;
         for (int i = 0; i < num_pairs; ++i)
         {
-            pairs.push_back(make_stress_pair(ioc));
+            pairs.push_back(make_stress_pair<Context>(ioc));
         }
 
         // Writer tasks - use function parameters to pass index reliably
@@ -602,7 +626,13 @@ struct concurrent_ops_stress_test
     }
 };
 
+struct concurrent_ops_stress_test : concurrent_ops_stress_test_impl<io_context> {};
 TEST_SUITE(concurrent_ops_stress_test, "boost.corosio.socket_stress.concurrent_ops");
+
+#if BOOST_COROSIO_HAS_SELECT
+struct concurrent_ops_stress_test_select : concurrent_ops_stress_test_impl<select_context> {};
+TEST_SUITE(concurrent_ops_stress_test_select, "boost.corosio.socket_stress.concurrent_ops.select");
+#endif
 
 //------------------------------------------------------------------------------
 // Stress Test 5: Accept/Connect Race
@@ -611,7 +641,8 @@ TEST_SUITE(concurrent_ops_stress_test, "boost.corosio.socket_stress.concurrent_o
 // code path and accept completion handling.
 //------------------------------------------------------------------------------
 
-struct accept_stress_test
+template<class Context>
+struct accept_stress_test_impl
 {
     void
     run()
@@ -619,7 +650,7 @@ struct accept_stress_test
         int duration = get_stress_duration();
         std::fprintf(stderr, "  accept_stress: running for %d seconds...\n", duration);
 
-        io_context ioc;
+        Context ioc;
         auto ex = ioc.get_executor();
 
         std::atomic<std::size_t> connections{0};
@@ -710,7 +741,13 @@ struct accept_stress_test
     }
 };
 
+struct accept_stress_test : accept_stress_test_impl<io_context> {};
 TEST_SUITE(accept_stress_test, "boost.corosio.socket_stress.accept");
+
+#if BOOST_COROSIO_HAS_SELECT
+struct accept_stress_test_select : accept_stress_test_impl<select_context> {};
+TEST_SUITE(accept_stress_test_select, "boost.corosio.socket_stress.accept.select");
+#endif
 
 } // namespace boost::corosio
 
