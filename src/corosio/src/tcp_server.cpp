@@ -41,10 +41,10 @@ tcp_server::bind(endpoint ep)
 
 void
 tcp_server::
-start()
+start(std::stop_token st)
 {
     for(auto& t : ports_)
-        capy::run_async(ex_)(do_accept(t));
+        capy::run_async(ex_, st)(do_accept(t));
 }
 
 } // namespace boost::corosio

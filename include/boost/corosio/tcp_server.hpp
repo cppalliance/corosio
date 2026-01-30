@@ -175,6 +175,22 @@ private:
         launch_wrapper& operator=(launch_wrapper&&) = delete;
     };
 
+    // Named functor to avoid incomplete lambda type in coroutine promise
+    template<class Executor>
+    struct launch_coro
+    {
+        launch_wrapper<Executor> operator()(
+            Executor ex,
+            tcp_server* self,
+            capy::task<void> t,
+            worker_base* wp)
+        {
+            (void)ex; // Executor stored in promise via constructor
+            co_await std::move(t);
+            co_await self->push(*wp);
+        }
+    };
+
     struct waiter
     {
         waiter* next;
@@ -459,14 +475,7 @@ public:
                 ~guard_t() { if(w) srv->push_sync(*w); }
             } guard{srv_, w};
 
-            auto wrapper =
-                [](Executor ex, tcp_server* self, capy::task<void> t, worker_base* wp)
-                    -> launch_wrapper<Executor>
-                {
-                    (void)ex; // Executor stored in promise via constructor
-                    co_await std::move(t);
-                    co_await self->push(*wp);
-                }(ex, srv_, std::move(task), w);
+            auto wrapper = launch_coro<Executor>{}(ex, srv_, std::move(task), w);
 
             // Executor is now stored in promise via constructor
             ex.post(std::exchange(wrapper.h, nullptr)); // Release before post
@@ -517,7 +526,7 @@ public:
         At least one endpoint has been bound via @ref bind.
         Workers have been added to the pool via `wv_.emplace()`.
     */
-    void start();
+    void start(std::stop_token st = {});
 };
 
 #ifdef _MSC_VER
