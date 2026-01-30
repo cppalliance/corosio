@@ -151,6 +151,9 @@ private:
     mutable bool reactor_running_ = false;
     mutable bool reactor_interrupted_ = false;
     mutable int idle_thread_count_ = 0;
+
+    // Edge-triggered eventfd state
+    mutable std::atomic<bool> eventfd_armed_{false};
 };
 
 } // namespace boost::corosio::detail

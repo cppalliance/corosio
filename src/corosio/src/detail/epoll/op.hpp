@@ -87,6 +87,11 @@ struct epoll_op;
     Tracks pending operations for a file descriptor. The fd is registered
     once with epoll and stays registered until closed. Events are dispatched
     to the appropriate pending operation (EPOLLIN -> read_op, etc.).
+
+    With edge-triggered epoll (EPOLLET), atomic operations are required to
+    synchronize between operation registration and reactor event delivery.
+    The read_ready/write_ready flags cache edge events that arrived before
+    an operation was registered.
 */
 struct descriptor_data
 {
@@ -94,13 +99,19 @@ struct descriptor_data
     std::uint32_t registered_events = 0;
 
     /// Pending read operation (nullptr if none)
-    epoll_op* read_op = nullptr;
+    std::atomic<epoll_op*> read_op{nullptr};
 
     /// Pending write operation (nullptr if none)
-    epoll_op* write_op = nullptr;
+    std::atomic<epoll_op*> write_op{nullptr};
 
     /// Pending connect operation (nullptr if none)
-    epoll_op* connect_op = nullptr;
+    std::atomic<epoll_op*> connect_op{nullptr};
+
+    /// Cached read readiness (edge event arrived before op registered)
+    std::atomic<bool> read_ready{false};
+
+    /// Cached write readiness (edge event arrived before op registered)
+    std::atomic<bool> write_ready{false};
 
     /// The file descriptor
     int fd = -1;

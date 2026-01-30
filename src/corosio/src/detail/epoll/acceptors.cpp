@@ -71,11 +71,11 @@ operator()()
                 auto& impl = static_cast<epoll_socket_impl&>(socket_svc->create_impl());
                 impl.set_socket(accepted_fd);
 
-                // Register accepted socket for persistent epoll monitoring
+                // Register accepted socket with epoll (edge-triggered mode)
                 impl.desc_data_.fd = accepted_fd;
-                impl.desc_data_.read_op = nullptr;
-                impl.desc_data_.write_op = nullptr;
-                impl.desc_data_.connect_op = nullptr;
+                impl.desc_data_.read_op.store(nullptr, std::memory_order_relaxed);
+                impl.desc_data_.write_op.store(nullptr, std::memory_order_relaxed);
+                impl.desc_data_.connect_op.store(nullptr, std::memory_order_relaxed);
                 socket_svc->scheduler().register_descriptor(accepted_fd, &impl.desc_data_);
 
                 sockaddr_in local_addr{};
@@ -153,10 +153,7 @@ void
 epoll_acceptor_impl::
 update_epoll_events() noexcept
 {
-    std::uint32_t events = 0;
-    if (desc_data_.read_op)  // accept uses EPOLLIN
-        events |= EPOLLIN;
-    svc_.scheduler().update_descriptor_events(fd_, &desc_data_, events);
+    svc_.scheduler().update_descriptor_events(fd_, &desc_data_, 0);
 }
 
 void
@@ -192,6 +189,7 @@ accept(
 
     if (accepted >= 0)
     {
+        desc_data_.read_ready.store(false, std::memory_order_relaxed);
         op.accepted_fd = accepted;
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
@@ -203,15 +201,38 @@ accept(
     {
         svc_.work_started();
         op.impl_ptr = shared_from_this();
-        desc_data_.read_op = &op;  // accept uses read_op slot (EPOLLIN)
-        update_epoll_events();
+
+        desc_data_.read_op.store(&op, std::memory_order_release);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+
+        if (desc_data_.read_ready.exchange(false, std::memory_order_acquire))
+        {
+            auto* claimed = desc_data_.read_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (claimed)
+            {
+                claimed->perform_io();
+                if (claimed->errn == EAGAIN || claimed->errn == EWOULDBLOCK)
+                {
+                    claimed->errn = 0;
+                    desc_data_.read_op.store(claimed, std::memory_order_release);
+                }
+                else
+                {
+                    svc_.post(claimed);
+                    svc_.work_finished();
+                }
+                return;
+            }
+        }
 
         if (op.cancelled.load(std::memory_order_acquire))
         {
-            desc_data_.read_op = nullptr;
-            update_epoll_events();
-            svc_.post(&op);
-            svc_.work_finished();
+            auto* claimed = desc_data_.read_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (claimed)
+            {
+                svc_.post(claimed);
+                svc_.work_finished();
+            }
         }
         return;
     }
@@ -233,11 +254,10 @@ cancel() noexcept
     }
 
     acc_.request_cancel();
-    if (desc_data_.read_op == &acc_)
+    // Use atomic exchange - only one of cancellation or reactor will succeed
+    auto* claimed = desc_data_.read_op.exchange(nullptr, std::memory_order_acq_rel);
+    if (claimed == &acc_)
     {
-        desc_data_.read_op = nullptr;
-        if (desc_data_.is_registered)
-            update_epoll_events();
         acc_.impl_ptr = self;
         svc_.post(&acc_);
         svc_.work_finished();
@@ -250,11 +270,10 @@ cancel_single_op(epoll_op& op) noexcept
 {
     op.request_cancel();
 
-    if (desc_data_.read_op == &op)
+    // Use atomic exchange - only one of cancellation or reactor will succeed
+    auto* claimed = desc_data_.read_op.exchange(nullptr, std::memory_order_acq_rel);
+    if (claimed == &op)
     {
-        desc_data_.read_op = nullptr;
-        if (desc_data_.is_registered)
-            update_epoll_events();
         try {
             op.impl_ptr = shared_from_this();
         } catch (const std::bad_weak_ptr&) {}
@@ -279,7 +298,9 @@ close_socket() noexcept
 
     desc_data_.fd = -1;
     desc_data_.is_registered = false;
-    desc_data_.read_op = nullptr;
+    desc_data_.read_op.store(nullptr, std::memory_order_relaxed);
+    desc_data_.read_ready.store(false, std::memory_order_relaxed);
+    desc_data_.write_ready.store(false, std::memory_order_relaxed);
     desc_data_.registered_events = 0;
 
     // Clear cached endpoint
@@ -372,9 +393,9 @@ open_acceptor(
 
     epoll_impl->fd_ = fd;
 
-    // Register fd for persistent epoll monitoring (lazy registration)
+    // Register fd with epoll (edge-triggered mode)
     epoll_impl->desc_data_.fd = fd;
-    epoll_impl->desc_data_.read_op = nullptr;
+    epoll_impl->desc_data_.read_op.store(nullptr, std::memory_order_relaxed);
     scheduler().register_descriptor(fd, &epoll_impl->desc_data_);
 
     // Cache the local endpoint (queries OS for ephemeral port if port was 0)
