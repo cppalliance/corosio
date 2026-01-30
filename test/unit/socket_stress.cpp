@@ -24,8 +24,6 @@
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IOCP
-
 #include <boost/corosio/socket.hpp>
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/io_context.hpp>
@@ -716,4 +714,3 @@ TEST_SUITE(accept_stress_test, "boost.corosio.socket_stress.accept");
 
 } // namespace boost::corosio
 
-#endif // BOOST_COROSIO_HAS_IOCP

@@ -141,7 +141,7 @@ epoll_scheduler(
     }
 
     epoll_event ev{};
-    ev.events = EPOLLIN;
+    ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = nullptr;
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, event_fd_, &ev) < 0)
     {
@@ -402,27 +402,26 @@ void
 epoll_scheduler::
 register_descriptor(int fd, descriptor_data* desc) const
 {
-    // Don't register yet - we'll register lazily when first operation waits
-    desc->registered_events = 0;
+    epoll_event ev{};
+    ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLERR | EPOLLHUP;
+    ev.data.ptr = desc;
+
+    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0)
+        detail::throw_system_error(make_err(errno), "epoll_ctl (register)");
+
+    desc->registered_events = ev.events;
     desc->is_registered = true;
     desc->fd = fd;
+    desc->read_ready.store(false, std::memory_order_relaxed);
+    desc->write_ready.store(false, std::memory_order_relaxed);
 }
 
 void
 epoll_scheduler::
-update_descriptor_events(int fd, descriptor_data* desc, std::uint32_t events) const
+update_descriptor_events(int, descriptor_data*, std::uint32_t) const
 {
-    // Always include error/hangup events and oneshot for auto-disarm
-    events |= EPOLLERR | EPOLLHUP | EPOLLONESHOT;
-
-    epoll_event ev{};
-    ev.events = events;
-    ev.data.ptr = desc;
-
-    int op = (desc->registered_events == 0) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
-    if (::epoll_ctl(epoll_fd_, op, fd, &ev) < 0)
-        detail::throw_system_error(make_err(errno), "epoll_ctl (persistent)");
-    desc->registered_events = events;
+    // Provides memory fence for operation pointer visibility across threads
+    std::atomic_thread_fence(std::memory_order_seq_cst);
 }
 
 void
@@ -464,8 +463,14 @@ void
 epoll_scheduler::
 interrupt_reactor() const
 {
-    std::uint64_t val = 1;
-    [[maybe_unused]] auto r = ::write(event_fd_, &val, sizeof(val));
+    // Only write if not already armed to avoid redundant writes
+    bool expected = false;
+    if (eventfd_armed_.compare_exchange_strong(expected, true,
+            std::memory_order_release, std::memory_order_relaxed))
+    {
+        std::uint64_t val = 1;
+        [[maybe_unused]] auto r = ::write(event_fd_, &val, sizeof(val));
+    }
 }
 
 void
@@ -474,22 +479,17 @@ wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
 {
     if (idle_thread_count_ > 0)
     {
-        // Idle worker exists - wake it via condvar
         wakeup_event_.notify_one();
         lock.unlock();
     }
     else if (reactor_running_ && !reactor_interrupted_)
     {
-        // No idle workers but reactor is running - interrupt it so it
-        // can re-check the queue after processing current epoll events
         reactor_interrupted_ = true;
         lock.unlock();
         interrupt_reactor();
     }
     else
     {
-        // No one to wake - either reactor will pick up work when it
-        // re-checks queue, or next thread to call run() will get it
         lock.unlock();
     }
 }
@@ -530,7 +530,6 @@ void
 epoll_scheduler::
 run_reactor(std::unique_lock<std::mutex>& lock)
 {
-    // Calculate timeout considering timers, use 0 if interrupted
     long effective_timeout_us = reactor_interrupted_ ? 0 : calculate_timeout(-1);
 
     int timeout_ms;
@@ -545,17 +544,13 @@ run_reactor(std::unique_lock<std::mutex>& lock)
 
     epoll_event events[128];
     int nfds = ::epoll_wait(epoll_fd_, events, 128, timeout_ms);
-    int saved_errno = errno;  // Save before process_expired() may overwrite
+    int saved_errno = errno;
 
-    // Process timers outside the lock - timer completions may call post()
-    // which needs to acquire the lock
     timer_svc_->process_expired();
 
     if (nfds < 0 && saved_errno != EINTR)
         detail::throw_system_error(make_err(saved_errno), "epoll_wait");
 
-    // Process I/O completions - these become handlers in the queue
-    // Must re-acquire lock before modifying completed_ops_
     lock.lock();
 
     int completions_queued = 0;
@@ -563,9 +558,9 @@ run_reactor(std::unique_lock<std::mutex>& lock)
     {
         if (events[i].data.ptr == nullptr)
         {
-            // eventfd interrupt - just drain it
             std::uint64_t val;
             [[maybe_unused]] auto r = ::read(event_fd_, &val, sizeof(val));
+            eventfd_armed_.store(false, std::memory_order_relaxed);
             continue;
         }
 
@@ -582,76 +577,129 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                 err = EIO;
         }
 
-        // Handle read events (including accept)
-        if ((ev & EPOLLIN) && desc->read_op)
+        if (ev & EPOLLIN)
         {
-            auto* op = desc->read_op;
-            desc->read_op = nullptr;
-            if (err)
-                op->complete(err, 0);
+            auto* op = desc->read_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (op)
+            {
+                if (err)
+                {
+                    op->complete(err, 0);
+                    completed_ops_.push(op);
+                    ++completions_queued;
+                }
+                else
+                {
+                    op->perform_io();
+                    if (op->errn == EAGAIN || op->errn == EWOULDBLOCK)
+                    {
+                        op->errn = 0;
+                        desc->read_op.store(op, std::memory_order_release);
+                    }
+                    else
+                    {
+                        completed_ops_.push(op);
+                        ++completions_queued;
+                    }
+                }
+            }
             else
-                op->perform_io();
-            completed_ops_.push(op);
-            ++completions_queued;
+            {
+                desc->read_ready.store(true, std::memory_order_release);
+            }
         }
 
-        // Handle write events
-        if ((ev & EPOLLOUT) && desc->write_op)
+        if (ev & EPOLLOUT)
         {
-            auto* op = desc->write_op;
-            desc->write_op = nullptr;
-            if (err)
-                op->complete(err, 0);
-            else
-                op->perform_io();
-            completed_ops_.push(op);
-            ++completions_queued;
+            bool any_completed = false;
+
+            // Connect uses write readiness - try it first
+            auto* conn_op = desc->connect_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (conn_op)
+            {
+                if (err)
+                {
+                    conn_op->complete(err, 0);
+                    completed_ops_.push(conn_op);
+                    ++completions_queued;
+                    any_completed = true;
+                }
+                else
+                {
+                    conn_op->perform_io();
+                    if (conn_op->errn == EAGAIN || conn_op->errn == EWOULDBLOCK)
+                    {
+                        conn_op->errn = 0;
+                        desc->connect_op.store(conn_op, std::memory_order_release);
+                    }
+                    else
+                    {
+                        completed_ops_.push(conn_op);
+                        ++completions_queued;
+                        any_completed = true;
+                    }
+                }
+            }
+
+            auto* write_op = desc->write_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (write_op)
+            {
+                if (err)
+                {
+                    write_op->complete(err, 0);
+                    completed_ops_.push(write_op);
+                    ++completions_queued;
+                    any_completed = true;
+                }
+                else
+                {
+                    write_op->perform_io();
+                    if (write_op->errn == EAGAIN || write_op->errn == EWOULDBLOCK)
+                    {
+                        write_op->errn = 0;
+                        desc->write_op.store(write_op, std::memory_order_release);
+                    }
+                    else
+                    {
+                        completed_ops_.push(write_op);
+                        ++completions_queued;
+                        any_completed = true;
+                    }
+                }
+            }
+
+            if (!conn_op && !write_op)
+                desc->write_ready.store(true, std::memory_order_release);
         }
 
-        // Handle connect events
-        if ((ev & EPOLLOUT) && desc->connect_op)
-        {
-            auto* op = desc->connect_op;
-            desc->connect_op = nullptr;
-            if (err)
-                op->complete(err, 0);
-            else
-                op->perform_io();
-            completed_ops_.push(op);
-            ++completions_queued;
-        }
-
-        // Handle errors for pending ops even if no specific event
         if (err)
         {
-            if (desc->read_op)
+            auto* read_op = desc->read_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (read_op)
             {
-                auto* op = desc->read_op;
-                desc->read_op = nullptr;
-                op->complete(err, 0);
-                completed_ops_.push(op);
+                read_op->complete(err, 0);
+                completed_ops_.push(read_op);
                 ++completions_queued;
             }
-            if (desc->write_op)
+
+            auto* write_op = desc->write_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (write_op)
             {
-                auto* op = desc->write_op;
-                desc->write_op = nullptr;
-                op->complete(err, 0);
-                completed_ops_.push(op);
+                write_op->complete(err, 0);
+                completed_ops_.push(write_op);
                 ++completions_queued;
             }
-            if (desc->connect_op)
+
+            auto* conn_op = desc->connect_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (conn_op)
             {
-                auto* op = desc->connect_op;
-                desc->connect_op = nullptr;
-                op->complete(err, 0);
-                completed_ops_.push(op);
+                conn_op->complete(err, 0);
+                completed_ops_.push(conn_op);
                 ++completions_queued;
             }
         }
     }
 
-    // Wake idle workers if we queued I/O completions
     if (completions_queued > 0)
     {
         if (completions_queued >= idle_thread_count_)
@@ -659,7 +707,6 @@ run_reactor(std::unique_lock<std::mutex>& lock)
         else
             for (int i = 0; i < completions_queued; ++i)
                 wakeup_event_.notify_one();
-
     }
 }
 
@@ -679,26 +726,30 @@ do_one(long timeout_us)
         if (stopped_.load(std::memory_order_acquire))
             return 0;
 
-        // Try to get a handler from the queue
+        // Prevents timer starvation when handlers are continuously posted
+        if (timer_svc_->nearest_expiry() <= std::chrono::steady_clock::now())
+        {
+            lock.unlock();
+            timer_svc_->process_expired();
+            lock.lock();
+        }
+
         scheduler_op* op = completed_ops_.pop();
 
         if (op != nullptr)
         {
-            // Got a handler - execute it
             lock.unlock();
             work_guard g{this};
             (*op)();
             return 1;
         }
 
-        // Queue is empty - check if we should become reactor or wait
         if (outstanding_work_.load(std::memory_order_acquire) == 0)
             return 0;
 
         if (timeout_us == 0)
-            return 0;  // Non-blocking poll
+            return 0;
 
-        // Check if timeout has expired (for positive timeout_us)
         long remaining_us = timeout_us;
         if (timeout_us > 0)
         {
@@ -711,19 +762,15 @@ do_one(long timeout_us)
 
         if (!reactor_running_)
         {
-            // No reactor running and queue empty - become the reactor
             reactor_running_ = true;
-            // If handlers arrived since our last check, don't block in epoll_wait
             reactor_interrupted_ = !completed_ops_.empty();
 
             run_reactor(lock);
 
             reactor_running_ = false;
-            // Loop back to check for handlers that reactor may have queued
             continue;
         }
 
-        // Reactor is running in another thread - wait for work on condvar
         ++idle_thread_count_;
         if (timeout_us < 0)
             wakeup_event_.wait(lock);

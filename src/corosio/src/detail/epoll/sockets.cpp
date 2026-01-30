@@ -132,12 +132,8 @@ void
 epoll_socket_impl::
 update_epoll_events() noexcept
 {
-    std::uint32_t events = 0;
-    if (desc_data_.read_op)
-        events |= EPOLLIN;
-    if (desc_data_.write_op || desc_data_.connect_op)
-        events |= EPOLLOUT;
-    svc_.scheduler().update_descriptor_events(fd_, &desc_data_, events);
+    // With EPOLLET, update_descriptor_events just provides a memory fence
+    svc_.scheduler().update_descriptor_events(fd_, &desc_data_, 0);
 }
 
 void
@@ -189,15 +185,38 @@ connect(
     {
         svc_.work_started();
         op.impl_ptr = shared_from_this();
-        desc_data_.connect_op = &op;
-        update_epoll_events();
+
+        desc_data_.connect_op.store(&op, std::memory_order_release);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+
+        if (desc_data_.write_ready.exchange(false, std::memory_order_acquire))
+        {
+            auto* claimed = desc_data_.connect_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (claimed)
+            {
+                claimed->perform_io();
+                if (claimed->errn == EAGAIN || claimed->errn == EWOULDBLOCK)
+                {
+                    claimed->errn = 0;
+                    desc_data_.connect_op.store(claimed, std::memory_order_release);
+                }
+                else
+                {
+                    svc_.post(claimed);
+                    svc_.work_finished();
+                }
+                return;
+            }
+        }
 
         if (op.cancelled.load(std::memory_order_acquire))
         {
-            desc_data_.connect_op = nullptr;
-            update_epoll_events();
-            svc_.post(&op);
-            svc_.work_finished();
+            auto* claimed = desc_data_.connect_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (claimed)
+            {
+                svc_.post(claimed);
+                svc_.work_finished();
+            }
         }
         return;
     }
@@ -248,6 +267,7 @@ read_some(
 
     if (n > 0)
     {
+        desc_data_.read_ready.store(false, std::memory_order_relaxed);
         op.complete(0, static_cast<std::size_t>(n));
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
@@ -256,6 +276,7 @@ read_some(
 
     if (n == 0)
     {
+        desc_data_.read_ready.store(false, std::memory_order_relaxed);
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
@@ -266,15 +287,38 @@ read_some(
     {
         svc_.work_started();
         op.impl_ptr = shared_from_this();
-        desc_data_.read_op = &op;
-        update_epoll_events();
+
+        desc_data_.read_op.store(&op, std::memory_order_release);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+
+        if (desc_data_.read_ready.exchange(false, std::memory_order_acquire))
+        {
+            auto* claimed = desc_data_.read_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (claimed)
+            {
+                claimed->perform_io();
+                if (claimed->errn == EAGAIN || claimed->errn == EWOULDBLOCK)
+                {
+                    claimed->errn = 0;
+                    desc_data_.read_op.store(claimed, std::memory_order_release);
+                }
+                else
+                {
+                    svc_.post(claimed);
+                    svc_.work_finished();
+                }
+                return;
+            }
+        }
 
         if (op.cancelled.load(std::memory_order_acquire))
         {
-            desc_data_.read_op = nullptr;
-            update_epoll_events();
-            svc_.post(&op);
-            svc_.work_finished();
+            auto* claimed = desc_data_.read_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (claimed)
+            {
+                svc_.post(claimed);
+                svc_.work_finished();
+            }
         }
         return;
     }
@@ -328,6 +372,7 @@ write_some(
 
     if (n > 0)
     {
+        desc_data_.write_ready.store(false, std::memory_order_relaxed);
         op.complete(0, static_cast<std::size_t>(n));
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
@@ -338,15 +383,38 @@ write_some(
     {
         svc_.work_started();
         op.impl_ptr = shared_from_this();
-        desc_data_.write_op = &op;
-        update_epoll_events();
+
+        desc_data_.write_op.store(&op, std::memory_order_release);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+
+        if (desc_data_.write_ready.exchange(false, std::memory_order_acquire))
+        {
+            auto* claimed = desc_data_.write_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (claimed)
+            {
+                claimed->perform_io();
+                if (claimed->errn == EAGAIN || claimed->errn == EWOULDBLOCK)
+                {
+                    claimed->errn = 0;
+                    desc_data_.write_op.store(claimed, std::memory_order_release);
+                }
+                else
+                {
+                    svc_.post(claimed);
+                    svc_.work_finished();
+                }
+                return;
+            }
+        }
 
         if (op.cancelled.load(std::memory_order_acquire))
         {
-            desc_data_.write_op = nullptr;
-            update_epoll_events();
-            svc_.post(&op);
-            svc_.work_finished();
+            auto* claimed = desc_data_.write_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (claimed)
+            {
+                svc_.post(claimed);
+                svc_.work_finished();
+            }
         }
         return;
     }
@@ -516,25 +584,22 @@ cancel() noexcept
         return;
     }
 
-    bool any_cancelled = false;
-    auto cancel_op = [this, &self, &any_cancelled](epoll_op& op, epoll_op*& desc_op_ptr) {
+    // Use atomic exchange to claim operations - only one of cancellation
+    // or reactor will succeed
+    auto cancel_atomic_op = [this, &self](epoll_op& op, std::atomic<epoll_op*>& desc_op_ptr) {
         op.request_cancel();
-        if (desc_op_ptr == &op)
+        auto* claimed = desc_op_ptr.exchange(nullptr, std::memory_order_acq_rel);
+        if (claimed == &op)
         {
-            desc_op_ptr = nullptr;
-            any_cancelled = true;
             op.impl_ptr = self;
             svc_.post(&op);
             svc_.work_finished();
         }
     };
 
-    cancel_op(conn_, desc_data_.connect_op);
-    cancel_op(rd_, desc_data_.read_op);
-    cancel_op(wr_, desc_data_.write_op);
-
-    if (any_cancelled && desc_data_.is_registered)
-        update_epoll_events();
+    cancel_atomic_op(conn_, desc_data_.connect_op);
+    cancel_atomic_op(rd_, desc_data_.read_op);
+    cancel_atomic_op(wr_, desc_data_.write_op);
 }
 
 void
@@ -543,21 +608,23 @@ cancel_single_op(epoll_op& op) noexcept
 {
     op.request_cancel();
 
-    epoll_op** desc_op_ptr = nullptr;
+    std::atomic<epoll_op*>* desc_op_ptr = nullptr;
     if (&op == &conn_) desc_op_ptr = &desc_data_.connect_op;
     else if (&op == &rd_) desc_op_ptr = &desc_data_.read_op;
     else if (&op == &wr_) desc_op_ptr = &desc_data_.write_op;
 
-    if (desc_op_ptr && *desc_op_ptr == &op)
+    if (desc_op_ptr)
     {
-        *desc_op_ptr = nullptr;
-        if (desc_data_.is_registered)
-            update_epoll_events();
-        try {
-            op.impl_ptr = shared_from_this();
-        } catch (const std::bad_weak_ptr&) {}
-        svc_.post(&op);
-        svc_.work_finished();
+        // Use atomic exchange - only one of cancellation or reactor will succeed
+        auto* claimed = desc_op_ptr->exchange(nullptr, std::memory_order_acq_rel);
+        if (claimed == &op)
+        {
+            try {
+                op.impl_ptr = shared_from_this();
+            } catch (const std::bad_weak_ptr&) {}
+            svc_.post(&op);
+            svc_.work_finished();
+        }
     }
 }
 
@@ -569,7 +636,6 @@ close_socket() noexcept
 
     if (fd_ >= 0)
     {
-        // Only deregister if we actually added to epoll (lazy registration)
         if (desc_data_.registered_events != 0)
             svc_.scheduler().deregister_descriptor(fd_);
         ::close(fd_);
@@ -578,9 +644,11 @@ close_socket() noexcept
 
     desc_data_.fd = -1;
     desc_data_.is_registered = false;
-    desc_data_.read_op = nullptr;
-    desc_data_.write_op = nullptr;
-    desc_data_.connect_op = nullptr;
+    desc_data_.read_op.store(nullptr, std::memory_order_relaxed);
+    desc_data_.write_op.store(nullptr, std::memory_order_relaxed);
+    desc_data_.connect_op.store(nullptr, std::memory_order_relaxed);
+    desc_data_.read_ready.store(false, std::memory_order_relaxed);
+    desc_data_.write_ready.store(false, std::memory_order_relaxed);
     desc_data_.registered_events = 0;
 
     local_endpoint_ = endpoint{};
@@ -653,11 +721,11 @@ open_socket(socket::socket_impl& impl)
 
     epoll_impl->fd_ = fd;
 
-    // Register fd persistently with epoll (prototype for performance)
+    // Register fd with epoll (edge-triggered mode)
     epoll_impl->desc_data_.fd = fd;
-    epoll_impl->desc_data_.read_op = nullptr;
-    epoll_impl->desc_data_.write_op = nullptr;
-    epoll_impl->desc_data_.connect_op = nullptr;
+    epoll_impl->desc_data_.read_op.store(nullptr, std::memory_order_relaxed);
+    epoll_impl->desc_data_.write_op.store(nullptr, std::memory_order_relaxed);
+    epoll_impl->desc_data_.connect_op.store(nullptr, std::memory_order_relaxed);
     scheduler().register_descriptor(fd, &epoll_impl->desc_data_);
 
     return {};
