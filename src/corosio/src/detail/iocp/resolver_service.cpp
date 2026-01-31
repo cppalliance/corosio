@@ -309,7 +309,7 @@ release()
     svc_.destroy_impl(*this);
 }
 
-void
+std::coroutine_handle<>
 win_resolver_impl::
 resolve(
     capy::coro h,
@@ -371,9 +371,10 @@ resolve(
 
         svc_.post(&op);
     }
+    return std::noop_coroutine();
 }
 
-void
+std::coroutine_handle<>
 win_resolver_impl::
 reverse_resolve(
     capy::coro h,
@@ -468,6 +469,7 @@ reverse_resolve(
         reverse_op_.gai_error = WSAENOBUFS;  // Map to "not enough memory"
         svc_.post(&reverse_op_);
     }
+    return std::noop_coroutine();
 }
 
 void

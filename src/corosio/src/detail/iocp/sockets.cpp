@@ -382,7 +382,7 @@ release_internal()
     // Destruction happens automatically when all shared_ptrs are released
 }
 
-void
+std::coroutine_handle<>
 win_socket_impl_internal::
 connect(
     capy::coro h,
@@ -413,7 +413,7 @@ connect(
     {
         op.dwError = ::WSAGetLastError();
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     auto connect_ex = svc_.connect_ex();
@@ -421,7 +421,7 @@ connect(
     {
         op.dwError = WSAEOPNOTSUPP;
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     sockaddr_in addr = detail::to_sockaddr_in(ep);
@@ -445,7 +445,7 @@ connect(
             svc_.work_finished();
             op.dwError = err;
             svc_.post(&op);
-            return;
+            return std::noop_coroutine();
         }
     }
     else
@@ -467,9 +467,10 @@ connect(
             svc_.post(&op);
         }
     }
+    return std::noop_coroutine();
 }
 
-void
+std::coroutine_handle<>
 win_socket_impl_internal::
 read_some(
     capy::coro h,
@@ -494,14 +495,14 @@ read_some(
     op.wsabuf_count = static_cast<DWORD>(
         param.copy_to(bufs, read_op::max_buffers));
 
-    // Handle empty buffer: complete immediately with 0 bytes
+    // Handle empty buffer: complete with 0 bytes via post for consistency
     if (op.wsabuf_count == 0)
     {
         op.bytes_transferred = 0;
         op.dwError = 0;
         op.empty_buffer = true;
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
@@ -528,10 +529,17 @@ read_some(
         DWORD err = ::WSAGetLastError();
         if (err != WSA_IO_PENDING)
         {
+            // Immediate error - must use post(), not complete_immediate().
+            // Using symmetric transfer (complete_immediate) here breaks
+            // coroutine chains that hold async mutexes: the resumed coroutine
+            // releases its lock and tries to wake the next waiter, but the
+            // symmetric transfer chain doesn't return control to io_context
+            // properly. Posting ensures the scheduler processes the completion,
+            // calling resume_coro() which explicitly calls .resume().
             svc_.work_finished();
             op.dwError = err;
             svc_.post(&op);
-            return;
+            return std::noop_coroutine();
         }
     }
     else
@@ -554,9 +562,10 @@ read_some(
             svc_.post(&op);
         }
     }
+    return std::noop_coroutine();
 }
 
-void
+std::coroutine_handle<>
 win_socket_impl_internal::
 write_some(
     capy::coro h,
@@ -587,7 +596,7 @@ write_some(
         op.bytes_transferred = 0;
         op.dwError = 0;
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
@@ -612,10 +621,11 @@ write_some(
         DWORD err = ::WSAGetLastError();
         if (err != WSA_IO_PENDING)
         {
+            // Immediate error - must use post(). See read_some for explanation.
             svc_.work_finished();
             op.dwError = err;
             svc_.post(&op);
-            return;
+            return std::noop_coroutine();
         }
     }
     else
@@ -635,6 +645,7 @@ write_some(
             svc_.post(&op);
         }
     }
+    return std::noop_coroutine();
 }
 
 void
@@ -1013,7 +1024,7 @@ release_internal()
     // Destruction happens automatically when all shared_ptrs are released
 }
 
-void
+std::coroutine_handle<>
 win_acceptor_impl_internal::
 accept(
     capy::coro h,
@@ -1050,7 +1061,7 @@ accept(
         peer_wrapper.release();
         op.dwError = ::WSAGetLastError();
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     HANDLE result = ::CreateIoCompletionPort(
@@ -1066,7 +1077,7 @@ accept(
         peer_wrapper.release();
         op.dwError = err;
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     ::SetFileCompletionNotificationModes(
@@ -1087,7 +1098,7 @@ accept(
         op.accepted_socket = INVALID_SOCKET;
         op.dwError = WSAEOPNOTSUPP;
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     DWORD bytes_received = 0;
@@ -1115,7 +1126,7 @@ accept(
             op.accepted_socket = INVALID_SOCKET;
             op.dwError = err;
             svc_.post(&op);
-            return;
+            return std::noop_coroutine();
         }
     }
     else
@@ -1134,6 +1145,7 @@ accept(
             svc_.post(&op);
         }
     }
+    return std::noop_coroutine();
 }
 
 void

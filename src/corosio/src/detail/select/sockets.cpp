@@ -118,7 +118,7 @@ release()
     svc_.destroy_impl(*this);
 }
 
-void
+std::coroutine_handle<>
 select_socket_impl::
 connect(
     std::coroutine_handle<> h,
@@ -151,7 +151,7 @@ connect(
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     if (errno == EINPROGRESS)
@@ -174,7 +174,7 @@ connect(
                 expected, select_registration_state::registered, std::memory_order_acq_rel))
         {
             svc_.scheduler().deregister_fd(fd_, select_scheduler::event_write);
-            return;
+            return std::noop_coroutine();
         }
 
         // If cancelled was set before we registered, handle it now.
@@ -190,15 +190,16 @@ connect(
                 svc_.work_finished();
             }
         }
-        return;
+        return std::noop_coroutine();
     }
 
     op.complete(errno, 0);
     op.impl_ptr = shared_from_this();
     svc_.post(&op);
+    return std::noop_coroutine();
 }
 
-void
+std::coroutine_handle<>
 select_socket_impl::
 read_some(
     std::coroutine_handle<> h,
@@ -226,7 +227,7 @@ read_some(
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     for (int i = 0; i < op.iovec_count; ++i)
@@ -242,7 +243,7 @@ read_some(
         op.complete(0, static_cast<std::size_t>(n));
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     if (n == 0)
@@ -250,7 +251,7 @@ read_some(
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -272,7 +273,7 @@ read_some(
                 expected, select_registration_state::registered, std::memory_order_acq_rel))
         {
             svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
-            return;
+            return std::noop_coroutine();
         }
 
         // If cancelled was set before we registered, handle it now.
@@ -288,15 +289,16 @@ read_some(
                 svc_.work_finished();
             }
         }
-        return;
+        return std::noop_coroutine();
     }
 
     op.complete(errno, 0);
     op.impl_ptr = shared_from_this();
     svc_.post(&op);
+    return std::noop_coroutine();
 }
 
-void
+std::coroutine_handle<>
 select_socket_impl::
 write_some(
     std::coroutine_handle<> h,
@@ -323,7 +325,7 @@ write_some(
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     for (int i = 0; i < op.iovec_count; ++i)
@@ -343,7 +345,7 @@ write_some(
         op.complete(0, static_cast<std::size_t>(n));
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -365,7 +367,7 @@ write_some(
                 expected, select_registration_state::registered, std::memory_order_acq_rel))
         {
             svc_.scheduler().deregister_fd(fd_, select_scheduler::event_write);
-            return;
+            return std::noop_coroutine();
         }
 
         // If cancelled was set before we registered, handle it now.
@@ -381,12 +383,13 @@ write_some(
                 svc_.work_finished();
             }
         }
-        return;
+        return std::noop_coroutine();
     }
 
     op.complete(errno ? errno : EIO, 0);
     op.impl_ptr = shared_from_this();
     svc_.post(&op);
+    return std::noop_coroutine();
 }
 
 std::error_code

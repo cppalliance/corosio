@@ -88,7 +88,7 @@ class BOOST_COROSIO_DECL timer : public io_object
 public:
     struct timer_impl : io_object_impl
     {
-        virtual void wait(
+        virtual std::coroutine_handle<> wait(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,

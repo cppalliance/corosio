@@ -199,7 +199,7 @@ protected:
 public:
     struct io_stream_impl : io_object_impl
     {
-        virtual void read_some(
+        virtual std::coroutine_handle<> read_some(
             std::coroutine_handle<>,
             capy::executor_ref,
             io_buffer_param,
@@ -207,7 +207,7 @@ public:
             std::error_code*,
             std::size_t*) = 0;
 
-        virtual void write_some(
+        virtual std::coroutine_handle<> write_some(
             std::coroutine_handle<>,
             capy::executor_ref,
             io_buffer_param,

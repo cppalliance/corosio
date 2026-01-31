@@ -916,7 +916,7 @@ struct wolfssl_stream_impl_
         delete this;
     }
 
-    void read_some(
+    std::coroutine_handle<> read_some(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param param,
@@ -929,9 +929,10 @@ struct wolfssl_stream_impl_
 
         capy::run_async(d, token)(
             do_read_some(bufs, count, token, ec, bytes, h, d));
+        return std::noop_coroutine();
     }
 
-    void write_some(
+    std::coroutine_handle<> write_some(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param param,
@@ -944,9 +945,10 @@ struct wolfssl_stream_impl_
 
         capy::run_async(d, token)(
             do_write_some(bufs, count, token, ec, bytes, h, d));
+        return std::noop_coroutine();
     }
 
-    void handshake(
+    std::coroutine_handle<> handshake(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         int type,
@@ -956,9 +958,10 @@ struct wolfssl_stream_impl_
         // Launch inner coroutine via run_async with stop_token for cancellation
         capy::run_async(d, token)(
             do_handshake(type, token, ec, h, d));
+        return std::noop_coroutine();
     }
 
-    void shutdown(
+    std::coroutine_handle<> shutdown(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         std::stop_token token,
@@ -967,6 +970,7 @@ struct wolfssl_stream_impl_
         // Launch inner coroutine via run_async with stop_token for cancellation
         capy::run_async(d, token)(
             do_shutdown(token, ec, h, d));
+        return std::noop_coroutine();
     }
 
     //--------------------------------------------------------------------------

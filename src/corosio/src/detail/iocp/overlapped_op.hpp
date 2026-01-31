@@ -25,6 +25,7 @@
 #include "src/detail/scheduler_op.hpp"
 
 #include <atomic>
+#include <coroutine>
 #include <cstddef>
 #include <optional>
 #include <stop_token>
@@ -145,6 +146,32 @@ struct overlapped_op
     {
         bytes_transferred = bytes;
         dwError = err;
+    }
+
+    /** Complete immediately and return handle for symmetric transfer.
+
+        Use this for immediate completion paths instead of posting to
+        the scheduler. Sets output parameters and returns the coroutine
+        handle to resume via symmetric transfer.
+    */
+    std::coroutine_handle<> complete_immediate()
+    {
+        stop_cb.reset();
+
+        if (ec_out)
+        {
+            if (dwError != 0)
+                *ec_out = make_err(dwError);
+            else if (is_read_operation() && bytes_transferred == 0 && !empty_buffer)
+                *ec_out = capy::error::eof;
+            else
+                *ec_out = {};
+        }
+
+        if (bytes_out)
+            *bytes_out = static_cast<std::size_t>(bytes_transferred);
+
+        return d.dispatch(h);
     }
 };
 

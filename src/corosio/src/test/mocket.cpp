@@ -98,7 +98,7 @@ public:
 
     void release() override;
 
-    void read_some(
+    std::coroutine_handle<> read_some(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param buffers,
@@ -106,7 +106,7 @@ public:
         std::error_code* ec,
         std::size_t* bytes_transferred) override;
 
-    void write_some(
+    std::coroutine_handle<> write_some(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param buffers,
@@ -247,7 +247,7 @@ validate_expect(
     return true;
 }
 
-void
+std::coroutine_handle<>
 mocket_impl::
 read_some(
     std::coroutine_handle<> h,
@@ -265,7 +265,7 @@ read_some(
             *ec = fail_ec;
             *bytes_transferred = 0;
             detail::resume_coro(d, h);
-            return;
+            return std::noop_coroutine();
         }
     }
 
@@ -282,13 +282,13 @@ read_some(
         *ec = {};
         *bytes_transferred = n;
         detail::resume_coro(d, h);
-        return;
+        return std::noop_coroutine();
     }
 
-    sock_.get_impl()->read_some(h, d, io_buffer_param(bufs), token, ec, bytes_transferred);
+    return sock_.get_impl()->read_some(h, d, io_buffer_param(bufs), token, ec, bytes_transferred);
 }
 
-void
+std::coroutine_handle<>
 mocket_impl::
 write_some(
     std::coroutine_handle<> h,
@@ -306,7 +306,7 @@ write_some(
             *ec = fail_ec;
             *bytes_transferred = 0;
             detail::resume_coro(d, h);
-            return;
+            return std::noop_coroutine();
         }
     }
 
@@ -322,16 +322,16 @@ write_some(
             *ec = capy::error::test_failure;
             *bytes_transferred = 0;
             detail::resume_coro(d, h);
-            return;
+            return std::noop_coroutine();
         }
 
         *ec = {};
         *bytes_transferred = total_size;
         detail::resume_coro(d, h);
-        return;
+        return std::noop_coroutine();
     }
 
-    sock_.get_impl()->write_some(h, d, io_buffer_param(bufs), token, ec, bytes_transferred);
+    return sock_.get_impl()->write_some(h, d, io_buffer_param(bufs), token, ec, bytes_transferred);
 }
 
 //------------------------------------------------------------------------------

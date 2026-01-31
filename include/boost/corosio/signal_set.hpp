@@ -198,7 +198,7 @@ private:
 public:
     struct signal_set_impl : io_object_impl
     {
-        virtual void wait(
+        virtual std::coroutine_handle<> wait(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,

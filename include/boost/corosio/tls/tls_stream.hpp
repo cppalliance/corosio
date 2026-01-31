@@ -227,14 +227,14 @@ public:
 
     struct tls_stream_impl : io_stream_impl
     {
-        virtual void handshake(
+        virtual std::coroutine_handle<> handshake(
             std::coroutine_handle<>,
             capy::executor_ref,
             int,
             std::stop_token,
             std::error_code*) = 0;
 
-        virtual void shutdown(
+        virtual std::coroutine_handle<> shutdown(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,

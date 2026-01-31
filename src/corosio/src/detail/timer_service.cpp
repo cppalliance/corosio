@@ -54,7 +54,7 @@ struct timer_impl
 
     void release() override;
 
-    void wait(
+    std::coroutine_handle<> wait(
         std::coroutine_handle<>,
         capy::executor_ref,
         std::stop_token,
@@ -365,7 +365,7 @@ release()
     svc_->destroy_impl(*this);
 }
 
-void
+std::coroutine_handle<>
 timer_impl::
 wait(
     std::coroutine_handle<> h,
@@ -383,7 +383,7 @@ wait(
             *ec = {};
         // Note: no work tracking needed - we dispatch synchronously
         resume_coro(d, h);
-        return;
+        return std::noop_coroutine();
     }
 
     h_ = h;
@@ -392,6 +392,7 @@ wait(
     ec_out_ = ec;
     waiting_ = true;
     svc_->get_scheduler().on_work_started();
+    return std::noop_coroutine();
 }
 
 //------------------------------------------------------------------------------
