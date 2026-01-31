@@ -50,16 +50,16 @@ class test_server : public tcp_server
         void run(launcher launch) override
         {
             launch(ctx_.get_executor(),
-                [this]() -> capy::task<>
+                [](corosio::socket* sock) -> capy::task<>
                 {
                     // Echo one message and close
                     char buf[64];
-                    auto [ec, n] = co_await sock_.read_some(
+                    auto [ec, n] = co_await sock->read_some(
                         capy::mutable_buffer(buf, sizeof(buf)));
                     if(!ec)
-                        (void)co_await sock_.write_some(capy::const_buffer(buf, n));
-                    sock_.close();
-                }());
+                        (void)co_await sock->write_some(capy::const_buffer(buf, n));
+                    sock->close();
+                }(&sock_));
         }
     };
 
@@ -95,20 +95,23 @@ struct tcp_server_test
         srv.start(stop_src.get_token());
 
         // Client task: request stop after brief delay
-        auto client_task = [&]() -> capy::task<>
+        auto client_task = [](
+            io_context* ioc,
+            std::stop_source* stop_src,
+            std::atomic<bool>* client_done) -> capy::task<>
         {
             // Brief delay to ensure server accept loop is running
-            timer t(ioc);
+            timer t(*ioc);
             t.expires_after(std::chrono::milliseconds(10));
             (void)co_await t.wait();
 
             // Request stop - server should exit accept loop
-            stop_src.request_stop();
+            stop_src->request_stop();
 
-            client_done.store(true);
-        };
+            client_done->store(true);
+        }(&ioc, &stop_src, &client_done);
 
-        capy::run_async(ioc.get_executor())(client_task());
+        capy::run_async(ioc.get_executor())(std::move(client_task));
 
         // Run until all work completes
         ioc.run();
@@ -152,9 +155,14 @@ struct tcp_server_test
         srv.start(stop_src.get_token());
 
         // Client connects, exchanges data, then triggers stop
-        auto client_task = [&]() -> capy::task<>
+        auto client_task = [](
+            io_context* ioc,
+            std::uint16_t port,
+            std::stop_source* stop_src,
+            std::atomic<bool>* connection_handled,
+            std::atomic<bool>* stop_requested) -> capy::task<>
         {
-            socket client(ioc);
+            socket client(*ioc);
             client.open();
 
             auto [connect_ec] = co_await client.connect(
@@ -176,15 +184,15 @@ struct tcp_server_test
             BOOST_TEST(!read_ec);
             BOOST_TEST_EQ(n, 5u);
 
-            connection_handled.store(true);
+            connection_handled->store(true);
             client.close();
 
             // Now request stop
-            stop_src.request_stop();
-            stop_requested.store(true);
-        };
+            stop_src->request_stop();
+            stop_requested->store(true);
+        }(&ioc, port, &stop_src, &connection_handled, &stop_requested);
 
-        capy::run_async(ioc.get_executor())(client_task());
+        capy::run_async(ioc.get_executor())(std::move(client_task));
 
         ioc.run();
 
