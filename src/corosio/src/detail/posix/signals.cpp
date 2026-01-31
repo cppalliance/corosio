@@ -56,7 +56,7 @@
 
     3. posix_signal_impl (one per signal_set)
        - Owns a singly-linked list (sorted by signal number) of signal_registrations
-       - Contains the pending_op_ used for async_wait operations
+       - Contains the pending_op_ used for wait operations
 
     Signal Delivery Flow
     --------------------
@@ -69,7 +69,7 @@
          to the scheduler for immediate completion
        - Otherwise, increment reg->undelivered to queue the signal
 
-    3. When async_wait() is called via start_wait():
+    3. When wait() is called via start_wait():
        - First check for queued signals (undelivered > 0); if found, post
          immediate completion without blocking
        - Otherwise, set waiting_ = true and call on_work_started() to keep
@@ -138,7 +138,7 @@ class posix_signals_impl;
 enum { max_signal_number = 64 };
 
 //------------------------------------------------------------------------------
-// signal_op - pending async_wait operation
+// signal_op - pending wait operation
 //------------------------------------------------------------------------------
 
 struct signal_op : scheduler_op

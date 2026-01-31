@@ -74,9 +74,15 @@ namespace boost::corosio {
     @par Example
     @code
     signal_set signals(ctx, SIGINT, SIGTERM);
-    auto [ec, signum] = co_await signals.async_wait();
-    if (!ec)
+    auto [ec, signum] = co_await signals.wait();
+    if (ec == capy::cond::canceled)
+    {
+        // Operation was cancelled via stop_token or cancel()
+    }
+    else if (!ec)
+    {
         std::cout << "Received signal " << signum << std::endl;
+    }
     @endcode
 */
 class BOOST_COROSIO_DECL signal_set : public io_object
@@ -323,7 +329,8 @@ public:
 
         This function forces the completion of any pending asynchronous
         wait operations against the signal set. The handler for each
-        cancelled operation will be invoked with capy::error::canceled.
+        cancelled operation will be invoked with an error code that
+        compares equal to `capy::cond::canceled`.
 
         Cancellation does not alter the set of registered signals.
     */
@@ -333,15 +340,33 @@ public:
 
         The operation supports cancellation via `std::stop_token` through
         the affine awaitable protocol. If the associated stop token is
-        triggered, the operation completes immediately with
-        `capy::error::canceled`.
+        triggered, the operation completes immediately with an error
+        that compares equal to `capy::cond::canceled`.
+
+        @par Example
+        @code
+        signal_set signals(ctx, SIGINT);
+        auto [ec, signum] = co_await signals.wait();
+        if (ec == capy::cond::canceled)
+        {
+            // Cancelled via stop_token or cancel()
+            co_return;
+        }
+        if (ec)
+        {
+            // Handle other errors
+            co_return;
+        }
+        // Process signal
+        std::cout << "Received signal " << signum << std::endl;
+        @endcode
 
         @return An awaitable that completes with `io_result<int>`.
             Returns the signal number when a signal is delivered,
-            or an error code on failure including:
-            - capy::error::canceled: Cancelled via stop_token or cancel().
+            or an error code on failure. Compare against error conditions
+            (e.g., `ec == capy::cond::canceled`) rather than error codes.
     */
-    auto async_wait()
+    auto wait()
     {
         return wait_awaitable(*this);
     }

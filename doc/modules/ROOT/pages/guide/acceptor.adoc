@@ -289,7 +289,7 @@ capy::task<void> run_server(corosio::io_context& ioc)
     capy::run_async(ioc.get_executor())(accept_loop(ioc, acc));
 
     // Wait for shutdown signal
-    auto [ec, signum] = co_await signals.async_wait();
+    auto [ec, signum] = co_await signals.wait();
     if (!ec)
     {
         std::cout << "Received signal " << signum << ", shutting down\n";

@@ -205,7 +205,7 @@ struct signal_set_test_impl
 
         auto wait_task = [](signal_set& s_ref, std::error_code& ec_out, int& sig_out, bool& done_out) -> capy::task<>
         {
-            auto [ec, signum] = co_await s_ref.async_wait();
+            auto [ec, signum] = co_await s_ref.wait();
             ec_out = ec;
             sig_out = signum;
             done_out = true;
@@ -239,7 +239,7 @@ struct signal_set_test_impl
 
         auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
         {
-            auto [ec, signum] = co_await s_ref.async_wait();
+            auto [ec, signum] = co_await s_ref.wait();
             sig_out = signum;
             done_out = true;
             (void)ec;
@@ -275,7 +275,7 @@ struct signal_set_test_impl
 
         auto wait_task = [](signal_set& s_ref, std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
-            auto [ec, signum] = co_await s_ref.async_wait();
+            auto [ec, signum] = co_await s_ref.wait();
             ec_out = ec;
             done_out = true;
             (void)signum;
@@ -336,7 +336,7 @@ struct signal_set_test_impl
 
         auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
         {
-            auto [ec, signum] = co_await s_ref.async_wait();
+            auto [ec, signum] = co_await s_ref.wait();
             sig_out = signum;
             done_out = true;
             (void)ec;
@@ -371,7 +371,7 @@ struct signal_set_test_impl
 
         auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
         {
-            auto [ec, signum] = co_await s_ref.async_wait();
+            auto [ec, signum] = co_await s_ref.wait();
             sig_out = signum;
             done_out = true;
             (void)ec;
@@ -410,7 +410,7 @@ struct signal_set_test_impl
 
         auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
         {
-            auto [ec, signum] = co_await s_ref.async_wait();
+            auto [ec, signum] = co_await s_ref.wait();
             sig_out = signum;
             done_out = true;
             (void)ec;
@@ -442,7 +442,7 @@ struct signal_set_test_impl
             (void)co_await t_ref.wait();
             std::raise(SIGINT);
 
-            auto [ec1, sig1] = co_await s_ref.async_wait();
+            auto [ec1, sig1] = co_await s_ref.wait();
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(sig1, SIGINT);
             ++count_out;
@@ -452,7 +452,7 @@ struct signal_set_test_impl
             (void)co_await t_ref.wait();
             std::raise(SIGINT);
 
-            auto [ec2, sig2] = co_await s_ref.async_wait();
+            auto [ec2, sig2] = co_await s_ref.wait();
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(sig2, SIGINT);
             ++count_out;
@@ -482,7 +482,7 @@ struct signal_set_test_impl
             (void)co_await t_ref.wait();
             std::raise(SIGINT);
 
-            auto result = co_await s_ref.async_wait();
+            auto result = co_await s_ref.wait();
             ok_out = !result.ec;
         };
         capy::run_async(ioc.get_executor())(task(s, t, result_ok));
@@ -503,7 +503,7 @@ struct signal_set_test_impl
 
         auto wait_task = [](signal_set& s_ref, bool& ok_out, std::error_code& ec_out) -> capy::task<>
         {
-            auto result = co_await s_ref.async_wait();
+            auto result = co_await s_ref.wait();
             ok_out = !result.ec;
             ec_out = result.ec;
         };
@@ -538,7 +538,7 @@ struct signal_set_test_impl
             (void)co_await t_ref.wait();
             std::raise(SIGINT);
 
-            auto [ec, signum] = co_await s_ref.async_wait();
+            auto [ec, signum] = co_await s_ref.wait();
             ec_out = ec;
             sig_out = signum;
         };
@@ -724,7 +724,7 @@ struct signal_set_test_impl
 
         auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
         {
-            auto [ec, signum] = co_await s_ref.async_wait();
+            auto [ec, signum] = co_await s_ref.wait();
             sig_out = signum;
             done_out = true;
             (void)ec;
