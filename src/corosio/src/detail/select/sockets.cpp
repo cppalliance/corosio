@@ -26,20 +26,12 @@
 
 namespace boost::corosio::detail {
 
-//------------------------------------------------------------------------------
-// select_op::canceller - implements stop_token cancellation
-//------------------------------------------------------------------------------
-
 void
 select_op::canceller::
 operator()() const noexcept
 {
     op->cancel();
 }
-
-//------------------------------------------------------------------------------
-// cancel() overrides for socket operations
-//------------------------------------------------------------------------------
 
 void
 select_connect_op::
@@ -70,10 +62,6 @@ cancel() noexcept
     else
         request_cancel();
 }
-
-//------------------------------------------------------------------------------
-// select_connect_op::operator() - caches endpoints on successful connect
-//------------------------------------------------------------------------------
 
 void
 select_connect_op::
@@ -115,10 +103,6 @@ operator()()
     impl_ptr.reset();
     saved_ex.dispatch( saved_h ).resume();
 }
-
-//------------------------------------------------------------------------------
-// select_socket_impl
-//------------------------------------------------------------------------------
 
 select_socket_impl::
 select_socket_impl(select_socket_service& svc) noexcept
@@ -423,10 +407,6 @@ shutdown(socket::shutdown_type what) noexcept
     return {};
 }
 
-//------------------------------------------------------------------------------
-// Socket Options
-//------------------------------------------------------------------------------
-
 std::error_code
 select_socket_impl::
 set_no_delay(bool value) noexcept
@@ -636,10 +616,6 @@ close_socket() noexcept
     local_endpoint_ = endpoint{};
     remote_endpoint_ = endpoint{};
 }
-
-//------------------------------------------------------------------------------
-// select_socket_service
-//------------------------------------------------------------------------------
 
 select_socket_service::
 select_socket_service(capy::execution_context& ctx)

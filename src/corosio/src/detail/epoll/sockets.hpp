@@ -82,8 +82,7 @@ namespace boost::corosio::detail {
 class epoll_socket_service;
 class epoll_socket_impl;
 
-//------------------------------------------------------------------------------
-
+/// Socket implementation for epoll backend.
 class epoll_socket_impl
     : public socket::socket_impl
     , public std::enable_shared_from_this<epoll_socket_impl>
@@ -166,8 +165,6 @@ private:
     endpoint local_endpoint_;
     endpoint remote_endpoint_;
 };
-
-//------------------------------------------------------------------------------
 
 /** State for epoll socket service. */
 class epoll_socket_state

@@ -28,20 +28,12 @@
 
 namespace boost::corosio::detail {
 
-//------------------------------------------------------------------------------
-// epoll_op::canceller - implements stop_token cancellation
-//------------------------------------------------------------------------------
-
 void
 epoll_op::canceller::
 operator()() const noexcept
 {
     op->cancel();
 }
-
-//------------------------------------------------------------------------------
-// cancel() overrides for socket operations
-//------------------------------------------------------------------------------
 
 void
 epoll_connect_op::
@@ -72,10 +64,6 @@ cancel() noexcept
     else
         request_cancel();
 }
-
-//------------------------------------------------------------------------------
-// epoll_connect_op::operator() - caches endpoints on successful connect
-//------------------------------------------------------------------------------
 
 void
 epoll_connect_op::
@@ -117,10 +105,6 @@ operator()()
     auto prevent_premature_destruction = std::move(impl_ptr);
     resume_coro(saved_ex, saved_h);
 }
-
-//------------------------------------------------------------------------------
-// epoll_socket_impl
-//------------------------------------------------------------------------------
 
 epoll_socket_impl::
 epoll_socket_impl(epoll_socket_service& svc) noexcept
@@ -439,10 +423,6 @@ shutdown(socket::shutdown_type what) noexcept
     return {};
 }
 
-//------------------------------------------------------------------------------
-// Socket Options
-//------------------------------------------------------------------------------
-
 std::error_code
 epoll_socket_impl::
 set_no_delay(bool value) noexcept
@@ -651,10 +631,6 @@ close_socket() noexcept
     local_endpoint_ = endpoint{};
     remote_endpoint_ = endpoint{};
 }
-
-//------------------------------------------------------------------------------
-// epoll_socket_service
-//------------------------------------------------------------------------------
 
 epoll_socket_service::
 epoll_socket_service(capy::execution_context& ctx)
