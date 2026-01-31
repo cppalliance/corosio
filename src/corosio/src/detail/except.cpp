@@ -12,6 +12,11 @@
 
 namespace boost::corosio::detail {
 
+void throw_logic_error()
+{
+    throw std::logic_error("logic error");
+}
+
 void throw_logic_error(char const* what)
 {
     throw std::logic_error(what);

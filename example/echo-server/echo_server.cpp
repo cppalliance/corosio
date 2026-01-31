@@ -19,66 +19,74 @@
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 
+class echo_worker : public corosio::tcp_server::worker_base
+{
+    corosio::io_context& ctx_;
+    corosio::socket sock_;
+    std::string buf_;
+
+public:
+    explicit echo_worker(corosio::io_context& ctx)
+        : ctx_(ctx)
+        , sock_(ctx)
+    {
+        buf_.reserve(4096);
+    }
+
+    corosio::socket& socket() override
+    {
+        return sock_;
+    }
+
+    void run(corosio::tcp_server::launcher launch) override
+    {
+        launch(ctx_.get_executor(), do_session());
+    }
+
+    capy::task<> do_session()
+    {
+        for (;;)
+        {
+            buf_.resize(4096);
+
+            // Read some data
+            auto [ec, n] = co_await sock_.read_some(
+                capy::mutable_buffer(buf_.data(), buf_.size()));
+
+            if (ec || n == 0)
+                break;
+
+            buf_.resize(n);
+
+            // Echo it back
+            auto [wec, wn] = co_await capy::write(
+                sock_, capy::const_buffer(buf_.data(), buf_.size()));
+
+            if (wec)
+                break;
+        }
+
+        sock_.close();
+    }
+};
+
+inline auto
+make_echo_workers(corosio::io_context& ctx, int n)
+{
+    std::vector<std::unique_ptr<corosio::tcp_server::worker_base>> v;
+    v.reserve(n);
+    for (int i = 0; i < n; ++i)
+        v.push_back(std::make_unique<echo_worker>(ctx));
+    return v;
+}
+
 class echo_server : public corosio::tcp_server
 {
-    class worker : public worker_base
-    {
-        corosio::io_context& ctx_;
-        corosio::socket sock_;
-        std::string buf_;
-
-    public:
-        explicit worker(corosio::io_context& ctx)
-            : ctx_(ctx)
-            , sock_(ctx)
-        {
-            buf_.reserve(4096);
-        }
-
-        corosio::socket& socket() override
-        {
-            return sock_;
-        }
-
-        void run(launcher launch) override
-        {
-            launch(ctx_.get_executor(), do_session());
-        }
-
-        capy::task<> do_session()
-        {
-            for (;;)
-            {
-                buf_.resize(4096);
-
-                // Read some data
-                auto [ec, n] = co_await sock_.read_some(
-                    capy::mutable_buffer(buf_.data(), buf_.size()));
-
-                if (ec || n == 0)
-                    break;
-
-                buf_.resize(n);
-
-                // Echo it back
-                auto [wec, wn] = co_await capy::write(
-                    sock_, capy::const_buffer(buf_.data(), buf_.size()));
-
-                if (wec)
-                    break;
-            }
-
-            sock_.close();
-        }
-    };
-
 public:
     echo_server(corosio::io_context& ctx, int max_workers)
         : tcp_server(ctx, ctx.get_executor())
     {
-        wv_.reserve(max_workers);
-        for (int i = 0; i < max_workers; ++i)
-            wv_.emplace<worker>(ctx);
+        set_workers(make_echo_workers(ctx, max_workers));
     }
 };
 
