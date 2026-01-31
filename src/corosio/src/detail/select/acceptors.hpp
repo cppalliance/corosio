@@ -34,8 +34,7 @@ class select_acceptor_service;
 class select_acceptor_impl;
 class select_socket_service;
 
-//------------------------------------------------------------------------------
-
+/// Acceptor implementation for select backend.
 class select_acceptor_impl
     : public acceptor::acceptor_impl
     , public std::enable_shared_from_this<select_acceptor_impl>
@@ -72,8 +71,6 @@ private:
     int fd_ = -1;
     endpoint local_endpoint_;
 };
-
-//------------------------------------------------------------------------------
 
 /** State for select acceptor service. */
 class select_acceptor_state

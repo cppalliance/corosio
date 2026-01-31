@@ -24,10 +24,6 @@
 
 namespace boost::corosio::detail {
 
-//------------------------------------------------------------------------------
-// epoll_accept_op::cancel
-//------------------------------------------------------------------------------
-
 void
 epoll_accept_op::
 cancel() noexcept
@@ -37,10 +33,6 @@ cancel() noexcept
     else
         request_cancel();
 }
-
-//------------------------------------------------------------------------------
-// epoll_accept_op::operator() - creates peer socket and caches endpoints
-//------------------------------------------------------------------------------
 
 void
 epoll_accept_op::
@@ -138,10 +130,6 @@ operator()()
     auto prevent_premature_destruction = std::move(impl_ptr);
     saved_ex.dispatch( saved_h ).resume();
 }
-
-//------------------------------------------------------------------------------
-// epoll_acceptor_impl
-//------------------------------------------------------------------------------
 
 epoll_acceptor_impl::
 epoll_acceptor_impl(epoll_acceptor_service& svc) noexcept
@@ -306,10 +294,6 @@ close_socket() noexcept
     // Clear cached endpoint
     local_endpoint_ = endpoint{};
 }
-
-//------------------------------------------------------------------------------
-// epoll_acceptor_service
-//------------------------------------------------------------------------------
 
 epoll_acceptor_service::
 epoll_acceptor_service(capy::execution_context& ctx)

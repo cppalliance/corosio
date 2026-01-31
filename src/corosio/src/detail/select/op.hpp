@@ -233,7 +233,6 @@ struct select_op : scheduler_op
     virtual void perform_io() noexcept {}
 };
 
-//------------------------------------------------------------------------------
 
 struct select_connect_op : select_op
 {
@@ -260,7 +259,6 @@ struct select_connect_op : select_op
     void cancel() noexcept override;
 };
 
-//------------------------------------------------------------------------------
 
 struct select_read_op : select_op
 {
@@ -293,7 +291,6 @@ struct select_read_op : select_op
     void cancel() noexcept override;
 };
 
-//------------------------------------------------------------------------------
 
 struct select_write_op : select_op
 {
@@ -323,7 +320,6 @@ struct select_write_op : select_op
     void cancel() noexcept override;
 };
 
-//------------------------------------------------------------------------------
 
 struct select_accept_op : select_op
 {

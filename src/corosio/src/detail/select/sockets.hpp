@@ -71,8 +71,7 @@ namespace boost::corosio::detail {
 class select_socket_service;
 class select_socket_impl;
 
-//------------------------------------------------------------------------------
-
+/// Socket implementation for select backend.
 class select_socket_impl
     : public socket::socket_impl
     , public std::enable_shared_from_this<select_socket_impl>
@@ -151,8 +150,6 @@ private:
     endpoint local_endpoint_;
     endpoint remote_endpoint_;
 };
-
-//------------------------------------------------------------------------------
 
 /** State for select socket service. */
 class select_socket_state

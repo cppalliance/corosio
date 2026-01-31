@@ -24,10 +24,6 @@
 
 namespace boost::corosio::detail {
 
-//------------------------------------------------------------------------------
-// select_accept_op::cancel
-//------------------------------------------------------------------------------
-
 void
 select_accept_op::
 cancel() noexcept
@@ -37,10 +33,6 @@ cancel() noexcept
     else
         request_cancel();
 }
-
-//------------------------------------------------------------------------------
-// select_accept_op::operator() - creates peer socket and caches endpoints
-//------------------------------------------------------------------------------
 
 void
 select_accept_op::
@@ -131,10 +123,6 @@ operator()()
     impl_ptr.reset();
     saved_ex.dispatch( saved_h ).resume();
 }
-
-//------------------------------------------------------------------------------
-// select_acceptor_impl
-//------------------------------------------------------------------------------
 
 select_acceptor_impl::
 select_acceptor_impl(select_acceptor_service& svc) noexcept
@@ -339,10 +327,6 @@ close_socket() noexcept
     // Clear cached endpoint
     local_endpoint_ = endpoint{};
 }
-
-//------------------------------------------------------------------------------
-// select_acceptor_service
-//------------------------------------------------------------------------------
 
 select_acceptor_service::
 select_acceptor_service(capy::execution_context& ctx)

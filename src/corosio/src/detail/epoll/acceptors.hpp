@@ -34,8 +34,7 @@ class epoll_acceptor_service;
 class epoll_acceptor_impl;
 class epoll_socket_service;
 
-//------------------------------------------------------------------------------
-
+/// Acceptor implementation for epoll backend.
 class epoll_acceptor_impl
     : public acceptor::acceptor_impl
     , public std::enable_shared_from_this<epoll_acceptor_impl>
@@ -74,8 +73,6 @@ private:
     int fd_ = -1;
     endpoint local_endpoint_;
 };
-
-//------------------------------------------------------------------------------
 
 /** State for epoll acceptor service. */
 class epoll_acceptor_state

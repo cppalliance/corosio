@@ -251,7 +251,6 @@ struct epoll_op : scheduler_op
     virtual void perform_io() noexcept {}
 };
 
-//------------------------------------------------------------------------------
 
 struct epoll_connect_op : epoll_op
 {
@@ -278,7 +277,6 @@ struct epoll_connect_op : epoll_op
     void cancel() noexcept override;
 };
 
-//------------------------------------------------------------------------------
 
 struct epoll_read_op : epoll_op
 {
@@ -311,7 +309,6 @@ struct epoll_read_op : epoll_op
     void cancel() noexcept override;
 };
 
-//------------------------------------------------------------------------------
 
 struct epoll_write_op : epoll_op
 {
@@ -341,7 +338,6 @@ struct epoll_write_op : epoll_op
     void cancel() noexcept override;
 };
 
-//------------------------------------------------------------------------------
 
 struct epoll_accept_op : epoll_op
 {
