@@ -46,7 +46,7 @@
 
     3. win_signal_impl (one per signal_set)
        - Owns a singly-linked list (sorted by signal number) of signal_registrations
-       - Contains the pending_op_ used for async_wait operations
+       - Contains the pending_op_ used for wait operations
 
     The signal_registration struct links these together:
        - next_in_set / (implicit via sorted order): links registrations within one signal_set

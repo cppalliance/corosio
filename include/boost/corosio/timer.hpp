@@ -143,8 +143,8 @@ public:
 
     /** Cancel any pending asynchronous operations.
 
-        All outstanding operations complete with @ref capy::error::canceled.
-        Check `ec == capy::cond::canceled` for portable comparison.
+        All outstanding operations complete with an error code that
+        compares equal to `capy::cond::canceled`.
     */
     void cancel();
 
@@ -188,14 +188,31 @@ public:
 
         The operation supports cancellation via `std::stop_token` through
         the affine awaitable protocol. If the associated stop token is
-        triggered, the operation completes immediately with
-        `capy::error::canceled`.
+        triggered, the operation completes immediately with an error
+        that compares equal to `capy::cond::canceled`.
+
+        @par Example
+        @code
+        timer t(ctx);
+        t.expires_after(std::chrono::seconds(5));
+        auto [ec] = co_await t.wait();
+        if (ec == capy::cond::canceled)
+        {
+            // Cancelled via stop_token or cancel()
+            co_return;
+        }
+        if (ec)
+        {
+            // Handle other errors
+            co_return;
+        }
+        // Timer expired
+        @endcode
 
         @return An awaitable that completes with `io_result<>`.
             Returns success (default error_code) when the timer expires,
-            or an error code on failure including:
-            - capy::error::canceled: Cancelled via stop_token or cancel().
-                Check `ec == cond::canceled` for portable comparison.
+            or an error code on failure. Compare against error conditions
+            (e.g., `ec == capy::cond::canceled`) rather than error codes.
 
         @par Preconditions
         The timer must have an expiry time set via expires_at() or
