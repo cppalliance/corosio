@@ -186,10 +186,9 @@ connect(
         svc_.work_started();
         op.impl_ptr = shared_from_this();
 
-        desc_data_.connect_op.store(&op, std::memory_order_release);
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        desc_data_.connect_op.store(&op, std::memory_order_seq_cst);
 
-        if (desc_data_.write_ready.exchange(false, std::memory_order_acquire))
+        if (desc_data_.write_ready.exchange(false, std::memory_order_seq_cst))
         {
             auto* claimed = desc_data_.connect_op.exchange(nullptr, std::memory_order_acq_rel);
             if (claimed)
@@ -288,10 +287,9 @@ read_some(
         svc_.work_started();
         op.impl_ptr = shared_from_this();
 
-        desc_data_.read_op.store(&op, std::memory_order_release);
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        desc_data_.read_op.store(&op, std::memory_order_seq_cst);
 
-        if (desc_data_.read_ready.exchange(false, std::memory_order_acquire))
+        if (desc_data_.read_ready.exchange(false, std::memory_order_seq_cst))
         {
             auto* claimed = desc_data_.read_op.exchange(nullptr, std::memory_order_acq_rel);
             if (claimed)
@@ -384,10 +382,9 @@ write_some(
         svc_.work_started();
         op.impl_ptr = shared_from_this();
 
-        desc_data_.write_op.store(&op, std::memory_order_release);
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        desc_data_.write_op.store(&op, std::memory_order_seq_cst);
 
-        if (desc_data_.write_ready.exchange(false, std::memory_order_acquire))
+        if (desc_data_.write_ready.exchange(false, std::memory_order_seq_cst))
         {
             auto* claimed = desc_data_.write_op.exchange(nullptr, std::memory_order_acq_rel);
             if (claimed)
