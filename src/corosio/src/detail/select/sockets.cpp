@@ -173,6 +173,8 @@ connect(
     if (errno == EINPROGRESS)
     {
         svc_.work_started();
+        op.impl_ptr = shared_from_this();
+
         // Set registering BEFORE register_fd to close the race window where
         // reactor sees an event before we set registered. The reactor treats
         // registering the same as registered when claiming the op.
@@ -270,6 +272,8 @@ read_some(
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
         svc_.work_started();
+        op.impl_ptr = shared_from_this();
+
         // Set registering BEFORE register_fd to close the race window where
         // reactor sees an event before we set registered.
         op.registered.store(select_registration_state::registering, std::memory_order_release);
@@ -361,6 +365,8 @@ write_some(
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
         svc_.work_started();
+        op.impl_ptr = shared_from_this();
+
         // Set registering BEFORE register_fd to close the race window where
         // reactor sees an event before we set registered.
         op.registered.store(select_registration_state::registering, std::memory_order_release);
