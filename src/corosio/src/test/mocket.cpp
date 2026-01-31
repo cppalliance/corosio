@@ -9,10 +9,16 @@
 
 #include <boost/corosio/test/mocket.hpp>
 #include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/except.hpp>
 #include <system_error>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket.hpp>
 #include "src/detail/intrusive.hpp"
+#include <boost/capy/buffers/slice.hpp>
+#include <boost/capy/buffers/span.hpp>
+#include <boost/capy/buffers/buffer_copy.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -25,15 +31,10 @@
 #include <cstdio>
 #include <cstring>
 #include <span>
-#include <stdexcept>
 
 namespace boost::corosio::test {
 
 namespace {
-
-constexpr std::size_t max_buffers = 8;
-using buffer_array = std::array<capy::mutable_buffer, max_buffers>;
-
 } // namespace
 
 //------------------------------------------------------------------------------
@@ -50,6 +51,8 @@ class mocket_impl
     std::string provide_;
     std::string expect_;
     mocket_impl* peer_ = nullptr;
+    std::size_t max_read_size_;
+    std::size_t max_write_size_;
     bool check_fuse_;
 
 public:
@@ -57,7 +60,9 @@ public:
         mocket_service& svc,
         capy::execution_context& ctx,
         capy::test::fuse& f,
-        bool check_fuse);
+        bool check_fuse,
+        std::size_t max_read_size,
+        std::size_t max_write_size);
 
     void set_peer(mocket_impl* peer) noexcept
     {
@@ -80,6 +85,11 @@ public:
     }
 
     std::error_code close();
+
+    void cancel() noexcept
+    {
+        sock_.cancel();
+    }
 
     bool is_open() const noexcept
     {
@@ -105,15 +115,9 @@ public:
         std::size_t* bytes_transferred) override;
 
 private:
-    std::size_t
-    fill_from_provide(
-        buffer_array const& bufs,
-        std::size_t count);
-
     bool
     validate_expect(
-        buffer_array const& bufs,
-        std::size_t count,
+        std::span<capy::mutable_buffer const> bufs,
         std::size_t total_size);
 };
 
@@ -132,9 +136,14 @@ public:
     }
 
     mocket_impl&
-    create_impl(capy::test::fuse& f, bool check_fuse)
+    create_impl(
+        capy::test::fuse& f,
+        bool check_fuse,
+        std::size_t max_read_size,
+        std::size_t max_write_size)
     {
-        auto* impl = new mocket_impl(*this, ctx_, f, check_fuse);
+        auto* impl = new mocket_impl(
+            *this, ctx_, f, check_fuse, max_read_size, max_write_size);
         impls_.push_back(impl);
         return *impl;
     }
@@ -161,12 +170,20 @@ mocket_impl(
     mocket_service& svc,
     capy::execution_context& ctx,
     capy::test::fuse& f,
-    bool check_fuse)
+    bool check_fuse,
+    std::size_t max_read_size,
+    std::size_t max_write_size)
     : svc_(svc)
     , fuse_(f)
     , sock_(ctx)
+    , max_read_size_(max_read_size)
+    , max_write_size_(max_write_size)
     , check_fuse_(check_fuse)
 {
+    if (max_read_size == 0)
+        detail::throw_logic_error("mocket: max_read_size cannot be 0");
+    if (max_write_size == 0)
+        detail::throw_logic_error("mocket: max_write_size cannot be 0");
 }
 
 std::error_code
@@ -198,33 +215,10 @@ release()
     svc_.destroy_impl(*this);
 }
 
-std::size_t
-mocket_impl::
-fill_from_provide(
-    buffer_array const& bufs,
-    std::size_t count)
-{
-    if (!peer_ || peer_->provide_.empty())
-        return 0;
-
-    std::size_t total = 0;
-    auto& src = peer_->provide_;
-
-    for (std::size_t i = 0; i < count && !src.empty(); ++i)
-    {
-        auto const n = std::min(bufs[i].size(), src.size());
-        std::memcpy(bufs[i].data(), src.data(), n);
-        src.erase(0, n);
-        total += n;
-    }
-    return total;
-}
-
 bool
 mocket_impl::
 validate_expect(
-    buffer_array const& bufs,
-    std::size_t count,
+    std::span<capy::mutable_buffer const> bufs,
     std::size_t total_size)
 {
     if (expect_.empty())
@@ -233,15 +227,15 @@ validate_expect(
     // Build the write data
     std::string written;
     written.reserve(total_size);
-    for (std::size_t i = 0; i < count; ++i)
+    for (auto const& buf : bufs)
     {
         written.append(
-            static_cast<char const*>(bufs[i].data()),
-            bufs[i].size());
+            static_cast<char const*>(buf.data()),
+            buf.size());
     }
 
     // Check if written data matches expect prefix
-    auto const n = std::min(written.size(), expect_.size());
+    auto const n = (std::min)(written.size(), expect_.size());
     if (std::memcmp(written.data(), expect_.data(), n) != 0)
     {
         fuse_.fail();
@@ -263,8 +257,6 @@ read_some(
     std::error_code* ec,
     std::size_t* bytes_transferred)
 {
-    (void)token;
-    // Fuse check for m1 only
     if (check_fuse_)
     {
         auto fail_ec = fuse_.maybe_fail();
@@ -277,22 +269,23 @@ read_some(
         }
     }
 
-    // Check if peer has staged data - if so, serve from provide buffer
+    capy::mutable_buffer vb[detail::max_iovec_];
+    std::span<capy::mutable_buffer> bufs(vb, buffers.copy_to(vb, detail::max_iovec_));
+    capy::keep_span_prefix(bufs, max_read_size_);
+
     if (peer_ && !peer_->provide_.empty())
     {
-        // Extract buffers only when we need them for staged data
-        buffer_array bufs{};
-        std::size_t count = buffers.copy_to(bufs.data(), max_buffers);
+        auto& src = peer_->provide_;
+        auto n = capy::buffer_copy(bufs, capy::make_buffer(src));
+        src.erase(0, n);
 
-        std::size_t n = fill_from_provide(bufs, count);
         *ec = {};
         *bytes_transferred = n;
         detail::resume_coro(d, h);
         return;
     }
 
-    // Pass through to the real socket (don't extract buffers - forward as-is)
-    sock_.get_impl()->read_some(h, d, buffers, token, ec, bytes_transferred);
+    sock_.get_impl()->read_some(h, d, io_buffer_param(bufs), token, ec, bytes_transferred);
 }
 
 void
@@ -305,8 +298,6 @@ write_some(
     std::error_code* ec,
     std::size_t* bytes_transferred)
 {
-    (void)token;
-    // Fuse check for m1 only
     if (check_fuse_)
     {
         auto fail_ec = fuse_.maybe_fail();
@@ -319,19 +310,14 @@ write_some(
         }
     }
 
-    // Check if we have staged expectations to validate
+    capy::mutable_buffer vb[detail::max_iovec_];
+    std::span<capy::mutable_buffer> bufs(vb, buffers.copy_to(vb, detail::max_iovec_));
+    capy::keep_span_prefix(bufs, max_write_size_);
+    auto total_size = capy::buffer_size(bufs);
+
     if (!expect_.empty())
     {
-        // Extract buffers only when we need them for validation
-        buffer_array bufs{};
-        std::size_t count = buffers.copy_to(bufs.data(), max_buffers);
-
-        // Calculate total size
-        std::size_t total_size = 0;
-        for (std::size_t i = 0; i < count; ++i)
-            total_size += bufs[i].size();
-
-        if (!validate_expect(bufs, count, total_size))
+        if (!validate_expect(bufs, total_size))
         {
             *ec = capy::error::test_failure;
             *bytes_transferred = 0;
@@ -339,15 +325,13 @@ write_some(
             return;
         }
 
-        // If all expected data was validated, report success
         *ec = {};
         *bytes_transferred = total_size;
         detail::resume_coro(d, h);
         return;
     }
 
-    // Pass through to the real socket (don't extract buffers - forward as-is)
-    sock_.get_impl()->write_some(h, d, buffers, token, ec, bytes_transferred);
+    sock_.get_impl()->write_some(h, d, io_buffer_param(bufs), token, ec, bytes_transferred);
 }
 
 //------------------------------------------------------------------------------
@@ -419,6 +403,14 @@ close()
     return get_impl()->close();
 }
 
+void
+mocket::
+cancel()
+{
+    if (impl_)
+        get_impl()->cancel();
+}
+
 bool
 mocket::
 is_open() const noexcept
@@ -429,13 +421,18 @@ is_open() const noexcept
 //------------------------------------------------------------------------------
 
 std::pair<mocket, mocket>
-make_mockets(capy::execution_context& ctx, capy::test::fuse& f)
+make_mockets(
+    capy::execution_context& ctx,
+    capy::test::fuse& f,
+    std::size_t max_read_size,
+    std::size_t max_write_size)
 {
     auto& svc = ctx.use_service<mocket_service>();
 
     // Create the two implementations
-    auto& impl1 = svc.create_impl(f, true);   // m1 checks fuse
-    auto& impl2 = svc.create_impl(f, false);  // m2 does not
+    // m1 checks fuse and has size limits; m2 does not
+    auto& impl1 = svc.create_impl(f, true, max_read_size, max_write_size);
+    auto& impl2 = svc.create_impl(f, false, std::size_t(-1), std::size_t(-1));
 
     // Link them as peers
     impl1.set_peer(&impl2);

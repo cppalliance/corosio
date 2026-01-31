@@ -14,6 +14,7 @@
 #include <boost/corosio/io_stream.hpp>
 #include <system_error>
 
+#include <cstddef>
 #include <string>
 #include <utility>
 
@@ -108,6 +109,13 @@ public:
     */
     std::error_code close();
 
+    /** Cancel pending I/O operations.
+
+        Cancels any pending asynchronous operations on the underlying
+        socket. Outstanding operations complete with `cond::canceled`.
+    */
+    void cancel();
+
     /** Check if the mocket is open.
 
         @return `true` if the mocket is open.
@@ -116,7 +124,11 @@ public:
 
 private:
     friend BOOST_COROSIO_DECL std::pair<mocket, mocket>
-    make_mockets(capy::execution_context&, capy::test::fuse&);
+    make_mockets(
+        capy::execution_context&,
+        capy::test::fuse&,
+        std::size_t,
+        std::size_t);
 
     explicit mocket(mocket_impl* impl) noexcept;
 };
@@ -129,8 +141,14 @@ private:
     The first mocket (m1) has fuse checks enabled via `maybe_fail()`.
     The second mocket (m2) does not call `maybe_fail()`.
 
+    Optional max_read_size and max_write_size parameters limit the
+    number of bytes transferred per I/O operation, simulating chunked
+    network delivery for testing purposes.
+
     @param ctx The execution context for the mockets.
     @param f The fuse for error injection testing.
+    @param max_read_size Maximum bytes per read operation (default unlimited).
+    @param max_write_size Maximum bytes per write operation (default unlimited).
 
     @return A pair of connected mockets.
 
@@ -139,7 +157,11 @@ private:
 */
 BOOST_COROSIO_DECL
 std::pair<mocket, mocket>
-make_mockets(capy::execution_context& ctx, capy::test::fuse& f);
+make_mockets(
+    capy::execution_context& ctx,
+    capy::test::fuse& f,
+    std::size_t max_read_size = std::size_t(-1),
+    std::size_t max_write_size = std::size_t(-1));
 
 } // namespace boost::corosio::test
 

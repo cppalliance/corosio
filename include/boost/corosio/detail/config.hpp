@@ -45,4 +45,8 @@ namespace boost::corosio {
 
 } // namespace boost::corosio
 
+namespace boost::corosio::detail {
+inline constexpr unsigned max_iovec_ = 16;
+}
+
 #endif

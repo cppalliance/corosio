@@ -8,10 +8,12 @@
 //
 
 #include <boost/corosio/tls/openssl_stream.hpp>
+#include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/coro_lock.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/write.hpp>
 
 // Internal context implementation
 #include "src/tls/detail/context_impl.hpp"
@@ -26,6 +28,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <span>
 #include <vector>
 
 /*
@@ -67,12 +70,6 @@ namespace {
 
 // Default buffer size for TLS I/O
 constexpr std::size_t default_buffer_size = 16384;
-
-// Maximum number of buffers to handle in a single operation
-constexpr std::size_t max_buffers = 8;
-
-// Buffer array type for coroutine parameters (copied into frame)
-using buffer_array = std::array<capy::mutable_buffer, max_buffers>;
 
 } // namespace
 
@@ -328,18 +325,28 @@ struct openssl_stream_impl_
     {
         while(BIO_ctrl_pending(ext_bio_) > 0 && !token.stop_requested())
         {
-            int pending = static_cast<int>(BIO_ctrl_pending(ext_bio_));
-            int to_read = (std::min)(pending, static_cast<int>(out_buf_.size()));
-            int n = BIO_read(ext_bio_, out_buf_.data(), to_read);
-            if(n <= 0)
+            // Drain all pending BIO data into out_buf_
+            std::size_t got = 0;
+            while(BIO_ctrl_pending(ext_bio_) > 0 && got < out_buf_.size())
+            {
+                int put = static_cast<int>(BIO_ctrl_pending(ext_bio_));
+                put = (std::min)(put, static_cast<int>(out_buf_.size() - got));
+                int r = BIO_read(ext_bio_, out_buf_.data() + got, put);
+                if(r <= 0)
+                    break;
+                got += static_cast<std::size_t>(r);
+            }
+            if(got == 0)
                 break;
 
-            // Write to underlying stream
-            auto guard = co_await io_cm_.scoped_lock();
-            auto [ec, written] = co_await s_.write_some(
-                capy::mutable_buffer(out_buf_.data(), static_cast<std::size_t>(n)));
-            if(ec)
-                co_return ec;
+            // Write all collected bytes using capy::write (handles partials)
+            {
+                auto guard = co_await io_cm_.scoped_lock();
+                auto [ec, n] = co_await capy::write(s_,
+                    capy::const_buffer(out_buf_.data(), got));
+                if(ec)
+                    co_return ec;
+            }
         }
         if(token.stop_requested())
         {
@@ -361,9 +368,12 @@ struct openssl_stream_impl_
         if(ec)
             co_return ec;
 
-        // Feed data into OpenSSL
-        int written = BIO_write(ext_bio_, in_buf_.data(), static_cast<int>(n));
-        (void)written;
+        // Feed data into OpenSSL - must accept all bytes
+        int got = BIO_write(ext_bio_, in_buf_.data(), static_cast<int>(n));
+        if(got < static_cast<int>(n))
+        {
+            co_return make_error_code(std::errc::no_buffer_space);
+        }
 
         co_return std::error_code{};
     }
@@ -374,7 +384,7 @@ struct openssl_stream_impl_
 
     capy::task<>
     do_read_some(
-        buffer_array dest_bufs,
+        std::array<capy::mutable_buffer, detail::max_iovec_> dest_arr,
         std::size_t buf_count,
         std::stop_token token,
         std::error_code* ec_out,
@@ -384,12 +394,14 @@ struct openssl_stream_impl_
     {
         std::error_code ec;
         std::size_t total_read = 0;
+        std::span<capy::mutable_buffer> dest_bufs(dest_arr.data(), buf_count);
 
-        // Process each destination buffer
-        for(std::size_t i = 0; i < buf_count && !token.stop_requested(); ++i)
+        for(auto& buf : dest_bufs)
         {
-            char* dest = static_cast<char*>(dest_bufs[i].data());
-            int remaining = static_cast<int>(dest_bufs[i].size());
+            if(token.stop_requested())
+                break;
+            char* dest = static_cast<char*>(buf.data());
+            int remaining = static_cast<int>(buf.size());
 
             while(remaining > 0 && !token.stop_requested())
             {
@@ -478,7 +490,7 @@ struct openssl_stream_impl_
 
     capy::task<>
     do_write_some(
-        buffer_array src_bufs,
+        std::array<capy::mutable_buffer, detail::max_iovec_> src_arr,
         std::size_t buf_count,
         std::stop_token token,
         std::error_code* ec_out,
@@ -488,12 +500,14 @@ struct openssl_stream_impl_
     {
         std::error_code ec;
         std::size_t total_written = 0;
+        std::span<capy::mutable_buffer> src_bufs(src_arr.data(), buf_count);
 
-        // Process each source buffer
-        for(std::size_t i = 0; i < buf_count && !token.stop_requested(); ++i)
+        for(auto& buf : src_bufs)
         {
-            char const* src = static_cast<char const*>(src_bufs[i].data());
-            int remaining = static_cast<int>(src_bufs[i].size());
+            if(token.stop_requested())
+                break;
+            char const* src = static_cast<char const*>(buf.data());
+            int remaining = static_cast<int>(buf.size());
 
             while(remaining > 0 && !token.stop_requested())
             {
@@ -727,8 +741,8 @@ struct openssl_stream_impl_
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        buffer_array bufs{};
-        std::size_t count = param.copy_to(bufs.data(), max_buffers);
+        std::array<capy::mutable_buffer, detail::max_iovec_> bufs{};
+        std::size_t count = param.copy_to(bufs.data(), detail::max_iovec_);
 
         capy::run_async(d, token)(
             do_read_some(bufs, count, token, ec, bytes, h, d));
@@ -742,8 +756,8 @@ struct openssl_stream_impl_
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        buffer_array bufs{};
-        std::size_t count = param.copy_to(bufs.data(), max_buffers);
+        std::array<capy::mutable_buffer, detail::max_iovec_> bufs{};
+        std::size_t count = param.copy_to(bufs.data(), detail::max_iovec_);
 
         capy::run_async(d, token)(
             do_write_some(bufs, count, token, ec, bytes, h, d));

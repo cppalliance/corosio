@@ -8,11 +8,13 @@
 //
 
 #include <boost/corosio/tls/wolfssl_stream.hpp>
+#include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/coro_lock.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/write.hpp>
 
 // Internal context implementation
 #include "src/tls/detail/context_impl.hpp"
@@ -27,6 +29,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <span>
 #include <vector>
 
 /*
@@ -91,12 +94,6 @@ namespace {
 
 // Default buffer size for TLS I/O
 constexpr std::size_t default_buffer_size = 16384;
-
-// Maximum number of buffers to handle in a single operation
-constexpr std::size_t max_buffers = 8;
-
-// Buffer array type for coroutine parameters (copied into frame)
-using buffer_array = std::array<capy::mutable_buffer, max_buffers>;
 
 } // namespace
 
@@ -417,7 +414,7 @@ struct wolfssl_stream_impl_
     */
     capy::task<>
     do_read_some(
-        buffer_array dest_bufs,
+        std::array<capy::mutable_buffer, detail::max_iovec_> dest_arr,
         std::size_t buf_count,
         std::stop_token token,
         std::error_code* ec_out,
@@ -427,6 +424,7 @@ struct wolfssl_stream_impl_
     {
         std::error_code ec;
         std::size_t total_read = 0;
+        std::span<capy::mutable_buffer> dest_bufs(dest_arr.data(), buf_count);
 
         // Set up operation buffers for callbacks
         op_buffers op{
@@ -436,11 +434,12 @@ struct wolfssl_stream_impl_
         };
         current_op_ = &op;
 
-        // Process each destination buffer
-        for(std::size_t i = 0; i < buf_count && !token.stop_requested(); ++i)
+        for(auto& buf : dest_bufs)
         {
-            char* dest = static_cast<char*>(dest_bufs[i].data());
-            int remaining = static_cast<int>(dest_bufs[i].size());
+            if(token.stop_requested())
+                break;
+            char* dest = static_cast<char*>(buf.data());
+            int remaining = static_cast<int>(buf.size());
 
             while(remaining > 0 && !token.stop_requested())
             {
@@ -490,14 +489,13 @@ struct wolfssl_stream_impl_
                     else if(err == WOLFSSL_ERROR_WANT_WRITE)
                     {
                         // Renegotiation
-                        while(read_out_len_ > 0)
+                        if(read_out_len_ > 0)
                         {
-                            capy::mutable_buffer buf(read_out_buf_.data(), read_out_len_);
-                            auto [wec, wn] = co_await do_underlying_write(buf, token);
+                            auto guard = co_await io_cm_.scoped_lock();
+                            auto [wec, wn] = co_await capy::write(s_,
+                                capy::const_buffer(read_out_buf_.data(), read_out_len_));
+                            read_out_len_ = 0;
                             if(wec) { ec = wec; goto done; }
-                            if(wn < read_out_len_)
-                                std::memmove(read_out_buf_.data(), read_out_buf_.data() + wn, read_out_len_ - wn);
-                            read_out_len_ -= wn;
                         }
                     }
                     else if(err == WOLFSSL_ERROR_ZERO_RETURN)
@@ -537,7 +535,7 @@ struct wolfssl_stream_impl_
     */
     capy::task<>
     do_write_some(
-        buffer_array src_bufs,
+        std::array<capy::mutable_buffer, detail::max_iovec_> src_arr,
         std::size_t buf_count,
         std::stop_token token,
         std::error_code* ec_out,
@@ -547,6 +545,7 @@ struct wolfssl_stream_impl_
     {
         std::error_code ec;
         std::size_t total_written = 0;
+        std::span<capy::mutable_buffer> src_bufs(src_arr.data(), buf_count);
 
         // Set up operation buffers for callbacks
         op_buffers op{
@@ -556,11 +555,12 @@ struct wolfssl_stream_impl_
         };
         current_op_ = &op;
 
-        // Process each source buffer
-        for(std::size_t i = 0; i < buf_count && !token.stop_requested(); ++i)
+        for(auto& buf : src_bufs)
         {
-            char const* src = static_cast<char const*>(src_bufs[i].data());
-            int remaining = static_cast<int>(src_bufs[i].size());
+            if(token.stop_requested())
+                break;
+            char const* src = static_cast<char const*>(buf.data());
+            int remaining = static_cast<int>(buf.size());
 
             while(remaining > 0 && !token.stop_requested())
             {
@@ -580,14 +580,13 @@ struct wolfssl_stream_impl_
                     if(total_written > 0)
                     {
                         // Flush any pending output
-                        while(write_out_len_ > 0)
+                        if(write_out_len_ > 0)
                         {
-                            capy::mutable_buffer buf(write_out_buf_.data(), write_out_len_);
-                            auto [wec, wn] = co_await do_underlying_write(buf, token);
+                            auto guard = co_await io_cm_.scoped_lock();
+                            auto [wec, wn] = co_await capy::write(s_,
+                                capy::const_buffer(write_out_buf_.data(), write_out_len_));
+                            write_out_len_ = 0;
                             if(wec) { ec = wec; goto done; }
-                            if(wn < write_out_len_)
-                                std::memmove(write_out_buf_.data(), write_out_buf_.data() + wn, write_out_len_ - wn);
-                            write_out_len_ -= wn;
                         }
                         goto done;
                     }
@@ -598,14 +597,13 @@ struct wolfssl_stream_impl_
 
                     if(err == WOLFSSL_ERROR_WANT_WRITE)
                     {
-                        while(write_out_len_ > 0)
+                        if(write_out_len_ > 0)
                         {
-                            capy::mutable_buffer buf(write_out_buf_.data(), write_out_len_);
-                            auto [wec, wn] = co_await do_underlying_write(buf, token);
+                            auto guard = co_await io_cm_.scoped_lock();
+                            auto [wec, wn] = co_await capy::write(s_,
+                                capy::const_buffer(write_out_buf_.data(), write_out_len_));
+                            write_out_len_ = 0;
                             if(wec) { ec = wec; goto done; }
-                            if(wn < write_out_len_)
-                                std::memmove(write_out_buf_.data(), write_out_buf_.data() + wn, write_out_len_ - wn);
-                            write_out_len_ -= wn;
                         }
                     }
                     else if(err == WOLFSSL_ERROR_WANT_READ)
@@ -690,18 +688,16 @@ struct wolfssl_stream_impl_
             {
                 // Handshake completed successfully
                 // Flush any remaining output
-                while(read_out_len_ > 0)
+                if(read_out_len_ > 0)
                 {
-                    capy::mutable_buffer buf(read_out_buf_.data(), read_out_len_);
-                    auto [wec, wn] = co_await do_underlying_write(buf, token);
+                    auto guard = co_await io_cm_.scoped_lock();
+                    auto [wec, wn] = co_await capy::write(s_,
+                        capy::const_buffer(read_out_buf_.data(), read_out_len_));
+                    read_out_len_ = 0;
                     if(wec)
                     {
                         ec = wec;
-                        break;
                     }
-                    if(wn < read_out_len_)
-                        std::memmove(read_out_buf_.data(), read_out_buf_.data() + wn, read_out_len_ - wn);
-                    read_out_len_ -= wn;
                 }
                 break;
             }
@@ -712,18 +708,17 @@ struct wolfssl_stream_impl_
                 if(err == WOLFSSL_ERROR_WANT_READ)
                 {
                     // Must flush (e.g. ClientHello) before reading ServerHello
-                    while(read_out_len_ > 0)
+                    if(read_out_len_ > 0)
                     {
-                        capy::mutable_buffer buf(read_out_buf_.data(), read_out_len_);
-                        auto [wec, wn] = co_await do_underlying_write(buf, token);
+                        auto guard = co_await io_cm_.scoped_lock();
+                        auto [wec, wn] = co_await capy::write(s_,
+                            capy::const_buffer(read_out_buf_.data(), read_out_len_));
+                        read_out_len_ = 0;
                         if(wec)
                         {
                             ec = wec;
                             goto exit_loop;
                         }
-                        if(wn < read_out_len_)
-                            std::memmove(read_out_buf_.data(), read_out_buf_.data() + wn, read_out_len_ - wn);
-                        read_out_len_ -= wn;
                     }
 
                     if(read_in_pos_ == read_in_len_)
@@ -744,18 +739,17 @@ struct wolfssl_stream_impl_
                 }
                 else if(err == WOLFSSL_ERROR_WANT_WRITE)
                 {
-                    while(read_out_len_ > 0)
+                    if(read_out_len_ > 0)
                     {
-                        capy::mutable_buffer buf(read_out_buf_.data(), read_out_len_);
-                        auto [wec, wn] = co_await do_underlying_write(buf, token);
+                        auto guard = co_await io_cm_.scoped_lock();
+                        auto [wec, wn] = co_await capy::write(s_,
+                            capy::const_buffer(read_out_buf_.data(), read_out_len_));
+                        read_out_len_ = 0;
                         if(wec)
                         {
                             ec = wec;
                             goto exit_loop;
                         }
-                        if(wn < read_out_len_)
-                            std::memmove(read_out_buf_.data(), read_out_buf_.data() + wn, read_out_len_ - wn);
-                        read_out_len_ -= wn;
                     }
                 }
                 else
@@ -821,18 +815,16 @@ struct wolfssl_stream_impl_
             if(ret == WOLFSSL_SUCCESS)
             {
                 // Bidirectional shutdown complete - flush any remaining output
-                while(read_out_len_ > 0)
+                if(read_out_len_ > 0)
                 {
-                    capy::mutable_buffer buf(read_out_buf_.data(), read_out_len_);
-                    auto [wec, wn] = co_await do_underlying_write(buf, token);
+                    auto guard = co_await io_cm_.scoped_lock();
+                    auto [wec, wn] = co_await capy::write(s_,
+                        capy::const_buffer(read_out_buf_.data(), read_out_len_));
+                    read_out_len_ = 0;
                     if(wec)
                     {
                         ec = wec;
-                        break;
                     }
-                    if(wn < read_out_len_)
-                        std::memmove(read_out_buf_.data(), read_out_buf_.data() + wn, read_out_len_ - wn);
-                    read_out_len_ -= wn;
                 }
                 break;
             }
@@ -842,18 +834,17 @@ struct wolfssl_stream_impl_
                 // This mirrors OpenSSL's SSL_shutdown() returning 0.
                 
                 // First, flush any pending output (sends our close_notify)
-                while(read_out_len_ > 0)
+                if(read_out_len_ > 0)
                 {
-                    capy::mutable_buffer buf(read_out_buf_.data(), read_out_len_);
-                    auto [wec, wn] = co_await do_underlying_write(buf, token);
+                    auto guard = co_await io_cm_.scoped_lock();
+                    auto [wec, wn] = co_await capy::write(s_,
+                        capy::const_buffer(read_out_buf_.data(), read_out_len_));
+                    read_out_len_ = 0;
                     if(wec)
                     {
                         // Socket error during shutdown write - acceptable, we're done
                         goto exit_shutdown;
                     }
-                    if(wn < read_out_len_)
-                        std::memmove(read_out_buf_.data(), read_out_buf_.data() + wn, read_out_len_ - wn);
-                    read_out_len_ -= wn;
                 }
 
                 // Check what WolfSSL needs next
@@ -933,12 +924,9 @@ struct wolfssl_stream_impl_
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        // Extract buffers from type-erased parameter
-        // Pass by value so array is copied into coroutine frame
-        buffer_array bufs{};
-        std::size_t count = param.copy_to(bufs.data(), max_buffers);
+        std::array<capy::mutable_buffer, detail::max_iovec_> bufs{};
+        std::size_t count = param.copy_to(bufs.data(), detail::max_iovec_);
 
-        // Launch inner coroutine via run_async with stop_token for cancellation
         capy::run_async(d, token)(
             do_read_some(bufs, count, token, ec, bytes, h, d));
     }
@@ -951,12 +939,9 @@ struct wolfssl_stream_impl_
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        // Extract buffers from type-erased parameter
-        // Pass by value so array is copied into coroutine frame
-        buffer_array bufs{};
-        std::size_t count = param.copy_to(bufs.data(), max_buffers);
+        std::array<capy::mutable_buffer, detail::max_iovec_> bufs{};
+        std::size_t count = param.copy_to(bufs.data(), detail::max_iovec_);
 
-        // Launch inner coroutine via run_async with stop_token for cancellation
         capy::run_async(d, token)(
             do_write_some(bufs, count, token, ec, bytes, h, d));
     }
