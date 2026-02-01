@@ -16,8 +16,8 @@
 // - Failure tests disabled: socket.cancel() doesn't unblock TLS handshake
 // - To enable failure tests: need TLS-aware cancellation that both impls respect
 
-#include <boost/corosio/tls/openssl_stream.hpp>
-#include <boost/corosio/tls/wolfssl_stream.hpp>
+#include <boost/corosio/openssl_stream.hpp>
+#include <boost/corosio/wolfssl_stream.hpp>
 
 #include "test_utils.hpp"
 #include "test_suite.hpp"
@@ -29,7 +29,7 @@
 
     Certificate Validation Behavior
     -------------------------------
-    tls::context stores certificate data as raw bytes without validation.
+    tls_context stores certificate data as raw bytes without validation.
     The backend (OpenSSL/WolfSSL) parses certificates at stream construction.
     Invalid certificates are silently ignored (stream has no cert).
     Certificate trust verification happens at the RECEIVING peer during handshake.
@@ -73,13 +73,13 @@ struct cross_ssl_stream_test
 {
 #if defined(BOOST_COROSIO_HAS_OPENSSL) && defined(BOOST_COROSIO_HAS_WOLFSSL)
     static auto
-    make_openssl( io_stream& s, tls::context ctx )
+    make_openssl( io_stream& s, tls_context ctx )
     {
         return openssl_stream( s, ctx );
     }
 
     static auto
-    make_wolfssl( io_stream& s, tls::context ctx )
+    make_wolfssl( io_stream& s, tls_context ctx )
     {
         return wolfssl_stream( s, ctx );
     }
@@ -87,7 +87,7 @@ struct cross_ssl_stream_test
     void
     testCrossImplSuccess()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // Skip anon mode for cross-impl: anonymous cipher syntax differs between
         // OpenSSL and WolfSSL, and WolfSSL may not have anon ciphers compiled in.
@@ -112,7 +112,7 @@ struct cross_ssl_stream_test
     void
     testCrossImplFailure()
     {
-        using namespace tls::test;
+        using namespace test;
 
         io_context ioc;
 

@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/corosio/tls/tls_stream.hpp>
+#include <boost/corosio/tls_stream.hpp>
 
 #include "test_suite.hpp"
 

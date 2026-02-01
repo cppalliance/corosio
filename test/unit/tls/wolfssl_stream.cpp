@@ -14,7 +14,7 @@
 // - context_mode::anon skipped; shared_cert and separate_cert modes work
 
 // Test that header file is self-contained.
-#include <boost/corosio/tls/wolfssl_stream.hpp>
+#include <boost/corosio/wolfssl_stream.hpp>
 
 #include "test_utils.hpp"
 #include "../stream_tests.hpp"
@@ -45,7 +45,7 @@ struct wolfssl_stream_test
 {
 #ifdef BOOST_COROSIO_HAS_WOLFSSL
     static auto
-    make_stream(io_stream& s, tls::context ctx)
+    make_stream(io_stream& s, tls_context ctx)
     {
         return wolfssl_stream(&s, ctx);
     }
@@ -57,7 +57,7 @@ struct wolfssl_stream_test
     void
     testHandshakeFuse()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto max_size : max_sizes)
         {
@@ -112,7 +112,7 @@ struct wolfssl_stream_test
     void
     testReadWriteFuse()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto max_size : max_sizes)
         {
@@ -192,7 +192,7 @@ struct wolfssl_stream_test
     void
     testShutdownFuse()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto max_size : max_sizes)
         {
@@ -258,7 +258,7 @@ struct wolfssl_stream_test
     void
     testSuccessCases()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // Skip anon mode: anonymous cipher string "aNULL:eNULL:@SECLEVEL=0"
         // is OpenSSL-specific and not supported by WolfSSL.
@@ -279,7 +279,7 @@ struct wolfssl_stream_test
     void
     testFailureCases()
     {
-        using namespace tls::test;
+        using namespace test;
 
         io_context ioc;
 
@@ -307,7 +307,7 @@ struct wolfssl_stream_test
     void
     testTlsShutdown()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto mode : { context_mode::shared_cert,
                           context_mode::separate_cert })
@@ -323,7 +323,7 @@ struct wolfssl_stream_test
     void
     testStreamTruncated()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto mode : { context_mode::shared_cert,
                           context_mode::separate_cert })
@@ -339,7 +339,7 @@ struct wolfssl_stream_test
     void
     testStopTokenCancellation()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // Cancel during handshake
         {
@@ -371,7 +371,7 @@ struct wolfssl_stream_test
     void
     testSocketErrorPropagation()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // socket.cancel() while TLS blocked on socket I/O
         {
@@ -396,7 +396,7 @@ struct wolfssl_stream_test
     void
     testCertificateValidation()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // Untrusted CA
         {
@@ -421,7 +421,7 @@ struct wolfssl_stream_test
     void
     testSni()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // Correct hostname succeeds
         {
@@ -448,7 +448,7 @@ struct wolfssl_stream_test
     void
     testSniCallback()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // SNI callback accepts hostname
         {
@@ -489,7 +489,7 @@ struct wolfssl_stream_test
     void
     testMtls()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // mTLS success
         {
@@ -523,7 +523,7 @@ struct wolfssl_stream_test
     void
     testCertificateChain()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // Basic chain test: client trusts both CAs
         {

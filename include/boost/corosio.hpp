@@ -20,9 +20,9 @@
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/corosio/timer.hpp>
 
-#include <boost/corosio/tls/context.hpp>
-#include <boost/corosio/tls/openssl_stream.hpp>
-#include <boost/corosio/tls/tls_stream.hpp>
-#include <boost/corosio/tls/wolfssl_stream.hpp>
+#include <boost/corosio/tls_context.hpp>
+#include <boost/corosio/openssl_stream.hpp>
+#include <boost/corosio/tls_stream.hpp>
+#include <boost/corosio/wolfssl_stream.hpp>
 
 #endif

@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <boost/corosio/tls/openssl_stream.hpp>
+#include <boost/corosio/openssl_stream.hpp>
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/coro_lock.hpp>
 #include <boost/capy/error.hpp>
@@ -69,7 +69,7 @@ constexpr std::size_t default_buffer_size = 16384;
 //
 //------------------------------------------------------------------------------
 
-namespace tls::detail {
+namespace detail {
 
 static int sni_ctx_data_index = -1;
 
@@ -81,7 +81,7 @@ sni_callback(SSL* ssl, int* /* alert */, void* /* arg */)
         return SSL_TLSEXT_ERR_NOACK;
 
     SSL_CTX* ctx = SSL_get_SSL_CTX(ssl);
-    auto* cd = static_cast<context_data const*>(
+    auto* cd = static_cast<tls_context_data const*>(
         SSL_CTX_get_ex_data(ctx, sni_ctx_data_index));
 
     if(cd && cd->servername_callback)
@@ -98,10 +98,10 @@ class openssl_native_context
 {
 public:
     SSL_CTX* ctx_;
-    context_data const* cd_;
+    tls_context_data const* cd_;
 
     explicit
-    openssl_native_context(context_data const& cd)
+    openssl_native_context(tls_context_data const& cd)
         : ctx_(nullptr)
         , cd_(&cd)
     {
@@ -112,7 +112,7 @@ public:
         if(sni_ctx_data_index < 0)
             sni_ctx_data_index = SSL_CTX_get_ex_new_index(0, nullptr, nullptr, nullptr, nullptr);
 
-        SSL_CTX_set_ex_data(ctx_, sni_ctx_data_index, const_cast<context_data*>(&cd));
+        SSL_CTX_set_ex_data(ctx_, sni_ctx_data_index, const_cast<tls_context_data*>(&cd));
 
         if(cd.servername_callback)
             SSL_CTX_set_tlsext_servername_callback(ctx_, sni_callback);
@@ -124,9 +124,9 @@ public:
 #endif
 
         int verify_mode_flag = SSL_VERIFY_NONE;
-        if(cd.verification_mode == verify_mode::peer)
+        if(cd.verification_mode == tls_verify_mode::peer)
             verify_mode_flag = SSL_VERIFY_PEER;
-        else if(cd.verification_mode == verify_mode::require_peer)
+        else if(cd.verification_mode == tls_verify_mode::require_peer)
             verify_mode_flag = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
         SSL_CTX_set_verify(ctx_, verify_mode_flag, nullptr);
 
@@ -138,7 +138,7 @@ public:
             if(bio)
             {
                 X509* cert = nullptr;
-                if(cd.entity_cert_format == file_format::pem)
+                if(cd.entity_cert_format == tls_file_format::pem)
                     cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
                 else
                     cert = d2i_X509_bio(bio, nullptr);
@@ -183,7 +183,7 @@ public:
             if(bio)
             {
                 EVP_PKEY* pkey = nullptr;
-                if(cd.private_key_format == file_format::pem)
+                if(cd.private_key_format == tls_file_format::pem)
                     pkey = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
                 else
                     pkey = d2i_PrivateKey_bio(bio, nullptr);
@@ -229,7 +229,7 @@ public:
 };
 
 inline SSL_CTX*
-get_openssl_context(context_data const& cd)
+get_openssl_context(tls_context_data const& cd)
 {
     static char key;
     auto* p = cd.find(&key, [&]
@@ -239,14 +239,14 @@ get_openssl_context(context_data const& cd)
     return static_cast<openssl_native_context*>(p)->ctx_;
 }
 
-} // namespace tls::detail
+} // namespace detail
 
 //------------------------------------------------------------------------------
 
 struct openssl_stream::impl
 {
     capy::any_stream& s_;
-    tls::context ctx_;
+    tls_context ctx_;
     SSL* ssl_ = nullptr;
     BIO* ext_bio_ = nullptr;
 
@@ -257,7 +257,7 @@ struct openssl_stream::impl
 
     //--------------------------------------------------------------------------
 
-    impl(capy::any_stream& s, tls::context ctx)
+    impl(capy::any_stream& s, tls_context ctx)
         : s_(s)
         , ctx_(std::move(ctx))
     {
@@ -600,8 +600,8 @@ struct openssl_stream::impl
     std::error_code
     init_ssl()
     {
-        auto& cd = tls::detail::get_context_data(ctx_);
-        SSL_CTX* native_ctx = tls::detail::get_openssl_context(cd);
+        auto& cd = detail::get_tls_context_data(ctx_);
+        SSL_CTX* native_ctx = detail::get_openssl_context(cd);
         if(!native_ctx)
         {
             unsigned long err = ERR_get_error();
@@ -643,7 +643,7 @@ struct openssl_stream::impl
 
 openssl_stream::impl*
 openssl_stream::
-make_impl(capy::any_stream& stream, tls::context const& ctx)
+make_impl(capy::any_stream& stream, tls_context const& ctx)
 {
     auto* p = new impl(stream, ctx);
 

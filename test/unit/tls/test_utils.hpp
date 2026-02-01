@@ -13,8 +13,8 @@
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/io_stream.hpp>
 #include <boost/corosio/timer.hpp>
-#include <boost/corosio/tls/context.hpp>
-#include <boost/corosio/tls/tls_stream.hpp>
+#include <boost/corosio/tls_context.hpp>
+#include <boost/corosio/tls_stream.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -28,7 +28,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace boost::corosio::tls::test {
+namespace boost::corosio::test {
 
 //------------------------------------------------------------------------------
 //
@@ -569,52 +569,52 @@ inline constexpr char const* server_fullchain_pem =
 //------------------------------------------------------------------------------
 
 /** Create a context with anonymous ciphers (no certificates needed). */
-inline context
+inline tls_context
 make_anon_context()
 {
-    context ctx;
-    ctx.set_verify_mode( verify_mode::none );
+    tls_context ctx;
+    ctx.set_verify_mode( tls_verify_mode::none );
     ctx.set_ciphersuites( "aNULL:eNULL:@SECLEVEL=0" );
     return ctx;
 }
 
 /** Create a server context with test certificate. */
-inline context
+inline tls_context
 make_server_context()
 {
-    context ctx;
-    ctx.use_certificate( server_cert_pem, file_format::pem );
-    ctx.use_private_key( server_key_pem, file_format::pem );
-    ctx.set_verify_mode( verify_mode::none );
+    tls_context ctx;
+    ctx.use_certificate( server_cert_pem, tls_file_format::pem );
+    ctx.use_private_key( server_key_pem, tls_file_format::pem );
+    ctx.set_verify_mode( tls_verify_mode::none );
     return ctx;
 }
 
 /** Create a client context that trusts the test CA. */
-inline context
+inline tls_context
 make_client_context()
 {
-    context ctx;
+    tls_context ctx;
     ctx.add_certificate_authority( ca_cert_pem );
-    ctx.set_verify_mode( verify_mode::peer );
+    ctx.set_verify_mode( tls_verify_mode::peer );
     return ctx;
 }
 
 /** Create a client context that trusts the WRONG CA (for failure tests). */
-inline context
+inline tls_context
 make_wrong_ca_context()
 {
-    context ctx;
+    tls_context ctx;
     ctx.add_certificate_authority( wrong_ca_cert_pem );
-    ctx.set_verify_mode( verify_mode::peer );
+    ctx.set_verify_mode( tls_verify_mode::peer );
     return ctx;
 }
 
 /** Create a context that requires peer verification but has no cert. */
-inline context
+inline tls_context
 make_verify_no_cert_context()
 {
-    context ctx;
-    ctx.set_verify_mode( verify_mode::require_peer );
+    tls_context ctx;
+    ctx.set_verify_mode( tls_verify_mode::require_peer );
     return ctx;
 }
 
@@ -632,7 +632,7 @@ enum class context_mode
 };
 
 /** Create client and server contexts for the given mode. */
-inline std::pair<context, context>
+inline std::pair<tls_context, tls_context>
 make_contexts( context_mode mode )
 {
     switch( mode )
@@ -707,8 +707,8 @@ template<typename ClientStreamFactory, typename ServerStreamFactory>
 void
 run_tls_test(
     io_context& ioc,
-    context client_ctx,
-    context server_ctx,
+    tls_context client_ctx,
+    tls_context server_ctx,
     ClientStreamFactory make_client,
     ServerStreamFactory make_server )
 {
@@ -769,8 +769,8 @@ template<typename ClientStreamFactory, typename ServerStreamFactory>
 void
 run_tls_test_no_shutdown(
     io_context& ioc,
-    context client_ctx,
-    context server_ctx,
+    tls_context client_ctx,
+    tls_context server_ctx,
     ClientStreamFactory make_client,
     ServerStreamFactory make_server )
 {
@@ -829,8 +829,8 @@ template<typename ClientStreamFactory, typename ServerStreamFactory>
 void
 run_tls_test_fail(
     io_context& ioc,
-    context client_ctx,
-    context server_ctx,
+    tls_context client_ctx,
+    tls_context server_ctx,
     ClientStreamFactory make_client,
     ServerStreamFactory make_server )
 {
@@ -927,8 +927,8 @@ template<typename ClientStreamFactory, typename ServerStreamFactory>
 void
 run_tls_shutdown_test(
     io_context& ioc,
-    context client_ctx,
-    context server_ctx,
+    tls_context client_ctx,
+    tls_context server_ctx,
     ClientStreamFactory make_client,
     ServerStreamFactory make_server )
 {
@@ -1032,8 +1032,8 @@ template<typename ClientStreamFactory, typename ServerStreamFactory>
 void
 run_tls_truncation_test(
     io_context& ioc,
-    context client_ctx,
-    context server_ctx,
+    tls_context client_ctx,
+    tls_context server_ctx,
     ClientStreamFactory make_client,
     ServerStreamFactory make_server )
 {
@@ -1129,13 +1129,13 @@ run_tls_truncation_test(
 //------------------------------------------------------------------------------
 
 /** Create a server context using chain certificates (signed by intermediate CA). */
-inline context
+inline tls_context
 make_chain_server_context()
 {
-    context ctx;
-    ctx.use_certificate( chain_server_cert_pem, file_format::pem );
-    ctx.use_private_key( chain_server_key_pem, file_format::pem );
-    ctx.set_verify_mode( verify_mode::none );
+    tls_context ctx;
+    ctx.use_certificate( chain_server_cert_pem, tls_file_format::pem );
+    ctx.use_private_key( chain_server_key_pem, tls_file_format::pem );
+    ctx.set_verify_mode( tls_verify_mode::none );
     return ctx;
 }
 
@@ -1143,126 +1143,126 @@ make_chain_server_context()
     Server sends entity cert + intermediate cert, allowing client to verify
     chain up to root CA. Uses use_certificate_chain() which expects the full
     chain (entity + intermediates) in a single PEM blob. */
-inline context
+inline tls_context
 make_fullchain_server_context()
 {
-    context ctx;
+    tls_context ctx;
     // use_certificate_chain expects entity cert followed by intermediate(s)
     ctx.use_certificate_chain( server_fullchain_pem );
-    ctx.use_private_key( chain_server_key_pem, file_format::pem );
-    ctx.set_verify_mode( verify_mode::none );
+    ctx.use_private_key( chain_server_key_pem, tls_file_format::pem );
+    ctx.set_verify_mode( tls_verify_mode::none );
     return ctx;
 }
 
 /** Create a client context that trusts ONLY the root CA (for chain tests).
     Server must send intermediate cert in chain for verification to succeed. */
-inline context
+inline tls_context
 make_rootonly_client_context()
 {
-    context ctx;
+    tls_context ctx;
     ctx.add_certificate_authority( root_ca_cert_pem );
-    ctx.set_verify_mode( verify_mode::peer );
+    ctx.set_verify_mode( tls_verify_mode::peer );
     return ctx;
 }
 
 /** Create a client context that trusts the root CA (for chain tests). */
-inline context
+inline tls_context
 make_chain_client_context()
 {
-    context ctx;
+    tls_context ctx;
     // Trust both root and intermediate CA for chain verification
     ctx.add_certificate_authority( root_ca_cert_pem );
     ctx.add_certificate_authority( intermediate_cert_pem );
-    ctx.set_verify_mode( verify_mode::peer );
+    ctx.set_verify_mode( tls_verify_mode::peer );
     return ctx;
 }
 
 /** Create a server context with an EXPIRED certificate.
     The certificate expired on Jan 2, 2020. */
-inline context
+inline tls_context
 make_expired_server_context()
 {
-    context ctx;
-    ctx.use_certificate( expired_cert_pem, file_format::pem );
-    ctx.use_private_key( expired_key_pem, file_format::pem );
+    tls_context ctx;
+    ctx.use_certificate( expired_cert_pem, tls_file_format::pem );
+    ctx.use_private_key( expired_key_pem, tls_file_format::pem );
     return ctx;
 }
 
 /** Create a client context that trusts the expired cert's self-signed CA.
     Used with make_expired_server_context() to test expiry validation. */
-inline context
+inline tls_context
 make_expired_client_context()
 {
-    context ctx;
+    tls_context ctx;
     // Trust the expired cert as its own CA (self-signed)
     ctx.add_certificate_authority( expired_cert_pem );
-    ctx.set_verify_mode( verify_mode::peer );
+    ctx.set_verify_mode( tls_verify_mode::peer );
     return ctx;
 }
 
 /** Create a server context with wrong hostname (CN=wrong.example.com). */
-inline context
+inline tls_context
 make_wrong_host_server_context()
 {
-    context ctx;
-    ctx.use_certificate( wrong_host_cert_pem, file_format::pem );
-    ctx.use_private_key( wrong_host_key_pem, file_format::pem );
-    ctx.set_verify_mode( verify_mode::none );
+    tls_context ctx;
+    ctx.use_certificate( wrong_host_cert_pem, tls_file_format::pem );
+    ctx.use_private_key( wrong_host_key_pem, tls_file_format::pem );
+    ctx.set_verify_mode( tls_verify_mode::none );
     return ctx;
 }
 
 /** Create a client context for mTLS (with client certificate). */
-inline context
+inline tls_context
 make_mtls_client_context()
 {
-    context ctx;
-    ctx.use_certificate( client_cert_pem, file_format::pem );
-    ctx.use_private_key( client_key_pem, file_format::pem );
+    tls_context ctx;
+    ctx.use_certificate( client_cert_pem, tls_file_format::pem );
+    ctx.use_private_key( client_key_pem, tls_file_format::pem );
     // Trust both root and intermediate CA for chain verification
     ctx.add_certificate_authority( root_ca_cert_pem );
     ctx.add_certificate_authority( intermediate_cert_pem );
-    ctx.set_verify_mode( verify_mode::peer );
+    ctx.set_verify_mode( tls_verify_mode::peer );
     return ctx;
 }
 
 /** Create a server context that requires client certificates (mTLS). */
-inline context
+inline tls_context
 make_mtls_server_context()
 {
-    context ctx;
-    ctx.use_certificate( chain_server_cert_pem, file_format::pem );
-    ctx.use_private_key( chain_server_key_pem, file_format::pem );
+    tls_context ctx;
+    ctx.use_certificate( chain_server_cert_pem, tls_file_format::pem );
+    ctx.use_private_key( chain_server_key_pem, tls_file_format::pem );
     // Trust both root and intermediate CA for chain verification
     ctx.add_certificate_authority( root_ca_cert_pem );
     ctx.add_certificate_authority( intermediate_cert_pem );
-    ctx.set_verify_mode( verify_mode::require_peer );
+    ctx.set_verify_mode( tls_verify_mode::require_peer );
     return ctx;
 }
 
 /** Create a client context that trusts the untrusted CA (for verification failures). */
-inline context
+inline tls_context
 make_untrusted_ca_client_context()
 {
-    context ctx;
+    tls_context ctx;
     ctx.add_certificate_authority( untrusted_ca_cert_pem );
-    ctx.set_verify_mode( verify_mode::peer );
+    ctx.set_verify_mode( tls_verify_mode::peer );
     return ctx;
 }
 
 /** Create an mTLS client context with INVALID client certificate.
     Uses server_cert_pem (self-signed) which is NOT signed by the
     intermediate/root CA that make_mtls_server_context() trusts. */
-inline context
+inline tls_context
 make_invalid_mtls_client_context()
 {
-    context ctx;
+    tls_context ctx;
     // Use the self-signed server cert as client cert - server won't trust it
-    ctx.use_certificate( server_cert_pem, file_format::pem );
-    ctx.use_private_key( server_key_pem, file_format::pem );
+    ctx.use_certificate( server_cert_pem, tls_file_format::pem );
+    ctx.use_private_key( server_key_pem, tls_file_format::pem );
     // Trust the chain CAs so we can verify server
     ctx.add_certificate_authority( root_ca_cert_pem );
     ctx.add_certificate_authority( intermediate_cert_pem );
-    ctx.set_verify_mode( verify_mode::peer );
+    ctx.set_verify_mode( tls_verify_mode::peer );
     return ctx;
 }
 
@@ -1287,8 +1287,8 @@ template<typename ClientStreamFactory, typename ServerStreamFactory>
 void
 run_connection_reset_test(
     io_context& ioc,
-    context client_ctx,
-    context server_ctx,
+    tls_context client_ctx,
+    tls_context server_ctx,
     ClientStreamFactory make_client,
     ServerStreamFactory make_server )
 {
@@ -1370,8 +1370,8 @@ template<typename ClientStreamFactory, typename ServerStreamFactory>
 void
 run_stop_token_handshake_test(
     io_context& ioc,
-    context client_ctx,
-    context server_ctx,
+    tls_context client_ctx,
+    tls_context server_ctx,
     ClientStreamFactory make_client,
     ServerStreamFactory make_server )
 {
@@ -1444,8 +1444,8 @@ template<typename ClientStreamFactory, typename ServerStreamFactory>
 void
 run_stop_token_read_test(
     io_context& ioc,
-    context client_ctx,
-    context server_ctx,
+    tls_context client_ctx,
+    tls_context server_ctx,
     ClientStreamFactory make_client,
     ServerStreamFactory make_server )
 {
@@ -1537,8 +1537,8 @@ template<typename ClientStreamFactory, typename ServerStreamFactory>
 void
 run_stop_token_write_test(
     io_context& ioc,
-    context client_ctx,
-    context server_ctx,
+    tls_context client_ctx,
+    tls_context server_ctx,
     ClientStreamFactory make_client,
     ServerStreamFactory make_server )
 {
@@ -1646,8 +1646,8 @@ template<typename ClientStreamFactory, typename ServerStreamFactory>
 void
 run_socket_cancel_test(
     io_context& ioc,
-    context client_ctx,
-    context server_ctx,
+    tls_context client_ctx,
+    tls_context server_ctx,
     ClientStreamFactory make_client,
     ServerStreamFactory make_server )
 {
@@ -1705,6 +1705,6 @@ run_socket_cancel_test(
     if( s2.is_open() ) s2.close();
 }
 
-} // namespace boost::corosio::tls::test
+} // namespace boost::corosio::test
 
 #endif

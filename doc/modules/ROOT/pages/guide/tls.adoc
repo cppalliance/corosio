@@ -9,15 +9,15 @@
 
 = TLS Encryption
 
-Corosio provides TLS encryption through the `tls::context` configuration class
+Corosio provides TLS encryption through the `tls_context` configuration class
 and stream wrappers that add encryption to existing connections. This chapter
 covers context configuration, stream usage, and common TLS patterns.
 
 NOTE: Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/tls/context.hpp>
-#include <boost/corosio/tls/wolfssl_stream.hpp>
+#include <boost/corosio/tls_context.hpp>
+#include <boost/corosio/wolfssl_stream.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 
 namespace corosio = boost::corosio;
@@ -29,7 +29,7 @@ namespace tls = corosio::tls;
 TLS (Transport Layer Security) encrypts data on TCP connections, providing
 confidentiality, integrity, and authentication. Corosio supports TLS through:
 
-* **tls::context** — Portable configuration for certificates, keys, and options
+* **tls_context** — Portable configuration for certificates, keys, and options
 * **tls_stream** — Abstract base class adding handshake and shutdown
 * **wolfssl_stream** — TLS implementation using WolfSSL
 * **openssl_stream** — TLS implementation using OpenSSL
@@ -39,9 +39,9 @@ The typical flow:
 [source,cpp]
 ----
 // 1. Configure a context
-tls::context ctx;
+tls_context ctx;
 ctx.set_default_verify_paths().value();
-ctx.set_verify_mode(tls::verify_mode::peer).value();
+ctx.set_verify_mode(tls_verify_mode::peer).value();
 ctx.set_hostname("api.example.com");
 
 // 2. Connect a socket
@@ -57,9 +57,9 @@ corosio::wolfssl_stream secure(sock, ctx);
 auto [ec, n] = co_await secure.read_some(buffer);
 ----
 
-== tls::context
+== tls_context
 
-The `tls::context` class stores TLS configuration: certificates, keys, trust
+The `tls_context` class stores TLS configuration: certificates, keys, trust
 anchors, protocol settings, and verification options. Contexts are shared
 handles—copies share the same underlying state.
 
@@ -71,7 +71,7 @@ configuration is captured when the first stream is constructed.
 [source,cpp]
 ----
 // Default context (TLS 1.2+ enabled)
-tls::context ctx;
+tls_context ctx;
 ----
 
 The default context has no certificates loaded and doesn't verify peers. You'll
@@ -87,11 +87,11 @@ key.
 [source,cpp]
 ----
 // From file
-ctx.use_certificate_file("server.crt", tls::file_format::pem).value();
+ctx.use_certificate_file("server.crt", tls_file_format::pem).value();
 
 // From memory
 std::string cert_data = /* ... */;
-ctx.use_certificate(cert_data, tls::file_format::pem).value();
+ctx.use_certificate(cert_data, tls_file_format::pem).value();
 
 // Certificate chain (cert + intermediates)
 ctx.use_certificate_chain_file("fullchain.pem").value();
@@ -102,10 +102,10 @@ ctx.use_certificate_chain_file("fullchain.pem").value();
 [source,cpp]
 ----
 // From file
-ctx.use_private_key_file("server.key", tls::file_format::pem).value();
+ctx.use_private_key_file("server.key", tls_file_format::pem).value();
 
 // From memory
-ctx.use_private_key(key_data, tls::file_format::pem).value();
+ctx.use_private_key(key_data, tls_file_format::pem).value();
 ----
 
 For encrypted private keys, set a password callback first:
@@ -116,7 +116,7 @@ ctx.set_password_callback(
     [](std::size_t max_len, tls::password_purpose purpose) {
         return std::string("my-key-password");
     });
-ctx.use_private_key_file("encrypted.key", tls::file_format::pem).value();
+ctx.use_private_key_file("encrypted.key", tls_file_format::pem).value();
 ----
 
 ==== PKCS#12 Bundles
@@ -208,13 +208,13 @@ ctx.set_alpn({"h2", "http/1.1"}).value();
 [source,cpp]
 ----
 // Don't verify peer (not recommended for clients)
-ctx.set_verify_mode(tls::verify_mode::none).value();
+ctx.set_verify_mode(tls_verify_mode::none).value();
 
 // Verify if peer presents certificate
-ctx.set_verify_mode(tls::verify_mode::peer).value();
+ctx.set_verify_mode(tls_verify_mode::peer).value();
 
 // Require peer certificate (fail if not presented)
-ctx.set_verify_mode(tls::verify_mode::require_peer).value();
+ctx.set_verify_mode(tls_verify_mode::require_peer).value();
 ----
 
 For HTTPS clients, use `peer`. For servers requiring client certificates
@@ -333,12 +333,12 @@ The WolfSSL-based implementation:
 
 [source,cpp]
 ----
-#include <boost/corosio/tls/wolfssl_stream.hpp>
+#include <boost/corosio/wolfssl_stream.hpp>
 
 corosio::tcp_socket sock(ioc);
 // ... connect sock ...
 
-tls::context ctx;
+tls_context ctx;
 // ... configure ctx ...
 
 corosio::wolfssl_stream secure(sock, ctx);
@@ -350,7 +350,7 @@ The OpenSSL-based implementation:
 
 [source,cpp]
 ----
-#include <boost/corosio/tls/openssl_stream.hpp>
+#include <boost/corosio/openssl_stream.hpp>
 
 corosio::openssl_stream secure(sock, ctx);
 ----
@@ -501,9 +501,9 @@ capy::task<void> https_get(
     }
 
     // Configure TLS
-    tls::context ctx;
+    tls_context ctx;
     ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode(tls::verify_mode::peer).value();
+    ctx.set_verify_mode(tls_verify_mode::peer).value();
     ctx.set_hostname(hostname);
 
     // Wrap in TLS and handshake
@@ -546,9 +546,9 @@ capy::task<void> tls_server(
     std::uint16_t port)
 {
     // Configure server TLS context
-    tls::context ctx;
+    tls_context ctx;
     ctx.use_certificate_chain_file("server-fullchain.pem").value();
-    ctx.use_private_key_file("server.key", tls::file_format::pem).value();
+    ctx.use_private_key_file("server.key", tls_file_format::pem).value();
 
     // Set up acceptor
     corosio::acceptor acc(ioc);
@@ -568,7 +568,7 @@ capy::task<void> tls_server(
 
 capy::task<void> handle_tls_client(
     corosio::tcp_socket sock,
-    tls::context ctx)
+    tls_context ctx)
 {
     corosio::wolfssl_stream secure(sock, ctx);
 
@@ -594,12 +594,12 @@ For client certificate authentication:
 
 [source,cpp]
 ----
-tls::context server_ctx;
+tls_context server_ctx;
 server_ctx.use_certificate_chain_file("server.pem").value();
-server_ctx.use_private_key_file("server.key", tls::file_format::pem).value();
+server_ctx.use_private_key_file("server.key", tls_file_format::pem).value();
 
 // Require client certificate
-server_ctx.set_verify_mode(tls::verify_mode::require_peer).value();
+server_ctx.set_verify_mode(tls_verify_mode::require_peer).value();
 server_ctx.load_verify_file("client-ca.pem").value();
 ----
 
@@ -607,14 +607,14 @@ server_ctx.load_verify_file("client-ca.pem").value();
 
 [source,cpp]
 ----
-tls::context client_ctx;
+tls_context client_ctx;
 client_ctx.set_default_verify_paths().value();
-client_ctx.set_verify_mode(tls::verify_mode::peer).value();
+client_ctx.set_verify_mode(tls_verify_mode::peer).value();
 client_ctx.set_hostname("server.example.com");
 
 // Provide client certificate
-client_ctx.use_certificate_file("client.crt", tls::file_format::pem).value();
-client_ctx.use_private_key_file("client.key", tls::file_format::pem).value();
+client_ctx.use_certificate_file("client.crt", tls_file_format::pem).value();
+client_ctx.use_private_key_file("client.key", tls_file_format::pem).value();
 ----
 
 == Thread Safety

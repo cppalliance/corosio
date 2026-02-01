@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <boost/corosio/tls/wolfssl_stream.hpp>
+#include <boost/corosio/wolfssl_stream.hpp>
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/coro_lock.hpp>
 #include <boost/capy/error.hpp>
@@ -72,7 +72,7 @@
          know whether this is a client or server connection
       4. This deferred initialization selects the appropriate cached context
 
-    This design allows a single tls::context to be shared across both client
+    This design allows a single tls_context to be shared across both client
     and server streams without requiring OpenSSL compatibility mode in WolfSSL.
 */
 
@@ -91,7 +91,7 @@ constexpr std::size_t default_buffer_size = 16384;
 //
 //------------------------------------------------------------------------------
 
-namespace tls::detail {
+namespace detail {
 
 // SNI callback invoked by WolfSSL during handshake (server-side)
 // Returns SNICbReturn enum: 0 = OK, fatal_return (2) = abort
@@ -105,7 +105,7 @@ wolfssl_sni_callback(WOLFSSL* ssl, int* /* alert */, void* arg)
 
     std::string_view servername(static_cast<char const*>(sni_data), sni_len);
 
-    auto* cd = static_cast<context_data const*>(arg);
+    auto* cd = static_cast<tls_context_data const*>(arg);
     if(cd && cd->servername_callback)
     {
         if(!cd->servername_callback(servername))
@@ -117,7 +117,7 @@ wolfssl_sni_callback(WOLFSSL* ssl, int* /* alert */, void* arg)
 
 /** Cached WolfSSL contexts owning WOLFSSL_CTX for client and server.
 
-    Created on first stream construction for a given tls::context,
+    Created on first stream construction for a given tls_context,
     then reused for subsequent streams sharing that context.
     Maintains separate contexts for client and server roles since
     WolfSSL requires different method functions for each.
@@ -130,16 +130,16 @@ public:
     WOLFSSL_CTX* server_ctx_;
 
     static void
-    apply_common_settings(WOLFSSL_CTX* ctx, context_data const& cd)
+    apply_common_settings(WOLFSSL_CTX* ctx, tls_context_data const& cd)
     {
         if(!ctx)
             return;
 
         // Apply verify mode from config
         int verify_mode_flag = WOLFSSL_VERIFY_NONE;
-        if(cd.verification_mode == verify_mode::peer)
+        if(cd.verification_mode == tls_verify_mode::peer)
             verify_mode_flag = WOLFSSL_VERIFY_PEER;
-        else if(cd.verification_mode == verify_mode::require_peer)
+        else if(cd.verification_mode == tls_verify_mode::require_peer)
             verify_mode_flag = WOLFSSL_VERIFY_PEER | WOLFSSL_VERIFY_FAIL_IF_NO_PEER_CERT;
         wolfSSL_CTX_set_verify(ctx, verify_mode_flag, nullptr);
 
@@ -154,7 +154,7 @@ public:
         else if(!cd.entity_certificate.empty())
         {
             // Only use single certificate if no chain provided
-            int format = (cd.entity_cert_format == file_format::pem)
+            int format = (cd.entity_cert_format == tls_file_format::pem)
                 ? WOLFSSL_FILETYPE_PEM : WOLFSSL_FILETYPE_ASN1;
             wolfSSL_CTX_use_certificate_buffer(ctx,
                 reinterpret_cast<unsigned char const*>(cd.entity_certificate.data()),
@@ -165,7 +165,7 @@ public:
         // Apply private key if provided
         if(!cd.private_key.empty())
         {
-            int format = (cd.private_key_format == file_format::pem)
+            int format = (cd.private_key_format == tls_file_format::pem)
                 ? WOLFSSL_FILETYPE_PEM : WOLFSSL_FILETYPE_ASN1;
             wolfSSL_CTX_use_PrivateKey_buffer(ctx,
                 reinterpret_cast<unsigned char const*>(cd.private_key.data()),
@@ -186,10 +186,10 @@ public:
         wolfSSL_CTX_set_verify_depth(ctx, cd.verify_depth);
     }
 
-    context_data const* cd_;  // For SNI callback access
+    tls_context_data const* cd_;  // For SNI callback access
 
     explicit
-    wolfssl_native_context(context_data const& cd)
+    wolfssl_native_context(tls_context_data const& cd)
         : client_ctx_(nullptr)
         , server_ctx_(nullptr)
         , cd_(&cd)
@@ -205,7 +205,7 @@ public:
         if(server_ctx_ && cd.servername_callback)
         {
             wolfSSL_CTX_set_servername_callback(server_ctx_, wolfssl_sni_callback);
-            wolfSSL_CTX_set_servername_arg(server_ctx_, const_cast<context_data*>(&cd));
+            wolfSSL_CTX_set_servername_arg(server_ctx_, const_cast<tls_context_data*>(&cd));
         }
     }
 
@@ -225,7 +225,7 @@ public:
     @return Pointer to the cached native context wrapper.
 */
 inline wolfssl_native_context*
-get_wolfssl_native_context(context_data const& cd)
+get_wolfssl_native_context(tls_context_data const& cd)
 {
     static char key;
     auto* p = cd.find(&key, [&]
@@ -235,14 +235,14 @@ get_wolfssl_native_context(context_data const& cd)
     return static_cast<wolfssl_native_context*>(p);
 }
 
-} // namespace tls::detail
+} // namespace detail
 
 //------------------------------------------------------------------------------
 
 struct wolfssl_stream::impl
 {
     capy::any_stream& s_;
-    tls::context ctx_;
+    tls_context ctx_;
     WOLFSSL* ssl_ = nullptr;
 
     // Buffers for read operations
@@ -278,7 +278,7 @@ struct wolfssl_stream::impl
 
     //--------------------------------------------------------------------------
 
-    impl(capy::any_stream& s, tls::context ctx)
+    impl(capy::any_stream& s, tls_context ctx)
         : s_(s)
         , ctx_(std::move(ctx))
     {
@@ -808,9 +808,9 @@ struct wolfssl_stream::impl
         if(ssl_)
             return {};
 
-        // Get cached native contexts from tls::context
-        auto& cd = tls::detail::get_context_data(ctx_);
-        auto* native = tls::detail::get_wolfssl_native_context(cd);
+        // Get cached native contexts from tls_context
+        auto& cd = detail::get_tls_context_data(ctx_);
+        auto* native = detail::get_wolfssl_native_context(cd);
         if(!native)
         {
             return std::error_code(
@@ -866,7 +866,7 @@ struct wolfssl_stream::impl
 
 wolfssl_stream::impl*
 wolfssl_stream::
-make_impl(capy::any_stream& stream, tls::context const& ctx)
+make_impl(capy::any_stream& stream, tls_context const& ctx)
 {
     // SSL object creation is deferred to handshake time when we know the role
     return new impl(stream, ctx);

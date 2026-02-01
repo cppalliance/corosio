@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/corosio/tls/openssl_stream.hpp>
+#include <boost/corosio/openssl_stream.hpp>
 
 #include "test_utils.hpp"
 #include "../stream_tests.hpp"
@@ -39,7 +39,7 @@ struct openssl_stream_test
 {
 #ifdef BOOST_COROSIO_HAS_OPENSSL
     static auto
-    make_stream(io_stream& s, tls::context ctx)
+    make_stream(io_stream& s, tls_context ctx)
     {
         return openssl_stream(&s, ctx);
     }
@@ -51,7 +51,7 @@ struct openssl_stream_test
     void
     testHandshakeFuse()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto max_size : max_sizes)
         {
@@ -106,7 +106,7 @@ struct openssl_stream_test
     void
     testReadWriteFuse()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto max_size : max_sizes)
         {
@@ -186,7 +186,7 @@ struct openssl_stream_test
     void
     testShutdownFuse()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto max_size : max_sizes)
         {
@@ -252,7 +252,7 @@ struct openssl_stream_test
     void
     testSuccessCases()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto mode : { context_mode::anon,
                           context_mode::shared_cert,
@@ -272,7 +272,7 @@ struct openssl_stream_test
     void
     testFailureCases()
     {
-        using namespace tls::test;
+        using namespace test;
 
         io_context ioc;
 
@@ -300,7 +300,7 @@ struct openssl_stream_test
     void
     testTlsShutdown()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto mode : { context_mode::shared_cert,
                           context_mode::separate_cert })
@@ -316,7 +316,7 @@ struct openssl_stream_test
     void
     testStreamTruncated()
     {
-        using namespace tls::test;
+        using namespace test;
 
         for(auto mode : { context_mode::shared_cert,
                           context_mode::separate_cert })
@@ -332,7 +332,7 @@ struct openssl_stream_test
     void
     testStopTokenCancellation()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // Cancel during handshake
         {
@@ -364,7 +364,7 @@ struct openssl_stream_test
     void
     testSocketErrorPropagation()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // socket.cancel() while TLS blocked on socket I/O
         {
@@ -389,7 +389,7 @@ struct openssl_stream_test
     void
     testCertificateValidation()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // Untrusted CA
         {
@@ -414,7 +414,7 @@ struct openssl_stream_test
     void
     testSni()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // Correct hostname succeeds
         {
@@ -441,7 +441,7 @@ struct openssl_stream_test
     void
     testSniCallback()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // SNI callback accepts hostname
         {
@@ -482,7 +482,7 @@ struct openssl_stream_test
     void
     testMtls()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // mTLS success
         {
@@ -516,7 +516,7 @@ struct openssl_stream_test
     void
     testCertificateChain()
     {
-        using namespace tls::test;
+        using namespace test;
 
         // Server sends full chain
         {

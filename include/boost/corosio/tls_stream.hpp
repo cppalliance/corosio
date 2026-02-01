@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_TLS_TLS_STREAM_HPP
-#define BOOST_COROSIO_TLS_TLS_STREAM_HPP
+#ifndef BOOST_COROSIO_TLS_STREAM_HPP
+#define BOOST_COROSIO_TLS_STREAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io_buffer_param.hpp>

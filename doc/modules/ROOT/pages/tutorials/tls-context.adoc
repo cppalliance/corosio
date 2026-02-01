@@ -10,20 +10,20 @@
 = TLS Context Configuration
 
 This tutorial covers how to configure TLS contexts for secure connections.
-A `tls::context` stores certificates, keys, and settings that define how
+A `tls_context` stores certificates, keys, and settings that define how
 TLS connections are established and verified.
 
 NOTE: Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/tls/context.hpp>
+#include <boost/corosio/tls_context.hpp>
 
 namespace tls = boost::corosio::tls;
 ----
 
 == Introduction
 
-The `tls::context` class is a portable abstraction for TLS configuration that
+The `tls_context` class is a portable abstraction for TLS configuration that
 works across multiple TLS backends (WolfSSL, OpenSSL, mbedTLS, etc.). It
 handles:
 
@@ -33,25 +33,25 @@ handles:
 * Configuring certificate verification behavior
 * Managing revocation checking (CRL, OCSP)
 
-Use `tls::context` to configure TLS settings once, then pass it to TLS streams
+Use `tls_context` to configure TLS settings once, then pass it to TLS streams
 for establishing secure connections.
 
 == Construction
 
-A `tls::context` is a shared handle to an opaque implementation. Copies share
+A `tls_context` is a shared handle to an opaque implementation. Copies share
 the same underlying state, making it easy to pass contexts by value and share
 them across multiple TLS streams.
 
 [source,cpp]
 ----
 // Create a default context
-tls::context ctx;
+tls_context ctx;
 
 // Copy shares the same underlying state
-tls::context ctx2 = ctx;  // ctx and ctx2 share state
+tls_context ctx2 = ctx;  // ctx and ctx2 share state
 
 // Move transfers ownership
-tls::context ctx3 = std::move( ctx );
+tls_context ctx3 = std::move( ctx );
 // ctx is now empty
 ----
 
@@ -65,17 +65,17 @@ Most applications follow this pattern:
 
 [source,cpp]
 ----
-tls::context ctx;
+tls_context ctx;
 
 // 1. Load credentials (for servers, or clients using client certs)
 ctx.use_certificate_chain_file( "server.crt" ).value();
-ctx.use_private_key_file( "server.key", tls::file_format::pem ).value();
+ctx.use_private_key_file( "server.key", tls_file_format::pem ).value();
 
 // 2. Configure trust anchors (for verifying peer certificates)
 ctx.set_default_verify_paths().value();  // Use system CA store
 
 // 3. Set verification mode
-ctx.set_verify_mode( tls::verify_mode::peer ).value();
+ctx.set_verify_mode( tls_verify_mode::peer ).value();
 
 // 4. Configure protocol options (optional)
 ctx.set_min_protocol_version( tls::version::tls_1_2 ).value();
@@ -98,15 +98,15 @@ from separate PEM files:
 ctx.use_certificate_chain_file( "fullchain.pem" ).value();
 
 // Load the matching private key
-ctx.use_private_key_file( "privkey.key", tls::file_format::pem ).value();
+ctx.use_private_key_file( "privkey.key", tls_file_format::pem ).value();
 ----
 
 For a single certificate without intermediates:
 
 [source,cpp]
 ----
-ctx.use_certificate_file( "server.crt", tls::file_format::pem ).value();
-ctx.use_private_key_file( "server.key", tls::file_format::pem ).value();
+ctx.use_certificate_file( "server.crt", tls_file_format::pem ).value();
+ctx.use_private_key_file( "server.key", tls_file_format::pem ).value();
 ----
 
 === Loading from PKCS#12 Bundles
@@ -130,7 +130,7 @@ std::string cert_pem = fetch_certificate_from_vault();
 std::string key_pem = fetch_key_from_vault();
 
 ctx.use_certificate_chain( cert_pem ).value();
-ctx.use_private_key( key_pem, tls::file_format::pem ).value();
+ctx.use_private_key( key_pem, tls_file_format::pem ).value();
 ----
 
 === DER Format
@@ -139,8 +139,8 @@ For binary DER-encoded files (common in embedded systems):
 
 [source,cpp]
 ----
-ctx.use_certificate_file( "server.der", tls::file_format::der ).value();
-ctx.use_private_key_file( "server.key.der", tls::file_format::der ).value();
+ctx.use_certificate_file( "server.der", tls_file_format::der ).value();
+ctx.use_private_key_file( "server.key.der", tls_file_format::der ).value();
 ----
 
 === Encrypted Private Keys
@@ -273,13 +273,13 @@ Configure how peer certificates are verified during the TLS handshake.
 [source,cpp]
 ----
 // Don't verify peer (not recommended for production)
-ctx.set_verify_mode( tls::verify_mode::none ).value();
+ctx.set_verify_mode( tls_verify_mode::none ).value();
 
 // Verify peer if certificate is presented
-ctx.set_verify_mode( tls::verify_mode::peer ).value();
+ctx.set_verify_mode( tls_verify_mode::peer ).value();
 
 // Require and verify peer certificate (mTLS server-side)
-ctx.set_verify_mode( tls::verify_mode::require_peer ).value();
+ctx.set_verify_mode( tls_verify_mode::require_peer ).value();
 ----
 
 Typical usage:
@@ -406,15 +406,15 @@ A common pattern uses two context configurations:
 [source,cpp]
 ----
 // Bootstrap context: for fetching revocation data
-tls::context bootstrap_ctx;
+tls_context bootstrap_ctx;
 bootstrap_ctx.set_default_verify_paths().value();
-bootstrap_ctx.set_verify_mode( tls::verify_mode::peer ).value();
+bootstrap_ctx.set_verify_mode( tls_verify_mode::peer ).value();
 bootstrap_ctx.set_revocation_policy( tls::revocation_policy::disabled );
 
 // Hardened context: for sensitive connections
-tls::context hardened_ctx;
+tls_context hardened_ctx;
 hardened_ctx.set_default_verify_paths().value();
-hardened_ctx.set_verify_mode( tls::verify_mode::peer ).value();
+hardened_ctx.set_verify_mode( tls_verify_mode::peer ).value();
 hardened_ctx.add_crl_file( "cached.crl" ).value();
 hardened_ctx.set_revocation_policy( tls::revocation_policy::hard_fail );
 ----
@@ -437,7 +437,7 @@ ctx.set_password_callback(
     });
 
 // Now load encrypted private key
-ctx.use_private_key_file( "encrypted.key", tls::file_format::pem ).value();
+ctx.use_private_key_file( "encrypted.key", tls_file_format::pem ).value();
 ----
 
 === Secure Password Handling
@@ -483,15 +483,15 @@ scenarios.
 
 [source,cpp]
 ----
-tls::context make_https_client_context()
+tls_context make_https_client_context()
 {
-    tls::context ctx;
+    tls_context ctx;
     
     // Trust system CAs for public websites
     ctx.set_default_verify_paths().value();
     
     // Verify server certificates
-    ctx.set_verify_mode( tls::verify_mode::peer ).value();
+    ctx.set_verify_mode( tls_verify_mode::peer ).value();
     
     // Modern TLS only
     ctx.set_min_protocol_version( tls::version::tls_1_2 ).value();
@@ -500,7 +500,7 @@ tls::context make_https_client_context()
 }
 
 // Usage with TLS stream
-tls::context ctx = make_https_client_context();
+tls_context ctx = make_https_client_context();
 ctx.set_hostname("api.example.com");  // Set before creating stream
 corosio::wolfssl_stream secure( sock, ctx );
 co_await secure.handshake( corosio::tls_stream::client );
@@ -510,16 +510,16 @@ co_await secure.handshake( corosio::tls_stream::client );
 
 [source,cpp]
 ----
-tls::context make_server_context()
+tls_context make_server_context()
 {
-    tls::context ctx;
+    tls_context ctx;
     
     // Load server credentials
     ctx.use_certificate_chain_file( "fullchain.pem" ).value();
-    ctx.use_private_key_file( "privkey.pem", tls::file_format::pem ).value();
+    ctx.use_private_key_file( "privkey.pem", tls_file_format::pem ).value();
     
     // Don't verify client certificates (no mTLS)
-    ctx.set_verify_mode( tls::verify_mode::none ).value();
+    ctx.set_verify_mode( tls_verify_mode::none ).value();
     
     return ctx;
 }
@@ -529,17 +529,17 @@ tls::context make_server_context()
 
 [source,cpp]
 ----
-tls::context make_mtls_client_context()
+tls_context make_mtls_client_context()
 {
-    tls::context ctx;
+    tls_context ctx;
     
     // Client credentials for mTLS
     ctx.use_certificate_chain_file( "client.crt" ).value();
-    ctx.use_private_key_file( "client.key", tls::file_format::pem ).value();
+    ctx.use_private_key_file( "client.key", tls_file_format::pem ).value();
     
     // Trust specific CA for server verification
     ctx.load_verify_file( "server-ca.crt" ).value();
-    ctx.set_verify_mode( tls::verify_mode::peer ).value();
+    ctx.set_verify_mode( tls_verify_mode::peer ).value();
     
     return ctx;
 }
@@ -553,7 +553,7 @@ to detect errors:
 [source,cpp]
 ----
 // Throw on error
-if( auto ec = ctx.use_certificate_file( "cert.pem", tls::file_format::pem ) )
+if( auto ec = ctx.use_certificate_file( "cert.pem", tls_file_format::pem ) )
     throw std::system_error(ec);
 
 // Check error explicitly

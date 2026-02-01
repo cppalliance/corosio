@@ -17,7 +17,7 @@
 #include <memory>
 #include <string_view>
 
-namespace boost::corosio::tls {
+namespace boost::corosio {
 
 //------------------------------------------------------------------------------
 //
@@ -31,7 +31,7 @@ namespace boost::corosio::tls {
 
     @see stream::handshake
 */
-enum class role
+enum class tls_role
 {
     /// Perform handshake as the connecting client.
     client,
@@ -45,10 +45,10 @@ enum class role
     Specifies the minimum or maximum TLS protocol version to use
     for connections. Only modern, secure versions are supported.
 
-    @see context::set_min_protocol_version
-    @see context::set_max_protocol_version
+    @see tls_context::set_min_protocol_version
+    @see tls_context::set_max_protocol_version
 */
-enum class version
+enum class tls_version
 {
     /// TLS 1.2 (RFC 5246).
     tls_1_2,
@@ -61,10 +61,10 @@ enum class version
 
     Specifies the encoding format for certificate and key data.
 
-    @see context::use_certificate
-    @see context::use_private_key
+    @see tls_context::use_certificate
+    @see tls_context::use_private_key
 */
-enum class file_format
+enum class tls_file_format
 {
     /// PEM format (Base64-encoded with header/footer lines).
     pem,
@@ -78,9 +78,9 @@ enum class file_format
     Controls how the TLS implementation verifies the peer's
     certificate during the handshake.
 
-    @see context::set_verify_mode
+    @see tls_context::set_verify_mode
 */
-enum class verify_mode
+enum class tls_verify_mode
 {
     /// Do not request or verify the peer certificate.
     none,
@@ -97,9 +97,9 @@ enum class verify_mode
     Controls how certificate revocation status is checked during
     verification.
 
-    @see context::set_revocation_policy
+    @see tls_context::set_revocation_policy
 */
-enum class revocation_policy
+enum class tls_revocation_policy
 {
     /// Do not check revocation status.
     disabled,
@@ -116,9 +116,9 @@ enum class revocation_policy
     Indicates whether the password is needed for reading (decrypting)
     or writing (encrypting) key material.
 
-    @see context::set_password_callback
+    @see tls_context::set_password_callback
 */
-enum class password_purpose
+enum class tls_password_purpose
 {
     /// Password needed to decrypt/read protected key material.
     for_reading,
@@ -127,17 +127,17 @@ enum class password_purpose
     for_writing
 };
 
-class context;
+class tls_context;
 
 namespace detail {
-struct context_data;
-context_data const&
-get_context_data( context const& ) noexcept;
+struct tls_context_data;
+tls_context_data const&
+get_tls_context_data( tls_context const& ) noexcept;
 } // namespace detail
 
 /** A portable TLS context for certificate and settings storage.
 
-    The `context` class provides a backend-agnostic interface for
+    The `tls_context` class provides a backend-agnostic interface for
     configuring TLS connections. It stores credentials (certificates and
     private keys), trust anchors, protocol settings, and verification
     options that are used when establishing TLS connections.
@@ -172,30 +172,30 @@ get_context_data( context const& ) noexcept;
     @par Example
     @code
     // Create a client context with system trust anchors
-    corosio::tls::context ctx;
+    corosio::tls_context ctx;
     ctx.set_default_verify_paths();
-    ctx.set_verify_mode( corosio::tls::verify_mode::peer );
+    ctx.set_verify_mode( corosio::tls_verify_mode::peer );
     ctx.set_hostname( "example.com" );
 
     // Use with a TLS stream
-    corosio::tls::stream secure( sock, ctx );
-    co_await secure.handshake( corosio::tls::role::client );
+    corosio::openssl_stream secure( sock, ctx );
+    co_await secure.handshake( corosio::tls_stream::client );
     @endcode
 
-    @see role
+    @see tls_role
 */
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4251)  // shared_ptr needs dll-interface
 #endif
-class BOOST_COROSIO_DECL context
+class BOOST_COROSIO_DECL tls_context
 {
     struct impl;
     std::shared_ptr<impl> impl_;
 
     friend
-    detail::context_data const&
-    detail::get_context_data( context const& ) noexcept;
+    detail::tls_context_data const&
+    detail::get_tls_context_data( tls_context const& ) noexcept;
 
 public:
     /** Construct a default TLS context.
@@ -207,10 +207,10 @@ public:
 
         @par Example
         @code
-        corosio::tls::context ctx;
+        corosio::tls_context ctx;
         @endcode
     */
-    context();
+    tls_context();
 
     /** Copy constructor.
 
@@ -219,7 +219,7 @@ public:
 
         @param other The context to copy from.
     */
-    context( context const& other ) = default;
+    tls_context( tls_context const& other ) = default;
 
     /** Copy assignment operator.
 
@@ -230,7 +230,7 @@ public:
 
         @return Reference to this context.
     */
-    context& operator=( context const& other ) = default;
+    tls_context& operator=( tls_context const& other ) = default;
 
     /** Move constructor.
 
@@ -239,7 +239,7 @@ public:
 
         @param other The context to move from.
     */
-    context( context&& other ) noexcept = default;
+    tls_context( tls_context&& other ) noexcept = default;
 
     /** Move assignment operator.
 
@@ -251,7 +251,7 @@ public:
 
         @return Reference to this context.
     */
-    context& operator=( context&& other ) noexcept = default;
+    tls_context& operator=( tls_context&& other ) noexcept = default;
 
     /** Destructor.
 
@@ -259,7 +259,7 @@ public:
         context. The context state is destroyed when the last handle
         is released.
     */
-    ~context() = default;
+    ~tls_context() = default;
 
     //--------------------------------------------------------------------------
     //
@@ -289,7 +289,7 @@ public:
     std::error_code
     use_certificate(
         std::string_view certificate,
-        file_format format );
+        tls_file_format format );
 
     /** Load the entity certificate from a file.
 
@@ -306,7 +306,7 @@ public:
 
         @par Example
         @code
-        ctx.use_certificate_file( "server.crt", tls::file_format::pem );
+        ctx.use_certificate_file( "server.crt", tls_file_format::pem );
         @endcode
 
         @see use_certificate
@@ -315,7 +315,7 @@ public:
     std::error_code
     use_certificate_file(
         std::string_view filename,
-        file_format format );
+        tls_file_format format );
 
     /** Load a certificate chain from a memory buffer.
 
@@ -377,7 +377,7 @@ public:
     std::error_code
     use_private_key(
         std::string_view private_key,
-        file_format format );
+        tls_file_format format );
 
     /** Load the private key from a file.
 
@@ -397,7 +397,7 @@ public:
 
         @par Example
         @code
-        ctx.use_private_key_file( "server.key", tls::file_format::pem );
+        ctx.use_private_key_file( "server.key", tls_file_format::pem );
         @endcode
 
         @see use_private_key
@@ -406,7 +406,7 @@ public:
     std::error_code
     use_private_key_file(
         std::string_view filename,
-        file_format format );
+        tls_file_format format );
 
     /** Load credentials from a PKCS#12 bundle in memory.
 
@@ -564,13 +564,13 @@ public:
         @par Example
         @code
         // Require TLS 1.3 minimum
-        ctx.set_min_protocol_version( tls::version::tls_1_3 );
+        ctx.set_min_protocol_version( tls_version::tls_1_3 );
         @endcode
 
         @see set_max_protocol_version
     */
     std::error_code
-    set_min_protocol_version( version v );
+    set_min_protocol_version( tls_version v );
 
     /** Set the maximum TLS protocol version.
 
@@ -585,7 +585,7 @@ public:
         @see set_min_protocol_version
     */
     std::error_code
-    set_max_protocol_version( version v );
+    set_max_protocol_version( tls_version v );
 
     /** Set the allowed cipher suites.
 
@@ -649,16 +649,16 @@ public:
         @par Example
         @code
         // Verify peer certificate (typical for clients)
-        ctx.set_verify_mode( tls::verify_mode::peer );
+        ctx.set_verify_mode( tls_verify_mode::peer );
 
         // Require client certificate (server-side mTLS)
-        ctx.set_verify_mode( tls::verify_mode::require_peer );
+        ctx.set_verify_mode( tls_verify_mode::require_peer );
         @endcode
 
-        @see verify_mode
+        @see tls_verify_mode
     */
     std::error_code
-    set_verify_mode( verify_mode mode );
+    set_verify_mode( tls_verify_mode mode );
 
     /** Set the maximum certificate chain verification depth.
 
@@ -852,17 +852,17 @@ public:
         @par Example
         @code
         // Require successful revocation check
-        ctx.set_revocation_policy( tls::revocation_policy::hard_fail );
+        ctx.set_revocation_policy( tls_revocation_policy::hard_fail );
 
         // Check but allow unknown status
-        ctx.set_revocation_policy( tls::revocation_policy::soft_fail );
+        ctx.set_revocation_policy( tls_revocation_policy::soft_fail );
         @endcode
 
-        @see revocation_policy
+        @see tls_revocation_policy
         @see add_crl
     */
     void
-    set_revocation_policy( revocation_policy policy );
+    set_revocation_policy( tls_revocation_policy policy );
 
     //--------------------------------------------------------------------------
     //
@@ -886,17 +886,17 @@ public:
         @par Example
         @code
         ctx.set_password_callback(
-            []( std::size_t max_len, tls::password_purpose purpose )
+            []( std::size_t max_len, tls_password_purpose purpose )
             {
                 // In practice, prompt user or read from secure storage
                 return std::string( "my-key-password" );
             });
 
         // Now load encrypted key
-        ctx.use_private_key_file( "encrypted.key", tls::file_format::pem );
+        ctx.use_private_key_file( "encrypted.key", tls_file_format::pem );
         @endcode
 
-        @see password_purpose
+        @see tls_password_purpose
     */
     template<typename Callback>
     void
@@ -908,12 +908,12 @@ public:
 
 template<typename Callback>
 void
-context::
+tls_context::
 set_servername_callback( Callback callback )
 {
     set_servername_callback_impl( std::move( callback ) );
 }
 
-} // namespace boost::corosio::tls
+} // namespace boost::corosio
 
 #endif

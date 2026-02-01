@@ -10,14 +10,14 @@
 #ifndef SRC_TLS_DETAIL_CONTEXT_IMPL_HPP
 #define SRC_TLS_DETAIL_CONTEXT_IMPL_HPP
 
-#include <boost/corosio/tls/context.hpp>
+#include <boost/corosio/tls_context.hpp>
 
 #include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
 
-namespace boost::corosio::tls {
+namespace boost::corosio {
 
 namespace detail {
 
@@ -36,16 +36,16 @@ public:
     virtual ~native_context_base() = default;
 };
 
-struct context_data
+struct tls_context_data
 {
     //--------------------------------------------
     // Credentials
 
     std::string entity_certificate;
-    file_format entity_cert_format = file_format::pem;
+    tls_file_format entity_cert_format = tls_file_format::pem;
     std::string certificate_chain;
     std::string private_key;
-    file_format private_key_format = file_format::pem;
+    tls_file_format private_key_format = tls_file_format::pem;
 
     //--------------------------------------------
     // Trust anchors
@@ -57,15 +57,15 @@ struct context_data
     //--------------------------------------------
     // Protocol settings
 
-    version min_version = version::tls_1_2;
-    version max_version = version::tls_1_3;
+    tls_version min_version = tls_version::tls_1_2;
+    tls_version max_version = tls_version::tls_1_3;
     std::string ciphersuites;
     std::vector<std::string> alpn_protocols;
 
     //--------------------------------------------
     // Verification
 
-    verify_mode verification_mode = verify_mode::none;
+    tls_verify_mode verification_mode = tls_verify_mode::none;
     int verify_depth = 100;
     std::string hostname;
     std::function<bool( bool, void* )> verify_callback;
@@ -81,12 +81,12 @@ struct context_data
     std::vector<std::string> crls;
     std::string ocsp_staple;
     bool require_ocsp_staple = false;
-    revocation_policy revocation = revocation_policy::disabled;
+    tls_revocation_policy revocation = tls_revocation_policy::disabled;
 
     //--------------------------------------------
     // Password
 
-    std::function<std::string( std::size_t, password_purpose )> password_callback;
+    std::function<std::string( std::size_t, tls_password_purpose )> password_callback;
 
     //--------------------------------------------
     // Cached native contexts (intrusive list)
@@ -119,7 +119,7 @@ struct context_data
         return ctx;
     }
 
-    ~context_data()
+    ~tls_context_data()
     {
         // Clean up cached native contexts (no lock needed - destructor)
         while( native_contexts_ )
@@ -135,12 +135,12 @@ struct context_data
 
 //------------------------------------------------------------------------------
 
-/** Implementation of tls::context.
+/** Implementation of tls_context.
 
     Contains all portable TLS configuration data plus
     cached native SSL contexts as an intrusive list.
 */
-struct context::impl : detail::context_data
+struct tls_context::impl : detail::tls_context_data
 {
 };
 
@@ -157,14 +157,14 @@ namespace detail {
 
     @return Reference to the context implementation.
 */
-inline context_data const&
-get_context_data( context const& ctx ) noexcept
+inline tls_context_data const&
+get_tls_context_data( tls_context const& ctx ) noexcept
 {
     return *ctx.impl_;
 }
 
 } // namespace detail
 
-} // namespace boost::corosio::tls
+} // namespace boost::corosio
 
 #endif

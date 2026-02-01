@@ -7,12 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_TLS_OPENSSL_STREAM_HPP
-#define BOOST_COROSIO_TLS_OPENSSL_STREAM_HPP
+#ifndef BOOST_COROSIO_OPENSSL_STREAM_HPP
+#define BOOST_COROSIO_OPENSSL_STREAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/tls/context.hpp>
-#include <boost/corosio/tls/tls_stream.hpp>
+#include <boost/corosio/tls_context.hpp>
+#include <boost/corosio/tls_stream.hpp>
 #include <boost/capy/concept/stream.hpp>
 #include <boost/capy/io/any_stream.hpp>
 #include <boost/capy/io_task.hpp>
@@ -47,9 +47,9 @@ namespace boost::corosio {
 
     @par Example
     @code
-    tls::context ctx;
+    tls_context ctx;
     ctx.set_hostname("example.com");
-    ctx.set_verify_mode(tls::verify_mode::peer);
+    ctx.set_verify_mode(tls_verify_mode::peer);
 
     corosio::tcp_socket sock(ioc);
     co_await sock.connect(endpoint);
@@ -84,7 +84,7 @@ public:
     */
     template<capy::Stream S>
         requires (!std::same_as<std::decay_t<S>, openssl_stream>)
-    openssl_stream(S stream, tls::context ctx)
+    openssl_stream(S stream, tls_context ctx)
         : stream_(std::move(stream))
         , impl_(make_impl(stream_, ctx))
     {
@@ -101,7 +101,7 @@ public:
         @param ctx The TLS context containing configuration.
     */
     template<capy::Stream S>
-    openssl_stream(S* stream, tls::context ctx)
+    openssl_stream(S* stream, tls_context ctx)
         : stream_(stream)
         , impl_(make_impl(stream_, ctx))
     {
@@ -144,7 +144,7 @@ protected:
 
 private:
     static impl*
-    make_impl(capy::any_stream& stream, tls::context const& ctx);
+    make_impl(capy::any_stream& stream, tls_context const& ctx);
 };
 
 } // namespace boost::corosio

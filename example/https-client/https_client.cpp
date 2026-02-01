@@ -8,7 +8,7 @@
 //
 
 #include <boost/corosio.hpp>
-#include <boost/corosio/tls/wolfssl_stream.hpp>
+#include <boost/corosio/wolfssl_stream.hpp>
 #include <system_error>
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -69,11 +69,11 @@ run_client(
         throw std::system_error(ec);
 
     // Configure TLS context
-    corosio::tls::context ctx;
+    corosio::tls_context ctx;
     ctx.set_hostname(hostname);
     if (auto ec = ctx.set_default_verify_paths(); ec)
         throw std::system_error(ec);
-    if (auto ec = ctx.set_verify_mode(corosio::tls::verify_mode::peer); ec)
+    if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer); ec)
         throw std::system_error(ec);
 
     // Wrap socket in TLS stream
