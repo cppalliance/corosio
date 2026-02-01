@@ -11,123 +11,39 @@
 #define BOOST_COROSIO_TLS_TLS_STREAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/capy/io_result.hpp>
-#include <boost/corosio/io_stream.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/corosio/io_buffer_param.hpp>
+#include <boost/capy/buffers.hpp>
+#include <boost/capy/io/any_stream.hpp>
+#include <boost/capy/io_task.hpp>
 
-#include <coroutine>
-#include <stop_token>
+#include <cstddef>
 
 namespace boost::corosio {
 
 /** Abstract base class for TLS streams.
 
-    This class provides the common interface for TLS stream implementations.
-    It derives from @ref io_stream to inherit read and write operations,
-    and adds the TLS-specific handshake and shutdown operations.
+    This class provides a runtime-polymorphic interface for TLS
+    implementations. Derived classes (openssl_stream, wolfssl_stream)
+    implement the virtual functions to provide backend-specific
+    TLS functionality.
 
-    Concrete implementations (e.g., wolfssl_stream, openssl_stream) derive
-    from this class and provide backend-specific functionality.
+    Unlike @ref io_stream which represents OS-level I/O completed
+    by the kernel, TLS streams are coroutine-based: their operations
+    are implemented as coroutines that orchestrate sub-operations
+    on the underlying stream.
+
+    The non-virtual template wrappers (`read_some`, `write_some`)
+    satisfy the `capy::Stream` concept, enabling TLS streams to
+    be used anywhere a Stream is expected.
 
     @par Thread Safety
     Distinct objects: Safe.@n
     Shared objects: Unsafe.
+
+    @see openssl_stream, wolfssl_stream
 */
-class BOOST_COROSIO_DECL tls_stream : public io_stream
+class BOOST_COROSIO_DECL tls_stream
 {
-    struct handshake_awaitable
-    {
-        tls_stream& stream_;
-        int type_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-
-        handshake_awaitable(
-            tls_stream& stream,
-            int type) noexcept
-            : stream_(stream)
-            , type_(type)
-        {
-        }
-
-        bool await_ready() const noexcept
-        {
-            return token_.stop_requested();
-        }
-
-        capy::io_result<> await_resume() const noexcept
-        {
-            if(token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled)};
-            return {ec_};
-        }
-
-        template<typename Ex>
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            Ex const& ex) -> std::coroutine_handle<>
-        {
-            stream_.get().handshake(h, ex, type_, token_, &ec_);
-            return std::noop_coroutine();
-        }
-
-        template<typename Ex>
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
-        {
-            token_ = std::move(token);
-            stream_.get().handshake(h, ex, type_, token_, &ec_);
-            return std::noop_coroutine();
-        }
-    };
-
-    struct shutdown_awaitable
-    {
-        tls_stream& stream_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-
-        explicit
-        shutdown_awaitable(tls_stream& stream) noexcept
-            : stream_(stream)
-        {
-        }
-
-        bool await_ready() const noexcept
-        {
-            return token_.stop_requested();
-        }
-
-        capy::io_result<> await_resume() const noexcept
-        {
-            if(token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled)};
-            return {ec_};
-        }
-
-        template<typename Ex>
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            Ex const& ex) -> std::coroutine_handle<>
-        {
-            stream_.get().shutdown(h, ex, token_, &ec_);
-            return std::noop_coroutine();
-        }
-
-        template<typename Ex>
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
-        {
-            token_ = std::move(token);
-            stream_.get().shutdown(h, ex, token_, &ec_);
-            return std::noop_coroutine();
-        }
-    };
-
 public:
     /** Different handshake types. */
     enum handshake_type
@@ -139,123 +55,124 @@ public:
         server
     };
 
+    /** Destructor. */
+    virtual ~tls_stream() = default;
+
+    tls_stream(tls_stream const&) = delete;
+    tls_stream& operator=(tls_stream const&) = delete;
+
+    /** Initiate an asynchronous read operation.
+
+        Reads decrypted data into the provided buffer sequence. The
+        operation completes when at least one byte has been read,
+        or an error occurs.
+
+        This non-virtual template wrapper satisfies the `capy::Stream`
+        concept by delegating to the virtual `do_read_some`.
+
+        @param buffers The buffer sequence to read data into.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+    */
+    template<capy::MutableBufferSequence Buffers>
+    auto
+    read_some(Buffers const& buffers)
+    {
+        return do_read_some(buffers);
+    }
+
+    /** Initiate an asynchronous write operation.
+
+        Encrypts and writes data from the provided buffer sequence.
+        The operation completes when at least one byte has been
+        written, or an error occurs.
+
+        This non-virtual template wrapper satisfies the `capy::Stream`
+        concept by delegating to the virtual `do_write_some`.
+
+        @param buffers The buffer sequence containing data to write.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+    */
+    template<capy::ConstBufferSequence Buffers>
+    auto
+    write_some(Buffers const& buffers)
+    {
+        return do_write_some(buffers);
+    }
+
     /** Perform the TLS handshake asynchronously.
 
-        This function initiates the TLS handshake process. For client
-        connections, this sends the ClientHello and processes the
-        server's response. For server connections, this waits for the
-        ClientHello and sends the server's response.
-
-        The operation supports cancellation via `std::stop_token` through
-        the affine awaitable protocol. If the associated stop token is
-        triggered, the operation completes immediately with
-        `errc::operation_canceled`.
+        Initiates the TLS handshake process. For client connections,
+        this sends the ClientHello and processes the server's response.
+        For server connections, this waits for the ClientHello and
+        sends the server's response.
 
         @param type The type of handshaking to perform (client or server).
 
-        @return An awaitable that completes with `io_result<>`.
-            Returns success on successful handshake, or an error code
-            on failure including:
-            - SSL/TLS errors from the underlying library
-            - operation_canceled: Cancelled via stop_token
-
-        @par Preconditions
-        The underlying stream must be connected.
-
-        @par Example
-        @code
-        // Client handshake with error code
-        auto [ec] = co_await secure.handshake(tls_stream::client);
-        if(ec) { ... }
-
-        // Or with exceptions
-        (co_await secure.handshake(tls_stream::client)).value();
-        @endcode
+        @return An awaitable yielding `(error_code)`.
     */
-    auto handshake(handshake_type type)
-    {
-        return handshake_awaitable(*this, type);
-    }
+    virtual capy::io_task<>
+    handshake(handshake_type type) = 0;
 
     /** Perform a graceful TLS shutdown asynchronously.
 
-        This function initiates the TLS shutdown sequence by sending a
-        close_notify alert and waiting for the peer's close_notify response.
+        Initiates the TLS shutdown sequence by sending a close_notify
+        alert and waiting for the peer's close_notify response.
 
-        The operation supports cancellation via `std::stop_token` through
-        the affine awaitable protocol. If the associated stop token is
-        triggered, the operation completes immediately with
-        `errc::operation_canceled`.
-
-        @return An awaitable that completes with `io_result<>`.
-            Returns success on successful shutdown, or an error code
-            on failure.
-
-        @par Preconditions
-        There must be no pending read or write operations on this stream.
-        The application must ensure all read_some and write_some operations
-        have completed before calling shutdown.
-
-        @par Example
-        @code
-        auto [ec] = co_await secure.shutdown();
-        if(ec) { ... }
-        @endcode
+        @return An awaitable yielding `(error_code)`.
     */
-    auto shutdown()
-    {
-        return shutdown_awaitable(*this);
-    }
+    virtual capy::io_task<>
+    shutdown() = 0;
 
     /** Returns a reference to the underlying stream.
 
-        @return Reference to the wrapped io_stream.
+        Provides access to the type-erased underlying stream for
+        operations like cancellation or accessing native handles.
+
+        @warning Do not reseat (assign to) the returned reference.
+            The TLS implementation holds internal state bound to
+            the original stream. Replacing it causes undefined
+            behavior.
+
+        @return Reference to the wrapped stream.
     */
-    io_stream& next_layer() noexcept
-    {
-        return s_;
-    }
+    virtual capy::any_stream&
+    next_layer() noexcept = 0;
 
     /** Returns a const reference to the underlying stream.
 
-        @return Const reference to the wrapped io_stream.
+        @return Const reference to the wrapped stream.
     */
-    io_stream const& next_layer() const noexcept
-    {
-        return s_;
-    }
-
-    struct tls_stream_impl : io_stream_impl
-    {
-        virtual std::coroutine_handle<> handshake(
-            std::coroutine_handle<>,
-            capy::executor_ref,
-            int,
-            std::stop_token,
-            std::error_code*) = 0;
-
-        virtual std::coroutine_handle<> shutdown(
-            std::coroutine_handle<>,
-            capy::executor_ref,
-            std::stop_token,
-            std::error_code*) = 0;
-    };
+    virtual capy::any_stream const&
+    next_layer() const noexcept = 0;
 
 protected:
-    explicit
-    tls_stream(io_stream& stream) noexcept
-        : io_stream(stream.context())
-        , s_(stream)
-    {
-    }
+    tls_stream() = default;
 
-    io_stream& s_;
+    /** Virtual read implementation.
 
-private:
-    tls_stream_impl& get() const noexcept
-    {
-        return *static_cast<tls_stream_impl*>(impl_);
-    }
+        Derived classes override this to perform TLS decryption
+        and read operations.
+
+        @param buffers Type-erased buffer sequence to read into.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+    */
+    virtual capy::io_task<std::size_t>
+    do_read_some(io_buffer_param buffers) = 0;
+
+    /** Virtual write implementation.
+
+        Derived classes override this to perform TLS encryption
+        and write operations.
+
+        @param buffers Type-erased buffer sequence to write from.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+    */
+    virtual capy::io_task<std::size_t>
+    do_write_some(io_buffer_param buffers) = 0;
 };
 
 } // namespace boost::corosio

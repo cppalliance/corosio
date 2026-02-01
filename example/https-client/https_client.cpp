@@ -29,7 +29,7 @@ namespace capy = boost::capy;
 // Coroutine that performs the HTTPS GET request
 capy::task<void>
 do_request(
-    corosio::io_stream& stream,
+    corosio::tls_stream& stream,
     std::string_view host)
 {
     // Build and send the HTTP request
@@ -77,13 +77,16 @@ run_client(
         throw std::system_error(ec);
 
     // Wrap socket in TLS stream
-    corosio::wolfssl_stream secure(s, ctx);
+    corosio::wolfssl_stream secure(&s, ctx);
 
     // Perform TLS handshake
     if (auto [ec] = co_await secure.handshake(corosio::wolfssl_stream::client); ec)
         throw std::system_error(ec);
 
     co_await do_request(secure, hostname);
+
+    if( auto [ec] = co_await secure.shutdown(); ec)
+        throw std::system_error(ec);
 }
 
 int

@@ -10,10 +10,7 @@
 #include <boost/corosio/tls/wolfssl_stream.hpp>
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/coro_lock.hpp>
-#include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/io_result.hpp>
-#include <boost/capy/task.hpp>
 #include <boost/capy/write.hpp>
 
 // Internal context implementation
@@ -23,8 +20,6 @@
 #include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
 #include <wolfssl/error-ssl.h>
-
-#include "src/detail/resume_coro.hpp"
 
 #include <algorithm>
 #include <array>
@@ -36,8 +31,8 @@
     wolfssl_stream Architecture
     ===========================
 
-    TLS layer wrapping an underlying io_stream. Supports one concurrent
-    read_some and one concurrent write_some (like Asio's ssl::stream).
+    TLS layer wrapping an underlying stream (via any_stream). Supports one
+    concurrent read_some and one concurrent write_some (like Asio's ssl::stream).
 
     Data Flow
     ---------
@@ -79,13 +74,6 @@
 
     This design allows a single tls::context to be shared across both client
     and server streams without requiring OpenSSL compatibility mode in WolfSSL.
-
-    Key Types
-    ---------
-    - wolfssl_stream_impl_ : tls_stream_impl  -- the impl stored in io_object::impl_
-    - wolfssl_native_context                  -- caches client_ctx_ and server_ctx_
-    - recv_callback, send_callback            -- WolfSSL I/O hooks (static)
-    - do_read_some, do_write_some             -- inner coroutines with WANT_* loops
 */
 
 namespace boost::corosio {
@@ -108,19 +96,19 @@ namespace tls::detail {
 // SNI callback invoked by WolfSSL during handshake (server-side)
 // Returns SNICbReturn enum: 0 = OK, fatal_return (2) = abort
 static int
-wolfssl_sni_callback( WOLFSSL* ssl, int* /* alert */, void* arg )
+wolfssl_sni_callback(WOLFSSL* ssl, int* /* alert */, void* arg)
 {
     void* sni_data = nullptr;
-    unsigned short sni_len = wolfSSL_SNI_GetRequest( ssl, WOLFSSL_SNI_HOST_NAME, &sni_data );
-    if( !sni_data || sni_len == 0 )
+    unsigned short sni_len = wolfSSL_SNI_GetRequest(ssl, WOLFSSL_SNI_HOST_NAME, &sni_data);
+    if(!sni_data || sni_len == 0)
         return 0;  // No SNI sent, continue
 
-    std::string_view servername( static_cast<char const*>( sni_data ), sni_len );
+    std::string_view servername(static_cast<char const*>(sni_data), sni_len);
 
-    auto* cd = static_cast<context_data const*>( arg );
-    if( cd && cd->servername_callback )
+    auto* cd = static_cast<context_data const*>(arg);
+    if(cd && cd->servername_callback)
     {
-        if( !cd->servername_callback( servername ) )
+        if(!cd->servername_callback(servername))
             return fatal_return;  // Callback rejected hostname
     }
 
@@ -142,91 +130,91 @@ public:
     WOLFSSL_CTX* server_ctx_;
 
     static void
-    apply_common_settings( WOLFSSL_CTX* ctx, context_data const& cd )
+    apply_common_settings(WOLFSSL_CTX* ctx, context_data const& cd)
     {
-        if( !ctx )
+        if(!ctx)
             return;
 
         // Apply verify mode from config
         int verify_mode_flag = WOLFSSL_VERIFY_NONE;
-        if( cd.verification_mode == verify_mode::peer )
+        if(cd.verification_mode == verify_mode::peer)
             verify_mode_flag = WOLFSSL_VERIFY_PEER;
-        else if( cd.verification_mode == verify_mode::require_peer )
+        else if(cd.verification_mode == verify_mode::require_peer)
             verify_mode_flag = WOLFSSL_VERIFY_PEER | WOLFSSL_VERIFY_FAIL_IF_NO_PEER_CERT;
-        wolfSSL_CTX_set_verify( ctx, verify_mode_flag, nullptr );
+        wolfSSL_CTX_set_verify(ctx, verify_mode_flag, nullptr);
 
         // Apply certificate chain if provided (entity cert + intermediates)
         // wolfSSL_CTX_use_certificate_chain_buffer loads entity as cert, rest as chain
-        if( !cd.certificate_chain.empty() )
+        if(!cd.certificate_chain.empty())
         {
-            wolfSSL_CTX_use_certificate_chain_buffer( ctx,
-                reinterpret_cast<unsigned char const*>( cd.certificate_chain.data() ),
-                static_cast<long>( cd.certificate_chain.size() ) );
+            wolfSSL_CTX_use_certificate_chain_buffer(ctx,
+                reinterpret_cast<unsigned char const*>(cd.certificate_chain.data()),
+                static_cast<long>(cd.certificate_chain.size()));
         }
-        else if( !cd.entity_certificate.empty() )
+        else if(!cd.entity_certificate.empty())
         {
             // Only use single certificate if no chain provided
-            int format = ( cd.entity_cert_format == file_format::pem )
+            int format = (cd.entity_cert_format == file_format::pem)
                 ? WOLFSSL_FILETYPE_PEM : WOLFSSL_FILETYPE_ASN1;
-            wolfSSL_CTX_use_certificate_buffer( ctx,
-                reinterpret_cast<unsigned char const*>( cd.entity_certificate.data() ),
-                static_cast<long>( cd.entity_certificate.size() ),
-                format );
+            wolfSSL_CTX_use_certificate_buffer(ctx,
+                reinterpret_cast<unsigned char const*>(cd.entity_certificate.data()),
+                static_cast<long>(cd.entity_certificate.size()),
+                format);
         }
 
         // Apply private key if provided
-        if( !cd.private_key.empty() )
+        if(!cd.private_key.empty())
         {
-            int format = ( cd.private_key_format == file_format::pem )
+            int format = (cd.private_key_format == file_format::pem)
                 ? WOLFSSL_FILETYPE_PEM : WOLFSSL_FILETYPE_ASN1;
-            wolfSSL_CTX_use_PrivateKey_buffer( ctx,
-                reinterpret_cast<unsigned char const*>( cd.private_key.data() ),
-                static_cast<long>( cd.private_key.size() ),
-                format );
+            wolfSSL_CTX_use_PrivateKey_buffer(ctx,
+                reinterpret_cast<unsigned char const*>(cd.private_key.data()),
+                static_cast<long>(cd.private_key.size()),
+                format);
         }
 
         // Apply CA certificates for verification
-        for( auto const& ca : cd.ca_certificates )
+        for(auto const& ca : cd.ca_certificates)
         {
-            wolfSSL_CTX_load_verify_buffer( ctx,
-                reinterpret_cast<unsigned char const*>( ca.data() ),
-                static_cast<long>( ca.size() ),
-                WOLFSSL_FILETYPE_PEM );
+            wolfSSL_CTX_load_verify_buffer(ctx,
+                reinterpret_cast<unsigned char const*>(ca.data()),
+                static_cast<long>(ca.size()),
+                WOLFSSL_FILETYPE_PEM);
         }
 
         // Apply verify depth
-        wolfSSL_CTX_set_verify_depth( ctx, cd.verify_depth );
+        wolfSSL_CTX_set_verify_depth(ctx, cd.verify_depth);
     }
 
     context_data const* cd_;  // For SNI callback access
 
     explicit
-    wolfssl_native_context( context_data const& cd )
-        : client_ctx_( nullptr )
-        , server_ctx_( nullptr )
-        , cd_( &cd )
+    wolfssl_native_context(context_data const& cd)
+        : client_ctx_(nullptr)
+        , server_ctx_(nullptr)
+        , cd_(&cd)
     {
         // Create separate contexts for client and server
-        client_ctx_ = wolfSSL_CTX_new( wolfTLS_client_method() );
-        server_ctx_ = wolfSSL_CTX_new( wolfTLS_server_method() );
+        client_ctx_ = wolfSSL_CTX_new(wolfTLS_client_method());
+        server_ctx_ = wolfSSL_CTX_new(wolfTLS_server_method());
 
-        apply_common_settings( client_ctx_, cd );
-        apply_common_settings( server_ctx_, cd );
+        apply_common_settings(client_ctx_, cd);
+        apply_common_settings(server_ctx_, cd);
 
         // Set SNI callback on server context if provided
-        if( server_ctx_ && cd.servername_callback )
+        if(server_ctx_ && cd.servername_callback)
         {
-            wolfSSL_CTX_set_servername_callback( server_ctx_, wolfssl_sni_callback );
-            wolfSSL_CTX_set_servername_arg( server_ctx_, const_cast<context_data*>( &cd ) );
+            wolfSSL_CTX_set_servername_callback(server_ctx_, wolfssl_sni_callback);
+            wolfSSL_CTX_set_servername_arg(server_ctx_, const_cast<context_data*>(&cd));
         }
     }
 
     ~wolfssl_native_context() override
     {
-        if( client_ctx_ )
-            wolfSSL_CTX_free( client_ctx_ );
-        if( server_ctx_ )
-            wolfSSL_CTX_free( server_ctx_ );
+        if(client_ctx_)
+            wolfSSL_CTX_free(client_ctx_);
+        if(server_ctx_)
+            wolfSSL_CTX_free(server_ctx_);
     }
 };
 
@@ -237,35 +225,34 @@ public:
     @return Pointer to the cached native context wrapper.
 */
 inline wolfssl_native_context*
-get_wolfssl_native_context( context_data const& cd )
+get_wolfssl_native_context(context_data const& cd)
 {
     static char key;
-    auto* p = cd.find( &key, [&]
+    auto* p = cd.find(&key, [&]
     {
-        return new wolfssl_native_context( cd );
+        return new wolfssl_native_context(cd);
     });
-    return static_cast<wolfssl_native_context*>( p );
+    return static_cast<wolfssl_native_context*>(p);
 }
 
 } // namespace tls::detail
 
 //------------------------------------------------------------------------------
 
-struct wolfssl_stream_impl_
-    : tls_stream::tls_stream_impl
+struct wolfssl_stream::impl
 {
-    io_stream& s_;
-    tls::context ctx_;      // holds ref to cached native context
+    capy::any_stream& s_;
+    tls::context ctx_;
     WOLFSSL* ssl_ = nullptr;
 
-    // Buffers for read operations (used by do_read_some)
+    // Buffers for read operations
     std::vector<char> read_in_buf_;
     std::size_t read_in_pos_ = 0;
     std::size_t read_in_len_ = 0;
     std::vector<char> read_out_buf_;
     std::size_t read_out_len_ = 0;
 
-    // Buffers for write operations (used by do_write_some)
+    // Buffers for write operations
     std::vector<char> write_in_buf_;
     std::size_t write_in_pos_ = 0;
     std::size_t write_in_len_ = 0;
@@ -291,20 +278,20 @@ struct wolfssl_stream_impl_
 
     //--------------------------------------------------------------------------
 
-    wolfssl_stream_impl_( io_stream& s, tls::context ctx )
-        : s_( s )
-        , ctx_( std::move( ctx ) )
+    impl(capy::any_stream& s, tls::context ctx)
+        : s_(s)
+        , ctx_(std::move(ctx))
     {
-        read_in_buf_.resize( default_buffer_size );
-        read_out_buf_.resize( default_buffer_size );
-        write_in_buf_.resize( default_buffer_size );
-        write_out_buf_.resize( default_buffer_size );
+        read_in_buf_.resize(default_buffer_size);
+        read_out_buf_.resize(default_buffer_size);
+        write_in_buf_.resize(default_buffer_size);
+        write_out_buf_.resize(default_buffer_size);
     }
 
-    ~wolfssl_stream_impl_()
+    ~impl()
     {
-        if( ssl_ )
-            wolfSSL_free( ssl_ );
+        if(ssl_)
+            wolfSSL_free(ssl_);
         // WOLFSSL_CTX* is owned by cached native context, not freed here
     }
 
@@ -320,8 +307,8 @@ struct wolfssl_stream_impl_
     static int
     recv_callback(WOLFSSL*, char* buf, int sz, void* ctx)
     {
-        auto* impl = static_cast<wolfssl_stream_impl_*>(ctx);
-        auto* op = impl->current_op_;
+        auto* self = static_cast<impl*>(ctx);
+        auto* op = self->current_op_;
 
         // Check if we have data in the input buffer
         std::size_t available = *op->in_len - *op->in_pos;
@@ -355,8 +342,8 @@ struct wolfssl_stream_impl_
     static int
     send_callback(WOLFSSL*, char* buf, int sz, void* ctx)
     {
-        auto* impl = static_cast<wolfssl_stream_impl_*>(ctx);
-        auto* op = impl->current_op_;
+        auto* self = static_cast<impl*>(ctx);
+        auto* op = self->current_op_;
 
         // Check if we have room in the output buffer
         std::size_t available = op->out_buf->size() - *op->out_len;
@@ -380,47 +367,13 @@ struct wolfssl_stream_impl_
     }
 
     //--------------------------------------------------------------------------
-
-    capy::task<capy::io_result<std::size_t>>
-    do_underlying_read(capy::mutable_buffer buf, std::stop_token token)
-    {
-        if(token.stop_requested())
-            co_return capy::io_result<std::size_t>{
-                make_error_code(std::errc::operation_canceled), 0};
-
-        auto guard = co_await io_cm_.scoped_lock();
-        co_return co_await s_.read_some(buf);
-    }
-
-    capy::task<capy::io_result<std::size_t>>
-    do_underlying_write(capy::mutable_buffer buf, std::stop_token token)
-    {
-        if(token.stop_requested())
-            co_return capy::io_result<std::size_t>{
-                make_error_code(std::errc::operation_canceled), 0};
-
-        auto guard = co_await io_cm_.scoped_lock();
-        co_return co_await s_.write_some(buf);
-    }
-
-    //--------------------------------------------------------------------------
     // Inner coroutines for TLS read/write operations
     //--------------------------------------------------------------------------
 
-    /** Inner coroutine that performs TLS read with WANT_READ loop.
-
-        Calls wolfSSL_read in a loop, performing async reads from the
-        underlying stream when needed.
-    */
-    capy::task<>
+    capy::io_task<std::size_t>
     do_read_some(
-        std::array<capy::mutable_buffer, detail::max_iovec_> dest_arr,
-        std::size_t buf_count,
-        std::stop_token token,
-        std::error_code* ec_out,
-        std::size_t* bytes_out,
-        std::coroutine_handle<> continuation,
-        capy::executor_ref d)
+        std::array<capy::mutable_buffer, capy::detail::max_iovec_> dest_arr,
+        std::size_t buf_count)
     {
         std::error_code ec;
         std::size_t total_read = 0;
@@ -436,12 +389,10 @@ struct wolfssl_stream_impl_
 
         for(auto& buf : dest_bufs)
         {
-            if(token.stop_requested())
-                break;
             char* dest = static_cast<char*>(buf.data());
             int remaining = static_cast<int>(buf.size());
 
-            while(remaining > 0 && !token.stop_requested())
+            while(remaining > 0)
             {
                 op.want_read = false;
                 op.want_write = false;
@@ -457,7 +408,10 @@ struct wolfssl_stream_impl_
 
                     // For read_some semantics, return after first successful read
                     if(total_read > 0)
-                        goto done;
+                    {
+                        current_op_ = nullptr;
+                        co_return {std::error_code{}, total_read};
+                    }
                 }
                 else
                 {
@@ -465,9 +419,17 @@ struct wolfssl_stream_impl_
 
                     if(err == WOLFSSL_ERROR_WANT_READ)
                     {
-                        if(read_in_pos_ == read_in_len_) { read_in_pos_ = 0; read_in_len_ = 0; }
-                        capy::mutable_buffer buf(read_in_buf_.data() + read_in_len_, read_in_buf_.size() - read_in_len_);
-                        auto [rec, rn] = co_await do_underlying_read(buf, token);
+                        if(read_in_pos_ == read_in_len_)
+                        {
+                            read_in_pos_ = 0;
+                            read_in_len_ = 0;
+                        }
+                        capy::mutable_buffer rbuf(
+                            read_in_buf_.data() + read_in_len_,
+                            read_in_buf_.size() - read_in_len_);
+
+                        auto guard = co_await io_cm_.scoped_lock();
+                        auto [rec, rn] = co_await s_.read_some(rbuf);
                         if(rec)
                         {
                             if(rec == make_error_code(capy::error::eof))
@@ -482,7 +444,8 @@ struct wolfssl_stream_impl_
                             {
                                 ec = rec;
                             }
-                            goto done;
+                            current_op_ = nullptr;
+                            co_return {ec, total_read};
                         }
                         read_in_len_ += rn;
                     }
@@ -495,53 +458,37 @@ struct wolfssl_stream_impl_
                             auto [wec, wn] = co_await capy::write(s_,
                                 capy::const_buffer(read_out_buf_.data(), read_out_len_));
                             read_out_len_ = 0;
-                            if(wec) { ec = wec; goto done; }
+                            if(wec)
+                            {
+                                current_op_ = nullptr;
+                                co_return {wec, total_read};
+                            }
                         }
                     }
                     else if(err == WOLFSSL_ERROR_ZERO_RETURN)
                     {
                         // Clean TLS shutdown - treat as EOF
-                        ec = make_error_code(capy::error::eof);
-                        goto done;
+                        current_op_ = nullptr;
+                        co_return {make_error_code(capy::error::eof), total_read};
                     }
                     else
                     {
                         // Other error
-                        ec = std::error_code(err, std::system_category());
-                        goto done;
+                        current_op_ = nullptr;
+                        co_return {std::error_code(err, std::system_category()), total_read};
                     }
                 }
             }
         }
 
-    done:
         current_op_ = nullptr;
-
-        if(token.stop_requested())
-            ec = make_error_code(std::errc::operation_canceled);
-
-        *ec_out = ec;
-        *bytes_out = total_read;
-
-        // Resume the original caller via executor
-        detail::resume_coro(d, continuation);
-        co_return;
+        co_return {std::error_code{}, total_read};
     }
 
-    /** Inner coroutine that performs TLS write with WANT_WRITE loop.
-
-        Calls wolfSSL_write in a loop, performing async writes to the
-        underlying stream when needed.
-    */
-    capy::task<>
+    capy::io_task<std::size_t>
     do_write_some(
-        std::array<capy::mutable_buffer, detail::max_iovec_> src_arr,
-        std::size_t buf_count,
-        std::stop_token token,
-        std::error_code* ec_out,
-        std::size_t* bytes_out,
-        std::coroutine_handle<> continuation,
-        capy::executor_ref d)
+        std::array<capy::mutable_buffer, capy::detail::max_iovec_> src_arr,
+        std::size_t buf_count)
     {
         std::error_code ec;
         std::size_t total_written = 0;
@@ -557,12 +504,10 @@ struct wolfssl_stream_impl_
 
         for(auto& buf : src_bufs)
         {
-            if(token.stop_requested())
-                break;
             char const* src = static_cast<char const*>(buf.data());
             int remaining = static_cast<int>(buf.size());
 
-            while(remaining > 0 && !token.stop_requested())
+            while(remaining > 0)
             {
                 op.want_read = false;
                 op.want_write = false;
@@ -586,9 +531,14 @@ struct wolfssl_stream_impl_
                             auto [wec, wn] = co_await capy::write(s_,
                                 capy::const_buffer(write_out_buf_.data(), write_out_len_));
                             write_out_len_ = 0;
-                            if(wec) { ec = wec; goto done; }
+                            if(wec)
+                            {
+                                current_op_ = nullptr;
+                                co_return {wec, total_written};
+                            }
                         }
-                        goto done;
+                        current_op_ = nullptr;
+                        co_return {std::error_code{}, total_written};
                     }
                 }
                 else
@@ -603,66 +553,56 @@ struct wolfssl_stream_impl_
                             auto [wec, wn] = co_await capy::write(s_,
                                 capy::const_buffer(write_out_buf_.data(), write_out_len_));
                             write_out_len_ = 0;
-                            if(wec) { ec = wec; goto done; }
+                            if(wec)
+                            {
+                                current_op_ = nullptr;
+                                co_return {wec, total_written};
+                            }
                         }
                     }
                     else if(err == WOLFSSL_ERROR_WANT_READ)
                     {
                         // Renegotiation
-                        if(write_in_pos_ == write_in_len_) { write_in_pos_ = 0; write_in_len_ = 0; }
-                        capy::mutable_buffer buf(write_in_buf_.data() + write_in_len_, write_in_buf_.size() - write_in_len_);
-                        auto [rec, rn] = co_await do_underlying_read(buf, token);
-                        if(rec) { ec = rec; goto done; }
+                        if(write_in_pos_ == write_in_len_)
+                        {
+                            write_in_pos_ = 0;
+                            write_in_len_ = 0;
+                        }
+                        capy::mutable_buffer rbuf(
+                            write_in_buf_.data() + write_in_len_,
+                            write_in_buf_.size() - write_in_len_);
+                        auto guard = co_await io_cm_.scoped_lock();
+                        auto [rec, rn] = co_await s_.read_some(rbuf);
+                        if(rec)
+                        {
+                            current_op_ = nullptr;
+                            co_return {rec, total_written};
+                        }
                         write_in_len_ += rn;
                     }
                     else
                     {
                         // Other error
-                        ec = std::error_code(err, std::system_category());
-                        goto done;
+                        current_op_ = nullptr;
+                        co_return {std::error_code(err, std::system_category()), total_written};
                     }
                 }
             }
         }
 
-    done:
         current_op_ = nullptr;
-
-        if(token.stop_requested())
-            ec = make_error_code(std::errc::operation_canceled);
-
-        *ec_out = ec;
-        *bytes_out = total_written;
-
-        // Resume the original caller via executor
-        detail::resume_coro(d, continuation);
-        co_return;
+        co_return {std::error_code{}, total_written};
     }
 
-    /** Inner coroutine that performs TLS handshake with WANT_READ/WANT_WRITE loop.
-
-        Calls wolfSSL_connect (client) or wolfSSL_accept (server) in a loop,
-        performing async I/O on the underlying stream when needed.
-    */
-    capy::task<>
-    do_handshake(
-        int type,
-        std::stop_token token,
-        std::error_code* ec_out,
-        std::coroutine_handle<> continuation,
-        capy::executor_ref d)
+    capy::io_task<>
+    do_handshake(int type)
     {
         std::error_code ec;
 
         // Initialize SSL object for the specified role (deferred from construction)
-        ec = init_ssl_for_role( type );
-        if( ec )
-        {
-            *ec_out = ec;
-            current_op_ = nullptr;
-            detail::resume_coro(d, continuation);
-            co_return;
-        }
+        ec = init_ssl_for_role(type);
+        if(ec)
+            co_return {ec};
 
         // Set up operation buffers for callbacks (use read buffers for handshake)
         op_buffers op{
@@ -672,7 +612,7 @@ struct wolfssl_stream_impl_
         };
         current_op_ = &op;
 
-        while(!token.stop_requested())
+        while(true)
         {
             op.want_read = false;
             op.want_write = false;
@@ -695,9 +635,7 @@ struct wolfssl_stream_impl_
                         capy::const_buffer(read_out_buf_.data(), read_out_len_));
                     read_out_len_ = 0;
                     if(wec)
-                    {
                         ec = wec;
-                    }
                 }
                 break;
             }
@@ -717,7 +655,7 @@ struct wolfssl_stream_impl_
                         if(wec)
                         {
                             ec = wec;
-                            goto exit_loop;
+                            break;
                         }
                     }
 
@@ -726,10 +664,11 @@ struct wolfssl_stream_impl_
                         read_in_pos_ = 0;
                         read_in_len_ = 0;
                     }
-                    capy::mutable_buffer buf(
+                    capy::mutable_buffer rbuf(
                         read_in_buf_.data() + read_in_len_,
                         read_in_buf_.size() - read_in_len_);
-                    auto [rec, rn] = co_await do_underlying_read(buf, token);
+                    auto guard = co_await io_cm_.scoped_lock();
+                    auto [rec, rn] = co_await s_.read_some(rbuf);
                     if(rec)
                     {
                         ec = rec;
@@ -748,7 +687,7 @@ struct wolfssl_stream_impl_
                         if(wec)
                         {
                             ec = wec;
-                            goto exit_loop;
+                            break;
                         }
                     }
                 }
@@ -761,30 +700,12 @@ struct wolfssl_stream_impl_
             }
         }
 
-    exit_loop:
         current_op_ = nullptr;
-
-        if(token.stop_requested())
-            ec = make_error_code(std::errc::operation_canceled);
-
-        *ec_out = ec;
-
-        // Resume the original caller via executor
-        detail::resume_coro(d, continuation);
-        co_return;
+        co_return {ec};
     }
 
-    /** Inner coroutine that performs TLS shutdown with WANT_READ/WANT_WRITE loop.
-
-        Calls wolfSSL_shutdown in a loop, performing async I/O on the
-        underlying stream when needed.
-    */
-    capy::task<>
-    do_shutdown(
-        std::stop_token token,
-        std::error_code* ec_out,
-        std::coroutine_handle<> continuation,
-        capy::executor_ref d)
+    capy::io_task<>
+    do_shutdown()
     {
         std::error_code ec;
 
@@ -796,20 +717,12 @@ struct wolfssl_stream_impl_
         };
         current_op_ = &op;
 
-        // TLS shutdown is bidirectional:
-        // 1. We send close_notify to peer
-        // 2. We receive peer's close_notify
-        // wolfSSL_shutdown returns WOLFSSL_SHUTDOWN_NOT_DONE until both complete.
-        // After sending our close_notify (via flush), we must read from the socket
-        // to receive the peer's close_notify, matching OpenSSL's behavior.
-
-        while(!token.stop_requested())
+        while(true)
         {
             op.want_read = false;
             op.want_write = false;
 
             int ret = wolfSSL_shutdown(ssl_);
-            // Only call wolfSSL_get_error once per iteration to avoid consuming error state
             int err = (ret != WOLFSSL_SUCCESS) ? wolfSSL_get_error(ssl_, ret) : 0;
 
             if(ret == WOLFSSL_SUCCESS)
@@ -822,17 +735,12 @@ struct wolfssl_stream_impl_
                         capy::const_buffer(read_out_buf_.data(), read_out_len_));
                     read_out_len_ = 0;
                     if(wec)
-                    {
                         ec = wec;
-                    }
                 }
                 break;
             }
             else if(ret == WOLFSSL_SHUTDOWN_NOT_DONE)
             {
-                // Sent our close_notify (or need to), waiting for peer's close_notify
-                // This mirrors OpenSSL's SSL_shutdown() returning 0.
-                
                 // First, flush any pending output (sends our close_notify)
                 if(read_out_len_ > 0)
                 {
@@ -841,34 +749,25 @@ struct wolfssl_stream_impl_
                         capy::const_buffer(read_out_buf_.data(), read_out_len_));
                     read_out_len_ = 0;
                     if(wec)
-                    {
-                        // Socket error during shutdown write - acceptable, we're done
-                        goto exit_shutdown;
-                    }
+                        break;  // Socket error during shutdown write - acceptable
                 }
 
                 // Check what WolfSSL needs next
                 if(err == WOLFSSL_ERROR_WANT_READ || err == 0)
                 {
-                    // Need to read peer's close_notify from the socket
-                    // err==0 also needs a read - the close_notify was sent, now wait for peer
                     if(read_in_pos_ == read_in_len_)
                     {
                         read_in_pos_ = 0;
                         read_in_len_ = 0;
                     }
-                    capy::mutable_buffer buf(
+                    capy::mutable_buffer rbuf(
                         read_in_buf_.data() + read_in_len_,
                         read_in_buf_.size() - read_in_len_);
-                    auto [rec, rn] = co_await do_underlying_read(buf, token);
+                    auto guard = co_await io_cm_.scoped_lock();
+                    auto [rec, rn] = co_await s_.read_some(rbuf);
                     if(rec)
-                    {
-                        // EOF or socket error during shutdown read - acceptable
-                        // The peer may have just closed the socket without close_notify
-                        goto exit_shutdown;
-                    }
+                        break;  // EOF or socket error during shutdown read - acceptable
                     read_in_len_ += rn;
-                    // Continue loop to process the received data with wolfSSL_shutdown
                 }
                 else if(err == WOLFSSL_ERROR_WANT_WRITE)
                 {
@@ -894,149 +793,69 @@ struct wolfssl_stream_impl_
             }
         }
 
-    exit_shutdown:
         current_op_ = nullptr;
-
-        if(token.stop_requested())
-            ec = make_error_code(std::errc::operation_canceled);
-
-        *ec_out = ec;
-
-        // Resume the original caller via executor
-        detail::resume_coro(d, continuation);
-        co_return;
-    }
-
-    //--------------------------------------------------------------------------
-    // io_stream_impl interface
-    //--------------------------------------------------------------------------
-
-    void release() override
-    {
-        delete this;
-    }
-
-    std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
-        capy::executor_ref d,
-        io_buffer_param param,
-        std::stop_token token,
-        std::error_code* ec,
-        std::size_t* bytes) override
-    {
-        std::array<capy::mutable_buffer, detail::max_iovec_> bufs{};
-        std::size_t count = param.copy_to(bufs.data(), detail::max_iovec_);
-
-        capy::run_async(d, token)(
-            do_read_some(bufs, count, token, ec, bytes, h, d));
-        return std::noop_coroutine();
-    }
-
-    std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
-        capy::executor_ref d,
-        io_buffer_param param,
-        std::stop_token token,
-        std::error_code* ec,
-        std::size_t* bytes) override
-    {
-        std::array<capy::mutable_buffer, detail::max_iovec_> bufs{};
-        std::size_t count = param.copy_to(bufs.data(), detail::max_iovec_);
-
-        capy::run_async(d, token)(
-            do_write_some(bufs, count, token, ec, bytes, h, d));
-        return std::noop_coroutine();
-    }
-
-    std::coroutine_handle<> handshake(
-        std::coroutine_handle<> h,
-        capy::executor_ref d,
-        int type,
-        std::stop_token token,
-        std::error_code* ec) override
-    {
-        // Launch inner coroutine via run_async with stop_token for cancellation
-        capy::run_async(d, token)(
-            do_handshake(type, token, ec, h, d));
-        return std::noop_coroutine();
-    }
-
-    std::coroutine_handle<> shutdown(
-        std::coroutine_handle<> h,
-        capy::executor_ref d,
-        std::stop_token token,
-        std::error_code* ec) override
-    {
-        // Launch inner coroutine via run_async with stop_token for cancellation
-        capy::run_async(d, token)(
-            do_shutdown(token, ec, h, d));
-        return std::noop_coroutine();
+        co_return {ec};
     }
 
     //--------------------------------------------------------------------------
     // Initialization
     //--------------------------------------------------------------------------
 
-    /** Initialize SSL object for the specified role.
-
-        @param type wolfssl_stream::client or wolfssl_stream::server
-        @return Error code if initialization failed.
-    */
     std::error_code
-    init_ssl_for_role( int type )
+    init_ssl_for_role(int type)
     {
         // Already initialized?
-        if( ssl_ )
+        if(ssl_)
             return {};
 
         // Get cached native contexts from tls::context
-        auto& impl = tls::detail::get_context_data( ctx_ );
-        auto* native = tls::detail::get_wolfssl_native_context( impl );
-        if( !native )
+        auto& cd = tls::detail::get_context_data(ctx_);
+        auto* native = tls::detail::get_wolfssl_native_context(cd);
+        if(!native)
         {
             return std::error_code(
-                wolfSSL_get_error( nullptr, 0 ),
-                std::system_category() );
+                wolfSSL_get_error(nullptr, 0),
+                std::system_category());
         }
 
         // Select appropriate context based on role
-        WOLFSSL_CTX* native_ctx = ( type == wolfssl_stream::client )
+        WOLFSSL_CTX* native_ctx = (type == wolfssl_stream::client)
             ? native->client_ctx_
             : native->server_ctx_;
 
-        if( !native_ctx )
+        if(!native_ctx)
         {
             return std::error_code(
-                wolfSSL_get_error( nullptr, 0 ),
-                std::system_category() );
+                wolfSSL_get_error(nullptr, 0),
+                std::system_category());
         }
 
         // Create SSL session from the role-specific context
-        ssl_ = wolfSSL_new( native_ctx );
-        if( !ssl_ )
+        ssl_ = wolfSSL_new(native_ctx);
+        if(!ssl_)
         {
-            int err = wolfSSL_get_error( nullptr, 0 );
-            return std::error_code( err, std::system_category() );
+            int err = wolfSSL_get_error(nullptr, 0);
+            return std::error_code(err, std::system_category());
         }
 
         // Set custom I/O callbacks
-        wolfSSL_SSLSetIORecv( ssl_, &recv_callback );
-        wolfSSL_SSLSetIOSend( ssl_, &send_callback );
+        wolfSSL_SSLSetIORecv(ssl_, &recv_callback);
+        wolfSSL_SSLSetIOSend(ssl_, &send_callback);
 
         // Set this impl as the I/O context
-        wolfSSL_SetIOReadCtx( ssl_, this );
-        wolfSSL_SetIOWriteCtx( ssl_, this );
+        wolfSSL_SetIOReadCtx(ssl_, this);
+        wolfSSL_SetIOWriteCtx(ssl_, this);
 
         // Apply per-session config (SNI + hostname verification) from context
-        if( type == wolfssl_stream::client && !impl.hostname.empty() )
+        if(type == wolfssl_stream::client && !cd.hostname.empty())
         {
             // Set SNI extension so server knows which cert to present
-            wolfSSL_UseSNI( ssl_, WOLFSSL_SNI_HOST_NAME,
-                impl.hostname.data(),
-                static_cast<unsigned short>( impl.hostname.size() ) );
+            wolfSSL_UseSNI(ssl_, WOLFSSL_SNI_HOST_NAME,
+                cd.hostname.data(),
+                static_cast<unsigned short>(cd.hostname.size()));
 
             // Enable hostname verification (checks CN/SAN in peer cert)
-            wolfSSL_check_domain_name( ssl_, impl.hostname.c_str() );
+            wolfSSL_check_domain_name(ssl_, cd.hostname.c_str());
         }
 
         return {};
@@ -1045,19 +864,72 @@ struct wolfssl_stream_impl_
 
 //------------------------------------------------------------------------------
 
+wolfssl_stream::impl*
 wolfssl_stream::
-wolfssl_stream( io_stream& stream, tls::context ctx )
-    : tls_stream( stream )
+make_impl(capy::any_stream& stream, tls::context const& ctx)
 {
     // SSL object creation is deferred to handshake time when we know the role
-    impl_ = new wolfssl_stream_impl_( s_, std::move( ctx ) );
+    return new impl(stream, ctx);
 }
 
 wolfssl_stream::
 ~wolfssl_stream()
 {
-    if( impl_ )
-        impl_->release();
+    delete impl_;
+}
+
+wolfssl_stream::
+wolfssl_stream(wolfssl_stream&& other) noexcept
+    : stream_(std::move(other.stream_))
+    , impl_(other.impl_)
+{
+    other.impl_ = nullptr;
+}
+
+wolfssl_stream&
+wolfssl_stream::
+operator=(wolfssl_stream&& other) noexcept
+{
+    if(this != &other)
+    {
+        delete impl_;
+        stream_ = std::move(other.stream_);
+        impl_ = other.impl_;
+        other.impl_ = nullptr;
+    }
+    return *this;
+}
+
+capy::io_task<std::size_t>
+wolfssl_stream::
+do_read_some(io_buffer_param buffers)
+{
+    std::array<capy::mutable_buffer, capy::detail::max_iovec_> bufs{};
+    std::size_t count = buffers.copy_to(bufs.data(), capy::detail::max_iovec_);
+    co_return co_await impl_->do_read_some(bufs, count);
+}
+
+capy::io_task<std::size_t>
+wolfssl_stream::
+do_write_some(io_buffer_param buffers)
+{
+    std::array<capy::mutable_buffer, capy::detail::max_iovec_> bufs{};
+    std::size_t count = buffers.copy_to(bufs.data(), capy::detail::max_iovec_);
+    co_return co_await impl_->do_write_some(bufs, count);
+}
+
+capy::io_task<>
+wolfssl_stream::
+handshake(handshake_type type)
+{
+    co_return co_await impl_->do_handshake(type);
+}
+
+capy::io_task<>
+wolfssl_stream::
+shutdown()
+{
+    co_return co_await impl_->do_shutdown();
 }
 
 } // namespace boost::corosio

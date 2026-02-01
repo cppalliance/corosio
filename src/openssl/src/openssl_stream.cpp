@@ -10,9 +10,7 @@
 #include <boost/corosio/tls/openssl_stream.hpp>
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/coro_lock.hpp>
-#include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/task.hpp>
 #include <boost/capy/write.hpp>
 
 // Internal context implementation
@@ -22,8 +20,6 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 #include <openssl/x509.h>
-
-#include "src/detail/resume_coro.hpp"
 
 #include <algorithm>
 #include <array>
@@ -35,8 +31,8 @@
     openssl_stream Architecture
     ===========================
 
-    TLS layer wrapping an underlying io_stream. Supports one concurrent
-    read_some and one concurrent write_some (like Asio's ssl::stream).
+    TLS layer wrapping an underlying stream (via any_stream). Supports one
+    concurrent read_some and one concurrent write_some (like Asio's ssl::stream).
 
     Data Flow (using BIO pairs)
     ---------------------------
@@ -57,18 +53,12 @@
     Renegotiation causes cross-direction I/O: SSL_read may need to write
     handshake data, SSL_write may need to read. Each operation handles
     whatever I/O direction OpenSSL requests.
-
-    Key Types
-    ---------
-    - openssl_stream_impl_ : tls_stream_impl  -- the impl stored in io_object::impl_
-    - do_read_some, do_write_some             -- inner coroutines with WANT_* loops
 */
 
 namespace boost::corosio {
 
 namespace {
 
-// Default buffer size for TLS I/O
 constexpr std::size_t default_buffer_size = 16384;
 
 } // namespace
@@ -81,251 +71,215 @@ constexpr std::size_t default_buffer_size = 16384;
 
 namespace tls::detail {
 
-// Ex data index for storing context_data pointer in SSL_CTX
 static int sni_ctx_data_index = -1;
 
-// SNI callback invoked by OpenSSL during handshake
 static int
-sni_callback( SSL* ssl, int* /* alert */, void* /* arg */ )
+sni_callback(SSL* ssl, int* /* alert */, void* /* arg */)
 {
-    char const* servername = SSL_get_servername( ssl, TLSEXT_NAMETYPE_host_name );
-    if( !servername )
-        return SSL_TLSEXT_ERR_NOACK;  // No SNI sent, continue
+    char const* servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    if(!servername)
+        return SSL_TLSEXT_ERR_NOACK;
 
-    SSL_CTX* ctx = SSL_get_SSL_CTX( ssl );
+    SSL_CTX* ctx = SSL_get_SSL_CTX(ssl);
     auto* cd = static_cast<context_data const*>(
-        SSL_CTX_get_ex_data( ctx, sni_ctx_data_index ) );
+        SSL_CTX_get_ex_data(ctx, sni_ctx_data_index));
 
-    if( cd && cd->servername_callback )
+    if(cd && cd->servername_callback)
     {
-        if( !cd->servername_callback( servername ) )
-            return SSL_TLSEXT_ERR_ALERT_FATAL;  // Callback rejected hostname
+        if(!cd->servername_callback(servername))
+            return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
 
     return SSL_TLSEXT_ERR_OK;
 }
 
-/** Cached OpenSSL context owning SSL_CTX.
-
-    Created on first stream construction for a given tls::context,
-    then reused for subsequent streams sharing that context.
-*/
 class openssl_native_context
     : public native_context_base
 {
 public:
     SSL_CTX* ctx_;
-    context_data const* cd_;  // For SNI callback access
+    context_data const* cd_;
 
     explicit
-    openssl_native_context( context_data const& cd )
-        : ctx_( nullptr )
-        , cd_( &cd )
+    openssl_native_context(context_data const& cd)
+        : ctx_(nullptr)
+        , cd_(&cd)
     {
-        // Create SSL_CTX supporting both client and server
-        ctx_ = SSL_CTX_new( TLS_method() );
-        if( !ctx_ )
+        ctx_ = SSL_CTX_new(TLS_method());
+        if(!ctx_)
             return;
 
-        // Initialize ex_data index for SNI callback (once)
-        if( sni_ctx_data_index < 0 )
-            sni_ctx_data_index = SSL_CTX_get_ex_new_index( 0, nullptr, nullptr, nullptr, nullptr );
+        if(sni_ctx_data_index < 0)
+            sni_ctx_data_index = SSL_CTX_get_ex_new_index(0, nullptr, nullptr, nullptr, nullptr);
 
-        // Store context_data pointer for SNI callback access
-        SSL_CTX_set_ex_data( ctx_, sni_ctx_data_index, const_cast<context_data*>( &cd ) );
+        SSL_CTX_set_ex_data(ctx_, sni_ctx_data_index, const_cast<context_data*>(&cd));
 
-        // Set SNI callback if provided
-        if( cd.servername_callback )
-            SSL_CTX_set_tlsext_servername_callback( ctx_, sni_callback );
+        if(cd.servername_callback)
+            SSL_CTX_set_tlsext_servername_callback(ctx_, sni_callback);
 
-        // Set modes for partial writes and moving buffers
-        SSL_CTX_set_mode( ctx_, SSL_MODE_ENABLE_PARTIAL_WRITE );
-        SSL_CTX_set_mode( ctx_, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER );
-#if defined( SSL_MODE_RELEASE_BUFFERS )
-        SSL_CTX_set_mode( ctx_, SSL_MODE_RELEASE_BUFFERS );
+        SSL_CTX_set_mode(ctx_, SSL_MODE_ENABLE_PARTIAL_WRITE);
+        SSL_CTX_set_mode(ctx_, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+#if defined(SSL_MODE_RELEASE_BUFFERS)
+        SSL_CTX_set_mode(ctx_, SSL_MODE_RELEASE_BUFFERS);
 #endif
 
-        // Apply verify mode from config
         int verify_mode_flag = SSL_VERIFY_NONE;
-        if( cd.verification_mode == verify_mode::peer )
+        if(cd.verification_mode == verify_mode::peer)
             verify_mode_flag = SSL_VERIFY_PEER;
-        else if( cd.verification_mode == verify_mode::require_peer )
+        else if(cd.verification_mode == verify_mode::require_peer)
             verify_mode_flag = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
-        SSL_CTX_set_verify( ctx_, verify_mode_flag, nullptr );
+        SSL_CTX_set_verify(ctx_, verify_mode_flag, nullptr);
 
-        // Apply certificates if provided
-        if( !cd.entity_certificate.empty() )
+        if(!cd.entity_certificate.empty())
         {
             BIO* bio = BIO_new_mem_buf(
                 cd.entity_certificate.data(),
-                static_cast<int>( cd.entity_certificate.size() ) );
-            if( bio )
+                static_cast<int>(cd.entity_certificate.size()));
+            if(bio)
             {
                 X509* cert = nullptr;
-                if( cd.entity_cert_format == file_format::pem )
-                    cert = PEM_read_bio_X509( bio, nullptr, nullptr, nullptr );
+                if(cd.entity_cert_format == file_format::pem)
+                    cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
                 else
-                    cert = d2i_X509_bio( bio, nullptr );
-                if( cert )
+                    cert = d2i_X509_bio(bio, nullptr);
+                if(cert)
                 {
-                    SSL_CTX_use_certificate( ctx_, cert );
-                    X509_free( cert );
+                    SSL_CTX_use_certificate(ctx_, cert);
+                    X509_free(cert);
                 }
-                BIO_free( bio );
+                BIO_free(bio);
             }
         }
 
-        // Apply certificate chain if provided (entity cert + intermediates)
-        // First cert is entity, rest are intermediates
-        if( !cd.certificate_chain.empty() )
+        if(!cd.certificate_chain.empty())
         {
             BIO* bio = BIO_new_mem_buf(
                 cd.certificate_chain.data(),
-                static_cast<int>( cd.certificate_chain.size() ) );
-            if( bio )
+                static_cast<int>(cd.certificate_chain.size()));
+            if(bio)
             {
-                // First cert is entity certificate
-                X509* entity = PEM_read_bio_X509( bio, nullptr, nullptr, nullptr );
-                if( entity )
+                X509* entity = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+                if(entity)
                 {
-                    SSL_CTX_use_certificate( ctx_, entity );
-                    X509_free( entity );
+                    SSL_CTX_use_certificate(ctx_, entity);
+                    X509_free(entity);
                 }
-                
-                // Remaining certs are intermediates - add as extra chain certs
+
                 X509* cert;
-                while( ( cert = PEM_read_bio_X509( bio, nullptr, nullptr, nullptr ) ) != nullptr )
+                while((cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr)) != nullptr)
                 {
-                    // SSL_CTX_add_extra_chain_cert takes ownership - don't free
-                    SSL_CTX_add_extra_chain_cert( ctx_, cert );
+                    SSL_CTX_add_extra_chain_cert(ctx_, cert);
                 }
-                ERR_clear_error(); // Clear expected EOF error from reading end of chain
-                BIO_free( bio );
+                ERR_clear_error();
+                BIO_free(bio);
             }
         }
 
-        // Apply private key if provided
-        if( !cd.private_key.empty() )
+        if(!cd.private_key.empty())
         {
             BIO* bio = BIO_new_mem_buf(
                 cd.private_key.data(),
-                static_cast<int>( cd.private_key.size() ) );
-            if( bio )
+                static_cast<int>(cd.private_key.size()));
+            if(bio)
             {
                 EVP_PKEY* pkey = nullptr;
-                if( cd.private_key_format == file_format::pem )
-                    pkey = PEM_read_bio_PrivateKey( bio, nullptr, nullptr, nullptr );
+                if(cd.private_key_format == file_format::pem)
+                    pkey = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
                 else
-                    pkey = d2i_PrivateKey_bio( bio, nullptr );
-                if( pkey )
+                    pkey = d2i_PrivateKey_bio(bio, nullptr);
+                if(pkey)
                 {
-                    SSL_CTX_use_PrivateKey( ctx_, pkey );
-                    EVP_PKEY_free( pkey );
+                    SSL_CTX_use_PrivateKey(ctx_, pkey);
+                    EVP_PKEY_free(pkey);
                 }
-                BIO_free( bio );
+                BIO_free(bio);
             }
         }
 
-        // Apply CA certificates for verification
-        X509_STORE* store = SSL_CTX_get_cert_store( ctx_ );
-        for( auto const& ca : cd.ca_certificates )
+        X509_STORE* store = SSL_CTX_get_cert_store(ctx_);
+        for(auto const& ca : cd.ca_certificates)
         {
-            BIO* bio = BIO_new_mem_buf( ca.data(), static_cast<int>( ca.size() ) );
-            if( bio )
+            BIO* bio = BIO_new_mem_buf(ca.data(), static_cast<int>(ca.size()));
+            if(bio)
             {
-                X509* cert = PEM_read_bio_X509( bio, nullptr, nullptr, nullptr );
-                if( cert )
+                X509* cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+                if(cert)
                 {
-                    X509_STORE_add_cert( store, cert );
-                    X509_free( cert );
+                    X509_STORE_add_cert(store, cert);
+                    X509_free(cert);
                 }
-                BIO_free( bio );
+                BIO_free(bio);
             }
         }
 
-        // Apply verify depth
-        SSL_CTX_set_verify_depth( ctx_, cd.verify_depth );
+        SSL_CTX_set_verify_depth(ctx_, cd.verify_depth);
 
-        // Apply cipher suites if provided
-        if( !cd.ciphersuites.empty() )
+        if(!cd.ciphersuites.empty())
         {
-            SSL_CTX_set_security_level( ctx_, 0 );
-            SSL_CTX_set_cipher_list( ctx_, cd.ciphersuites.c_str() );
+            SSL_CTX_set_security_level(ctx_, 0);
+            SSL_CTX_set_cipher_list(ctx_, cd.ciphersuites.c_str());
         }
     }
 
     ~openssl_native_context() override
     {
-        if( ctx_ )
-            SSL_CTX_free( ctx_ );
+        if(ctx_)
+            SSL_CTX_free(ctx_);
     }
 };
 
-/** Get or create cached SSL_CTX for this context.
-
-    @param cd The context implementation.
-
-    @return Pointer to the cached SSL_CTX.
-*/
 inline SSL_CTX*
-get_openssl_context( context_data const& cd )
+get_openssl_context(context_data const& cd)
 {
     static char key;
-    auto* p = cd.find( &key, [&]
+    auto* p = cd.find(&key, [&]
     {
-        return new openssl_native_context( cd );
+        return new openssl_native_context(cd);
     });
-    return static_cast<openssl_native_context*>( p )->ctx_;
+    return static_cast<openssl_native_context*>(p)->ctx_;
 }
 
 } // namespace tls::detail
 
 //------------------------------------------------------------------------------
 
-struct openssl_stream_impl_
-    : tls_stream::tls_stream_impl
+struct openssl_stream::impl
 {
-    io_stream& s_;
-    tls::context ctx_;      // holds ref to cached native context
+    capy::any_stream& s_;
+    tls::context ctx_;
     SSL* ssl_ = nullptr;
     BIO* ext_bio_ = nullptr;
 
-    // Buffers for network I/O
     std::vector<char> in_buf_;
     std::vector<char> out_buf_;
 
-    // Renegotiation can cause both TLS read/write to access the socket
     capy::coro_lock io_cm_;
 
     //--------------------------------------------------------------------------
 
-    openssl_stream_impl_( io_stream& s, tls::context ctx )
-        : s_( s )
-        , ctx_( std::move( ctx ) )
+    impl(capy::any_stream& s, tls::context ctx)
+        : s_(s)
+        , ctx_(std::move(ctx))
     {
-        in_buf_.resize( default_buffer_size );
-        out_buf_.resize( default_buffer_size );
+        in_buf_.resize(default_buffer_size);
+        out_buf_.resize(default_buffer_size);
     }
 
-    ~openssl_stream_impl_()
+    ~impl()
     {
-        if( ext_bio_ )
-            BIO_free( ext_bio_ );
-        if( ssl_ )
-            SSL_free( ssl_ );
-        // SSL_CTX* is owned by cached native context, not freed here
+        if(ext_bio_)
+            BIO_free(ext_bio_);
+        if(ssl_)
+            SSL_free(ssl_);
     }
 
-    //--------------------------------------------------------------------------
-    // Helper to flush pending output from BIO to network
     //--------------------------------------------------------------------------
 
     capy::task<std::error_code>
-    flush_output(std::stop_token token)
+    flush_output()
     {
-        while(BIO_ctrl_pending(ext_bio_) > 0 && !token.stop_requested())
+        while(BIO_ctrl_pending(ext_bio_) > 0)
         {
-            // Drain all pending BIO data into out_buf_
             std::size_t got = 0;
             while(BIO_ctrl_pending(ext_bio_) > 0 && got < out_buf_.size())
             {
@@ -339,7 +293,6 @@ struct openssl_stream_impl_
             if(got == 0)
                 break;
 
-            // Write all collected bytes using capy::write (handles partials)
             {
                 auto guard = co_await io_cm_.scoped_lock();
                 auto [ec, n] = co_await capy::write(s_,
@@ -348,27 +301,18 @@ struct openssl_stream_impl_
                     co_return ec;
             }
         }
-        if(token.stop_requested())
-        {
-            co_return make_error_code(std::errc::operation_canceled);
-        }
         co_return std::error_code{};
     }
 
     capy::task<std::error_code>
-    read_input(std::stop_token token)
+    read_input()
     {
-        if(token.stop_requested())
-        {
-            co_return make_error_code(std::errc::operation_canceled);
-        }
         auto guard = co_await io_cm_.scoped_lock();
         auto [ec, n] = co_await s_.read_some(
             capy::mutable_buffer(in_buf_.data(), in_buf_.size()));
         if(ec)
             co_return ec;
 
-        // Feed data into OpenSSL - must accept all bytes
         int got = BIO_write(ext_bio_, in_buf_.data(), static_cast<int>(n));
         if(got < static_cast<int>(n))
         {
@@ -379,18 +323,11 @@ struct openssl_stream_impl_
     }
 
     //--------------------------------------------------------------------------
-    // Inner coroutines for TLS read/write operations
-    //--------------------------------------------------------------------------
 
-    capy::task<>
+    capy::io_task<std::size_t>
     do_read_some(
-        std::array<capy::mutable_buffer, detail::max_iovec_> dest_arr,
-        std::size_t buf_count,
-        std::stop_token token,
-        std::error_code* ec_out,
-        std::size_t* bytes_out,
-        std::coroutine_handle<> continuation,
-        capy::executor_ref d)
+        std::array<capy::mutable_buffer, capy::detail::max_iovec_> dest_arr,
+        std::size_t buf_count)
     {
         std::error_code ec;
         std::size_t total_read = 0;
@@ -398,12 +335,10 @@ struct openssl_stream_impl_
 
         for(auto& buf : dest_bufs)
         {
-            if(token.stop_requested())
-                break;
             char* dest = static_cast<char*>(buf.data());
             int remaining = static_cast<int>(buf.size());
 
-            while(remaining > 0 && !token.stop_requested())
+            while(remaining > 0)
             {
                 ERR_clear_error();
                 int ret = SSL_read(ssl_, dest, remaining);
@@ -414,9 +349,8 @@ struct openssl_stream_impl_
                     remaining -= ret;
                     total_read += static_cast<std::size_t>(ret);
 
-                    // For read_some semantics, return after first successful read
                     if(total_read > 0)
-                        goto done;
+                        co_return {std::error_code{}, total_read};
                 }
                 else
                 {
@@ -424,37 +358,32 @@ struct openssl_stream_impl_
 
                     if(err == SSL_ERROR_WANT_WRITE)
                     {
-                        // Flush pending output (renegotiation)
-                        ec = co_await flush_output(token);
+                        ec = co_await flush_output();
                         if(ec)
-                            goto done;
+                            co_return {ec, total_read};
                     }
                     else if(err == SSL_ERROR_WANT_READ)
                     {
-                        // First flush any pending output
-                        ec = co_await flush_output(token);
+                        ec = co_await flush_output();
                         if(ec)
-                            goto done;
+                            co_return {ec, total_read};
 
-                        // Then read from network
-                        ec = co_await read_input(token);
+                        ec = co_await read_input();
                         if(ec)
                         {
                             if(ec == make_error_code(capy::error::eof))
                             {
-                                // Check if we got a proper TLS shutdown
                                 if(SSL_get_shutdown(ssl_) & SSL_RECEIVED_SHUTDOWN)
                                     ec = make_error_code(capy::error::eof);
                                 else
                                     ec = make_error_code(capy::error::stream_truncated);
                             }
-                            goto done;
+                            co_return {ec, total_read};
                         }
                     }
                     else if(err == SSL_ERROR_ZERO_RETURN)
                     {
-                        ec = make_error_code(capy::error::eof);
-                        goto done;
+                        co_return {make_error_code(capy::error::eof), total_read};
                     }
                     else if(err == SSL_ERROR_SYSCALL)
                     {
@@ -464,39 +393,26 @@ struct openssl_stream_impl_
                         else
                             ec = std::error_code(
                                 static_cast<int>(ssl_err), std::system_category());
-                        goto done;
+                        co_return {ec, total_read};
                     }
                     else
                     {
                         unsigned long ssl_err = ERR_get_error();
                         ec = std::error_code(
                             static_cast<int>(ssl_err), std::system_category());
-                        goto done;
+                        co_return {ec, total_read};
                     }
                 }
             }
         }
 
-    done:
-        if(token.stop_requested())
-            ec = make_error_code(std::errc::operation_canceled);
-
-        *ec_out = ec;
-        *bytes_out = total_read;
-
-        detail::resume_coro(d, continuation);
-        co_return;
+        co_return {std::error_code{}, total_read};
     }
 
-    capy::task<>
+    capy::io_task<std::size_t>
     do_write_some(
-        std::array<capy::mutable_buffer, detail::max_iovec_> src_arr,
-        std::size_t buf_count,
-        std::stop_token token,
-        std::error_code* ec_out,
-        std::size_t* bytes_out,
-        std::coroutine_handle<> continuation,
-        capy::executor_ref d)
+        std::array<capy::mutable_buffer, capy::detail::max_iovec_> src_arr,
+        std::size_t buf_count)
     {
         std::error_code ec;
         std::size_t total_written = 0;
@@ -504,12 +420,10 @@ struct openssl_stream_impl_
 
         for(auto& buf : src_bufs)
         {
-            if(token.stop_requested())
-                break;
             char const* src = static_cast<char const*>(buf.data());
             int remaining = static_cast<int>(buf.size());
 
-            while(remaining > 0 && !token.stop_requested())
+            while(remaining > 0)
             {
                 ERR_clear_error();
                 int ret = SSL_write(ssl_, src, remaining);
@@ -520,11 +434,10 @@ struct openssl_stream_impl_
                     remaining -= ret;
                     total_written += static_cast<std::size_t>(ret);
 
-                    // For write_some semantics, flush and return after first successful write
                     if(total_written > 0)
                     {
-                        ec = co_await flush_output(token);
-                        goto done;
+                        ec = co_await flush_output();
+                        co_return {ec, total_written};
                     }
                 }
                 else
@@ -533,54 +446,40 @@ struct openssl_stream_impl_
 
                     if(err == SSL_ERROR_WANT_WRITE)
                     {
-                        ec = co_await flush_output(token);
+                        ec = co_await flush_output();
                         if(ec)
-                            goto done;
+                            co_return {ec, total_written};
                     }
                     else if(err == SSL_ERROR_WANT_READ)
                     {
-                        // Renegotiation - flush then read
-                        ec = co_await flush_output(token);
+                        ec = co_await flush_output();
                         if(ec)
-                            goto done;
+                            co_return {ec, total_written};
 
-                        ec = co_await read_input(token);
+                        ec = co_await read_input();
                         if(ec)
-                            goto done;
+                            co_return {ec, total_written};
                     }
                     else
                     {
                         unsigned long ssl_err = ERR_get_error();
                         ec = std::error_code(
                             static_cast<int>(ssl_err), std::system_category());
-                        goto done;
+                        co_return {ec, total_written};
                     }
                 }
             }
         }
 
-    done:
-        if(token.stop_requested())
-            ec = make_error_code(std::errc::operation_canceled);
-
-        *ec_out = ec;
-        *bytes_out = total_written;
-
-        detail::resume_coro(d, continuation);
-        co_return;
+        co_return {std::error_code{}, total_written};
     }
 
-    capy::task<>
-    do_handshake(
-        int type,
-        std::stop_token token,
-        std::error_code* ec_out,
-        std::coroutine_handle<> continuation,
-        capy::executor_ref d)
+    capy::io_task<>
+    do_handshake(int type)
     {
         std::error_code ec;
 
-        while(!token.stop_requested())
+        while(true)
         {
             ERR_clear_error();
             int ret;
@@ -591,9 +490,8 @@ struct openssl_stream_impl_
 
             if(ret == 1)
             {
-                // Handshake completed - flush any remaining output
-                ec = co_await flush_output(token);
-                break;
+                ec = co_await flush_output();
+                co_return {ec};
             }
             else
             {
@@ -601,76 +499,58 @@ struct openssl_stream_impl_
 
                 if(err == SSL_ERROR_WANT_WRITE)
                 {
-                    ec = co_await flush_output(token);
+                    ec = co_await flush_output();
                     if(ec)
-                        break;
+                        co_return {ec};
                 }
                 else if(err == SSL_ERROR_WANT_READ)
                 {
-                    // Flush output first (e.g., ClientHello)
-                    ec = co_await flush_output(token);
+                    ec = co_await flush_output();
                     if(ec)
-                        break;
-                    // Then read response
-                    ec = co_await read_input(token);
+                        co_return {ec};
+
+                    ec = co_await read_input();
                     if(ec)
-                        break;
+                        co_return {ec};
                 }
                 else
                 {
                     unsigned long ssl_err = ERR_get_error();
                     ec = std::error_code(
                         static_cast<int>(ssl_err), std::system_category());
-                    break;
+                    co_return {ec};
                 }
             }
         }
-
-        if(token.stop_requested())
-        {
-            ec = make_error_code(std::errc::operation_canceled);
-        }
-        *ec_out = ec;
-
-        detail::resume_coro(d, continuation);
-        co_return;
     }
 
-    capy::task<>
-    do_shutdown(
-        std::stop_token token,
-        std::error_code* ec_out,
-        std::coroutine_handle<> continuation,
-        capy::executor_ref d)
+    capy::io_task<>
+    do_shutdown()
     {
         std::error_code ec;
 
-        while(!token.stop_requested())
+        while(true)
         {
             ERR_clear_error();
             int ret = SSL_shutdown(ssl_);
 
             if(ret == 1)
             {
-                // Bidirectional shutdown complete
-                ec = co_await flush_output(token);
-                break;
+                ec = co_await flush_output();
+                co_return {ec};
             }
             else if(ret == 0)
             {
-                // Sent close_notify, need to receive peer's
-                ec = co_await flush_output(token);
+                ec = co_await flush_output();
                 if(ec)
-                    break;
+                    co_return {ec};
 
-                // Continue to receive peer's close_notify
-                ec = co_await read_input(token);
+                ec = co_await read_input();
                 if(ec)
                 {
-                    // EOF is expected during shutdown
                     if(ec == make_error_code(capy::error::eof))
                         ec = {};
-                    break;
+                    co_return {ec};
                 }
             }
             else
@@ -679,22 +559,22 @@ struct openssl_stream_impl_
 
                 if(err == SSL_ERROR_WANT_WRITE)
                 {
-                    ec = co_await flush_output(token);
+                    ec = co_await flush_output();
                     if(ec)
-                        break;
+                        co_return {ec};
                 }
                 else if(err == SSL_ERROR_WANT_READ)
                 {
-                    ec = co_await flush_output(token);
+                    ec = co_await flush_output();
                     if(ec)
-                        break;
+                        co_return {ec};
 
-                    ec = co_await read_input(token);
+                    ec = co_await read_input();
                     if(ec)
                     {
                         if(ec == make_error_code(capy::error::eof))
                             ec = {};
-                        break;
+                        co_return {ec};
                     }
                 }
                 else
@@ -702,7 +582,6 @@ struct openssl_stream_impl_
                     unsigned long ssl_err = ERR_get_error();
                     if(ssl_err == 0 && err == SSL_ERROR_SYSCALL)
                     {
-                        // Connection closed without close_notify - acceptable
                         ec = {};
                     }
                     else
@@ -710,133 +589,50 @@ struct openssl_stream_impl_
                         ec = std::error_code(
                             static_cast<int>(ssl_err), std::system_category());
                     }
-                    break;
+                    co_return {ec};
                 }
             }
         }
-
-        if(token.stop_requested())
-            ec = make_error_code(std::errc::operation_canceled);
-
-        *ec_out = ec;
-
-        detail::resume_coro(d, continuation);
-        co_return;
     }
 
-    //--------------------------------------------------------------------------
-    // io_stream_impl interface
-    //--------------------------------------------------------------------------
-
-    void release() override
-    {
-        delete this;
-    }
-
-    std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
-        capy::executor_ref d,
-        io_buffer_param param,
-        std::stop_token token,
-        std::error_code* ec,
-        std::size_t* bytes) override
-    {
-        std::array<capy::mutable_buffer, detail::max_iovec_> bufs{};
-        std::size_t count = param.copy_to(bufs.data(), detail::max_iovec_);
-
-        capy::run_async(d, token)(
-            do_read_some(bufs, count, token, ec, bytes, h, d));
-        return std::noop_coroutine();
-    }
-
-    std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
-        capy::executor_ref d,
-        io_buffer_param param,
-        std::stop_token token,
-        std::error_code* ec,
-        std::size_t* bytes) override
-    {
-        std::array<capy::mutable_buffer, detail::max_iovec_> bufs{};
-        std::size_t count = param.copy_to(bufs.data(), detail::max_iovec_);
-
-        capy::run_async(d, token)(
-            do_write_some(bufs, count, token, ec, bytes, h, d));
-        return std::noop_coroutine();
-    }
-
-    std::coroutine_handle<> handshake(
-        std::coroutine_handle<> h,
-        capy::executor_ref d,
-        int type,
-        std::stop_token token,
-        std::error_code* ec) override
-    {
-        capy::run_async(d, token)(
-            do_handshake(type, token, ec, h, d));
-        return std::noop_coroutine();
-    }
-
-    std::coroutine_handle<> shutdown(
-        std::coroutine_handle<> h,
-        capy::executor_ref d,
-        std::stop_token token,
-        std::error_code* ec) override
-    {
-        capy::run_async(d, token)(
-            do_shutdown(token, ec, h, d));
-        return std::noop_coroutine();
-    }
-
-    //--------------------------------------------------------------------------
-    // Initialization
     //--------------------------------------------------------------------------
 
     std::error_code
     init_ssl()
     {
-        // Get cached SSL_CTX from tls::context
-        auto& impl = tls::detail::get_context_data( ctx_ );
-        SSL_CTX* native_ctx = tls::detail::get_openssl_context( impl );
-        if( !native_ctx )
+        auto& cd = tls::detail::get_context_data(ctx_);
+        SSL_CTX* native_ctx = tls::detail::get_openssl_context(cd);
+        if(!native_ctx)
         {
             unsigned long err = ERR_get_error();
             return std::error_code(
-                static_cast<int>( err ), std::system_category() );
+                static_cast<int>(err), std::system_category());
         }
 
-        // Create SSL session from cached context
-        ssl_ = SSL_new( native_ctx );
-        if( !ssl_ )
+        ssl_ = SSL_new(native_ctx);
+        if(!ssl_)
         {
             unsigned long err = ERR_get_error();
             return std::error_code(
-                static_cast<int>( err ), std::system_category() );
+                static_cast<int>(err), std::system_category());
         }
 
-        // Create BIO pair for I/O
         BIO* int_bio = nullptr;
-        if( !BIO_new_bio_pair( &int_bio, 0, &ext_bio_, 0 ) )
+        if(!BIO_new_bio_pair(&int_bio, 0, &ext_bio_, 0))
         {
             unsigned long err = ERR_get_error();
-            SSL_free( ssl_ );
+            SSL_free(ssl_);
             ssl_ = nullptr;
             return std::error_code(
-                static_cast<int>( err ), std::system_category() );
+                static_cast<int>(err), std::system_category());
         }
 
-        // Attach internal BIO to SSL (SSL takes ownership)
-        SSL_set_bio( ssl_, int_bio, int_bio );
+        SSL_set_bio(ssl_, int_bio, int_bio);
 
-        // Apply per-session config (SNI + hostname verification) from context
-        if( !impl.hostname.empty() )
+        if(!cd.hostname.empty())
         {
-            // Set SNI extension so server knows which cert to present
-            SSL_set_tlsext_host_name( ssl_, impl.hostname.c_str() );
-            
-            // Enable hostname verification (checks CN/SAN in peer cert)
-            // Available in OpenSSL 1.0.2+
-            SSL_set1_host( ssl_, impl.hostname.c_str() );
+            SSL_set_tlsext_host_name(ssl_, cd.hostname.c_str());
+            SSL_set1_host(ssl_, cd.hostname.c_str());
         }
 
         return {};
@@ -845,27 +641,80 @@ struct openssl_stream_impl_
 
 //------------------------------------------------------------------------------
 
+openssl_stream::impl*
 openssl_stream::
-openssl_stream( io_stream& stream, tls::context ctx )
-    : tls_stream( stream )
+make_impl(capy::any_stream& stream, tls::context const& ctx)
 {
-    auto* impl = new openssl_stream_impl_( s_, std::move( ctx ) );
+    auto* p = new impl(stream, ctx);
 
-    auto ec = impl->init_ssl();
-    if( ec )
+    auto ec = p->init_ssl();
+    if(ec)
     {
-        delete impl;
-        return;
+        delete p;
+        return nullptr;
     }
 
-    impl_ = impl;
+    return p;
 }
 
 openssl_stream::
 ~openssl_stream()
 {
-    if( impl_ )
-        impl_->release();
+    delete impl_;
+}
+
+openssl_stream::
+openssl_stream(openssl_stream&& other) noexcept
+    : stream_(std::move(other.stream_))
+    , impl_(other.impl_)
+{
+    other.impl_ = nullptr;
+}
+
+openssl_stream&
+openssl_stream::
+operator=(openssl_stream&& other) noexcept
+{
+    if(this != &other)
+    {
+        delete impl_;
+        stream_ = std::move(other.stream_);
+        impl_ = other.impl_;
+        other.impl_ = nullptr;
+    }
+    return *this;
+}
+
+capy::io_task<std::size_t>
+openssl_stream::
+do_read_some(io_buffer_param buffers)
+{
+    std::array<capy::mutable_buffer, capy::detail::max_iovec_> bufs{};
+    std::size_t count = buffers.copy_to(bufs.data(), capy::detail::max_iovec_);
+    co_return co_await impl_->do_read_some(bufs, count);
+}
+
+capy::io_task<std::size_t>
+openssl_stream::
+do_write_some(io_buffer_param buffers)
+{
+    std::array<capy::mutable_buffer, capy::detail::max_iovec_> bufs{};
+    std::size_t count = buffers.copy_to(bufs.data(), capy::detail::max_iovec_);
+    co_return co_await impl_->do_write_some(bufs, count);
+}
+
+capy::io_task<>
+openssl_stream::
+handshake(handshake_type type)
+{
+    co_return co_await impl_->do_handshake(type);
+}
+
+capy::io_task<>
+openssl_stream::
+shutdown()
+{
+    co_return co_await impl_->do_shutdown();
 }
 
 } // namespace boost::corosio

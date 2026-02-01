@@ -41,7 +41,7 @@ struct openssl_stream_test
     static auto
     make_stream(io_stream& s, tls::context ctx)
     {
-        return openssl_stream(s, ctx);
+        return openssl_stream(&s, ctx);
     }
 
     /** Test TLS handshake with max_size variations.
@@ -73,13 +73,13 @@ struct openssl_stream_test
 
                 auto client_task = [&]() -> capy::task<>
                 {
-                    auto [ec] = co_await client.handshake(tls_stream::client);
+                    auto [ec] = co_await client.handshake(openssl_stream::client);
                     client_ec = ec;
                 };
 
                 auto server_task = [&]() -> capy::task<>
                 {
-                    auto [ec] = co_await server.handshake(tls_stream::server);
+                    auto [ec] = co_await server.handshake(openssl_stream::server);
                     server_ec = ec;
                 };
 
@@ -127,7 +127,7 @@ struct openssl_stream_test
 
                 auto client_task = [&]() -> capy::task<>
                 {
-                    auto [ec] = co_await client.handshake(tls_stream::client);
+                    auto [ec] = co_await client.handshake(openssl_stream::client);
                     BOOST_TEST(!ec);
                     if(ec)
                         co_return;
@@ -150,7 +150,7 @@ struct openssl_stream_test
 
                 auto server_task = [&]() -> capy::task<>
                 {
-                    auto [ec] = co_await server.handshake(tls_stream::server);
+                    auto [ec] = co_await server.handshake(openssl_stream::server);
                     BOOST_TEST(!ec);
                     if(ec)
                         co_return;
@@ -210,7 +210,7 @@ struct openssl_stream_test
 
                 auto client_task = [&]() -> capy::task<>
                 {
-                    auto [ec] = co_await client.handshake(tls_stream::client);
+                    auto [ec] = co_await client.handshake(openssl_stream::client);
                     BOOST_TEST(!ec);
                     if(ec)
                         co_return;
@@ -221,7 +221,7 @@ struct openssl_stream_test
 
                 auto server_task = [&]() -> capy::task<>
                 {
-                    auto [ec] = co_await server.handshake(tls_stream::server);
+                    auto [ec] = co_await server.handshake(openssl_stream::server);
                     BOOST_TEST(!ec);
                     if(ec)
                         co_return;

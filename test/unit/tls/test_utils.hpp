@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <stop_token>
+#include <type_traits>
 #include <vector>
 
 namespace boost::corosio::tls::test {
@@ -657,8 +658,9 @@ make_contexts( context_mode mode )
 //------------------------------------------------------------------------------
 
 /** Test bidirectional data transfer on connected streams. */
-inline capy::task<>
-test_stream( io_stream& a, io_stream& b )
+template<typename StreamA, typename StreamB>
+capy::task<>
+test_stream( StreamA& a, StreamB& b )
 {
     char buf[32] = {};
 
@@ -719,13 +721,13 @@ run_tls_test(
     // invocation pattern [...](){}() can cause capture corruption with run_async
     auto client_task = [&client]() -> capy::task<>
     {
-        auto [ec] = co_await client.handshake( tls_stream::client );
+        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
         BOOST_TEST( !ec );
     };
 
     auto server_task = [&server]() -> capy::task<>
     {
-        auto [ec] = co_await server.handshake( tls_stream::server );
+        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
         BOOST_TEST( !ec );
     };
 
@@ -781,13 +783,13 @@ run_tls_test_no_shutdown(
     // invocation pattern [...](){}() can cause capture corruption with run_async
     auto client_task = [&client]() -> capy::task<>
     {
-        auto [ec] = co_await client.handshake( tls_stream::client );
+        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
         BOOST_TEST( !ec );
     };
 
     auto server_task = [&server]() -> capy::task<>
     {
-        auto [ec] = co_await server.handshake( tls_stream::server );
+        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
         BOOST_TEST( !ec );
     };
 
@@ -850,7 +852,7 @@ run_tls_test_fail(
     // invocation pattern [...](){}() can cause capture corruption with run_async
     auto client_task = [&client, &client_failed, &client_done, &server_done, &timeout, &s1, &s2]() -> capy::task<>
     {
-        auto [ec] = co_await client.handshake( tls_stream::client );
+        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
         if( ec )
         {
             client_failed = true;
@@ -865,7 +867,7 @@ run_tls_test_fail(
 
     auto server_task = [&server, &server_failed, &server_done, &client_done, &timeout, &s1, &s2]() -> capy::task<>
     {
-        auto [ec] = co_await server.handshake( tls_stream::server );
+        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
         if( ec )
         {
             server_failed = true;
@@ -938,13 +940,13 @@ run_tls_shutdown_test(
     // Handshake phase
     auto client_hs = [&client]() -> capy::task<>
     {
-        auto [ec] = co_await client.handshake( tls_stream::client );
+        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
         BOOST_TEST( !ec );
     };
 
     auto server_hs = [&server]() -> capy::task<>
     {
-        auto [ec] = co_await server.handshake( tls_stream::server );
+        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
         BOOST_TEST( !ec );
     };
 
@@ -1043,13 +1045,13 @@ run_tls_truncation_test(
     // Handshake phase
     auto client_hs = [&client]() -> capy::task<>
     {
-        auto [ec] = co_await client.handshake( tls_stream::client );
+        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
         BOOST_TEST( !ec );
     };
 
     auto server_hs = [&server]() -> capy::task<>
     {
-        auto [ec] = co_await server.handshake( tls_stream::server );
+        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
         BOOST_TEST( !ec );
     };
 
@@ -1303,7 +1305,7 @@ run_connection_reset_test(
 
     auto client_task = [&client, &client_failed, &timeout]() -> capy::task<>
     {
-        auto [ec] = co_await client.handshake( tls_stream::client );
+        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
         // Should fail because server closed socket
         if( ec )
             client_failed = true;
@@ -1390,7 +1392,7 @@ run_stop_token_handshake_test(
     // Client handshake - will be cancelled while waiting for ServerHello
     auto client_task = [&client, &client_got_error, &failsafe]() -> capy::task<>
     {
-        auto [ec] = co_await client.handshake( tls_stream::client );
+        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
         if( ec )
             client_got_error = true;
         failsafe.cancel();
@@ -1456,13 +1458,13 @@ run_stop_token_read_test(
     // Handshake phase
     auto client_hs = [&client]() -> capy::task<>
     {
-        auto [ec] = co_await client.handshake( tls_stream::client );
+        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
         BOOST_TEST( !ec );
     };
 
     auto server_hs = [&server]() -> capy::task<>
     {
-        auto [ec] = co_await server.handshake( tls_stream::server );
+        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
         BOOST_TEST( !ec );
     };
 
@@ -1549,13 +1551,13 @@ run_stop_token_write_test(
     // Handshake phase
     auto client_hs = [&client]() -> capy::task<>
     {
-        auto [ec] = co_await client.handshake( tls_stream::client );
+        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
         BOOST_TEST( !ec );
     };
 
     auto server_hs = [&server]() -> capy::task<>
     {
-        auto [ec] = co_await server.handshake( tls_stream::server );
+        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
         BOOST_TEST( !ec );
     };
 
@@ -1664,7 +1666,7 @@ run_socket_cancel_test(
     // Client starts handshake - will be cancelled
     auto client_task = [&client, &client_got_error, &failsafe]() -> capy::task<>
     {
-        auto [ec] = co_await client.handshake( tls_stream::client );
+        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
         if( ec )
             client_got_error = true;
         failsafe.cancel();

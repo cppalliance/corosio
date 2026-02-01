@@ -47,7 +47,7 @@ struct wolfssl_stream_test
     static auto
     make_stream(io_stream& s, tls::context ctx)
     {
-        return wolfssl_stream(s, ctx);
+        return wolfssl_stream(&s, ctx);
     }
 
     /** Test TLS handshake with max_size variations.
