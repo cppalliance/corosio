@@ -93,6 +93,29 @@ constexpr std::size_t default_buffer_size = 16384;
 
 namespace detail {
 
+// Password callback invoked by WolfSSL when loading encrypted private keys
+static int
+wolfssl_password_callback(char* buf, int size, int rwflag, void* userdata)
+{
+    auto* cd = static_cast<tls_context_data const*>(userdata);
+    if(!cd || !cd->password_callback)
+        return 0;
+
+    tls_password_purpose purpose = (rwflag == 0)
+        ? tls_password_purpose::for_reading
+        : tls_password_purpose::for_writing;
+
+    std::string password = cd->password_callback(
+        static_cast<std::size_t>(size), purpose);
+
+    int len = static_cast<int>(password.size());
+    if(len > size)
+        len = size;
+
+    std::memcpy(buf, password.data(), static_cast<std::size_t>(len));
+    return len;
+}
+
 // SNI callback invoked by WolfSSL during handshake (server-side)
 // Returns SNICbReturn enum: 0 = OK, fatal_return (2) = abort
 static int
@@ -165,6 +188,14 @@ public:
         // Apply private key if provided
         if(!cd.private_key.empty())
         {
+            // Set password callback before loading encrypted private key
+            if(cd.password_callback)
+            {
+                wolfSSL_CTX_set_default_passwd_cb(ctx, wolfssl_password_callback);
+                wolfSSL_CTX_set_default_passwd_cb_userdata(ctx,
+                    const_cast<tls_context_data*>(&cd));
+            }
+
             int format = (cd.private_key_format == tls_file_format::pem)
                 ? WOLFSSL_FILETYPE_PEM : WOLFSSL_FILETYPE_ASN1;
             wolfSSL_CTX_use_PrivateKey_buffer(ctx,

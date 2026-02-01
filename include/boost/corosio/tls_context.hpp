@@ -761,6 +761,10 @@ private:
     set_servername_callback_impl(
         std::function<bool( std::string_view )> callback );
 
+    void
+    set_password_callback_impl(
+        std::function<std::string( std::size_t, tls_password_purpose )> callback );
+
 public:
 
     //--------------------------------------------------------------------------
@@ -912,6 +916,14 @@ tls_context::
 set_servername_callback( Callback callback )
 {
     set_servername_callback_impl( std::move( callback ) );
+}
+
+template<typename Callback>
+void
+tls_context::
+set_password_callback( Callback callback )
+{
+    set_password_callback_impl( std::move( callback ) );
 }
 
 } // namespace boost::corosio

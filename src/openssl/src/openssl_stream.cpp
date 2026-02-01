@@ -74,6 +74,28 @@ namespace detail {
 static int sni_ctx_data_index = -1;
 
 static int
+password_callback(char* buf, int size, int rwflag, void* userdata)
+{
+    auto* cd = static_cast<tls_context_data const*>(userdata);
+    if(!cd || !cd->password_callback)
+        return 0;
+
+    tls_password_purpose purpose = (rwflag == 0)
+        ? tls_password_purpose::for_reading
+        : tls_password_purpose::for_writing;
+
+    std::string password = cd->password_callback(
+        static_cast<std::size_t>(size), purpose);
+
+    int len = static_cast<int>(password.size());
+    if(len > size)
+        len = size;
+
+    std::memcpy(buf, password.data(), static_cast<std::size_t>(len));
+    return len;
+}
+
+static int
 sni_callback(SSL* ssl, int* /* alert */, void* /* arg */)
 {
     char const* servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
@@ -184,7 +206,13 @@ public:
             {
                 EVP_PKEY* pkey = nullptr;
                 if(cd.private_key_format == tls_file_format::pem)
-                    pkey = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
+                {
+                    if(cd.password_callback)
+                        pkey = PEM_read_bio_PrivateKey(bio, nullptr,
+                            password_callback, const_cast<tls_context_data*>(&cd));
+                    else
+                        pkey = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
+                }
                 else
                     pkey = d2i_PrivateKey_bio(bio, nullptr);
                 if(pkey)

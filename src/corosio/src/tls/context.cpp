@@ -249,6 +249,14 @@ set_servername_callback_impl(
     impl_->servername_callback = std::move( callback );
 }
 
+void
+tls_context::
+set_password_callback_impl(
+    std::function<std::string( std::size_t, tls_password_purpose )> callback )
+{
+    impl_->password_callback = std::move( callback );
+}
+
 //------------------------------------------------------------------------------
 //
 // Revocation Checking
