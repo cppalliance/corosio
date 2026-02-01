@@ -16,7 +16,7 @@
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/resolver_results.hpp>
 #include <boost/corosio/signal_set.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/corosio/timer.hpp>
 

@@ -51,7 +51,7 @@ namespace boost::corosio {
     ctx.set_hostname("example.com");
     ctx.set_verify_mode(tls::verify_mode::peer);
 
-    corosio::socket sock(ioc);
+    corosio::tcp_socket sock(ioc);
     co_await sock.connect(endpoint);
 
     // Reference mode - sock must outlive tls

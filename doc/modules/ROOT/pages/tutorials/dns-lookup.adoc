@@ -187,7 +187,7 @@ capy::task<void> connect_to_host(
     if (resolve_ec)
         throw boost::system::system_error(resolve_ec);
 
-    corosio::socket sock(ioc);
+    corosio::tcp_socket sock(ioc);
     sock.open();
 
     // Try each address until one works

@@ -221,7 +221,7 @@ int main()
     corosio::io_context ioc;
 
     // Create I/O objects
-    corosio::socket sock(ioc);
+    corosio::tcp_socket sock(ioc);
     corosio::timer timer(ioc);
 
     // Launch initial coroutine

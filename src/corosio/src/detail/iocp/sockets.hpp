@@ -16,7 +16,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/acceptor.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include "src/detail/intrusive.hpp"
@@ -189,7 +189,7 @@ private:
     @note Internal implementation detail. Users interact with socket class.
 */
 class win_socket_impl
-    : public socket::socket_impl
+    : public tcp_socket::socket_impl
     , public intrusive_list<win_socket_impl>::node
 {
     std::shared_ptr<win_socket_impl_internal> internal_;
@@ -234,14 +234,14 @@ public:
         return internal_->write_some(h, d, buf, token, ec, bytes);
     }
 
-    std::error_code shutdown(socket::shutdown_type what) noexcept override
+    std::error_code shutdown(tcp_socket::shutdown_type what) noexcept override
     {
         int how;
         switch (what)
         {
-        case socket::shutdown_receive: how = SD_RECEIVE; break;
-        case socket::shutdown_send:    how = SD_SEND;    break;
-        case socket::shutdown_both:    how = SD_BOTH;    break;
+        case tcp_socket::shutdown_receive: how = SD_RECEIVE; break;
+        case tcp_socket::shutdown_send:    how = SD_SEND;    break;
+        case tcp_socket::shutdown_both:    how = SD_BOTH;    break;
         default:
             return make_err(WSAEINVAL);
         }
@@ -359,7 +359,7 @@ public:
         return {};
     }
 
-    socket::linger_options linger(std::error_code& ec) const noexcept override
+    tcp_socket::linger_options linger(std::error_code& ec) const noexcept override
     {
         struct ::linger lg{};
         int len = sizeof(lg);

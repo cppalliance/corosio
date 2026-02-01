@@ -248,7 +248,7 @@ the coroutine resumes—possibly on a different thread.
 
 [source,cpp]
 ----
-capy::task<void> handle_client(corosio::socket sock)
+capy::task<void> handle_client(corosio::tcp_socket sock)
 {
     char buf[1024];
 
@@ -403,7 +403,7 @@ sequential `co_await`s naturally serialize:
 
 [source,cpp]
 ----
-capy::task<void> session(corosio::socket sock)
+capy::task<void> session(corosio::tcp_socket sock)
 {
     // All code in this coroutine runs sequentially
     auto [ec, n] = co_await sock.read_some(buf);
@@ -491,7 +491,7 @@ capy::task<void> accept_loop(
 {
     for (;;)
     {
-        corosio::socket peer(ioc);
+        corosio::tcp_socket peer(ioc);
         auto [ec] = co_await acc.accept(peer);
         if (ec) break;
 
@@ -519,7 +519,7 @@ For bounded resource usage, use a fixed pool of workers:
 ----
 struct worker
 {
-    corosio::socket sock;
+    corosio::tcp_socket sock;
     std::string buf;
     bool in_use = false;
 
@@ -544,7 +544,7 @@ For multi-stage processing, chain coroutines:
 
 [source,cpp]
 ----
-capy::task<void> pipeline(corosio::socket sock)
+capy::task<void> pipeline(corosio::tcp_socket sock)
 {
     auto message = co_await read_message(sock);
     auto result = co_await process(message);
@@ -588,13 +588,13 @@ Spawned coroutines must not hold references to destroyed objects:
 ----
 // WRONG: socket destroyed while coroutine runs
 {
-    corosio::socket sock(ioc);
+    corosio::tcp_socket sock(ioc);
     capy::run_async(ex)(use_socket(sock));  // Takes reference!
 }  // sock destroyed here, coroutine still running
 
 // RIGHT: move socket into coroutine
 {
-    corosio::socket sock(ioc);
+    corosio::tcp_socket sock(ioc);
     capy::run_async(ex)(use_socket(std::move(sock)));
 }  // OK, coroutine owns the socket
 ----

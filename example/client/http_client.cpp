@@ -58,7 +58,7 @@ run_client(
     corosio::ipv4_address addr,
     std::uint16_t port)
 {
-    corosio::socket s(ioc);
+    corosio::tcp_socket s(ioc);
     s.open();
 
     // Connect to the server

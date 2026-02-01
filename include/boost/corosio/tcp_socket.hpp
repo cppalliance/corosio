@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_SOCKET_HPP
-#define BOOST_COROSIO_SOCKET_HPP
+#ifndef BOOST_COROSIO_TCP_SOCKET_HPP
+#define BOOST_COROSIO_TCP_SOCKET_HPP
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
@@ -57,7 +57,7 @@ using native_handle_type = int;
     @par Example
     @code
     io_context ioc;
-    socket s(ioc);
+    tcp_socket s(ioc);
     s.open();
 
     // Using structured bindings
@@ -71,7 +71,7 @@ using native_handle_type = int;
         capy::mutable_buffer(buf, sizeof(buf)));
     @endcode
 */
-class BOOST_COROSIO_DECL socket : public io_stream
+class BOOST_COROSIO_DECL tcp_socket : public io_stream
 {
 public:
     /** Different ways a socket may be shutdown. */
@@ -134,12 +134,12 @@ public:
 
     struct connect_awaitable
     {
-        socket& s_;
+        tcp_socket& s_;
         endpoint endpoint_;
         std::stop_token token_;
         mutable std::error_code ec_;
 
-        connect_awaitable(socket& s, endpoint ep) noexcept
+        connect_awaitable(tcp_socket& s, endpoint ep) noexcept
             : s_(s)
             , endpoint_(ep)
         {
@@ -183,13 +183,13 @@ public:
 
         Closes the socket if open, cancelling any pending operations.
     */
-    ~socket();
+    ~tcp_socket();
 
     /** Construct a socket from an execution context.
 
         @param ctx The execution context that will own this socket.
     */
-    explicit socket(capy::execution_context& ctx);
+    explicit tcp_socket(capy::execution_context& ctx);
 
     /** Construct a socket from an executor.
 
@@ -198,10 +198,10 @@ public:
         @param ex The executor whose context will own the socket.
     */
     template<class Ex>
-        requires (!std::same_as<std::remove_cvref_t<Ex>, socket>) &&
+        requires (!std::same_as<std::remove_cvref_t<Ex>, tcp_socket>) &&
                  capy::Executor<Ex>
-    explicit socket(Ex const& ex)
-        : socket(ex.context())
+    explicit tcp_socket(Ex const& ex)
+        : tcp_socket(ex.context())
     {
     }
 
@@ -211,7 +211,7 @@ public:
 
         @param other The socket to move from.
     */
-    socket(socket&& other) noexcept
+    tcp_socket(tcp_socket&& other) noexcept
         : io_stream(other.context())
     {
         impl_ = other.impl_;
@@ -229,7 +229,7 @@ public:
 
         @throws std::logic_error if the sockets have different execution contexts.
     */
-    socket& operator=(socket&& other)
+    tcp_socket& operator=(tcp_socket&& other)
     {
         if (this != &other)
         {
@@ -243,8 +243,8 @@ public:
         return *this;
     }
 
-    socket(socket const&) = delete;
-    socket& operator=(socket const&) = delete;
+    tcp_socket(tcp_socket const&) = delete;
+    tcp_socket& operator=(tcp_socket const&) = delete;
 
     /** Open the socket.
 

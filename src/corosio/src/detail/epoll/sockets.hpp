@@ -15,7 +15,7 @@
 #if BOOST_COROSIO_HAS_EPOLL
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include "src/detail/intrusive.hpp"
@@ -84,7 +84,7 @@ class epoll_socket_impl;
 
 /// Socket implementation for epoll backend.
 class epoll_socket_impl
-    : public socket::socket_impl
+    : public tcp_socket::socket_impl
     , public std::enable_shared_from_this<epoll_socket_impl>
     , public intrusive_list<epoll_socket_impl>::node
 {
@@ -118,7 +118,7 @@ public:
         std::error_code*,
         std::size_t*) override;
 
-    std::error_code shutdown(socket::shutdown_type what) noexcept override;
+    std::error_code shutdown(tcp_socket::shutdown_type what) noexcept override;
 
     native_handle_type native_handle() const noexcept override { return fd_; }
 
@@ -136,7 +136,7 @@ public:
     int send_buffer_size(std::error_code& ec) const noexcept override;
 
     std::error_code set_linger(bool enabled, int timeout) noexcept override;
-    socket::linger_options linger(std::error_code& ec) const noexcept override;
+    tcp_socket::linger_options linger(std::error_code& ec) const noexcept override;
 
     endpoint local_endpoint() const noexcept override { return local_endpoint_; }
     endpoint remote_endpoint() const noexcept override { return remote_endpoint_; }
@@ -197,9 +197,9 @@ public:
 
     void shutdown() override;
 
-    socket::socket_impl& create_impl() override;
-    void destroy_impl(socket::socket_impl& impl) override;
-    std::error_code open_socket(socket::socket_impl& impl) override;
+    tcp_socket::socket_impl& create_impl() override;
+    void destroy_impl(tcp_socket::socket_impl& impl) override;
+    std::error_code open_socket(tcp_socket::socket_impl& impl) override;
 
     epoll_scheduler& scheduler() const noexcept { return state_->sched_; }
     void post(epoll_op* op);

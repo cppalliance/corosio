@@ -20,7 +20,7 @@
 
 namespace boost::corosio::test {
 
-std::pair<socket, socket>
+std::pair<tcp_socket, tcp_socket>
 make_socket_pair(basic_io_context& ctx)
 {
     auto ex = ctx.get_executor();
@@ -35,12 +35,12 @@ make_socket_pair(basic_io_context& ctx)
     acc.listen(endpoint(ipv4_address::loopback(), 0));
     auto port = acc.local_endpoint().port();
 
-    socket s1(ctx);
-    socket s2(ctx);
+    tcp_socket s1(ctx);
+    tcp_socket s2(ctx);
     s2.open();
 
     capy::run_async(ex)(
-        [](acceptor& a, socket& s,
+        [](acceptor& a, tcp_socket& s,
            std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await a.accept(s);
@@ -49,7 +49,7 @@ make_socket_pair(basic_io_context& ctx)
         }(acc, s1, accept_ec, accept_done));
 
     capy::run_async(ex)(
-        [](socket& s, endpoint ep,
+        [](tcp_socket& s, endpoint ep,
            std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await s.connect(ep);

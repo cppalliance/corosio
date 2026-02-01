@@ -16,13 +16,13 @@
 // 1. stop_callback lifetime - stop token firing during completion
 // 2. ready_ flag race - synchronous completion vs completion port delivery
 // 3. Rapid cancel/complete cycles
-// 4. shared_ptr lifetime - operation completion vs socket close race
+// 4. shared_ptr lifetime - operation completion vs tcp_socket close race
 //
 // Tests run on all backends (epoll, IOCP, select).
 
 #include <boost/corosio/detail/platform.hpp>
 
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/io_context.hpp>
 #if BOOST_COROSIO_HAS_SELECT
@@ -81,10 +81,10 @@ get_stress_port() noexcept
     return static_cast<std::uint16_t>(port_base + ((pid_offset + offset) % port_range));
 }
 
-// Create a connected socket pair for stress testing.
+// Create a connected tcp_socket pair for stress testing.
 // Must be called BEFORE context::run().
 template<class Context>
-std::pair<socket, socket>
+std::pair<tcp_socket, tcp_socket>
 make_stress_pair(Context& ctx)
 {
     auto ex = ctx.get_executor();
@@ -115,12 +115,12 @@ make_stress_pair(Context& ctx)
     if (!listening)
         throw std::runtime_error("stress_pair: failed to find available port");
 
-    socket s1(ctx);
-    socket s2(ctx);
+    tcp_socket s1(ctx);
+    tcp_socket s2(ctx);
     s2.open();
 
     capy::run_async(ex)(
-        [](acceptor& a, socket& s,
+        [](acceptor& a, tcp_socket& s,
            std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await a.accept(s);
@@ -129,7 +129,7 @@ make_stress_pair(Context& ctx)
         }(acc, s1, accept_ec, accept_done));
 
     capy::run_async(ex)(
-        [](socket& s, endpoint ep,
+        [](tcp_socket& s, endpoint ep,
            std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await s.connect(ep);
@@ -175,7 +175,7 @@ struct stop_token_stress_test_impl
         Context ioc;
         auto ex = ioc.get_executor();
 
-        // Pre-create socket pair BEFORE ioc.run()
+        // Pre-create tcp_socket pair BEFORE ioc.run()
         auto [s1, s2] = make_stress_pair<Context>(ioc);
 
         std::atomic<std::size_t> iterations{0};
@@ -309,7 +309,7 @@ struct sync_completion_stress_test_impl
         Context ioc;
         auto ex = ioc.get_executor();
 
-        // Pre-create socket pair BEFORE ioc.run()
+        // Pre-create tcp_socket pair BEFORE ioc.run()
         auto [s1, s2] = make_stress_pair<Context>(ioc);
 
         std::atomic<std::size_t> iterations{0};
@@ -399,7 +399,7 @@ struct cancel_close_stress_test_impl
         Context ioc;
         auto ex = ioc.get_executor();
 
-        // Pre-create socket pair BEFORE ioc.run()
+        // Pre-create tcp_socket pair BEFORE ioc.run()
         auto [s1, s2] = make_stress_pair<Context>(ioc);
 
         std::atomic<std::size_t> iterations{0};
@@ -436,7 +436,7 @@ struct cancel_close_stress_test_impl
                         switch (i % 3)
                         {
                         case 0:
-                            // Cancel via socket.cancel()
+                            // Cancel via tcp_socket.cancel()
                             s2.cancel();
                             ++cancels;
                             break;
@@ -528,7 +528,7 @@ TEST_SUITE(cancel_close_stress_test_select, "boost.corosio.socket_stress.cancel_
 //------------------------------------------------------------------------------
 // Stress Test 4: Concurrent Operations
 //
-// This test runs multiple concurrent socket operations to stress
+// This test runs multiple concurrent tcp_socket operations to stress
 // thread safety and completion dispatch.
 //------------------------------------------------------------------------------
 
@@ -549,8 +549,8 @@ struct concurrent_ops_stress_test_impl
 
         constexpr int num_pairs = 4;
 
-        // Create multiple socket pairs
-        std::vector<std::pair<socket, socket>> pairs;
+        // Create multiple tcp_socket pairs
+        std::vector<std::pair<tcp_socket, tcp_socket>> pairs;
         for (int i = 0; i < num_pairs; ++i)
         {
             pairs.push_back(make_stress_pair<Context>(ioc));
@@ -560,7 +560,7 @@ struct concurrent_ops_stress_test_impl
         for (int i = 0; i < num_pairs; ++i)
         {
             capy::run_async(ex)(
-                [](socket& s, std::atomic<bool>& stop, std::atomic<std::size_t>& bytes, int idx) -> capy::task<>
+                [](tcp_socket& s, std::atomic<bool>& stop, std::atomic<std::size_t>& bytes, int idx) -> capy::task<>
                 {
                     std::size_t sent = 0;
                     char buf[256];
@@ -582,7 +582,7 @@ struct concurrent_ops_stress_test_impl
         for (int i = 0; i < num_pairs; ++i)
         {
             capy::run_async(ex)(
-                [](socket& s, std::atomic<bool>& stop, std::atomic<std::size_t>& bytes, int) -> capy::task<>
+                [](tcp_socket& s, std::atomic<bool>& stop, std::atomic<std::size_t>& bytes, int) -> capy::task<>
                 {
                     std::size_t received = 0;
                     char buf[256];
@@ -686,7 +686,7 @@ struct accept_stress_test_impl
         {
             while (!stop_flag.load(std::memory_order_relaxed))
             {
-                socket peer(ioc);
+                tcp_socket peer(ioc);
                 auto [ec] = co_await acc.accept(peer);
                 if (ec)
                 {
@@ -704,7 +704,7 @@ struct accept_stress_test_impl
         {
             while (!stop_flag.load(std::memory_order_relaxed))
             {
-                socket client(ioc);
+                tcp_socket client(ioc);
                 client.open();
                 auto [ec] = co_await client.connect(
                     endpoint(ipv4_address::loopback(), port));

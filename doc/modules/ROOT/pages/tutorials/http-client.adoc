@@ -98,7 +98,7 @@ capy::task<void> run_client(
     boost::urls::ipv4_address addr,
     std::uint16_t port)
 {
-    corosio::socket s(ioc);
+    corosio::tcp_socket s(ioc);
     s.open();
 
     // Connect (throws on error)
@@ -225,7 +225,7 @@ capy::task<void> run_https_client(
     std::uint16_t port,
     std::string_view hostname)
 {
-    corosio::socket s(ioc);
+    corosio::tcp_socket s(ioc);
     s.open();
 
     (co_await s.connect(corosio::endpoint(addr, port))).value();

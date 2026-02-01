@@ -42,7 +42,7 @@ class echo_server : public corosio::tcp_server
     struct worker : worker_base
     {
         corosio::io_context& ctx_;
-        corosio::socket sock_;
+        corosio::tcp_socket sock_;
         std::string buf;
 
         explicit worker(corosio::io_context& ctx)
@@ -52,7 +52,7 @@ class echo_server : public corosio::tcp_server
             buf.reserve(4096);
         }
 
-        corosio::socket& socket() override { return sock_; }
+        corosio::tcp_socket& socket() override { return sock_; }
 
         void run(launcher launch) override
         {
@@ -89,7 +89,7 @@ class worker_base
 public:
     virtual ~worker_base() = default;
     virtual void run(launcher launch) = 0;
-    virtual corosio::socket& socket() = 0;
+    virtual corosio::tcp_socket& socket() = 0;
 };
 ----
 
@@ -101,7 +101,7 @@ required methods:
 struct my_worker : tcp_server::worker_base
 {
     corosio::io_context& ctx_;
-    corosio::socket sock_;
+    corosio::tcp_socket sock_;
     std::string request_buf;
     std::string response_buf;
 
@@ -110,7 +110,7 @@ struct my_worker : tcp_server::worker_base
         , sock_(ctx)
     {}
 
-    corosio::socket& socket() override { return sock_; }
+    corosio::tcp_socket& socket() override { return sock_; }
 
     void run(launcher launch) override
     {
@@ -254,7 +254,7 @@ class echo_server : public corosio::tcp_server
     struct worker : worker_base
     {
         corosio::io_context& ctx_;
-        corosio::socket sock_;
+        corosio::tcp_socket sock_;
         std::string buf;
 
         explicit worker(corosio::io_context& ctx)
@@ -264,7 +264,7 @@ class echo_server : public corosio::tcp_server
             buf.reserve(4096);
         }
 
-        corosio::socket& socket() override { return sock_; }
+        corosio::tcp_socket& socket() override { return sock_; }
 
         void run(launcher launch) override
         {

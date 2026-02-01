@@ -22,7 +22,7 @@ namespace capy = boost::capy;
 class echo_worker : public corosio::tcp_server::worker_base
 {
     corosio::io_context& ctx_;
-    corosio::socket sock_;
+    corosio::tcp_socket sock_;
     std::string buf_;
 
 public:
@@ -33,7 +33,7 @@ public:
         buf_.reserve(4096);
     }
 
-    corosio::socket& socket() override
+    corosio::tcp_socket& socket() override
     {
         return sock_;
     }

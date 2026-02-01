@@ -18,7 +18,7 @@ NOTE: Code snippets assume:
 ----
 #include <boost/corosio/tls/context.hpp>
 #include <boost/corosio/tls/wolfssl_stream.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 
 namespace corosio = boost::corosio;
 namespace tls = corosio::tls;
@@ -45,7 +45,7 @@ ctx.set_verify_mode(tls::verify_mode::peer).value();
 ctx.set_hostname("api.example.com");
 
 // 2. Connect a socket
-corosio::socket sock(ioc);
+corosio::tcp_socket sock(ioc);
 sock.open();
 (co_await sock.connect(endpoint)).value();
 
@@ -335,7 +335,7 @@ The WolfSSL-based implementation:
 ----
 #include <boost/corosio/tls/wolfssl_stream.hpp>
 
-corosio::socket sock(ioc);
+corosio::tcp_socket sock(ioc);
 // ... connect sock ...
 
 tls::context ctx;
@@ -463,7 +463,7 @@ capy::task<void> send_request(corosio::io_stream& stream)
 }
 
 // Works with plain socket
-corosio::socket sock(ioc);
+corosio::tcp_socket sock(ioc);
 co_await send_request(sock);
 
 // Also works with TLS stream
@@ -490,7 +490,7 @@ capy::task<void> https_get(
         throw boost::system::system_error(resolve_ec);
 
     // Connect TCP socket
-    corosio::socket sock(ioc);
+    corosio::tcp_socket sock(ioc);
     sock.open();
 
     for (auto const& entry : results)
@@ -556,7 +556,7 @@ capy::task<void> tls_server(
 
     for (;;)
     {
-        corosio::socket peer(ioc);
+        corosio::tcp_socket peer(ioc);
         auto [ec] = co_await acc.accept(peer);
         if (ec) break;
 
@@ -567,7 +567,7 @@ capy::task<void> tls_server(
 }
 
 capy::task<void> handle_tls_client(
-    corosio::socket sock,
+    corosio::tcp_socket sock,
     tls::context ctx)
 {
     corosio::wolfssl_stream secure(sock, ctx);

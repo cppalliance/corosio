@@ -393,7 +393,7 @@ capy::task<void> run_server(corosio::io_context& ioc)
 
     while (running)
     {
-        corosio::socket peer(ioc);
+        corosio::tcp_socket peer(ioc);
         auto [ec] = co_await acc.accept(peer);
         if (ec)
             break;

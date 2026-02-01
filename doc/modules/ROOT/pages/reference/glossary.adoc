@@ -208,7 +208,7 @@ An I/O object that waits for operating system signals. See
 `corosio::signal_set`.
 
 Socket::
-An I/O object for TCP network communication. See `corosio::socket`.
+An I/O object for TCP network communication. See `corosio::tcp_socket`.
 
 Stop Token::
 A mechanism for requesting cancellation. See `std::stop_token`.

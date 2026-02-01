@@ -15,7 +15,7 @@
 #include <boost/corosio/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/endpoint.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
@@ -51,7 +51,7 @@ namespace boost::corosio {
     acceptor acc(ioc);
     acc.listen(endpoint(8080));  // Bind to port 8080
 
-    socket peer(ioc);
+    tcp_socket peer(ioc);
     auto [ec] = co_await acc.accept(peer);
     if (!ec) {
         // peer is now a connected socket
@@ -64,12 +64,12 @@ class BOOST_COROSIO_DECL acceptor : public io_object
     struct accept_awaitable
     {
         acceptor& acc_;
-        socket& peer_;
+        tcp_socket& peer_;
         std::stop_token token_;
         mutable std::error_code ec_;
         mutable io_object::io_object_impl* peer_impl_ = nullptr;
 
-        accept_awaitable(acceptor& acc, socket& peer) noexcept
+        accept_awaitable(acceptor& acc, tcp_socket& peer) noexcept
             : acc_(acc)
             , peer_(peer)
         {
@@ -242,14 +242,14 @@ public:
 
         @par Example
         @code
-        socket peer(ioc);
+        tcp_socket peer(ioc);
         auto [ec] = co_await acc.accept(peer);
         if (!ec) {
             // Use peer socket
         }
         @endcode
     */
-    auto accept(socket& peer)
+    auto accept(tcp_socket& peer)
     {
         if (!impl_)
             detail::throw_logic_error("accept: acceptor not listening");

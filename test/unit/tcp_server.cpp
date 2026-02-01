@@ -27,7 +27,7 @@ namespace {
 class test_worker : public tcp_server::worker_base
 {
     io_context& ctx_;
-    corosio::socket sock_;
+    corosio::tcp_socket sock_;
 
 public:
     explicit test_worker(io_context& ctx)
@@ -36,7 +36,7 @@ public:
     {
     }
 
-    corosio::socket& socket() override
+    corosio::tcp_socket& socket() override
     {
         return sock_;
     }
@@ -44,7 +44,7 @@ public:
     void run(tcp_server::launcher launch) override
     {
         launch(ctx_.get_executor(),
-            [](corosio::socket* sock) -> capy::task<>
+            [](corosio::tcp_socket* sock) -> capy::task<>
             {
                 // Echo one message and close
                 char buf[64];
@@ -164,7 +164,7 @@ struct tcp_server_test
             std::atomic<bool>* connection_handled,
             std::atomic<bool>* stop_requested) -> capy::task<>
         {
-            socket client(*ioc);
+            tcp_socket client(*ioc);
             client.open();
 
             auto [connect_ec] = co_await client.connect(
@@ -311,7 +311,7 @@ struct tcp_server_test
             std::uint16_t port,
             int* count) -> capy::task<>
         {
-            socket client(*ioc);
+            tcp_socket client(*ioc);
             client.open();
             auto [connect_ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
@@ -357,7 +357,7 @@ struct tcp_server_test
             std::uint16_t port,
             int* count) -> capy::task<>
         {
-            socket client(*ioc);
+            tcp_socket client(*ioc);
             client.open();
             auto [connect_ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));

@@ -8,7 +8,7 @@
 //
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/string_dynamic_buffer.hpp>
@@ -34,7 +34,7 @@ namespace capy = boost::capy;
 
 // Server coroutine: reads requests and sends responses
 capy::task<> server_task(
-    corosio::socket& sock,
+    corosio::tcp_socket& sock,
     int num_requests,
     int& completed_requests)
 {
@@ -61,7 +61,7 @@ capy::task<> server_task(
 
 // Client coroutine: sends requests and reads responses
 capy::task<> client_task(
-    corosio::socket& sock,
+    corosio::tcp_socket& sock,
     int num_requests,
     bench::statistics& latency_stats)
 {
@@ -172,8 +172,8 @@ bench::benchmark_result bench_concurrent_connections(int num_connections, int re
 
     Context ioc;
 
-    std::vector<corosio::socket> clients;
-    std::vector<corosio::socket> servers;
+    std::vector<corosio::tcp_socket> clients;
+    std::vector<corosio::tcp_socket> servers;
     std::vector<int> completed(num_connections, 0);
     std::vector<bench::statistics> stats(num_connections);
 
@@ -248,8 +248,8 @@ bench::benchmark_result bench_multithread(int num_threads, int num_connections, 
 
     Context ioc;
 
-    std::vector<corosio::socket> clients;
-    std::vector<corosio::socket> servers;
+    std::vector<corosio::tcp_socket> clients;
+    std::vector<corosio::tcp_socket> servers;
     std::vector<int> completed(num_connections, 0);
     std::vector<bench::statistics> stats(num_connections);
 

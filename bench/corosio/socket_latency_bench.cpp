@@ -8,7 +8,7 @@
 //
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -28,8 +28,8 @@ namespace capy = boost::capy;
 
 // Ping-pong coroutine task
 capy::task<> pingpong_task(
-    corosio::socket& client,
-    corosio::socket& server,
+    corosio::tcp_socket& client,
+    corosio::tcp_socket& server,
     std::size_t message_size,
     int iterations,
     bench::statistics& stats)
@@ -134,8 +134,8 @@ bench::benchmark_result bench_concurrent_latency(int num_pairs, std::size_t mess
     Context ioc;
 
     // Store sockets and stats separately for safe reference passing
-    std::vector<corosio::socket> clients;
-    std::vector<corosio::socket> servers;
+    std::vector<corosio::tcp_socket> clients;
+    std::vector<corosio::tcp_socket> servers;
     std::vector<bench::statistics> stats(num_pairs);
 
     clients.reserve(num_pairs);

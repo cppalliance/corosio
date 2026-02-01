@@ -159,7 +159,7 @@ capy::task<void> periodic_task(corosio::io_context& ioc)
 ----
 capy::task<void> with_timeout(
     corosio::io_context& ioc,
-    corosio::socket& sock)
+    corosio::tcp_socket& sock)
 {
     corosio::timer timeout(ioc);
     timeout.expires_after(30s);
@@ -251,7 +251,7 @@ same timer.
 ----
 capy::task<void> heartbeat(
     corosio::io_context& ioc,
-    corosio::socket& sock,
+    corosio::tcp_socket& sock,
     std::atomic<bool>& running)
 {
     corosio::timer t(ioc);

@@ -13,7 +13,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <system_error>
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include "src/detail/intrusive.hpp"
 #include <boost/capy/buffers/slice.hpp>
 #include <boost/capy/buffers/span.hpp>
@@ -47,7 +47,7 @@ class mocket_impl
 {
     mocket_service& svc_;
     capy::test::fuse& fuse_;
-    socket sock_;
+    tcp_socket sock_;
     std::string provide_;
     std::string expect_;
     mocket_impl* peer_ = nullptr;
@@ -69,7 +69,7 @@ public:
         peer_ = peer;
     }
 
-    socket& get_socket() noexcept
+    tcp_socket& get_socket() noexcept
     {
         return sock_;
     }
@@ -451,17 +451,17 @@ make_mockets(
     acc.listen(endpoint(ipv4_address::loopback(), 0));
     auto port = acc.local_endpoint().port();
 
-    // Open impl2's socket for connect
+    // Open impl2's tcp_socket for connect
     impl2.get_socket().open();
 
-    // Create a socket to receive the accepted connection
-    socket accepted_socket(ctx);
+    // Create a tcp_socket to receive the accepted connection
+    tcp_socket accepted_socket(ctx);
 
     // Launch accept operation
     // Note: Pass captures as parameters to store them in the coroutine frame,
     // avoiding use-after-scope when the lambda temporary is destroyed.
     capy::run_async(ex)(
-        [](acceptor& a, socket& s,
+        [](acceptor& a, tcp_socket& s,
            std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await a.accept(s);
@@ -471,7 +471,7 @@ make_mockets(
 
     // Launch connect operation
     capy::run_async(ex)(
-        [](socket& s, endpoint ep,
+        [](tcp_socket& s, endpoint ep,
            std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await s.connect(ep);
@@ -502,7 +502,7 @@ make_mockets(
         throw std::runtime_error("mocket connect failed");
     }
 
-    // Transfer the accepted socket to impl1
+    // Transfer the accepted tcp_socket to impl1
     impl1.get_socket() = std::move(accepted_socket);
 
     acc.close();

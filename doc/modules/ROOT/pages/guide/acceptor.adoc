@@ -16,7 +16,7 @@ NOTE: Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/acceptor.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/endpoint.hpp>
 
 namespace corosio = boost::corosio;
@@ -31,7 +31,7 @@ An acceptor binds to a local endpoint and waits for clients to connect:
 corosio::acceptor acc(ioc);
 acc.listen(corosio::endpoint(8080));  // Listen on port 8080
 
-corosio::socket peer(ioc);
+corosio::tcp_socket peer(ioc);
 auto [ec] = co_await acc.accept(peer);
 
 if (!ec)
@@ -116,7 +116,7 @@ The `accept()` operation waits for and accepts an incoming connection:
 
 [source,cpp]
 ----
-corosio::socket peer(ioc);
+corosio::tcp_socket peer(ioc);
 auto [ec] = co_await acc.accept(peer);
 ----
 
@@ -246,7 +246,7 @@ capy::task<void> accept_loop(
 {
     for (;;)
     {
-        corosio::socket peer(ioc);
+        corosio::tcp_socket peer(ioc);
         auto [ec] = co_await acc.accept(peer);
 
         if (ec)

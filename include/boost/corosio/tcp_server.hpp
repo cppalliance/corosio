@@ -13,7 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/acceptor.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/capy/task.hpp>
@@ -109,7 +109,7 @@ namespace boost::corosio {
     @code
     class my_worker : public tcp_server::worker_base
     {
-        corosio::socket sock_;
+        corosio::tcp_socket sock_;
         capy::any_executor ex_;
     public:
         my_worker(io_context& ctx)
@@ -118,11 +118,11 @@ namespace boost::corosio {
         {
         }
 
-        corosio::socket& socket() override { return sock_; }
+        corosio::tcp_socket& socket() override { return sock_; }
 
         void run(launcher launch) override
         {
-            launch(ex_, [](corosio::socket* sock) -> capy::task<>
+            launch(ex_, [](corosio::tcp_socket* sock) -> capy::task<>
             {
                 // handle connection using sock
                 co_return;
@@ -480,7 +480,7 @@ public:
         virtual void run(launcher launch) = 0;
 
         /// Return the socket used for connections.
-        virtual corosio::socket& socket() = 0;
+        virtual corosio::tcp_socket& socket() = 0;
     };
 
     /** Move-only handle to launch a worker coroutine.

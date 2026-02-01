@@ -61,7 +61,7 @@ run_client(
     std::uint16_t port,
     std::string_view hostname)
 {
-    corosio::socket s(ioc);
+    corosio::tcp_socket s(ioc);
     s.open();
 
     // Connect to the server

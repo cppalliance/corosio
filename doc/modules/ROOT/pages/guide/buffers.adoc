@@ -192,7 +192,7 @@ operation:
 [source,cpp]
 ----
 // WRONG: buffer outlives string
-capy::task<void> bad_example(corosio::socket& sock)
+capy::task<void> bad_example(corosio::tcp_socket& sock)
 {
     capy::const_buffer buf;
     {
@@ -204,7 +204,7 @@ capy::task<void> bad_example(corosio::socket& sock)
 }
 
 // CORRECT: keep storage alive
-capy::task<void> good_example(corosio::socket& sock)
+capy::task<void> good_example(corosio::tcp_socket& sock)
 {
     std::string msg = "Hello";
     co_await sock.write_some(

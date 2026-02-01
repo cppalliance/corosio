@@ -187,7 +187,7 @@ capy::task<void> connect_to_service(
     if (results.empty())
         throw std::runtime_error("No addresses found");
 
-    corosio::socket sock(ioc);
+    corosio::tcp_socket sock(ioc);
     sock.open();
 
     boost::system::error_code last_error;
@@ -317,7 +317,7 @@ capy::task<void> http_get(
     }
 
     // Connect to first address
-    corosio::socket sock(ioc);
+    corosio::tcp_socket sock(ioc);
     sock.open();
 
     for (auto const& entry : results)

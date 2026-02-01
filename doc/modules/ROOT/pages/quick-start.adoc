@@ -55,7 +55,7 @@ class echo_server : public corosio::tcp_server
     class worker : public worker_base
     {
         corosio::io_context& ctx_;
-        corosio::socket sock_;
+        corosio::tcp_socket sock_;
         std::string buf_;
 
     public:
@@ -66,7 +66,7 @@ class echo_server : public corosio::tcp_server
             buf_.reserve(4096);
         }
 
-        corosio::socket& socket() override { return sock_; }
+        corosio::tcp_socket& socket() override { return sock_; }
 
         void run(launcher launch) override
         {

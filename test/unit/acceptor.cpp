@@ -112,7 +112,7 @@ struct acceptor_test_impl
         // These must outlive the coroutines
         bool accept_done = false;
         std::error_code accept_ec;
-        socket peer(ioc);
+        tcp_socket peer(ioc);
 
         auto task = [&]() -> capy::task<>
         {
@@ -153,18 +153,18 @@ struct acceptor_test_impl
     {
         // Tests that close() properly handles a pending accept operation.
         // This is the key test for the cancel/destruction race condition:
-        // when close() is called, CancelIoEx is invoked, the socket is closed,
+        // when close() is called, CancelIoEx is invoked, the tcp_socket is closed,
         // but the impl must stay alive until IOCP delivers the cancellation.
         // The acceptor_ptr shared_ptr in accept_op ensures this.
         Context ioc;
         acceptor acc(ioc);
         acc.listen(endpoint(0));
 
-        socket peer(ioc);
+        tcp_socket peer(ioc);
         bool accept_done = false;
         std::error_code accept_ec;
 
-        // Pattern from socket tests: run a single coroutine that manages
+        // Pattern from tcp_socket tests: run a single coroutine that manages
         // the nested coroutine and close operation
         auto task = [&ioc, &acc, &peer, &accept_done, &accept_ec]() -> capy::task<>
         {

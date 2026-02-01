@@ -9,14 +9,14 @@
 
 = Sockets
 
-The `socket` class provides asynchronous TCP networking. It supports
+The `tcp_socket` class provides asynchronous TCP networking. It supports
 connecting to servers, reading and writing data, and graceful connection
 management.
 
 NOTE: Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/capy/buffers.hpp>
 
@@ -30,7 +30,7 @@ A socket represents one end of a TCP connection:
 
 [source,cpp]
 ----
-corosio::socket s(ioc);
+corosio::tcp_socket s(ioc);
 s.open();
 
 auto [ec] = co_await s.connect(
@@ -48,11 +48,11 @@ Sockets are constructed from an execution context or executor:
 [source,cpp]
 ----
 // From io_context
-corosio::socket s1(ioc);
+corosio::tcp_socket s1(ioc);
 
 // From executor
 auto ex = ioc.get_executor();
-corosio::socket s2(ex);
+corosio::tcp_socket s2(ex);
 ----
 
 The socket doesn't own system resources until `open()` is called.
@@ -232,10 +232,10 @@ Sockets are move-only:
 
 [source,cpp]
 ----
-corosio::socket s1(ioc);
-corosio::socket s2 = std::move(s1);  // OK
+corosio::tcp_socket s1(ioc);
+corosio::tcp_socket s2 = std::move(s1);  // OK
 
-corosio::socket s3 = s2;  // Error: deleted copy constructor
+corosio::tcp_socket s3 = s2;  // Error: deleted copy constructor
 ----
 
 Move assignment closes any existing socket:
@@ -274,7 +274,7 @@ capy::task<void> send_data(corosio::io_stream& stream)
 }
 
 // Works with socket, wolfssl_stream, or any io_stream
-corosio::socket sock(ioc);
+corosio::tcp_socket sock(ioc);
 co_await send_data(sock);
 ----
 
@@ -320,7 +320,7 @@ socket. But don't start two reads or two writes concurrently.
 ----
 capy::task<void> echo_client(corosio::io_context& ioc)
 {
-    corosio::socket s(ioc);
+    corosio::tcp_socket s(ioc);
     s.open();
 
     (co_await s.connect(

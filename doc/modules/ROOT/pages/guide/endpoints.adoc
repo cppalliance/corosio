@@ -188,7 +188,7 @@ assert(ep1 != ep3);  // Different port
 
 [source,cpp]
 ----
-corosio::socket s(ioc);
+corosio::tcp_socket s(ioc);
 s.open();
 
 corosio::endpoint target(

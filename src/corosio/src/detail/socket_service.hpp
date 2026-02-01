@@ -11,7 +11,7 @@
 #define BOOST_COROSIO_DETAIL_SOCKET_SERVICE_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/acceptor.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -63,13 +63,13 @@ public:
 
         @return Reference to the newly created socket implementation.
     */
-    virtual socket::socket_impl& create_impl() = 0;
+    virtual tcp_socket::socket_impl& create_impl() = 0;
 
     /** Destroy a socket implementation.
 
         @param impl The socket implementation to destroy.
     */
-    virtual void destroy_impl(socket::socket_impl& impl) = 0;
+    virtual void destroy_impl(tcp_socket::socket_impl& impl) = 0;
 
     /** Open a socket.
 
@@ -78,7 +78,7 @@ public:
         @param impl The socket implementation to open.
         @return Error code on failure, empty on success.
     */
-    virtual std::error_code open_socket(socket::socket_impl& impl) = 0;
+    virtual std::error_code open_socket(tcp_socket::socket_impl& impl) = 0;
 
 protected:
     socket_service() = default;

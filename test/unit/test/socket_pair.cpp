@@ -42,7 +42,7 @@ struct socket_pair_test
 
         auto [s1, s2] = make_socket_pair(ioc);
 
-        auto task = [](socket& a, socket& b) -> capy::task<>
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
         {
             char buf[32] = {};
 

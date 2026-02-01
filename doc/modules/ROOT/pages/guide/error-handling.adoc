@@ -291,7 +291,7 @@ capy::task<void> connect_with_retry(
     corosio::endpoint ep,
     int max_retries)
 {
-    corosio::socket sock(ioc);
+    corosio::tcp_socket sock(ioc);
     corosio::timer delay(ioc);
 
     for (int attempt = 0; attempt < max_retries; ++attempt)

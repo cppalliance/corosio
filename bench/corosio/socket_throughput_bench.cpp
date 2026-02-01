@@ -9,7 +9,7 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/detail/platform.hpp>
-#include <boost/corosio/socket.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -35,7 +35,7 @@ namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 
 // Helper to set TCP_NODELAY on a socket for low latency
-inline void set_nodelay(corosio::socket& s)
+inline void set_nodelay(corosio::tcp_socket& s)
 {
     int flag = 1;
 #if BOOST_COROSIO_HAS_IOCP
@@ -87,7 +87,7 @@ bench::benchmark_result bench_throughput(std::size_t chunk_size, std::size_t tot
             total_written += n;
         }
         writer_done = true;
-        writer.shutdown(corosio::socket::shutdown_send);
+        writer.shutdown(corosio::tcp_socket::shutdown_send);
     };
 
     // Reader coroutine
@@ -172,7 +172,7 @@ bench::benchmark_result bench_bidirectional_throughput(std::size_t chunk_size, s
             if (ec) break;
             written1 += n;
         }
-        sock1.shutdown(corosio::socket::shutdown_send);
+        sock1.shutdown(corosio::tcp_socket::shutdown_send);
     };
 
     // Socket 2 reads from socket 1
@@ -199,7 +199,7 @@ bench::benchmark_result bench_bidirectional_throughput(std::size_t chunk_size, s
             if (ec) break;
             written2 += n;
         }
-        sock2.shutdown(corosio::socket::shutdown_send);
+        sock2.shutdown(corosio::tcp_socket::shutdown_send);
     };
 
     // Socket 1 reads from socket 2
