@@ -19,6 +19,28 @@ namespace boost::corosio {
 struct endpoint_parse_test
 {
     void
+    testConstructFromEndpointAndPort()
+    {
+        // IPv4 case
+        {
+            endpoint ep1(ipv4_address::loopback(), 8080);
+            endpoint ep2(ep1, 443);
+            BOOST_TEST(ep2.is_v4());
+            BOOST_TEST_EQ(ep2.v4_address(), ipv4_address::loopback());
+            BOOST_TEST_EQ(ep2.port(), 443);
+        }
+
+        // IPv6 case
+        {
+            endpoint ep1(ipv6_address::loopback(), 8080);
+            endpoint ep2(ep1, 443);
+            BOOST_TEST(ep2.is_v6());
+            BOOST_TEST(ep2.v6_address().is_loopback());
+            BOOST_TEST_EQ(ep2.port(), 443);
+        }
+    }
+
+    void
     testDetectFormat()
     {
         BOOST_TEST(detect_endpoint_format("192.168.1.1") == 
@@ -145,6 +167,7 @@ struct endpoint_parse_test
     void
     run()
     {
+        testConstructFromEndpointAndPort();
         testDetectFormat();
         testParseIPv4NoPort();
         testParseIPv4WithPort();

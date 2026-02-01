@@ -112,6 +112,22 @@ public:
     {
     }
 
+    /** Construct from an endpoint's address with a different port.
+
+        Creates a new endpoint using the address from an existing
+        endpoint but with a different port number.
+
+        @param ep The endpoint whose address to use.
+        @param p The port number in host byte order.
+    */
+    endpoint(endpoint const& ep, std::uint16_t p) noexcept
+        : v4_address_(ep.v4_address_)
+        , v6_address_(ep.v6_address_)
+        , port_(p)
+        , is_v4_(ep.is_v4_)
+    {
+    }
+
     /** Check if this endpoint uses an IPv4 address.
 
         @return `true` if the endpoint uses IPv4, `false` if IPv6.
