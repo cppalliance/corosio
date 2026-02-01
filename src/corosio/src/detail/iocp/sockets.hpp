@@ -15,7 +15,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -445,7 +445,7 @@ private:
     @note Internal implementation detail. Users interact with acceptor class.
 */
 class win_acceptor_impl
-    : public acceptor::acceptor_impl
+    : public tcp_acceptor::acceptor_impl
     , public intrusive_list<win_acceptor_impl>::node
 {
     std::shared_ptr<win_acceptor_impl_internal> internal_;

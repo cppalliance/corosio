@@ -128,7 +128,7 @@ struct tcp_server_test
         io_context ioc;
 
         // Find an available port
-        acceptor acc(ioc);
+        tcp_acceptor acc(ioc);
         std::uint16_t port = 0;
         for(int attempt = 0; attempt < 20; ++attempt)
         {
@@ -141,7 +141,7 @@ struct tcp_server_test
             catch(std::system_error const&)
             {
                 acc.close();
-                acc = acceptor(ioc);
+                acc = tcp_acceptor(ioc);
             }
         }
         acc.close();
@@ -279,7 +279,7 @@ struct tcp_server_test
         io_context ioc;
 
         // Find an available port
-        acceptor acc(ioc);
+        tcp_acceptor acc(ioc);
         std::uint16_t port = 0;
         for(int attempt = 0; attempt < 20; ++attempt)
         {
@@ -292,7 +292,7 @@ struct tcp_server_test
             catch(std::system_error const&)
             {
                 acc.close();
-                acc = acceptor(ioc);
+                acc = tcp_acceptor(ioc);
             }
         }
         acc.close();

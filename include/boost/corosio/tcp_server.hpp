@@ -12,7 +12,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/endpoint.hpp>
@@ -444,7 +444,7 @@ private:
         return pop_awaitable{*this};
     }
 
-    capy::task<void> do_accept(acceptor& acc);
+    capy::task<void> do_accept(tcp_acceptor& acc);
 
 public:
     /** Abstract base class for connection handlers.

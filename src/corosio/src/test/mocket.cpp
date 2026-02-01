@@ -8,7 +8,7 @@
 //
 
 #include <boost/corosio/test/mocket.hpp>
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <system_error>
@@ -447,7 +447,7 @@ make_mockets(
     bool connect_done = false;
 
     // Use ephemeral port (0) - OS assigns an available port
-    acceptor acc(ctx);
+    tcp_acceptor acc(ctx);
     acc.listen(endpoint(ipv4_address::loopback(), 0));
     auto port = acc.local_endpoint().port();
 
@@ -461,7 +461,7 @@ make_mockets(
     // Note: Pass captures as parameters to store them in the coroutine frame,
     // avoiding use-after-scope when the lambda temporary is destroyed.
     capy::run_async(ex)(
-        [](acceptor& a, tcp_socket& s,
+        [](tcp_acceptor& a, tcp_socket& s,
            std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await a.accept(s);

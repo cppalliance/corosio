@@ -23,7 +23,7 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/io_context.hpp>
 #if BOOST_COROSIO_HAS_SELECT
 #include <boost/corosio/select_context.hpp>
@@ -95,7 +95,7 @@ make_stress_pair(Context& ctx)
     bool connect_done = false;
 
     std::uint16_t port = 0;
-    acceptor acc(ctx);
+    tcp_acceptor acc(ctx);
     bool listening = false;
     for (int attempt = 0; attempt < 50; ++attempt)
     {
@@ -109,7 +109,7 @@ make_stress_pair(Context& ctx)
         catch (const std::system_error&)
         {
             acc.close();
-            acc = acceptor(ctx);
+            acc = tcp_acceptor(ctx);
         }
     }
     if (!listening)
@@ -120,7 +120,7 @@ make_stress_pair(Context& ctx)
     s2.open();
 
     capy::run_async(ex)(
-        [](acceptor& a, tcp_socket& s,
+        [](tcp_acceptor& a, tcp_socket& s,
            std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await a.accept(s);
@@ -658,7 +658,7 @@ struct accept_stress_test_impl
 
         // Find available port
         std::uint16_t port = 0;
-        acceptor acc(ioc);
+        tcp_acceptor acc(ioc);
         bool listening = false;
         for (int attempt = 0; attempt < 50; ++attempt)
         {
@@ -672,7 +672,7 @@ struct accept_stress_test_impl
             catch (const std::system_error&)
             {
                 acc.close();
-                acc = acceptor(ioc);
+                acc = tcp_acceptor(ioc);
             }
         }
         if (!listening)

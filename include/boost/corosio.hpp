@@ -10,7 +10,7 @@
 #ifndef BOOST_COROSIO_HPP
 #define BOOST_COROSIO_HPP
 
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/resolver.hpp>

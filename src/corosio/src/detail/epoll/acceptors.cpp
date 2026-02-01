@@ -320,7 +320,7 @@ shutdown()
     state_->acceptor_ptrs_.clear();
 }
 
-acceptor::acceptor_impl&
+tcp_acceptor::acceptor_impl&
 epoll_acceptor_service::
 create_acceptor_impl()
 {
@@ -336,7 +336,7 @@ create_acceptor_impl()
 
 void
 epoll_acceptor_service::
-destroy_acceptor_impl(acceptor::acceptor_impl& impl)
+destroy_acceptor_impl(tcp_acceptor::acceptor_impl& impl)
 {
     auto* epoll_impl = static_cast<epoll_acceptor_impl*>(&impl);
     std::lock_guard lock(state_->mutex_);
@@ -347,7 +347,7 @@ destroy_acceptor_impl(acceptor::acceptor_impl& impl)
 std::error_code
 epoll_acceptor_service::
 open_acceptor(
-    acceptor::acceptor_impl& impl,
+    tcp_acceptor::acceptor_impl& impl,
     endpoint ep,
     int backlog)
 {

@@ -342,7 +342,7 @@ capy::task<void> echo_client(corosio::io_context& ioc)
 
 == Next Steps
 
-* xref:acceptor.adoc[Acceptors] — Accept incoming connections
+* xref:tcp_acceptor.adoc[Acceptors] — Accept incoming connections
 * xref:endpoints.adoc[Endpoints] — IP addresses and ports
 * xref:composed-operations.adoc[Composed Operations] — read() and write()
 * xref:../tutorials/echo-server.adoc[Echo Server Tutorial] — Server example

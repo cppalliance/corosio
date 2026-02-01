@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_ACCEPTOR_HPP
-#define BOOST_COROSIO_ACCEPTOR_HPP
+#ifndef BOOST_COROSIO_TCP_ACCEPTOR_HPP
+#define BOOST_COROSIO_TCP_ACCEPTOR_HPP
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
@@ -48,7 +48,7 @@ namespace boost::corosio {
     @par Example
     @code
     io_context ioc;
-    acceptor acc(ioc);
+    tcp_acceptor acc(ioc);
     acc.listen(endpoint(8080));  // Bind to port 8080
 
     tcp_socket peer(ioc);
@@ -59,17 +59,17 @@ namespace boost::corosio {
     }
     @endcode
 */
-class BOOST_COROSIO_DECL acceptor : public io_object
+class BOOST_COROSIO_DECL tcp_acceptor : public io_object
 {
     struct accept_awaitable
     {
-        acceptor& acc_;
+        tcp_acceptor& acc_;
         tcp_socket& peer_;
         std::stop_token token_;
         mutable std::error_code ec_;
         mutable io_object::io_object_impl* peer_impl_ = nullptr;
 
-        accept_awaitable(acceptor& acc, tcp_socket& peer) noexcept
+        accept_awaitable(tcp_acceptor& acc, tcp_socket& peer) noexcept
             : acc_(acc)
             , peer_(peer)
         {
@@ -121,13 +121,13 @@ public:
 
         Closes the acceptor if open, cancelling any pending operations.
     */
-    ~acceptor();
+    ~tcp_acceptor();
 
     /** Construct an acceptor from an execution context.
 
         @param ctx The execution context that will own this acceptor.
     */
-    explicit acceptor(capy::execution_context& ctx);
+    explicit tcp_acceptor(capy::execution_context& ctx);
 
     /** Construct an acceptor from an executor.
 
@@ -136,10 +136,10 @@ public:
         @param ex The executor whose context will own the acceptor.
     */
     template<class Ex>
-        requires (!std::same_as<std::remove_cvref_t<Ex>, acceptor>) &&
+        requires (!std::same_as<std::remove_cvref_t<Ex>, tcp_acceptor>) &&
                  capy::Executor<Ex>
-    explicit acceptor(Ex const& ex)
-        : acceptor(ex.context())
+    explicit tcp_acceptor(Ex const& ex)
+        : tcp_acceptor(ex.context())
     {
     }
 
@@ -149,7 +149,7 @@ public:
 
         @param other The acceptor to move from.
     */
-    acceptor(acceptor&& other) noexcept
+    tcp_acceptor(tcp_acceptor&& other) noexcept
         : io_object(other.context())
     {
         impl_ = other.impl_;
@@ -167,13 +167,13 @@ public:
 
         @throws std::logic_error if the acceptors have different execution contexts.
     */
-    acceptor& operator=(acceptor&& other)
+    tcp_acceptor& operator=(tcp_acceptor&& other)
     {
         if (this != &other)
         {
             if (ctx_ != other.ctx_)
                 detail::throw_logic_error(
-                    "cannot move acceptor across execution contexts");
+                    "cannot move tcp_acceptor across execution contexts");
             close();
             impl_ = other.impl_;
             other.impl_ = nullptr;
@@ -181,8 +181,8 @@ public:
         return *this;
     }
 
-    acceptor(acceptor const&) = delete;
-    acceptor& operator=(acceptor const&) = delete;
+    tcp_acceptor(tcp_acceptor const&) = delete;
+    tcp_acceptor& operator=(tcp_acceptor const&) = delete;
 
     /** Open, bind, and listen on an endpoint.
 

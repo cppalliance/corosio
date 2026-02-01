@@ -20,7 +20,7 @@ struct tcp_server::impl
     std::mutex join_mutex;
     std::condition_variable join_cv;
     capy::execution_context& ctx;
-    std::vector<acceptor> ports;
+    std::vector<tcp_acceptor> ports;
     std::stop_source stop;
 
     explicit impl(capy::execution_context& c) noexcept
@@ -72,7 +72,7 @@ tcp_server::operator=(tcp_server&& o) noexcept
 
 // Accept loop: wait for idle worker, accept connection, dispatch
 capy::task<void>
-tcp_server::do_accept(acceptor& acc)
+tcp_server::do_accept(tcp_acceptor& acc)
 {
     auto st = co_await capy::this_coro::stop_token;
     while(! st.stop_requested())

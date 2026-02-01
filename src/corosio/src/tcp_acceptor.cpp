@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -21,21 +21,21 @@
 
 namespace boost::corosio {
 
-acceptor::
-~acceptor()
+tcp_acceptor::
+~tcp_acceptor()
 {
     close();
 }
 
-acceptor::
-acceptor(
+tcp_acceptor::
+tcp_acceptor(
     capy::execution_context& ctx)
     : io_object(ctx)
 {
 }
 
 void
-acceptor::
+tcp_acceptor::
 listen(endpoint ep, int backlog)
 {
     if (impl_)
@@ -53,7 +53,7 @@ listen(endpoint ep, int backlog)
     // by the context constructor before any acceptor operations.
     auto* svc = ctx_->find_service<detail::acceptor_service>();
     if (!svc)
-        detail::throw_logic_error("acceptor::listen: no acceptor service installed");
+        detail::throw_logic_error("tcp_acceptor::listen: no acceptor service installed");
     auto& wrapper = svc->create_acceptor_impl();
     impl_ = &wrapper;
     std::error_code ec = svc->open_acceptor(wrapper, ep, backlog);
@@ -62,12 +62,12 @@ listen(endpoint ep, int backlog)
     {
         wrapper.release();
         impl_ = nullptr;
-        detail::throw_system_error(ec, "acceptor::listen");
+        detail::throw_system_error(ec, "tcp_acceptor::listen");
     }
 }
 
 void
-acceptor::
+tcp_acceptor::
 close()
 {
     if (!impl_)
@@ -79,7 +79,7 @@ close()
 }
 
 void
-acceptor::
+tcp_acceptor::
 cancel()
 {
     if (!impl_)
@@ -93,7 +93,7 @@ cancel()
 }
 
 endpoint
-acceptor::
+tcp_acceptor::
 local_endpoint() const noexcept
 {
     if (!impl_)

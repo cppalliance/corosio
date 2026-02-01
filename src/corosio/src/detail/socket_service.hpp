@@ -12,7 +12,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <system_error>
@@ -104,13 +104,13 @@ public:
 
         @return Reference to the newly created acceptor implementation.
     */
-    virtual acceptor::acceptor_impl& create_acceptor_impl() = 0;
+    virtual tcp_acceptor::acceptor_impl& create_acceptor_impl() = 0;
 
     /** Destroy an acceptor implementation.
 
         @param impl The acceptor implementation to destroy.
     */
-    virtual void destroy_acceptor_impl(acceptor::acceptor_impl& impl) = 0;
+    virtual void destroy_acceptor_impl(tcp_acceptor::acceptor_impl& impl) = 0;
 
     /** Open an acceptor.
 
@@ -123,7 +123,7 @@ public:
         @return Error code on failure, empty on success.
     */
     virtual std::error_code open_acceptor(
-        acceptor::acceptor_impl& impl,
+        tcp_acceptor::acceptor_impl& impl,
         endpoint ep,
         int backlog) = 0;
 

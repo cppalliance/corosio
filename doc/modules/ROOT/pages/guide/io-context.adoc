@@ -300,6 +300,6 @@ Future macOS support will use kqueue for:
 == Next Steps
 
 * xref:sockets.adoc[Sockets] — I/O with TCP sockets
-* xref:acceptor.adoc[Acceptors] — Accept incoming connections
+* xref:tcp_acceptor.adoc[Acceptors] — Accept incoming connections
 * xref:timers.adoc[Timers] — Async delays and timeouts
 * xref:../concepts/affine-awaitables.adoc[Affine Awaitables] — The dispatch protocol

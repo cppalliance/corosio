@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/corosio/tcp_socket.hpp>
 
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #if BOOST_COROSIO_HAS_SELECT
@@ -81,7 +81,7 @@ make_socket_pair_t(Context& ctx)
     bool connect_done = false;
 
     std::uint16_t port = 0;
-    acceptor acc(ctx);
+    tcp_acceptor acc(ctx);
     bool listening = false;
     for (int attempt = 0; attempt < 20; ++attempt)
     {
@@ -95,7 +95,7 @@ make_socket_pair_t(Context& ctx)
         catch (const std::system_error&)
         {
             acc.close();
-            acc = acceptor(ctx);
+            acc = tcp_acceptor(ctx);
         }
     }
     if (!listening)
@@ -106,7 +106,7 @@ make_socket_pair_t(Context& ctx)
     s2.open();
 
     capy::run_async(ex)(
-        [](acceptor& a, tcp_socket& s,
+        [](tcp_acceptor& a, tcp_socket& s,
            std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await a.accept(s);
@@ -1199,7 +1199,7 @@ struct socket_test_impl
     {
         // Test with ephemeral port (port 0 - OS assigns)
         Context ioc;
-        acceptor acc(ioc);
+        tcp_acceptor acc(ioc);
 
         // Bind to loopback with port 0 (ephemeral)
         acc.listen(endpoint(ipv4_address::loopback(), 0));
@@ -1254,7 +1254,7 @@ struct socket_test_impl
     {
         // Test with a specified port number
         Context ioc;
-        acceptor acc(ioc);
+        tcp_acceptor acc(ioc);
 
         // Simple fast LCG random number generator seeded with PID
 #if BOOST_COROSIO_POSIX
@@ -1281,7 +1281,7 @@ struct socket_test_impl
             catch (const std::system_error&)
             {
                 acc.close();
-                acc = acceptor(ioc);
+                acc = tcp_acceptor(ioc);
                 test_port += fast_rand();
             }
         }

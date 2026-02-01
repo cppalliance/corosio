@@ -8,7 +8,7 @@
 //
 
 #include <boost/corosio/test/socket_pair.hpp>
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <system_error>
 #include <boost/corosio/basic_io_context.hpp>
 #include <boost/corosio/detail/platform.hpp>
@@ -31,7 +31,7 @@ make_socket_pair(basic_io_context& ctx)
     bool connect_done = false;
 
     // Use ephemeral port (0) - OS assigns an available port
-    acceptor acc(ctx);
+    tcp_acceptor acc(ctx);
     acc.listen(endpoint(ipv4_address::loopback(), 0));
     auto port = acc.local_endpoint().port();
 
@@ -40,7 +40,7 @@ make_socket_pair(basic_io_context& ctx)
     s2.open();
 
     capy::run_async(ex)(
-        [](acceptor& a, tcp_socket& s,
+        [](tcp_acceptor& a, tcp_socket& s,
            std::error_code& ec_out, bool& done_out) -> capy::task<>
         {
             auto [ec] = co_await a.accept(s);

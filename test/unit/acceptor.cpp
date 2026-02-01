@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/timer.hpp>
@@ -40,7 +40,7 @@ struct acceptor_test_impl
     testConstruction()
     {
         Context ioc;
-        acceptor acc(ioc);
+        tcp_acceptor acc(ioc);
 
         // Acceptor should not be open initially
         BOOST_TEST_EQ(acc.is_open(), false);
@@ -50,7 +50,7 @@ struct acceptor_test_impl
     testListen()
     {
         Context ioc;
-        acceptor acc(ioc);
+        tcp_acceptor acc(ioc);
 
         // Listen on a port
         acc.listen(endpoint(0));  // Port 0 = ephemeral port
@@ -65,12 +65,12 @@ struct acceptor_test_impl
     testMoveConstruct()
     {
         Context ioc;
-        acceptor acc1(ioc);
+        tcp_acceptor acc1(ioc);
         acc1.listen(endpoint(0));
         BOOST_TEST_EQ(acc1.is_open(), true);
 
         // Move construct
-        acceptor acc2(std::move(acc1));
+        tcp_acceptor acc2(std::move(acc1));
         BOOST_TEST_EQ(acc1.is_open(), false);
         BOOST_TEST_EQ(acc2.is_open(), true);
 
@@ -81,8 +81,8 @@ struct acceptor_test_impl
     testMoveAssign()
     {
         Context ioc;
-        acceptor acc1(ioc);
-        acceptor acc2(ioc);
+        tcp_acceptor acc1(ioc);
+        tcp_acceptor acc2(ioc);
         acc1.listen(endpoint(0));
         BOOST_TEST_EQ(acc1.is_open(), true);
         BOOST_TEST_EQ(acc2.is_open(), false);
@@ -106,7 +106,7 @@ struct acceptor_test_impl
         // This exercises the acceptor_ptr shared_ptr that keeps the
         // acceptor impl alive until IOCP delivers the cancellation.
         Context ioc;
-        acceptor acc(ioc);
+        tcp_acceptor acc(ioc);
         acc.listen(endpoint(0));
 
         // These must outlive the coroutines
@@ -157,7 +157,7 @@ struct acceptor_test_impl
         // but the impl must stay alive until IOCP delivers the cancellation.
         // The acceptor_ptr shared_ptr in accept_op ensures this.
         Context ioc;
-        acceptor acc(ioc);
+        tcp_acceptor acc(ioc);
         acc.listen(endpoint(0));
 
         tcp_socket peer(ioc);
@@ -217,13 +217,13 @@ struct acceptor_test_impl
 //------------------------------------------------
 
 // Default io_context (platform default backend)
-struct acceptor_test : acceptor_test_impl<io_context> {};
-TEST_SUITE(acceptor_test, "boost.corosio.acceptor");
+struct tcp_acceptor_test : acceptor_test_impl<io_context> {};
+TEST_SUITE(tcp_acceptor_test, "boost.corosio.acceptor");
 
 // POSIX: also test with select_context explicitly
 #if BOOST_COROSIO_HAS_SELECT
-struct acceptor_test_select : acceptor_test_impl<select_context> {};
-TEST_SUITE(acceptor_test_select, "boost.corosio.acceptor.select");
+struct tcp_acceptor_test_select : acceptor_test_impl<select_context> {};
+TEST_SUITE(tcp_acceptor_test_select, "boost.corosio.acceptor.select");
 #endif
 
 } // namespace boost::corosio

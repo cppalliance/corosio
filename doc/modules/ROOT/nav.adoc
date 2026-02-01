@@ -10,7 +10,7 @@
 ** xref:guide/concurrent-programming.adoc[Concurrent Programming]
 ** xref:guide/io-context.adoc[I/O Context]
 ** xref:guide/sockets.adoc[Sockets]
-** xref:guide/acceptor.adoc[Acceptors]
+** xref:guide/tcp_acceptor.adoc[Acceptors]
 ** xref:guide/endpoints.adoc[Endpoints]
 ** xref:guide/composed-operations.adoc[Composed Operations]
 ** xref:guide/timers.adoc[Timers]

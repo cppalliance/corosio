@@ -21,7 +21,7 @@ executor without manual dispatch.
 
 * **io_context** — Event loop for processing asynchronous operations
 * **socket** — Asynchronous TCP socket with connect, read, and write
-* **acceptor** — TCP listener for accepting incoming connections
+* **tcp_acceptor** — TCP listener for accepting incoming connections
 * **tcp_server** — Server framework with worker pools
 * **resolver** — Asynchronous DNS resolution
 * **timer** — Asynchronous timer for delays and timeouts

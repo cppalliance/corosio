@@ -15,7 +15,7 @@
 #if BOOST_COROSIO_HAS_EPOLL
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/acceptor.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include "src/detail/intrusive.hpp"
@@ -36,7 +36,7 @@ class epoll_socket_service;
 
 /// Acceptor implementation for epoll backend.
 class epoll_acceptor_impl
-    : public acceptor::acceptor_impl
+    : public tcp_acceptor::acceptor_impl
     , public std::enable_shared_from_this<epoll_acceptor_impl>
     , public intrusive_list<epoll_acceptor_impl>::node
 {
@@ -105,10 +105,10 @@ public:
 
     void shutdown() override;
 
-    acceptor::acceptor_impl& create_acceptor_impl() override;
-    void destroy_acceptor_impl(acceptor::acceptor_impl& impl) override;
+    tcp_acceptor::acceptor_impl& create_acceptor_impl() override;
+    void destroy_acceptor_impl(tcp_acceptor::acceptor_impl& impl) override;
     std::error_code open_acceptor(
-        acceptor::acceptor_impl& impl,
+        tcp_acceptor::acceptor_impl& impl,
         endpoint ep,
         int backlog) override;
 

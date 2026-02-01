@@ -15,7 +15,7 @@ This glossary defines terms used throughout the Corosio documentation.
 
 Acceptor::
 An I/O object that listens for and accepts incoming TCP connections. See
-`corosio::acceptor` and xref:../guide/acceptor.adoc[Acceptors Guide].
+`corosio::tcp_acceptor` and xref:../guide/tcp_acceptor.adoc[Acceptors Guide].
 
 Affine Awaitable::
 An awaitable type that implements the affine protocol, receiving a dispatcher

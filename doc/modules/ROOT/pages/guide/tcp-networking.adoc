@@ -700,7 +700,7 @@ listening socket.
 Corosio wraps the complexity of TCP programming in a coroutine-friendly API:
 
 * **socket** — Connect to servers, send and receive data
-* **acceptor** — Listen for and accept incoming connections
+* **tcp_acceptor** — Listen for and accept incoming connections
 * **resolver** — Translate hostnames to IP addresses
 * **endpoint** — Represent addresses and ports
 

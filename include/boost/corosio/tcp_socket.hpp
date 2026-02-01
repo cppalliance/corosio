@@ -517,7 +517,7 @@ public:
     endpoint remote_endpoint() const noexcept;
 
 private:
-    friend class acceptor;
+    friend class tcp_acceptor;
 
     inline socket_impl& get() const noexcept
     {
