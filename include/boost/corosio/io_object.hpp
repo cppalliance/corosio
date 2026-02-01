@@ -43,6 +43,68 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL io_object
 {
 public:
+    struct implementation;
+
+    class handle;
+
+    struct io_service
+    {
+        virtual void open(handle&) = 0;
+        virtual void close(handle&) = 0;
+        virtual void destroy(implementation*) = 0;
+        virtual implementation* construct() = 0;
+    };
+
+    class handle
+    {
+        capy::execution_context* ctx_ = nullptr;
+        io_service* svc_ = nullptr;
+        implementation* impl_ = nullptr;
+
+    public:
+        ~handle()
+        {
+            if(impl_)
+                svc_->destroy(impl_);
+        }
+        handle() = default;
+        handle(
+            capy::execution_context& ctx,
+            io_service& svc)
+            : ctx_(&ctx)
+            , svc_(&svc)
+            , impl_(svc_->construct())
+        {
+        }
+        handle(handle&& other)
+            : ctx_(std::exchange(other.ctx_, nullptr))
+            , svc_(std::exchange(other.svc_, nullptr))
+            , impl_(std::exchange(other.impl_, nullptr))
+        {
+        }
+        handle& operator=(handle&& other) noexcept
+        {
+            ctx_ = std::exchange(other.ctx_, nullptr);
+            svc_ = std::exchange(other.svc_, nullptr);
+            impl_ = std::exchange(other.impl_, nullptr);
+            return *this;
+        }
+        capy::execution_context& context() const noexcept
+        {
+            return *ctx_;
+        }
+        io_service& service() const noexcept
+        {
+            return *svc_;
+        }
+        implementation& get() const noexcept
+        {
+            return *impl_;
+        }
+    };
+
+    //------
+
     struct io_object_impl
     {
         virtual ~io_object_impl() = default;
