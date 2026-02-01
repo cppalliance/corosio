@@ -229,19 +229,6 @@ public:
             std::size_t*) = 0;
     };
 
-    /** Returns the underlying implementation.
-
-        This accessor is provided for testing and advanced use cases
-        that need direct access to the implementation object.
-
-        @return Pointer to the io_stream_impl, or nullptr if not set.
-    */
-    io_stream_impl*
-    get_impl() const noexcept
-    {
-        return static_cast<io_stream_impl*>(impl_);
-    }
-
 protected:
     explicit
     io_stream(

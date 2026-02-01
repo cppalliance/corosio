@@ -35,14 +35,24 @@ constexpr std::array<std::size_t, 6> max_sizes = {
 
 } // namespace
 
-struct openssl_stream_test
+// Callable wrapper for passing to test helper templates
+struct openssl_stream_factory
 {
-#ifdef BOOST_COROSIO_HAS_OPENSSL
-    static auto
-    make_stream(io_stream& s, tls_context ctx)
+    auto operator()(tcp_socket& s, tls_context ctx) const
     {
         return openssl_stream(&s, ctx);
     }
+
+    auto operator()(corosio::test::mocket& s, tls_context ctx) const
+    {
+        return openssl_stream(&s, ctx);
+    }
+};
+
+struct openssl_stream_test
+{
+#ifdef BOOST_COROSIO_HAS_OPENSSL
+    static constexpr openssl_stream_factory make_stream{};
 
     /** Test TLS handshake with max_size variations.
 
@@ -59,7 +69,7 @@ struct openssl_stream_test
             f.inert([&](capy::test::fuse&) -> capy::task<>
             {
                 io_context ioc;
-                auto [m1, m2] = corosio::test::make_mockets(
+                auto [m1, m2] = corosio::test::make_mocket_pair(
                     ioc, f, max_size, max_size);
 
                 auto client_ctx = make_client_context();
@@ -114,7 +124,7 @@ struct openssl_stream_test
             f.inert([&](capy::test::fuse&) -> capy::task<>
             {
                 io_context ioc;
-                auto [m1, m2] = corosio::test::make_mockets(
+                auto [m1, m2] = corosio::test::make_mocket_pair(
                     ioc, f, max_size, max_size);
 
                 auto client_ctx = make_client_context();
@@ -199,7 +209,7 @@ struct openssl_stream_test
             f.inert([&](capy::test::fuse&) -> capy::task<>
             {
                 io_context ioc;
-                auto [m1, m2] = corosio::test::make_mockets(
+                auto [m1, m2] = corosio::test::make_mocket_pair(
                     ioc, f, max_size, max_size);
 
                 auto client_ctx = make_client_context();
