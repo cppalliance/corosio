@@ -501,9 +501,15 @@ public:
 class win_sockets
     : private win_wsa_init
     , public capy::execution_context::service
+    , public io_object::io_service
 {
 public:
     using key_type = win_sockets;
+
+    void open(io_object::handle&) override {}
+    void close(io_object::handle&) override {}
+    void destroy(io_object::implementation*) override {}
+    io_object::implementation* construct() override { return nullptr; }
 
     /** Construct the socket service.
 

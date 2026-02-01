@@ -54,10 +54,17 @@ namespace boost::corosio::detail {
     whichever concrete implementation is installed first by a context constructor
     will be returned by find_service<socket_service>().
 */
-class socket_service : public capy::execution_context::service
+class socket_service
+    : public capy::execution_context::service
+    , public io_object::io_service
 {
 public:
     using key_type = socket_service;
+
+    void open(io_object::handle&) override {}
+    void close(io_object::handle&) override {}
+    void destroy(io_object::implementation*) override {}
+    io_object::implementation* construct() override { return nullptr; }
 
     /** Create a new socket implementation.
 
