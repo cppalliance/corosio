@@ -126,7 +126,7 @@ public:
     template<capy::MutableBufferSequence MB>
     auto read_some(MB const& buffers)
     {
-        return read_some_awaitable<MutableBufferSequence>(*this, buffers);
+        return read_some_awaitable<MB>(*this, buffers);
     }
 
     /** Asynchronously write data to the stream.
@@ -192,7 +192,7 @@ public:
     template<capy::ConstBufferSequence CB>
     auto write_some(CB const& buffers)
     {
-        return write_some_awaitable<ConstBufferSequence>(*this, buffers);
+        return write_some_awaitable<CB>(*this, buffers);
     }
 
 protected:

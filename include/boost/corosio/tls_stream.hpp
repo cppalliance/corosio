@@ -17,6 +17,7 @@
 #include <boost/capy/io_task.hpp>
 
 #include <cstddef>
+#include <string_view>
 
 namespace boost::corosio {
 
@@ -144,6 +145,13 @@ public:
     */
     virtual capy::any_stream const&
     next_layer() const noexcept = 0;
+
+    /** Returns the name of the TLS backend.
+
+        @return A string identifying the TLS implementation,
+            such as "openssl" or "wolfssl".
+    */
+    virtual std::string_view name() const noexcept = 0;
 
 protected:
     tls_stream() = default;

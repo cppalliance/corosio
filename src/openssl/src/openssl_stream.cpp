@@ -735,4 +735,11 @@ shutdown()
     co_return co_await impl_->do_shutdown();
 }
 
+std::string_view
+openssl_stream::
+name() const noexcept
+{
+    return "openssl";
+}
+
 } // namespace boost::corosio

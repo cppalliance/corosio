@@ -46,6 +46,18 @@ struct openssl_stream_test
         test::context_mode::separate_cert
     };
 
+    void testName()
+    {
+        using namespace test;
+
+        io_context ioc;
+        auto ctx = make_anon_context();
+        tcp_socket sock( ioc );
+        openssl_stream stream( &sock, ctx );
+
+        BOOST_TEST( stream.name() == "openssl" );
+    }
+
     /** Test certificate chain validation (OpenSSL-specific).
 
         OpenSSL supports sending full certificate chains via
@@ -91,6 +103,7 @@ struct openssl_stream_test
         test::testMtls( make_stream );
 
         testCertificateChain();
+        testName();
     }
 };
 

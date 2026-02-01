@@ -953,4 +953,11 @@ shutdown()
     co_return co_await impl_->do_shutdown();
 }
 
+std::string_view
+wolfssl_stream::
+name() const noexcept
+{
+    return "wolfssl";
+}
+
 } // namespace boost::corosio

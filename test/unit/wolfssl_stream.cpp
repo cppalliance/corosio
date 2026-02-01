@@ -46,6 +46,18 @@ struct wolfssl_stream_test
         test::context_mode::separate_cert
     };
 
+    void testName()
+    {
+        using namespace test;
+
+        io_context ioc;
+        auto ctx = make_client_context();
+        tcp_socket sock( ioc );
+        wolfssl_stream stream( &sock, ctx );
+
+        BOOST_TEST( stream.name() == "wolfssl" );
+    }
+
     /** Test certificate chain validation (WolfSSL-specific).
 
         WolfSSL has limited certificate chain support compared to OpenSSL.
@@ -98,6 +110,7 @@ struct wolfssl_stream_test
         test::testMtls( make_stream );
 
         testCertificateChain();
+        testName();
     }
 };
 

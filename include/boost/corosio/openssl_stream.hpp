@@ -136,6 +136,9 @@ public:
         return stream_;
     }
 
+    std::string_view
+    name() const noexcept override;
+
 protected:
     capy::io_task<std::size_t>
     do_read_some(capy::some_mutable_buffers buffers) override;
