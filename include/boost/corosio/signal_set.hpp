@@ -32,7 +32,7 @@
     This header provides the public interface for asynchronous signal handling.
     The implementation is split across platform-specific files:
       - posix/signals.cpp: Uses sigaction() for robust signal handling
-      - win/signals.cpp: Uses C runtime signal() (Windows lacks sigaction)
+      - iocp/signals.cpp: Uses C runtime signal() (Windows lacks sigaction)
 
     Key design decisions:
 

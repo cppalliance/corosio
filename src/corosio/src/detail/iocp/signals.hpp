@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP
-#define BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP
+#ifndef BOOST_COROSIO_DETAIL_IOCP_SIGNALS_HPP
+#define BOOST_COROSIO_DETAIL_IOCP_SIGNALS_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -254,4 +254,4 @@ private:
 
 #endif // BOOST_COROSIO_HAS_IOCP
 
-#endif // BOOST_COROSIO_DETAIL_WIN_SIGNALS_HPP
+#endif // BOOST_COROSIO_DETAIL_IOCP_SIGNALS_HPP
