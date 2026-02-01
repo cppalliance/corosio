@@ -11,8 +11,8 @@
 #define BOOST_COROSIO_TLS_STREAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/io_buffer_param.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/some_buffers.hpp>
 #include <boost/capy/io/any_stream.hpp>
 #include <boost/capy/io_task.hpp>
 
@@ -75,8 +75,7 @@ public:
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     template<capy::MutableBufferSequence Buffers>
-    auto
-    read_some(Buffers const& buffers)
+    auto read_some(Buffers const& buffers)
     {
         return do_read_some(buffers);
     }
@@ -95,8 +94,7 @@ public:
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     template<capy::ConstBufferSequence Buffers>
-    auto
-    write_some(Buffers const& buffers)
+    auto write_some(Buffers const& buffers)
     {
         return do_write_some(buffers);
     }
@@ -155,24 +153,24 @@ protected:
         Derived classes override this to perform TLS decryption
         and read operations.
 
-        @param buffers Type-erased buffer sequence to read into.
+        @param buffers Buffer sequence to read into.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     virtual capy::io_task<std::size_t>
-    do_read_some(io_buffer_param buffers) = 0;
+    do_read_some(capy::some_mutable_buffers buffers) = 0;
 
     /** Virtual write implementation.
 
         Derived classes override this to perform TLS encryption
         and write operations.
 
-        @param buffers Type-erased buffer sequence to write from.
+        @param buffers Buffer sequence to write from.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     virtual capy::io_task<std::size_t>
-    do_write_some(io_buffer_param buffers) = 0;
+    do_write_some(capy::some_const_buffers buffers) = 0;
 };
 
 } // namespace boost::corosio

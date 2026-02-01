@@ -9,6 +9,7 @@
 
 #include <boost/corosio/openssl_stream.hpp>
 #include <boost/corosio/detail/config.hpp>
+#include <boost/capy/buffers/some_buffers.hpp>
 #include <boost/capy/ex/coro_lock.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/write.hpp>
@@ -24,7 +25,6 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <span>
 #include <vector>
 
 /*
@@ -325,15 +325,12 @@ struct openssl_stream::impl
     //--------------------------------------------------------------------------
 
     capy::io_task<std::size_t>
-    do_read_some(
-        std::array<capy::mutable_buffer, capy::detail::max_iovec_> dest_arr,
-        std::size_t buf_count)
+    do_read_some(capy::some_mutable_buffers buffers)
     {
         std::error_code ec;
         std::size_t total_read = 0;
-        std::span<capy::mutable_buffer> dest_bufs(dest_arr.data(), buf_count);
 
-        for(auto& buf : dest_bufs)
+        for(auto& buf : buffers)
         {
             char* dest = static_cast<char*>(buf.data());
             int remaining = static_cast<int>(buf.size());
@@ -410,15 +407,12 @@ struct openssl_stream::impl
     }
 
     capy::io_task<std::size_t>
-    do_write_some(
-        std::array<capy::mutable_buffer, capy::detail::max_iovec_> src_arr,
-        std::size_t buf_count)
+    do_write_some(capy::some_const_buffers buffers)
     {
         std::error_code ec;
         std::size_t total_written = 0;
-        std::span<capy::mutable_buffer> src_bufs(src_arr.data(), buf_count);
 
-        for(auto& buf : src_bufs)
+        for(auto const& buf : buffers)
         {
             char const* src = static_cast<char const*>(buf.data());
             int remaining = static_cast<int>(buf.size());
@@ -687,20 +681,16 @@ operator=(openssl_stream&& other) noexcept
 
 capy::io_task<std::size_t>
 openssl_stream::
-do_read_some(io_buffer_param buffers)
+do_read_some(capy::some_mutable_buffers buffers)
 {
-    std::array<capy::mutable_buffer, capy::detail::max_iovec_> bufs{};
-    std::size_t count = buffers.copy_to(bufs.data(), capy::detail::max_iovec_);
-    co_return co_await impl_->do_read_some(bufs, count);
+    co_return co_await impl_->do_read_some(buffers);
 }
 
 capy::io_task<std::size_t>
 openssl_stream::
-do_write_some(io_buffer_param buffers)
+do_write_some(capy::some_const_buffers buffers)
 {
-    std::array<capy::mutable_buffer, capy::detail::max_iovec_> bufs{};
-    std::size_t count = buffers.copy_to(bufs.data(), capy::detail::max_iovec_);
-    co_return co_await impl_->do_write_some(bufs, count);
+    co_return co_await impl_->do_write_some(buffers);
 }
 
 capy::io_task<>
