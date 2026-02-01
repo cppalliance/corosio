@@ -41,6 +41,11 @@ namespace boost::corosio {
     Distinct objects: Safe.@n
     Shared objects: Unsafe. A timer must not have concurrent wait
     operations.
+
+    @par Semantics
+    Wraps platform timer facilities via the io_context reactor.
+    Operations dispatch to OS timer APIs (timerfd, IOCP timers,
+    kqueue EVFILT_TIMER).
 */
 class BOOST_COROSIO_DECL timer : public io_object
 {

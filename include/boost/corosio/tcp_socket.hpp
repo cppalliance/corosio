@@ -54,6 +54,11 @@ using native_handle_type = int;
     of the same type (e.g., two simultaneous reads). One read and one
     write may be in flight simultaneously.
 
+    @par Semantics
+    Wraps the platform TCP/IP stack. Operations dispatch to
+    OS socket APIs via the io_context reactor (epoll, IOCP,
+    kqueue). Satisfies @ref capy::Stream.
+
     @par Example
     @code
     io_context ioc;

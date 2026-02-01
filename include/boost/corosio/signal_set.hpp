@@ -67,6 +67,11 @@ namespace boost::corosio {
     Shared objects: Unsafe. A signal_set must not have concurrent
     wait operations.
 
+    @par Semantics
+    Wraps platform signal handling (sigaction on POSIX, C runtime
+    signal() on Windows). Operations dispatch to OS signal APIs
+    via the io_context reactor.
+
     @par Supported Signals
     On Windows, the following signals are supported:
     SIGINT, SIGTERM, SIGABRT, SIGFPE, SIGILL, SIGSEGV.

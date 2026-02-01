@@ -180,6 +180,11 @@ operator&=(reverse_flags& a, reverse_flags b) noexcept
     Shared objects: Unsafe. A resolver must not have concurrent resolve
     operations.
 
+    @par Semantics
+    Wraps platform DNS resolution (getaddrinfo/getnameinfo).
+    Operations dispatch to OS resolver APIs via the io_context
+    thread pool.
+
     @par Example
     @code
     io_context ioc;

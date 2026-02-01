@@ -26,6 +26,16 @@ namespace boost::corosio {
     share common implementation patterns while maintaining type safety
     through the virtual interface.
 
+    @par Semantics
+    Derived classes wrap direct platform I/O: OS sockets, timers,
+    signal handlers, acceptors. Operations dispatch through a
+    platform-specific implementation vtable (epoll, IOCP, kqueue,
+    io_uring).
+
+    Test mocks, decorators, and stream adapters must not inherit
+    from io_object. Use concepts or templates for generic I/O
+    algorithms.
+
     @note This class is intended for use as a protected base class.
         The implementation pointer is accessible to derived classes
         through the protected member `impl_`.

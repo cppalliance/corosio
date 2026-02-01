@@ -23,6 +23,19 @@
 
 namespace boost::corosio {
 
+/** Platform stream with read/write operations.
+
+    @par Semantics
+    Concrete classes wrap OS-level stream I/O completed by the
+    kernel. Satisfies @ref capy::ReadStream and @ref capy::WriteStream
+    concepts. Functions taking `io_stream&` signal "platform
+    implementation required."
+
+    For generic stream algorithms that work with test mocks,
+    use `template<capy::Stream S>` instead of `io_stream&`.
+
+    @see capy::Stream, capy::ReadStream, capy::WriteStream
+*/
 class BOOST_COROSIO_DECL io_stream : public io_object
 {
 public:

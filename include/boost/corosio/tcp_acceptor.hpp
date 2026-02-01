@@ -45,6 +45,10 @@ namespace boost::corosio {
     Shared objects: Unsafe. An acceptor must not have concurrent accept
     operations.
 
+    @par Semantics
+    Wraps the platform TCP listener. Operations dispatch to
+    OS accept APIs via the io_context reactor.
+
     @par Example
     @code
     io_context ioc;
