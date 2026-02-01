@@ -11,6 +11,7 @@
 #include <boost/corosio/endpoint.hpp>
 
 #include <string>
+#include <system_error>
 
 #include "test_suite.hpp"
 
@@ -38,6 +39,100 @@ struct endpoint_parse_test
             BOOST_TEST(ep2.v6_address().is_loopback());
             BOOST_TEST_EQ(ep2.port(), 443);
         }
+    }
+
+    void
+    testConstructFromString()
+    {
+        // IPv4 without port
+        {
+            endpoint ep("192.168.1.1");
+            BOOST_TEST(ep.is_v4());
+            BOOST_TEST_EQ(ep.v4_address().to_string(), "192.168.1.1");
+            BOOST_TEST_EQ(ep.port(), 0);
+        }
+
+        // IPv4 with port
+        {
+            endpoint ep("192.168.1.1:8080");
+            BOOST_TEST(ep.is_v4());
+            BOOST_TEST_EQ(ep.v4_address().to_string(), "192.168.1.1");
+            BOOST_TEST_EQ(ep.port(), 8080);
+        }
+
+        // IPv4 port edge cases
+        {
+            endpoint ep1("127.0.0.1:0");
+            BOOST_TEST_EQ(ep1.port(), 0);
+
+            endpoint ep2("127.0.0.1:65535");
+            BOOST_TEST_EQ(ep2.port(), 65535);
+        }
+
+        // IPv6 without port
+        {
+            endpoint ep("::1");
+            BOOST_TEST(ep.is_v6());
+            BOOST_TEST(ep.v6_address().is_loopback());
+            BOOST_TEST_EQ(ep.port(), 0);
+        }
+
+        // IPv6 without port (full form)
+        {
+            endpoint ep("2001:db8::1");
+            BOOST_TEST(ep.is_v6());
+            BOOST_TEST_EQ(ep.port(), 0);
+        }
+
+        // IPv6 bracketed without port
+        {
+            endpoint ep("[::1]");
+            BOOST_TEST(ep.is_v6());
+            BOOST_TEST(ep.v6_address().is_loopback());
+            BOOST_TEST_EQ(ep.port(), 0);
+        }
+
+        // IPv6 bracketed with port
+        {
+            endpoint ep("[::1]:8080");
+            BOOST_TEST(ep.is_v6());
+            BOOST_TEST(ep.v6_address().is_loopback());
+            BOOST_TEST_EQ(ep.port(), 8080);
+        }
+
+        // IPv6 full address bracketed with port
+        {
+            endpoint ep("[2001:db8::1]:443");
+            BOOST_TEST(ep.is_v6());
+            BOOST_TEST_EQ(ep.port(), 443);
+        }
+    }
+
+    void
+    testConstructFromStringThrows()
+    {
+        // Empty string
+        BOOST_TEST_THROWS(endpoint(""), std::system_error);
+
+        // Invalid IPv4
+        BOOST_TEST_THROWS(endpoint("256.0.0.1"), std::system_error);
+        BOOST_TEST_THROWS(endpoint("1.2.3"), std::system_error);
+        BOOST_TEST_THROWS(endpoint("1.2.3.4.5"), std::system_error);
+
+        // Invalid port
+        BOOST_TEST_THROWS(endpoint("1.2.3.4:"), std::system_error);
+        BOOST_TEST_THROWS(endpoint("1.2.3.4:abc"), std::system_error);
+        BOOST_TEST_THROWS(endpoint("1.2.3.4:65536"), std::system_error);
+        BOOST_TEST_THROWS(endpoint("1.2.3.4:-1"), std::system_error);
+        BOOST_TEST_THROWS(endpoint("1.2.3.4:01"), std::system_error);
+
+        // Invalid IPv6
+        BOOST_TEST_THROWS(endpoint("["), std::system_error);
+        BOOST_TEST_THROWS(endpoint("[]"), std::system_error);
+        BOOST_TEST_THROWS(endpoint("[::1"), std::system_error);
+        BOOST_TEST_THROWS(endpoint("[::1]:"), std::system_error);
+        BOOST_TEST_THROWS(endpoint("[::1]:abc"), std::system_error);
+        BOOST_TEST_THROWS(endpoint("[::1]:65536"), std::system_error);
     }
 
     void
@@ -168,6 +263,8 @@ struct endpoint_parse_test
     run()
     {
         testConstructFromEndpointAndPort();
+        testConstructFromString();
+        testConstructFromStringThrows();
         testDetectFormat();
         testParseIPv4NoPort();
         testParseIPv4WithPort();
