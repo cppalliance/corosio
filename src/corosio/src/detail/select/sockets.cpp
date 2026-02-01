@@ -394,14 +394,14 @@ write_some(
 
 std::error_code
 select_socket_impl::
-shutdown(socket::shutdown_type what) noexcept
+shutdown(tcp_socket::shutdown_type what) noexcept
 {
     int how;
     switch (what)
     {
-    case socket::shutdown_receive: how = SHUT_RD;   break;
-    case socket::shutdown_send:    how = SHUT_WR;   break;
-    case socket::shutdown_both:    how = SHUT_RDWR; break;
+    case tcp_socket::shutdown_receive: how = SHUT_RD;   break;
+    case tcp_socket::shutdown_send:    how = SHUT_WR;   break;
+    case tcp_socket::shutdown_both:    how = SHUT_RDWR; break;
     default:
         return make_err(EINVAL);
     }
@@ -522,7 +522,7 @@ set_linger(bool enabled, int timeout) noexcept
     return {};
 }
 
-socket::linger_options
+tcp_socket::linger_options
 select_socket_impl::
 linger(std::error_code& ec) const noexcept
 {
@@ -643,7 +643,7 @@ shutdown()
     state_->socket_ptrs_.clear();
 }
 
-socket::socket_impl&
+tcp_socket::socket_impl&
 select_socket_service::
 create_impl()
 {
@@ -661,7 +661,7 @@ create_impl()
 
 void
 select_socket_service::
-destroy_impl(socket::socket_impl& impl)
+destroy_impl(tcp_socket::socket_impl& impl)
 {
     auto* select_impl = static_cast<select_socket_impl*>(&impl);
     std::lock_guard lock(state_->mutex_);
@@ -671,7 +671,7 @@ destroy_impl(socket::socket_impl& impl)
 
 std::error_code
 select_socket_service::
-open_socket(socket::socket_impl& impl)
+open_socket(tcp_socket::socket_impl& impl)
 {
     auto* select_impl = static_cast<select_socket_impl*>(&impl);
     select_impl->close_socket();
