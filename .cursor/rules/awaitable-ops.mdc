@@ -1,0 +1,42 @@
+---
+description: doc javadoc for async awaitable functions of I/O objects
+alwaysApply: false
+---
+
+**Checklist for an outstanding async/awaitable function javadoc:**
+
+Revised checklist:
+
+---
+
+**Checklist for an outstanding awaitable function javadoc:**
+
+1. **Brief** — One-sentence summary starting with a verb, e.g. "Read data from the stream asynchronously."
+
+2. **Extended description** — Short paragraph explaining what the function does. State that it is an asynchronous operation that suspends the calling coroutine until completion. If composed, state which underlying operations it is implemented in terms of.
+
+3. **Completion conditions** — Bulleted `@li` list of conditions under which the operation completes and the coroutine resumes (e.g. "The supplied buffers are full", "An error occurs", "The operation was canceled").
+
+4. **Concurrency and overlap** — State which operations may be simultaneously in flight. E.g. for a read: "At most one write operation may be in flight concurrently with this read operation. No other read operations may be in flight until this operation completes." Clarify that simultaneous in-flight operations does *not* imply that the initiating calls themselves may be made concurrently; all calls to the stream must be made from the same implicit or explicit serialization context.
+
+5. **`@param` for each parameter** — Including ownership/lifetime semantics. For buffers: state that the caller retains ownership and must guarantee validity until the operation completes. For string/view parameters: state whether the implementation copies the data or requires it to remain valid for the duration.
+
+6. **`@return`** — Describe the returned aggregate and its elements. The first element is always `error_code`. Name and describe each subsequent element (e.g. "bytes_transferred", "endpoint"). Note that the result is customarily destructured by the caller.
+
+7. **Error conditions** — Document the notable `error_code` values or conditions that may appear in the first element. E.g. `capy::cond::canceled` if the stop token was activated or the i/o object's `cancel()` was called, EOF conditions, protocol-specific errors, etc. State that error codes should be compared to error conditions, not specific values.
+
+8. **`@throws`** — Typically only for precondition violations. State which preconditions trigger exceptions, or state that no exceptions are thrown during normal operation.
+
+9. **Cancellation** — State that the operation supports cancellation via `stop_token` propagated through the IoAwaitable protocol, or via the i/o object's `cancel()` member. State that the resulting error compares equal to `capy::cond::canceled`.
+
+10. **`@par Example`** — Two or three `@code` blocks showing different usage patterns: typical happy path with destructuring, error handling, cancellation, different overloads, etc.
+
+11. **`@note` / `@par Remarks`** — Behavioral gotchas. E.g. "This operation may not read all of the requested bytes." Or equivalence to another overload.
+
+12. **`@tparam`** — For non-variadic template parameters. State the concept requirement (e.g. "The type must satisfy the *AsyncStream* concept"). Don't document `Args...`.
+
+13. **`@see`** — Always last. Cross-references to related functions, concepts, and relevant RFC sections.
+
+14. Keep the ascii-art to a minimum, only add dividers if the class declaration is very long
+
+15. Don't emit @tparam for deduced types or concepts

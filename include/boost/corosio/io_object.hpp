@@ -15,46 +15,62 @@
 
 namespace boost::corosio {
 
-/** Base class for I/O objects in the library hierarchy.
+/** Base class for platform I/O objects.
 
-    This class provides a common base for all I/O object implementations
-    in the library. It holds the implementation pointer (`impl_`) which
-    provides a unified interface for all derived classes in the hierarchy.
-
-    By using a single pointer to a polymorphic base (`impl_base`), all
-    classes in the I/O object hierarchy can leverage type erasure to
-    share common implementation patterns while maintaining type safety
-    through the virtual interface.
+    Provides common infrastructure for I/O objects that wrap kernel
+    resources (sockets, timers, signal handlers, acceptors). Derived
+    classes dispatch operations through a platform-specific vtable
+    (IOCP, epoll, kqueue, io_uring).
 
     @par Semantics
-    Derived classes wrap direct platform I/O: OS sockets, timers,
-    signal handlers, acceptors. Operations dispatch through a
-    platform-specific implementation vtable (epoll, IOCP, kqueue,
-    io_uring).
+    Only concrete platform I/O types should inherit from `io_object`.
+    Test mocks, decorators, and stream adapters must not inherit from
+    this class. Use concepts or templates for generic I/O algorithms.
 
-    Test mocks, decorators, and stream adapters must not inherit
-    from io_object. Use concepts or templates for generic I/O
-    algorithms.
+    @par Thread Safety
+    Distinct objects: Safe.
+    Shared objects: Unsafe. All operations on a single I/O object
+    must be serialized.
 
-    @note This class is intended for use as a protected base class.
-        The implementation pointer is accessible to derived classes
-        through the protected member `impl_`.
+    @note Intended as a protected base class. The implementation
+        pointer `impl_` is accessible to derived classes.
+
+    @see io_stream, tcp_socket, tcp_acceptor
 */
 class BOOST_COROSIO_DECL io_object
 {
 public:
+    /// Forward declaration for platform-specific implementation.
     struct implementation;
 
     class handle;
 
+    /** Service interface for I/O object lifecycle management.
+
+        Platform backends implement this interface to manage the
+        creation, opening, closing, and destruction of I/O object
+        implementations.
+    */
     struct io_service
     {
+        /// Open the I/O object for use.
         virtual void open(handle&) = 0;
+
+        /// Close the I/O object, releasing kernel resources.
         virtual void close(handle&) = 0;
+
+        /// Destroy the implementation, freeing memory.
         virtual void destroy(implementation*) = 0;
+
+        /// Construct a new implementation instance.
         virtual implementation* construct() = 0;
     };
 
+    /** RAII wrapper for I/O object implementation lifetime.
+
+        Manages ownership of the platform-specific implementation,
+        automatically destroying it when the handle goes out of scope.
+    */
     class handle
     {
         capy::execution_context* ctx_ = nullptr;
@@ -62,12 +78,17 @@ public:
         implementation* impl_ = nullptr;
 
     public:
+        /// Destroy the handle and its implementation.
         ~handle()
         {
             if(impl_)
                 svc_->destroy(impl_);
         }
+
+        /// Construct an empty handle.
         handle() = default;
+
+        /// Construct a handle bound to a context and service.
         handle(
             capy::execution_context& ctx,
             io_service& svc)
@@ -76,12 +97,16 @@ public:
             , impl_(svc_->construct())
         {
         }
+
+        /// Move construct from another handle.
         handle(handle&& other)
             : ctx_(std::exchange(other.ctx_, nullptr))
             , svc_(std::exchange(other.svc_, nullptr))
             , impl_(std::exchange(other.impl_, nullptr))
         {
         }
+
+        /// Move assign from another handle.
         handle& operator=(handle&& other) noexcept
         {
             ctx_ = std::exchange(other.ctx_, nullptr);
@@ -89,36 +114,41 @@ public:
             impl_ = std::exchange(other.impl_, nullptr);
             return *this;
         }
+
+        /// Return the execution context.
         capy::execution_context& context() const noexcept
         {
             return *ctx_;
         }
+
+        /// Return the associated I/O service.
         io_service& service() const noexcept
         {
             return *svc_;
         }
+
+        /// Return the platform implementation.
         implementation& get() const noexcept
         {
             return *impl_;
         }
     };
 
-    //------
+    /** Base interface for platform I/O implementations.
 
+        Derived classes provide platform-specific operation dispatch.
+    */
     struct io_object_impl
     {
         virtual ~io_object_impl() = default;
 
+        /// Release associated resources without closing.
         virtual void release() = 0;
     };
 
-    /** Return the execution context.
-
-        @return Reference to the execution context that owns this socket.
-    */
-    auto
-    context() const noexcept ->
-        capy::execution_context&
+    /// Return the execution context.
+    capy::execution_context&
+    context() const noexcept
     {
         return *ctx_;
     }
@@ -126,6 +156,7 @@ public:
 protected:
     virtual ~io_object() = default;
 
+    /// Construct an I/O object bound to the given context.
     explicit
     io_object(
         capy::execution_context& ctx) noexcept
