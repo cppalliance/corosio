@@ -7,12 +7,13 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+// This benchmark uses coroutines (like Corosio) for a fair comparison,
+// rather than plain callbacks.
+
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/post.hpp>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/awaitable.hpp>
-#include <boost/asio/use_awaitable.hpp>
 
 #include <atomic>
 #include <cstring>
@@ -25,10 +26,24 @@
 
 namespace asio = boost::asio;
 
-// Measures the raw throughput of posting and executing handlers from a single
-// thread. Establishes a baseline for Asio's scheduler performance without any
-// synchronization overhead. Useful for comparing against Corosio's coroutine-based
-// approach to understand the overhead difference between callbacks and coroutines.
+// Coroutine that increments a counter
+asio::awaitable<void> increment_task(int& counter)
+{
+    ++counter;
+    co_return;
+}
+
+// Coroutine that increments an atomic counter
+asio::awaitable<void> atomic_increment_task(std::atomic<int>& counter)
+{
+    counter.fetch_add(1, std::memory_order_relaxed);
+    co_return;
+}
+
+// Measures single-threaded coroutine throughput using Asio's awaitable/co_spawn.
+// This is a direct apples-to-apples comparison with Corosio since both use C++20
+// coroutines. Differences reveal the overhead of each framework's coroutine
+// integration rather than callback vs. coroutine differences.
 bench::benchmark_result bench_single_threaded_post(int num_handlers)
 {
     bench::print_header("Single-threaded Handler Post (Asio)");
@@ -39,9 +54,7 @@ bench::benchmark_result bench_single_threaded_post(int num_handlers)
     bench::stopwatch sw;
 
     for (int i = 0; i < num_handlers; ++i)
-    {
-        asio::post(ioc, [&counter]() { ++counter; });
-    }
+        asio::co_spawn(ioc, increment_task(counter), asio::detached);
 
     ioc.run();
 
@@ -65,14 +78,12 @@ bench::benchmark_result bench_single_threaded_post(int num_handlers)
         .add("ops_per_sec", ops_per_sec);
 }
 
-// Measures how Asio's throughput scales when multiple threads call run() on the
-// same io_context. Asio uses a mutex-protected queue, so this reveals contention
-// characteristics. Compare against Corosio to evaluate different synchronization
-// strategies. Sub-linear scaling is expected; the question is how gracefully
-// performance degrades under thread pressure.
+// Measures multi-threaded scaling using Asio coroutines. Tests how Asio's
+// scheduler handles coroutine resumption across threads. Compare against Corosio
+// to evaluate coroutine dispatch efficiency under thread contention.
 bench::benchmark_result bench_multithreaded_scaling(int num_handlers, int max_threads)
 {
-    bench::print_header("Multi-threaded Scaling (Asio)");
+    bench::print_header("Multi-threaded Scaling (Asio Coroutines)");
 
     std::cout << "  Handlers per test: " << num_handlers << "\n\n";
 
@@ -80,18 +91,15 @@ bench::benchmark_result bench_multithreaded_scaling(int num_handlers, int max_th
     result.add("handlers", num_handlers);
 
     double baseline_ops = 0;
+
     for (int num_threads = 1; num_threads <= max_threads; num_threads *= 2)
     {
         asio::io_context ioc;
         std::atomic<int> counter{0};
 
-        // Post all handlers first
+        // Post all coroutines first
         for (int i = 0; i < num_handlers; ++i)
-        {
-            asio::post(ioc, [&counter]() {
-                counter.fetch_add(1, std::memory_order_relaxed);
-            });
-        }
+            asio::co_spawn(ioc, atomic_increment_task(counter), asio::detached);
 
         bench::stopwatch sw;
 
@@ -114,6 +122,7 @@ bench::benchmark_result bench_multithreaded_scaling(int num_handlers, int max_th
         else if (baseline_ops > 0)
             std::cout << " (speedup: " << std::fixed << std::setprecision(2)
                       << (ops_per_sec / baseline_ops) << "x)";
+
         std::cout << "\n";
 
         result.add("threads_" + std::to_string(num_threads) + "_ops_per_sec", ops_per_sec);
@@ -128,13 +137,12 @@ bench::benchmark_result bench_multithreaded_scaling(int num_handlers, int max_th
     return result;
 }
 
-// Measures Asio performance when posting and polling are interleaved, simulating
-// a game loop or GUI event pump. Tests poll() efficiency with small work batches
-// and frequent restarts. Compare against Corosio to evaluate which framework
-// handles this latency-sensitive pattern more efficiently.
+// Measures poll() efficiency with Asio coroutines in a game-loop pattern.
+// Tests how Asio handles frequent context restarts with coroutine-based work.
+// Compare against Corosio for latency-sensitive polling scenarios.
 bench::benchmark_result bench_interleaved_post_run(int iterations, int handlers_per_iteration)
 {
-    bench::print_header("Interleaved Post/Run (Asio)");
+    bench::print_header("Interleaved Post/Run (Asio Coroutines)");
 
     asio::io_context ioc;
     int counter = 0;
@@ -145,9 +153,7 @@ bench::benchmark_result bench_interleaved_post_run(int iterations, int handlers_
     for (int iter = 0; iter < iterations; ++iter)
     {
         for (int i = 0; i < handlers_per_iteration; ++i)
-        {
-            asio::post(ioc, [&counter]() { ++counter; });
-        }
+            asio::co_spawn(ioc, increment_task(counter), asio::detached);
 
         ioc.poll();
         ioc.restart();
@@ -180,13 +186,12 @@ bench::benchmark_result bench_interleaved_post_run(int iterations, int handlers_
         .add("ops_per_sec", ops_per_sec);
 }
 
-// Measures Asio performance under realistic concurrent load where multiple threads
-// simultaneously post and execute work. This stresses Asio's synchronization
-// primitives. Compare against Corosio to evaluate which framework handles
-// producer-consumer workloads more efficiently.
+// Measures Asio coroutine performance under concurrent producer-consumer load.
+// Multiple threads spawn and execute coroutines simultaneously. Compare against
+// Corosio to evaluate coroutine dispatch under realistic server workloads.
 bench::benchmark_result bench_concurrent_post_run(int num_threads, int handlers_per_thread)
 {
-    bench::print_header("Concurrent Post and Run (Asio)");
+    bench::print_header("Concurrent Post and Run (Asio Coroutines)");
 
     asio::io_context ioc;
     std::atomic<int> counter{0};
@@ -201,11 +206,7 @@ bench::benchmark_result bench_concurrent_post_run(int num_threads, int handlers_
         workers.emplace_back([&ioc, &counter, handlers_per_thread]()
         {
             for (int i = 0; i < handlers_per_thread; ++i)
-            {
-                asio::post(ioc, [&counter]() {
-                    counter.fetch_add(1, std::memory_order_relaxed);
-                });
-            }
+                asio::co_spawn(ioc, atomic_increment_task(counter), asio::detached);
             ioc.run();
         });
     }
@@ -241,7 +242,7 @@ bench::benchmark_result bench_concurrent_post_run(int num_threads, int handlers_
 void run_benchmarks(const char* output_file, const char* bench_filter)
 {
     std::cout << "Boost.Asio io_context Benchmarks\n";
-    std::cout << "=================================\n";
+    std::cout << "=================================\n\n";
 
     bench::result_collector collector("asio");
 
@@ -252,7 +253,7 @@ void run_benchmarks(const char* output_file, const char* bench_filter)
         asio::io_context ioc;
         int counter = 0;
         for (int i = 0; i < 1000; ++i)
-            asio::post(ioc, [&counter]() { ++counter; });
+            asio::co_spawn(ioc, increment_task(counter), asio::detached);
         ioc.run();
     }
 
@@ -289,7 +290,7 @@ void print_usage(const char* program_name)
     std::cout << "  --help             Show this help message\n";
     std::cout << "\n";
     std::cout << "Available benchmarks:\n";
-    std::cout << "  single_threaded    Single-threaded handler post throughput\n";
+    std::cout << "  single_threaded    Single-threaded coroutine post throughput\n";
     std::cout << "  multithreaded      Multi-threaded scaling test\n";
     std::cout << "  interleaved        Interleaved post/poll pattern\n";
     std::cout << "  concurrent         Concurrent post and run\n";
