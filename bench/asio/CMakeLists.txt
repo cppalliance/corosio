@@ -27,7 +27,6 @@ function(asio_add_benchmark name source)
 endfunction()
 
 asio_add_benchmark(asio_bench_io_context io_context_bench.cpp)
-asio_add_benchmark(asio_bench_io_context_coro io_context_coro_bench.cpp)
 asio_add_benchmark(asio_bench_socket_throughput socket_throughput_bench.cpp)
 asio_add_benchmark(asio_bench_socket_latency socket_latency_bench.cpp)
 asio_add_benchmark(asio_bench_http_server http_server_bench.cpp)
