@@ -32,6 +32,8 @@ namespace boost::corosio::detail {
 inline void
 resume_coro(capy::executor_ref d, capy::coro h)
 {
+    // I/O results may have been written by another thread (OS or worker).
+    // Acquire fence ensures those writes are visible before coroutine resumes.
     std::atomic_thread_fence(std::memory_order_acquire);
     auto resume_h = d.dispatch(h);
     if (resume_h.address() == h.address())

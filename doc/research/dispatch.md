@@ -429,21 +429,39 @@ void dispatch(capy::coro h) const {
 
 **File:** `src/corosio/src/detail/resume_coro.hpp`
 
+The `resume_coro` helper includes a **memory barrier** that must be preserved. This acquire fence ensures that I/O results (buffer contents, error codes, bytes transferred) written by other threads are visible to the resumed coroutine before it continues execution.
+
 ```cpp
 // BEFORE
-template<class Dispatcher>
-void resume_coro(Dispatcher& d, std::coroutine_handle<> h) {
+inline void
+resume_coro(capy::executor_ref d, capy::coro h)
+{
+    std::atomic_thread_fence(std::memory_order_acquire);  // KEEP THIS
     auto resume_h = d.dispatch(h);
     if (resume_h.address() == h.address())
         resume_h.resume();
 }
 
 // AFTER
-template<class Dispatcher>
-void resume_coro(Dispatcher& d, std::coroutine_handle<> h) {
+inline void
+resume_coro(capy::executor_ref d, capy::coro h)
+{
+    std::atomic_thread_fence(std::memory_order_acquire);  // PRESERVED
     d.dispatch(h);  // dispatch now handles resume internally
 }
 ```
+
+**Why the fence matters:**
+
+When an I/O operation completes:
+1. The OS (or an internal worker thread) writes results to buffers
+2. The completion is signaled to the `io_context` thread
+3. `resume_coro` is called to resume the waiting coroutine
+4. The coroutine reads the results from those buffers
+
+Without the acquire fence, the coroutine might see stale data due to CPU memory reordering. The fence ensures all writes from step 1 are visible before step 4.
+
+**Note:** The fence is conservative — it always executes even when not strictly necessary (e.g., same-thread immediate completions, or when IOCP/epoll already provides synchronization). This is intentional for safety.
 
 ### 3. Update `complete_immediate`
 
@@ -581,6 +599,7 @@ Measure latency of immediate completions:
 | Stack behavior | Always unwinds | Can overflow | Always unwinds |
 | Async mutex | Works | Broken | Works |
 | Immediate completions | Handler path | Can inline (broken) | Can inline (fixed) |
+| Memory barrier | In handler path | In `resume_coro` | In `resume_coro` (preserved) |
 
 The fix is conceptually simple: **dispatch must be a normal function call, not an enabler of symmetric transfer.** Symmetric transfer remains available for task-to-task composition via `final_suspend`, where it's safe and efficient.
 
