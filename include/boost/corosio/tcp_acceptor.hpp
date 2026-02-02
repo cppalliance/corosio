@@ -287,7 +287,7 @@ public:
 
     struct acceptor_impl : io_object_impl
     {
-        virtual std::coroutine_handle<> accept(
+        virtual void accept(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,

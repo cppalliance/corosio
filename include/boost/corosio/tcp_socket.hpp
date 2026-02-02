@@ -96,7 +96,7 @@ public:
 
     struct socket_impl : io_stream_impl
     {
-        virtual std::coroutine_handle<> connect(
+        virtual void connect(
             std::coroutine_handle<>,
             capy::executor_ref,
             endpoint,

@@ -194,7 +194,7 @@ release()
     svc_.destroy_impl(*this);
 }
 
-std::coroutine_handle<>
+void
 win_signal_impl::
 wait(
     std::coroutine_handle<> h,
@@ -217,11 +217,10 @@ wait(
         if (signal_out)
             *signal_out = 0;
         d.dispatch(h).resume();
-        return std::noop_coroutine();
+        return;
     }
 
     svc_.start_wait(*this, &pending_op_);
-    return std::noop_coroutine();
 }
 
 std::error_code

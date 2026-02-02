@@ -138,14 +138,14 @@ public:
 
     void release_internal();
 
-    std::coroutine_handle<> connect(
+    void connect(
         capy::coro,
         capy::executor_ref,
         endpoint,
         std::stop_token,
         std::error_code*);
 
-    std::coroutine_handle<> read_some(
+    void read_some(
         capy::coro,
         capy::executor_ref,
         io_buffer_param,
@@ -153,7 +153,7 @@ public:
         std::error_code*,
         std::size_t*);
 
-    std::coroutine_handle<> write_some(
+    void write_some(
         capy::coro,
         capy::executor_ref,
         io_buffer_param,
@@ -202,17 +202,17 @@ public:
 
     void release() override;
 
-    std::coroutine_handle<> connect(
+    void connect(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         endpoint ep,
         std::stop_token token,
         std::error_code* ec) override
     {
-        return internal_->connect(h, d, ep, token, ec);
+        internal_->connect(h, d, ep, token, ec);
     }
 
-    std::coroutine_handle<> read_some(
+    void read_some(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param buf,
@@ -220,10 +220,10 @@ public:
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        return internal_->read_some(h, d, buf, token, ec, bytes);
+        internal_->read_some(h, d, buf, token, ec, bytes);
     }
 
-    std::coroutine_handle<> write_some(
+    void write_some(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param buf,
@@ -231,7 +231,7 @@ public:
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        return internal_->write_some(h, d, buf, token, ec, bytes);
+        internal_->write_some(h, d, buf, token, ec, bytes);
     }
 
     std::error_code shutdown(tcp_socket::shutdown_type what) noexcept override
@@ -413,7 +413,7 @@ public:
 
     void release_internal();
 
-    std::coroutine_handle<> accept(
+    void accept(
         capy::coro,
         capy::executor_ref,
         std::stop_token,
@@ -458,14 +458,14 @@ public:
 
     void release() override;
 
-    std::coroutine_handle<> accept(
+    void accept(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         std::stop_token token,
         std::error_code* ec,
         io_object::io_object_impl** impl_out) override
     {
-        return internal_->accept(h, d, token, ec, impl_out);
+        internal_->accept(h, d, token, ec, impl_out);
     }
 
     endpoint local_endpoint() const noexcept override

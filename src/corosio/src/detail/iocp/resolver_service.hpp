@@ -200,7 +200,7 @@ public:
 
     void release() override;
 
-    std::coroutine_handle<> resolve(
+    void resolve(
         std::coroutine_handle<>,
         capy::executor_ref,
         std::string_view host,
@@ -210,7 +210,7 @@ public:
         std::error_code*,
         resolver_results*) override;
 
-    std::coroutine_handle<> reverse_resolve(
+    void reverse_resolve(
         std::coroutine_handle<>,
         capy::executor_ref,
         endpoint const& ep,

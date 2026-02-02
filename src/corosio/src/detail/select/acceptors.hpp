@@ -47,7 +47,7 @@ public:
 
     void release() override;
 
-    std::coroutine_handle<> accept(
+    void accept(
         std::coroutine_handle<>,
         capy::executor_ref,
         std::stop_token,

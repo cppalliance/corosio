@@ -617,7 +617,7 @@ release()
     svc_.destroy_impl(*this);
 }
 
-std::coroutine_handle<>
+void
 posix_resolver_impl::
 resolve(
     std::coroutine_handle<> h,
@@ -697,10 +697,9 @@ resolve(
         op_.gai_error = EAI_MEMORY;  // Map to "not enough memory"
         svc_.post(&op_);
     }
-    return std::noop_coroutine();
 }
 
-std::coroutine_handle<>
+void
 posix_resolver_impl::
 reverse_resolve(
     std::coroutine_handle<> h,
@@ -791,7 +790,6 @@ reverse_resolve(
         reverse_op_.gai_error = EAI_MEMORY;
         svc_.post(&reverse_op_);
     }
-    return std::noop_coroutine();
 }
 
 void

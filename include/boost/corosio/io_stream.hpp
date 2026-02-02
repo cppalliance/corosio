@@ -288,7 +288,7 @@ public:
     struct io_stream_impl : io_object_impl
     {
         /// Initiate platform read operation.
-        virtual std::coroutine_handle<> read_some(
+        virtual void read_some(
             std::coroutine_handle<>,
             capy::executor_ref,
             io_buffer_param,
@@ -297,7 +297,7 @@ public:
             std::size_t*) = 0;
 
         /// Initiate platform write operation.
-        virtual std::coroutine_handle<> write_some(
+        virtual void write_some(
             std::coroutine_handle<>,
             capy::executor_ref,
             io_buffer_param,

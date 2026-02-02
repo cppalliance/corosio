@@ -152,7 +152,7 @@ release()
     svc_.destroy_acceptor_impl(*this);
 }
 
-std::coroutine_handle<>
+void
 epoll_acceptor_impl::
 accept(
     std::coroutine_handle<> h,
@@ -182,7 +182,7 @@ accept(
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return std::noop_coroutine();
+        return;
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -209,7 +209,7 @@ accept(
                     svc_.post(claimed);
                     svc_.work_finished();
                 }
-                return std::noop_coroutine();
+                return;
             }
         }
 
@@ -222,13 +222,12 @@ accept(
                 svc_.work_finished();
             }
         }
-        return std::noop_coroutine();
+        return;
     }
 
     op.complete(errno, 0);
     op.impl_ptr = shared_from_this();
     svc_.post(&op);
-    return std::noop_coroutine();
 }
 
 void

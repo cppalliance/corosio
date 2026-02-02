@@ -475,7 +475,7 @@ public:
 public:
     struct resolver_impl : io_object_impl
     {
-        virtual std::coroutine_handle<> resolve(
+        virtual void resolve(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::string_view host,
@@ -485,7 +485,7 @@ public:
             std::error_code*,
             resolver_results*) = 0;
 
-        virtual std::coroutine_handle<> reverse_resolve(
+        virtual void reverse_resolve(
             std::coroutine_handle<>,
             capy::executor_ref,
             endpoint const& ep,

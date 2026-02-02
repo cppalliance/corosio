@@ -84,14 +84,14 @@ public:
 
     void release() override;
 
-    std::coroutine_handle<> connect(
+    void connect(
         std::coroutine_handle<>,
         capy::executor_ref,
         endpoint,
         std::stop_token,
         std::error_code*) override;
 
-    std::coroutine_handle<> read_some(
+    void read_some(
         std::coroutine_handle<>,
         capy::executor_ref,
         io_buffer_param,
@@ -99,7 +99,7 @@ public:
         std::error_code*,
         std::size_t*) override;
 
-    std::coroutine_handle<> write_some(
+    void write_some(
         std::coroutine_handle<>,
         capy::executor_ref,
         io_buffer_param,
