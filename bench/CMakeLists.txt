@@ -8,6 +8,15 @@
 # Official repository: https://github.com/cppalliance/corosio
 #
 
+# Check LTO support for benchmarks
+include(CheckIPOSupported)
+check_ipo_supported(RESULT COROSIO_BENCH_LTO_SUPPORTED OUTPUT COROSIO_BENCH_LTO_ERROR LANGUAGES CXX)
+if (COROSIO_BENCH_LTO_SUPPORTED)
+    message(STATUS "LTO enabled for benchmarks")
+else ()
+    message(STATUS "LTO not available for benchmarks: ${COROSIO_BENCH_LTO_ERROR}")
+endif ()
+
 # Corosio benchmarks
 add_subdirectory(corosio)
 
