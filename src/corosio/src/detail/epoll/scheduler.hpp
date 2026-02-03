@@ -22,7 +22,6 @@
 #include "src/detail/timer_service.hpp"
 
 #include <atomic>
-#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -61,7 +60,8 @@ public:
 
     /** Construct the scheduler.
 
-        Creates an epoll instance and eventfd for event notification.
+        Creates an epoll instance, eventfd for reactor interruption,
+        and timerfd for kernel-managed timer expiry.
 
         @param ctx Reference to the owning execution_context.
         @param concurrency_hint Hint for expected thread count (unused).
@@ -135,10 +135,11 @@ private:
     void run_reactor(std::unique_lock<std::mutex>& lock);
     void wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const;
     void interrupt_reactor() const;
-    long calculate_timeout(long requested_timeout_us) const;
+    void update_timerfd() const;
 
     int epoll_fd_;
     int event_fd_;                              // for interrupting reactor
+    int timer_fd_;                              // timerfd for kernel-managed timer expiry
     mutable std::mutex mutex_;
     mutable std::condition_variable wakeup_event_;
     mutable op_queue completed_ops_;
@@ -154,6 +155,16 @@ private:
 
     // Edge-triggered eventfd state
     mutable std::atomic<bool> eventfd_armed_{false};
+
+    // Sentinel operation for interleaving reactor runs with handler execution.
+    // Ensures the reactor runs periodically even when handlers are continuously
+    // posted, preventing timer starvation.
+    struct task_op final : scheduler_op
+    {
+        void operator()() override {}
+        void destroy() override {}
+    };
+    task_op task_op_;
 };
 
 } // namespace boost::corosio::detail
