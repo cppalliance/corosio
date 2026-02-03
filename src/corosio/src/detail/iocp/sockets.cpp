@@ -363,6 +363,18 @@ win_socket_impl_internal(win_sockets& svc) noexcept
 win_socket_impl_internal::
 ~win_socket_impl_internal()
 {
+    // Destroy any active initiator coroutines
+    if (read_initiator_handle_)
+        read_initiator_handle_.destroy();
+    if (write_initiator_handle_)
+        write_initiator_handle_.destroy();
+
+    // Free cached frame storage (operator delete in promise_type is no-op)
+    if (read_initiator_frame_)
+        ::operator delete(read_initiator_frame_);
+    if (write_initiator_frame_)
+        ::operator delete(write_initiator_frame_);
+
     svc_.unregister_impl(*this);
 }
 
@@ -469,46 +481,31 @@ connect(
     }
 }
 
-std::coroutine_handle<>
-win_socket_impl_internal::
-read_some(
-    capy::coro h,
-    capy::executor_ref d,
-    io_buffer_param param,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes_out)
+//------------------------------------------------------------------------------
+// Initiator coroutines - receive control via symmetric transfer after caller
+// suspends, then initiate the actual I/O.
+
+read_initiator
+make_read_initiator(void*& cached, win_socket_impl_internal* impl)
 {
-    // Keep internal alive during I/O
-    rd_.internal_ptr = shared_from_this();
+    impl->do_read_io();
+    co_return;
+}
 
+write_initiator
+make_write_initiator(void*& cached, win_socket_impl_internal* impl)
+{
+    impl->do_write_io();
+    co_return;
+}
+
+//------------------------------------------------------------------------------
+
+void
+win_socket_impl_internal::
+do_read_io()
+{
     auto& op = rd_;
-    op.reset();
-    op.h = h;
-    op.d = d;
-    op.ec_out = ec;
-    op.bytes_out = bytes_out;
-    op.start(token);
-
-    capy::mutable_buffer bufs[read_op::max_buffers];
-    op.wsabuf_count = static_cast<DWORD>(
-        param.copy_to(bufs, read_op::max_buffers));
-
-    // Handle empty buffer: complete with 0 bytes via post for consistency
-    if (op.wsabuf_count == 0)
-    {
-        op.bytes_transferred = 0;
-        op.dwError = 0;
-        op.empty_buffer = true;
-        svc_.post(&op);
-        return std::noop_coroutine();
-    }
-
-    for (DWORD i = 0; i < op.wsabuf_count; ++i)
-    {
-        op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
-        op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
-    }
 
     op.flags = 0;
 
@@ -532,7 +529,7 @@ read_some(
             svc_.work_finished();
             op.dwError = err;
             op.complete_immediate();
-            return std::noop_coroutine();
+            return;
         }
     }
     else
@@ -555,7 +552,109 @@ read_some(
             svc_.post(&op);
         }
     }
-    return std::noop_coroutine();
+}
+
+void
+win_socket_impl_internal::
+do_write_io()
+{
+    auto& op = wr_;
+
+    svc_.work_started();
+
+    int result = ::WSASend(
+        socket_,
+        op.wsabufs,
+        op.wsabuf_count,
+        nullptr,
+        0,
+        &op,
+        nullptr);
+
+    if (result == SOCKET_ERROR)
+    {
+        DWORD err = ::WSAGetLastError();
+        if (err != WSA_IO_PENDING)
+        {
+            // Immediate error - must use post(). See do_read_io for explanation.
+            svc_.work_finished();
+            op.dwError = err;
+            svc_.post(&op);
+            return;
+        }
+    }
+    else
+    {
+        // Synchronous completion - use CAS to race with IOCP.
+        // See do_read_io for detailed explanation.
+        //
+        // CRITICAL: Must call work_finished() ONLY if we win the CAS, and must
+        // not access op after CAS fails. If IOCP wins, it processes the op
+        // (which may destroy it), so any access to op is use-after-free.
+        // The IOCP handler calls work_finished() via its work_guard.
+        if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
+        {
+            svc_.work_finished();
+            op.bytes_transferred = static_cast<DWORD>(op.InternalHigh);
+            op.dwError = 0;
+            svc_.post(&op);
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
+
+std::coroutine_handle<>
+win_socket_impl_internal::
+read_some(
+    capy::coro h,
+    capy::executor_ref d,
+    io_buffer_param param,
+    std::stop_token token,
+    std::error_code* ec,
+    std::size_t* bytes_out)
+{
+    // Keep internal alive during I/O
+    rd_.internal_ptr = shared_from_this();
+
+    auto& op = rd_;
+    op.reset();
+    op.h = h;
+    op.d = d;
+    op.ec_out = ec;
+    op.bytes_out = bytes_out;
+    op.start(token);
+
+    // Prepare buffers (must happen before initiator runs)
+    capy::mutable_buffer bufs[read_op::max_buffers];
+    op.wsabuf_count = static_cast<DWORD>(
+        param.copy_to(bufs, read_op::max_buffers));
+
+    // Handle empty buffer: complete with 0 bytes via post for consistency
+    if (op.wsabuf_count == 0)
+    {
+        op.bytes_transferred = 0;
+        op.dwError = 0;
+        op.empty_buffer = true;
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    for (DWORD i = 0; i < op.wsabuf_count; ++i)
+    {
+        op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
+        op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
+    }
+
+    // Destroy previous initiator if any, construct new one into cached frame
+    if (read_initiator_handle_)
+        read_initiator_handle_.destroy();
+
+    auto initiator = make_read_initiator(read_initiator_frame_, this);
+    read_initiator_handle_ = initiator.h;
+
+    // Symmetric transfer to initiator - I/O starts after caller is suspended
+    return initiator.h;
 }
 
 std::coroutine_handle<>
@@ -579,6 +678,7 @@ write_some(
     op.bytes_out = bytes_out;
     op.start(token);
 
+    // Prepare buffers (must happen before initiator runs)
     capy::mutable_buffer bufs[write_op::max_buffers];
     op.wsabuf_count = static_cast<DWORD>(
         param.copy_to(bufs, write_op::max_buffers));
@@ -598,47 +698,15 @@ write_some(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    svc_.work_started();
+    // Destroy previous initiator if any, construct new one into cached frame
+    if (write_initiator_handle_)
+        write_initiator_handle_.destroy();
 
-    int result = ::WSASend(
-        socket_,
-        op.wsabufs,
-        op.wsabuf_count,
-        nullptr,
-        0,
-        &op,
-        nullptr);
+    auto initiator = make_write_initiator(write_initiator_frame_, this);
+    write_initiator_handle_ = initiator.h;
 
-    if (result == SOCKET_ERROR)
-    {
-        DWORD err = ::WSAGetLastError();
-        if (err != WSA_IO_PENDING)
-        {
-            // Immediate error - must use post(). See read_some for explanation.
-            svc_.work_finished();
-            op.dwError = err;
-            svc_.post(&op);
-            return std::noop_coroutine();
-        }
-    }
-    else
-    {
-        // Synchronous completion - use CAS to race with IOCP.
-        // See read_some for detailed explanation.
-        //
-        // CRITICAL: Must call work_finished() ONLY if we win the CAS, and must
-        // not access op after CAS fails. If IOCP wins, it processes the op
-        // (which may destroy it), so any access to op is use-after-free.
-        // The IOCP handler calls work_finished() via its work_guard.
-        if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
-        {
-            svc_.work_finished();
-            op.bytes_transferred = static_cast<DWORD>(op.InternalHigh);
-            op.dwError = 0;
-            svc_.post(&op);
-        }
-    }
-    return std::noop_coroutine();
+    // Symmetric transfer to initiator - I/O starts after caller is suspended
+    return initiator.h;
 }
 
 void

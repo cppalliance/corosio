@@ -27,6 +27,7 @@
 #include "src/detail/iocp/mutex.hpp"
 #include "src/detail/iocp/wsa_init.hpp"
 
+#include <coroutine>
 #include <memory>
 
 #include <MSWSock.h>
@@ -108,6 +109,90 @@ struct accept_op : overlapped_op
 
 //------------------------------------------------------------------------------
 
+/** Initiator coroutine for read operations.
+
+    This coroutine receives control via symmetric transfer after the caller
+    has fully suspended, then initiates the actual I/O. Uses cached frame
+    allocation to avoid per-operation heap allocations.
+*/
+struct read_initiator
+{
+    struct promise_type
+    {
+        win_socket_impl_internal* impl;
+
+        /** Cached allocation - first call allocates, subsequent calls reuse. */
+        static void* operator new(std::size_t n, void*& cached, win_socket_impl_internal*)
+        {
+            if (!cached)
+                cached = ::operator new(n);
+            return cached;
+        }
+
+        /** No-op - frame memory freed in socket destructor. */
+        static void operator delete(void*) noexcept {}
+
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_always final_suspend() noexcept { return {}; }
+
+        read_initiator get_return_object()
+        {
+            return {std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+
+        void return_void() {}
+        void unhandled_exception() { std::terminate(); }
+    };
+
+    using handle_type = std::coroutine_handle<promise_type>;
+    handle_type h;
+};
+
+/** Initiator coroutine for write operations.
+
+    This coroutine receives control via symmetric transfer after the caller
+    has fully suspended, then initiates the actual I/O. Uses cached frame
+    allocation to avoid per-operation heap allocations.
+*/
+struct write_initiator
+{
+    struct promise_type
+    {
+        win_socket_impl_internal* impl;
+
+        /** Cached allocation - first call allocates, subsequent calls reuse. */
+        static void* operator new(std::size_t n, void*& cached, win_socket_impl_internal*)
+        {
+            if (!cached)
+                cached = ::operator new(n);
+            return cached;
+        }
+
+        /** No-op - frame memory freed in socket destructor. */
+        static void operator delete(void*) noexcept {}
+
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_always final_suspend() noexcept { return {}; }
+
+        write_initiator get_return_object()
+        {
+            return {std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+
+        void return_void() {}
+        void unhandled_exception() { std::terminate(); }
+    };
+
+    using handle_type = std::coroutine_handle<promise_type>;
+    handle_type h;
+};
+
+// Coroutine factory functions (defined in sockets.cpp)
+read_initiator make_read_initiator(void*& cached, win_socket_impl_internal* impl);
+write_initiator make_write_initiator(void*& cached, win_socket_impl_internal* impl);
+
+//------------------------------------------------------------------------------
+
 /** Internal socket state for IOCP-based I/O.
 
     This class contains the actual state for a single socket, including
@@ -131,6 +216,12 @@ class win_socket_impl_internal
     read_op rd_;
     write_op wr_;
     SOCKET socket_ = INVALID_SOCKET;
+
+    // Cached initiator coroutine frames (allocated on first use)
+    void* read_initiator_frame_ = nullptr;
+    void* write_initiator_frame_ = nullptr;
+    read_initiator::handle_type read_initiator_handle_;
+    write_initiator::handle_type write_initiator_handle_;
 
 public:
     explicit win_socket_impl_internal(win_sockets& svc) noexcept;
@@ -173,6 +264,12 @@ public:
         local_endpoint_ = local;
         remote_endpoint_ = remote;
     }
+
+    /** Execute the read I/O operation (called by initiator coroutine). */
+    void do_read_io();
+
+    /** Execute the write I/O operation (called by initiator coroutine). */
+    void do_write_io();
 
 private:
     endpoint local_endpoint_;
