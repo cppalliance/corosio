@@ -128,7 +128,7 @@ operator()()
     capy::executor_ref saved_ex( std::move( ex ) );
     capy::coro saved_h( std::move( h ) );
     auto prevent_premature_destruction = std::move(impl_ptr);
-    saved_ex.dispatch( saved_h ).resume();
+    saved_ex.dispatch( saved_h );
 }
 
 epoll_acceptor_impl::

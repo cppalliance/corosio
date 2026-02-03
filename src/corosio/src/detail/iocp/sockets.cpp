@@ -528,16 +528,10 @@ read_some(
         DWORD err = ::WSAGetLastError();
         if (err != WSA_IO_PENDING)
         {
-            // Immediate error - must use post(), not complete_immediate().
-            // Using symmetric transfer (complete_immediate) here breaks
-            // coroutine chains that hold async mutexes: the resumed coroutine
-            // releases its lock and tries to wake the next waiter, but the
-            // symmetric transfer chain doesn't return control to io_context
-            // properly. Posting ensures the scheduler processes the completion,
-            // calling resume_coro() which explicitly calls .resume().
+            // Immediate error - dispatch inline
             svc_.work_finished();
             op.dwError = err;
-            svc_.post(&op);
+            op.complete_immediate();
             return;
         }
     }

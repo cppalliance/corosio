@@ -148,13 +148,13 @@ struct overlapped_op
         dwError = err;
     }
 
-    /** Complete immediately and return handle for symmetric transfer.
+    /** Complete immediately via dispatch.
 
         Use this for immediate completion paths instead of posting to
-        the scheduler. Sets output parameters and returns the coroutine
-        handle to resume via symmetric transfer.
+        the scheduler. Sets output parameters and dispatches the coroutine
+        for resumption.
     */
-    std::coroutine_handle<> complete_immediate()
+    void complete_immediate()
     {
         stop_cb.reset();
 
@@ -171,7 +171,7 @@ struct overlapped_op
         if (bytes_out)
             *bytes_out = static_cast<std::size_t>(bytes_transferred);
 
-        return d.dispatch(h);
+        d.dispatch(h);
     }
 };
 

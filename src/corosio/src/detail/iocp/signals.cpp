@@ -157,7 +157,7 @@ operator()()
     auto* service = svc;
     svc = nullptr;
 
-    d.dispatch(h).resume();
+    d.dispatch(h);
 
     // Balance the on_work_started() from start_wait. When svc is null
     // (immediate completion from queued signal), no work tracking occurred.
@@ -216,7 +216,7 @@ wait(
             *ec = make_error_code(capy::error::canceled);
         if (signal_out)
             *signal_out = 0;
-        d.dispatch(h).resume();
+        d.dispatch(h);
         return;
     }
 
@@ -495,7 +495,7 @@ cancel_wait(win_signal_impl& impl)
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        op->d.dispatch(op->h).resume();
+        op->d.dispatch(op->h);
         sched_.on_work_finished();
     }
 }

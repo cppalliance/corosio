@@ -354,7 +354,8 @@ private:
             Ex const&, std::stop_token) noexcept
         {
             // Dispatch to server's executor before touching shared state
-            return self_.ex_.dispatch(h);
+            self_.ex_.dispatch(h);
+            return std::noop_coroutine();
         }
 
         void await_resume() noexcept

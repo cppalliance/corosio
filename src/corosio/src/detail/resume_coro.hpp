@@ -22,10 +22,6 @@ namespace boost::corosio::detail {
     error codes, bytes transferred) written by other threads are
     visible to the resumed coroutine before it continues execution.
 
-    Uses symmetric transfer: if dispatch returns the same handle,
-    we resume directly. If it returns noop_coroutine, the work was
-    posted to a queue and will be resumed by the scheduler.
-
     @param d The executor to dispatch through.
     @param h The coroutine handle to resume.
 */
@@ -35,9 +31,7 @@ resume_coro(capy::executor_ref d, capy::coro h)
     // I/O results may have been written by another thread (OS or worker).
     // Acquire fence ensures those writes are visible before coroutine resumes.
     std::atomic_thread_fence(std::memory_order_acquire);
-    auto resume_h = d.dispatch(h);
-    if (resume_h.address() == h.address())
-        resume_h.resume();
+    d.dispatch(h);
 }
 
 } // namespace boost::corosio::detail

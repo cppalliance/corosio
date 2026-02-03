@@ -174,7 +174,7 @@ struct select_op : scheduler_op
         capy::executor_ref saved_ex( std::move( ex ) );
         capy::coro saved_h( std::move( h ) );
         impl_ptr.reset();
-        saved_ex.dispatch( saved_h ).resume();
+        saved_ex.dispatch( saved_h );
     }
 
     virtual bool is_read_operation() const noexcept { return false; }

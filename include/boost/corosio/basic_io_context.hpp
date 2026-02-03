@@ -342,21 +342,18 @@ public:
     /** Dispatch a coroutine handle.
 
         This is the executor interface for capy coroutines. If called
-        from within `run()`, returns the handle for symmetric transfer.
-        Otherwise posts the handle and returns `noop_coroutine`.
+        from within `run()`, resumes the coroutine inline via a normal
+        function call. Otherwise posts the coroutine for later execution.
 
         @param h The coroutine handle to dispatch.
-
-        @return The handle for symmetric transfer, or `noop_coroutine`
-            if the handle was posted.
     */
-    capy::coro
+    void
     dispatch(capy::coro h) const
     {
         if (running_in_this_thread())
-            return h;
-        ctx_->sched_->post(h);
-        return std::noop_coroutine();
+            h.resume();
+        else
+            ctx_->sched_->post(h);
     }
 
     /** Post a coroutine for deferred execution.
