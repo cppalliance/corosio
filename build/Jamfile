@@ -60,9 +60,11 @@ lib boost_corosio_openssl
     <library>/boost/corosio//boost_corosio
     <include>../src/corosio
     [ ac.check-library /openssl//ssl : <library>/openssl//ssl <library>/openssl//crypto : <build>no ]
+    <target-os>windows:<library>crypt32
   : usage-requirements
     <library>/boost/corosio//boost_corosio
     <define>BOOST_COROSIO_HAS_OPENSSL
+    <target-os>windows:<library>crypt32
   ;
 
 # WolfSSL
