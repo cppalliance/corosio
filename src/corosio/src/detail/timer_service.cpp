@@ -107,8 +107,20 @@ public:
 
     void shutdown() override
     {
+        // Cancel all waiting timers and destroy coroutine handles
+        // This properly decrements outstanding_work_ for each waiting timer
         while (auto* impl = timers_.pop_front())
+        {
+            if (impl->waiting_)
+            {
+                impl->waiting_ = false;
+                // Destroy the coroutine handle without resuming
+                impl->h_.destroy();
+                // Decrement work count to avoid leak
+                sched_->on_work_finished();
+            }
             delete impl;
+        }
         while (auto* impl = free_list_.pop_front())
             delete impl;
     }
