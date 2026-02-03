@@ -20,7 +20,6 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <limits>
@@ -30,6 +29,7 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
+#include <sys/timerfd.h>
 #include <unistd.h>
 
 /*
@@ -121,6 +121,7 @@ epoll_scheduler(
     int)
     : epoll_fd_(-1)
     , event_fd_(-1)
+    , timer_fd_(-1)
     , outstanding_work_(0)
     , stopped_(false)
     , shutdown_(false)
@@ -140,33 +141,60 @@ epoll_scheduler(
         detail::throw_system_error(make_err(errn), "eventfd");
     }
 
+    timer_fd_ = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+    if (timer_fd_ < 0)
+    {
+        int errn = errno;
+        ::close(event_fd_);
+        ::close(epoll_fd_);
+        detail::throw_system_error(make_err(errn), "timerfd_create");
+    }
+
     epoll_event ev{};
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = nullptr;
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, event_fd_, &ev) < 0)
     {
         int errn = errno;
+        ::close(timer_fd_);
         ::close(event_fd_);
         ::close(epoll_fd_);
         detail::throw_system_error(make_err(errn), "epoll_ctl");
+    }
+
+    epoll_event timer_ev{};
+    timer_ev.events = EPOLLIN | EPOLLERR;
+    timer_ev.data.ptr = &timer_fd_;
+    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, timer_fd_, &timer_ev) < 0)
+    {
+        int errn = errno;
+        ::close(timer_fd_);
+        ::close(event_fd_);
+        ::close(epoll_fd_);
+        detail::throw_system_error(make_err(errn), "epoll_ctl (timerfd)");
     }
 
     timer_svc_ = &get_timer_service(ctx, *this);
     timer_svc_->set_on_earliest_changed(
         timer_service::callback(
             this,
-            [](void* p) { static_cast<epoll_scheduler*>(p)->interrupt_reactor(); }));
+            [](void* p) { static_cast<epoll_scheduler*>(p)->update_timerfd(); }));
 
     // Initialize resolver service
     get_resolver_service(ctx, *this);
 
     // Initialize signal service
     get_signal_service(ctx, *this);
+
+    // Push task sentinel to interleave reactor runs with handler execution
+    completed_ops_.push(&task_op_);
 }
 
 epoll_scheduler::
 ~epoll_scheduler()
 {
+    if (timer_fd_ >= 0)
+        ::close(timer_fd_);
     if (event_fd_ >= 0)
         ::close(event_fd_);
     if (epoll_fd_ >= 0)
@@ -183,6 +211,8 @@ shutdown()
 
         while (auto* h = completed_ops_.pop())
         {
+            if (h == &task_op_)
+                continue;
             lock.unlock();
             h->destroy();
             lock.lock();
@@ -500,45 +530,48 @@ struct work_guard
     ~work_guard() { self->work_finished(); }
 };
 
-long
+void
 epoll_scheduler::
-calculate_timeout(long requested_timeout_us) const
+update_timerfd() const
 {
-    if (requested_timeout_us == 0)
-        return 0;
-
     auto nearest = timer_svc_->nearest_expiry();
+
+    itimerspec ts{};
+    int flags = 0;
+
     if (nearest == timer_service::time_point::max())
-        return requested_timeout_us;
+    {
+        // No timers - disarm by setting to 0 (relative)
+        // ts is already zeroed
+    }
+    else
+    {
+        auto now = std::chrono::steady_clock::now();
+        if (nearest <= now)
+        {
+            // Use 1ns instead of 0 - zero disarms the timerfd
+            ts.it_value.tv_nsec = 1;
+        }
+        else
+        {
+            auto nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                nearest - now).count();
+            ts.it_value.tv_sec = nsec / 1000000000;
+            ts.it_value.tv_nsec = nsec % 1000000000;
+            // Ensure non-zero to avoid disarming if duration rounds to 0
+            if (ts.it_value.tv_sec == 0 && ts.it_value.tv_nsec == 0)
+                ts.it_value.tv_nsec = 1;
+        }
+    }
 
-    auto now = std::chrono::steady_clock::now();
-    if (nearest <= now)
-        return 0;
-
-    auto timer_timeout_us = std::chrono::duration_cast<std::chrono::microseconds>(
-        nearest - now).count();
-
-    if (requested_timeout_us < 0)
-        return static_cast<long>(timer_timeout_us);
-
-    return static_cast<long>((std::min)(
-        static_cast<long long>(requested_timeout_us),
-        static_cast<long long>(timer_timeout_us)));
+    ::timerfd_settime(timer_fd_, flags, &ts, nullptr);
 }
 
 void
 epoll_scheduler::
 run_reactor(std::unique_lock<std::mutex>& lock)
 {
-    long effective_timeout_us = reactor_interrupted_ ? 0 : calculate_timeout(-1);
-
-    int timeout_ms;
-    if (effective_timeout_us < 0)
-        timeout_ms = -1;
-    else if (effective_timeout_us == 0)
-        timeout_ms = 0;
-    else
-        timeout_ms = static_cast<int>((effective_timeout_us + 999) / 1000);
+    int timeout_ms = reactor_interrupted_ ? 0 : -1;
 
     lock.unlock();
 
@@ -547,6 +580,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
     int saved_errno = errno;
 
     timer_svc_->process_expired();
+    update_timerfd();
 
     if (nfds < 0 && saved_errno != EINTR)
         detail::throw_system_error(make_err(saved_errno), "epoll_wait");
@@ -563,6 +597,10 @@ run_reactor(std::unique_lock<std::mutex>& lock)
             eventfd_armed_.store(false, std::memory_order_relaxed);
             continue;
         }
+
+        // timerfd_settime() in update_timerfd() resets the readable state
+        if (events[i].data.ptr == &timer_fd_)
+            continue;
 
         auto* desc = static_cast<descriptor_data*>(events[i].data.ptr);
         std::uint32_t ev = events[i].events;
@@ -716,25 +754,43 @@ do_one(long timeout_us)
 {
     std::unique_lock lock(mutex_);
 
-    using clock = std::chrono::steady_clock;
-    auto deadline = (timeout_us > 0)
-        ? clock::now() + std::chrono::microseconds(timeout_us)
-        : clock::time_point{};
-
     for (;;)
     {
         if (stopped_.load(std::memory_order_acquire))
             return 0;
 
-        // Prevents timer starvation when handlers are continuously posted
-        if (timer_svc_->nearest_expiry() <= std::chrono::steady_clock::now())
-        {
-            lock.unlock();
-            timer_svc_->process_expired();
-            lock.lock();
-        }
-
         scheduler_op* op = completed_ops_.pop();
+
+        if (op == &task_op_)
+        {
+            bool more_handlers = !completed_ops_.empty();
+
+            if (!more_handlers)
+            {
+                if (outstanding_work_.load(std::memory_order_acquire) == 0)
+                {
+                    completed_ops_.push(&task_op_);
+                    return 0;
+                }
+                if (timeout_us == 0)
+                {
+                    completed_ops_.push(&task_op_);
+                    return 0;
+                }
+            }
+
+            reactor_interrupted_ = more_handlers || timeout_us == 0;
+            reactor_running_ = true;
+
+            if (more_handlers && idle_thread_count_ > 0)
+                wakeup_event_.notify_one();
+
+            run_reactor(lock);
+
+            reactor_running_ = false;
+            completed_ops_.push(&task_op_);
+            continue;
+        }
 
         if (op != nullptr)
         {
@@ -750,32 +806,11 @@ do_one(long timeout_us)
         if (timeout_us == 0)
             return 0;
 
-        long remaining_us = timeout_us;
-        if (timeout_us > 0)
-        {
-            auto now = clock::now();
-            if (now >= deadline)
-                return 0;
-            remaining_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                deadline - now).count();
-        }
-
-        if (!reactor_running_)
-        {
-            reactor_running_ = true;
-            reactor_interrupted_ = !completed_ops_.empty();
-
-            run_reactor(lock);
-
-            reactor_running_ = false;
-            continue;
-        }
-
         ++idle_thread_count_;
         if (timeout_us < 0)
             wakeup_event_.wait(lock);
         else
-            wakeup_event_.wait_for(lock, std::chrono::microseconds(remaining_us));
+            wakeup_event_.wait_for(lock, std::chrono::microseconds(timeout_us));
         --idle_thread_count_;
     }
 }
