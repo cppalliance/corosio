@@ -21,7 +21,7 @@ project boost/corosio/test/unit
     ;
 
 # Non-TLS tests
-for local f in [ glob *.cpp ] [ glob test/*.cpp ]
+for local f in [ glob *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp ] [ glob test/*.cpp ]
 {
     run $(f) ;
 }
