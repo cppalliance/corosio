@@ -145,7 +145,7 @@ public:
         std::stop_token,
         std::error_code*);
 
-    void read_some(
+    std::coroutine_handle<> read_some(
         capy::coro,
         capy::executor_ref,
         io_buffer_param,
@@ -153,7 +153,7 @@ public:
         std::error_code*,
         std::size_t*);
 
-    void write_some(
+    std::coroutine_handle<> write_some(
         capy::coro,
         capy::executor_ref,
         io_buffer_param,
@@ -212,7 +212,7 @@ public:
         internal_->connect(h, d, ep, token, ec);
     }
 
-    void read_some(
+    std::coroutine_handle<> read_some(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param buf,
@@ -220,10 +220,10 @@ public:
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        internal_->read_some(h, d, buf, token, ec, bytes);
+        return internal_->read_some(h, d, buf, token, ec, bytes);
     }
 
-    void write_some(
+    std::coroutine_handle<> write_some(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         io_buffer_param buf,
@@ -231,7 +231,7 @@ public:
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        internal_->write_some(h, d, buf, token, ec, bytes);
+        return internal_->write_some(h, d, buf, token, ec, bytes);
     }
 
     std::error_code shutdown(tcp_socket::shutdown_type what) noexcept override

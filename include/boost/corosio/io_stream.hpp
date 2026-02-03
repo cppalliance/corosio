@@ -232,8 +232,7 @@ protected:
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            ios_.get().read_some(h, ex, buffers_, token_, &ec_, &bytes_transferred_);
-            return std::noop_coroutine();
+            return ios_.get().read_some(h, ex, buffers_, token_, &ec_, &bytes_transferred_);
         }
     };
 
@@ -273,8 +272,7 @@ protected:
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            ios_.get().write_some(h, ex, buffers_, token_, &ec_, &bytes_transferred_);
-            return std::noop_coroutine();
+            return ios_.get().write_some(h, ex, buffers_, token_, &ec_, &bytes_transferred_);
         }
     };
 
@@ -288,7 +286,7 @@ public:
     struct io_stream_impl : io_object_impl
     {
         /// Initiate platform read operation.
-        virtual void read_some(
+        virtual std::coroutine_handle<> read_some(
             std::coroutine_handle<>,
             capy::executor_ref,
             io_buffer_param,
@@ -297,7 +295,7 @@ public:
             std::size_t*) = 0;
 
         /// Initiate platform write operation.
-        virtual void write_some(
+        virtual std::coroutine_handle<> write_some(
             std::coroutine_handle<>,
             capy::executor_ref,
             io_buffer_param,

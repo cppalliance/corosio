@@ -469,7 +469,7 @@ connect(
     }
 }
 
-void
+std::coroutine_handle<>
 win_socket_impl_internal::
 read_some(
     capy::coro h,
@@ -501,7 +501,7 @@ read_some(
         op.dwError = 0;
         op.empty_buffer = true;
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
@@ -532,7 +532,7 @@ read_some(
             svc_.work_finished();
             op.dwError = err;
             op.complete_immediate();
-            return;
+            return std::noop_coroutine();
         }
     }
     else
@@ -555,9 +555,10 @@ read_some(
             svc_.post(&op);
         }
     }
+    return std::noop_coroutine();
 }
 
-void
+std::coroutine_handle<>
 win_socket_impl_internal::
 write_some(
     capy::coro h,
@@ -588,7 +589,7 @@ write_some(
         op.bytes_transferred = 0;
         op.dwError = 0;
         svc_.post(&op);
-        return;
+        return std::noop_coroutine();
     }
 
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
@@ -617,7 +618,7 @@ write_some(
             svc_.work_finished();
             op.dwError = err;
             svc_.post(&op);
-            return;
+            return std::noop_coroutine();
         }
     }
     else
@@ -637,6 +638,7 @@ write_some(
             svc_.post(&op);
         }
     }
+    return std::noop_coroutine();
 }
 
 void

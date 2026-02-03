@@ -102,7 +102,7 @@ public:
         std::stop_token,
         std::error_code*) override;
 
-    void read_some(
+    std::coroutine_handle<> read_some(
         std::coroutine_handle<>,
         capy::executor_ref,
         io_buffer_param,
@@ -110,7 +110,7 @@ public:
         std::error_code*,
         std::size_t*) override;
 
-    void write_some(
+    std::coroutine_handle<> write_some(
         std::coroutine_handle<>,
         capy::executor_ref,
         io_buffer_param,
