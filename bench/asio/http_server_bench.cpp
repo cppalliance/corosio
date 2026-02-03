@@ -41,7 +41,7 @@ std::pair<tcp::socket, tcp::socket> make_socket_pair(asio::io_context& ioc)
     tcp::socket server(ioc);
 
     auto endpoint = acceptor.local_endpoint();
-    client.connect(endpoint);
+    client.connect(tcp::endpoint(asio::ip::address_v4::loopback(), endpoint.port()));
     server = acceptor.accept();
 
     client.set_option(tcp::no_delay(true));
