@@ -112,6 +112,21 @@ epoll_socket_impl(epoll_socket_service& svc) noexcept
 {
 }
 
+epoll_socket_impl::
+~epoll_socket_impl()
+{
+    if (read_initiator_handle_)
+        read_initiator_handle_.destroy();
+    if (write_initiator_handle_)
+        write_initiator_handle_.destroy();
+
+    // promise_type::operator delete is no-op, so free here
+    if (read_initiator_frame_)
+        ::operator delete(read_initiator_frame_);
+    if (write_initiator_frame_)
+        ::operator delete(write_initiator_frame_);
+}
+
 void
 epoll_socket_impl::
 update_epoll_events() noexcept
@@ -209,42 +224,25 @@ connect(
     svc_.post(&op);
 }
 
-std::coroutine_handle<>
+read_initiator
+make_read_initiator(void*& cached, epoll_socket_impl* impl)
+{
+    impl->do_read_io();
+    co_return;
+}
+
+write_initiator
+make_write_initiator(void*& cached, epoll_socket_impl* impl)
+{
+    impl->do_write_io();
+    co_return;
+}
+
+void
 epoll_socket_impl::
-read_some(
-    std::coroutine_handle<> h,
-    capy::executor_ref ex,
-    io_buffer_param param,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes_out)
+do_read_io()
 {
     auto& op = rd_;
-    op.reset();
-    op.h = h;
-    op.ex = ex;
-    op.ec_out = ec;
-    op.bytes_out = bytes_out;
-    op.fd = fd_;
-    op.start(token, this);
-
-    capy::mutable_buffer bufs[epoll_read_op::max_buffers];
-    op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_read_op::max_buffers));
-
-    if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
-    {
-        op.empty_buffer_read = true;
-        op.complete(0, 0);
-        op.impl_ptr = shared_from_this();
-        svc_.post(&op);
-        return std::noop_coroutine();
-    }
-
-    for (int i = 0; i < op.iovec_count; ++i)
-    {
-        op.iovecs[i].iov_base = bufs[i].data();
-        op.iovecs[i].iov_len = bufs[i].size();
-    }
 
     ssize_t n = ::readv(fd_, op.iovecs, op.iovec_count);
 
@@ -252,24 +250,21 @@ read_some(
     {
         desc_data_.read_ready.store(false, std::memory_order_relaxed);
         op.complete(0, static_cast<std::size_t>(n));
-        op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return std::noop_coroutine();
+        return;
     }
 
     if (n == 0)
     {
         desc_data_.read_ready.store(false, std::memory_order_relaxed);
         op.complete(0, 0);
-        op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return std::noop_coroutine();
+        return;
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
         svc_.work_started();
-        op.impl_ptr = shared_from_this();
 
         desc_data_.read_op.store(&op, std::memory_order_seq_cst);
 
@@ -289,7 +284,7 @@ read_some(
                     svc_.post(claimed);
                     svc_.work_finished();
                 }
-                return std::noop_coroutine();
+                return;
             }
         }
 
@@ -302,13 +297,121 @@ read_some(
                 svc_.work_finished();
             }
         }
-        return std::noop_coroutine();
+        return;
     }
 
     op.complete(errno, 0);
-    op.impl_ptr = shared_from_this();
     svc_.post(&op);
-    return std::noop_coroutine();
+}
+
+void
+epoll_socket_impl::
+do_write_io()
+{
+    auto& op = wr_;
+
+    msghdr msg{};
+    msg.msg_iov = op.iovecs;
+    msg.msg_iovlen = static_cast<std::size_t>(op.iovec_count);
+
+    ssize_t n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
+
+    if (n > 0)
+    {
+        desc_data_.write_ready.store(false, std::memory_order_relaxed);
+        op.complete(0, static_cast<std::size_t>(n));
+        svc_.post(&op);
+        return;
+    }
+
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+    {
+        svc_.work_started();
+
+        desc_data_.write_op.store(&op, std::memory_order_seq_cst);
+
+        if (desc_data_.write_ready.exchange(false, std::memory_order_seq_cst))
+        {
+            auto* claimed = desc_data_.write_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (claimed)
+            {
+                claimed->perform_io();
+                if (claimed->errn == EAGAIN || claimed->errn == EWOULDBLOCK)
+                {
+                    claimed->errn = 0;
+                    desc_data_.write_op.store(claimed, std::memory_order_release);
+                }
+                else
+                {
+                    svc_.post(claimed);
+                    svc_.work_finished();
+                }
+                return;
+            }
+        }
+
+        if (op.cancelled.load(std::memory_order_acquire))
+        {
+            auto* claimed = desc_data_.write_op.exchange(nullptr, std::memory_order_acq_rel);
+            if (claimed)
+            {
+                svc_.post(claimed);
+                svc_.work_finished();
+            }
+        }
+        return;
+    }
+
+    op.complete(errno ? errno : EIO, 0);
+    svc_.post(&op);
+}
+
+std::coroutine_handle<>
+epoll_socket_impl::
+read_some(
+    std::coroutine_handle<> h,
+    capy::executor_ref ex,
+    io_buffer_param param,
+    std::stop_token token,
+    std::error_code* ec,
+    std::size_t* bytes_out)
+{
+    auto& op = rd_;
+    op.reset();
+    op.h = h;
+    op.ex = ex;
+    op.ec_out = ec;
+    op.bytes_out = bytes_out;
+    op.fd = fd_;
+    op.start(token, this);
+    op.impl_ptr = shared_from_this();
+
+    // Must prepare buffers before initiator runs
+    capy::mutable_buffer bufs[epoll_read_op::max_buffers];
+    op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_read_op::max_buffers));
+
+    if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
+    {
+        op.empty_buffer_read = true;
+        op.complete(0, 0);
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    for (int i = 0; i < op.iovec_count; ++i)
+    {
+        op.iovecs[i].iov_base = bufs[i].data();
+        op.iovecs[i].iov_len = bufs[i].size();
+    }
+
+    if (read_initiator_handle_)
+        read_initiator_handle_.destroy();
+
+    auto initiator = make_read_initiator(read_initiator_frame_, this);
+    read_initiator_handle_ = initiator.h;
+
+    // Symmetric transfer ensures caller is suspended before I/O starts
+    return initiator.h;
 }
 
 std::coroutine_handle<>
@@ -329,14 +432,15 @@ write_some(
     op.bytes_out = bytes_out;
     op.fd = fd_;
     op.start(token, this);
+    op.impl_ptr = shared_from_this();
 
+    // Must prepare buffers before initiator runs
     capy::mutable_buffer bufs[epoll_write_op::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_write_op::max_buffers));
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
         op.complete(0, 0);
-        op.impl_ptr = shared_from_this();
         svc_.post(&op);
         return std::noop_coroutine();
     }
@@ -347,64 +451,14 @@ write_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    msghdr msg{};
-    msg.msg_iov = op.iovecs;
-    msg.msg_iovlen = static_cast<std::size_t>(op.iovec_count);
+    if (write_initiator_handle_)
+        write_initiator_handle_.destroy();
 
-    ssize_t n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
+    auto initiator = make_write_initiator(write_initiator_frame_, this);
+    write_initiator_handle_ = initiator.h;
 
-    if (n > 0)
-    {
-        desc_data_.write_ready.store(false, std::memory_order_relaxed);
-        op.complete(0, static_cast<std::size_t>(n));
-        op.impl_ptr = shared_from_this();
-        svc_.post(&op);
-        return std::noop_coroutine();
-    }
-
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
-    {
-        svc_.work_started();
-        op.impl_ptr = shared_from_this();
-
-        desc_data_.write_op.store(&op, std::memory_order_seq_cst);
-
-        if (desc_data_.write_ready.exchange(false, std::memory_order_seq_cst))
-        {
-            auto* claimed = desc_data_.write_op.exchange(nullptr, std::memory_order_acq_rel);
-            if (claimed)
-            {
-                claimed->perform_io();
-                if (claimed->errn == EAGAIN || claimed->errn == EWOULDBLOCK)
-                {
-                    claimed->errn = 0;
-                    desc_data_.write_op.store(claimed, std::memory_order_release);
-                }
-                else
-                {
-                    svc_.post(claimed);
-                    svc_.work_finished();
-                }
-                return std::noop_coroutine();
-            }
-        }
-
-        if (op.cancelled.load(std::memory_order_acquire))
-        {
-            auto* claimed = desc_data_.write_op.exchange(nullptr, std::memory_order_acq_rel);
-            if (claimed)
-            {
-                svc_.post(claimed);
-                svc_.work_finished();
-            }
-        }
-        return std::noop_coroutine();
-    }
-
-    op.complete(errno ? errno : EIO, 0);
-    op.impl_ptr = shared_from_this();
-    svc_.post(&op);
-    return std::noop_coroutine();
+    // Symmetric transfer ensures caller is suspended before I/O starts
+    return initiator.h;
 }
 
 std::error_code
