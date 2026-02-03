@@ -564,7 +564,8 @@ update_timerfd() const
         }
     }
 
-    ::timerfd_settime(timer_fd_, flags, &ts, nullptr);
+    if (::timerfd_settime(timer_fd_, flags, &ts, nullptr) < 0)
+        detail::throw_system_error(make_err(errno), "timerfd_settime");
 }
 
 void
