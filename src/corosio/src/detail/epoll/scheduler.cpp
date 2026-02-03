@@ -649,8 +649,6 @@ run_reactor(std::unique_lock<std::mutex>& lock)
 
         if (ev & EPOLLOUT)
         {
-            bool any_completed = false;
-
             // Connect uses write readiness - try it first
             auto* conn_op = desc->connect_op.exchange(nullptr, std::memory_order_acq_rel);
             if (conn_op)
@@ -660,7 +658,6 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     conn_op->complete(err, 0);
                     completed_ops_.push(conn_op);
                     ++completions_queued;
-                    any_completed = true;
                 }
                 else
                 {
@@ -674,7 +671,6 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     {
                         completed_ops_.push(conn_op);
                         ++completions_queued;
-                        any_completed = true;
                     }
                 }
             }
@@ -687,7 +683,6 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     write_op->complete(err, 0);
                     completed_ops_.push(write_op);
                     ++completions_queued;
-                    any_completed = true;
                 }
                 else
                 {
@@ -701,7 +696,6 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     {
                         completed_ops_.push(write_op);
                         ++completions_queued;
-                        any_completed = true;
                     }
                 }
             }
@@ -710,7 +704,8 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                 desc->write_ready.store(true, std::memory_order_release);
         }
 
-        if (err)
+        // Handle error for ops not processed above (no EPOLLIN/EPOLLOUT)
+        if (err && !(ev & (EPOLLIN | EPOLLOUT)))
         {
             auto* read_op = desc->read_op.exchange(nullptr, std::memory_order_acq_rel);
             if (read_op)
@@ -740,11 +735,10 @@ run_reactor(std::unique_lock<std::mutex>& lock)
 
     if (completions_queued > 0)
     {
-        if (completions_queued >= idle_thread_count_)
-            wakeup_event_.notify_all();
+        if (completions_queued == 1)
+            wakeup_event_.notify_one();
         else
-            for (int i = 0; i < completions_queued; ++i)
-                wakeup_event_.notify_one();
+            wakeup_event_.notify_all();
     }
 }
 
