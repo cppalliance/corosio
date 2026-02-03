@@ -24,10 +24,8 @@
 #include <sys/select.h>
 
 #include <atomic>
-#include <chrono>
 #include <condition_variable>
 #include <cstddef>
-#include <cstdint>
 #include <mutex>
 #include <unordered_map>
 
@@ -163,6 +161,16 @@ private:
     mutable bool reactor_running_ = false;
     mutable bool reactor_interrupted_ = false;
     mutable int idle_thread_count_ = 0;
+
+    // Sentinel operation for interleaving reactor runs with handler execution.
+    // Ensures the reactor runs periodically even when handlers are continuously
+    // posted, preventing timer starvation.
+    struct task_op final : scheduler_op
+    {
+        void operator()() override {}
+        void destroy() override {}
+    };
+    task_op task_op_;
 };
 
 } // namespace boost::corosio::detail

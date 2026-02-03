@@ -20,7 +20,6 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
 
-#include <algorithm>
 #include <chrono>
 #include <limits>
 
@@ -151,6 +150,9 @@ select_scheduler(
 
     // Initialize signal service
     get_signal_service(ctx, *this);
+
+    // Push task sentinel to interleave reactor runs with handler execution
+    completed_ops_.push(&task_op_);
 }
 
 select_scheduler::
@@ -172,6 +174,8 @@ shutdown()
 
         while (auto* h = completed_ops_.pop())
         {
+            if (h == &task_op_)
+                continue;
             lock.unlock();
             h->destroy();
             lock.lock();
@@ -688,14 +692,12 @@ run_reactor(std::unique_lock<std::mutex>& lock)
         }
     }
 
-    // Wake idle workers if we queued I/O completions
     if (completions_queued > 0)
     {
-        if (completions_queued >= idle_thread_count_)
-            wakeup_event_.notify_all();
+        if (completions_queued == 1)
+            wakeup_event_.notify_one();
         else
-            for (int i = 0; i < completions_queued; ++i)
-                wakeup_event_.notify_one();
+            wakeup_event_.notify_all();
     }
 }
 
@@ -705,73 +707,63 @@ do_one(long timeout_us)
 {
     std::unique_lock lock(mutex_);
 
-    using clock = std::chrono::steady_clock;
-    auto deadline = (timeout_us > 0)
-        ? clock::now() + std::chrono::microseconds(timeout_us)
-        : clock::time_point{};
-
     for (;;)
     {
         if (stopped_.load(std::memory_order_acquire))
             return 0;
 
-        // Prevents timer starvation when handlers are continuously posted
-        if (timer_svc_->nearest_expiry() <= std::chrono::steady_clock::now())
-        {
-            lock.unlock();
-            timer_svc_->process_expired();
-            lock.lock();
-        }
-
-        // Try to get a handler from the queue
         scheduler_op* op = completed_ops_.pop();
+
+        if (op == &task_op_)
+        {
+            bool more_handlers = !completed_ops_.empty();
+
+            if (!more_handlers)
+            {
+                if (outstanding_work_.load(std::memory_order_acquire) == 0)
+                {
+                    completed_ops_.push(&task_op_);
+                    return 0;
+                }
+                if (timeout_us == 0)
+                {
+                    completed_ops_.push(&task_op_);
+                    return 0;
+                }
+            }
+
+            reactor_interrupted_ = more_handlers || timeout_us == 0;
+            reactor_running_ = true;
+
+            if (more_handlers && idle_thread_count_ > 0)
+                wakeup_event_.notify_one();
+
+            run_reactor(lock);
+
+            reactor_running_ = false;
+            completed_ops_.push(&task_op_);
+            continue;
+        }
 
         if (op != nullptr)
         {
-            // Got a handler - execute it
             lock.unlock();
             work_guard g{this};
             (*op)();
             return 1;
         }
 
-        // Queue is empty - check if we should become reactor or wait
         if (outstanding_work_.load(std::memory_order_acquire) == 0)
             return 0;
 
         if (timeout_us == 0)
-            return 0;  // Non-blocking poll
+            return 0;
 
-        // Check if timeout has expired (for positive timeout_us)
-        long remaining_us = timeout_us;
-        if (timeout_us > 0)
-        {
-            auto now = clock::now();
-            if (now >= deadline)
-                return 0;
-            remaining_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                deadline - now).count();
-        }
-
-        if (!reactor_running_)
-        {
-            // No reactor running and queue empty - become the reactor
-            reactor_running_ = true;
-            reactor_interrupted_ = false;
-
-            run_reactor(lock);
-
-            reactor_running_ = false;
-            // Loop back to check for handlers that reactor may have queued
-            continue;
-        }
-
-        // Reactor is running in another thread - wait for work on condvar
         ++idle_thread_count_;
         if (timeout_us < 0)
             wakeup_event_.wait(lock);
         else
-            wakeup_event_.wait_for(lock, std::chrono::microseconds(remaining_us));
+            wakeup_event_.wait_for(lock, std::chrono::microseconds(timeout_us));
         --idle_thread_count_;
     }
 }
