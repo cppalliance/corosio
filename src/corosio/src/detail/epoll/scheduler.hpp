@@ -70,6 +70,7 @@ public:
         capy::execution_context& ctx,
         int concurrency_hint = -1);
 
+    /// Destroy the scheduler.
     ~epoll_scheduler();
 
     epoll_scheduler(epoll_scheduler const&) = delete;
@@ -129,6 +130,16 @@ public:
 
     /** For use by I/O operations to track completed work. */
     void work_finished() const noexcept override;
+
+    /** Drain work from thread context's private queue to global queue.
+
+        Called by thread_context_guard destructor when a thread exits run().
+        Transfers pending work to the global queue under mutex protection.
+
+        @param queue The private queue to drain.
+        @param count Item count for wakeup decisions (wakes other threads if positive).
+    */
+    void drain_thread_queue(op_queue& queue, long count) const;
 
 private:
     std::size_t do_one(long timeout_us);
