@@ -382,25 +382,7 @@ connect(
             return;
         }
     }
-    else
-    {
-        // Synchronous completion - with FILE_SKIP_COMPLETION_PORT_ON_SUCCESS,
-        // IOCP shouldn't post a packet. But if the flag failed to set or under
-        // certain conditions, IOCP might still deliver a completion. Use CAS
-        // to race with IOCP: only set fields and post if we win (CAS returns 0).
-        // If IOCP wins, it already set the fields via complete() and processed.
-        //
-        // CRITICAL: Must call work_finished() ONLY if we win the CAS, and must
-        // not access op after CAS fails. If IOCP wins, it processes the op
-        // (which may destroy it), so any access to op is use-after-free.
-        // The IOCP handler calls work_finished() via its work_guard.
-        if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
-        {
-            svc_.work_finished();
-            op.dwError = 0;
-            svc_.post(&op);
-        }
-    }
+    // Synchronous completion: IOCP will deliver the completion packet
 }
 
 //------------------------------------------------------------------------------
@@ -455,17 +437,7 @@ do_read_io()
             return;
         }
     }
-    else
-    {
-        // Synchronous completion - race with IOCP using CAS on ready_ flag
-        if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
-        {
-            svc_.work_finished();
-            op.bytes_transferred = static_cast<DWORD>(op.InternalHigh);
-            op.dwError = 0;
-            svc_.post(&op);
-        }
-    }
+    // Synchronous completion: IOCP will deliver the completion packet
 }
 
 void
@@ -497,23 +469,7 @@ do_write_io()
             return;
         }
     }
-    else
-    {
-        // Synchronous completion - use CAS to race with IOCP.
-        // See do_read_io for detailed explanation.
-        //
-        // CRITICAL: Must call work_finished() ONLY if we win the CAS, and must
-        // not access op after CAS fails. If IOCP wins, it processes the op
-        // (which may destroy it), so any access to op is use-after-free.
-        // The IOCP handler calls work_finished() via its work_guard.
-        if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
-        {
-            svc_.work_finished();
-            op.bytes_transferred = static_cast<DWORD>(op.InternalHigh);
-            op.dwError = 0;
-            svc_.post(&op);
-        }
-    }
+    // Synchronous completion: IOCP will deliver the completion packet
 }
 
 //------------------------------------------------------------------------------
@@ -787,10 +743,6 @@ open_socket(win_socket_impl_internal& impl)
         return make_err(dwError);
     }
 
-    ::SetFileCompletionNotificationModes(
-        reinterpret_cast<HANDLE>(sock),
-        FILE_SKIP_COMPLETION_PORT_ON_SUCCESS);
-
     impl.socket_ = sock;
     return {};
 }
@@ -938,10 +890,6 @@ open_acceptor(
         return make_err(dwError);
     }
 
-    ::SetFileCompletionNotificationModes(
-        reinterpret_cast<HANDLE>(sock),
-        FILE_SKIP_COMPLETION_PORT_ON_SUCCESS);
-
     // Bind to endpoint
     sockaddr_in addr = detail::to_sockaddr_in(ep);
     if (::bind(sock,
@@ -1056,10 +1004,6 @@ accept(
         return;
     }
 
-    ::SetFileCompletionNotificationModes(
-        reinterpret_cast<HANDLE>(accepted),
-        FILE_SKIP_COMPLETION_PORT_ON_SUCCESS);
-
     // Set up the accept operation
     op.accepted_socket = accepted;
     op.peer_wrapper = &peer_wrapper;
@@ -1105,22 +1049,7 @@ accept(
             return;
         }
     }
-    else
-    {
-        // Synchronous completion - use CAS to race with IOCP.
-        // See win_socket_impl_internal::read_some for detailed explanation.
-        //
-        // CRITICAL: Must call work_finished() ONLY if we win the CAS, and must
-        // not access op after CAS fails. If IOCP wins, it processes the op
-        // (which may destroy it), so any access to op is use-after-free.
-        // The IOCP handler calls work_finished() via its work_guard.
-        if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
-        {
-            svc_.work_finished();
-            op.dwError = 0;
-            svc_.post(&op);
-        }
-    }
+    // Synchronous completion: IOCP will deliver the completion packet
 }
 
 void

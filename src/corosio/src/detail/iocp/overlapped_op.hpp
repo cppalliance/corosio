@@ -72,9 +72,6 @@ struct overlapped_op
     std::optional<std::stop_callback<canceller>> stop_cb;
     cancel_func_type cancel_func_ = nullptr;
 
-    // Synchronizes GQCS completion with initiating function return.
-    long ready_ = 0;
-
     explicit overlapped_op(func_type func) noexcept
         : scheduler_op(func)
     {
@@ -99,7 +96,6 @@ struct overlapped_op
         empty_buffer = false;
         is_read_ = false;
         cancelled.store(false, std::memory_order_relaxed);
-        ready_ = 0;
     }
 
     void request_cancel() noexcept

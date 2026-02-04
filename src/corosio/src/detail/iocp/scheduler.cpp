@@ -459,11 +459,6 @@ do_one(unsigned long timeout_ms)
                     err = ov_op->dwError;
                 }
 
-                // Check ready_ flag for race with initiator.
-                // CAS returns old value: if 0, we won the race (initiator done).
-                if (::InterlockedCompareExchange(&ov_op->ready_, 1, 0) != 0)
-                    continue;  // Initiator already processing this op
-
                 ov_op->store_result(bytes, err);
                 on_work_finished();
                 ov_op->complete(this, bytes, err);
