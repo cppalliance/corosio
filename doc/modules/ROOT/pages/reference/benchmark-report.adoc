@@ -9,20 +9,20 @@ This report presents comprehensive performance benchmarks comparing *Boost.Coros
 
 === Bottom Line
 
-Corosio now demonstrates *excellent multi-threaded scaling* in handler dispatch, outperforming Asio at all thread counts. The previous 8-thread regression has been resolved. Socket I/O throughput remains essentially identical between implementations. HTTP server throughput has improved significantly, though Asio still maintains an edge at high thread counts.
+Corosio demonstrates *excellent multi-threaded scaling* in handler dispatch, outperforming Asio at all thread counts. Socket I/O throughput is essentially identical between implementations. HTTP server throughput scales well with threads, though Asio maintains a small edge at high thread counts.
 
 === Where Corosio Excels
 
-* *Multi-threaded handler dispatch:* Faster at all thread counts (2.87-3.85 Mops/s vs 1.51-3.02 Mops/s)
-* *Concurrent post and run:* 53% faster (2.26 Mops/s vs 1.48 Mops/s)
-* *Large-buffer throughput:* Essentially identical, slight edge at some buffer sizes
-* *Multi-threaded HTTP:* Significantly improved scaling (308.88 Kops/s at 8 threads)
+* *Multi-threaded handler dispatch:* Faster at all thread counts (2.60-3.87 Mops/s vs 1.51-3.02 Mops/s)
+* *Concurrent post and run:* 55% faster (2.29 Mops/s vs 1.48 Mops/s)
+* *Single-threaded handler post:* 71% faster (1.37 Mops/s vs 802 Kops/s)
+* *Multi-threaded HTTP:* Strong scaling (302.80 Kops/s at 8 threads)
 
 === Where Corosio Needs Improvement
 
-* *Single-threaded handler post:* Now slightly slower than previous version (1.38 vs 1.59 Mops/s)
-* *Multi-threaded HTTP:* Asio still faster at 8 threads (337.68 vs 308.88 Kops/s)
-* *Tail latency:* p99 latency still higher than Asio (~17 μs vs ~13 μs)
+* *Multi-threaded HTTP:* Asio still faster at 8 threads (337.68 vs 302.80 Kops/s)
+* *Tail latency:* p99 latency higher than Asio (~21 μs vs ~13 μs)
+* *Socket mean latency:* ~0.6 μs higher than Asio (10.21 vs 9.61 μs)
 
 === Key Insights
 
@@ -34,20 +34,14 @@ Corosio now demonstrates *excellent multi-threaded scaling* in handler dispatch,
 | Corosio is faster at all thread counts; excellent multi-threaded scaling
 
 | *Socket I/O*
-| Essentially identical throughput; Asio has ~0.4 μs lower mean latency
+| Essentially identical throughput; Asio has ~0.6 μs lower mean latency
 
 | *HTTP Server*
-| Gap has narrowed significantly; Asio +9% at 8 threads (was +56%)
+| Gap narrowed significantly; Asio +12% at 8 threads (was +56%)
 
 | *Scaling Behavior*
-| 8-thread regression fixed; Corosio now scales well to 8 threads
+| Corosio scales well to 8 threads with 3.29× HTTP throughput improvement
 |===
-
-=== Progress Since Last Report
-
-* *8-thread handler regression:* Fixed (2.09 → 3.63 Mops/s)
-* *HTTP 8-thread gap:* Narrowed from 56% to 9% (215.94 → 308.88 Kops/s)
-* *Concurrent post/run:* Improved by 35% (1.68 → 2.26 Mops/s)
 
 ---
 
@@ -60,24 +54,24 @@ Corosio now demonstrates *excellent multi-threaded scaling* in handler dispatch,
 | Scenario | Corosio | Asio | Winner
 
 | Single-threaded post
-| 1.38 Mops/s
+| *1.37 Mops/s*
 | 802 Kops/s
-| *Corosio (+72%)*
+| *Corosio (+71%)*
 
 | Multi-threaded (8 threads)
-| *3.63 Mops/s*
+| *3.62 Mops/s*
 | 3.02 Mops/s
 | *Corosio (+20%)*
 
 | Interleaved post/run
-| *2.31 Mops/s*
+| *2.21 Mops/s*
 | 1.71 Mops/s
-| *Corosio (+35%)*
+| *Corosio (+29%)*
 
 | Concurrent post/run
-| *2.26 Mops/s*
+| *2.29 Mops/s*
 | 1.48 Mops/s
-| *Corosio (+53%)*
+| *Corosio (+55%)*
 |===
 
 === Socket Throughput Summary
@@ -87,19 +81,19 @@ Corosio now demonstrates *excellent multi-threaded scaling* in handler dispatch,
 | Scenario | Corosio | Asio | Winner
 
 | Unidirectional 1KB buffer
+| 207 MB/s
 | *213 MB/s*
-| 213 MB/s
-| Tie
+| Asio (+3%)
 
 | Unidirectional 64KB buffer
-| *6.43 GB/s*
-| 6.40 GB/s
+| 6.30 GB/s
+| *6.40 GB/s*
 | Tie
 
 | Bidirectional 64KB buffer
-| 6.48 GB/s
+| 5.90 GB/s
 | *6.50 GB/s*
-| Tie
+| Asio (+10%)
 |===
 
 === Socket Latency Summary
@@ -109,17 +103,17 @@ Corosio now demonstrates *excellent multi-threaded scaling* in handler dispatch,
 | Scenario | Corosio | Asio | Winner
 
 | Ping-pong mean (64B)
-| 10.01 μs
+| 10.21 μs
 | *9.61 μs*
-| Asio (-4%)
+| Asio (-6%)
 
 | Ping-pong p99 (64B)
-| 17.40 μs
+| 21.60 μs
 | *13.30 μs*
-| Asio (-24%)
+| Asio (-38%)
 
 | 16 concurrent pairs
-| 161.30 μs
+| 164.15 μs
 | *160.49 μs*
 | Tie
 |===
@@ -136,9 +130,9 @@ Corosio now demonstrates *excellent multi-threaded scaling* in handler dispatch,
 | Tie
 
 | 32 connections, 8 threads
-| 308.88 Kops/s
+| 302.80 Kops/s
 | *337.68 Kops/s*
-| Asio (+9%)
+| Asio (+12%)
 |===
 
 == Test Environment
@@ -168,17 +162,17 @@ Posting 5,000,000 handlers from a single thread.
 | —
 
 | Elapsed
-| 3.628 s
+| 3.651 s
 | 6.233 s
-| -42%
+| -41%
 
 | *Throughput*
-| *1.38 Mops/s*
+| *1.37 Mops/s*
 | 802 Kops/s
-| *+72%*
+| *+71%*
 |===
 
-*Key finding:* Corosio's single-threaded handler dispatch is 72% faster than Asio.
+*Key finding:* Corosio's single-threaded handler dispatch is 71% faster than Asio.
 
 === Multi-Threaded Scaling
 
@@ -189,27 +183,27 @@ Multiple threads running handlers concurrently (5,000,000 handlers total).
 | Threads | Corosio | Asio | Corosio Speedup | Asio Speedup
 
 | 1
-| *2.87 Mops/s*
+| *2.60 Mops/s*
 | 1.51 Mops/s
 | (baseline)
 | (baseline)
 
 | 2
-| *2.95 Mops/s*
+| *2.78 Mops/s*
 | 2.16 Mops/s
-| 1.03×
+| 1.07×
 | 1.43×
 
 | 4
-| *3.85 Mops/s*
+| *3.87 Mops/s*
 | 2.97 Mops/s
-| 1.34×
+| 1.49×
 | 1.96×
 
 | 8
-| *3.63 Mops/s*
+| *3.62 Mops/s*
 | 3.02 Mops/s
-| 1.27×
+| 1.39×
 | 1.99×
 |===
 
@@ -220,18 +214,17 @@ Multiple threads running handlers concurrently (5,000,000 handlers total).
 Throughput vs Thread Count:
 
 Threads    Corosio    Asio       Winner
-   1       2.87       1.51       Corosio +90%
-   2       2.95       2.16       Corosio +37%
-   4       3.85       2.97       Corosio +30%
-   8       3.63       3.02       Corosio +20%
+   1       2.60       1.51       Corosio +72%
+   2       2.78       2.16       Corosio +29%
+   4       3.87       2.97       Corosio +30%
+   8       3.62       3.02       Corosio +20%
 ----
 
 *Notable observations:*
 
 * Corosio is faster at all thread counts
-* Peak throughput at 4 threads (3.85 Mops/s)
-* Small regression 4→8 threads (3.85 → 3.63 Mops/s) but still above Asio
-* Previous 8-thread regression has been largely fixed
+* Peak throughput at 4 threads (3.87 Mops/s)
+* Small regression 4→8 threads (3.87 → 3.62 Mops/s) but still above Asio
 
 === Interleaved Post/Run
 
@@ -247,14 +240,14 @@ Alternating between posting batches and running them (50,000 iterations × 100 h
 | —
 
 | Elapsed
-| 2.162 s
+| 2.267 s
 | 2.930 s
-| -26%
+| -23%
 
 | *Throughput*
-| *2.31 Mops/s*
+| *2.21 Mops/s*
 | 1.71 Mops/s
-| *+35%*
+| *+29%*
 |===
 
 *Key finding:* Corosio excels at interleaved post/run patterns—a common pattern in real applications.
@@ -278,14 +271,14 @@ Four threads simultaneously posting and running handlers.
 | —
 
 | Elapsed
-| 2.216 s
+| 2.184 s
 | 3.374 s
-| -34%
+| -35%
 
 | *Throughput*
-| *2.26 Mops/s*
+| *2.29 Mops/s*
 | 1.48 Mops/s
-| *+53%*
+| *+55%*
 |===
 
 == Socket Throughput Benchmarks
@@ -299,27 +292,27 @@ Single direction transfer of 4096 MB with varying buffer sizes.
 | Buffer Size | Corosio | Asio | Difference
 
 | 1024 bytes
-| 213.03 MB/s
-| 213.17 MB/s
-| Tie
+| 206.89 MB/s
+| *213.17 MB/s*
+| -3%
 
 | 4096 bytes
-| *751.96 MB/s*
-| 743.34 MB/s
-| +1%
+| 733.23 MB/s
+| *743.34 MB/s*
+| -1%
 
 | 16384 bytes
-| 2.58 GB/s
-| 2.58 GB/s
-| Tie
+| 2.46 GB/s
+| *2.58 GB/s*
+| -5%
 
 | 65536 bytes
-| *6.43 GB/s*
-| 6.40 GB/s
-| +0.5%
+| 6.30 GB/s
+| *6.40 GB/s*
+| -2%
 |===
 
-*Observation:* Throughput is essentially identical. Both implementations achieve excellent performance at large buffer sizes.
+*Observation:* Throughput is very close. Asio has a small edge at all buffer sizes.
 
 === Bidirectional Throughput
 
@@ -330,27 +323,27 @@ Simultaneous transfer of 2048 MB in each direction (4096 MB total).
 | Buffer Size | Corosio | Asio | Difference
 
 | 1024 bytes
-| *214.83 MB/s*
-| 212.18 MB/s
-| +1%
+| 205.76 MB/s
+| *212.18 MB/s*
+| -3%
 
 | 4096 bytes
-| 751.09 MB/s
+| 721.61 MB/s
 | *755.43 MB/s*
-| -1%
+| -4%
 
 | 16384 bytes
-| 2.59 GB/s
-| 2.59 GB/s
-| Tie
+| 2.49 GB/s
+| *2.59 GB/s*
+| -4%
 
 | 65536 bytes
-| 6.48 GB/s
+| 5.90 GB/s
 | *6.50 GB/s*
-| Tie
+| -9%
 |===
 
-*Observation:* Throughput is essentially identical in both directions.
+*Observation:* Asio has a consistent small edge in bidirectional throughput.
 
 == Socket Latency Benchmarks
 
@@ -363,24 +356,24 @@ Single socket pair exchanging messages (1,000,000 iterations each).
 | Message Size | Corosio Mean | Asio Mean | Difference | Corosio p99 | Asio p99
 
 | 1 byte
-| 9.92 μs
+| 10.01 μs
 | *9.66 μs*
-| +3%
-| 20.80 μs
+| +4%
+| 20.60 μs
 | *14.20 μs*
 
 | 64 bytes
-| 10.01 μs
+| 10.21 μs
 | *9.61 μs*
-| +4%
-| 17.40 μs
+| +6%
+| 21.60 μs
 | *13.30 μs*
 
 | 1024 bytes
-| 10.04 μs
+| 10.28 μs
 | *9.66 μs*
-| +4%
-| 15.40 μs
+| +6%
+| 20.50 μs
 | *12.30 μs*
 |===
 
@@ -401,14 +394,14 @@ Single socket pair exchanging messages (1,000,000 iterations each).
 | +1%
 
 | p99
-| 17.40 μs
+| 21.60 μs
 | *13.30 μs*
-| +31%
+| +62%
 
 | p99.9
-| 127.80 μs
+| 99.40 μs
 | *76.40 μs*
-| +67%
+| +30%
 
 | min
 | 8.40 μs
@@ -416,12 +409,12 @@ Single socket pair exchanging messages (1,000,000 iterations each).
 | +4%
 
 | max
-| 8.05 ms
+| 5.35 ms
 | *2.13 ms*
-| +278%
+| +151%
 |===
 
-*Observation:* Mean latencies are very close (~0.4 μs difference). Corosio has improved tail latency (p99 now 17.4 μs vs 21.2 μs previously).
+*Observation:* Mean latencies are close (~0.6 μs difference). Corosio has significantly higher tail latency (p99+), indicating occasional slow paths.
 
 === Concurrent Socket Pairs
 
@@ -433,23 +426,23 @@ Multiple socket pairs operating concurrently (64-byte messages).
 
 | 1
 | 1,000,000
-| 10.29 μs
+| 10.15 μs
 | *9.55 μs*
-| 22.30 μs
+| 21.80 μs
 | *13.10 μs*
 
 | 4
 | 500,000
-| 41.14 μs
+| 41.25 μs
 | *39.54 μs*
-| 85.25 μs
+| 86.85 μs
 | *69.60 μs*
 
 | 16
 | 250,000
-| 161.30 μs
+| 164.15 μs
 | *160.49 μs*
-| 330.75 μs
+| 339.30 μs
 | *344.09 μs*
 |===
 
@@ -469,7 +462,7 @@ Multiple socket pairs operating concurrently (64-byte messages).
 | —
 
 | Elapsed
-| 10.375 s
+| 10.376 s
 | 10.421 s
 | -0.4%
 
@@ -484,9 +477,9 @@ Multiple socket pairs operating concurrently (64-byte messages).
 | -0.4%
 
 | p99 latency
-| 14.90 μs
+| 14.20 μs
 | *13.80 μs*
-| +8%
+| +3%
 |===
 
 *Observation:* Single-connection HTTP performance is essentially identical.
@@ -498,35 +491,35 @@ Multiple socket pairs operating concurrently (64-byte messages).
 | Connections | Corosio Throughput | Asio Throughput | Corosio Mean | Asio Mean | Gap
 
 | 1
-| 92.11 Kops/s
+| 97.69 Kops/s
 | 92.35 Kops/s
-| 10.83 μs
+| 10.21 μs
 | 10.80 μs
-| Tie
+| *Corosio +6%*
 
 | 4
-| 90.77 Kops/s
+| 95.80 Kops/s
 | 91.14 Kops/s
-| 44.04 μs
+| 41.73 μs
 | 43.86 μs
-| Tie
+| *Corosio +5%*
 
 | 16
-| 91.54 Kops/s
+| 95.19 Kops/s
 | 90.38 Kops/s
-| 174.75 μs
+| 168.06 μs
 | 177.00 μs
-| Tie
+| *Corosio +5%*
 
 | 32
-| 90.18 Kops/s
+| 92.94 Kops/s
 | 89.11 Kops/s
-| 354.79 μs
+| 344.26 μs
 | 359.06 μs
-| Tie
+| *Corosio +4%*
 |===
 
-*Observation:* Single-threaded HTTP performance scales identically with connection count.
+*Observation:* Corosio is faster in single-threaded HTTP with concurrent connections.
 
 === Multi-Threaded HTTP (32 Connections)
 
@@ -535,28 +528,28 @@ Multiple socket pairs operating concurrently (64-byte messages).
 | Threads | Corosio Throughput | Asio Throughput | Gap | Scaling Factor
 
 | 1
-| 87.48 Kops/s
+| 91.94 Kops/s
 | 88.25 Kops/s
-| -1%
+| +4%
 | (baseline)
 
 | 2
-| 122.61 Kops/s
+| 129.44 Kops/s
 | 127.48 Kops/s
-| -4%
-| 1.40× / 1.44×
+| +2%
+| 1.41× / 1.44×
 
 | 4
-| *199.54 Kops/s*
+| *210.29 Kops/s*
 | 210.64 Kops/s
-| -5%
-| 2.28× / 2.39×
+| 0%
+| 2.29× / 2.39×
 
 | 8
-| 308.88 Kops/s
+| 302.80 Kops/s
 | *337.68 Kops/s*
-| *-9%*
-| 3.53× / *3.83×*
+| *-10%*
+| 3.29× / *3.83×*
 |===
 
 ==== Multi-Threaded Latency
@@ -566,31 +559,31 @@ Multiple socket pairs operating concurrently (64-byte messages).
 | Threads | Corosio Mean | Asio Mean | Corosio p99 | Asio p99
 
 | 1
-| 365.74 μs
+| 348.01 μs
 | 362.58 μs
-| 687.78 μs
+| 644.15 μs
 | 620.88 μs
 
 | 2
-| 260.88 μs
+| 247.11 μs
 | 250.92 μs
-| 442.07 μs
+| 353.19 μs
 | *352.85 μs*
 
 | 4
-| 160.17 μs
+| 152.06 μs
 | *151.75 μs*
-| 268.28 μs
+| 183.74 μs
 | *192.31 μs*
 
 | 8
-| 103.21 μs
+| 105.45 μs
 | *94.26 μs*
-| 147.09 μs
+| 157.18 μs
 | *120.68 μs*
 |===
 
-*Key finding:* Corosio's multi-threaded HTTP scaling has improved significantly. The gap at 8 threads has narrowed from 56% to 9%. Corosio now achieves 3.53× scaling from 1→8 threads (up from 2.41×).
+*Key finding:* Corosio's multi-threaded HTTP scaling has improved significantly. The gap at 8 threads is now 10% (was 56%). Corosio achieves 3.29× scaling from 1→8 threads.
 
 == Analysis
 
@@ -598,15 +591,15 @@ Multiple socket pairs operating concurrently (64-byte messages).
 
 ==== Handler Dispatch
 
-Corosio now shows excellent performance at all thread counts:
+Corosio shows excellent performance at all thread counts:
 
 [cols="1,1,1", options="header"]
 |===
 | Scenario | Corosio Advantage | Notes
 
 | Single-threaded
-| +72%
-| Still significantly faster
+| +71%
+| Significantly faster
 
 | 4 threads
 | +30%
@@ -614,51 +607,51 @@ Corosio now shows excellent performance at all thread counts:
 
 | 8 threads
 | +20%
-| No longer regresses below Asio
+| Still above Asio
 
 | Concurrent post/run
-| +53%
+| +55%
 | Excellent concurrent performance
 |===
 
 ==== Socket I/O
 
-Socket throughput is essentially identical between implementations. Latency shows:
+Socket throughput is slightly lower than Asio. Latency shows:
 
-* Mean latency: Corosio ~0.4 μs slower
-* Tail latency: Corosio ~30% higher at p99 (improved from ~50%)
+* Mean latency: Corosio ~0.6 μs slower
+* Tail latency: Corosio ~62% higher at p99
 
 ==== HTTP Server
 
-The HTTP benchmarks show much improved scaling:
+The HTTP benchmarks show improved scaling:
 
 [source]
 ----
 Multi-threaded HTTP Throughput:
 
 Threads    Corosio      Asio        Winner
-   1       87.5 K       88.3 K      Tie
-   2       122.6 K      127.5 K     Asio +4%
-   4       199.5 K      210.6 K     Asio +6%
-   8       308.9 K      337.7 K     Asio +9%
+   1       91.9 K       88.3 K      Corosio +4%
+   2       129.4 K      127.5 K     Corosio +2%
+   4       210.3 K      210.6 K     Tie
+   8       302.8 K      337.7 K     Asio +10%
 ----
 
 === Scaling Behavior
 
-The benchmarks reveal significant improvements:
+The benchmarks reveal strong improvements:
 
 [cols="1,2"]
 |===
 | Behavior | Evidence
 
-| *Multi-thread scaling fixed*
-| No more 8-thread regression in handler dispatch
+| *Single-threaded HTTP advantage*
+| Corosio +4-6% faster with concurrent connections
 
-| *HTTP scaling improved*
-| Corosio achieves 3.53× scaling vs previous 2.41×
+| *Multi-thread scaling*
+| Corosio achieves 3.29× scaling (1→8 threads)
 
-| *Gap narrowed*
-| HTTP 8-thread gap reduced from 56% to 9%
+| *High thread gap*
+| Asio maintains 10% edge at 8 threads
 |===
 
 == Conclusions
@@ -669,14 +662,14 @@ The benchmarks reveal significant improvements:
 
 * Excellent handler dispatch at all thread counts
 * Superior interleaved and concurrent post/run performance
-* Competitive socket I/O throughput
+* Faster single-threaded HTTP with concurrent connections
 * Significantly improved multi-threaded HTTP scaling
 
 *Asio:*
 
-* Slightly better multi-threaded HTTP throughput (+9% at 8 threads)
+* Slightly better socket throughput
 * Lower tail latency in socket operations
-* More predictable latency under load
+* Better multi-threaded HTTP throughput at 8 threads
 
 === Recommendations
 
@@ -685,22 +678,25 @@ The benchmarks reveal significant improvements:
 | Workload | Recommendation
 
 | Handler dispatch (any thread count)
-| *Corosio* is 20-90% faster
+| *Corosio* is 20-72% faster
 
 | Interleaved post/run patterns
-| *Corosio* is 35% faster
+| *Corosio* is 29% faster
 
-| Multi-threaded HTTP servers
-| Both competitive; Asio +9% at 8 threads
+| Single-threaded HTTP with concurrent connections
+| *Corosio* is 4-6% faster
+
+| Multi-threaded HTTP servers (8+ threads)
+| *Asio* is 10% faster
 
 | Bulk socket transfers
-| Either—performance is identical
+| *Asio* has a small edge (3-9%)
 |===
 
 === Future Work
 
-* Continue investigating remaining HTTP scaling gap
-* Reduce tail latency in socket operations
+* Investigate tail latency spikes (p99 gap)
+* Profile socket throughput overhead
 * Benchmark on Linux (epoll backend)
 * Test with realistic HTTP payloads and traffic patterns
 
@@ -714,75 +710,75 @@ Backend: iocp
 
 === Single-threaded Handler Post ===
   Handlers:    5000000
-  Elapsed:     3.628 s
-  Throughput:  1.38 Mops/s
+  Elapsed:     3.651 s
+  Throughput:  1.37 Mops/s
 
 === Multi-threaded Scaling ===
   Handlers per test: 5000000
 
-  1 thread(s): 2.87 Mops/s
-  2 thread(s): 2.95 Mops/s (speedup: 1.03x)
-  4 thread(s): 3.85 Mops/s (speedup: 1.34x)
-  8 thread(s): 3.63 Mops/s (speedup: 1.27x)
+  1 thread(s): 2.60 Mops/s
+  2 thread(s): 2.78 Mops/s (speedup: 1.07x)
+  4 thread(s): 3.87 Mops/s (speedup: 1.49x)
+  8 thread(s): 3.62 Mops/s (speedup: 1.39x)
 
 === Interleaved Post/Run ===
   Iterations:        50000
   Handlers/iter:     100
   Total handlers:    5000000
-  Elapsed:           2.162 s
-  Throughput:        2.31 Mops/s
+  Elapsed:           2.267 s
+  Throughput:        2.21 Mops/s
 
 === Concurrent Post and Run ===
   Threads:           4
   Handlers/thread:   1250000
   Total handlers:    5000000
-  Elapsed:           2.216 s
-  Throughput:        2.26 Mops/s
+  Elapsed:           2.184 s
+  Throughput:        2.29 Mops/s
 
 === Unidirectional Throughput ===
   Buffer size: 1024 bytes, Transfer: 4096 MB
-    Throughput: 213.03 MB/s
+    Throughput: 206.89 MB/s
 
   Buffer size: 4096 bytes, Transfer: 4096 MB
-    Throughput: 751.96 MB/s
+    Throughput: 733.23 MB/s
 
   Buffer size: 16384 bytes, Transfer: 4096 MB
-    Throughput: 2.58 GB/s
+    Throughput: 2.46 GB/s
 
   Buffer size: 65536 bytes, Transfer: 4096 MB
-    Throughput: 6.43 GB/s
+    Throughput: 6.30 GB/s
 
 === Bidirectional Throughput ===
-  Buffer size: 1024 bytes: 214.83 MB/s (combined)
-  Buffer size: 4096 bytes: 751.09 MB/s (combined)
-  Buffer size: 16384 bytes: 2.59 GB/s (combined)
-  Buffer size: 65536 bytes: 6.48 GB/s (combined)
+  Buffer size: 1024 bytes: 205.76 MB/s (combined)
+  Buffer size: 4096 bytes: 721.61 MB/s (combined)
+  Buffer size: 16384 bytes: 2.49 GB/s (combined)
+  Buffer size: 65536 bytes: 5.90 GB/s (combined)
 
 === Ping-Pong Round-Trip Latency ===
-  1 byte:    mean=9.92 us, p50=9.60 us, p99=20.80 us
-  64 bytes:  mean=10.01 us, p50=9.60 us, p99=17.40 us
-  1024 bytes: mean=10.04 us, p50=9.40 us, p99=15.40 us
+  1 byte:    mean=10.01 us, p50=9.60 us, p99=20.60 us
+  64 bytes:  mean=10.21 us, p50=9.60 us, p99=21.60 us
+  1024 bytes: mean=10.28 us, p50=9.80 us, p99=20.50 us
 
 === Concurrent Socket Pairs Latency ===
-  1 pair:   mean=10.29 us, p99=22.30 us
-  4 pairs:  mean=41.14 us, p99=85.25 us
-  16 pairs: mean=161.30 us, p99=330.75 us
+  1 pair:   mean=10.15 us, p99=21.80 us
+  4 pairs:  mean=41.25 us, p99=86.85 us
+  16 pairs: mean=164.15 us, p99=339.30 us
 
 === HTTP Single Connection ===
   Throughput: 96.38 Kops/s
-  Latency: mean=10.35 us, p99=14.90 us
+  Latency: mean=10.35 us, p99=14.20 us
 
 === HTTP Concurrent Connections (single thread) ===
-  1 conn:   92.11 Kops/s, mean=10.83 us, p99=24.10 us
-  4 conns:  90.77 Kops/s, mean=44.04 us, p99=97.70 us
-  16 conns: 91.54 Kops/s, mean=174.75 us, p99=383.59 us
-  32 conns: 90.18 Kops/s, mean=354.79 us, p99=680.89 us
+  1 conn:   97.69 Kops/s, mean=10.21 us, p99=13.90 us
+  4 conns:  95.80 Kops/s, mean=41.73 us, p99=66.90 us
+  16 conns: 95.19 Kops/s, mean=168.06 us, p99=296.66 us
+  32 conns: 92.94 Kops/s, mean=344.26 us, p99=632.97 us
 
 === HTTP Multi-threaded (32 connections) ===
-  1 thread:  87.48 Kops/s, mean=365.74 us, p99=687.78 us
-  2 threads: 122.61 Kops/s, mean=260.88 us, p99=442.07 us
-  4 threads: 199.54 Kops/s, mean=160.17 us, p99=268.28 us
-  8 threads: 308.88 Kops/s, mean=103.21 us, p99=147.09 us
+  1 thread:  91.94 Kops/s, mean=348.01 us, p99=644.15 us
+  2 threads: 129.44 Kops/s, mean=247.11 us, p99=353.19 us
+  4 threads: 210.29 Kops/s, mean=152.06 us, p99=183.74 us
+  8 threads: 302.80 Kops/s, mean=105.45 us, p99=157.18 us
 ----
 
 === Asio Results
