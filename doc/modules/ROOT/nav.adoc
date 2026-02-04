@@ -27,3 +27,4 @@
 ** xref:testing/mocket.adoc[Mock Sockets]
 * xref:reference:boost/corosio.adoc[Reference]
 * xref:reference/glossary.adoc[Glossary]
+* xref:reference/benchmark-report.adoc[Benchmarks]

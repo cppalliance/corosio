@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/completion_key.hpp"
+#include "src/detail/iocp/windows.hpp"
 
 #include <chrono>
 #include <memory>
@@ -23,10 +24,9 @@ namespace boost::corosio::detail {
 
 /** Abstract interface for timer wakeup mechanisms.
 
-    Derives from completion_key so the timer object itself serves
-    as the IOCP completion key when posting wakeups.
+    Posts key_wake_dispatch to the IOCP to trigger timer processing.
 */
-class win_timers : public completion_key
+class win_timers
 {
 protected:
     long* dispatch_required_;
@@ -44,16 +44,6 @@ public:
     virtual void start() = 0;
     virtual void stop() = 0;
     virtual void update_timeout(time_point next_expiry) = 0;
-
-    result on_completion(
-        win_scheduler&,
-        DWORD,
-        DWORD,
-        LPOVERLAPPED) override
-    {
-        ::InterlockedExchange(dispatch_required_, 1);
-        return result::continue_loop;
-    }
 };
 
 std::unique_ptr<win_timers> make_win_timers(

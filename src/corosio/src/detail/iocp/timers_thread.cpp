@@ -12,6 +12,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/timers_thread.hpp"
+#include "src/detail/iocp/completion_key.hpp"
 #include "src/detail/iocp/windows.hpp"
 
 namespace boost::corosio::detail {
@@ -108,7 +109,11 @@ thread_func()
             break;
 
         ::InterlockedExchange(dispatch_required_, 1);
-        repost(iocp_);
+        ::PostQueuedCompletionStatus(
+            static_cast<HANDLE>(iocp_),
+            0,
+            key_wake_dispatch,
+            nullptr);
     }
 }
 

@@ -18,63 +18,33 @@
 
 namespace boost::corosio::detail {
 
-class win_scheduler;
+/** IOCP completion key values.
 
-/** Abstract base for IOCP completion key dispatch.
+    These integer values are used as the completion key parameter
+    when calling CreateIoCompletionPort and PostQueuedCompletionStatus.
+    The run loop dispatches based on these values using a switch.
 
-    Each subsystem that posts completions to the IOCP owns a key
-    object derived from this class. The key's address is used as
-    the completion key value, enabling polymorphic dispatch when
-    completions are dequeued.
+    All I/O handles are registered with key_io (0), and dispatch
+    happens via the function pointer in the overlapped_op structure.
+    The other keys are for internal scheduler signals.
 */
-struct completion_key
+enum completion_key : ULONG_PTR
 {
-    /** Result of completion handling, controls run loop behavior. */
-    enum class result
-    {
-        did_work,       // Handler was invoked, count as work done
-        continue_loop,  // No work done, continue polling
-        stop_loop       // Stop the run loop
-    };
+    /** I/O operation completed. OVERLAPPED* points to overlapped_op. */
+    key_io = 0,
 
-    /** Handle a completion from the IOCP.
+    /** Timer or deferred operation wakeup signal. */
+    key_wake_dispatch = 1,
 
-        @param sched The scheduler dequeuing the completion.
-        @param bytes Bytes transferred (from GQCS).
-        @param dwError Error code (from GetLastError if GQCS failed).
-        @param overlapped The OVERLAPPED pointer (may be nullptr for signals).
-        @return Action for the run loop to take.
-    */
-    virtual result on_completion(
-        win_scheduler& sched,
-        DWORD bytes,
-        DWORD dwError,
-        LPOVERLAPPED overlapped) = 0;
+    /** Scheduler stop/shutdown signal. */
+    key_shutdown = 2,
 
-    /** Destroy a completion during shutdown without invoking handler.
+    /** Operation completed with results pre-stored in OVERLAPPED fields.
+        Used when posting completions after synchronous completion. */
+    key_result_stored = 3,
 
-        @param overlapped The OVERLAPPED pointer to destroy.
-    */
-    virtual void destroy(LPOVERLAPPED /*overlapped*/) {}
-
-    /** Re-queue this key to the IOCP.
-
-        Allows a key to post itself back to the completion port,
-        e.g., to propagate signals to other waiting threads.
-
-        @param iocp The completion port handle.
-        @param overlapped Optional OVERLAPPED pointer (default nullptr).
-    */
-    void repost(void* iocp, LPOVERLAPPED overlapped = nullptr)
-    {
-        ::PostQueuedCompletionStatus(
-            static_cast<HANDLE>(iocp),
-            0,
-            reinterpret_cast<ULONG_PTR>(this),
-            overlapped);
-    }
-
-    virtual ~completion_key() = default;
+    /** Posted scheduler_op*. OVERLAPPED* is actually a scheduler_op*. */
+    key_posted = 4
 };
 
 } // namespace boost::corosio::detail

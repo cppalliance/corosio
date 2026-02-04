@@ -76,29 +76,6 @@ public:
     void update_timeout();
 
 private:
-    // Completion key for posted handlers (scheduler_op*)
-    struct handler_key final : completion_key
-    {
-        result on_completion(
-            win_scheduler& sched,
-            DWORD bytes,
-            DWORD dwError,
-            LPOVERLAPPED overlapped) override;
-
-        void destroy(LPOVERLAPPED overlapped) override;
-    };
-
-    // Completion key for stop signaling
-    struct shutdown_key final : completion_key
-    {
-        result on_completion(
-            win_scheduler& sched,
-            DWORD bytes,
-            DWORD dwError,
-            LPOVERLAPPED overlapped) override;
-    };
-
-    // Static callback thunk - receives 'this' as context
     static void on_timer_changed(void* ctx);
     void post_deferred_completions(op_queue& ops);
     std::size_t do_one(unsigned long timeout_ms);
@@ -107,20 +84,13 @@ private:
     mutable long outstanding_work_;
     mutable long stopped_;
     long shutdown_;
-
-    // PQCS consumes non-paged pool; limit to one outstanding stop event
     long stop_event_posted_;
-
-    // Signals do_run() to drain completed_ops_ fallback queue
     mutable long dispatch_required_;
 
-    handler_key handler_key_;
-    shutdown_key shutdown_key_;
-
-    mutable win_mutex dispatch_mutex_;                                      // protects completed_ops_
-    mutable op_queue completed_ops_;                                       // fallback when PQCS fails (no auto-destroy)
-    std::unique_ptr<win_timers> timers_;                                   // timer wakeup mechanism
-    timer_service* timer_svc_ = nullptr;                                   // timer service for processing
+    mutable win_mutex dispatch_mutex_;
+    mutable op_queue completed_ops_;
+    std::unique_ptr<win_timers> timers_;
+    timer_service* timer_svc_ = nullptr;
 };
 
 } // namespace boost::corosio::detail

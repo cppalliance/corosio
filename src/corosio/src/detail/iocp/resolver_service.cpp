@@ -208,87 +208,104 @@ completion(
     op->impl->svc_.post(op);
 }
 
-void
-resolve_op::
-operator()()
+resolve_op::resolve_op() noexcept
+    : overlapped_op(&do_complete)
 {
-    stop_cb.reset();
-
-    if (ec_out)
-    {
-        if (cancelled.load(std::memory_order_acquire))
-            *ec_out = capy::error::canceled;
-        else if (dwError != 0)
-            *ec_out = make_err(dwError);
-        else
-            *ec_out = {};  // Clear on success
-    }
-
-    if (out && !cancelled.load(std::memory_order_acquire) && dwError == 0 && results)
-    {
-        *out = convert_results(results, host, service);
-    }
-
-    if (results)
-    {
-        ::FreeAddrInfoExW(results);
-        results = nullptr;
-    }
-
-    cancel_handle = nullptr;
-
-    resume_coro(ex, h);
 }
 
 void
-resolve_op::
-destroy()
+resolve_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
 {
-    stop_cb.reset();
+    auto* op = static_cast<resolve_op*>(base);
 
-    if (results)
+    if (!owner)
     {
-        ::FreeAddrInfoExW(results);
-        results = nullptr;
+        // Destroy path
+        op->stop_cb.reset();
+        if (op->results)
+        {
+            ::FreeAddrInfoExW(op->results);
+            op->results = nullptr;
+        }
+        op->cancel_handle = nullptr;
+        return;
     }
 
-    cancel_handle = nullptr;
+    op->stop_cb.reset();
+
+    if (op->ec_out)
+    {
+        if (op->cancelled.load(std::memory_order_acquire))
+            *op->ec_out = capy::error::canceled;
+        else if (op->dwError != 0)
+            *op->ec_out = make_err(op->dwError);
+        else
+            *op->ec_out = {};
+    }
+
+    if (op->out && !op->cancelled.load(std::memory_order_acquire) && op->dwError == 0 && op->results)
+    {
+        *op->out = convert_results(op->results, op->host, op->service);
+    }
+
+    if (op->results)
+    {
+        ::FreeAddrInfoExW(op->results);
+        op->results = nullptr;
+    }
+
+    op->cancel_handle = nullptr;
+
+    resume_coro(op->ex, op->h);
 }
 
 //------------------------------------------------------------------------------
 // reverse_resolve_op
 //------------------------------------------------------------------------------
 
-void
-reverse_resolve_op::
-operator()()
+reverse_resolve_op::reverse_resolve_op() noexcept
+    : overlapped_op(&do_complete)
 {
-    stop_cb.reset();
-
-    if (ec_out)
-    {
-        if (cancelled.load(std::memory_order_acquire))
-            *ec_out = capy::error::canceled;
-        else if (gai_error != 0)
-            *ec_out = make_err(static_cast<DWORD>(gai_error));
-        else
-            *ec_out = {};  // Clear on success
-    }
-
-    if (result_out && !cancelled.load(std::memory_order_acquire) && gai_error == 0)
-    {
-        *result_out = reverse_resolver_result(
-            ep, std::move(stored_host), std::move(stored_service));
-    }
-
-    resume_coro(ex, h);
 }
 
 void
-reverse_resolve_op::
-destroy()
+reverse_resolve_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
 {
-    stop_cb.reset();
+    auto* op = static_cast<reverse_resolve_op*>(base);
+
+    if (!owner)
+    {
+        op->stop_cb.reset();
+        return;
+    }
+
+    op->stop_cb.reset();
+
+    if (op->ec_out)
+    {
+        if (op->cancelled.load(std::memory_order_acquire))
+            *op->ec_out = capy::error::canceled;
+        else if (op->gai_error != 0)
+            *op->ec_out = make_err(static_cast<DWORD>(op->gai_error));
+        else
+            *op->ec_out = {};
+    }
+
+    if (op->result_out && !op->cancelled.load(std::memory_order_acquire) && op->gai_error == 0)
+    {
+        *op->result_out = reverse_resolver_result(
+            op->ep, std::move(op->stored_host), std::move(op->stored_service));
+    }
+
+    resume_coro(op->ex, op->h);
 }
 
 //------------------------------------------------------------------------------

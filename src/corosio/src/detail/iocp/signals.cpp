@@ -143,33 +143,36 @@ extern "C" void corosio_signal_handler(int signal_number)
 //
 //------------------------------------------------------------------------------
 
-void
-signal_op::
-operator()()
+signal_op::signal_op() noexcept
+    : scheduler_op(&do_complete)
 {
-    if (ec_out)
-        *ec_out = {};
-    if (signal_out)
-        *signal_out = signal_number;
-
-    // Capture svc before resuming: the coroutine may destroy this op,
-    // so we cannot access any members after resume() returns
-    auto* service = svc;
-    svc = nullptr;
-
-    d.dispatch(h);
-
-    // Balance the on_work_started() from start_wait. When svc is null
-    // (immediate completion from queued signal), no work tracking occurred.
-    if (service)
-        service->work_finished();
 }
 
 void
-signal_op::
-destroy()
+signal_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
 {
-    // No-op: signal_op is embedded in win_signal_impl
+    auto* op = static_cast<signal_op*>(base);
+
+    // Destroy path - no-op: signal_op is embedded in win_signal_impl
+    if (!owner)
+        return;
+
+    if (op->ec_out)
+        *op->ec_out = {};
+    if (op->signal_out)
+        *op->signal_out = op->signal_number;
+
+    auto* service = op->svc;
+    op->svc = nullptr;
+
+    op->d.dispatch(op->h);
+
+    if (service)
+        service->work_finished();
 }
 
 //------------------------------------------------------------------------------

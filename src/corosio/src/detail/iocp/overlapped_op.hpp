@@ -34,6 +34,15 @@
 
 namespace boost::corosio::detail {
 
+/** Base class for IOCP overlapped operations.
+
+    Derives from both OVERLAPPED (for Windows IOCP) and scheduler_op
+    (for queueing). Uses function pointer dispatch inherited from
+    scheduler_op - no virtual functions.
+
+    The OVERLAPPED structure is at the start so we can static_cast
+    between OVERLAPPED* and overlapped_op*.
+*/
 struct overlapped_op
     : OVERLAPPED
     , scheduler_op
@@ -48,34 +57,43 @@ struct overlapped_op
         }
     };
 
+    /** Function pointer type for cancellation hook. */
+    using cancel_func_type = void(*)(overlapped_op*) noexcept;
+
     capy::coro h;
     capy::executor_ref ex;
     std::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
     DWORD dwError = 0;
     DWORD bytes_transferred = 0;
-    bool empty_buffer = false;  // True if operation was with empty buffer
-    bool is_read_ = false;      // True if this is a read operation (for EOF)
+    bool empty_buffer = false;
+    bool is_read_ = false;
     std::atomic<bool> cancelled{false};
     std::optional<std::stop_callback<canceller>> stop_cb;
+    cancel_func_type cancel_func_ = nullptr;
 
     // Synchronizes GQCS completion with initiating function return.
-    // GQCS can complete before WSARecv/etc returns; ready_=1 means
-    // the initiator is done and the op can be dispatched.
     long ready_ = 0;
 
-    overlapped_op()
+    explicit overlapped_op(func_type func) noexcept
+        : scheduler_op(func)
     {
         data_ = this;
+        reset_overlapped();
     }
 
-    void reset() noexcept
+    void reset_overlapped() noexcept
     {
         Internal = 0;
         InternalHigh = 0;
         Offset = 0;
         OffsetHigh = 0;
         hEvent = nullptr;
+    }
+
+    void reset() noexcept
+    {
+        reset_overlapped();
         dwError = 0;
         bytes_transferred = 0;
         empty_buffer = false;
@@ -84,52 +102,15 @@ struct overlapped_op
         ready_ = 0;
     }
 
-    void operator()() override
-    {
-        stop_cb.reset();
-
-        if (ec_out)
-        {
-            if (cancelled.load(std::memory_order_acquire))
-            {
-                // Explicit cancellation via cancel() or stop_token
-                *ec_out = capy::error::canceled;
-            }
-            else if (dwError != 0)
-            {
-                *ec_out = make_err(dwError);
-            }
-            else if (is_read_ && bytes_transferred == 0 && !empty_buffer)
-            {
-                // EOF: 0 bytes transferred with no error indicates end of stream
-                // (but not if we intentionally read with an empty buffer)
-                *ec_out = capy::error::eof;
-            }
-            else
-            {
-                *ec_out = {};
-            }
-        }
-
-        if (bytes_out)
-            *bytes_out = static_cast<std::size_t>(bytes_transferred);
-
-        resume_coro(ex, h);
-    }
-
-    void destroy() override
-    {
-        stop_cb.reset();
-    }
-
     void request_cancel() noexcept
     {
         cancelled.store(true, std::memory_order_release);
     }
 
-    /** Hook for derived classes to perform actual I/O cancellation. */
-    virtual void do_cancel() noexcept
+    void do_cancel() noexcept
     {
+        if (cancel_func_)
+            cancel_func_(this);
     }
 
     void start(std::stop_token token)
@@ -141,25 +122,22 @@ struct overlapped_op
             stop_cb.emplace(token, canceller{this});
     }
 
-    void complete(DWORD bytes, DWORD err) noexcept
+    void store_result(DWORD bytes, DWORD err) noexcept
     {
         bytes_transferred = bytes;
         dwError = err;
     }
 
-    /** Complete immediately via dispatch.
-
-        Use this for immediate completion paths instead of posting to
-        the scheduler. Sets output parameters and dispatches the coroutine
-        for resumption.
-    */
-    void complete_immediate()
+    /** Write results to output parameters and resume coroutine. */
+    void invoke_handler()
     {
         stop_cb.reset();
 
         if (ec_out)
         {
-            if (dwError != 0)
+            if (cancelled.load(std::memory_order_acquire))
+                *ec_out = capy::error::canceled;
+            else if (dwError != 0)
                 *ec_out = make_err(dwError);
             else if (is_read_ && bytes_transferred == 0 && !empty_buffer)
                 *ec_out = capy::error::eof;
@@ -172,12 +150,22 @@ struct overlapped_op
 
         resume_coro(ex, h);
     }
+
+    /** Cleanup without invoking handler (for destroy path). */
+    void cleanup_only()
+    {
+        stop_cb.reset();
+    }
 };
 
+/** Cast OVERLAPPED* to overlapped_op*.
+
+    Safe because overlapped_op has OVERLAPPED as first base class.
+*/
 inline overlapped_op*
-get_overlapped_op(scheduler_op* h) noexcept
+overlapped_to_op(LPOVERLAPPED ov) noexcept
 {
-    return static_cast<overlapped_op*>(h->data());
+    return static_cast<overlapped_op*>(ov);
 }
 
 } // namespace boost::corosio::detail

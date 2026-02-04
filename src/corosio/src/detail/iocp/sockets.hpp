@@ -48,13 +48,14 @@ class win_acceptor_impl_internal;
 struct connect_op : overlapped_op
 {
     win_socket_impl_internal& internal;
-    std::shared_ptr<win_socket_impl_internal> internal_ptr;  // Keeps internal alive during I/O
-    endpoint target_endpoint;  // Stored for endpoint caching on success
+    std::shared_ptr<win_socket_impl_internal> internal_ptr;
+    endpoint target_endpoint;
 
-    explicit connect_op(win_socket_impl_internal& internal_) noexcept : internal(internal_) {}
+    static void do_complete(void* owner, scheduler_op* base,
+        std::uint32_t bytes, std::uint32_t error);
+    static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    void operator()() override;
-    void do_cancel() noexcept override;
+    explicit connect_op(win_socket_impl_internal& internal_) noexcept;
 };
 
 /** Read operation state with buffer descriptors. */
@@ -65,12 +66,13 @@ struct read_op : overlapped_op
     DWORD wsabuf_count = 0;
     DWORD flags = 0;
     win_socket_impl_internal& internal;
-    std::shared_ptr<win_socket_impl_internal> internal_ptr;  // Keeps internal alive during I/O
+    std::shared_ptr<win_socket_impl_internal> internal_ptr;
 
-    explicit read_op(win_socket_impl_internal& internal_) noexcept : internal(internal_) {}
+    static void do_complete(void* owner, scheduler_op* base,
+        std::uint32_t bytes, std::uint32_t error);
+    static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    void operator()() override;
-    void do_cancel() noexcept override;
+    explicit read_op(win_socket_impl_internal& internal_) noexcept;
 };
 
 /** Write operation state with buffer descriptors. */
@@ -80,30 +82,30 @@ struct write_op : overlapped_op
     WSABUF wsabufs[max_buffers];
     DWORD wsabuf_count = 0;
     win_socket_impl_internal& internal;
-    std::shared_ptr<win_socket_impl_internal> internal_ptr;  // Keeps internal alive during I/O
+    std::shared_ptr<win_socket_impl_internal> internal_ptr;
 
-    explicit write_op(win_socket_impl_internal& internal_) noexcept : internal(internal_) {}
+    static void do_complete(void* owner, scheduler_op* base,
+        std::uint32_t bytes, std::uint32_t error);
+    static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    void operator()() override;
-    void do_cancel() noexcept override;
+    explicit write_op(win_socket_impl_internal& internal_) noexcept;
 };
 
 /** Accept operation state. */
 struct accept_op : overlapped_op
 {
     SOCKET accepted_socket = INVALID_SOCKET;
-    win_socket_impl* peer_wrapper = nullptr;  // Wrapper for accepted socket
-    std::shared_ptr<win_acceptor_impl_internal> acceptor_ptr;  // Keeps acceptor alive during I/O
-    SOCKET listen_socket = INVALID_SOCKET;  // For SO_UPDATE_ACCEPT_CONTEXT
-    io_object::io_object_impl** impl_out = nullptr;  // Output: wrapper for awaitable
-    // Buffer for AcceptEx: local + remote addresses
+    win_socket_impl* peer_wrapper = nullptr;
+    std::shared_ptr<win_acceptor_impl_internal> acceptor_ptr;
+    SOCKET listen_socket = INVALID_SOCKET;
+    io_object::io_object_impl** impl_out = nullptr;
     char addr_buf[2 * (sizeof(sockaddr_in6) + 16)];
 
-    /** Resume the coroutine after accept completes. */
-    void operator()() override;
+    static void do_complete(void* owner, scheduler_op* base,
+        std::uint32_t bytes, std::uint32_t error);
+    static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    /** Cancel the pending accept via CancelIoEx. */
-    void do_cancel() noexcept override;
+    accept_op() noexcept;
 };
 
 //------------------------------------------------------------------------------
@@ -677,9 +679,6 @@ public:
     /** Return the IOCP handle. */
     void* native_handle() const noexcept { return iocp_; }
 
-    /** Return the completion key for associating sockets with IOCP. */
-    completion_key* io_key() noexcept { return &overlapped_key_; }
-
     /** Return the ConnectEx function pointer. */
     LPFN_CONNECTEX connect_ex() const noexcept { return connect_ex_; }
 
@@ -696,21 +695,9 @@ public:
     void work_finished() noexcept;
 
 private:
-    struct overlapped_key final : completion_key
-    {
-        result on_completion(
-            win_scheduler& sched,
-            DWORD bytes,
-            DWORD dwError,
-            LPOVERLAPPED overlapped) override;
-
-        void destroy(LPOVERLAPPED overlapped) override;
-    };
-
     void load_extension_functions();
 
     win_scheduler& sched_;
-    overlapped_key overlapped_key_;
     win_mutex mutex_;
     intrusive_list<win_socket_impl_internal> socket_list_;
     intrusive_list<win_acceptor_impl_internal> acceptor_list_;

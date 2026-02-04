@@ -121,10 +121,13 @@ struct resolve_op : overlapped_op
         DWORD bytes,
         OVERLAPPED* ov);
 
-    /** Resume the coroutine after resolve completes. */
-    void operator()() override;
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t bytes,
+        std::uint32_t error);
 
-    void destroy() override;
+    resolve_op() noexcept;
 };
 
 /** Reverse resolve operation state. */
@@ -138,10 +141,13 @@ struct reverse_resolve_op : overlapped_op
     int gai_error = 0;
     win_resolver_impl* impl = nullptr;
 
-    /** Resume the coroutine after reverse resolve completes. */
-    void operator()() override;
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t bytes,
+        std::uint32_t error);
 
-    void destroy() override;
+    reverse_resolve_op() noexcept;
 };
 
 //------------------------------------------------------------------------------

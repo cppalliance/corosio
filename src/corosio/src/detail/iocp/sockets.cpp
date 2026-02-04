@@ -18,337 +18,257 @@
 #include "src/detail/resume_coro.hpp"
 
 /*
-    Windows IOCP Socket Implementation Overview
-    ===========================================
+    Windows IOCP Socket Implementation
+    ==================================
 
-    This file implements asynchronous socket I/O using Windows I/O Completion
-    Ports (IOCP). Understanding the following concepts is essential for
-    maintaining this code.
-
-    IOCP Fundamentals
-    -----------------
-    IOCP is a kernel-managed queue for I/O completions. The flow is:
-
-    1. Associate a socket with the IOCP via CreateIoCompletionPort()
-    2. Start async I/O (WSARecv, WSASend, ConnectEx, AcceptEx) passing an
-       OVERLAPPED structure
-    3. The kernel performs the I/O asynchronously
-    4. When complete, the kernel posts a completion packet to the IOCP
-    5. GetQueuedCompletionStatus() dequeues completions for processing
-
-    Our overlapped_op derives from OVERLAPPED, so we can static_cast between
-    them. Each operation type (connect_op, read_op, write_op, accept_op)
-    contains all state needed for that I/O operation.
-
-    Completion Key Dispatch
-    -----------------------
-    Each socket is associated with a completion_key pointer when registered
-    with the IOCP. When a completion arrives, we dispatch through the key's
-    virtual on_completion() method. The overlapped_key handles socket I/O
-    completions by:
-
-    1. Casting the OVERLAPPED* back to overlapped_op*
-    2. Using InterlockedCompareExchange on ready_ to handle races
-    3. Calling complete() to store results, then operator() to resume
-
-    The ready_ flag handles a subtle race: an operation can complete
-    synchronously (returning immediately) but IOCP still posts a completion.
-    The first path to set ready_=1 wins and processes the completion.
-
-    Lifetime Management via shared_ptr (Hidden from Public Interface)
-    -----------------------------------------------------------------
-    The trickiest aspect is ensuring socket state stays alive while I/O is
-    pending. Consider: socket::close() is called while a read is in flight.
-    We must:
-
-    1. Cancel the I/O (CancelIoEx)
-    2. Close the socket handle (closesocket)
-    3. But the internal state CANNOT be destroyed yet - IOCP will still
-       deliver a completion packet for the cancelled I/O
-
-    We use a two-layer design to hide shared_ptr from the public interface:
-
-    1. win_socket_impl (wrapper) - what the socket class sees
-       - Derives from socket::socket_impl
-       - Holds shared_ptr<win_socket_impl_internal>
-       - Owned by win_sockets service (tracked via intrusive_list)
-       - Destroyed by release() which calls svc_.destroy_impl()
-
-    2. win_socket_impl_internal - actual state + operations
-       - Derives from enable_shared_from_this
-       - Contains socket handle, connect_op, read_op, write_op
-       - May outlive the wrapper if operations are pending
-
-    When I/O starts, operations capture shared_from_this() on the internal:
-       conn_.internal_ptr = shared_from_this()
-
-    When socket::close() is called:
-    1. wrapper->release() cancels I/O and closes socket handle
-    2. release() calls svc_.destroy_impl() which deletes the wrapper
-    3. Internal may still be alive if operations hold refs
-    4. When operation completes, internal_ptr.reset() releases the ref
-    5. If that was the last ref, internal is destroyed
-
-    Key Invariants
-    --------------
-    1. Operations hold shared_ptr<internal> ONLY during active I/O (set at
-       I/O start, cleared in operator())
-
-    2. The win_sockets service owns both wrappers and tracks internals:
-       - socket_wrapper_list_ / acceptor_wrapper_list_ own wrappers
-       - socket_list_ / acceptor_list_ track internals for shutdown
-
-    3. Internal impl destructors call unregister_impl() to remove themselves
-       from the service's list
-
-    4. The socket/acceptor classes hold raw pointers to wrappers; wrappers
-       hold shared_ptr to internals. No shared_ptr in public headers.
-
-    5. For accept operations, a new wrapper is created by the service and
-       passed to the peer socket via impl_out. The peer socket calls
-       release() on close, which triggers destroy_impl().
-
-    Cancellation
-    ------------
-    Cancellation has two paths:
-
-    1. Explicit cancel(): Sets the cancelled flag and calls CancelIoEx().
-       The completion will arrive with ERROR_OPERATION_ABORTED.
-
-    2. Stop token: The stop_callback calls request_cancel() which does the
-       same thing. The stop_cb is reset in operator() before resuming.
-
-    Both paths result in the operation completing normally through IOCP,
-    just with an error code. The coroutine resumes and sees the cancellation.
-
-    Service Shutdown
-    ----------------
-    When the io_context shuts down, win_sockets::shutdown() closes all
-    sockets and removes them from the tracking list, then deletes any
-    remaining wrappers. Internals may still be alive if operations hold
-    shared_ptrs. This is fine - they'll be destroyed when all references
-    are released.
-
-    Thread Safety
-    -------------
-    - Multiple threads can call GetQueuedCompletionStatus() on the same IOCP
-    - The mutex_ protects the socket/acceptor lists during create/unregister
-    - Individual socket operations are NOT thread-safe - users must not
-      have concurrent operations of the same type on a single socket
+    Uses function pointer dispatch instead of virtual dispatch.
+    All socket handles are registered with IOCP using key_io (0).
+    Each operation type has a static do_complete function.
 */
 
 namespace boost::corosio::detail {
 
-completion_key::result
-win_sockets::overlapped_key::
-on_completion(
-    win_scheduler& sched,
-    DWORD bytes,
-    DWORD dwError,
-    LPOVERLAPPED overlapped)
-{
-    auto* op = static_cast<overlapped_op*>(overlapped);
-    if (::InterlockedCompareExchange(&op->ready_, 1, 0) == 0)
-    {
-        struct work_guard
-        {
-            win_scheduler* self;
-            ~work_guard() { self->on_work_finished(); }
-        };
+//------------------------------------------------------------------------------
+// Operation constructors
 
-        work_guard g{&sched};
-        op->complete(bytes, dwError);
-        (*op)();
-        return result::did_work;
+connect_op::connect_op(win_socket_impl_internal& internal_) noexcept
+    : overlapped_op(&do_complete)
+    , internal(internal_)
+{
+    cancel_func_ = &do_cancel_impl;
+}
+
+read_op::read_op(win_socket_impl_internal& internal_) noexcept
+    : overlapped_op(&do_complete)
+    , internal(internal_)
+{
+    cancel_func_ = &do_cancel_impl;
+}
+
+write_op::write_op(win_socket_impl_internal& internal_) noexcept
+    : overlapped_op(&do_complete)
+    , internal(internal_)
+{
+    cancel_func_ = &do_cancel_impl;
+}
+
+accept_op::accept_op() noexcept
+    : overlapped_op(&do_complete)
+{
+    cancel_func_ = &do_cancel_impl;
+}
+
+//------------------------------------------------------------------------------
+// Cancellation functions
+
+void connect_op::do_cancel_impl(overlapped_op* base) noexcept
+{
+    auto* op = static_cast<connect_op*>(base);
+    if (op->internal.is_open())
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(op->internal.native_handle()),
+            op);
     }
-    return result::continue_loop;
 }
 
-void
-win_sockets::overlapped_key::
-destroy(LPOVERLAPPED overlapped)
+void read_op::do_cancel_impl(overlapped_op* base) noexcept
 {
-    static_cast<overlapped_op*>(overlapped)->destroy();
-}
-
-void
-accept_op::
-operator()()
-{
-    stop_cb.reset();
-
-    bool success = (dwError == 0 && !cancelled.load(std::memory_order_acquire));
-
-    if (ec_out)
+    auto* op = static_cast<read_op*>(base);
+    if (op->internal.is_open())
     {
-        if (cancelled.load(std::memory_order_acquire))
-            *ec_out = capy::error::canceled;
-        else if (dwError != 0)
-            *ec_out = make_err(dwError);
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(op->internal.native_handle()),
+            op);
+    }
+}
+
+void write_op::do_cancel_impl(overlapped_op* base) noexcept
+{
+    auto* op = static_cast<write_op*>(base);
+    if (op->internal.is_open())
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(op->internal.native_handle()),
+            op);
+    }
+}
+
+void accept_op::do_cancel_impl(overlapped_op* base) noexcept
+{
+    auto* op = static_cast<accept_op*>(base);
+    if (op->listen_socket != INVALID_SOCKET)
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(op->listen_socket),
+            op);
+    }
+}
+
+//------------------------------------------------------------------------------
+// accept_op completion handler
+
+void
+accept_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
+{
+    auto* op = static_cast<accept_op*>(base);
+
+    // Destroy path
+    if (!owner)
+    {
+        op->cleanup_only();
+        return;
+    }
+
+    op->stop_cb.reset();
+
+    bool success = (op->dwError == 0 && !op->cancelled.load(std::memory_order_acquire));
+
+    if (op->ec_out)
+    {
+        if (op->cancelled.load(std::memory_order_acquire))
+            *op->ec_out = capy::error::canceled;
+        else if (op->dwError != 0)
+            *op->ec_out = make_err(op->dwError);
         else
-            *ec_out = {};
+            *op->ec_out = {};
     }
 
-    if (success && accepted_socket != INVALID_SOCKET && peer_wrapper)
+    if (success && op->accepted_socket != INVALID_SOCKET && op->peer_wrapper)
     {
-        // Update accept context for proper socket behavior
         ::setsockopt(
-            accepted_socket,
+            op->accepted_socket,
             SOL_SOCKET,
             SO_UPDATE_ACCEPT_CONTEXT,
-            reinterpret_cast<char*>(&listen_socket),
+            reinterpret_cast<char*>(&op->listen_socket),
             sizeof(SOCKET));
 
-        // Transfer socket handle to peer impl internal
-        peer_wrapper->get_internal()->set_socket(accepted_socket);
+        op->peer_wrapper->get_internal()->set_socket(op->accepted_socket);
 
-        // Cache endpoints on the accepted socket
         sockaddr_in local_addr{};
         int local_len = sizeof(local_addr);
         sockaddr_in remote_addr{};
         int remote_len = sizeof(remote_addr);
 
         endpoint local_ep, remote_ep;
-        if (::getsockname(accepted_socket,
+        if (::getsockname(op->accepted_socket,
             reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
             local_ep = from_sockaddr_in(local_addr);
-        if (::getpeername(accepted_socket,
+        if (::getpeername(op->accepted_socket,
             reinterpret_cast<sockaddr*>(&remote_addr), &remote_len) == 0)
             remote_ep = from_sockaddr_in(remote_addr);
 
-        peer_wrapper->get_internal()->set_endpoints(local_ep, remote_ep);
+        op->peer_wrapper->get_internal()->set_endpoints(local_ep, remote_ep);
+        op->accepted_socket = INVALID_SOCKET;
 
-        accepted_socket = INVALID_SOCKET;
-
-        // Pass wrapper to awaitable for assignment to peer socket
-        if (impl_out)
-            *impl_out = peer_wrapper;
-        // Note: peer_wrapper ownership transfers to the peer socket
-        // Don't delete it here
+        if (op->impl_out)
+            *op->impl_out = op->peer_wrapper;
     }
     else
     {
-        // Cleanup on failure
-        if (accepted_socket != INVALID_SOCKET)
+        if (op->accepted_socket != INVALID_SOCKET)
         {
-            ::closesocket(accepted_socket);
-            accepted_socket = INVALID_SOCKET;
+            ::closesocket(op->accepted_socket);
+            op->accepted_socket = INVALID_SOCKET;
         }
 
-        // Release the peer wrapper on failure
-        peer_wrapper->release();
-        peer_wrapper = nullptr;
+        if (op->peer_wrapper)
+        {
+            op->peer_wrapper->release();
+            op->peer_wrapper = nullptr;
+        }
 
-        if (impl_out)
-            *impl_out = nullptr;
+        if (op->impl_out)
+            *op->impl_out = nullptr;
     }
 
-    // Save h and ex before moving acceptor_ptr, because acceptor_ptr
-    // may be the last reference to the internal, and this accept_op is a
-    // member of the internal. Destroying the internal would invalidate h/ex.
-    auto saved_h = h;
-    auto saved_ex = ex;
-
-    // Move acceptor_ptr to local BEFORE resuming. When the local's destructor
-    // runs at function exit, it may destroy the internal (and 'this'). Moving
-    // to local ensures this happens after all member accesses are complete.
-    auto prevent_premature_destruction = std::move(acceptor_ptr);
+    auto saved_h = op->h;
+    auto saved_ex = op->ex;
+    auto prevent_premature_destruction = std::move(op->acceptor_ptr);
 
     resume_coro(saved_ex, saved_h);
 }
 
-void
-accept_op::
-do_cancel() noexcept
-{
-    if (listen_socket != INVALID_SOCKET)
-    {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(listen_socket),
-            this);
-    }
-}
+//------------------------------------------------------------------------------
+// connect_op completion handler
 
 void
-connect_op::
-operator()()
+connect_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
 {
-    // Cache endpoints on successful connect
-    bool success = (dwError == 0 && !cancelled.load(std::memory_order_acquire));
-    if (success && internal.is_open())
+    auto* op = static_cast<connect_op*>(base);
+
+    if (!owner)
     {
-        // Query local endpoint via getsockname (may fail, but remote is always known)
+        op->cleanup_only();
+        return;
+    }
+
+    bool success = (op->dwError == 0 && !op->cancelled.load(std::memory_order_acquire));
+    if (success && op->internal.is_open())
+    {
         endpoint local_ep;
         sockaddr_in local_addr{};
         int local_len = sizeof(local_addr);
-        if (::getsockname(internal.native_handle(),
+        if (::getsockname(op->internal.native_handle(),
             reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
             local_ep = from_sockaddr_in(local_addr);
-        // Always cache remote endpoint; local may be default if getsockname failed
-        internal.set_endpoints(local_ep, target_endpoint);
+        op->internal.set_endpoints(local_ep, op->target_endpoint);
     }
 
-    // Move internal_ptr to local BEFORE resuming coroutine. The coroutine might
-    // close the socket, releasing the last wrapper ref. If internal_ptr were the
-    // last ref and we reset it after resuming, we'd destroy 'this' while still
-    // executing. Moving to local ensures destruction happens after all member
-    // accesses, when the local's destructor runs at function exit.
-    auto prevent_premature_destruction = std::move(internal_ptr);
-    overlapped_op::operator()();
+    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    op->invoke_handler();
 }
 
+//------------------------------------------------------------------------------
+// read_op completion handler
+
 void
-connect_op::
-do_cancel() noexcept
+read_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
 {
-    if (internal.is_open())
+    auto* op = static_cast<read_op*>(base);
+
+    if (!owner)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(internal.native_handle()),
-            this);
+        op->cleanup_only();
+        return;
     }
+
+    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    op->invoke_handler();
 }
 
-void
-read_op::
-operator()()
-{
-    // Move internal_ptr to local BEFORE resuming. See connect_op::operator()().
-    auto prevent_premature_destruction = std::move(internal_ptr);
-    overlapped_op::operator()();
-}
+//------------------------------------------------------------------------------
+// write_op completion handler
 
 void
-read_op::
-do_cancel() noexcept
+write_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
 {
-    if (internal.is_open())
+    auto* op = static_cast<write_op*>(base);
+
+    if (!owner)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(internal.native_handle()),
-            this);
+        op->cleanup_only();
+        return;
     }
-}
 
-void
-write_op::
-operator()()
-{
-    // Move internal_ptr to local BEFORE resuming. See connect_op::operator()().
-    auto prevent_premature_destruction = std::move(internal_ptr);
-    overlapped_op::operator()();
-}
-
-void
-write_op::
-do_cancel() noexcept
-{
-    if (internal.is_open())
-    {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(internal.native_handle()),
-            this);
-    }
+    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    op->invoke_handler();
 }
 
 win_socket_impl_internal::
@@ -525,25 +445,15 @@ do_read_io()
         DWORD err = ::WSAGetLastError();
         if (err != WSA_IO_PENDING)
         {
-            // Immediate error - dispatch inline
             svc_.work_finished();
             op.dwError = err;
-            op.complete_immediate();
+            op.invoke_handler();
             return;
         }
     }
     else
     {
-        // Synchronous completion - with FILE_SKIP_COMPLETION_PORT_ON_SUCCESS,
-        // IOCP shouldn't post a packet. But if the flag failed to set or under
-        // certain conditions, IOCP might still deliver a completion. Use CAS
-        // to race with IOCP: only set fields and post if we win (CAS returns 0).
-        // If IOCP wins, it already set the fields via complete() and processed.
-        //
-        // CRITICAL: Must call work_finished() ONLY if we win the CAS, and must
-        // not access op after CAS fails. If IOCP wins, it processes the op
-        // (which may destroy it), so any access to op is use-after-free.
-        // The IOCP handler calls work_finished() via its work_guard.
+        // Synchronous completion - race with IOCP using CAS on ready_ flag
         if (::InterlockedCompareExchange(&op.ready_, 1, 0) == 0)
         {
             svc_.work_finished();
@@ -863,7 +773,7 @@ open_socket(win_socket_impl_internal& impl)
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(sock),
         static_cast<HANDLE>(iocp_),
-        reinterpret_cast<ULONG_PTR>(&overlapped_key_),
+        key_io,
         0);
 
     if (result == nullptr)
@@ -1014,7 +924,7 @@ open_acceptor(
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(sock),
         static_cast<HANDLE>(iocp_),
-        reinterpret_cast<ULONG_PTR>(&overlapped_key_),
+        key_io,
         0);
 
     if (result == nullptr)
@@ -1129,7 +1039,7 @@ accept(
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(accepted),
         svc_.native_handle(),
-        reinterpret_cast<ULONG_PTR>(svc_.io_key()),
+        key_io,
         0);
 
     if (result == nullptr)

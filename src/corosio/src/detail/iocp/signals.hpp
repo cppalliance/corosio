@@ -75,10 +75,15 @@ struct signal_op : scheduler_op
     int* signal_out = nullptr;
     int signal_number = 0;
     signal_op* next_in_queue = nullptr;
-    win_signals* svc = nullptr;  // For work_finished callback
+    win_signals* svc = nullptr;
 
-    void operator()() override;
-    void destroy() override;
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t bytes,
+        std::uint32_t error);
+
+    signal_op() noexcept;
 };
 
 //------------------------------------------------------------------------------

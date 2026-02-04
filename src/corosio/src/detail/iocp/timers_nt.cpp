@@ -12,6 +12,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/timers_nt.hpp"
+#include "src/detail/iocp/completion_key.hpp"
 #include "src/detail/iocp/windows.hpp"
 
 namespace boost::corosio::detail {
@@ -177,14 +178,20 @@ associate_timer()
         wait_packet_,
         iocp_,
         waitable_timer_,
-        this,
+        reinterpret_cast<void*>(key_wake_dispatch),
         nullptr,
         STATUS_SUCCESS,
         0,
         &already_signaled);
 
     if (status == STATUS_SUCCESS && already_signaled)
-        repost(iocp_);
+    {
+        ::PostQueuedCompletionStatus(
+            static_cast<HANDLE>(iocp_),
+            0,
+            key_wake_dispatch,
+            nullptr);
+    }
 }
 
 } // namespace boost::corosio::detail
