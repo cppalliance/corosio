@@ -536,6 +536,12 @@ update_timerfd() const
 {
     auto nearest = timer_svc_->nearest_expiry();
 
+    // Skip syscall if expiry hasn't changed
+    if (nearest == last_timerfd_expiry_)
+        return;
+
+    last_timerfd_expiry_ = nearest;
+
     itimerspec ts{};
     int flags = 0;
 
@@ -576,19 +582,20 @@ run_reactor(std::unique_lock<std::mutex>& lock)
 
     lock.unlock();
 
+    // --- Event loop runs WITHOUT the mutex (like Asio) ---
+
     epoll_event events[128];
     int nfds = ::epoll_wait(epoll_fd_, events, 128, timeout_ms);
     int saved_errno = errno;
 
-    timer_svc_->process_expired();
-    update_timerfd();
-
     if (nfds < 0 && saved_errno != EINTR)
         detail::throw_system_error(make_err(saved_errno), "epoll_wait");
 
-    lock.lock();
-
+    bool check_timers = false;
+    op_queue local_ops;
     int completions_queued = 0;
+
+    // Process events without holding the mutex
     for (int i = 0; i < nfds; ++i)
     {
         if (events[i].data.ptr == nullptr)
@@ -599,9 +606,11 @@ run_reactor(std::unique_lock<std::mutex>& lock)
             continue;
         }
 
-        // timerfd_settime() in update_timerfd() resets the readable state
         if (events[i].data.ptr == &timer_fd_)
+        {
+            check_timers = true;
             continue;
+        }
 
         auto* desc = static_cast<descriptor_data*>(events[i].data.ptr);
         std::uint32_t ev = events[i].events;
@@ -624,7 +633,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                 if (err)
                 {
                     op->complete(err, 0);
-                    completed_ops_.push(op);
+                    local_ops.push(op);
                     ++completions_queued;
                 }
                 else
@@ -637,7 +646,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     }
                     else
                     {
-                        completed_ops_.push(op);
+                        local_ops.push(op);
                         ++completions_queued;
                     }
                 }
@@ -650,14 +659,13 @@ run_reactor(std::unique_lock<std::mutex>& lock)
 
         if (ev & EPOLLOUT)
         {
-            // Connect uses write readiness - try it first
             auto* conn_op = desc->connect_op.exchange(nullptr, std::memory_order_acq_rel);
             if (conn_op)
             {
                 if (err)
                 {
                     conn_op->complete(err, 0);
-                    completed_ops_.push(conn_op);
+                    local_ops.push(conn_op);
                     ++completions_queued;
                 }
                 else
@@ -670,7 +678,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     }
                     else
                     {
-                        completed_ops_.push(conn_op);
+                        local_ops.push(conn_op);
                         ++completions_queued;
                     }
                 }
@@ -682,7 +690,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                 if (err)
                 {
                     write_op->complete(err, 0);
-                    completed_ops_.push(write_op);
+                    local_ops.push(write_op);
                     ++completions_queued;
                 }
                 else
@@ -695,7 +703,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     }
                     else
                     {
-                        completed_ops_.push(write_op);
+                        local_ops.push(write_op);
                         ++completions_queued;
                     }
                 }
@@ -705,14 +713,13 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                 desc->write_ready.store(true, std::memory_order_release);
         }
 
-        // Handle error for ops not processed above (no EPOLLIN/EPOLLOUT)
         if (err && !(ev & (EPOLLIN | EPOLLOUT)))
         {
             auto* read_op = desc->read_op.exchange(nullptr, std::memory_order_acq_rel);
             if (read_op)
             {
                 read_op->complete(err, 0);
-                completed_ops_.push(read_op);
+                local_ops.push(read_op);
                 ++completions_queued;
             }
 
@@ -720,7 +727,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
             if (write_op)
             {
                 write_op->complete(err, 0);
-                completed_ops_.push(write_op);
+                local_ops.push(write_op);
                 ++completions_queued;
             }
 
@@ -728,11 +735,24 @@ run_reactor(std::unique_lock<std::mutex>& lock)
             if (conn_op)
             {
                 conn_op->complete(err, 0);
-                completed_ops_.push(conn_op);
+                local_ops.push(conn_op);
                 ++completions_queued;
             }
         }
     }
+
+    // Process timers only when timerfd fires (like Asio's check_timers pattern)
+    if (check_timers)
+    {
+        timer_svc_->process_expired();
+        update_timerfd();
+    }
+
+    // --- Acquire mutex only for queue operations ---
+    lock.lock();
+
+    if (!local_ops.empty())
+        completed_ops_.splice(local_ops);
 
     if (completions_queued > 0)
     {
