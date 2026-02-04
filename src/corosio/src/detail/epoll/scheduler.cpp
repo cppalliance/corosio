@@ -280,10 +280,10 @@ post(capy::coro h) const
 
     auto ph = std::make_unique<post_handler>(h);
 
-    // Fast path: same thread posts to private queue without locking
+    // Fast path: same thread posts to private queue
+    // Only count locally; work_cleanup batches to global counter
     if (auto* ctx = find_context(this))
     {
-        outstanding_work_.fetch_add(1, std::memory_order_relaxed);
         ++ctx->private_outstanding_work;
         ctx->private_queue.push(ph.release());
         return;
@@ -301,10 +301,10 @@ void
 epoll_scheduler::
 post(scheduler_op* h) const
 {
-    // Fast path: same thread posts to private queue without locking
+    // Fast path: same thread posts to private queue
+    // Only count locally; work_cleanup batches to global counter
     if (auto* ctx = find_context(this))
     {
-        outstanding_work_.fetch_add(1, std::memory_order_relaxed);
         ++ctx->private_outstanding_work;
         ctx->private_queue.push(h);
         return;
@@ -534,8 +534,8 @@ void
 epoll_scheduler::
 drain_thread_queue(op_queue& queue, long count) const
 {
-    std::lock_guard lock(mutex_);
     // Note: outstanding_work_ was already incremented when posting
+    std::lock_guard lock(mutex_);
     completed_ops_.splice(queue);
     if (count > 0)
         wakeup_event_.notify_all();
@@ -576,10 +576,69 @@ wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
     }
 }
 
-struct work_guard
+/** RAII guard for handler execution work accounting.
+
+    Handler consumes 1 work item, may produce N new items via fast-path posts.
+    Net change = N - 1:
+    - If N > 1: add (N-1) to global (more work produced than consumed)
+    - If N == 1: net zero, do nothing
+    - If N < 1: call work_finished() (work consumed, may trigger stop)
+
+    Also drains private queue to global for other threads to process.
+*/
+struct work_cleanup
 {
-    epoll_scheduler const* self;
-    ~work_guard() { self->work_finished(); }
+    epoll_scheduler const* scheduler;
+    std::unique_lock<std::mutex>* lock;
+    scheduler_context* ctx;
+
+    ~work_cleanup()
+    {
+        if (ctx)
+        {
+            long produced = ctx->private_outstanding_work;
+            if (produced > 1)
+                scheduler->outstanding_work_.fetch_add(produced - 1, std::memory_order_relaxed);
+            else if (produced < 1)
+                scheduler->work_finished();
+            // produced == 1: net zero, handler consumed what it produced
+            ctx->private_outstanding_work = 0;
+
+            if (!ctx->private_queue.empty())
+            {
+                lock->lock();
+                scheduler->completed_ops_.splice(ctx->private_queue);
+                lock->unlock();
+            }
+        }
+        else
+        {
+            // No thread context - slow-path op was already counted globally
+            scheduler->work_finished();
+        }
+    }
+};
+
+/** RAII guard for reactor work accounting.
+
+    Reactor only produces work via timer/signal callbacks posting handlers.
+    Unlike handler execution which consumes 1, the reactor consumes nothing.
+    All produced work must be flushed to global counter.
+*/
+struct task_cleanup
+{
+    epoll_scheduler const* scheduler;
+    scheduler_context* ctx;
+
+    ~task_cleanup()
+    {
+        if (ctx && ctx->private_outstanding_work > 0)
+        {
+            scheduler->outstanding_work_.fetch_add(
+                ctx->private_outstanding_work, std::memory_order_relaxed);
+            ctx->private_outstanding_work = 0;
+        }
+    }
 };
 
 void
@@ -623,9 +682,14 @@ void
 epoll_scheduler::
 run_reactor(std::unique_lock<std::mutex>& lock)
 {
+    auto* ctx = find_context(this);
     int timeout_ms = reactor_interrupted_ ? 0 : -1;
 
     lock.unlock();
+
+    // Flush private work count when reactor completes
+    task_cleanup on_exit{this, ctx};
+    (void)on_exit;
 
     // --- Event loop runs WITHOUT the mutex (like Asio) ---
 
@@ -801,15 +865,11 @@ run_reactor(std::unique_lock<std::mutex>& lock)
     if (!local_ops.empty())
         completed_ops_.splice(local_ops);
 
-    // Drain private queue (outstanding_work_ was already incremented when posting)
-    if (auto* ctx = find_context(this))
+    // Drain private queue to global (work count handled by task_cleanup)
+    if (ctx && !ctx->private_queue.empty())
     {
-        if (!ctx->private_queue.empty())
-        {
-            completions_queued += ctx->private_outstanding_work;
-            ctx->private_outstanding_work = 0;
-            completed_ops_.splice(ctx->private_queue);
-        }
+        completions_queued += ctx->private_outstanding_work;
+        completed_ops_.splice(ctx->private_queue);
     }
 
     // Only wake threads that are actually idle, and only as many as we have work
@@ -870,10 +930,30 @@ do_one(long timeout_us)
 
         if (op != nullptr)
         {
+            auto* ctx = find_context(this);
             lock.unlock();
-            work_guard g{this};
+
+            work_cleanup on_exit{this, &lock, ctx};
+            (void)on_exit;
+
             (*op)();
             return 1;
+        }
+
+        // Drain private queue before blocking, flush work count to global
+        if (auto* ctx = find_context(this))
+        {
+            if (ctx->private_outstanding_work > 0)
+            {
+                outstanding_work_.fetch_add(
+                    ctx->private_outstanding_work, std::memory_order_relaxed);
+                ctx->private_outstanding_work = 0;
+            }
+            if (!ctx->private_queue.empty())
+            {
+                completed_ops_.splice(ctx->private_queue);
+                continue;
+            }
         }
 
         if (outstanding_work_.load(std::memory_order_acquire) == 0)
@@ -881,17 +961,6 @@ do_one(long timeout_us)
 
         if (timeout_us == 0)
             return 0;
-
-        // Drain private queue before blocking (outstanding_work_ was already incremented)
-        if (auto* ctx = find_context(this))
-        {
-            if (!ctx->private_queue.empty())
-            {
-                ctx->private_outstanding_work = 0;
-                completed_ops_.splice(ctx->private_queue);
-                continue;
-            }
-        }
 
         ++idle_thread_count_;
         if (timeout_us < 0)

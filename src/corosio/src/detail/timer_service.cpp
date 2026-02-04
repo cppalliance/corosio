@@ -11,7 +11,7 @@
 
 #include <boost/corosio/detail/scheduler.hpp>
 #include "src/detail/intrusive.hpp"
-#include "src/detail/resume_coro.hpp"
+#include "src/detail/scheduler_op.hpp"
 #include <boost/capy/error.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -27,6 +27,40 @@
 namespace boost::corosio::detail {
 
 class timer_service_impl;
+
+// Completion operation posted to scheduler when timer expires or is cancelled.
+// Runs inside work_cleanup scope so work accounting is batched correctly.
+struct timer_op final : scheduler_op
+{
+    capy::coro h;
+    capy::executor_ref d;
+    std::error_code* ec_out = nullptr;
+    std::error_code ec_value;
+    scheduler* sched = nullptr;
+
+    void operator()() override
+    {
+        if (ec_out)
+            *ec_out = ec_value;
+
+        // Capture before posting (coro may destroy this op)
+        auto* service = sched;
+        sched = nullptr;
+
+        d.post(h);
+
+        // Balance the on_work_started() from timer_impl::wait()
+        if (service)
+            service->on_work_finished();
+
+        delete this;
+    }
+
+    void destroy() override
+    {
+        delete this;
+    }
+};
 
 struct timer_impl
     : timer::timer_impl
@@ -194,14 +228,16 @@ public:
             notify = (impl.heap_index_ == 0);
         }
 
-        // Resume cancelled waiter outside lock
+        // Post cancelled waiter as scheduler_op (runs inside work_cleanup scope)
         if (was_waiting)
         {
-            if (ec_out)
-                *ec_out = make_error_code(capy::error::canceled);
-            resume_coro(d, h);
-            // Call on_work_finished AFTER the coroutine resumes
-            sched_->on_work_finished();
+            auto* op = new timer_op;
+            op->h = h;
+            op->d = std::move(d);
+            op->ec_out = ec_out;
+            op->ec_value = make_error_code(capy::error::canceled);
+            op->sched = sched_;
+            sched_->post(op);
         }
 
         if (notify)
@@ -234,14 +270,16 @@ public:
             }
         }
 
-        // Dispatch outside lock
+        // Post cancelled waiter as scheduler_op (runs inside work_cleanup scope)
         if (was_waiting)
         {
-            if (ec_out)
-                *ec_out = make_error_code(capy::error::canceled);
-            resume_coro(d, h);
-            // Call on_work_finished AFTER the coroutine resumes
-            sched_->on_work_finished();
+            auto* op = new timer_op;
+            op->h = h;
+            op->d = std::move(d);
+            op->ec_out = ec_out;
+            op->ec_value = make_error_code(capy::error::canceled);
+            op->sched = sched_;
+            sched_->post(op);
         }
     }
 
@@ -259,14 +297,8 @@ public:
 
     std::size_t process_expired() override
     {
-        // Collect expired timers while holding lock
-        struct expired_entry
-        {
-            std::coroutine_handle<> h;
-            capy::executor_ref d;
-            std::error_code* ec_out;
-        };
-        std::vector<expired_entry> expired;
+        // Collect expired timer_ops while holding lock
+        std::vector<timer_op*> expired;
 
         {
             std::lock_guard lock(mutex_);
@@ -280,23 +312,22 @@ public:
                 if (t->waiting_)
                 {
                     t->waiting_ = false;
-                    expired.push_back({t->h_, std::move(t->d_), t->ec_out_});
+                    auto* op = new timer_op;
+                    op->h = t->h_;
+                    op->d = std::move(t->d_);
+                    op->ec_out = t->ec_out_;
+                    op->ec_value = {};  // Success
+                    op->sched = sched_;
+                    expired.push_back(op);
                 }
                 // If not waiting, timer is removed but not dispatched -
                 // wait() will handle this by checking expiry
             }
         }
 
-        // Dispatch outside lock
-        for (auto& e : expired)
-        {
-            if (e.ec_out)
-                *e.ec_out = {};
-            resume_coro(e.d, e.h);
-            // Call on_work_finished AFTER the coroutine resumes, so it has a
-            // chance to add new work before we potentially trigger stop()
-            sched_->on_work_finished();
-        }
+        // Post ops to scheduler (they run inside work_cleanup scope)
+        for (auto* op : expired)
+            sched_->post(op);
 
         return expired.size();
     }
@@ -390,12 +421,10 @@ wait(
 
     if (already_expired)
     {
-        // Timer already expired - dispatch immediately
+        // Timer already expired - post for work tracking
         if (ec)
             *ec = {};
-        // Note: no work tracking needed - we dispatch synchronously
-        resume_coro(d, h);
-        // completion is always posted to scheduler queue, never inline.
+        d.post(h);
         return std::noop_coroutine();
     }
 

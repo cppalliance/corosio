@@ -142,6 +142,9 @@ public:
     void drain_thread_queue(op_queue& queue, long count) const;
 
 private:
+    friend struct work_cleanup;
+    friend struct task_cleanup;
+
     std::size_t do_one(long timeout_us);
     void run_reactor(std::unique_lock<std::mutex>& lock);
     void wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const;
