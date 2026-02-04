@@ -13,6 +13,7 @@
 
 #include "src/detail/iocp/signals.hpp"
 #include "src/detail/iocp/scheduler.hpp"
+#include "src/detail/resume_coro.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/error.hpp>
@@ -169,7 +170,7 @@ signal_op::do_complete(
     auto* service = op->svc;
     op->svc = nullptr;
 
-    op->d.dispatch(op->h);
+    resume_coro(op->d, op->h);
 
     if (service)
         service->work_finished();
@@ -219,7 +220,7 @@ wait(
             *ec = make_error_code(capy::error::canceled);
         if (signal_out)
             *signal_out = 0;
-        d.dispatch(h);
+        resume_coro(d, h);
         return;
     }
 
@@ -498,7 +499,7 @@ cancel_wait(win_signal_impl& impl)
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        op->d.dispatch(op->h);
+        resume_coro(op->d, op->h);
         sched_.on_work_finished();
     }
 }
