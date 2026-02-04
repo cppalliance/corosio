@@ -188,12 +188,29 @@ void run_socket_latency_benchmarks(
     bench::result_collector& collector,
     char const* filter )
 {
-    std::cout << "\n>>> Socket Latency Benchmarks <<<\n";
-
     bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
 
+    // Warm up
+    {
+        Context ioc;
+        auto [c, s] = corosio::test::make_socket_pair( ioc );
+        char buf[64] = {};
+        auto task = [&]() -> capy::task<>
+        {
+            for( int i = 0; i < 100; ++i )
+            {
+                (void)co_await c.write_some( capy::const_buffer( buf, sizeof( buf ) ) );
+                (void)co_await s.read_some( capy::mutable_buffer( buf, sizeof( buf ) ) );
+            }
+        };
+        capy::run_async( ioc.get_executor() )( task() );
+        ioc.run();
+        c.close();
+        s.close();
+    }
+
     std::vector<std::size_t> message_sizes = { 1, 64, 1024 };
-    int iterations = 1000;
+    int iterations = 1000000;
 
     if( run_all || std::strcmp( filter, "pingpong" ) == 0 )
     {
@@ -205,9 +222,9 @@ void run_socket_latency_benchmarks(
     if( run_all || std::strcmp( filter, "concurrent" ) == 0 )
     {
         bench::print_header( "Concurrent Socket Pairs Latency" );
-        collector.add( bench_concurrent_latency<Context>( 1, 64, 1000 ) );
-        collector.add( bench_concurrent_latency<Context>( 4, 64, 500 ) );
-        collector.add( bench_concurrent_latency<Context>( 16, 64, 250 ) );
+        collector.add( bench_concurrent_latency<Context>( 1, 64, 1000000 ) );
+        collector.add( bench_concurrent_latency<Context>( 4, 64, 500000 ) );
+        collector.add( bench_concurrent_latency<Context>( 16, 64, 250000 ) );
     }
 }
 

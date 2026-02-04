@@ -227,8 +227,6 @@ void run_io_context_benchmarks(
     bench::result_collector& collector,
     char const* filter )
 {
-    std::cout << "\n>>> io_context Benchmarks (Asio) <<<\n";
-
     bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
 
     // Warm up
@@ -241,16 +239,16 @@ void run_io_context_benchmarks(
     }
 
     if( run_all || std::strcmp( filter, "single_threaded" ) == 0 )
-        collector.add( bench_single_threaded_post( 1000000 ) );
+        collector.add( bench_single_threaded_post( 5000000 ) );
 
     if( run_all || std::strcmp( filter, "multithreaded" ) == 0 )
-        collector.add( bench_multithreaded_scaling( 1000000, 8 ) );
+        collector.add( bench_multithreaded_scaling( 5000000, 8 ) );
 
     if( run_all || std::strcmp( filter, "interleaved" ) == 0 )
-        collector.add( bench_interleaved_post_run( 10000, 100 ) );
+        collector.add( bench_interleaved_post_run( 50000, 100 ) );
 
     if( run_all || std::strcmp( filter, "concurrent" ) == 0 )
-        collector.add( bench_concurrent_post_run( 4, 250000 ) );
+        collector.add( bench_concurrent_post_run( 4, 1250000 ) );
 }
 
 } // namespace asio_bench

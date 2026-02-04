@@ -240,12 +240,26 @@ void run_socket_throughput_benchmarks(
     bench::result_collector& collector,
     char const* filter )
 {
-    std::cout << "\n>>> Socket Throughput Benchmarks <<<\n";
-
     bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
 
+    // Warm up
+    {
+        Context ioc;
+        auto [w, r] = corosio::test::make_socket_pair( ioc );
+        std::vector<char> buf( 4096, 'w' );
+        auto task = [&]() -> capy::task<>
+        {
+            (void)co_await w.write_some( capy::const_buffer( buf.data(), buf.size() ) );
+            (void)co_await r.read_some( capy::mutable_buffer( buf.data(), buf.size() ) );
+        };
+        capy::run_async( ioc.get_executor() )( task() );
+        ioc.run();
+        w.close();
+        r.close();
+    }
+
     std::vector<std::size_t> buffer_sizes = { 1024, 4096, 16384, 65536 };
-    std::size_t transfer_size = 64 * 1024 * 1024;
+    std::size_t transfer_size = 4ULL * 1024 * 1024 * 1024;
 
     if( run_all || std::strcmp( filter, "unidirectional" ) == 0 )
     {
