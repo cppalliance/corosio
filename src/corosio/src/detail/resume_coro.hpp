@@ -10,17 +10,19 @@
 #ifndef BOOST_COROSIO_DETAIL_RESUME_CORO_HPP
 #define BOOST_COROSIO_DETAIL_RESUME_CORO_HPP
 
+#include <boost/corosio/basic_io_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/detail/type_id.hpp>
 #include <boost/capy/coro.hpp>
-#include <atomic>
 
 namespace boost::corosio::detail {
 
-/** Resumes a coroutine with proper memory synchronization.
+/** Resumes a coroutine for I/O completion.
 
-    The acquire fence ensures all I/O results (buffer contents,
-    error codes, bytes transferred) written by other threads are
-    visible to the resumed coroutine before it continues execution.
+    If the executor is io_context::executor_type, resumes directly
+    to avoid dispatch overhead. Otherwise dispatches through the
+    executor. No memory fence is needed since GQCS/epoll_wait
+    provide acquire semantics.
 
     @param d The executor to dispatch through.
     @param h The coroutine handle to resume.
@@ -28,10 +30,11 @@ namespace boost::corosio::detail {
 inline void
 resume_coro(capy::executor_ref d, capy::coro h)
 {
-    // I/O results may have been written by another thread (OS or worker).
-    // Acquire fence ensures those writes are visible before coroutine resumes.
-    std::atomic_thread_fence(std::memory_order_acquire);
-    d.dispatch(h);
+    // Fast path: resume directly for io_context executor
+    if (&d.type_id() == &capy::detail::type_id<basic_io_context::executor_type>())
+        h.resume();
+    else
+        d.dispatch(h);
 }
 
 } // namespace boost::corosio::detail
