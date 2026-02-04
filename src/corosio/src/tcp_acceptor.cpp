@@ -34,36 +34,41 @@ tcp_acceptor(
 {
 }
 
-void
+std::error_code
 tcp_acceptor::
 listen(endpoint ep, int backlog)
 {
     if (impl_)
         close();
 
+    std::error_code ec;
+
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc = ctx_->use_service<detail::win_sockets>();
     auto& wrapper = svc.create_acceptor_impl();
     impl_ = &wrapper;
-    std::error_code ec = svc.open_acceptor(
-        *wrapper.get_internal(), ep, backlog);
+    ec = svc.open_acceptor(*wrapper.get_internal(), ep, backlog);
 #else
     // POSIX backends use abstract acceptor_service for runtime polymorphism.
     // The concrete service (epoll_sockets or select_sockets) must be installed
     // by the context constructor before any acceptor operations.
     auto* svc = ctx_->find_service<detail::acceptor_service>();
     if (!svc)
-        detail::throw_logic_error("tcp_acceptor::listen: no acceptor service installed");
+    {
+        // Should not happen with properly constructed io_context
+        return make_error_code(std::errc::operation_not_supported);
+    }
     auto& wrapper = svc->create_acceptor_impl();
     impl_ = &wrapper;
-    std::error_code ec = svc->open_acceptor(wrapper, ep, backlog);
+    ec = svc->open_acceptor(wrapper, ep, backlog);
 #endif
+    // Both branches above define 'wrapper' as a reference to the impl
     if (ec)
     {
         wrapper.release();
         impl_ = nullptr;
-        detail::throw_system_error(ec, "tcp_acceptor::listen");
     }
+    return ec;
 }
 
 void

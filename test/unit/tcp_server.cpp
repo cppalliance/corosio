@@ -133,16 +133,10 @@ struct tcp_server_test
         for(int attempt = 0; attempt < 20; ++attempt)
         {
             port = static_cast<std::uint16_t>(49152 + (attempt * 7) % 16383);
-            try
-            {
-                acc.listen(endpoint(ipv4_address::loopback(), port));
+            if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
                 break;
-            }
-            catch(std::system_error const&)
-            {
-                acc.close();
-                acc = tcp_acceptor(ioc);
-            }
+            acc.close();
+            acc = tcp_acceptor(ioc);
         }
         acc.close();
 
@@ -284,16 +278,10 @@ struct tcp_server_test
         for(int attempt = 0; attempt < 20; ++attempt)
         {
             port = static_cast<std::uint16_t>(49152 + (attempt * 7) % 16383);
-            try
-            {
-                acc.listen(endpoint(ipv4_address::loopback(), port));
+            if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
                 break;
-            }
-            catch(std::system_error const&)
-            {
-                acc.close();
-                acc = tcp_acceptor(ioc);
-            }
+            acc.close();
+            acc = tcp_acceptor(ioc);
         }
         acc.close();
 
@@ -437,6 +425,81 @@ struct tcp_server_test
     }
 
     void
+    testListenErrorCode()
+    {
+        io_context ioc;
+
+        // Test success case
+        tcp_acceptor acc1(ioc);
+        auto ec1 = acc1.listen(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec1);
+        BOOST_TEST(acc1.is_open());
+        auto port = acc1.local_endpoint().port();
+        BOOST_TEST(port != 0);
+
+        // Test with explicit backlog
+        tcp_acceptor acc2(ioc);
+        auto ec2 = acc2.listen(endpoint(ipv4_address::loopback(), 0), 64);
+        BOOST_TEST(!ec2);
+        BOOST_TEST(acc2.is_open());
+        BOOST_TEST(acc2.local_endpoint().port() != 0);
+    }
+
+    void
+    testBindSuccess()
+    {
+        io_context ioc;
+
+        // Test that tcp_server::bind returns no error and doesn't throw
+        test_server srv(ioc);
+        auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+    }
+
+    void
+    testListenErrorNonLocalAddress()
+    {
+        io_context ioc;
+
+        // Binding to a non-local IP address should fail with
+        // "can't assign requested address" (EADDRNOTAVAIL) on all platforms.
+        // 192.0.2.1 is from TEST-NET-1 (RFC 5737), reserved for documentation
+        // and never assigned to real interfaces.
+        tcp_acceptor acc(ioc);
+        auto ec = acc.listen(endpoint(ipv4_address({192, 0, 2, 1}), 0));
+        BOOST_TEST(ec);
+        BOOST_TEST(!acc.is_open());
+    }
+
+    void
+    testBindErrorNonLocalAddress()
+    {
+        io_context ioc;
+
+        // tcp_server::bind should return an error for non-local address
+        test_server srv(ioc);
+        auto ec = srv.bind(endpoint(ipv4_address({192, 0, 2, 1}), 0));
+        BOOST_TEST(ec);
+    }
+
+    void
+    testListenOnOpenAcceptor()
+    {
+        io_context ioc;
+        tcp_acceptor acc(ioc);
+
+        // First listen
+        auto ec1 = acc.listen(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec1);
+        BOOST_TEST(acc.is_open());
+
+        // Re-listen should close and reopen
+        auto ec2 = acc.listen(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec2);
+        BOOST_TEST(acc.is_open());
+    }
+
+    void
     run()
     {
         testStopServer();
@@ -446,6 +509,11 @@ struct tcp_server_test
         testStopWithoutStart();
         testRestart();
         testStartWithoutJoinThrows();
+        testListenErrorCode();
+        testBindSuccess();
+        testListenErrorNonLocalAddress();
+        testBindErrorNonLocalAddress();
+        testListenOnOpenAcceptor();
     }
 };
 

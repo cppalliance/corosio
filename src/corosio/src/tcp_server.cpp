@@ -93,9 +93,10 @@ std::error_code
 tcp_server::bind(endpoint ep)
 {
     impl_->ports.emplace_back(impl_->ctx);
-    // VFALCO this should return error_code
-    impl_->ports.back().listen(ep);
-    return {};
+    auto ec = impl_->ports.back().listen(ep);
+    if (ec)
+        impl_->ports.pop_back();
+    return ec;
 }
 
 void

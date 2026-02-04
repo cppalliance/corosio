@@ -389,7 +389,8 @@ capy::task<void> run_server(corosio::io_context& ioc)
 
     // Accept loop
     corosio::acceptor acc(ioc);
-    acc.listen(corosio::endpoint(8080));
+    if (auto ec = acc.listen(corosio::endpoint(8080)))
+        co_return;
 
     while (running)
     {

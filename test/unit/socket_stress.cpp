@@ -100,17 +100,13 @@ make_stress_pair(Context& ctx)
     for (int attempt = 0; attempt < 50; ++attempt)
     {
         port = get_stress_port();
-        try
+        if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
         {
-            acc.listen(endpoint(ipv4_address::loopback(), port));
             listening = true;
             break;
         }
-        catch (const std::system_error&)
-        {
-            acc.close();
-            acc = tcp_acceptor(ctx);
-        }
+        acc.close();
+        acc = tcp_acceptor(ctx);
     }
     if (!listening)
         throw std::runtime_error("stress_pair: failed to find available port");
@@ -663,17 +659,13 @@ struct accept_stress_test_impl
         for (int attempt = 0; attempt < 50; ++attempt)
         {
             port = get_stress_port();
-            try
+            if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
             {
-                acc.listen(endpoint(ipv4_address::loopback(), port));
                 listening = true;
                 break;
             }
-            catch (const std::system_error&)
-            {
-                acc.close();
-                acc = tcp_acceptor(ioc);
-            }
+            acc.close();
+            acc = tcp_acceptor(ioc);
         }
         if (!listening)
         {

@@ -53,7 +53,8 @@ namespace boost::corosio {
     @code
     io_context ioc;
     tcp_acceptor acc(ioc);
-    acc.listen(endpoint(8080));  // Bind to port 8080
+    if (auto ec = acc.listen(endpoint(8080)))  // Bind to port 8080
+        return ec;
 
     tcp_socket peer(ioc);
     auto [ec] = co_await acc.accept(peer);
@@ -198,11 +199,23 @@ public:
             bind to all interfaces on a specific port.
 
         @param backlog The maximum length of the queue of pending
-            connections. Defaults to a reasonable system value.
+            connections. Defaults to 128.
 
-        @throws std::system_error on failure.
+        @return An error code indicating success or the reason for failure.
+            A default-constructed error code indicates success.
+
+        @par Error Conditions
+        @li `errc::address_in_use`: The endpoint is already in use.
+        @li `errc::address_not_available`: The address is not available
+            on any local interface.
+        @li `errc::permission_denied`: Insufficient privileges to bind
+            to the endpoint (e.g., privileged port).
+        @li `errc::operation_not_supported`: The acceptor service is
+            unavailable in the context (POSIX only).
+
+        @throws Nothing.
     */
-    void listen(endpoint ep, int backlog = 128);
+    [[nodiscard]] std::error_code listen(endpoint ep, int backlog = 128);
 
     /** Close the acceptor.
 

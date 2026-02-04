@@ -29,7 +29,8 @@ An tcp_acceptor binds to a local endpoint and waits for clients to connect:
 [source,cpp]
 ----
 corosio::tcp_acceptor acc(ioc);
-acc.listen(corosio::endpoint(8080));  // Listen on port 8080
+if (auto ec = acc.listen(corosio::endpoint(8080)))  // Listen on port 8080
+    return ec;
 
 corosio::tcp_socket peer(ioc);
 auto [ec] = co_await acc.accept(peer);
@@ -65,7 +66,11 @@ listening for connections:
 
 [source,cpp]
 ----
-acc.listen(corosio::endpoint(8080));
+if (auto ec = acc.listen(corosio::endpoint(8080)))
+{
+    std::cerr << "Listen failed: " << ec.message() << "\n";
+    return ec;
+}
 ----
 
 This performs three operations:
@@ -74,13 +79,14 @@ This performs three operations:
 2. Binds to the specified endpoint
 3. Marks the socket as passive (listening)
 
-Throws `std::system_error` on failure.
+Returns a `std::error_code` indicating success or failure. The return value
+is marked `[[nodiscard]]` to prevent accidentally ignoring errors.
 
 === Parameters
 
 [source,cpp]
 ----
-void listen(endpoint ep, int backlog = 128);
+[[nodiscard]] std::error_code listen(endpoint ep, int backlog = 128);
 ----
 
 The `backlog` parameter specifies the maximum queue length for pending
@@ -94,7 +100,8 @@ To accept connections on any network interface:
 [source,cpp]
 ----
 // Port only - binds to 0.0.0.0 (all IPv4 interfaces)
-acc.listen(corosio::endpoint(8080));
+if (auto ec = acc.listen(corosio::endpoint(8080)))
+    return ec;
 ----
 
 === Binding to a Specific Interface
@@ -104,8 +111,9 @@ To accept connections only on a specific interface:
 [source,cpp]
 ----
 // Localhost only
-acc.listen(corosio::endpoint(
-    boost::urls::ipv4_address::loopback(), 8080));
+if (auto ec = acc.listen(corosio::endpoint(
+    boost::urls::ipv4_address::loopback(), 8080)))
+    return ec;
 ----
 
 == Accepting Connections
@@ -281,7 +289,11 @@ Coordinate shutdown with signal handling:
 capy::task<void> run_server(corosio::io_context& ioc)
 {
     corosio::tcp_acceptor acc(ioc);
-    acc.listen(corosio::endpoint(8080));
+    if (auto ec = acc.listen(corosio::endpoint(8080)))
+    {
+        std::cerr << "Listen failed: " << ec.message() << "\n";
+        co_return;
+    }
 
     corosio::signal_set signals(ioc, SIGINT, SIGTERM);
 

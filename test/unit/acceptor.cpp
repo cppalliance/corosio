@@ -53,7 +53,8 @@ struct acceptor_test_impl
         tcp_acceptor acc(ioc);
 
         // Listen on a port
-        acc.listen(endpoint(0));  // Port 0 = ephemeral port
+        auto ec = acc.listen(endpoint(0));  // Port 0 = ephemeral port
+        BOOST_TEST(!ec);
         BOOST_TEST_EQ(acc.is_open(), true);
 
         // Close it
@@ -66,7 +67,8 @@ struct acceptor_test_impl
     {
         Context ioc;
         tcp_acceptor acc1(ioc);
-        acc1.listen(endpoint(0));
+        auto ec = acc1.listen(endpoint(0));
+        BOOST_TEST(!ec);
         BOOST_TEST_EQ(acc1.is_open(), true);
 
         // Move construct
@@ -83,7 +85,8 @@ struct acceptor_test_impl
         Context ioc;
         tcp_acceptor acc1(ioc);
         tcp_acceptor acc2(ioc);
-        acc1.listen(endpoint(0));
+        auto ec = acc1.listen(endpoint(0));
+        BOOST_TEST(!ec);
         BOOST_TEST_EQ(acc1.is_open(), true);
         BOOST_TEST_EQ(acc2.is_open(), false);
 
@@ -107,7 +110,8 @@ struct acceptor_test_impl
         // acceptor impl alive until IOCP delivers the cancellation.
         Context ioc;
         tcp_acceptor acc(ioc);
-        acc.listen(endpoint(0));
+        auto ec = acc.listen(endpoint(0));
+        BOOST_TEST(!ec);
 
         // These must outlive the coroutines
         bool accept_done = false;
@@ -158,7 +162,8 @@ struct acceptor_test_impl
         // The acceptor_ptr shared_ptr in accept_op ensures this.
         Context ioc;
         tcp_acceptor acc(ioc);
-        acc.listen(endpoint(0));
+        auto ec = acc.listen(endpoint(0));
+        BOOST_TEST(!ec);
 
         tcp_socket peer(ioc);
         bool accept_done = false;

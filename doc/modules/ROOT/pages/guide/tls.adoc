@@ -552,7 +552,8 @@ capy::task<void> tls_server(
 
     // Set up acceptor
     corosio::acceptor acc(ioc);
-    acc.listen(corosio::endpoint(port));
+    if (auto ec = acc.listen(corosio::endpoint(port)))
+        co_return;
 
     for (;;)
     {

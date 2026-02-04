@@ -202,7 +202,8 @@ auto [ec] = co_await s.connect(target);
 [source,cpp]
 ----
 corosio::tcp_acceptor acc(ioc);
-acc.listen(corosio::endpoint(8080));  // Bind to all interfaces
+if (auto ec = acc.listen(corosio::endpoint(8080)))  // Bind to all interfaces
+    return ec;
 ----
 
 == From Resolver Results

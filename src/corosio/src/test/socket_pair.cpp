@@ -32,7 +32,8 @@ make_socket_pair(basic_io_context& ctx)
 
     // Use ephemeral port (0) - OS assigns an available port
     tcp_acceptor acc(ctx);
-    acc.listen(endpoint(ipv4_address::loopback(), 0));
+    if (auto ec = acc.listen(endpoint(ipv4_address::loopback(), 0)))
+        throw std::runtime_error("socket_pair listen failed: " + ec.message());
     auto port = acc.local_endpoint().port();
 
     tcp_socket s1(ctx);

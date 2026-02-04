@@ -152,7 +152,9 @@ make_mocket_pair(
 
     // Use ephemeral port (0) - OS assigns an available port
     tcp_acceptor acc(ctx);
-    acc.listen(endpoint(ipv4_address::loopback(), 0));
+    auto listen_ec = acc.listen(endpoint(ipv4_address::loopback(), 0));
+    if (listen_ec)
+        throw std::runtime_error("mocket listen failed: " + listen_ec.message());
     auto port = acc.local_endpoint().port();
 
     // Open peer socket for connect

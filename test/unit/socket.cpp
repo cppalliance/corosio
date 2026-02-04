@@ -86,17 +86,13 @@ make_socket_pair_t(Context& ctx)
     for (int attempt = 0; attempt < 20; ++attempt)
     {
         port = get_socket_test_port();
-        try
+        if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
         {
-            acc.listen(endpoint(ipv4_address::loopback(), port));
             listening = true;
             break;
         }
-        catch (const std::system_error&)
-        {
-            acc.close();
-            acc = tcp_acceptor(ctx);
-        }
+        acc.close();
+        acc = tcp_acceptor(ctx);
     }
     if (!listening)
         throw std::runtime_error("socket_pair: failed to find available port");
@@ -1202,7 +1198,8 @@ struct socket_test_impl
         tcp_acceptor acc(ioc);
 
         // Bind to loopback with port 0 (ephemeral)
-        acc.listen(endpoint(ipv4_address::loopback(), 0));
+        auto listen_ec = acc.listen(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!listen_ec);
 
         // Acceptor's local endpoint should have a non-zero OS-assigned port
         auto acc_local = acc.local_endpoint();
@@ -1272,18 +1269,14 @@ struct socket_test_impl
         bool found = false;
         for (int attempt = 0; attempt < 100; ++attempt)
         {
-            try
+            if (!acc.listen(endpoint(ipv4_address::loopback(), test_port)))
             {
-                acc.listen(endpoint(ipv4_address::loopback(), test_port));
                 found = true;
                 break;
             }
-            catch (const std::system_error&)
-            {
-                acc.close();
-                acc = tcp_acceptor(ioc);
-                test_port += fast_rand();
-            }
+            acc.close();
+            acc = tcp_acceptor(ioc);
+            test_port += fast_rand();
         }
         if (!found)
         {
