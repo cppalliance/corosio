@@ -754,12 +754,12 @@ run_reactor(std::unique_lock<std::mutex>& lock)
     if (!local_ops.empty())
         completed_ops_.splice(local_ops);
 
-    if (completions_queued > 0)
+    // Only wake threads that are actually idle, and only as many as we have work
+    if (completions_queued > 0 && idle_thread_count_ > 0)
     {
-        if (completions_queued == 1)
+        int threads_to_wake = (std::min)(completions_queued, idle_thread_count_);
+        for (int i = 0; i < threads_to_wake; ++i)
             wakeup_event_.notify_one();
-        else
-            wakeup_event_.notify_all();
     }
 }
 
