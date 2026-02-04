@@ -208,6 +208,7 @@ connect_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
+        op->internal_ptr.reset();
         return;
     }
 
@@ -242,6 +243,7 @@ read_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
+        op->internal_ptr.reset();
         return;
     }
 
@@ -264,6 +266,7 @@ write_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
+        op->internal_ptr.reset();
         return;
     }
 
@@ -311,7 +314,6 @@ release_internal()
             nullptr);
     }
     close_socket();
-    // Destruction happens automatically when all shared_ptrs are released
 }
 
 void
@@ -445,8 +447,10 @@ do_read_io()
         DWORD err = ::WSAGetLastError();
         if (err != WSA_IO_PENDING)
         {
+            // Sync failure - release internal_ptr before resuming
             svc_.work_finished();
             op.dwError = err;
+            auto prevent_premature_destruction = std::move(op.internal_ptr);
             op.invoke_handler();
             return;
         }
