@@ -20,12 +20,15 @@ namespace boost::corosio::detail {
 std::unique_ptr<win_timers>
 make_win_timers(void* iocp, long* dispatch_required)
 {
-    // Try NT native API first (Windows 8+)
+    // Thread-based is faster; NT API requires one-shot re-association per
+    // wakeup which tanks performance. See timers_nt.cpp for details.
+    return std::make_unique<win_timers_thread>(iocp, dispatch_required);
+
+#if 0
+    // NT native API (Windows 8+)
     if (auto p = win_timers_nt::try_create(iocp, dispatch_required))
         return p;
-
-    // Fall back to dedicated thread
-    return std::make_unique<win_timers_thread>(iocp, dispatch_required);
+#endif
 }
 
 } // namespace boost::corosio::detail

@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+#include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -15,10 +16,51 @@
 #include "src/detail/iocp/completion_key.hpp"
 #include "src/detail/iocp/windows.hpp"
 
+/*
+    NT Wait Completion Packet Timer Implementation
+    ==============================================
+
+    This uses undocumented NT APIs to integrate waitable timers directly with
+    IOCP, avoiding the need for a dedicated timer thread.
+
+    CRITICAL: THE ASSOCIATION IS ONE-SHOT
+    -------------------------------------
+
+    When NtAssociateWaitCompletionPacket associates a timer with IOCP, the
+    association is consumed when the timer fires. After the completion packet
+    is posted to IOCP, the wait packet is "spent" and must be re-associated
+    before it can fire again.
+
+    This means update_timeout() MUST be called after every timer wakeup to
+    re-associate the wait packet, even if the timer expiry hasn't changed.
+    The scheduler calls update_timeout() unconditionally in do_one() after
+    processing expired timers for this reason.
+
+    WHY THIS IMPLEMENTATION IS SLOW
+    --------------------------------
+
+    The re-association must happen on every scheduler iteration, even for
+    timer-free workloads. This causes ~60% CPU overhead in benchmarks because
+    SetWaitableTimer + NtAssociateWaitCompletionPacket are called repeatedly.
+
+    DO NOT OPTIMIZE BY SKIPPING RE-ASSOCIATION
+    ------------------------------------------
+
+    It may seem obvious to skip re-association when no timers exist or when the
+    expiry hasn't changed. However, skipping breaks the timer mechanism:
+
+    1. Timer fires -> posts key_wake_dispatch to IOCP
+    2. do_one() processes the completion, calls process_expired()
+    3. If update_timeout() is skipped, the wait packet is not re-associated
+    4. Future timers will never fire -> scheduler hangs
+
+    The correct optimization (if needed) would be at the waitable timer level
+    (caching due_time to avoid redundant SetWaitableTimer calls), but the
+    NtAssociateWaitCompletionPacket call cannot be skipped after any wakeup.
+*/
+
 namespace boost::corosio::detail {
 
-// NT API type definitions
-using NTSTATUS = LONG;
 constexpr NTSTATUS STATUS_SUCCESS = 0;
 
 using NtCreateWaitCompletionPacketFn = NTSTATUS(NTAPI*)(
@@ -26,32 +68,16 @@ using NtCreateWaitCompletionPacketFn = NTSTATUS(NTAPI*)(
     ULONG DesiredAccess,
     void* ObjectAttributes);
 
-using NtAssociateWaitCompletionPacketFn = NTSTATUS(NTAPI*)(
-    void* WaitCompletionPacketHandle,
-    void* IoCompletionHandle,
-    void* TargetObjectHandle,
-    void* KeyContext,
-    void* ApcContext,
-    NTSTATUS IoStatus,
-    ULONG_PTR IoStatusInformation,
-    BOOLEAN* AlreadySignaled);
-
-using NtCancelWaitCompletionPacketFn = NTSTATUS(NTAPI*)(
-    void* WaitCompletionPacketHandle,
-    BOOLEAN RemoveSignaledPacket);
-
 win_timers_nt::
 win_timers_nt(
     void* iocp,
     long* dispatch_required,
-    void* nt_create,
-    void* nt_assoc,
-    void* nt_cancel)
+    NtAssociateWaitCompletionPacketFn nt_assoc,
+    NtCancelWaitCompletionPacketFn nt_cancel)
     : win_timers(dispatch_required)
     , iocp_(iocp)
-    , nt_create_wait_completion_packet_(nt_create)
-    , nt_associate_wait_completion_packet_(nt_assoc)
-    , nt_cancel_wait_completion_packet_(nt_cancel)
+    , nt_associate_(nt_assoc)
+    , nt_cancel_(nt_cancel)
 {
     waitable_timer_ = ::CreateWaitableTimerW(nullptr, FALSE, nullptr);
 }
@@ -64,26 +90,24 @@ try_create(void* iocp, long* dispatch_required)
     if (!ntdll)
         return nullptr;
 
-    auto nt_create = ::GetProcAddress(ntdll, "NtCreateWaitCompletionPacket");
-    auto nt_assoc = ::GetProcAddress(ntdll, "NtAssociateWaitCompletionPacket");
-    auto nt_cancel = ::GetProcAddress(ntdll, "NtCancelWaitCompletionPacket");
+    auto nt_create = reinterpret_cast<NtCreateWaitCompletionPacketFn>(
+        ::GetProcAddress(ntdll, "NtCreateWaitCompletionPacket"));
+    auto nt_assoc = reinterpret_cast<NtAssociateWaitCompletionPacketFn>(
+        ::GetProcAddress(ntdll, "NtAssociateWaitCompletionPacket"));
+    auto nt_cancel = reinterpret_cast<NtCancelWaitCompletionPacketFn>(
+        ::GetProcAddress(ntdll, "NtCancelWaitCompletionPacket"));
 
     if (!nt_create || !nt_assoc || !nt_cancel)
         return nullptr;
 
     auto p = std::unique_ptr<win_timers_nt>(new win_timers_nt(
-        iocp, dispatch_required,
-        reinterpret_cast<void*>(nt_create),
-        reinterpret_cast<void*>(nt_assoc),
-        reinterpret_cast<void*>(nt_cancel)));
+        iocp, dispatch_required, nt_assoc, nt_cancel));
 
     if (!p->waitable_timer_)
         return nullptr;
 
     // Create the wait completion packet
-    auto create_fn = reinterpret_cast<NtCreateWaitCompletionPacketFn>(
-        p->nt_create_wait_completion_packet_);
-    NTSTATUS status = create_fn(&p->wait_packet_, MAXIMUM_ALLOWED, nullptr);
+    NTSTATUS status = nt_create(&p->wait_packet_, MAXIMUM_ALLOWED, nullptr);
     if (status != STATUS_SUCCESS || !p->wait_packet_)
         return nullptr;
 
@@ -110,28 +134,17 @@ void
 win_timers_nt::
 stop()
 {
-    if (wait_packet_ && nt_cancel_wait_completion_packet_)
-    {
-        auto cancel_fn = reinterpret_cast<NtCancelWaitCompletionPacketFn>(
-            nt_cancel_wait_completion_packet_);
-        cancel_fn(wait_packet_, TRUE);
-    }
+    nt_cancel_(wait_packet_, TRUE);
 }
 
 void
 win_timers_nt::
 update_timeout(time_point next_expiry)
 {
-    if (!waitable_timer_)
-        return;
+    BOOST_COROSIO_ASSERT(waitable_timer_);
 
     // Cancel pending association
-    if (wait_packet_ && nt_cancel_wait_completion_packet_)
-    {
-        auto cancel_fn = reinterpret_cast<NtCancelWaitCompletionPacketFn>(
-            nt_cancel_wait_completion_packet_);
-        cancel_fn(wait_packet_, FALSE);
-    }
+    nt_cancel_(wait_packet_, FALSE);
 
     auto now = std::chrono::steady_clock::now();
     LARGE_INTEGER due_time;
@@ -164,17 +177,11 @@ void
 win_timers_nt::
 associate_timer()
 {
-    if (!wait_packet_ || !nt_associate_wait_completion_packet_)
-        return;
-
     // Set dispatch flag before associating
     ::InterlockedExchange(dispatch_required_, 1);
 
-    auto assoc_fn = reinterpret_cast<NtAssociateWaitCompletionPacketFn>(
-        nt_associate_wait_completion_packet_);
-
     BOOLEAN already_signaled = FALSE;
-    NTSTATUS status = assoc_fn(
+    NTSTATUS status = nt_associate_(
         wait_packet_,
         iocp_,
         waitable_timer_,

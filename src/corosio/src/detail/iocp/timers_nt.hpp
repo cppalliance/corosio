@@ -15,24 +15,40 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/timers.hpp"
+#include "src/detail/iocp/windows.hpp"
 
 namespace boost::corosio::detail {
+
+// NT API type definitions
+using NTSTATUS = LONG;
+
+using NtAssociateWaitCompletionPacketFn = NTSTATUS(NTAPI*)(
+    void* WaitCompletionPacketHandle,
+    void* IoCompletionHandle,
+    void* TargetObjectHandle,
+    void* KeyContext,
+    void* ApcContext,
+    NTSTATUS IoStatus,
+    ULONG_PTR IoStatusInformation,
+    BOOLEAN* AlreadySignaled);
+
+using NtCancelWaitCompletionPacketFn = NTSTATUS(NTAPI*)(
+    void* WaitCompletionPacketHandle,
+    BOOLEAN RemoveSignaledPacket);
 
 class win_timers_nt final : public win_timers
 {
     void* iocp_;
     void* waitable_timer_ = nullptr;
     void* wait_packet_ = nullptr;
-    void* nt_create_wait_completion_packet_;
-    void* nt_associate_wait_completion_packet_;
-    void* nt_cancel_wait_completion_packet_;
+    NtAssociateWaitCompletionPacketFn nt_associate_;
+    NtCancelWaitCompletionPacketFn nt_cancel_;
 
     win_timers_nt(
         void* iocp,
         long* dispatch_required,
-        void* nt_create,
-        void* nt_assoc,
-        void* nt_cancel);
+        NtAssociateWaitCompletionPacketFn nt_assoc,
+        NtCancelWaitCompletionPacketFn nt_cancel);
 
 public:
     // Returns nullptr if NT APIs unavailable (pre-Windows 8)
