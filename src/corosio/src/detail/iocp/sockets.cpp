@@ -286,18 +286,6 @@ win_socket_impl_internal(win_sockets& svc) noexcept
 win_socket_impl_internal::
 ~win_socket_impl_internal()
 {
-    // Destroy any active initiator coroutines
-    if (read_initiator_handle_)
-        read_initiator_handle_.destroy();
-    if (write_initiator_handle_)
-        write_initiator_handle_.destroy();
-
-    // Free cached frame storage (operator delete in promise_type is no-op)
-    if (read_initiator_frame_)
-        ::operator delete(read_initiator_frame_);
-    if (write_initiator_frame_)
-        ::operator delete(write_initiator_frame_);
-
     svc_.unregister_impl(*this);
 }
 
@@ -383,24 +371,6 @@ connect(
         }
     }
     // Synchronous completion: IOCP will deliver the completion packet
-}
-
-//------------------------------------------------------------------------------
-// Initiator coroutines - receive control via symmetric transfer after caller
-// suspends, then initiate the actual I/O.
-
-read_initiator
-make_read_initiator(void*& cached, win_socket_impl_internal* impl)
-{
-    impl->do_read_io();
-    co_return;
-}
-
-write_initiator
-make_write_initiator(void*& cached, win_socket_impl_internal* impl)
-{
-    impl->do_write_io();
-    co_return;
 }
 
 //------------------------------------------------------------------------------
@@ -517,15 +487,8 @@ read_some(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    // Destroy previous initiator if any, construct new one into cached frame
-    if (read_initiator_handle_)
-        read_initiator_handle_.destroy();
-
-    auto initiator = make_read_initiator(read_initiator_frame_, this);
-    read_initiator_handle_ = initiator.h;
-
     // Symmetric transfer to initiator - I/O starts after caller is suspended
-    return initiator.h;
+    return read_initiator_.start<&win_socket_impl_internal::do_read_io>(this);
 }
 
 std::coroutine_handle<>
@@ -569,15 +532,8 @@ write_some(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    // Destroy previous initiator if any, construct new one into cached frame
-    if (write_initiator_handle_)
-        write_initiator_handle_.destroy();
-
-    auto initiator = make_write_initiator(write_initiator_frame_, this);
-    write_initiator_handle_ = initiator.h;
-
     // Symmetric transfer to initiator - I/O starts after caller is suspended
-    return initiator.h;
+    return write_initiator_.start<&win_socket_impl_internal::do_write_io>(this);
 }
 
 void

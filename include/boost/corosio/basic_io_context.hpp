@@ -341,9 +341,19 @@ public:
 
     /** Dispatch a coroutine handle.
 
-        This is the executor interface for capy coroutines. If called
-        from within `run()`, resumes the coroutine inline via a normal
-        function call. Otherwise posts the coroutine for later execution.
+        If called from within `run()`, resumes the coroutine inline
+        by calling `h.resume()`. The call returns when the coroutine
+        suspends or completes. Otherwise posts the coroutine for
+        later execution.
+
+        After this function returns, the state of `h` is unspecified.
+        The coroutine may have completed, been destroyed, or suspended
+        at a different suspension point. Callers must not assume `h`
+        remains valid after calling `dispatch`.
+
+        @note Because this function may call `h.resume()` before
+        returning, it cannot be used to implement symmetric transfer
+        from `await_suspend`.
 
         @param h The coroutine handle to dispatch.
     */

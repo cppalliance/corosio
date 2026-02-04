@@ -113,19 +113,7 @@ epoll_socket_impl(epoll_socket_service& svc) noexcept
 }
 
 epoll_socket_impl::
-~epoll_socket_impl()
-{
-    if (read_initiator_handle_)
-        read_initiator_handle_.destroy();
-    if (write_initiator_handle_)
-        write_initiator_handle_.destroy();
-
-    // promise_type::operator delete is no-op, so free here
-    if (read_initiator_frame_)
-        ::operator delete(read_initiator_frame_);
-    if (write_initiator_frame_)
-        ::operator delete(write_initiator_frame_);
-}
+~epoll_socket_impl() = default;
 
 void
 epoll_socket_impl::
@@ -222,20 +210,6 @@ connect(
     op.complete(errno, 0);
     op.impl_ptr = shared_from_this();
     svc_.post(&op);
-}
-
-read_initiator
-make_read_initiator(void*& cached, epoll_socket_impl* impl)
-{
-    impl->do_read_io();
-    co_return;
-}
-
-write_initiator
-make_write_initiator(void*& cached, epoll_socket_impl* impl)
-{
-    impl->do_write_io();
-    co_return;
 }
 
 void
@@ -404,14 +378,8 @@ read_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    if (read_initiator_handle_)
-        read_initiator_handle_.destroy();
-
-    auto initiator = make_read_initiator(read_initiator_frame_, this);
-    read_initiator_handle_ = initiator.h;
-
     // Symmetric transfer ensures caller is suspended before I/O starts
-    return initiator.h;
+    return read_initiator_.start<&epoll_socket_impl::do_read_io>(this);
 }
 
 std::coroutine_handle<>
@@ -451,14 +419,8 @@ write_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    if (write_initiator_handle_)
-        write_initiator_handle_.destroy();
-
-    auto initiator = make_write_initiator(write_initiator_frame_, this);
-    write_initiator_handle_ = initiator.h;
-
     // Symmetric transfer ensures caller is suspended before I/O starts
-    return initiator.h;
+    return write_initiator_.start<&epoll_socket_impl::do_write_io>(this);
 }
 
 std::error_code
