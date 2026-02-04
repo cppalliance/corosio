@@ -320,14 +320,37 @@ void run_http_server_benchmarks(
     bench::result_collector& collector,
     char const* filter )
 {
-    std::cout << "\n>>> HTTP Server Benchmarks <<<\n";
-
     bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
+
+    // Warm up
+    {
+        Context ioc;
+        auto [c, s] = corosio::test::make_socket_pair( ioc );
+        char buf[256] = {};
+        auto task = [&]() -> capy::task<>
+        {
+            for( int i = 0; i < 10; ++i )
+            {
+                (void)co_await capy::write(
+                    c, capy::const_buffer( bench::http::small_request, bench::http::small_request_size ) );
+                (void)co_await s.read_some(
+                    capy::mutable_buffer( buf, bench::http::small_request_size ) );
+                (void)co_await capy::write(
+                    s, capy::const_buffer( bench::http::small_response, bench::http::small_response_size ) );
+                (void)co_await c.read_some(
+                    capy::mutable_buffer( buf, bench::http::small_response_size ) );
+            }
+        };
+        capy::run_async( ioc.get_executor() )( task() );
+        ioc.run();
+        c.close();
+        s.close();
+    }
 
     if( run_all || std::strcmp( filter, "single_conn" ) == 0 )
     {
         bench::print_header( "Single Connection (Sequential Requests)" );
-        collector.add( bench_single_connection<Context>( 10000 ) );
+        collector.add( bench_single_connection<Context>( 1000000 ) );
     }
 
     if( run_all || std::strcmp( filter, "concurrent" ) == 0 )
@@ -335,10 +358,10 @@ void run_http_server_benchmarks(
         if( run_all )
             std::this_thread::sleep_for( std::chrono::seconds( 5 ) );
         bench::print_header( "Concurrent Connections" );
-        collector.add( bench_concurrent_connections<Context>( 1, 10000 ) );
-        collector.add( bench_concurrent_connections<Context>( 4, 2500 ) );
-        collector.add( bench_concurrent_connections<Context>( 16, 625 ) );
-        collector.add( bench_concurrent_connections<Context>( 32, 312 ) );
+        collector.add( bench_concurrent_connections<Context>( 1, 1000000 ) );
+        collector.add( bench_concurrent_connections<Context>( 4, 250000 ) );
+        collector.add( bench_concurrent_connections<Context>( 16, 62500 ) );
+        collector.add( bench_concurrent_connections<Context>( 32, 31250 ) );
     }
 
     if( run_all || std::strcmp( filter, "multithread" ) == 0 )
@@ -346,10 +369,10 @@ void run_http_server_benchmarks(
         if( run_all )
             std::this_thread::sleep_for( std::chrono::seconds( 5 ) );
         bench::print_header( "Multi-threaded (32 connections, varying threads)" );
-        collector.add( bench_multithread<Context>( 1, 32, 312 ) );
-        collector.add( bench_multithread<Context>( 2, 32, 312 ) );
-        collector.add( bench_multithread<Context>( 4, 32, 312 ) );
-        collector.add( bench_multithread<Context>( 8, 32, 312 ) );
+        collector.add( bench_multithread<Context>( 1, 32, 31250 ) );
+        collector.add( bench_multithread<Context>( 2, 32, 31250 ) );
+        collector.add( bench_multithread<Context>( 4, 32, 31250 ) );
+        collector.add( bench_multithread<Context>( 8, 32, 31250 ) );
     }
 }
 

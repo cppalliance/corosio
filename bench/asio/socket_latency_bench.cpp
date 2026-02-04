@@ -170,12 +170,24 @@ void run_socket_latency_benchmarks(
     bench::result_collector& collector,
     char const* filter )
 {
-    std::cout << "\n>>> Socket Latency Benchmarks (Asio) <<<\n";
-
     bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
 
+    // Warm up
+    {
+        asio::io_context ioc;
+        auto [c, s] = make_socket_pair( ioc );
+        char buf[64] = {};
+        for( int i = 0; i < 100; ++i )
+        {
+            asio::write( c, asio::buffer( buf ) );
+            asio::read( s, asio::buffer( buf ) );
+        }
+        c.close();
+        s.close();
+    }
+
     std::vector<std::size_t> message_sizes = { 1, 64, 1024 };
-    int iterations = 1000;
+    int iterations = 1000000;
 
     if( run_all || std::strcmp( filter, "pingpong" ) == 0 )
     {
@@ -187,9 +199,9 @@ void run_socket_latency_benchmarks(
     if( run_all || std::strcmp( filter, "concurrent" ) == 0 )
     {
         bench::print_header( "Concurrent Socket Pairs Latency (Asio)" );
-        collector.add( bench_concurrent_latency( 1, 64, 1000 ) );
-        collector.add( bench_concurrent_latency( 4, 64, 500 ) );
-        collector.add( bench_concurrent_latency( 16, 64, 250 ) );
+        collector.add( bench_concurrent_latency( 1, 64, 1000000 ) );
+        collector.add( bench_concurrent_latency( 4, 64, 500000 ) );
+        collector.add( bench_concurrent_latency( 16, 64, 250000 ) );
     }
 }
 

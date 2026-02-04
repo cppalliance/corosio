@@ -234,8 +234,6 @@ void run_io_context_benchmarks(
     bench::result_collector& collector,
     char const* filter )
 {
-    std::cout << "\n>>> io_context Benchmarks <<<\n";
-
     bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
 
     // Warm up
@@ -249,16 +247,16 @@ void run_io_context_benchmarks(
     }
 
     if( run_all || std::strcmp( filter, "single_threaded" ) == 0 )
-        collector.add( bench_single_threaded_post<Context>( 1000000 ) );
+        collector.add( bench_single_threaded_post<Context>( 5000000 ) );
 
     if( run_all || std::strcmp( filter, "multithreaded" ) == 0 )
-        collector.add( bench_multithreaded_scaling<Context>( 1000000, 8 ) );
+        collector.add( bench_multithreaded_scaling<Context>( 5000000, 8 ) );
 
     if( run_all || std::strcmp( filter, "interleaved" ) == 0 )
-        collector.add( bench_interleaved_post_run<Context>( 10000, 100 ) );
+        collector.add( bench_interleaved_post_run<Context>( 50000, 100 ) );
 
     if( run_all || std::strcmp( filter, "concurrent" ) == 0 )
-        collector.add( bench_concurrent_post_run<Context>( 4, 250000 ) );
+        collector.add( bench_concurrent_post_run<Context>( 4, 1250000 ) );
 }
 
 // Explicit instantiations
