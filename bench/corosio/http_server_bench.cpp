@@ -373,6 +373,7 @@ void run_http_server_benchmarks(
         collector.add( bench_multithread<Context>( 2, 32, 31250 ) );
         collector.add( bench_multithread<Context>( 4, 32, 31250 ) );
         collector.add( bench_multithread<Context>( 8, 32, 31250 ) );
+        collector.add( bench_multithread<Context>( 16, 32, 31250 ) );
     }
 }
 

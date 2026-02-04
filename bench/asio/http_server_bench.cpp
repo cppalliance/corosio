@@ -364,6 +364,7 @@ void run_http_server_benchmarks(
         collector.add( bench_multithread( 2, 32, 31250 ) );
         collector.add( bench_multithread( 4, 32, 31250 ) );
         collector.add( bench_multithread( 8, 32, 31250 ) );
+        collector.add( bench_multithread( 16, 32, 31250 ) );
     }
 }
 
