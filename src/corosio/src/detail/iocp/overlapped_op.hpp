@@ -49,12 +49,13 @@ struct overlapped_op
     };
 
     capy::coro h;
-    capy::executor_ref d;
+    capy::executor_ref ex;
     std::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
     DWORD dwError = 0;
     DWORD bytes_transferred = 0;
     bool empty_buffer = false;  // True if operation was with empty buffer
+    bool is_read_ = false;      // True if this is a read operation (for EOF)
     std::atomic<bool> cancelled{false};
     std::optional<std::stop_callback<canceller>> stop_cb;
 
@@ -78,6 +79,7 @@ struct overlapped_op
         dwError = 0;
         bytes_transferred = 0;
         empty_buffer = false;
+        is_read_ = false;
         cancelled.store(false, std::memory_order_relaxed);
         ready_ = 0;
     }
@@ -97,7 +99,7 @@ struct overlapped_op
             {
                 *ec_out = make_err(dwError);
             }
-            else if (is_read_operation() && bytes_transferred == 0 && !empty_buffer)
+            else if (is_read_ && bytes_transferred == 0 && !empty_buffer)
             {
                 // EOF: 0 bytes transferred with no error indicates end of stream
                 // (but not if we intentionally read with an empty buffer)
@@ -112,11 +114,8 @@ struct overlapped_op
         if (bytes_out)
             *bytes_out = static_cast<std::size_t>(bytes_transferred);
 
-        resume_coro(d, h);
+        resume_coro(ex, h);
     }
-
-    // Returns true if this is a read operation (for EOF detection)
-    virtual bool is_read_operation() const noexcept { return false; }
 
     void destroy() override
     {
@@ -162,7 +161,7 @@ struct overlapped_op
         {
             if (dwError != 0)
                 *ec_out = make_err(dwError);
-            else if (is_read_operation() && bytes_transferred == 0 && !empty_buffer)
+            else if (is_read_ && bytes_transferred == 0 && !empty_buffer)
                 *ec_out = capy::error::eof;
             else
                 *ec_out = {};
@@ -171,7 +170,7 @@ struct overlapped_op
         if (bytes_out)
             *bytes_out = static_cast<std::size_t>(bytes_transferred);
 
-        d.dispatch(h);
+        resume_coro(ex, h);
     }
 };
 

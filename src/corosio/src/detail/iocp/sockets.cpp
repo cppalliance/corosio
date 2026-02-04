@@ -243,18 +243,18 @@ operator()()
             *impl_out = nullptr;
     }
 
-    // Save h and d before moving acceptor_ptr, because acceptor_ptr
+    // Save h and ex before moving acceptor_ptr, because acceptor_ptr
     // may be the last reference to the internal, and this accept_op is a
-    // member of the internal. Destroying the internal would invalidate h and d.
+    // member of the internal. Destroying the internal would invalidate h/ex.
     auto saved_h = h;
-    auto saved_d = d;
+    auto saved_ex = ex;
 
     // Move acceptor_ptr to local BEFORE resuming. When the local's destructor
     // runs at function exit, it may destroy the internal (and 'this'). Moving
     // to local ensures this happens after all member accesses are complete.
     auto prevent_premature_destruction = std::move(acceptor_ptr);
 
-    resume_coro(saved_d, saved_h);
+    resume_coro(saved_ex, saved_h);
 }
 
 void
@@ -409,7 +409,7 @@ connect(
     auto& op = conn_;
     op.reset();
     op.h = h;
-    op.d = d;
+    op.ex = d;
     op.ec_out = ec;
     op.target_endpoint = ep;  // Store target for endpoint caching
     op.start(token);
@@ -619,8 +619,9 @@ read_some(
 
     auto& op = rd_;
     op.reset();
+    op.is_read_ = true;
     op.h = h;
-    op.d = d;
+    op.ex = d;
     op.ec_out = ec;
     op.bytes_out = bytes_out;
     op.start(token);
@@ -673,7 +674,7 @@ write_some(
     auto& op = wr_;
     op.reset();
     op.h = h;
-    op.d = d;
+    op.ex = d;
     op.ec_out = ec;
     op.bytes_out = bytes_out;
     op.start(token);
@@ -1100,7 +1101,7 @@ accept(
     auto& op = acc_;
     op.reset();
     op.h = h;
-    op.d = d;
+    op.ex = d;
     op.ec_out = ec;
     op.impl_out = impl_out;
     op.start(token);

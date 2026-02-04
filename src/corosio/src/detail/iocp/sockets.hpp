@@ -70,7 +70,6 @@ struct read_op : overlapped_op
     explicit read_op(win_socket_impl_internal& internal_) noexcept : internal(internal_) {}
 
     void operator()() override;
-    bool is_read_operation() const noexcept override { return true; }
     void do_cancel() noexcept override;
 };
 

@@ -237,7 +237,7 @@ operator()()
 
     cancel_handle = nullptr;
 
-    resume_coro(d, h);
+    resume_coro(ex, h);
 }
 
 void
@@ -281,7 +281,7 @@ operator()()
             ep, std::move(stored_host), std::move(stored_service));
     }
 
-    resume_coro(d, h);
+    resume_coro(ex, h);
 }
 
 void
@@ -324,7 +324,7 @@ resolve(
     auto& op = op_;
     op.reset();
     op.h = h;
-    op.d = d;
+    op.ex = d;
     op.ec_out = ec;
     op.out = out;
     op.impl = this;
@@ -387,7 +387,7 @@ reverse_resolve(
     auto& op = reverse_op_;
     op.reset();
     op.h = h;
-    op.d = d;
+    op.ex = d;
     op.ec_out = ec;
     op.result_out = result_out;
     op.impl = this;
