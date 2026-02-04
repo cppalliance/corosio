@@ -8,21 +8,20 @@
 # Official repository: https://github.com/cppalliance/corosio
 #
 
-# Corosio benchmark executables
+add_executable(corosio_bench
+    main.cpp
+    io_context_bench.cpp
+    socket_throughput_bench.cpp
+    socket_latency_bench.cpp
+    http_server_bench.cpp)
 
-function(corosio_add_benchmark name source)
-    add_executable(${name} ${source})
-    target_link_libraries(${name}
-        PRIVATE
-            Boost::corosio
-            Threads::Threads)
-    set_property(TARGET ${name} PROPERTY FOLDER "benchmarks/corosio")
-    if (COROSIO_BENCH_LTO_SUPPORTED)
-        set_property(TARGET ${name} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-    endif ()
-endfunction()
+target_link_libraries(corosio_bench
+    PRIVATE
+        Boost::corosio
+        Threads::Threads)
 
-corosio_add_benchmark(corosio_bench_io_context io_context_bench.cpp)
-corosio_add_benchmark(corosio_bench_socket_throughput socket_throughput_bench.cpp)
-corosio_add_benchmark(corosio_bench_socket_latency socket_latency_bench.cpp)
-corosio_add_benchmark(corosio_bench_http_server http_server_bench.cpp)
+set_property(TARGET corosio_bench PROPERTY FOLDER "benchmarks/corosio")
+
+if (COROSIO_BENCH_LTO_SUPPORTED)
+    set_property(TARGET corosio_bench PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif ()

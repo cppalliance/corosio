@@ -7,8 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-// This benchmark uses coroutines (like Corosio) for a fair comparison,
-// rather than plain callbacks.
+#include "benchmarks.hpp"
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/co_spawn.hpp>
@@ -26,108 +25,100 @@
 
 namespace asio = boost::asio;
 
-// Coroutine that increments a counter
-asio::awaitable<void> increment_task(int& counter)
+namespace asio_bench {
+namespace {
+
+asio::awaitable<void> increment_task( int& counter )
 {
     ++counter;
     co_return;
 }
 
-// Coroutine that increments an atomic counter
-asio::awaitable<void> atomic_increment_task(std::atomic<int>& counter)
+asio::awaitable<void> atomic_increment_task( std::atomic<int>& counter )
 {
-    counter.fetch_add(1, std::memory_order_relaxed);
+    counter.fetch_add( 1, std::memory_order_relaxed );
     co_return;
 }
 
-// Measures single-threaded coroutine throughput using Asio's awaitable/co_spawn.
-// This is a direct apples-to-apples comparison with Corosio since both use C++20
-// coroutines. Differences reveal the overhead of each framework's coroutine
-// integration rather than callback vs. coroutine differences.
-bench::benchmark_result bench_single_threaded_post(int num_handlers)
+bench::benchmark_result bench_single_threaded_post( int num_handlers )
 {
-    bench::print_header("Single-threaded Handler Post (Asio)");
+    bench::print_header( "Single-threaded Handler Post (Asio)" );
 
     asio::io_context ioc;
     int counter = 0;
 
     bench::stopwatch sw;
 
-    for (int i = 0; i < num_handlers; ++i)
-        asio::co_spawn(ioc, increment_task(counter), asio::detached);
+    for( int i = 0; i < num_handlers; ++i )
+        asio::co_spawn( ioc, increment_task( counter ), asio::detached );
 
     ioc.run();
 
     double elapsed = sw.elapsed_seconds();
-    double ops_per_sec = static_cast<double>(num_handlers) / elapsed;
+    double ops_per_sec = static_cast<double>( num_handlers ) / elapsed;
 
     std::cout << "  Handlers:    " << num_handlers << "\n";
-    std::cout << "  Elapsed:     " << std::fixed << std::setprecision(3)
+    std::cout << "  Elapsed:     " << std::fixed << std::setprecision( 3 )
               << elapsed << " s\n";
-    std::cout << "  Throughput:  " << bench::format_rate(ops_per_sec) << "\n";
+    std::cout << "  Throughput:  " << bench::format_rate( ops_per_sec ) << "\n";
 
-    if (counter != num_handlers)
+    if( counter != num_handlers )
     {
         std::cerr << "  ERROR: counter mismatch! Expected " << num_handlers
                   << ", got " << counter << "\n";
     }
 
-    return bench::benchmark_result("single_threaded_post")
-        .add("handlers", num_handlers)
-        .add("elapsed_s", elapsed)
-        .add("ops_per_sec", ops_per_sec);
+    return bench::benchmark_result( "single_threaded_post" )
+        .add( "handlers", num_handlers )
+        .add( "elapsed_s", elapsed )
+        .add( "ops_per_sec", ops_per_sec );
 }
 
-// Measures multi-threaded scaling using Asio coroutines. Tests how Asio's
-// scheduler handles coroutine resumption across threads. Compare against Corosio
-// to evaluate coroutine dispatch efficiency under thread contention.
-bench::benchmark_result bench_multithreaded_scaling(int num_handlers, int max_threads)
+bench::benchmark_result bench_multithreaded_scaling( int num_handlers, int max_threads )
 {
-    bench::print_header("Multi-threaded Scaling (Asio Coroutines)");
+    bench::print_header( "Multi-threaded Scaling (Asio Coroutines)" );
 
     std::cout << "  Handlers per test: " << num_handlers << "\n\n";
 
-    bench::benchmark_result result("multithreaded_scaling");
-    result.add("handlers", num_handlers);
+    bench::benchmark_result result( "multithreaded_scaling" );
+    result.add( "handlers", num_handlers );
 
     double baseline_ops = 0;
 
-    for (int num_threads = 1; num_threads <= max_threads; num_threads *= 2)
+    for( int num_threads = 1; num_threads <= max_threads; num_threads *= 2 )
     {
         asio::io_context ioc;
-        std::atomic<int> counter{0};
+        std::atomic<int> counter{ 0 };
 
-        // Post all coroutines first
-        for (int i = 0; i < num_handlers; ++i)
-            asio::co_spawn(ioc, atomic_increment_task(counter), asio::detached);
+        for( int i = 0; i < num_handlers; ++i )
+            asio::co_spawn( ioc, atomic_increment_task( counter ), asio::detached );
 
         bench::stopwatch sw;
 
-        // Run with multiple threads
         std::vector<std::thread> runners;
-        for (int t = 0; t < num_threads; ++t)
-            runners.emplace_back([&ioc]() { ioc.run(); });
+        for( int t = 0; t < num_threads; ++t )
+            runners.emplace_back( [&ioc]() { ioc.run(); } );
 
-        for (auto& t : runners)
+        for( auto& t : runners )
             t.join();
 
         double elapsed = sw.elapsed_seconds();
-        double ops_per_sec = static_cast<double>(num_handlers) / elapsed;
+        double ops_per_sec = static_cast<double>( num_handlers ) / elapsed;
 
         std::cout << "  " << num_threads << " thread(s): "
-                  << bench::format_rate(ops_per_sec);
+                  << bench::format_rate( ops_per_sec );
 
-        if (num_threads == 1)
+        if( num_threads == 1 )
             baseline_ops = ops_per_sec;
-        else if (baseline_ops > 0)
-            std::cout << " (speedup: " << std::fixed << std::setprecision(2)
-                      << (ops_per_sec / baseline_ops) << "x)";
+        else if( baseline_ops > 0 )
+            std::cout << " (speedup: " << std::fixed << std::setprecision( 2 )
+                      << ( ops_per_sec / baseline_ops ) << "x)";
 
         std::cout << "\n";
 
-        result.add("threads_" + std::to_string(num_threads) + "_ops_per_sec", ops_per_sec);
+        result.add( "threads_" + std::to_string( num_threads ) + "_ops_per_sec", ops_per_sec );
 
-        if (counter.load() != num_handlers)
+        if( counter.load() != num_handlers )
         {
             std::cerr << "  ERROR: counter mismatch! Expected " << num_handlers
                       << ", got " << counter.load() << "\n";
@@ -137,12 +128,9 @@ bench::benchmark_result bench_multithreaded_scaling(int num_handlers, int max_th
     return result;
 }
 
-// Measures poll() efficiency with Asio coroutines in a game-loop pattern.
-// Tests how Asio handles frequent context restarts with coroutine-based work.
-// Compare against Corosio for latency-sensitive polling scenarios.
-bench::benchmark_result bench_interleaved_post_run(int iterations, int handlers_per_iteration)
+bench::benchmark_result bench_interleaved_post_run( int iterations, int handlers_per_iteration )
 {
-    bench::print_header("Interleaved Post/Run (Asio Coroutines)");
+    bench::print_header( "Interleaved Post/Run (Asio Coroutines)" );
 
     asio::io_context ioc;
     int counter = 0;
@@ -150,197 +138,119 @@ bench::benchmark_result bench_interleaved_post_run(int iterations, int handlers_
 
     bench::stopwatch sw;
 
-    for (int iter = 0; iter < iterations; ++iter)
+    for( int iter = 0; iter < iterations; ++iter )
     {
-        for (int i = 0; i < handlers_per_iteration; ++i)
-            asio::co_spawn(ioc, increment_task(counter), asio::detached);
+        for( int i = 0; i < handlers_per_iteration; ++i )
+            asio::co_spawn( ioc, increment_task( counter ), asio::detached );
 
         ioc.poll();
         ioc.restart();
     }
 
-    // Run any remaining handlers
     ioc.run();
 
     double elapsed = sw.elapsed_seconds();
-    double ops_per_sec = static_cast<double>(total_handlers) / elapsed;
+    double ops_per_sec = static_cast<double>( total_handlers ) / elapsed;
 
     std::cout << "  Iterations:        " << iterations << "\n";
     std::cout << "  Handlers/iter:     " << handlers_per_iteration << "\n";
     std::cout << "  Total handlers:    " << total_handlers << "\n";
-    std::cout << "  Elapsed:           " << std::fixed << std::setprecision(3)
+    std::cout << "  Elapsed:           " << std::fixed << std::setprecision( 3 )
               << elapsed << " s\n";
-    std::cout << "  Throughput:        " << bench::format_rate(ops_per_sec) << "\n";
+    std::cout << "  Throughput:        " << bench::format_rate( ops_per_sec ) << "\n";
 
-    if (counter != total_handlers)
+    if( counter != total_handlers )
     {
         std::cerr << "  ERROR: counter mismatch! Expected " << total_handlers
                   << ", got " << counter << "\n";
     }
 
-    return bench::benchmark_result("interleaved_post_run")
-        .add("iterations", iterations)
-        .add("handlers_per_iteration", handlers_per_iteration)
-        .add("total_handlers", total_handlers)
-        .add("elapsed_s", elapsed)
-        .add("ops_per_sec", ops_per_sec);
+    return bench::benchmark_result( "interleaved_post_run" )
+        .add( "iterations", iterations )
+        .add( "handlers_per_iteration", handlers_per_iteration )
+        .add( "total_handlers", total_handlers )
+        .add( "elapsed_s", elapsed )
+        .add( "ops_per_sec", ops_per_sec );
 }
 
-// Measures Asio coroutine performance under concurrent producer-consumer load.
-// Multiple threads spawn and execute coroutines simultaneously. Compare against
-// Corosio to evaluate coroutine dispatch under realistic server workloads.
-bench::benchmark_result bench_concurrent_post_run(int num_threads, int handlers_per_thread)
+bench::benchmark_result bench_concurrent_post_run( int num_threads, int handlers_per_thread )
 {
-    bench::print_header("Concurrent Post and Run (Asio Coroutines)");
+    bench::print_header( "Concurrent Post and Run (Asio Coroutines)" );
 
     asio::io_context ioc;
-    std::atomic<int> counter{0};
+    std::atomic<int> counter{ 0 };
     int total_handlers = num_threads * handlers_per_thread;
 
     bench::stopwatch sw;
 
-    // Launch threads that both post and run
     std::vector<std::thread> workers;
-    for (int t = 0; t < num_threads; ++t)
+    for( int t = 0; t < num_threads; ++t )
     {
-        workers.emplace_back([&ioc, &counter, handlers_per_thread]()
+        workers.emplace_back( [&ioc, &counter, handlers_per_thread]()
         {
-            for (int i = 0; i < handlers_per_thread; ++i)
-                asio::co_spawn(ioc, atomic_increment_task(counter), asio::detached);
+            for( int i = 0; i < handlers_per_thread; ++i )
+                asio::co_spawn( ioc, atomic_increment_task( counter ), asio::detached );
             ioc.run();
-        });
+        } );
     }
 
-    for (auto& t : workers)
+    for( auto& t : workers )
         t.join();
 
     double elapsed = sw.elapsed_seconds();
-    double ops_per_sec = static_cast<double>(total_handlers) / elapsed;
+    double ops_per_sec = static_cast<double>( total_handlers ) / elapsed;
 
     std::cout << "  Threads:           " << num_threads << "\n";
     std::cout << "  Handlers/thread:   " << handlers_per_thread << "\n";
     std::cout << "  Total handlers:    " << total_handlers << "\n";
-    std::cout << "  Elapsed:           " << std::fixed << std::setprecision(3)
+    std::cout << "  Elapsed:           " << std::fixed << std::setprecision( 3 )
               << elapsed << " s\n";
-    std::cout << "  Throughput:        " << bench::format_rate(ops_per_sec) << "\n";
+    std::cout << "  Throughput:        " << bench::format_rate( ops_per_sec ) << "\n";
 
-    if (counter.load() != total_handlers)
+    if( counter.load() != total_handlers )
     {
         std::cerr << "  ERROR: counter mismatch! Expected " << total_handlers
                   << ", got " << counter.load() << "\n";
     }
 
-    return bench::benchmark_result("concurrent_post_run")
-        .add("threads", num_threads)
-        .add("handlers_per_thread", handlers_per_thread)
-        .add("total_handlers", total_handlers)
-        .add("elapsed_s", elapsed)
-        .add("ops_per_sec", ops_per_sec);
+    return bench::benchmark_result( "concurrent_post_run" )
+        .add( "threads", num_threads )
+        .add( "handlers_per_thread", handlers_per_thread )
+        .add( "total_handlers", total_handlers )
+        .add( "elapsed_s", elapsed )
+        .add( "ops_per_sec", ops_per_sec );
 }
 
-// Run benchmarks
-void run_benchmarks(const char* output_file, const char* bench_filter)
+} // anonymous namespace
+
+void run_io_context_benchmarks(
+    bench::result_collector& collector,
+    char const* filter )
 {
-    std::cout << "Boost.Asio io_context Benchmarks\n";
-    std::cout << "=================================\n\n";
+    std::cout << "\n>>> io_context Benchmarks (Asio) <<<\n";
 
-    bench::result_collector collector("asio");
-
-    bool run_all = !bench_filter || std::strcmp(bench_filter, "all") == 0;
+    bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
 
     // Warm up
     {
         asio::io_context ioc;
         int counter = 0;
-        for (int i = 0; i < 1000; ++i)
-            asio::co_spawn(ioc, increment_task(counter), asio::detached);
+        for( int i = 0; i < 1000; ++i )
+            asio::co_spawn( ioc, increment_task( counter ), asio::detached );
         ioc.run();
     }
 
-    // Run selected benchmarks
-    if (run_all || std::strcmp(bench_filter, "single_threaded") == 0)
-        collector.add(bench_single_threaded_post(1000000));
+    if( run_all || std::strcmp( filter, "single_threaded" ) == 0 )
+        collector.add( bench_single_threaded_post( 1000000 ) );
 
-    if (run_all || std::strcmp(bench_filter, "multithreaded") == 0)
-        collector.add(bench_multithreaded_scaling(1000000, 8));
+    if( run_all || std::strcmp( filter, "multithreaded" ) == 0 )
+        collector.add( bench_multithreaded_scaling( 1000000, 8 ) );
 
-    if (run_all || std::strcmp(bench_filter, "interleaved") == 0)
-        collector.add(bench_interleaved_post_run(10000, 100));
+    if( run_all || std::strcmp( filter, "interleaved" ) == 0 )
+        collector.add( bench_interleaved_post_run( 10000, 100 ) );
 
-    if (run_all || std::strcmp(bench_filter, "concurrent") == 0)
-        collector.add(bench_concurrent_post_run(4, 250000));
-
-    std::cout << "\nBenchmarks complete.\n";
-
-    if (output_file)
-    {
-        if (collector.write_json(output_file))
-            std::cout << "Results written to: " << output_file << "\n";
-        else
-            std::cerr << "Error: Failed to write results to: " << output_file << "\n";
-    }
+    if( run_all || std::strcmp( filter, "concurrent" ) == 0 )
+        collector.add( bench_concurrent_post_run( 4, 250000 ) );
 }
 
-void print_usage(const char* program_name)
-{
-    std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
-    std::cout << "Options:\n";
-    std::cout << "  --bench <name>     Run only the specified benchmark\n";
-    std::cout << "  --output <file>    Write JSON results to file\n";
-    std::cout << "  --help             Show this help message\n";
-    std::cout << "\n";
-    std::cout << "Available benchmarks:\n";
-    std::cout << "  single_threaded    Single-threaded coroutine post throughput\n";
-    std::cout << "  multithreaded      Multi-threaded scaling test\n";
-    std::cout << "  interleaved        Interleaved post/poll pattern\n";
-    std::cout << "  concurrent         Concurrent post and run\n";
-    std::cout << "  all                Run all benchmarks (default)\n";
-}
-
-int main(int argc, char* argv[])
-{
-    const char* output_file = nullptr;
-    const char* bench_filter = nullptr;
-
-    for (int i = 1; i < argc; ++i)
-    {
-        if (std::strcmp(argv[i], "--bench") == 0)
-        {
-            if (i + 1 < argc)
-            {
-                bench_filter = argv[++i];
-            }
-            else
-            {
-                std::cerr << "Error: --bench requires an argument\n";
-                return 1;
-            }
-        }
-        else if (std::strcmp(argv[i], "--output") == 0)
-        {
-            if (i + 1 < argc)
-            {
-                output_file = argv[++i];
-            }
-            else
-            {
-                std::cerr << "Error: --output requires an argument\n";
-                return 1;
-            }
-        }
-        else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
-        {
-            print_usage(argv[0]);
-            return 0;
-        }
-        else
-        {
-            std::cerr << "Unknown option: " << argv[i] << "\n";
-            print_usage(argv[0]);
-            return 1;
-        }
-    }
-
-    run_benchmarks(output_file, bench_filter);
-    return 0;
-}
+} // namespace asio_bench

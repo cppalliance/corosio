@@ -8,25 +8,28 @@
 # Official repository: https://github.com/cppalliance/corosio
 #
 
-# Asio benchmark executables for comparison
+# Asio benchmark executable for comparison
 
-function(asio_add_benchmark name source)
-    add_executable(${name} ${source})
-    target_link_libraries(${name}
-        PRIVATE
-            Boost::asio
-            Threads::Threads)
-    target_compile_features(${name} PUBLIC cxx_std_20)
-    target_compile_options(${name}
-        PRIVATE
-            $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
-    set_property(TARGET ${name} PROPERTY FOLDER "benchmarks/asio")
-    if (COROSIO_BENCH_LTO_SUPPORTED)
-        set_property(TARGET ${name} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-    endif ()
-endfunction()
+add_executable(asio_bench
+    main.cpp
+    io_context_bench.cpp
+    socket_throughput_bench.cpp
+    socket_latency_bench.cpp
+    http_server_bench.cpp)
 
-asio_add_benchmark(asio_bench_io_context io_context_bench.cpp)
-asio_add_benchmark(asio_bench_socket_throughput socket_throughput_bench.cpp)
-asio_add_benchmark(asio_bench_socket_latency socket_latency_bench.cpp)
-asio_add_benchmark(asio_bench_http_server http_server_bench.cpp)
+target_link_libraries(asio_bench
+    PRIVATE
+        Boost::asio
+        Threads::Threads)
+
+target_compile_features(asio_bench PUBLIC cxx_std_20)
+
+target_compile_options(asio_bench
+    PRIVATE
+        $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
+
+set_property(TARGET asio_bench PROPERTY FOLDER "benchmarks/asio")
+
+if (COROSIO_BENCH_LTO_SUPPORTED)
+    set_property(TARGET asio_bench PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif ()
