@@ -18,8 +18,6 @@
 
 namespace boost::corosio::detail {
 
-class win_scheduler;
-
 /** Base class for completion handlers using function pointer dispatch.
 
     Handlers are continuations that execute after an asynchronous
@@ -95,18 +93,6 @@ public:
             func_(nullptr, this, 0, 0);
     }
 
-    /** Returns the user-defined data pointer.
-
-        Derived classes may set this to store auxiliary data
-        such as a pointer to the most-derived object.
-
-        @return The user-defined data pointer, or `nullptr` if not set.
-    */
-    void* data() const noexcept
-    {
-        return data_;
-    }
-
     virtual ~scheduler_op() = default;
 
 protected:
@@ -131,7 +117,6 @@ protected:
     }
 
     func_type func_;
-    void* data_ = nullptr;
 };
 
 //------------------------------------------------------------------------------

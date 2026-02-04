@@ -75,7 +75,6 @@ struct overlapped_op
     explicit overlapped_op(func_type func) noexcept
         : scheduler_op(func)
     {
-        data_ = this;
         reset_overlapped();
     }
 

@@ -324,10 +324,7 @@ public:
         std::atomic<bool> cancelled{false};
         std::optional<std::stop_callback<canceller>> stop_cb;
 
-        resolve_op()
-        {
-            data_ = this;
-        }
+        resolve_op() = default;
 
         void reset() noexcept;
         void operator()() override;
@@ -370,10 +367,7 @@ public:
         std::atomic<bool> cancelled{false};
         std::optional<std::stop_callback<canceller>> stop_cb;
 
-        reverse_resolve_op()
-        {
-            data_ = this;
-        }
+        reverse_resolve_op() = default;
 
         void reset() noexcept;
         void operator()() override;

@@ -134,10 +134,7 @@ struct select_op : scheduler_op
     select_socket_impl* socket_impl_ = nullptr;
     select_acceptor_impl* acceptor_impl_ = nullptr;
 
-    select_op()
-    {
-        data_ = this;
-    }
+    select_op() = default;
 
     void reset() noexcept
     {

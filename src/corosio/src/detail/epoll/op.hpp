@@ -149,10 +149,7 @@ struct epoll_op : scheduler_op
     epoll_socket_impl* socket_impl_ = nullptr;
     epoll_acceptor_impl* acceptor_impl_ = nullptr;
 
-    epoll_op()
-    {
-        data_ = this;
-    }
+    epoll_op() = default;
 
     void reset() noexcept
     {
