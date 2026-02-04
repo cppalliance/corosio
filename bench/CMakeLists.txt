@@ -20,6 +20,9 @@ endif ()
 # Corosio benchmarks
 add_subdirectory(corosio)
 
+# Profiler workloads (LTO disabled for call stack visibility)
+add_subdirectory(profile)
+
 # Asio comparison benchmarks (only if Boost.Asio is available)
 if(TARGET Boost::asio)
     add_subdirectory(asio)
