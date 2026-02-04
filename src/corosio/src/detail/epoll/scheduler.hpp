@@ -167,8 +167,6 @@ private:
     // Edge-triggered eventfd state
     mutable std::atomic<bool> eventfd_armed_{false};
 
-    // Track last timerfd expiry to avoid redundant timerfd_settime calls
-    mutable timer_service::time_point last_timerfd_expiry_{timer_service::time_point::max()};
 
     // Sentinel operation for interleaving reactor runs with handler execution.
     // Ensures the reactor runs periodically even when handlers are continuously

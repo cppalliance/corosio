@@ -588,12 +588,6 @@ update_timerfd() const
 {
     auto nearest = timer_svc_->nearest_expiry();
 
-    // Skip syscall if expiry hasn't changed
-    if (nearest == last_timerfd_expiry_)
-        return;
-
-    last_timerfd_expiry_ = nearest;
-
     itimerspec ts{};
     int flags = 0;
 
@@ -659,6 +653,8 @@ run_reactor(std::unique_lock<std::mutex>& lock)
 
         if (events[i].data.ptr == &timer_fd_)
         {
+            std::uint64_t expirations;
+            [[maybe_unused]] auto r = ::read(timer_fd_, &expirations, sizeof(expirations));
             check_timers = true;
             continue;
         }
