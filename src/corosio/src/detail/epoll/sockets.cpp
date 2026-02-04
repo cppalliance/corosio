@@ -131,7 +131,7 @@ release()
     svc_.destroy_impl(*this);
 }
 
-void
+std::coroutine_handle<>
 epoll_socket_impl::
 connect(
     std::coroutine_handle<> h,
@@ -165,7 +165,8 @@ connect(
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     if (errno == EINPROGRESS)
@@ -191,7 +192,8 @@ connect(
                     svc_.post(claimed);
                     svc_.work_finished();
                 }
-                return;
+                // completion is always posted to scheduler queue, never inline.
+                return std::noop_coroutine();
             }
         }
 
@@ -204,12 +206,15 @@ connect(
                 svc_.work_finished();
             }
         }
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     op.complete(errno, 0);
     op.impl_ptr = shared_from_this();
     svc_.post(&op);
+    // completion is always posted to scheduler queue, never inline.
+    return std::noop_coroutine();
 }
 
 void

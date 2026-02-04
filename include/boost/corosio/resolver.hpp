@@ -243,8 +243,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
             std::coroutine_handle<> h,
             Ex const& ex) -> std::coroutine_handle<>
         {
-            r_.get().resolve(h, ex, host_, service_, flags_, token_, &ec_, &results_);
-            return std::noop_coroutine();
+            return r_.get().resolve(h, ex, host_, service_, flags_, token_, &ec_, &results_);
         }
 
         template<typename Ex>
@@ -254,8 +253,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            r_.get().resolve(h, ex, host_, service_, flags_, token_, &ec_, &results_);
-            return std::noop_coroutine();
+            return r_.get().resolve(h, ex, host_, service_, flags_, token_, &ec_, &results_);
         }
     };
 
@@ -295,8 +293,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
             std::coroutine_handle<> h,
             Ex const& ex) -> std::coroutine_handle<>
         {
-            r_.get().reverse_resolve(h, ex, ep_, flags_, token_, &ec_, &result_);
-            return std::noop_coroutine();
+            return r_.get().reverse_resolve(h, ex, ep_, flags_, token_, &ec_, &result_);
         }
 
         template<typename Ex>
@@ -306,8 +303,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            r_.get().reverse_resolve(h, ex, ep_, flags_, token_, &ec_, &result_);
-            return std::noop_coroutine();
+            return r_.get().reverse_resolve(h, ex, ep_, flags_, token_, &ec_, &result_);
         }
     };
 
@@ -475,7 +471,7 @@ public:
 public:
     struct resolver_impl : io_object_impl
     {
-        virtual void resolve(
+        virtual std::coroutine_handle<> resolve(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::string_view host,
@@ -485,7 +481,7 @@ public:
             std::error_code*,
             resolver_results*) = 0;
 
-        virtual void reverse_resolve(
+        virtual std::coroutine_handle<> reverse_resolve(
             std::coroutine_handle<>,
             capy::executor_ref,
             endpoint const& ep,

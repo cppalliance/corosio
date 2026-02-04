@@ -326,7 +326,7 @@ release()
     svc_.destroy_impl(*this);
 }
 
-void
+std::coroutine_handle<>
 win_resolver_impl::
 resolve(
     capy::coro h,
@@ -388,9 +388,11 @@ resolve(
 
         svc_.post(&op);
     }
+    // completion is always posted to scheduler queue, never inline.
+    return std::noop_coroutine();
 }
 
-void
+std::coroutine_handle<>
 win_resolver_impl::
 reverse_resolve(
     capy::coro h,
@@ -485,6 +487,8 @@ reverse_resolve(
         reverse_op_.gai_error = WSAENOBUFS;  // Map to "not enough memory"
         svc_.post(&reverse_op_);
     }
+    // completion is always posted to scheduler queue, never inline.
+    return std::noop_coroutine();
 }
 
 void

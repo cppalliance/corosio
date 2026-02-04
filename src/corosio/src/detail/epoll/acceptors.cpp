@@ -152,7 +152,7 @@ release()
     svc_.destroy_acceptor_impl(*this);
 }
 
-void
+std::coroutine_handle<>
 epoll_acceptor_impl::
 accept(
     std::coroutine_handle<> h,
@@ -182,7 +182,8 @@ accept(
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -209,7 +210,8 @@ accept(
                     svc_.post(claimed);
                     svc_.work_finished();
                 }
-                return;
+                // completion is always posted to scheduler queue, never inline.
+                return std::noop_coroutine();
             }
         }
 
@@ -222,12 +224,15 @@ accept(
                 svc_.work_finished();
             }
         }
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     op.complete(errno, 0);
     op.impl_ptr = shared_from_this();
     svc_.post(&op);
+    // completion is always posted to scheduler queue, never inline.
+    return std::noop_coroutine();
 }
 
 void

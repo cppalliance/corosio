@@ -138,7 +138,7 @@ release()
     svc_.destroy_acceptor_impl(*this);
 }
 
-void
+std::coroutine_handle<>
 select_acceptor_impl::
 accept(
     std::coroutine_handle<> h,
@@ -171,7 +171,8 @@ accept(
             op.complete(EINVAL, 0);
             op.impl_ptr = shared_from_this();
             svc_.post(&op);
-            return;
+            // completion is always posted to scheduler queue, never inline.
+            return std::noop_coroutine();
         }
 
         // Set non-blocking and close-on-exec flags.
@@ -186,7 +187,8 @@ accept(
             op.complete(err, 0);
             op.impl_ptr = shared_from_this();
             svc_.post(&op);
-            return;
+            // completion is always posted to scheduler queue, never inline.
+            return std::noop_coroutine();
         }
 
         if (::fcntl(accepted, F_SETFL, flags | O_NONBLOCK) == -1)
@@ -197,7 +199,8 @@ accept(
             op.complete(err, 0);
             op.impl_ptr = shared_from_this();
             svc_.post(&op);
-            return;
+            // completion is always posted to scheduler queue, never inline.
+            return std::noop_coroutine();
         }
 
         if (::fcntl(accepted, F_SETFD, FD_CLOEXEC) == -1)
@@ -208,14 +211,16 @@ accept(
             op.complete(err, 0);
             op.impl_ptr = shared_from_this();
             svc_.post(&op);
-            return;
+            // completion is always posted to scheduler queue, never inline.
+            return std::noop_coroutine();
         }
 
         op.accepted_fd = accepted;
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -237,7 +242,8 @@ accept(
                 expected, select_registration_state::registered, std::memory_order_acq_rel))
         {
             svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
-            return;
+            // completion is always posted to scheduler queue, never inline.
+            return std::noop_coroutine();
         }
 
         // If cancelled was set before we registered, handle it now.
@@ -253,12 +259,15 @@ accept(
                 svc_.work_finished();
             }
         }
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     op.complete(errno, 0);
     op.impl_ptr = shared_from_this();
     svc_.post(&op);
+    // completion is always posted to scheduler queue, never inline.
+    return std::noop_coroutine();
 }
 
 void

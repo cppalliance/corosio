@@ -105,8 +105,7 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
             std::coroutine_handle<> h,
             Ex const& ex) -> std::coroutine_handle<>
         {
-            acc_.get().accept(h, ex, token_, &ec_, &peer_impl_);
-            return std::noop_coroutine();
+            return acc_.get().accept(h, ex, token_, &ec_, &peer_impl_);
         }
 
         template<typename Ex>
@@ -116,8 +115,7 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            acc_.get().accept(h, ex, token_, &ec_, &peer_impl_);
-            return std::noop_coroutine();
+            return acc_.get().accept(h, ex, token_, &ec_, &peer_impl_);
         }
     };
 
@@ -300,7 +298,7 @@ public:
 
     struct acceptor_impl : io_object_impl
     {
-        virtual void accept(
+        virtual std::coroutine_handle<> accept(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,

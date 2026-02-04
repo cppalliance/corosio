@@ -96,7 +96,7 @@ public:
 
     struct socket_impl : io_stream_impl
     {
-        virtual void connect(
+        virtual std::coroutine_handle<> connect(
             std::coroutine_handle<>,
             capy::executor_ref,
             endpoint,
@@ -167,8 +167,7 @@ public:
             std::coroutine_handle<> h,
             Ex const& ex) -> std::coroutine_handle<>
         {
-            s_.get().connect(h, ex, endpoint_, token_, &ec_);
-            return std::noop_coroutine();
+            return s_.get().connect(h, ex, endpoint_, token_, &ec_);
         }
 
         template<typename Ex>
@@ -178,8 +177,7 @@ public:
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            s_.get().connect(h, ex, endpoint_, token_, &ec_);
-            return std::noop_coroutine();
+            return s_.get().connect(h, ex, endpoint_, token_, &ec_);
         }
     };
 

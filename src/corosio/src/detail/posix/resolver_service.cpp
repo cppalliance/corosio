@@ -389,7 +389,7 @@ public:
 
     void release() override;
 
-    void resolve(
+    std::coroutine_handle<> resolve(
         std::coroutine_handle<>,
         capy::executor_ref,
         std::string_view host,
@@ -399,7 +399,7 @@ public:
         std::error_code*,
         resolver_results*) override;
 
-    void reverse_resolve(
+    std::coroutine_handle<> reverse_resolve(
         std::coroutine_handle<>,
         capy::executor_ref,
         endpoint const& ep,
@@ -617,7 +617,7 @@ release()
     svc_.destroy_impl(*this);
 }
 
-void
+std::coroutine_handle<>
 posix_resolver_impl::
 resolve(
     std::coroutine_handle<> h,
@@ -697,9 +697,10 @@ resolve(
         op_.gai_error = EAI_MEMORY;  // Map to "not enough memory"
         svc_.post(&op_);
     }
+    return std::noop_coroutine();
 }
 
-void
+std::coroutine_handle<>
 posix_resolver_impl::
 reverse_resolve(
     std::coroutine_handle<> h,
@@ -790,6 +791,7 @@ reverse_resolve(
         reverse_op_.gai_error = EAI_MEMORY;
         svc_.post(&reverse_op_);
     }
+    return std::noop_coroutine();
 }
 
 void

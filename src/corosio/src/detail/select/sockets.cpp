@@ -118,7 +118,7 @@ release()
     svc_.destroy_impl(*this);
 }
 
-void
+std::coroutine_handle<>
 select_socket_impl::
 connect(
     std::coroutine_handle<> h,
@@ -151,7 +151,8 @@ connect(
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     if (errno == EINPROGRESS)
@@ -174,7 +175,8 @@ connect(
                 expected, select_registration_state::registered, std::memory_order_acq_rel))
         {
             svc_.scheduler().deregister_fd(fd_, select_scheduler::event_write);
-            return;
+            // completion is always posted to scheduler queue, never inline.
+            return std::noop_coroutine();
         }
 
         // If cancelled was set before we registered, handle it now.
@@ -190,12 +192,15 @@ connect(
                 svc_.work_finished();
             }
         }
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     op.complete(errno, 0);
     op.impl_ptr = shared_from_this();
     svc_.post(&op);
+    // completion is always posted to scheduler queue, never inline.
+    return std::noop_coroutine();
 }
 
 std::coroutine_handle<>

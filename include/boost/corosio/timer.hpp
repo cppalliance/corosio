@@ -74,8 +74,7 @@ class BOOST_COROSIO_DECL timer : public io_object
             std::coroutine_handle<> h,
             Ex const& ex) -> std::coroutine_handle<>
         {
-            t_.get().wait(h, ex, token_, &ec_);
-            return std::noop_coroutine();
+            return t_.get().wait(h, ex, token_, &ec_);
         }
 
         template<typename Ex>
@@ -85,15 +84,14 @@ class BOOST_COROSIO_DECL timer : public io_object
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            t_.get().wait(h, ex, token_, &ec_);
-            return std::noop_coroutine();
+            return t_.get().wait(h, ex, token_, &ec_);
         }
     };
 
 public:
     struct timer_impl : io_object_impl
     {
-        virtual void wait(
+        virtual std::coroutine_handle<> wait(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,

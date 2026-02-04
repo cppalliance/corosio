@@ -124,7 +124,7 @@ public:
 
     void release() override;
 
-    void wait(
+    std::coroutine_handle<> wait(
         std::coroutine_handle<>,
         capy::executor_ref,
         std::stop_token,

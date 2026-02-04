@@ -98,7 +98,7 @@ public:
 
     void release() override;
 
-    void connect(
+    std::coroutine_handle<> connect(
         std::coroutine_handle<>,
         capy::executor_ref,
         endpoint,

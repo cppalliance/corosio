@@ -304,7 +304,7 @@ release_internal()
     close_socket();
 }
 
-void
+std::coroutine_handle<>
 win_socket_impl_internal::
 connect(
     capy::coro h,
@@ -335,7 +335,8 @@ connect(
     {
         op.dwError = ::WSAGetLastError();
         svc_.post(&op);
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     auto connect_ex = svc_.connect_ex();
@@ -343,7 +344,8 @@ connect(
     {
         op.dwError = WSAEOPNOTSUPP;
         svc_.post(&op);
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     sockaddr_in addr = detail::to_sockaddr_in(ep);
@@ -367,10 +369,13 @@ connect(
             svc_.work_finished();
             op.dwError = err;
             svc_.post(&op);
-            return;
+            // completion is always posted to scheduler queue, never inline.
+            return std::noop_coroutine();
         }
     }
     // Synchronous completion: IOCP will deliver the completion packet
+    // completion is always posted to scheduler queue, never inline.
+    return std::noop_coroutine();
 }
 
 //------------------------------------------------------------------------------
@@ -904,7 +909,7 @@ release_internal()
     // Destruction happens automatically when all shared_ptrs are released
 }
 
-void
+std::coroutine_handle<>
 win_acceptor_impl_internal::
 accept(
     capy::coro h,
@@ -941,7 +946,8 @@ accept(
         peer_wrapper.release();
         op.dwError = ::WSAGetLastError();
         svc_.post(&op);
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     HANDLE result = ::CreateIoCompletionPort(
@@ -957,7 +963,8 @@ accept(
         peer_wrapper.release();
         op.dwError = err;
         svc_.post(&op);
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     // Set up the accept operation
@@ -974,7 +981,8 @@ accept(
         op.accepted_socket = INVALID_SOCKET;
         op.dwError = WSAEOPNOTSUPP;
         svc_.post(&op);
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     DWORD bytes_received = 0;
@@ -1002,10 +1010,13 @@ accept(
             op.accepted_socket = INVALID_SOCKET;
             op.dwError = err;
             svc_.post(&op);
-            return;
+            // completion is always posted to scheduler queue, never inline.
+            return std::noop_coroutine();
         }
     }
     // Synchronous completion: IOCP will deliver the completion packet
+    // completion is always posted to scheduler queue, never inline.
+    return std::noop_coroutine();
 }
 
 void

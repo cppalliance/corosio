@@ -195,15 +195,14 @@ private:
             std::stop_token token) -> std::coroutine_handle<>
         {
             token_ = std::move(token);
-            s_.get().wait(h, ex, token_, &ec_, &signal_number_);
-            return std::noop_coroutine();
+            return s_.get().wait(h, ex, token_, &ec_, &signal_number_);
         }
     };
 
 public:
     struct signal_set_impl : io_object_impl
     {
-        virtual void wait(
+        virtual std::coroutine_handle<> wait(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,

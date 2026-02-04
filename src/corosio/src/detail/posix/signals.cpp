@@ -189,7 +189,7 @@ public:
 
     void release() override;
 
-    void wait(
+    std::coroutine_handle<> wait(
         std::coroutine_handle<>,
         capy::executor_ref,
         std::stop_token,
@@ -387,7 +387,7 @@ release()
     svc_.destroy_impl(*this);
 }
 
-void
+std::coroutine_handle<>
 posix_signal_impl::
 wait(
     std::coroutine_handle<> h,
@@ -409,10 +409,13 @@ wait(
         if (signal_out)
             *signal_out = 0;
         d.post(h);
-        return;
+        // completion is always posted to scheduler queue, never inline.
+        return std::noop_coroutine();
     }
 
     svc_.start_wait(*this, &pending_op_);
+    // completion is always posted to scheduler queue, never inline.
+    return std::noop_coroutine();
 }
 
 std::error_code

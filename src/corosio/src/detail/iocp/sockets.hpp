@@ -144,7 +144,7 @@ public:
 
     void release_internal();
 
-    void connect(
+    std::coroutine_handle<> connect(
         capy::coro,
         capy::executor_ref,
         endpoint,
@@ -214,14 +214,14 @@ public:
 
     void release() override;
 
-    void connect(
+    std::coroutine_handle<> connect(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         endpoint ep,
         std::stop_token token,
         std::error_code* ec) override
     {
-        internal_->connect(h, d, ep, token, ec);
+        return internal_->connect(h, d, ep, token, ec);
     }
 
     std::coroutine_handle<> read_some(
@@ -425,7 +425,7 @@ public:
 
     void release_internal();
 
-    void accept(
+    std::coroutine_handle<> accept(
         capy::coro,
         capy::executor_ref,
         std::stop_token,
@@ -470,14 +470,14 @@ public:
 
     void release() override;
 
-    void accept(
+    std::coroutine_handle<> accept(
         std::coroutine_handle<> h,
         capy::executor_ref d,
         std::stop_token token,
         std::error_code* ec,
         io_object::io_object_impl** impl_out) override
     {
-        internal_->accept(h, d, token, ec, impl_out);
+        return internal_->accept(h, d, token, ec, impl_out);
     }
 
     endpoint local_endpoint() const noexcept override
