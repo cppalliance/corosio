@@ -44,7 +44,7 @@
     Thread Model
     ------------
     - ONE thread runs epoll_wait() at a time (the reactor thread)
-    - OTHER threads wait on wakeup_event_ (condition variable) for handlers
+    - OTHER threads wait on cond_ (condition variable) for handlers
     - When work is posted, exactly one waiting thread wakes via notify_one()
     - This matches Windows IOCP semantics where N posted items wake N threads
 
@@ -60,16 +60,26 @@
     After the reactor queues I/O completions, it loops back to try getting
     a handler, giving priority to handler execution over more I/O polling.
 
+    Signaling State (state_)
+    ------------------------
+    The state_ variable encodes two pieces of information:
+    - Bit 0: signaled flag (1 = signaled, persists until cleared)
+    - Upper bits: waiter count (each waiter adds 2 before blocking)
+
+    This allows efficient coordination:
+    - Signalers only call notify when waiters exist (state_ > 1)
+    - Waiters check if already signaled before blocking (fast-path)
+
     Wake Coordination (wake_one_thread_and_unlock)
     ----------------------------------------------
     When posting work:
-    - If idle threads exist: notify_one() wakes exactly one worker
+    - If waiters exist (state_ > 1): signal and notify_one()
     - Else if reactor running: interrupt via eventfd write
     - Else: no-op (thread will find work when it checks queue)
 
-    This is critical for matching IOCP behavior. With the old model, posting
-    N handlers would wake all threads (thundering herd). Now each post()
-    wakes at most one thread, and that thread handles exactly one item.
+    This avoids waking threads unnecessarily. With cascading wakes,
+    each handler execution wakes at most one additional thread if
+    more work exists in the queue.
 
     Work Counting
     -------------
@@ -147,7 +157,7 @@ epoll_scheduler(
     , shutdown_(false)
     , reactor_running_(false)
     , reactor_interrupted_(false)
-    , idle_thread_count_(0)
+    , state_(0)
 {
     epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
     if (epoll_fd_ < 0)
@@ -237,14 +247,14 @@ shutdown()
             h->destroy();
             lock.lock();
         }
+
+        signal_all(lock);
     }
 
     outstanding_work_.store(0, std::memory_order_release);
 
     if (event_fd_ >= 0)
         interrupt_reactor();
-
-    wakeup_event_.notify_all();
 }
 
 void
@@ -353,8 +363,8 @@ stop()
     {
         // Wake all threads so they notice stopped_ and exit
         {
-            std::lock_guard lock(mutex_);
-            wakeup_event_.notify_all();
+            std::unique_lock lock(mutex_);
+            signal_all(lock);
         }
         interrupt_reactor();
     }
@@ -516,11 +526,11 @@ work_finished() const noexcept
     if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
     {
         // Last work item completed - wake all threads so they can exit.
-        // notify_all() wakes threads waiting on the condvar.
+        // signal_all() wakes threads waiting on the condvar.
         // interrupt_reactor() wakes the reactor thread blocked in epoll_wait().
         // Both are needed because they target different blocking mechanisms.
         std::unique_lock lock(mutex_);
-        wakeup_event_.notify_all();
+        signal_all(lock);
         if (reactor_running_ && !reactor_interrupted_)
         {
             reactor_interrupted_ = true;
@@ -535,10 +545,10 @@ epoll_scheduler::
 drain_thread_queue(op_queue& queue, long count) const
 {
     // Note: outstanding_work_ was already incremented when posting
-    std::lock_guard lock(mutex_);
+    std::unique_lock lock(mutex_);
     completed_ops_.splice(queue);
     if (count > 0)
-        wakeup_event_.notify_all();
+        maybe_unlock_and_signal_one(lock);
 }
 
 void
@@ -557,14 +567,78 @@ interrupt_reactor() const
 
 void
 epoll_scheduler::
+signal_all(std::unique_lock<std::mutex>&) const
+{
+    state_ |= 1;
+    cond_.notify_all();
+}
+
+bool
+epoll_scheduler::
+maybe_unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
+{
+    state_ |= 1;
+    if (state_ > 1)
+    {
+        lock.unlock();
+        cond_.notify_one();
+        return true;
+    }
+    return false;
+}
+
+void
+epoll_scheduler::
+unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
+{
+    state_ |= 1;
+    bool have_waiters = state_ > 1;
+    lock.unlock();
+    if (have_waiters)
+        cond_.notify_one();
+}
+
+void
+epoll_scheduler::
+clear_signal() const
+{
+    state_ &= ~std::size_t(1);
+}
+
+void
+epoll_scheduler::
+wait_for_signal(std::unique_lock<std::mutex>& lock) const
+{
+    while ((state_ & 1) == 0)
+    {
+        state_ += 2;
+        cond_.wait(lock);
+        state_ -= 2;
+    }
+}
+
+void
+epoll_scheduler::
+wait_for_signal_for(
+    std::unique_lock<std::mutex>& lock,
+    long timeout_us) const
+{
+    if ((state_ & 1) == 0)
+    {
+        state_ += 2;
+        cond_.wait_for(lock, std::chrono::microseconds(timeout_us));
+        state_ -= 2;
+    }
+}
+
+void
+epoll_scheduler::
 wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
 {
-    if (idle_thread_count_ > 0)
-    {
-        wakeup_event_.notify_one();
-        lock.unlock();
-    }
-    else if (reactor_running_ && !reactor_interrupted_)
+    if (maybe_unlock_and_signal_one(lock))
+        return;
+
+    if (reactor_running_ && !reactor_interrupted_)
     {
         reactor_interrupted_ = true;
         lock.unlock();
@@ -691,7 +765,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
     task_cleanup on_exit{this, ctx};
     (void)on_exit;
 
-    // --- Event loop runs WITHOUT the mutex (like Asio) ---
+    // Event loop runs without mutex held
 
     epoll_event events[128];
     int nfds = ::epoll_wait(epoll_fd_, events, 128, timeout_ms);
@@ -852,7 +926,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
         }
     }
 
-    // Process timers only when timerfd fires (like Asio's check_timers pattern)
+    // Process timers only when timerfd fires
     if (check_timers)
     {
         timer_svc_->process_expired();
@@ -872,12 +946,11 @@ run_reactor(std::unique_lock<std::mutex>& lock)
         completed_ops_.splice(ctx->private_queue);
     }
 
-    // Only wake threads that are actually idle, and only as many as we have work
-    if (completions_queued > 0 && idle_thread_count_ > 0)
+    // Signal and wake one waiter if work is queued
+    if (completions_queued > 0)
     {
-        int threads_to_wake = (std::min)(completions_queued, idle_thread_count_);
-        for (int i = 0; i < threads_to_wake; ++i)
-            wakeup_event_.notify_one();
+        if (maybe_unlock_and_signal_one(lock))
+            lock.lock();
     }
 }
 
@@ -918,8 +991,12 @@ do_one(long timeout_us)
             reactor_interrupted_ = more_handlers || timeout_us == 0;
             reactor_running_ = true;
 
-            if (more_handlers && idle_thread_count_ > 0)
-                wakeup_event_.notify_one();
+            // Wake a waiter if more handlers exist
+            if (more_handlers)
+            {
+                if (maybe_unlock_and_signal_one(lock))
+                    lock.lock();
+            }
 
             run_reactor(lock);
 
@@ -931,7 +1008,12 @@ do_one(long timeout_us)
         if (op != nullptr)
         {
             auto* ctx = find_context(this);
-            lock.unlock();
+
+            // Cascade wake: if more handlers exist, signal and wake next waiter
+            if (!completed_ops_.empty())
+                unlock_and_signal_one(lock);
+            else
+                lock.unlock();
 
             work_cleanup on_exit{this, &lock, ctx};
             (void)on_exit;
@@ -962,12 +1044,11 @@ do_one(long timeout_us)
         if (timeout_us == 0)
             return 0;
 
-        ++idle_thread_count_;
+        clear_signal();
         if (timeout_us < 0)
-            wakeup_event_.wait(lock);
+            wait_for_signal(lock);
         else
-            wakeup_event_.wait_for(lock, std::chrono::microseconds(timeout_us));
-        --idle_thread_count_;
+            wait_for_signal_for(lock, timeout_us);
     }
 }
 
