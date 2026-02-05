@@ -81,16 +81,6 @@ public:
     */
     virtual void operator()() {}
 
-    /** Check if this is a deferred I/O operation.
-
-        Deferred I/O operations (like descriptor_data) are not work items
-        themselves but generate work items. They should not go through
-        normal work accounting.
-
-        @return true if this is a deferred I/O operation.
-    */
-    virtual bool is_deferred_io() const noexcept { return false; }
-
     /** Destroy without invoking the handler.
 
         Called during shutdown or when discarding queued operations.

@@ -190,7 +190,12 @@ operator()()
     // Get and clear ready events atomically
     std::uint32_t ev = ready_events_.exchange(0, std::memory_order_acquire);
     if (ev == 0)
+    {
+        scheduler_->compensating_work_started();
         return;
+    }
+
+    op_queue local_ops;
 
     // Check for error condition (EPOLLERR only - EPOLLHUP alone is just peer close)
     int err = 0;
@@ -202,8 +207,6 @@ operator()()
         if (err == 0)
             err = EIO;
     }
-
-    op_queue local_ops;
 
     // Process EPOLLIN (read ready)
     if (ev & EPOLLIN)
@@ -335,9 +338,19 @@ operator()()
         }
     }
 
-    // Queue completions - work was already counted when op started
-    if (scheduler_)
+    // Execute first handler inline — the scheduler's work_cleanup
+    // accounts for this as the "consumed" work item
+    scheduler_op* first = local_ops.pop();
+    if (first)
+    {
         scheduler_->post_deferred_completions(local_ops);
+        (*first)();
+    }
+    else
+    {
+        // All EAGAIN — offset the -1 that work_cleanup will apply
+        scheduler_->compensating_work_started();
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -759,6 +772,15 @@ work_finished() const noexcept
 
 void
 epoll_scheduler::
+compensating_work_started() const noexcept
+{
+    auto* ctx = find_context(this);
+    if (ctx)
+        ++ctx->private_outstanding_work;
+}
+
+void
+epoll_scheduler::
 drain_thread_queue(op_queue& queue, long count) const
 {
     // Note: outstanding_work_ was already incremented when posting
@@ -1127,17 +1149,6 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us)
         // Handle operation
         if (op != nullptr)
         {
-            // Deferred I/O generates work items, doesn't consume them
-            if (op->is_deferred_io())
-            {
-                lock.unlock();
-                (*op)();
-                lock.lock();
-                drain_private_queue(ctx, outstanding_work_, completed_ops_);
-                continue;
-            }
-
-            // Producers wake workers; avoids futex contention
             lock.unlock();
 
             work_cleanup on_exit{this, &lock, ctx};
