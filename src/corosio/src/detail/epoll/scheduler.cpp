@@ -567,15 +567,11 @@ void
 epoll_scheduler::
 stop()
 {
-    bool expected = false;
-    if (stopped_.compare_exchange_strong(expected, true,
-            std::memory_order_release, std::memory_order_relaxed))
+    std::unique_lock lock(mutex_);
+    if (!stopped_)
     {
-        // Wake all threads so they notice stopped_ and exit
-        {
-            std::unique_lock lock(mutex_);
-            signal_all(lock);
-        }
+        stopped_ = true;
+        signal_all(lock);
         interrupt_reactor();
     }
 }
@@ -584,23 +580,22 @@ bool
 epoll_scheduler::
 stopped() const noexcept
 {
-    return stopped_.load(std::memory_order_acquire);
+    std::unique_lock lock(mutex_);
+    return stopped_;
 }
 
 void
 epoll_scheduler::
 restart()
 {
-    stopped_.store(false, std::memory_order_release);
+    std::unique_lock lock(mutex_);
+    stopped_ = false;
 }
 
 std::size_t
 epoll_scheduler::
 run()
 {
-    if (stopped_.load(std::memory_order_acquire))
-        return 0;
-
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
         stop();
@@ -627,9 +622,6 @@ std::size_t
 epoll_scheduler::
 run_one()
 {
-    if (stopped_.load(std::memory_order_acquire))
-        return 0;
-
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
         stop();
@@ -645,9 +637,6 @@ std::size_t
 epoll_scheduler::
 wait_one(long usec)
 {
-    if (stopped_.load(std::memory_order_acquire))
-        return 0;
-
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
         stop();
@@ -663,9 +652,6 @@ std::size_t
 epoll_scheduler::
 poll()
 {
-    if (stopped_.load(std::memory_order_acquire))
-        return 0;
-
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
         stop();
@@ -692,9 +678,6 @@ std::size_t
 epoll_scheduler::
 poll_one()
 {
-    if (stopped_.load(std::memory_order_acquire))
-        return 0;
-
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
         stop();
@@ -1102,12 +1085,13 @@ std::size_t
 epoll_scheduler::
 do_one(std::unique_lock<std::mutex>& lock, long timeout_us)
 {
+    auto* ctx = find_context(this);
+
     for (;;)
     {
-        if (stopped_.load(std::memory_order_acquire))
+        if (stopped_)
             return 0;
 
-        auto* ctx = find_context(this);
         scheduler_op* op = completed_ops_.pop();
 
         // Handle reactor sentinel - time to poll for I/O
