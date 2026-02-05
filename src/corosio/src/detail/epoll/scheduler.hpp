@@ -151,11 +151,79 @@ private:
     void interrupt_reactor() const;
     void update_timerfd() const;
 
+    /** Set the signaled state and wake all waiting threads.
+
+        @par Preconditions
+        Mutex must be held.
+
+        @param lock The held mutex lock.
+    */
+    void signal_all(std::unique_lock<std::mutex>& lock) const;
+
+    /** Set the signaled state and wake one waiter if any exist.
+
+        Only unlocks and signals if at least one thread is waiting.
+        Use this when the caller needs to perform a fallback action
+        (such as interrupting the reactor) when no waiters exist.
+
+        @par Preconditions
+        Mutex must be held.
+
+        @param lock The held mutex lock.
+
+        @return `true` if unlocked and signaled, `false` if lock still held.
+    */
+    bool maybe_unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const;
+
+    /** Set the signaled state, unlock, and wake one waiter if any exist.
+
+        Always unlocks the mutex. Use this when the caller will release
+        the lock regardless of whether a waiter exists.
+
+        @par Preconditions
+        Mutex must be held.
+
+        @param lock The held mutex lock.
+    */
+    void unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const;
+
+    /** Clear the signaled state before waiting.
+
+        @par Preconditions
+        Mutex must be held.
+    */
+    void clear_signal() const;
+
+    /** Block until the signaled state is set.
+
+        Returns immediately if already signaled (fast-path). Otherwise
+        increments the waiter count, waits on the condition variable,
+        and decrements the waiter count upon waking.
+
+        @par Preconditions
+        Mutex must be held.
+
+        @param lock The held mutex lock.
+    */
+    void wait_for_signal(std::unique_lock<std::mutex>& lock) const;
+
+    /** Block until signaled or timeout expires.
+
+        @par Preconditions
+        Mutex must be held.
+
+        @param lock The held mutex lock.
+        @param timeout_us Maximum time to wait in microseconds.
+    */
+    void wait_for_signal_for(
+        std::unique_lock<std::mutex>& lock,
+        long timeout_us) const;
+
     int epoll_fd_;
     int event_fd_;                              // for interrupting reactor
     int timer_fd_;                              // timerfd for kernel-managed timer expiry
     mutable std::mutex mutex_;
-    mutable std::condition_variable wakeup_event_;
+    mutable std::condition_variable cond_;
     mutable op_queue completed_ops_;
     mutable std::atomic<long> outstanding_work_;
     std::atomic<bool> stopped_;
@@ -165,7 +233,9 @@ private:
     // Single reactor thread coordination
     mutable bool reactor_running_ = false;
     mutable bool reactor_interrupted_ = false;
-    mutable int idle_thread_count_ = 0;
+
+    // Signaling state: bit 0 = signaled, upper bits = waiter count (incremented by 2)
+    mutable std::size_t state_ = 0;
 
     // Edge-triggered eventfd state
     mutable std::atomic<bool> eventfd_armed_{false};
