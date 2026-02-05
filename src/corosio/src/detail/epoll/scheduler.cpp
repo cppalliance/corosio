@@ -56,7 +56,7 @@
        - Run epoll_wait (unlocked), queue I/O completions, loop back
     4. If queue empty and reactor running: wait on condvar for work
 
-    The reactor_running_ flag ensures only one thread owns epoll_wait().
+    The task_running_ flag ensures only one thread owns epoll_wait().
     After the reactor queues I/O completions, it loops back to try getting
     a handler, giving priority to handler execution over more I/O polling.
 
@@ -143,7 +143,204 @@ find_context(epoll_scheduler const* self) noexcept
     return nullptr;
 }
 
+/// Flush private work count to global counter.
+void
+flush_private_work(
+    scheduler_context* ctx,
+    std::atomic<long>& outstanding_work) noexcept
+{
+    if (ctx && ctx->private_outstanding_work > 0)
+    {
+        outstanding_work.fetch_add(
+            ctx->private_outstanding_work, std::memory_order_relaxed);
+        ctx->private_outstanding_work = 0;
+    }
+}
+
+/// Drain private queue to global queue, flushing work count first.
+///
+/// @return True if any ops were drained.
+bool
+drain_private_queue(
+    scheduler_context* ctx,
+    std::atomic<long>& outstanding_work,
+    op_queue& completed_ops) noexcept
+{
+    if (!ctx || ctx->private_queue.empty())
+        return false;
+
+    flush_private_work(ctx, outstanding_work);
+    completed_ops.splice(ctx->private_queue);
+    return true;
+}
+
 } // namespace
+
+//------------------------------------------------------------------------------
+// Deferred I/O processing for descriptor_state
+//------------------------------------------------------------------------------
+
+void
+descriptor_state::
+operator()()
+{
+    // Clear enqueued flag so we can be re-enqueued if more events arrive
+    is_enqueued_.store(false, std::memory_order_relaxed);
+
+    // Get and clear ready events atomically
+    std::uint32_t ev = ready_events_.exchange(0, std::memory_order_acquire);
+    if (ev == 0)
+        return;
+
+    // Check for error condition (EPOLLERR only - EPOLLHUP alone is just peer close)
+    int err = 0;
+    if (ev & EPOLLERR)
+    {
+        socklen_t len = sizeof(err);
+        if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
+            err = errno;
+        if (err == 0)
+            err = EIO;
+    }
+
+    op_queue local_ops;
+
+    // Process EPOLLIN (read ready)
+    if (ev & EPOLLIN)
+    {
+        epoll_op* op = nullptr;
+        {
+            std::lock_guard lock(mutex);
+            op = read_op;
+            read_op = nullptr;
+            if (!op)
+                read_ready = true;
+        }
+        if (op)
+        {
+            if (err)
+            {
+                op->complete(err, 0);
+                local_ops.push(op);
+            }
+            else
+            {
+                op->perform_io();
+                if (op->errn == EAGAIN || op->errn == EWOULDBLOCK)
+                {
+                    op->errn = 0;
+                    std::lock_guard lock(mutex);
+                    read_op = op;
+                }
+                else
+                {
+                    local_ops.push(op);
+                }
+            }
+        }
+    }
+
+    // Process EPOLLOUT (write/connect ready)
+    if (ev & EPOLLOUT)
+    {
+        epoll_op* conn_op = nullptr;
+        epoll_op* wr_op = nullptr;
+        {
+            std::lock_guard lock(mutex);
+            conn_op = connect_op;
+            connect_op = nullptr;
+            wr_op = write_op;
+            write_op = nullptr;
+            if (!conn_op && !wr_op)
+                write_ready = true;
+        }
+
+        if (conn_op)
+        {
+            if (err)
+            {
+                conn_op->complete(err, 0);
+                local_ops.push(conn_op);
+            }
+            else
+            {
+                conn_op->perform_io();
+                if (conn_op->errn == EAGAIN || conn_op->errn == EWOULDBLOCK)
+                {
+                    conn_op->errn = 0;
+                    std::lock_guard lock(mutex);
+                    connect_op = conn_op;
+                }
+                else
+                {
+                    local_ops.push(conn_op);
+                }
+            }
+        }
+
+        if (wr_op)
+        {
+            if (err)
+            {
+                wr_op->complete(err, 0);
+                local_ops.push(wr_op);
+            }
+            else
+            {
+                wr_op->perform_io();
+                if (wr_op->errn == EAGAIN || wr_op->errn == EWOULDBLOCK)
+                {
+                    wr_op->errn = 0;
+                    std::lock_guard lock(mutex);
+                    write_op = wr_op;
+                }
+                else
+                {
+                    local_ops.push(wr_op);
+                }
+            }
+        }
+    }
+
+    // Handle error-only events (no EPOLLIN/EPOLLOUT)
+    if (err && !(ev & (EPOLLIN | EPOLLOUT)))
+    {
+        epoll_op* rd_op = nullptr;
+        epoll_op* wr_op = nullptr;
+        epoll_op* conn_op = nullptr;
+        {
+            std::lock_guard lock(mutex);
+            rd_op = read_op;
+            read_op = nullptr;
+            wr_op = write_op;
+            write_op = nullptr;
+            conn_op = connect_op;
+            connect_op = nullptr;
+        }
+
+        if (rd_op)
+        {
+            rd_op->complete(err, 0);
+            local_ops.push(rd_op);
+        }
+        if (wr_op)
+        {
+            wr_op->complete(err, 0);
+            local_ops.push(wr_op);
+        }
+        if (conn_op)
+        {
+            conn_op->complete(err, 0);
+            local_ops.push(conn_op);
+        }
+    }
+
+    // Queue completions - work was already counted when op started
+    if (scheduler_)
+        scheduler_->post_deferred_completions(local_ops);
+}
+
+//------------------------------------------------------------------------------
 
 epoll_scheduler::
 epoll_scheduler(
@@ -155,8 +352,8 @@ epoll_scheduler(
     , outstanding_work_(0)
     , stopped_(false)
     , shutdown_(false)
-    , reactor_running_(false)
-    , reactor_interrupted_(false)
+    , task_running_(false)
+    , task_interrupted_(false)
     , state_(0)
 {
     epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
@@ -481,7 +678,7 @@ poll_one()
 
 void
 epoll_scheduler::
-register_descriptor(int fd, descriptor_data* desc) const
+register_descriptor(int fd, descriptor_state* desc) const
 {
     epoll_event ev{};
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLERR | EPOLLHUP;
@@ -493,6 +690,7 @@ register_descriptor(int fd, descriptor_data* desc) const
     desc->registered_events = ev.events;
     desc->is_registered = true;
     desc->fd = fd;
+    desc->scheduler_ = this;
 
     std::lock_guard lock(desc->mutex);
     desc->read_ready = false;
@@ -501,7 +699,7 @@ register_descriptor(int fd, descriptor_data* desc) const
 
 void
 epoll_scheduler::
-update_descriptor_events(int, descriptor_data*, std::uint32_t) const
+update_descriptor_events(int, descriptor_state*, std::uint32_t) const
 {
     // Provides memory fence for operation pointer visibility across threads
     std::atomic_thread_fence(std::memory_order_seq_cst);
@@ -533,9 +731,9 @@ work_finished() const noexcept
         // Both are needed because they target different blocking mechanisms.
         std::unique_lock lock(mutex_);
         signal_all(lock);
-        if (reactor_running_ && !reactor_interrupted_)
+        if (task_running_ && !task_interrupted_)
         {
-            reactor_interrupted_ = true;
+            task_interrupted_ = true;
             lock.unlock();
             interrupt_reactor();
         }
@@ -551,6 +749,26 @@ drain_thread_queue(op_queue& queue, long count) const
     completed_ops_.splice(queue);
     if (count > 0)
         maybe_unlock_and_signal_one(lock);
+}
+
+void
+epoll_scheduler::
+post_deferred_completions(op_queue& ops) const
+{
+    if (ops.empty())
+        return;
+
+    // Fast path: if on scheduler thread, use private queue
+    if (auto* ctx = find_context(this))
+    {
+        ctx->private_queue.splice(ops);
+        return;
+    }
+
+    // Slow path: add to global queue and wake a thread
+    std::unique_lock lock(mutex_);
+    completed_ops_.splice(ops);
+    wake_one_thread_and_unlock(lock);
 }
 
 void
@@ -640,9 +858,9 @@ wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
     if (maybe_unlock_and_signal_one(lock))
         return;
 
-    if (reactor_running_ && !reactor_interrupted_)
+    if (task_running_ && !task_interrupted_)
     {
-        reactor_interrupted_ = true;
+        task_interrupted_ = true;
         lock.unlock();
         interrupt_reactor();
     }
@@ -756,10 +974,10 @@ update_timerfd() const
 
 void
 epoll_scheduler::
-run_reactor(std::unique_lock<std::mutex>& lock)
+run_task(std::unique_lock<std::mutex>& lock)
 {
     auto* ctx = find_context(this);
-    int timeout_ms = reactor_interrupted_ ? 0 : -1;
+    int timeout_ms = task_interrupted_ ? 0 : -1;
 
     lock.unlock();
 
@@ -799,155 +1017,18 @@ run_reactor(std::unique_lock<std::mutex>& lock)
             continue;
         }
 
-        auto* desc = static_cast<descriptor_data*>(events[i].data.ptr);
-        std::uint32_t ev = events[i].events;
-        int err = 0;
+        // Deferred I/O: just set ready events and enqueue descriptor
+        // No per-descriptor mutex locking in reactor hot path!
+        auto* desc = static_cast<descriptor_state*>(events[i].data.ptr);
+        desc->add_ready_events(events[i].events);
 
-        if (ev & (EPOLLERR | EPOLLHUP))
+        // Only enqueue if not already enqueued
+        bool expected = false;
+        if (desc->is_enqueued_.compare_exchange_strong(expected, true,
+                std::memory_order_release, std::memory_order_relaxed))
         {
-            socklen_t len = sizeof(err);
-            if (::getsockopt(desc->fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
-                err = errno;
-            if (err == 0)
-                err = EIO;
-        }
-
-        if (ev & EPOLLIN)
-        {
-            epoll_op* op = nullptr;
-            {
-                std::lock_guard lock(desc->mutex);
-                op = desc->read_op;
-                desc->read_op = nullptr;
-                if (!op)
-                    desc->read_ready = true;
-            }
-            if (op)
-            {
-                if (err)
-                {
-                    op->complete(err, 0);
-                    local_ops.push(op);
-                    ++completions_queued;
-                }
-                else
-                {
-                    op->perform_io();
-                    if (op->errn == EAGAIN || op->errn == EWOULDBLOCK)
-                    {
-                        op->errn = 0;
-                        std::lock_guard lock(desc->mutex);
-                        desc->read_op = op;
-                    }
-                    else
-                    {
-                        local_ops.push(op);
-                        ++completions_queued;
-                    }
-                }
-            }
-        }
-
-        if (ev & EPOLLOUT)
-        {
-            epoll_op* conn_op = nullptr;
-            epoll_op* write_op = nullptr;
-            {
-                std::lock_guard lock(desc->mutex);
-                conn_op = desc->connect_op;
-                desc->connect_op = nullptr;
-                write_op = desc->write_op;
-                desc->write_op = nullptr;
-                if (!conn_op && !write_op)
-                    desc->write_ready = true;
-            }
-
-            if (conn_op)
-            {
-                if (err)
-                {
-                    conn_op->complete(err, 0);
-                    local_ops.push(conn_op);
-                    ++completions_queued;
-                }
-                else
-                {
-                    conn_op->perform_io();
-                    if (conn_op->errn == EAGAIN || conn_op->errn == EWOULDBLOCK)
-                    {
-                        conn_op->errn = 0;
-                        std::lock_guard lock(desc->mutex);
-                        desc->connect_op = conn_op;
-                    }
-                    else
-                    {
-                        local_ops.push(conn_op);
-                        ++completions_queued;
-                    }
-                }
-            }
-
-            if (write_op)
-            {
-                if (err)
-                {
-                    write_op->complete(err, 0);
-                    local_ops.push(write_op);
-                    ++completions_queued;
-                }
-                else
-                {
-                    write_op->perform_io();
-                    if (write_op->errn == EAGAIN || write_op->errn == EWOULDBLOCK)
-                    {
-                        write_op->errn = 0;
-                        std::lock_guard lock(desc->mutex);
-                        desc->write_op = write_op;
-                    }
-                    else
-                    {
-                        local_ops.push(write_op);
-                        ++completions_queued;
-                    }
-                }
-            }
-        }
-
-        if (err && !(ev & (EPOLLIN | EPOLLOUT)))
-        {
-            epoll_op* read_op = nullptr;
-            epoll_op* write_op = nullptr;
-            epoll_op* conn_op = nullptr;
-            {
-                std::lock_guard lock(desc->mutex);
-                read_op = desc->read_op;
-                desc->read_op = nullptr;
-                write_op = desc->write_op;
-                desc->write_op = nullptr;
-                conn_op = desc->connect_op;
-                desc->connect_op = nullptr;
-            }
-
-            if (read_op)
-            {
-                read_op->complete(err, 0);
-                local_ops.push(read_op);
-                ++completions_queued;
-            }
-
-            if (write_op)
-            {
-                write_op->complete(err, 0);
-                local_ops.push(write_op);
-                ++completions_queued;
-            }
-
-            if (conn_op)
-            {
-                conn_op->complete(err, 0);
-                local_ops.push(conn_op);
-                ++completions_queued;
-            }
+            local_ops.push(desc);
+            ++completions_queued;
         }
     }
 
@@ -990,12 +1071,12 @@ do_one(long timeout_us)
         if (stopped_.load(std::memory_order_acquire))
             return 0;
 
+        auto* ctx = find_context(this);
         scheduler_op* op = completed_ops_.pop();
 
+        // Handle reactor sentinel - time to poll for I/O
         if (op == &task_op_)
         {
-            // Check both global queue and private queue for pending handlers
-            auto* ctx = find_context(this);
             bool more_handlers = !completed_ops_.empty() ||
                 (ctx && !ctx->private_queue.empty());
 
@@ -1013,29 +1094,39 @@ do_one(long timeout_us)
                 }
             }
 
-            reactor_interrupted_ = more_handlers || timeout_us == 0;
-            reactor_running_ = true;
+            task_interrupted_ = more_handlers || timeout_us == 0;
+            task_running_ = true;
 
-            // Wake a waiter if more handlers exist
             if (more_handlers)
             {
                 if (maybe_unlock_and_signal_one(lock))
                     lock.lock();
             }
 
-            run_reactor(lock);
+            run_task(lock);
 
-            reactor_running_ = false;
+            task_running_ = false;
             completed_ops_.push(&task_op_);
             continue;
         }
 
+        // Handle operation
         if (op != nullptr)
         {
-            auto* ctx = find_context(this);
+            // Deferred I/O generates work items, doesn't consume them
+            if (op->is_deferred_io())
+            {
+                lock.unlock();
+                (*op)();
+                lock.lock();
+                drain_private_queue(ctx, outstanding_work_, completed_ops_);
+                continue;
+            }
 
-            // Cascade wake: if more handlers exist, signal and wake next waiter
-            if (!completed_ops_.empty())
+            // Regular operation - cascade wake if more work exists
+            bool more_work = !completed_ops_.empty() ||
+                (ctx && !ctx->private_queue.empty());
+            if (more_work)
                 unlock_and_signal_one(lock);
             else
                 lock.unlock();
@@ -1047,21 +1138,9 @@ do_one(long timeout_us)
             return 1;
         }
 
-        // Drain private queue before blocking, flush work count to global
-        if (auto* ctx = find_context(this))
-        {
-            if (ctx->private_outstanding_work > 0)
-            {
-                outstanding_work_.fetch_add(
-                    ctx->private_outstanding_work, std::memory_order_relaxed);
-                ctx->private_outstanding_work = 0;
-            }
-            if (!ctx->private_queue.empty())
-            {
-                completed_ops_.splice(ctx->private_queue);
-                continue;
-            }
-        }
+        // No work from global queue - try private queue before blocking
+        if (drain_private_queue(ctx, outstanding_work_, completed_ops_))
+            continue;
 
         if (outstanding_work_.load(std::memory_order_acquire) == 0)
             return 0;

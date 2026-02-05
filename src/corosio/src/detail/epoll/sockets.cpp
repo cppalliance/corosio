@@ -120,7 +120,7 @@ epoll_socket_impl::
 update_epoll_events() noexcept
 {
     // With EPOLLET, update_descriptor_events just provides a memory fence
-    svc_.scheduler().update_descriptor_events(fd_, &desc_data_, 0);
+    svc_.scheduler().update_descriptor_events(fd_, &desc_state_, 0);
 }
 
 void
@@ -176,15 +176,15 @@ connect(
 
         bool perform_now = false;
         {
-            std::lock_guard lock(desc_data_.mutex);
-            if (desc_data_.write_ready)
+            std::lock_guard lock(desc_state_.mutex);
+            if (desc_state_.write_ready)
             {
-                desc_data_.write_ready = false;
+                desc_state_.write_ready = false;
                 perform_now = true;
             }
             else
             {
-                desc_data_.connect_op = &op;
+                desc_state_.connect_op = &op;
             }
         }
 
@@ -194,8 +194,8 @@ connect(
             if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
             {
                 op.errn = 0;
-                std::lock_guard lock(desc_data_.mutex);
-                desc_data_.connect_op = &op;
+                std::lock_guard lock(desc_state_.mutex);
+                desc_state_.connect_op = &op;
             }
             else
             {
@@ -209,11 +209,11 @@ connect(
         {
             epoll_op* claimed = nullptr;
             {
-                std::lock_guard lock(desc_data_.mutex);
-                if (desc_data_.connect_op == &op)
+                std::lock_guard lock(desc_state_.mutex);
+                if (desc_state_.connect_op == &op)
                 {
-                    claimed = desc_data_.connect_op;
-                    desc_data_.connect_op = nullptr;
+                    claimed = desc_state_.connect_op;
+                    desc_state_.connect_op = nullptr;
                 }
             }
             if (claimed)
@@ -244,8 +244,8 @@ do_read_io()
     if (n > 0)
     {
         {
-            std::lock_guard lock(desc_data_.mutex);
-            desc_data_.read_ready = false;
+            std::lock_guard lock(desc_state_.mutex);
+            desc_state_.read_ready = false;
         }
         op.complete(0, static_cast<std::size_t>(n));
         svc_.post(&op);
@@ -255,8 +255,8 @@ do_read_io()
     if (n == 0)
     {
         {
-            std::lock_guard lock(desc_data_.mutex);
-            desc_data_.read_ready = false;
+            std::lock_guard lock(desc_state_.mutex);
+            desc_state_.read_ready = false;
         }
         op.complete(0, 0);
         svc_.post(&op);
@@ -269,15 +269,15 @@ do_read_io()
 
         bool perform_now = false;
         {
-            std::lock_guard lock(desc_data_.mutex);
-            if (desc_data_.read_ready)
+            std::lock_guard lock(desc_state_.mutex);
+            if (desc_state_.read_ready)
             {
-                desc_data_.read_ready = false;
+                desc_state_.read_ready = false;
                 perform_now = true;
             }
             else
             {
-                desc_data_.read_op = &op;
+                desc_state_.read_op = &op;
             }
         }
 
@@ -287,8 +287,8 @@ do_read_io()
             if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
             {
                 op.errn = 0;
-                std::lock_guard lock(desc_data_.mutex);
-                desc_data_.read_op = &op;
+                std::lock_guard lock(desc_state_.mutex);
+                desc_state_.read_op = &op;
             }
             else
             {
@@ -302,11 +302,11 @@ do_read_io()
         {
             epoll_op* claimed = nullptr;
             {
-                std::lock_guard lock(desc_data_.mutex);
-                if (desc_data_.read_op == &op)
+                std::lock_guard lock(desc_state_.mutex);
+                if (desc_state_.read_op == &op)
                 {
-                    claimed = desc_data_.read_op;
-                    desc_data_.read_op = nullptr;
+                    claimed = desc_state_.read_op;
+                    desc_state_.read_op = nullptr;
                 }
             }
             if (claimed)
@@ -337,8 +337,8 @@ do_write_io()
     if (n > 0)
     {
         {
-            std::lock_guard lock(desc_data_.mutex);
-            desc_data_.write_ready = false;
+            std::lock_guard lock(desc_state_.mutex);
+            desc_state_.write_ready = false;
         }
         op.complete(0, static_cast<std::size_t>(n));
         svc_.post(&op);
@@ -351,15 +351,15 @@ do_write_io()
 
         bool perform_now = false;
         {
-            std::lock_guard lock(desc_data_.mutex);
-            if (desc_data_.write_ready)
+            std::lock_guard lock(desc_state_.mutex);
+            if (desc_state_.write_ready)
             {
-                desc_data_.write_ready = false;
+                desc_state_.write_ready = false;
                 perform_now = true;
             }
             else
             {
-                desc_data_.write_op = &op;
+                desc_state_.write_op = &op;
             }
         }
 
@@ -369,8 +369,8 @@ do_write_io()
             if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
             {
                 op.errn = 0;
-                std::lock_guard lock(desc_data_.mutex);
-                desc_data_.write_op = &op;
+                std::lock_guard lock(desc_state_.mutex);
+                desc_state_.write_op = &op;
             }
             else
             {
@@ -384,11 +384,11 @@ do_write_io()
         {
             epoll_op* claimed = nullptr;
             {
-                std::lock_guard lock(desc_data_.mutex);
-                if (desc_data_.write_op == &op)
+                std::lock_guard lock(desc_state_.mutex);
+                if (desc_state_.write_op == &op)
                 {
-                    claimed = desc_data_.write_op;
-                    desc_data_.write_op = nullptr;
+                    claimed = desc_state_.write_op;
+                    desc_state_.write_op = nullptr;
                 }
             }
             if (claimed)
@@ -651,21 +651,21 @@ cancel() noexcept
     epoll_op* rd_claimed = nullptr;
     epoll_op* wr_claimed = nullptr;
     {
-        std::lock_guard lock(desc_data_.mutex);
-        if (desc_data_.connect_op == &conn_)
+        std::lock_guard lock(desc_state_.mutex);
+        if (desc_state_.connect_op == &conn_)
         {
-            conn_claimed = desc_data_.connect_op;
-            desc_data_.connect_op = nullptr;
+            conn_claimed = desc_state_.connect_op;
+            desc_state_.connect_op = nullptr;
         }
-        if (desc_data_.read_op == &rd_)
+        if (desc_state_.read_op == &rd_)
         {
-            rd_claimed = desc_data_.read_op;
-            desc_data_.read_op = nullptr;
+            rd_claimed = desc_state_.read_op;
+            desc_state_.read_op = nullptr;
         }
-        if (desc_data_.write_op == &wr_)
+        if (desc_state_.write_op == &wr_)
         {
-            wr_claimed = desc_data_.write_op;
-            desc_data_.write_op = nullptr;
+            wr_claimed = desc_state_.write_op;
+            desc_state_.write_op = nullptr;
         }
     }
 
@@ -696,15 +696,15 @@ cancel_single_op(epoll_op& op) noexcept
     op.request_cancel();
 
     epoll_op** desc_op_ptr = nullptr;
-    if (&op == &conn_) desc_op_ptr = &desc_data_.connect_op;
-    else if (&op == &rd_) desc_op_ptr = &desc_data_.read_op;
-    else if (&op == &wr_) desc_op_ptr = &desc_data_.write_op;
+    if (&op == &conn_) desc_op_ptr = &desc_state_.connect_op;
+    else if (&op == &rd_) desc_op_ptr = &desc_state_.read_op;
+    else if (&op == &wr_) desc_op_ptr = &desc_state_.write_op;
 
     if (desc_op_ptr)
     {
         epoll_op* claimed = nullptr;
         {
-            std::lock_guard lock(desc_data_.mutex);
+            std::lock_guard lock(desc_state_.mutex);
             if (*desc_op_ptr == &op)
             {
                 claimed = *desc_op_ptr;
@@ -730,23 +730,23 @@ close_socket() noexcept
 
     if (fd_ >= 0)
     {
-        if (desc_data_.registered_events != 0)
+        if (desc_state_.registered_events != 0)
             svc_.scheduler().deregister_descriptor(fd_);
         ::close(fd_);
         fd_ = -1;
     }
 
-    desc_data_.fd = -1;
-    desc_data_.is_registered = false;
+    desc_state_.fd = -1;
+    desc_state_.is_registered = false;
     {
-        std::lock_guard lock(desc_data_.mutex);
-        desc_data_.read_op = nullptr;
-        desc_data_.write_op = nullptr;
-        desc_data_.connect_op = nullptr;
-        desc_data_.read_ready = false;
-        desc_data_.write_ready = false;
+        std::lock_guard lock(desc_state_.mutex);
+        desc_state_.read_op = nullptr;
+        desc_state_.write_op = nullptr;
+        desc_state_.connect_op = nullptr;
+        desc_state_.read_ready = false;
+        desc_state_.write_ready = false;
     }
-    desc_data_.registered_events = 0;
+    desc_state_.registered_events = 0;
 
     local_endpoint_ = endpoint{};
     remote_endpoint_ = endpoint{};
@@ -815,14 +815,14 @@ open_socket(tcp_socket::socket_impl& impl)
     epoll_impl->fd_ = fd;
 
     // Register fd with epoll (edge-triggered mode)
-    epoll_impl->desc_data_.fd = fd;
+    epoll_impl->desc_state_.fd = fd;
     {
-        std::lock_guard lock(epoll_impl->desc_data_.mutex);
-        epoll_impl->desc_data_.read_op = nullptr;
-        epoll_impl->desc_data_.write_op = nullptr;
-        epoll_impl->desc_data_.connect_op = nullptr;
+        std::lock_guard lock(epoll_impl->desc_state_.mutex);
+        epoll_impl->desc_state_.read_op = nullptr;
+        epoll_impl->desc_state_.write_op = nullptr;
+        epoll_impl->desc_state_.connect_op = nullptr;
     }
-    scheduler().register_descriptor(fd, &epoll_impl->desc_data_);
+    scheduler().register_descriptor(fd, &epoll_impl->desc_state_);
 
     return {};
 }

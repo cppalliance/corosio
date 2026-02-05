@@ -66,7 +66,7 @@ public:
     epoll_acceptor_service& service() noexcept { return svc_; }
 
     epoll_accept_op acc_;
-    descriptor_data desc_data_;
+    descriptor_state desc_state_;
 
 private:
     epoll_acceptor_service& svc_;
