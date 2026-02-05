@@ -31,6 +31,7 @@ namespace boost::corosio::detail {
 
 struct epoll_op;
 struct descriptor_state;
+struct scheduler_context;
 
 /** Linux scheduler using epoll for I/O multiplexing.
 
@@ -165,8 +166,8 @@ private:
     friend struct work_cleanup;
     friend struct task_cleanup;
 
-    std::size_t do_one(std::unique_lock<std::mutex>& lock, long timeout_us);
-    void run_task(std::unique_lock<std::mutex>& lock);
+    std::size_t do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* ctx);
+    void run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx);
     void wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const;
     void interrupt_reactor() const;
     void update_timerfd() const;
@@ -250,8 +251,14 @@ private:
     bool shutdown_;
     timer_service* timer_svc_ = nullptr;
 
-    // Single reactor thread coordination
+    // True while a thread is blocked in epoll_wait. Used by
+    // wake_one_thread_and_unlock and work_finished to know when
+    // an eventfd interrupt is needed instead of a condvar signal.
     mutable bool task_running_ = false;
+
+    // True when the reactor has been told to do a non-blocking poll
+    // (more handlers queued or poll mode). Prevents redundant eventfd
+    // writes and controls the epoll_wait timeout.
     mutable bool task_interrupted_ = false;
 
     // Signaling state: bit 0 = signaled, upper bits = waiter count (incremented by 2)
@@ -260,10 +267,9 @@ private:
     // Edge-triggered eventfd state
     mutable std::atomic<bool> eventfd_armed_{false};
 
-
     // Sentinel operation for interleaving reactor runs with handler execution.
     // Ensures the reactor runs periodically even when handlers are continuously
-    // posted, preventing timer starvation.
+    // posted, preventing starvation of I/O events, timers, and signals.
     struct task_op final : scheduler_op
     {
         void operator()() override {}
