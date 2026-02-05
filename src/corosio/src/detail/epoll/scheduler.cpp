@@ -96,8 +96,6 @@
 
 namespace boost::corosio::detail {
 
-namespace {
-
 struct scheduler_context
 {
     epoll_scheduler const* key;
@@ -112,6 +110,8 @@ struct scheduler_context
     {
     }
 };
+
+namespace {
 
 corosio::detail::thread_local_ptr<scheduler_context> context_stack;
 
@@ -608,7 +608,7 @@ run()
     std::size_t n = 0;
     for (;;)
     {
-        if (!do_one(lock, -1))
+        if (!do_one(lock, -1, &ctx.frame_))
             break;
         if (n != (std::numeric_limits<std::size_t>::max)())
             ++n;
@@ -630,7 +630,7 @@ run_one()
 
     thread_context_guard ctx(this);
     std::unique_lock lock(mutex_);
-    return do_one(lock, -1);
+    return do_one(lock, -1, &ctx.frame_);
 }
 
 std::size_t
@@ -645,7 +645,7 @@ wait_one(long usec)
 
     thread_context_guard ctx(this);
     std::unique_lock lock(mutex_);
-    return do_one(lock, usec);
+    return do_one(lock, usec, &ctx.frame_);
 }
 
 std::size_t
@@ -664,7 +664,7 @@ poll()
     std::size_t n = 0;
     for (;;)
     {
-        if (!do_one(lock, 0))
+        if (!do_one(lock, 0, &ctx.frame_))
             break;
         if (n != (std::numeric_limits<std::size_t>::max)())
             ++n;
@@ -686,7 +686,7 @@ poll_one()
 
     thread_context_guard ctx(this);
     std::unique_lock lock(mutex_);
-    return do_one(lock, 0);
+    return do_one(lock, 0, &ctx.frame_);
 }
 
 void
@@ -995,12 +995,12 @@ update_timerfd() const
 
 void
 epoll_scheduler::
-run_task(std::unique_lock<std::mutex>& lock)
+run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
 {
-    auto* ctx = find_context(this);
     int timeout_ms = task_interrupted_ ? 0 : -1;
 
-    lock.unlock();
+    if (lock.owns_lock())
+        lock.unlock();
 
     // Flush private work count when reactor completes
     task_cleanup on_exit{this, ctx};
@@ -1083,10 +1083,8 @@ run_task(std::unique_lock<std::mutex>& lock)
 
 std::size_t
 epoll_scheduler::
-do_one(std::unique_lock<std::mutex>& lock, long timeout_us)
+do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* ctx)
 {
-    auto* ctx = find_context(this);
-
     for (;;)
     {
         if (stopped_)
@@ -1100,30 +1098,23 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us)
             bool more_handlers = !completed_ops_.empty() ||
                 (ctx && !ctx->private_queue.empty());
 
-            if (!more_handlers)
+            // Nothing to run the reactor for: no pending work to wait on,
+            // or caller requested a non-blocking poll
+            if (!more_handlers &&
+                (outstanding_work_.load(std::memory_order_acquire) == 0 ||
+                    timeout_us == 0))
             {
-                if (outstanding_work_.load(std::memory_order_acquire) == 0)
-                {
-                    completed_ops_.push(&task_op_);
-                    return 0;
-                }
-                if (timeout_us == 0)
-                {
-                    completed_ops_.push(&task_op_);
-                    return 0;
-                }
+                completed_ops_.push(&task_op_);
+                return 0;
             }
 
             task_interrupted_ = more_handlers || timeout_us == 0;
             task_running_ = true;
 
             if (more_handlers)
-            {
-                if (maybe_unlock_and_signal_one(lock))
-                    lock.lock();
-            }
+                unlock_and_signal_one(lock);
 
-            run_task(lock);
+            run_task(lock, ctx);
 
             task_running_ = false;
             completed_ops_.push(&task_op_);
@@ -1146,10 +1137,9 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us)
         if (drain_private_queue(ctx, outstanding_work_, completed_ops_))
             continue;
 
-        if (outstanding_work_.load(std::memory_order_acquire) == 0)
-            return 0;
-
-        if (timeout_us == 0)
+        // No pending work to wait on, or caller requested non-blocking poll
+        if (outstanding_work_.load(std::memory_order_acquire) == 0 ||
+            timeout_us == 0)
             return 0;
 
         clear_signal();
