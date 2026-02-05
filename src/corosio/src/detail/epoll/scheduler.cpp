@@ -493,8 +493,10 @@ register_descriptor(int fd, descriptor_data* desc) const
     desc->registered_events = ev.events;
     desc->is_registered = true;
     desc->fd = fd;
-    desc->read_ready.store(false, std::memory_order_relaxed);
-    desc->write_ready.store(false, std::memory_order_relaxed);
+
+    std::lock_guard lock(desc->mutex);
+    desc->read_ready = false;
+    desc->write_ready = false;
 }
 
 void
@@ -812,7 +814,14 @@ run_reactor(std::unique_lock<std::mutex>& lock)
 
         if (ev & EPOLLIN)
         {
-            auto* op = desc->read_op.exchange(nullptr, std::memory_order_acq_rel);
+            epoll_op* op = nullptr;
+            {
+                std::lock_guard lock(desc->mutex);
+                op = desc->read_op;
+                desc->read_op = nullptr;
+                if (!op)
+                    desc->read_ready = true;
+            }
             if (op)
             {
                 if (err)
@@ -827,7 +836,8 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     if (op->errn == EAGAIN || op->errn == EWOULDBLOCK)
                     {
                         op->errn = 0;
-                        desc->read_op.store(op, std::memory_order_release);
+                        std::lock_guard lock(desc->mutex);
+                        desc->read_op = op;
                     }
                     else
                     {
@@ -836,15 +846,22 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     }
                 }
             }
-            else
-            {
-                desc->read_ready.store(true, std::memory_order_release);
-            }
         }
 
         if (ev & EPOLLOUT)
         {
-            auto* conn_op = desc->connect_op.exchange(nullptr, std::memory_order_acq_rel);
+            epoll_op* conn_op = nullptr;
+            epoll_op* write_op = nullptr;
+            {
+                std::lock_guard lock(desc->mutex);
+                conn_op = desc->connect_op;
+                desc->connect_op = nullptr;
+                write_op = desc->write_op;
+                desc->write_op = nullptr;
+                if (!conn_op && !write_op)
+                    desc->write_ready = true;
+            }
+
             if (conn_op)
             {
                 if (err)
@@ -859,7 +876,8 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     if (conn_op->errn == EAGAIN || conn_op->errn == EWOULDBLOCK)
                     {
                         conn_op->errn = 0;
-                        desc->connect_op.store(conn_op, std::memory_order_release);
+                        std::lock_guard lock(desc->mutex);
+                        desc->connect_op = conn_op;
                     }
                     else
                     {
@@ -869,7 +887,6 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                 }
             }
 
-            auto* write_op = desc->write_op.exchange(nullptr, std::memory_order_acq_rel);
             if (write_op)
             {
                 if (err)
@@ -884,7 +901,8 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     if (write_op->errn == EAGAIN || write_op->errn == EWOULDBLOCK)
                     {
                         write_op->errn = 0;
-                        desc->write_op.store(write_op, std::memory_order_release);
+                        std::lock_guard lock(desc->mutex);
+                        desc->write_op = write_op;
                     }
                     else
                     {
@@ -893,14 +911,23 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     }
                 }
             }
-
-            if (!conn_op && !write_op)
-                desc->write_ready.store(true, std::memory_order_release);
         }
 
         if (err && !(ev & (EPOLLIN | EPOLLOUT)))
         {
-            auto* read_op = desc->read_op.exchange(nullptr, std::memory_order_acq_rel);
+            epoll_op* read_op = nullptr;
+            epoll_op* write_op = nullptr;
+            epoll_op* conn_op = nullptr;
+            {
+                std::lock_guard lock(desc->mutex);
+                read_op = desc->read_op;
+                desc->read_op = nullptr;
+                write_op = desc->write_op;
+                desc->write_op = nullptr;
+                conn_op = desc->connect_op;
+                desc->connect_op = nullptr;
+            }
+
             if (read_op)
             {
                 read_op->complete(err, 0);
@@ -908,7 +935,6 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                 ++completions_queued;
             }
 
-            auto* write_op = desc->write_op.exchange(nullptr, std::memory_order_acq_rel);
             if (write_op)
             {
                 write_op->complete(err, 0);
@@ -916,7 +942,6 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                 ++completions_queued;
             }
 
-            auto* conn_op = desc->connect_op.exchange(nullptr, std::memory_order_acq_rel);
             if (conn_op)
             {
                 conn_op->complete(err, 0);

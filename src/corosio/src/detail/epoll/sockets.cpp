@@ -174,32 +174,48 @@ connect(
         svc_.work_started();
         op.impl_ptr = shared_from_this();
 
-        desc_data_.connect_op.store(&op, std::memory_order_seq_cst);
-
-        if (desc_data_.write_ready.exchange(false, std::memory_order_seq_cst))
+        bool perform_now = false;
         {
-            auto* claimed = desc_data_.connect_op.exchange(nullptr, std::memory_order_acq_rel);
-            if (claimed)
+            std::lock_guard lock(desc_data_.mutex);
+            if (desc_data_.write_ready)
             {
-                claimed->perform_io();
-                if (claimed->errn == EAGAIN || claimed->errn == EWOULDBLOCK)
-                {
-                    claimed->errn = 0;
-                    desc_data_.connect_op.store(claimed, std::memory_order_release);
-                }
-                else
-                {
-                    svc_.post(claimed);
-                    svc_.work_finished();
-                }
-                // completion is always posted to scheduler queue, never inline.
-                return std::noop_coroutine();
+                desc_data_.write_ready = false;
+                perform_now = true;
             }
+            else
+            {
+                desc_data_.connect_op = &op;
+            }
+        }
+
+        if (perform_now)
+        {
+            op.perform_io();
+            if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
+            {
+                op.errn = 0;
+                std::lock_guard lock(desc_data_.mutex);
+                desc_data_.connect_op = &op;
+            }
+            else
+            {
+                svc_.post(&op);
+                svc_.work_finished();
+            }
+            return std::noop_coroutine();
         }
 
         if (op.cancelled.load(std::memory_order_acquire))
         {
-            auto* claimed = desc_data_.connect_op.exchange(nullptr, std::memory_order_acq_rel);
+            epoll_op* claimed = nullptr;
+            {
+                std::lock_guard lock(desc_data_.mutex);
+                if (desc_data_.connect_op == &op)
+                {
+                    claimed = desc_data_.connect_op;
+                    desc_data_.connect_op = nullptr;
+                }
+            }
             if (claimed)
             {
                 svc_.post(claimed);
@@ -227,7 +243,10 @@ do_read_io()
 
     if (n > 0)
     {
-        desc_data_.read_ready.store(false, std::memory_order_relaxed);
+        {
+            std::lock_guard lock(desc_data_.mutex);
+            desc_data_.read_ready = false;
+        }
         op.complete(0, static_cast<std::size_t>(n));
         svc_.post(&op);
         return;
@@ -235,7 +254,10 @@ do_read_io()
 
     if (n == 0)
     {
-        desc_data_.read_ready.store(false, std::memory_order_relaxed);
+        {
+            std::lock_guard lock(desc_data_.mutex);
+            desc_data_.read_ready = false;
+        }
         op.complete(0, 0);
         svc_.post(&op);
         return;
@@ -245,31 +267,48 @@ do_read_io()
     {
         svc_.work_started();
 
-        desc_data_.read_op.store(&op, std::memory_order_seq_cst);
-
-        if (desc_data_.read_ready.exchange(false, std::memory_order_seq_cst))
+        bool perform_now = false;
         {
-            auto* claimed = desc_data_.read_op.exchange(nullptr, std::memory_order_acq_rel);
-            if (claimed)
+            std::lock_guard lock(desc_data_.mutex);
+            if (desc_data_.read_ready)
             {
-                claimed->perform_io();
-                if (claimed->errn == EAGAIN || claimed->errn == EWOULDBLOCK)
-                {
-                    claimed->errn = 0;
-                    desc_data_.read_op.store(claimed, std::memory_order_release);
-                }
-                else
-                {
-                    svc_.post(claimed);
-                    svc_.work_finished();
-                }
-                return;
+                desc_data_.read_ready = false;
+                perform_now = true;
             }
+            else
+            {
+                desc_data_.read_op = &op;
+            }
+        }
+
+        if (perform_now)
+        {
+            op.perform_io();
+            if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
+            {
+                op.errn = 0;
+                std::lock_guard lock(desc_data_.mutex);
+                desc_data_.read_op = &op;
+            }
+            else
+            {
+                svc_.post(&op);
+                svc_.work_finished();
+            }
+            return;
         }
 
         if (op.cancelled.load(std::memory_order_acquire))
         {
-            auto* claimed = desc_data_.read_op.exchange(nullptr, std::memory_order_acq_rel);
+            epoll_op* claimed = nullptr;
+            {
+                std::lock_guard lock(desc_data_.mutex);
+                if (desc_data_.read_op == &op)
+                {
+                    claimed = desc_data_.read_op;
+                    desc_data_.read_op = nullptr;
+                }
+            }
             if (claimed)
             {
                 svc_.post(claimed);
@@ -297,7 +336,10 @@ do_write_io()
 
     if (n > 0)
     {
-        desc_data_.write_ready.store(false, std::memory_order_relaxed);
+        {
+            std::lock_guard lock(desc_data_.mutex);
+            desc_data_.write_ready = false;
+        }
         op.complete(0, static_cast<std::size_t>(n));
         svc_.post(&op);
         return;
@@ -307,31 +349,48 @@ do_write_io()
     {
         svc_.work_started();
 
-        desc_data_.write_op.store(&op, std::memory_order_seq_cst);
-
-        if (desc_data_.write_ready.exchange(false, std::memory_order_seq_cst))
+        bool perform_now = false;
         {
-            auto* claimed = desc_data_.write_op.exchange(nullptr, std::memory_order_acq_rel);
-            if (claimed)
+            std::lock_guard lock(desc_data_.mutex);
+            if (desc_data_.write_ready)
             {
-                claimed->perform_io();
-                if (claimed->errn == EAGAIN || claimed->errn == EWOULDBLOCK)
-                {
-                    claimed->errn = 0;
-                    desc_data_.write_op.store(claimed, std::memory_order_release);
-                }
-                else
-                {
-                    svc_.post(claimed);
-                    svc_.work_finished();
-                }
-                return;
+                desc_data_.write_ready = false;
+                perform_now = true;
             }
+            else
+            {
+                desc_data_.write_op = &op;
+            }
+        }
+
+        if (perform_now)
+        {
+            op.perform_io();
+            if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
+            {
+                op.errn = 0;
+                std::lock_guard lock(desc_data_.mutex);
+                desc_data_.write_op = &op;
+            }
+            else
+            {
+                svc_.post(&op);
+                svc_.work_finished();
+            }
+            return;
         }
 
         if (op.cancelled.load(std::memory_order_acquire))
         {
-            auto* claimed = desc_data_.write_op.exchange(nullptr, std::memory_order_acq_rel);
+            epoll_op* claimed = nullptr;
+            {
+                std::lock_guard lock(desc_data_.mutex);
+                if (desc_data_.write_op == &op)
+                {
+                    claimed = desc_data_.write_op;
+                    desc_data_.write_op = nullptr;
+                }
+            }
             if (claimed)
             {
                 svc_.post(claimed);
@@ -584,22 +643,50 @@ cancel() noexcept
         return;
     }
 
-    // Use atomic exchange to claim operations - only one of cancellation
-    // or reactor will succeed
-    auto cancel_atomic_op = [this, &self](epoll_op& op, std::atomic<epoll_op*>& desc_op_ptr) {
-        op.request_cancel();
-        auto* claimed = desc_op_ptr.exchange(nullptr, std::memory_order_acq_rel);
-        if (claimed == &op)
-        {
-            op.impl_ptr = self;
-            svc_.post(&op);
-            svc_.work_finished();
-        }
-    };
+    conn_.request_cancel();
+    rd_.request_cancel();
+    wr_.request_cancel();
 
-    cancel_atomic_op(conn_, desc_data_.connect_op);
-    cancel_atomic_op(rd_, desc_data_.read_op);
-    cancel_atomic_op(wr_, desc_data_.write_op);
+    epoll_op* conn_claimed = nullptr;
+    epoll_op* rd_claimed = nullptr;
+    epoll_op* wr_claimed = nullptr;
+    {
+        std::lock_guard lock(desc_data_.mutex);
+        if (desc_data_.connect_op == &conn_)
+        {
+            conn_claimed = desc_data_.connect_op;
+            desc_data_.connect_op = nullptr;
+        }
+        if (desc_data_.read_op == &rd_)
+        {
+            rd_claimed = desc_data_.read_op;
+            desc_data_.read_op = nullptr;
+        }
+        if (desc_data_.write_op == &wr_)
+        {
+            wr_claimed = desc_data_.write_op;
+            desc_data_.write_op = nullptr;
+        }
+    }
+
+    if (conn_claimed)
+    {
+        conn_.impl_ptr = self;
+        svc_.post(&conn_);
+        svc_.work_finished();
+    }
+    if (rd_claimed)
+    {
+        rd_.impl_ptr = self;
+        svc_.post(&rd_);
+        svc_.work_finished();
+    }
+    if (wr_claimed)
+    {
+        wr_.impl_ptr = self;
+        svc_.post(&wr_);
+        svc_.work_finished();
+    }
 }
 
 void
@@ -608,16 +695,23 @@ cancel_single_op(epoll_op& op) noexcept
 {
     op.request_cancel();
 
-    std::atomic<epoll_op*>* desc_op_ptr = nullptr;
+    epoll_op** desc_op_ptr = nullptr;
     if (&op == &conn_) desc_op_ptr = &desc_data_.connect_op;
     else if (&op == &rd_) desc_op_ptr = &desc_data_.read_op;
     else if (&op == &wr_) desc_op_ptr = &desc_data_.write_op;
 
     if (desc_op_ptr)
     {
-        // Use atomic exchange - only one of cancellation or reactor will succeed
-        auto* claimed = desc_op_ptr->exchange(nullptr, std::memory_order_acq_rel);
-        if (claimed == &op)
+        epoll_op* claimed = nullptr;
+        {
+            std::lock_guard lock(desc_data_.mutex);
+            if (*desc_op_ptr == &op)
+            {
+                claimed = *desc_op_ptr;
+                *desc_op_ptr = nullptr;
+            }
+        }
+        if (claimed)
         {
             try {
                 op.impl_ptr = shared_from_this();
@@ -644,11 +738,14 @@ close_socket() noexcept
 
     desc_data_.fd = -1;
     desc_data_.is_registered = false;
-    desc_data_.read_op.store(nullptr, std::memory_order_relaxed);
-    desc_data_.write_op.store(nullptr, std::memory_order_relaxed);
-    desc_data_.connect_op.store(nullptr, std::memory_order_relaxed);
-    desc_data_.read_ready.store(false, std::memory_order_relaxed);
-    desc_data_.write_ready.store(false, std::memory_order_relaxed);
+    {
+        std::lock_guard lock(desc_data_.mutex);
+        desc_data_.read_op = nullptr;
+        desc_data_.write_op = nullptr;
+        desc_data_.connect_op = nullptr;
+        desc_data_.read_ready = false;
+        desc_data_.write_ready = false;
+    }
     desc_data_.registered_events = 0;
 
     local_endpoint_ = endpoint{};
@@ -719,9 +816,12 @@ open_socket(tcp_socket::socket_impl& impl)
 
     // Register fd with epoll (edge-triggered mode)
     epoll_impl->desc_data_.fd = fd;
-    epoll_impl->desc_data_.read_op.store(nullptr, std::memory_order_relaxed);
-    epoll_impl->desc_data_.write_op.store(nullptr, std::memory_order_relaxed);
-    epoll_impl->desc_data_.connect_op.store(nullptr, std::memory_order_relaxed);
+    {
+        std::lock_guard lock(epoll_impl->desc_data_.mutex);
+        epoll_impl->desc_data_.read_op = nullptr;
+        epoll_impl->desc_data_.write_op = nullptr;
+        epoll_impl->desc_data_.connect_op = nullptr;
+    }
     scheduler().register_descriptor(fd, &epoll_impl->desc_data_);
 
     return {};
