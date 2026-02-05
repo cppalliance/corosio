@@ -33,6 +33,7 @@
 #include <atomic>
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stop_token>
 
@@ -88,35 +89,27 @@ struct epoll_op;
     once with epoll and stays registered until closed. Events are dispatched
     to the appropriate pending operation (EPOLLIN -> read_op, etc.).
 
-    With edge-triggered epoll (EPOLLET), atomic operations are required to
-    synchronize between operation registration and reactor event delivery.
-    The read_ready/write_ready flags cache edge events that arrived before
-    an operation was registered.
+    @par Thread Safety
+    The mutex protects operation pointers and ready flags. Perform I/O
+    outside the lock to minimize hold time. Fields without "protected by
+    mutex" are set during registration only.
 */
 struct descriptor_data
 {
-    /// Currently registered events (EPOLLIN, EPOLLOUT, etc.)
+    std::mutex mutex;
+
+    // Protected by mutex
+    epoll_op* read_op = nullptr;
+    epoll_op* write_op = nullptr;
+    epoll_op* connect_op = nullptr;
+
+    // Caches edge events that arrived before an op was registered
+    bool read_ready = false;
+    bool write_ready = false;
+
+    // Set during registration only (no mutex needed)
     std::uint32_t registered_events = 0;
-
-    /// Pending read operation (nullptr if none)
-    std::atomic<epoll_op*> read_op{nullptr};
-
-    /// Pending write operation (nullptr if none)
-    std::atomic<epoll_op*> write_op{nullptr};
-
-    /// Pending connect operation (nullptr if none)
-    std::atomic<epoll_op*> connect_op{nullptr};
-
-    /// Cached read readiness (edge event arrived before op registered)
-    std::atomic<bool> read_ready{false};
-
-    /// Cached write readiness (edge event arrived before op registered)
-    std::atomic<bool> write_ready{false};
-
-    /// The file descriptor
     int fd = -1;
-
-    /// Whether this descriptor is managed by persistent registration
     bool is_registered = false;
 };
 
