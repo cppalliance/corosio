@@ -246,7 +246,7 @@ private:
     mutable std::condition_variable cond_;
     mutable op_queue completed_ops_;
     mutable std::atomic<long> outstanding_work_;
-    std::atomic<bool> stopped_;
+    bool stopped_;
     bool shutdown_;
     timer_service* timer_svc_ = nullptr;
 
