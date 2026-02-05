@@ -12,7 +12,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/some_buffers.hpp>
+#include <boost/capy/buffers/buffer_array.hpp>
 #include <boost/capy/io/any_stream.hpp>
 #include <boost/capy/io_task.hpp>
 
@@ -166,7 +166,7 @@ protected:
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     virtual capy::io_task<std::size_t>
-    do_read_some(capy::some_mutable_buffers buffers) = 0;
+    do_read_some(capy::mutable_buffer_array<capy::detail::max_iovec_> buffers) = 0;
 
     /** Virtual write implementation.
 
@@ -178,7 +178,7 @@ protected:
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     virtual capy::io_task<std::size_t>
-    do_write_some(capy::some_const_buffers buffers) = 0;
+    do_write_some(capy::const_buffer_array<capy::detail::max_iovec_> buffers) = 0;
 };
 
 } // namespace boost::corosio

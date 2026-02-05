@@ -13,7 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/tls_context.hpp>
 #include <boost/corosio/tls_stream.hpp>
-#include <boost/capy/buffers/some_buffers.hpp>
+#include <boost/capy/buffers/buffer_array.hpp>
 #include <boost/capy/concept/stream.hpp>
 #include <boost/capy/io/any_stream.hpp>
 #include <boost/capy/io_task.hpp>
@@ -141,10 +141,10 @@ public:
 
 protected:
     capy::io_task<std::size_t>
-    do_read_some(capy::some_mutable_buffers buffers) override;
+    do_read_some(capy::mutable_buffer_array<capy::detail::max_iovec_> buffers) override;
 
     capy::io_task<std::size_t>
-    do_write_some(capy::some_const_buffers buffers) override;
+    do_write_some(capy::const_buffer_array<capy::detail::max_iovec_> buffers) override;
 
 private:
     static impl*
