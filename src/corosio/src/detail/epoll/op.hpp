@@ -148,9 +148,6 @@ struct descriptor_state : scheduler_op
 
     /// Destroy without invoking.
     void destroy() override {}
-
-    /// Return true (this is a deferred I/O operation).
-    bool is_deferred_io() const noexcept override { return true; }
 };
 
 struct epoll_op : scheduler_op

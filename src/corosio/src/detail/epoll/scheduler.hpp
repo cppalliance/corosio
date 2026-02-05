@@ -131,6 +131,13 @@ public:
     /** For use by I/O operations to track completed work. */
     void work_finished() const noexcept override;
 
+    /** Offset a forthcoming work_finished from work_cleanup.
+
+        Called by descriptor_state when all I/O returned EAGAIN and no
+        handler will be executed. Must be called from a scheduler thread.
+    */
+    void compensating_work_started() const noexcept;
+
     /** Drain work from thread context's private queue to global queue.
 
         Called by thread_context_guard destructor when a thread exits run().
