@@ -160,7 +160,7 @@ public:
     epoll_write_op wr_;
 
     /// Per-descriptor state for persistent epoll registration
-    descriptor_data desc_data_;
+    descriptor_state desc_state_;
 
     cached_initiator read_initiator_;
     cached_initiator write_initiator_;

@@ -64,14 +64,14 @@ operator()()
                 impl.set_socket(accepted_fd);
 
                 // Register accepted socket with epoll (edge-triggered mode)
-                impl.desc_data_.fd = accepted_fd;
+                impl.desc_state_.fd = accepted_fd;
                 {
-                    std::lock_guard lock(impl.desc_data_.mutex);
-                    impl.desc_data_.read_op = nullptr;
-                    impl.desc_data_.write_op = nullptr;
-                    impl.desc_data_.connect_op = nullptr;
+                    std::lock_guard lock(impl.desc_state_.mutex);
+                    impl.desc_state_.read_op = nullptr;
+                    impl.desc_state_.write_op = nullptr;
+                    impl.desc_state_.connect_op = nullptr;
                 }
-                socket_svc->scheduler().register_descriptor(accepted_fd, &impl.desc_data_);
+                socket_svc->scheduler().register_descriptor(accepted_fd, &impl.desc_state_);
 
                 sockaddr_in local_addr{};
                 socklen_t local_len = sizeof(local_addr);
@@ -144,7 +144,7 @@ void
 epoll_acceptor_impl::
 update_epoll_events() noexcept
 {
-    svc_.scheduler().update_descriptor_events(fd_, &desc_data_, 0);
+    svc_.scheduler().update_descriptor_events(fd_, &desc_state_, 0);
 }
 
 void
@@ -181,8 +181,8 @@ accept(
     if (accepted >= 0)
     {
         {
-            std::lock_guard lock(desc_data_.mutex);
-            desc_data_.read_ready = false;
+            std::lock_guard lock(desc_state_.mutex);
+            desc_state_.read_ready = false;
         }
         op.accepted_fd = accepted;
         op.complete(0, 0);
@@ -199,15 +199,15 @@ accept(
 
         bool perform_now = false;
         {
-            std::lock_guard lock(desc_data_.mutex);
-            if (desc_data_.read_ready)
+            std::lock_guard lock(desc_state_.mutex);
+            if (desc_state_.read_ready)
             {
-                desc_data_.read_ready = false;
+                desc_state_.read_ready = false;
                 perform_now = true;
             }
             else
             {
-                desc_data_.read_op = &op;
+                desc_state_.read_op = &op;
             }
         }
 
@@ -217,8 +217,8 @@ accept(
             if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
             {
                 op.errn = 0;
-                std::lock_guard lock(desc_data_.mutex);
-                desc_data_.read_op = &op;
+                std::lock_guard lock(desc_state_.mutex);
+                desc_state_.read_op = &op;
             }
             else
             {
@@ -232,11 +232,11 @@ accept(
         {
             epoll_op* claimed = nullptr;
             {
-                std::lock_guard lock(desc_data_.mutex);
-                if (desc_data_.read_op == &op)
+                std::lock_guard lock(desc_state_.mutex);
+                if (desc_state_.read_op == &op)
                 {
-                    claimed = desc_data_.read_op;
-                    desc_data_.read_op = nullptr;
+                    claimed = desc_state_.read_op;
+                    desc_state_.read_op = nullptr;
                 }
             }
             if (claimed)
@@ -271,11 +271,11 @@ cancel() noexcept
 
     epoll_op* claimed = nullptr;
     {
-        std::lock_guard lock(desc_data_.mutex);
-        if (desc_data_.read_op == &acc_)
+        std::lock_guard lock(desc_state_.mutex);
+        if (desc_state_.read_op == &acc_)
         {
-            claimed = desc_data_.read_op;
-            desc_data_.read_op = nullptr;
+            claimed = desc_state_.read_op;
+            desc_state_.read_op = nullptr;
         }
     }
     if (claimed)
@@ -294,11 +294,11 @@ cancel_single_op(epoll_op& op) noexcept
 
     epoll_op* claimed = nullptr;
     {
-        std::lock_guard lock(desc_data_.mutex);
-        if (desc_data_.read_op == &op)
+        std::lock_guard lock(desc_state_.mutex);
+        if (desc_state_.read_op == &op)
         {
-            claimed = desc_data_.read_op;
-            desc_data_.read_op = nullptr;
+            claimed = desc_state_.read_op;
+            desc_state_.read_op = nullptr;
         }
     }
     if (claimed)
@@ -319,21 +319,21 @@ close_socket() noexcept
 
     if (fd_ >= 0)
     {
-        if (desc_data_.registered_events != 0)
+        if (desc_state_.registered_events != 0)
             svc_.scheduler().deregister_descriptor(fd_);
         ::close(fd_);
         fd_ = -1;
     }
 
-    desc_data_.fd = -1;
-    desc_data_.is_registered = false;
+    desc_state_.fd = -1;
+    desc_state_.is_registered = false;
     {
-        std::lock_guard lock(desc_data_.mutex);
-        desc_data_.read_op = nullptr;
-        desc_data_.read_ready = false;
-        desc_data_.write_ready = false;
+        std::lock_guard lock(desc_state_.mutex);
+        desc_state_.read_op = nullptr;
+        desc_state_.read_ready = false;
+        desc_state_.write_ready = false;
     }
-    desc_data_.registered_events = 0;
+    desc_state_.registered_events = 0;
 
     // Clear cached endpoint
     local_endpoint_ = endpoint{};
@@ -422,12 +422,12 @@ open_acceptor(
     epoll_impl->fd_ = fd;
 
     // Register fd with epoll (edge-triggered mode)
-    epoll_impl->desc_data_.fd = fd;
+    epoll_impl->desc_state_.fd = fd;
     {
-        std::lock_guard lock(epoll_impl->desc_data_.mutex);
-        epoll_impl->desc_data_.read_op = nullptr;
+        std::lock_guard lock(epoll_impl->desc_state_.mutex);
+        epoll_impl->desc_state_.read_op = nullptr;
     }
-    scheduler().register_descriptor(fd, &epoll_impl->desc_data_);
+    scheduler().register_descriptor(fd, &epoll_impl->desc_state_);
 
     // Cache the local endpoint (queries OS for ephemeral port if port was 0)
     sockaddr_in local_addr{};

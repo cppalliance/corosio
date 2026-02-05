@@ -52,8 +52,8 @@
 
     Persistent Registration
     -----------------------
-    File descriptors are registered with epoll once (via descriptor_data) and
-    stay registered until closed. The descriptor_data tracks which operations
+    File descriptors are registered with epoll once (via descriptor_state) and
+    stay registered until closed. The descriptor_state tracks which operations
     are pending (read_op, write_op, connect_op). When an event arrives, the
     reactor dispatches to the appropriate pending operation.
 
@@ -83,18 +83,32 @@ class epoll_socket_impl;
 class epoll_acceptor_impl;
 struct epoll_op;
 
+// Forward declaration
+class epoll_scheduler;
+
 /** Per-descriptor state for persistent epoll registration.
 
     Tracks pending operations for a file descriptor. The fd is registered
-    once with epoll and stays registered until closed. Events are dispatched
-    to the appropriate pending operation (EPOLLIN -> read_op, etc.).
+    once with epoll and stays registered until closed.
+
+    This struct extends scheduler_op to support deferred I/O processing.
+    When epoll events arrive, the reactor sets ready_events and queues
+    this descriptor for processing. When popped from the scheduler queue,
+    operator() performs the actual I/O and queues completion handlers.
+
+    @par Deferred I/O Model
+    The reactor no longer performs I/O directly. Instead:
+    1. Reactor sets ready_events and queues descriptor_state
+    2. Scheduler pops descriptor_state and calls operator()
+    3. operator() performs I/O under mutex and queues completions
+
+    This eliminates per-descriptor mutex locking from the reactor hot path.
 
     @par Thread Safety
-    The mutex protects operation pointers and ready flags. Perform I/O
-    outside the lock to minimize hold time. Fields without "protected by
-    mutex" are set during registration only.
+    The mutex protects operation pointers and ready flags during I/O.
+    ready_events_ and is_enqueued_ are atomic for lock-free reactor access.
 */
-struct descriptor_data
+struct descriptor_state : scheduler_op
 {
     std::mutex mutex;
 
@@ -111,6 +125,32 @@ struct descriptor_data
     std::uint32_t registered_events = 0;
     int fd = -1;
     bool is_registered = false;
+
+    // For deferred I/O - set by reactor, read by scheduler
+    std::atomic<std::uint32_t> ready_events_{0};
+    std::atomic<bool> is_enqueued_{false};
+    epoll_scheduler const* scheduler_ = nullptr;
+
+    /// Set ready events atomically.
+    void set_ready_events(std::uint32_t ev) noexcept
+    {
+        ready_events_.store(ev, std::memory_order_relaxed);
+    }
+
+    /// Add ready events atomically.
+    void add_ready_events(std::uint32_t ev) noexcept
+    {
+        ready_events_.fetch_or(ev, std::memory_order_relaxed);
+    }
+
+    /// Perform deferred I/O and queue completions.
+    void operator()() override;
+
+    /// Destroy without invoking.
+    void destroy() override {}
+
+    /// Return true (this is a deferred I/O operation).
+    bool is_deferred_io() const noexcept override { return true; }
 };
 
 struct epoll_op : scheduler_op

@@ -30,7 +30,7 @@
 namespace boost::corosio::detail {
 
 struct epoll_op;
-struct descriptor_data;
+struct descriptor_state;
 
 /** Linux scheduler using epoll for I/O multiplexing.
 
@@ -103,13 +103,13 @@ public:
     /** Register a descriptor for persistent monitoring.
 
         The fd is registered once and stays registered until explicitly
-        deregistered. Events are dispatched via descriptor_data which
+        deregistered. Events are dispatched via descriptor_state which
         tracks pending read/write/connect operations.
 
         @param fd The file descriptor to register.
         @param desc Pointer to descriptor data (stored in epoll_event.data.ptr).
     */
-    void register_descriptor(int fd, descriptor_data* desc) const;
+    void register_descriptor(int fd, descriptor_state* desc) const;
 
     /** Update events for a persistently registered descriptor.
 
@@ -117,7 +117,7 @@ public:
         @param desc Pointer to descriptor data.
         @param events The new events to monitor.
     */
-    void update_descriptor_events(int fd, descriptor_data* desc, std::uint32_t events) const;
+    void update_descriptor_events(int fd, descriptor_state* desc, std::uint32_t events) const;
 
     /** Deregister a persistently registered descriptor.
 
@@ -141,12 +141,25 @@ public:
     */
     void drain_thread_queue(op_queue& queue, long count) const;
 
+    /** Post completed operations for deferred invocation.
+
+        If called from a thread running this scheduler, operations go to
+        the thread's private queue (fast path). Otherwise, operations are
+        added to the global queue under mutex and a waiter is signaled.
+
+        @par Preconditions
+        work_started() must have been called for each operation.
+
+        @param ops Queue of operations to post.
+    */
+    void post_deferred_completions(op_queue& ops) const;
+
 private:
     friend struct work_cleanup;
     friend struct task_cleanup;
 
     std::size_t do_one(long timeout_us);
-    void run_reactor(std::unique_lock<std::mutex>& lock);
+    void run_task(std::unique_lock<std::mutex>& lock);
     void wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const;
     void interrupt_reactor() const;
     void update_timerfd() const;
@@ -231,8 +244,8 @@ private:
     timer_service* timer_svc_ = nullptr;
 
     // Single reactor thread coordination
-    mutable bool reactor_running_ = false;
-    mutable bool reactor_interrupted_ = false;
+    mutable bool task_running_ = false;
+    mutable bool task_interrupted_ = false;
 
     // Signaling state: bit 0 = signaled, upper bits = waiter count (incremented by 2)
     mutable std::size_t state_ = 0;
