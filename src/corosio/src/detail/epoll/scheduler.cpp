@@ -1123,13 +1123,8 @@ do_one(long timeout_us)
                 continue;
             }
 
-            // Regular operation - cascade wake if more work exists
-            bool more_work = !completed_ops_.empty() ||
-                (ctx && !ctx->private_queue.empty());
-            if (more_work)
-                unlock_and_signal_one(lock);
-            else
-                lock.unlock();
+            // Producers wake workers; avoids futex contention
+            lock.unlock();
 
             work_cleanup on_exit{this, &lock, ctx};
             (void)on_exit;
