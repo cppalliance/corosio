@@ -595,11 +595,18 @@ run()
     }
 
     thread_context_guard ctx(this);
+    std::unique_lock lock(mutex_);
 
     std::size_t n = 0;
-    while (do_one(-1))
+    for (;;)
+    {
+        if (!do_one(lock, -1))
+            break;
         if (n != (std::numeric_limits<std::size_t>::max)())
             ++n;
+        if (!lock.owns_lock())
+            lock.lock();
+    }
     return n;
 }
 
@@ -617,7 +624,8 @@ run_one()
     }
 
     thread_context_guard ctx(this);
-    return do_one(-1);
+    std::unique_lock lock(mutex_);
+    return do_one(lock, -1);
 }
 
 std::size_t
@@ -634,7 +642,8 @@ wait_one(long usec)
     }
 
     thread_context_guard ctx(this);
-    return do_one(usec);
+    std::unique_lock lock(mutex_);
+    return do_one(lock, usec);
 }
 
 std::size_t
@@ -651,11 +660,18 @@ poll()
     }
 
     thread_context_guard ctx(this);
+    std::unique_lock lock(mutex_);
 
     std::size_t n = 0;
-    while (do_one(0))
+    for (;;)
+    {
+        if (!do_one(lock, 0))
+            break;
         if (n != (std::numeric_limits<std::size_t>::max)())
             ++n;
+        if (!lock.owns_lock())
+            lock.lock();
+    }
     return n;
 }
 
@@ -673,7 +689,8 @@ poll_one()
     }
 
     thread_context_guard ctx(this);
-    return do_one(0);
+    std::unique_lock lock(mutex_);
+    return do_one(lock, 0);
 }
 
 void
@@ -902,7 +919,6 @@ struct work_cleanup
             {
                 lock->lock();
                 scheduler->completed_ops_.splice(ctx->private_queue);
-                lock->unlock();
             }
         }
         else
@@ -1062,10 +1078,8 @@ run_task(std::unique_lock<std::mutex>& lock)
 
 std::size_t
 epoll_scheduler::
-do_one(long timeout_us)
+do_one(std::unique_lock<std::mutex>& lock, long timeout_us)
 {
-    std::unique_lock lock(mutex_);
-
     for (;;)
     {
         if (stopped_.load(std::memory_order_acquire))

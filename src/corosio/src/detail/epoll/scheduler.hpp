@@ -158,7 +158,7 @@ private:
     friend struct work_cleanup;
     friend struct task_cleanup;
 
-    std::size_t do_one(long timeout_us);
+    std::size_t do_one(std::unique_lock<std::mutex>& lock, long timeout_us);
     void run_task(std::unique_lock<std::mutex>& lock);
     void wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const;
     void interrupt_reactor() const;
