@@ -197,8 +197,8 @@ jobs:
             shared: false
             coverage: true
             build-type: "Debug"
-            cxxflags: "--coverage -fprofile-arcs -ftest-coverage"
-            ccflags: "--coverage -fprofile-arcs -ftest-coverage"
+            cxxflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
+            ccflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
             install: "lcov wget unzip"
 
           # Linux Clang (5 configurations)
