@@ -19,6 +19,7 @@
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/write.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -32,16 +33,16 @@
 namespace asio_bench {
 namespace {
 
+// Server: loop until read error (EOF from client shutdown)
 asio::awaitable<void> server_task(
     tcp::socket& sock,
-    int num_requests,
-    int& completed_requests )
+    int64_t& completed_requests )
 {
     std::string buf;
 
     try
     {
-        while( completed_requests < num_requests )
+        for( ;; )
         {
             std::size_t n = co_await asio::async_read_until(
                 sock,
@@ -61,18 +62,20 @@ asio::awaitable<void> server_task(
     catch( std::exception const& ) {}
 }
 
+// Client: loop while running, then shutdown
 asio::awaitable<void> client_task(
     tcp::socket& sock,
-    int num_requests,
-    bench::statistics& latency_stats )
+    std::atomic<bool>& running,
+    int64_t& request_count,
+    perf::statistics& latency_stats )
 {
     std::string buf;
 
     try
     {
-        for( int i = 0; i < num_requests; ++i )
+        while( running.load( std::memory_order_relaxed ) )
         {
-            bench::stopwatch sw;
+            perf::stopwatch sw;
 
             co_await asio::async_write(
                 sock,
@@ -112,67 +115,78 @@ asio::awaitable<void> client_task(
 
             double latency_us = sw.elapsed_us();
             latency_stats.add( latency_us );
+            ++request_count;
 
             buf.erase( 0, total_size );
         }
+
+        sock.shutdown( tcp::socket::shutdown_send );
     }
     catch( std::exception const& ) {}
 }
 
-bench::benchmark_result bench_single_connection( int num_requests )
+bench::benchmark_result bench_single_connection( double duration_s )
 {
-    std::cout << "  Requests: " << num_requests << "\n";
+    perf::print_header( "Single Connection (Asio Coroutines)" );
 
     asio::io_context ioc;
     auto [client, server] = make_socket_pair( ioc );
 
-    int completed_requests = 0;
-    bench::statistics latency_stats;
+    std::atomic<bool> running{ true };
+    int64_t completed_requests = 0;
+    int64_t request_count = 0;
+    perf::statistics latency_stats;
 
-    bench::stopwatch total_sw;
+    perf::stopwatch total_sw;
 
     asio::co_spawn( ioc,
-        server_task( server, num_requests, completed_requests ),
+        server_task( server, completed_requests ),
         asio::detached );
     asio::co_spawn( ioc,
-        client_task( client, num_requests, latency_stats ),
+        client_task( client, running, request_count, latency_stats ),
         asio::detached );
+
+    std::thread timer( [&]()
+    {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>( duration_s ) );
+        running.store( false, std::memory_order_relaxed );
+    } );
 
     ioc.run();
+    timer.join();
 
     double elapsed = total_sw.elapsed_seconds();
-    double requests_per_sec = static_cast<double>( num_requests ) / elapsed;
+    double requests_per_sec = static_cast<double>( request_count ) / elapsed;
 
-    std::cout << "    Completed: " << num_requests << " requests\n";
+    std::cout << "    Completed: " << request_count << " requests\n";
     std::cout << "    Elapsed: " << std::fixed << std::setprecision( 3 )
               << elapsed << " s\n";
-    std::cout << "    Throughput: " << bench::format_rate( requests_per_sec ) << "\n";
-    bench::print_latency_stats( latency_stats, "Request latency" );
+    std::cout << "    Throughput: " << perf::format_rate( requests_per_sec ) << "\n";
+    perf::print_latency_stats( latency_stats, "Request latency" );
     std::cout << "\n";
 
     client.close();
     server.close();
 
     return bench::benchmark_result( "single_conn" )
-        .add( "num_requests", num_requests )
         .add( "num_connections", 1 )
+        .add( "total_requests", static_cast<double>( request_count ) )
         .add( "requests_per_sec", requests_per_sec )
         .add_latency_stats( "request_latency", latency_stats );
 }
 
-bench::benchmark_result bench_concurrent_connections( int num_connections, int requests_per_conn )
+bench::benchmark_result bench_concurrent_connections( int num_connections, double duration_s )
 {
-    int total_requests = num_connections * requests_per_conn;
-    std::cout << "  Connections: " << num_connections
-              << ", Requests per connection: " << requests_per_conn
-              << ", Total: " << total_requests << "\n";
+    std::cout << "  Connections: " << num_connections << "\n";
 
     asio::io_context ioc;
 
     std::vector<tcp::socket> clients;
     std::vector<tcp::socket> servers;
-    std::vector<int> completed( num_connections, 0 );
-    std::vector<bench::statistics> stats( num_connections );
+    std::vector<int64_t> server_completed( num_connections, 0 );
+    std::vector<int64_t> client_counts( num_connections, 0 );
+    std::vector<perf::statistics> stats( num_connections );
 
     clients.reserve( num_connections );
     servers.reserve( num_connections );
@@ -184,21 +198,36 @@ bench::benchmark_result bench_concurrent_connections( int num_connections, int r
         servers.push_back( std::move( s ) );
     }
 
-    bench::stopwatch total_sw;
+    std::atomic<bool> running{ true };
+
+    perf::stopwatch total_sw;
 
     for( int i = 0; i < num_connections; ++i )
     {
         asio::co_spawn( ioc,
-            server_task( servers[i], requests_per_conn, completed[i] ),
+            server_task( servers[i], server_completed[i] ),
             asio::detached );
         asio::co_spawn( ioc,
-            client_task( clients[i], requests_per_conn, stats[i] ),
+            client_task( clients[i], running, client_counts[i], stats[i] ),
             asio::detached );
     }
 
+    std::thread timer( [&]()
+    {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>( duration_s ) );
+        running.store( false, std::memory_order_relaxed );
+    } );
+
     ioc.run();
+    timer.join();
 
     double elapsed = total_sw.elapsed_seconds();
+
+    int64_t total_requests = 0;
+    for( auto c : client_counts )
+        total_requests += c;
+
     double requests_per_sec = static_cast<double>( total_requests ) / elapsed;
 
     double total_mean = 0;
@@ -212,11 +241,11 @@ bench::benchmark_result bench_concurrent_connections( int num_connections, int r
     std::cout << "    Completed: " << total_requests << " requests\n";
     std::cout << "    Elapsed: " << std::fixed << std::setprecision( 3 )
               << elapsed << " s\n";
-    std::cout << "    Throughput: " << bench::format_rate( requests_per_sec ) << "\n";
+    std::cout << "    Throughput: " << perf::format_rate( requests_per_sec ) << "\n";
     std::cout << "    Avg mean latency: "
-              << bench::format_latency( total_mean / num_connections ) << "\n";
+              << perf::format_latency( total_mean / num_connections ) << "\n";
     std::cout << "    Avg p99 latency: "
-              << bench::format_latency( total_p99 / num_connections ) << "\n\n";
+              << perf::format_latency( total_p99 / num_connections ) << "\n\n";
 
     for( auto& c : clients )
         c.close();
@@ -225,27 +254,25 @@ bench::benchmark_result bench_concurrent_connections( int num_connections, int r
 
     return bench::benchmark_result( "concurrent_" + std::to_string( num_connections ) )
         .add( "num_connections", num_connections )
-        .add( "requests_per_conn", requests_per_conn )
-        .add( "total_requests", total_requests )
+        .add( "total_requests", static_cast<double>( total_requests ) )
         .add( "requests_per_sec", requests_per_sec )
         .add( "avg_mean_latency_us", total_mean / num_connections )
         .add( "avg_p99_latency_us", total_p99 / num_connections );
 }
 
-bench::benchmark_result bench_multithread( int num_threads, int num_connections, int requests_per_conn )
+bench::benchmark_result bench_multithread(
+    int num_threads, int num_connections, double duration_s )
 {
-    int total_requests = num_connections * requests_per_conn;
     std::cout << "  Threads: " << num_threads
-              << ", Connections: " << num_connections
-              << ", Requests per connection: " << requests_per_conn
-              << ", Total: " << total_requests << "\n";
+              << ", Connections: " << num_connections << "\n";
 
     asio::io_context ioc( num_threads );
 
     std::vector<tcp::socket> clients;
     std::vector<tcp::socket> servers;
-    std::vector<int> completed( num_connections, 0 );
-    std::vector<bench::statistics> stats( num_connections );
+    std::vector<int64_t> server_completed( num_connections, 0 );
+    std::vector<int64_t> client_counts( num_connections, 0 );
+    std::vector<perf::statistics> stats( num_connections );
 
     clients.reserve( num_connections );
     servers.reserve( num_connections );
@@ -257,29 +284,44 @@ bench::benchmark_result bench_multithread( int num_threads, int num_connections,
         servers.push_back( std::move( s ) );
     }
 
+    std::atomic<bool> running{ true };
+
     for( int i = 0; i < num_connections; ++i )
     {
         asio::co_spawn( ioc,
-            server_task( servers[i], requests_per_conn, completed[i] ),
+            server_task( servers[i], server_completed[i] ),
             asio::detached );
         asio::co_spawn( ioc,
-            client_task( clients[i], requests_per_conn, stats[i] ),
+            client_task( clients[i], running, client_counts[i], stats[i] ),
             asio::detached );
     }
 
-    bench::stopwatch total_sw;
+    perf::stopwatch total_sw;
 
     std::vector<std::thread> threads;
     threads.reserve( num_threads - 1 );
     for( int i = 1; i < num_threads; ++i )
         threads.emplace_back( [&ioc] { ioc.run(); } );
 
+    std::thread timer( [&]()
+    {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>( duration_s ) );
+        running.store( false, std::memory_order_relaxed );
+    } );
+
     ioc.run();
 
+    timer.join();
     for( auto& t : threads )
         t.join();
 
     double elapsed = total_sw.elapsed_seconds();
+
+    int64_t total_requests = 0;
+    for( auto c : client_counts )
+        total_requests += c;
+
     double requests_per_sec = static_cast<double>( total_requests ) / elapsed;
 
     double total_mean = 0;
@@ -293,11 +335,11 @@ bench::benchmark_result bench_multithread( int num_threads, int num_connections,
     std::cout << "    Completed: " << total_requests << " requests\n";
     std::cout << "    Elapsed: " << std::fixed << std::setprecision( 3 )
               << elapsed << " s\n";
-    std::cout << "    Throughput: " << bench::format_rate( requests_per_sec ) << "\n";
+    std::cout << "    Throughput: " << perf::format_rate( requests_per_sec ) << "\n";
     std::cout << "    Avg mean latency: "
-              << bench::format_latency( total_mean / num_connections ) << "\n";
+              << perf::format_latency( total_mean / num_connections ) << "\n";
     std::cout << "    Avg p99 latency: "
-              << bench::format_latency( total_p99 / num_connections ) << "\n\n";
+              << perf::format_latency( total_p99 / num_connections ) << "\n\n";
 
     for( auto& c : clients )
         c.close();
@@ -307,8 +349,7 @@ bench::benchmark_result bench_multithread( int num_threads, int num_connections,
     return bench::benchmark_result( "multithread_" + std::to_string( num_threads ) + "t" )
         .add( "num_threads", num_threads )
         .add( "num_connections", num_connections )
-        .add( "requests_per_conn", requests_per_conn )
-        .add( "total_requests", total_requests )
+        .add( "total_requests", static_cast<double>( total_requests ) )
         .add( "requests_per_sec", requests_per_sec )
         .add( "avg_mean_latency_us", total_mean / num_connections )
         .add( "avg_p99_latency_us", total_p99 / num_connections );
@@ -318,7 +359,8 @@ bench::benchmark_result bench_multithread( int num_threads, int num_connections,
 
 void run_http_server_benchmarks(
     bench::result_collector& collector,
-    char const* filter )
+    char const* filter,
+    double duration_s )
 {
     bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
 
@@ -339,32 +381,25 @@ void run_http_server_benchmarks(
     }
 
     if( run_all || std::strcmp( filter, "single_conn" ) == 0 )
-    {
-        bench::print_header( "Single Connection (Sequential Requests)" );
-        collector.add( bench_single_connection( 1000000 ) );
-    }
+        collector.add( bench_single_connection( duration_s ) );
 
     if( run_all || std::strcmp( filter, "concurrent" ) == 0 )
     {
-        if( run_all )
-            std::this_thread::sleep_for( std::chrono::seconds( 5 ) );
-        bench::print_header( "Concurrent Connections" );
-        collector.add( bench_concurrent_connections( 1, 1000000 ) );
-        collector.add( bench_concurrent_connections( 4, 250000 ) );
-        collector.add( bench_concurrent_connections( 16, 62500 ) );
-        collector.add( bench_concurrent_connections( 32, 31250 ) );
+        perf::print_header( "Concurrent Connections (Asio Coroutines)" );
+        collector.add( bench_concurrent_connections( 1, duration_s ) );
+        collector.add( bench_concurrent_connections( 4, duration_s ) );
+        collector.add( bench_concurrent_connections( 16, duration_s ) );
+        collector.add( bench_concurrent_connections( 32, duration_s ) );
     }
 
     if( run_all || std::strcmp( filter, "multithread" ) == 0 )
     {
-        if( run_all )
-            std::this_thread::sleep_for( std::chrono::seconds( 5 ) );
-        bench::print_header( "Multi-threaded (32 connections, varying threads)" );
-        collector.add( bench_multithread( 1, 32, 31250 ) );
-        collector.add( bench_multithread( 2, 32, 31250 ) );
-        collector.add( bench_multithread( 4, 32, 31250 ) );
-        collector.add( bench_multithread( 8, 32, 31250 ) );
-        collector.add( bench_multithread( 16, 32, 31250 ) );
+        perf::print_header( "Multi-threaded (Asio Coroutines)" );
+        collector.add( bench_multithread( 1, 32, duration_s ) );
+        collector.add( bench_multithread( 2, 32, duration_s ) );
+        collector.add( bench_multithread( 4, 32, duration_s ) );
+        collector.add( bench_multithread( 8, 32, duration_s ) );
+        collector.add( bench_multithread( 16, 32, duration_s ) );
     }
 }
 
