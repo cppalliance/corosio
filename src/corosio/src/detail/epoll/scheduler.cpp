@@ -187,6 +187,10 @@ operator()()
     // Clear enqueued flag so we can be re-enqueued if more events arrive
     is_enqueued_.store(false, std::memory_order_relaxed);
 
+    // Take ownership of impl ref set by close_socket() to prevent
+    // the owning impl from being freed while we're executing
+    auto prevent_impl_destruction = std::move(impl_ref_);
+
     // Get and clear ready events atomically
     std::uint32_t ev = ready_events_.exchange(0, std::memory_order_acquire);
     if (ev == 0)
