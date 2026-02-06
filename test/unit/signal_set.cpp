@@ -10,21 +10,16 @@
 // Test that header file is self-contained.
 #include <boost/corosio/signal_set.hpp>
 
-#include <boost/corosio/io_context.hpp>
 #include <boost/corosio/timer.hpp>
+
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
-// Include platform-specific context headers for multi-backend testing
-#include <boost/corosio/detail/platform.hpp>
-#if BOOST_COROSIO_HAS_SELECT
-#include <boost/corosio/select_context.hpp>
-#endif
-
 #include <csignal>
 #include <chrono>
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -37,7 +32,7 @@ namespace boost::corosio {
 //------------------------------------------------
 
 template<class Context>
-struct signal_set_test_impl
+struct signal_set_test
 {
     //--------------------------------------------
     // Construction and move semantics
@@ -832,18 +827,6 @@ struct signal_set_test_impl
     }
 };
 
-//------------------------------------------------
-// Register test suites for each available backend
-//------------------------------------------------
-
-// Default io_context (platform default backend)
-struct signal_set_test : signal_set_test_impl<io_context> {};
-TEST_SUITE(signal_set_test, "boost.corosio.signal_set");
-
-// POSIX: also test with select_context explicitly
-#if BOOST_COROSIO_HAS_SELECT
-struct signal_set_test_select : signal_set_test_impl<select_context> {};
-TEST_SUITE(signal_set_test_select, "boost.corosio.signal_set.select");
-#endif
+COROSIO_BACKEND_TESTS(signal_set_test, "boost.corosio.signal_set")
 
 } // namespace boost::corosio

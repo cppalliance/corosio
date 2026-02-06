@@ -11,11 +11,7 @@
 #include <boost/corosio/tcp_socket.hpp>
 
 #include <boost/corosio/tcp_acceptor.hpp>
-#include <boost/corosio/io_context.hpp>
-#include <boost/corosio/detail/platform.hpp>
-#if BOOST_COROSIO_HAS_SELECT
-#include <boost/corosio/select_context.hpp>
-#endif
+
 #include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>
@@ -31,7 +27,6 @@
 #include <boost/capy/task.hpp>
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -44,31 +39,15 @@
 #include <process.h>  // _getpid()
 #endif
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
 namespace {
 
-// Thread-safe port counter for multi-backend tests
-std::atomic<std::uint16_t> next_socket_test_port{0};
-
-std::uint16_t
-get_socket_test_port() noexcept
-{
-    constexpr std::uint16_t port_base = 49152;
-    constexpr std::uint16_t port_range = 16383;
-
-#if BOOST_COROSIO_POSIX
-    auto pid = static_cast<std::uint32_t>(getpid());
-#else
-    auto pid = static_cast<std::uint32_t>(_getpid());
-#endif
-    auto pid_offset = static_cast<std::uint16_t>((pid * 7919) % port_range);
-    auto offset = next_socket_test_port.fetch_add(1, std::memory_order_relaxed);
-    return static_cast<std::uint16_t>(port_base + ((pid_offset + offset) % port_range));
-}
-
-// Template version of make_socket_pair for multi-backend testing
+// Template version of make_socket_pair for multi-backend testing.
+// Uses ephemeral port (port 0) to let the OS assign a free port,
+// avoiding conflicts with other test processes and system services.
 template<class Context>
 std::pair<tcp_socket, tcp_socket>
 make_socket_pair_t(Context& ctx)
@@ -80,22 +59,11 @@ make_socket_pair_t(Context& ctx)
     bool accept_done = false;
     bool connect_done = false;
 
-    std::uint16_t port = 0;
     tcp_acceptor acc(ctx);
-    bool listening = false;
-    for (int attempt = 0; attempt < 20; ++attempt)
-    {
-        port = get_socket_test_port();
-        if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
-        {
-            listening = true;
-            break;
-        }
-        acc.close();
-        acc = tcp_acceptor(ctx);
-    }
-    if (!listening)
-        throw std::runtime_error("socket_pair: failed to find available port");
+    auto ec = acc.listen(endpoint(ipv4_address::loopback(), 0));
+    if (ec)
+        throw std::runtime_error("socket_pair: listen failed");
+    auto port = acc.local_endpoint().port();
 
     tcp_socket s1(ctx);
     tcp_socket s2(ctx);
@@ -142,7 +110,7 @@ static_assert(capy::WriteStream<tcp_socket>);
 // Socket-specific tests
 
 template<class Context>
-struct socket_test_impl
+struct socket_test
 {
     void
     testConstruction()
@@ -1556,14 +1524,6 @@ struct socket_test_impl
     }
 };
 
-// Default backend test (epoll on Linux, IOCP on Windows, etc.)
-struct socket_test : socket_test_impl<io_context> {};
-TEST_SUITE(socket_test, "boost.corosio.tcp_socket");
-
-#if BOOST_COROSIO_HAS_SELECT
-// Select backend test (POSIX platforms)
-struct socket_test_select : socket_test_impl<select_context> {};
-TEST_SUITE(socket_test_select, "boost.corosio.tcp_socket.select");
-#endif
+COROSIO_BACKEND_TESTS(socket_test, "boost.corosio.tcp_socket")
 
 } // namespace boost::corosio
