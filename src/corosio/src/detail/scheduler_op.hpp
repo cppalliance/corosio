@@ -117,6 +117,10 @@ protected:
     }
 
     func_type func_;
+
+    // Pad to 32 bytes so derived structs (descriptor_state, epoll_op)
+    // keep hot fields on optimal cache line boundaries
+    std::byte reserved_[sizeof(void*)] = {};
 };
 
 //------------------------------------------------------------------------------
