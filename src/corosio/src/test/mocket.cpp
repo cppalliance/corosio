@@ -31,11 +31,11 @@ mocket::
 mocket::
 mocket(
     capy::execution_context& ctx,
-    capy::test::fuse& f,
+    capy::test::fuse f,
     std::size_t max_read_size,
     std::size_t max_write_size)
     : sock_(ctx)
-    , fuse_(&f)
+    , fuse_(std::move(f))
     , max_read_size_(max_read_size)
     , max_write_size_(max_write_size)
 {
@@ -54,7 +54,6 @@ mocket(mocket&& other) noexcept
     , max_read_size_(other.max_read_size_)
     , max_write_size_(other.max_write_size_)
 {
-    other.fuse_ = nullptr;
 }
 
 mocket&
@@ -69,7 +68,6 @@ operator=(mocket&& other) noexcept
         fuse_ = other.fuse_;
         max_read_size_ = other.max_read_size_;
         max_write_size_ = other.max_write_size_;
-        other.fuse_ = nullptr;
     }
     return *this;
 }
@@ -98,13 +96,13 @@ close()
     // Verify test expectations
     if (!expect_.empty())
     {
-        fuse_->fail();
+        fuse_.fail();
         sock_.close();
         return capy::error::test_failure;
     }
     if (!provide_.empty())
     {
-        fuse_->fail();
+        fuse_.fail();
         sock_.close();
         return capy::error::test_failure;
     }
@@ -132,7 +130,7 @@ is_open() const noexcept
 std::pair<mocket, tcp_socket>
 make_mocket_pair(
     capy::execution_context& ctx,
-    capy::test::fuse& f,
+    capy::test::fuse f,
     std::size_t max_read_size,
     std::size_t max_write_size)
 {
