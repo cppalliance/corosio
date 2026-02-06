@@ -10,53 +10,66 @@
 #ifndef COROSIO_BENCH_BENCHMARKS_HPP
 #define COROSIO_BENCH_BENCHMARKS_HPP
 
+#include "../../common/backend_selection.hpp"
 #include "../common/benchmark.hpp"
 
 namespace corosio_bench {
 
-/** Run io_context benchmarks for the given context type.
+/** Run io_context benchmarks using the given context factory.
 
+    @param factory Factory that creates a fresh io_context.
     @param collector Results collector.
     @param filter Optional filter: nullptr or "all" runs all, or a specific
            benchmark name (single_threaded, multithreaded, interleaved, concurrent).
+    @param duration_s Duration in seconds for each benchmark.
 */
-template<typename Context>
 void run_io_context_benchmarks(
+    perf::context_factory factory,
     bench::result_collector& collector,
-    char const* filter );
+    char const* filter,
+    double duration_s );
 
-/** Run socket throughput benchmarks for the given context type.
+/** Run socket throughput benchmarks using the given context factory.
 
+    @param factory Factory that creates a fresh io_context.
     @param collector Results collector.
     @param filter Optional filter: nullptr or "all" runs all, or a specific
            benchmark name (unidirectional, bidirectional).
+    @param duration_s Duration in seconds for each benchmark.
 */
-template<typename Context>
 void run_socket_throughput_benchmarks(
+    perf::context_factory factory,
     bench::result_collector& collector,
-    char const* filter );
+    char const* filter,
+    double duration_s );
 
-/** Run socket latency benchmarks for the given context type.
+/** Run socket latency benchmarks using the given context factory.
 
+    @param factory Factory that creates a fresh io_context.
     @param collector Results collector.
     @param filter Optional filter: nullptr or "all" runs all, or a specific
            benchmark name (pingpong, concurrent).
+    @param duration_s Duration in seconds for each benchmark.
 */
-template<typename Context>
 void run_socket_latency_benchmarks(
+    perf::context_factory factory,
     bench::result_collector& collector,
-    char const* filter );
+    char const* filter,
+    double duration_s );
 
-/** Run HTTP server benchmarks for the given context type.
+/** Run HTTP server benchmarks using the given context factory.
 
+    @param factory Factory that creates a fresh io_context.
     @param collector Results collector.
     @param filter Optional filter: nullptr or "all" runs all, or a specific
            benchmark name (single_conn, concurrent, multithread).
+    @param duration_s Duration in seconds for each benchmark.
 */
-template<typename Context>
 void run_http_server_benchmarks(
+    perf::context_factory factory,
     bench::result_collector& collector,
-    char const* filter );
+    char const* filter,
+    double duration_s );
 
 } // namespace corosio_bench
 

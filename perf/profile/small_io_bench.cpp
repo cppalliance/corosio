@@ -37,7 +37,7 @@
 #include <vector>
 
 #include "../common/backend_selection.hpp"
-#include "../common/benchmark.hpp"
+#include "../common/perf.hpp"
 
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
@@ -77,13 +77,13 @@ capy::task<> ping_pong(
 //------------------------------------------------------------------------------
 
 // Run the profiler workload for the specified duration
-template<typename Context>
 void run_workload(
+    perf::context_factory factory,
     int duration_seconds,
     std::size_t buffer_size,
     int num_pairs)
 {
-    Context ioc;
+    auto ioc = factory();
     std::atomic<std::uint64_t> ops{0};
     std::atomic<bool> stop{false};
 
@@ -93,7 +93,7 @@ void run_workload(
 
     for (int i = 0; i < num_pairs; ++i)
     {
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [a, b] = corosio::test::make_socket_pair(*ioc);
         a.set_no_delay(true);
         b.set_no_delay(true);
         pairs.emplace_back(std::move(a), std::move(b));
@@ -102,7 +102,7 @@ void run_workload(
     // Launch ping-pong on each pair
     for (auto& [a, b] : pairs)
     {
-        capy::run_async(ioc.get_executor())(
+        capy::run_async(ioc->get_executor())(
             ping_pong(a, b, buffer_size, ops, stop));
     }
 
@@ -119,7 +119,7 @@ void run_workload(
     while (std::chrono::steady_clock::now() < end_time)
     {
         // Run for a short burst
-        ioc.run_for(std::chrono::milliseconds(100));
+        ioc->run_for(std::chrono::milliseconds(100));
 
         // Progress report every 2 seconds
         auto now = std::chrono::steady_clock::now();
@@ -130,7 +130,7 @@ void run_workload(
             double rate = static_cast<double>(current - last_count) / 2.0;
 
             std::cout << "  [" << std::fixed << std::setprecision(0) << elapsed << "s] "
-                      << bench::format_rate(rate) << " (" << current << " total)\n";
+                      << perf::format_rate(rate) << " (" << current << " total)\n";
 
             last_count = current;
             next_report = now + std::chrono::seconds(2);
@@ -148,7 +148,7 @@ void run_workload(
     }
 
     // Drain remaining work
-    ioc.run();
+    ioc->run();
 
     // Final stats
     auto total_elapsed = std::chrono::duration<double>(
@@ -160,13 +160,13 @@ void run_workload(
     std::cout << "  Duration:   " << std::fixed << std::setprecision(2)
               << total_elapsed << " s\n";
     std::cout << "  Operations: " << total << "\n";
-    std::cout << "  Avg rate:   " << bench::format_rate(avg_rate) << "\n";
+    std::cout << "  Avg rate:   " << perf::format_rate(avg_rate) << "\n";
 }
 
 //------------------------------------------------------------------------------
 
-template<typename Context>
 void run_profiler_workload(
+    perf::context_factory factory,
     const char* backend_name,
     int duration,
     std::size_t buffer_size,
@@ -185,31 +185,31 @@ void run_profiler_workload(
     // Warmup
     std::cout << "Warming up (1 second)...\n";
     {
-        Context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto ioc = factory();
+        auto [a, b] = corosio::test::make_socket_pair(*ioc);
         a.set_no_delay(true);
         b.set_no_delay(true);
 
         std::atomic<std::uint64_t> warmup_ops{0};
         std::atomic<bool> warmup_stop{false};
 
-        capy::run_async(ioc.get_executor())(
+        capy::run_async(ioc->get_executor())(
             ping_pong(a, b, 64, warmup_ops, warmup_stop));
 
         auto warmup_end = std::chrono::steady_clock::now() + std::chrono::seconds(1);
         while (std::chrono::steady_clock::now() < warmup_end)
-            ioc.run_for(std::chrono::milliseconds(100));
+            ioc->run_for(std::chrono::milliseconds(100));
 
         warmup_stop.store(true, std::memory_order_relaxed);
         a.cancel();
         b.cancel();
-        ioc.run();
+        ioc->run();
     }
 
     std::cout << "Warmup complete.\n\n";
 
     // Main workload
-    run_workload<Context>(duration, buffer_size, num_pairs);
+    run_workload(factory, duration, buffer_size, num_pairs);
 
     std::cout << "\nWorkload complete.\n";
 }
@@ -231,7 +231,7 @@ void print_usage(const char* program_name)
     std::cout << "Example:\n";
     std::cout << "  " << program_name << " --duration 10 --buffer 64 --pairs 4\n";
     std::cout << "\n";
-    bench::print_available_backends();
+    perf::print_available_backends();
 }
 
 int main(int argc, char* argv[])
@@ -286,7 +286,7 @@ int main(int argc, char* argv[])
         }
         else if (std::strcmp(argv[i], "--list") == 0)
         {
-            bench::print_available_backends();
+            perf::print_available_backends();
             return 0;
         }
         else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
@@ -316,12 +316,12 @@ int main(int argc, char* argv[])
 
     // If no backend specified, use platform default
     if (!backend)
-        backend = bench::default_backend_name();
+        backend = perf::default_backend_name();
 
     // Dispatch to the selected backend
-    return bench::dispatch_backend(backend,
-        [=]<typename Context>(const char* name)
+    return perf::dispatch_backend(backend,
+        [=](perf::context_factory factory, const char* name)
         {
-            run_profiler_workload<Context>(name, duration, buffer_size, num_pairs);
+            run_profiler_workload(factory, name, duration, buffer_size, num_pairs);
         });
 }

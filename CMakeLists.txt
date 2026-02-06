@@ -34,7 +34,7 @@ if (BOOST_COROSIO_IS_ROOT)
     include(CTest)
 endif ()
 option(BOOST_COROSIO_BUILD_TESTS "Build boost::corosio tests" ${BUILD_TESTING})
-option(BOOST_COROSIO_BUILD_BENCH "Build boost::corosio benchmarks" ${BOOST_COROSIO_IS_ROOT})
+option(BOOST_COROSIO_BUILD_PERF "Build boost::corosio performance tools" ${BOOST_COROSIO_IS_ROOT})
 option(BOOST_COROSIO_BUILD_EXAMPLES "Build boost::corosio examples" ${BOOST_COROSIO_IS_ROOT})
 option(BOOST_COROSIO_BUILD_DOCS "Build boost::corosio documentation" OFF)
 option(BOOST_COROSIO_MRDOCS_BUILD "Building for MrDocs documentation generation" OFF)
@@ -68,7 +68,7 @@ if (BOOST_COROSIO_BUILD_TESTS)
 endif ()
 
 # Include asio for benchmarks (comparison benchmarks)
-if (BOOST_COROSIO_BUILD_BENCH)
+if (BOOST_COROSIO_BUILD_PERF)
     list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio)
 endif ()
 
@@ -322,9 +322,9 @@ endif ()
 
 #-------------------------------------------------
 #
-# Benchmarks
+# Performance tools
 #
 #-------------------------------------------------
-if (BOOST_COROSIO_BUILD_BENCH)
-    add_subdirectory(bench)
+if (BOOST_COROSIO_BUILD_PERF)
+    add_subdirectory(perf)
 endif ()

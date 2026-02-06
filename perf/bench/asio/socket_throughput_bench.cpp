@@ -18,8 +18,11 @@
 #include <boost/asio/read.hpp>
 #include <boost/asio/buffer.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cstring>
 #include <iostream>
+#include <thread>
 #include <vector>
 
 #include "../common/benchmark.hpp"
@@ -27,10 +30,10 @@
 namespace asio_bench {
 namespace {
 
-bench::benchmark_result bench_throughput( std::size_t chunk_size, std::size_t total_bytes )
+// Pattern C: Write until running=false, then shutdown; reader reads until EOF
+bench::benchmark_result bench_throughput( std::size_t chunk_size, double duration_s )
 {
-    std::cout << "  Buffer size: " << chunk_size << " bytes, ";
-    std::cout << "Transfer: " << ( total_bytes / ( 1024 * 1024 ) ) << " MB\n";
+    std::cout << "  Buffer size: " << chunk_size << " bytes\n";
 
     asio::io_context ioc;
     auto [writer, reader] = make_socket_pair( ioc );
@@ -38,6 +41,7 @@ bench::benchmark_result bench_throughput( std::size_t chunk_size, std::size_t to
     std::vector<char> write_buf( chunk_size, 'x' );
     std::vector<char> read_buf( chunk_size );
 
+    std::atomic<bool> running{ true };
     std::size_t total_written = 0;
     std::size_t total_read = 0;
 
@@ -45,11 +49,10 @@ bench::benchmark_result bench_throughput( std::size_t chunk_size, std::size_t to
     {
         try
         {
-            while( total_written < total_bytes )
+            while( running.load( std::memory_order_relaxed ) )
             {
-                std::size_t to_write = ( std::min )( chunk_size, total_bytes - total_written );
                 auto n = co_await writer.async_write_some(
-                    asio::buffer( write_buf.data(), to_write ),
+                    asio::buffer( write_buf.data(), chunk_size ),
                     asio::use_awaitable );
                 total_written += n;
             }
@@ -62,7 +65,7 @@ bench::benchmark_result bench_throughput( std::size_t chunk_size, std::size_t to
     {
         try
         {
-            while( total_read < total_bytes )
+            for( ;; )
             {
                 auto n = co_await reader.async_read_some(
                     asio::buffer( read_buf.data(), read_buf.size() ),
@@ -75,11 +78,20 @@ bench::benchmark_result bench_throughput( std::size_t chunk_size, std::size_t to
         catch( std::exception const& ) {}
     };
 
-    bench::stopwatch sw;
+    perf::stopwatch sw;
 
     asio::co_spawn( ioc, write_task(), asio::detached );
     asio::co_spawn( ioc, read_task(), asio::detached );
+
+    std::thread timer( [&]()
+    {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>( duration_s ) );
+        running.store( false, std::memory_order_relaxed );
+    } );
+
     ioc.run();
+    timer.join();
 
     double elapsed = sw.elapsed_seconds();
     double throughput = static_cast<double>( total_read ) / elapsed;
@@ -88,24 +100,22 @@ bench::benchmark_result bench_throughput( std::size_t chunk_size, std::size_t to
     std::cout << "    Read:       " << total_read << " bytes\n";
     std::cout << "    Elapsed:    " << std::fixed << std::setprecision( 3 )
               << elapsed << " s\n";
-    std::cout << "    Throughput: " << bench::format_throughput( throughput ) << "\n\n";
+    std::cout << "    Throughput: " << perf::format_throughput( throughput ) << "\n\n";
 
     writer.close();
     reader.close();
 
     return bench::benchmark_result( "throughput_" + std::to_string( chunk_size ) )
         .add( "chunk_size", static_cast<double>( chunk_size ) )
-        .add( "total_bytes", static_cast<double>( total_bytes ) )
         .add( "bytes_written", static_cast<double>( total_written ) )
         .add( "bytes_read", static_cast<double>( total_read ) )
         .add( "elapsed_s", elapsed )
         .add( "throughput_bytes_per_sec", throughput );
 }
 
-bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, std::size_t total_bytes )
+bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, double duration_s )
 {
-    std::cout << "  Buffer size: " << chunk_size << " bytes, ";
-    std::cout << "Transfer: " << ( total_bytes / ( 1024 * 1024 ) ) << " MB each direction\n";
+    std::cout << "  Buffer size: " << chunk_size << " bytes, bidirectional\n";
 
     asio::io_context ioc;
     auto [sock1, sock2] = make_socket_pair( ioc );
@@ -113,6 +123,7 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
     std::vector<char> buf1( chunk_size, 'a' );
     std::vector<char> buf2( chunk_size, 'b' );
 
+    std::atomic<bool> running{ true };
     std::size_t written1 = 0, read1 = 0;
     std::size_t written2 = 0, read2 = 0;
 
@@ -120,11 +131,10 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
     {
         try
         {
-            while( written1 < total_bytes )
+            while( running.load( std::memory_order_relaxed ) )
             {
-                std::size_t to_write = ( std::min )( chunk_size, total_bytes - written1 );
                 auto n = co_await sock1.async_write_some(
-                    asio::buffer( buf1.data(), to_write ),
+                    asio::buffer( buf1.data(), chunk_size ),
                     asio::use_awaitable );
                 written1 += n;
             }
@@ -138,7 +148,7 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
         try
         {
             std::vector<char> rbuf( chunk_size );
-            while( read1 < total_bytes )
+            for( ;; )
             {
                 auto n = co_await sock2.async_read_some(
                     asio::buffer( rbuf.data(), rbuf.size() ),
@@ -154,11 +164,10 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
     {
         try
         {
-            while( written2 < total_bytes )
+            while( running.load( std::memory_order_relaxed ) )
             {
-                std::size_t to_write = ( std::min )( chunk_size, total_bytes - written2 );
                 auto n = co_await sock2.async_write_some(
-                    asio::buffer( buf2.data(), to_write ),
+                    asio::buffer( buf2.data(), chunk_size ),
                     asio::use_awaitable );
                 written2 += n;
             }
@@ -172,7 +181,7 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
         try
         {
             std::vector<char> rbuf( chunk_size );
-            while( read2 < total_bytes )
+            for( ;; )
             {
                 auto n = co_await sock1.async_read_some(
                     asio::buffer( rbuf.data(), rbuf.size() ),
@@ -184,13 +193,22 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
         catch( std::exception const& ) {}
     };
 
-    bench::stopwatch sw;
+    perf::stopwatch sw;
 
     asio::co_spawn( ioc, write1_task(), asio::detached );
     asio::co_spawn( ioc, read1_task(), asio::detached );
     asio::co_spawn( ioc, write2_task(), asio::detached );
     asio::co_spawn( ioc, read2_task(), asio::detached );
+
+    std::thread timer( [&]()
+    {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>( duration_s ) );
+        running.store( false, std::memory_order_relaxed );
+    } );
+
     ioc.run();
+    timer.join();
 
     double elapsed = sw.elapsed_seconds();
     std::size_t total_transferred = read1 + read2;
@@ -201,7 +219,7 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
     std::cout << "    Total:       " << total_transferred << " bytes\n";
     std::cout << "    Elapsed:     " << std::fixed << std::setprecision( 3 )
               << elapsed << " s\n";
-    std::cout << "    Throughput:  " << bench::format_throughput( throughput )
+    std::cout << "    Throughput:  " << perf::format_throughput( throughput )
               << " (combined)\n\n";
 
     sock1.close();
@@ -209,7 +227,6 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
 
     return bench::benchmark_result( "bidirectional_" + std::to_string( chunk_size ) )
         .add( "chunk_size", static_cast<double>( chunk_size ) )
-        .add( "total_bytes_per_direction", static_cast<double>( total_bytes ) )
         .add( "bytes_direction1", static_cast<double>( read1 ) )
         .add( "bytes_direction2", static_cast<double>( read2 ) )
         .add( "total_transferred", static_cast<double>( total_transferred ) )
@@ -221,7 +238,8 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
 
 void run_socket_throughput_benchmarks(
     bench::result_collector& collector,
-    char const* filter )
+    char const* filter,
+    double duration_s )
 {
     bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
 
@@ -237,20 +255,19 @@ void run_socket_throughput_benchmarks(
     }
 
     std::vector<std::size_t> buffer_sizes = { 1024, 4096, 16384, 65536 };
-    std::size_t transfer_size = 4ULL * 1024 * 1024 * 1024;
 
     if( run_all || std::strcmp( filter, "unidirectional" ) == 0 )
     {
-        bench::print_header( "Unidirectional Throughput (Asio)" );
+        perf::print_header( "Unidirectional Throughput (Asio Coroutines)" );
         for( auto size : buffer_sizes )
-            collector.add( bench_throughput( size, transfer_size ) );
+            collector.add( bench_throughput( size, duration_s ) );
     }
 
     if( run_all || std::strcmp( filter, "bidirectional" ) == 0 )
     {
-        bench::print_header( "Bidirectional Throughput (Asio)" );
+        perf::print_header( "Bidirectional Throughput (Asio Coroutines)" );
         for( auto size : buffer_sizes )
-            collector.add( bench_bidirectional_throughput( size, transfer_size / 2 ) );
+            collector.add( bench_bidirectional_throughput( size, duration_s ) );
     }
 }
 

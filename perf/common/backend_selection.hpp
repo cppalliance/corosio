@@ -7,16 +7,20 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BENCH_COMMON_BACKEND_SELECTION_HPP
-#define BENCH_COMMON_BACKEND_SELECTION_HPP
+#ifndef BOOST_COROSIO_PERF_BACKEND_SELECTION_HPP
+#define BOOST_COROSIO_PERF_BACKEND_SELECTION_HPP
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #include <cstring>
 #include <iostream>
+#include <memory>
 
-namespace bench {
+namespace perf {
+
+/// Factory function pointer that creates a fresh io_context.
+using context_factory = std::unique_ptr<boost::corosio::basic_io_context>(*)();
 
 /** Return the default backend name for the current platform. */
 inline const char* default_backend_name()
@@ -53,10 +57,13 @@ inline void print_available_backends()
     std::cout << "\nDefault backend: " << default_backend_name() << "\n";
 }
 
-/** Dispatch to a templated function based on backend name.
+/** Dispatch to a function based on backend name.
+
+    Resolves the backend name to a context_factory and passes it
+    to the callback along with the canonical backend name.
 
     @param backend The backend name (epoll, select, iocp, etc.)
-    @param func A callable that takes a type tag as template parameter
+    @param func A callable with signature void(context_factory, char const*)
     @return 0 on success, 1 if backend is not available
 */
 template<typename Func>
@@ -67,7 +74,9 @@ int dispatch_backend(const char* backend, Func&& func)
 #if BOOST_COROSIO_HAS_EPOLL
     if (std::strcmp(backend, "epoll") == 0)
     {
-        func.template operator()<corosio::epoll_context>("epoll");
+        func([]() -> std::unique_ptr<corosio::basic_io_context> {
+            return std::make_unique<corosio::epoll_context>();
+        }, "epoll");
         return 0;
     }
 #endif
@@ -75,7 +84,9 @@ int dispatch_backend(const char* backend, Func&& func)
 #if BOOST_COROSIO_HAS_SELECT
     if (std::strcmp(backend, "select") == 0)
     {
-        func.template operator()<corosio::select_context>("select");
+        func([]() -> std::unique_ptr<corosio::basic_io_context> {
+            return std::make_unique<corosio::select_context>();
+        }, "select");
         return 0;
     }
 #endif
@@ -83,7 +94,9 @@ int dispatch_backend(const char* backend, Func&& func)
 #if BOOST_COROSIO_HAS_IOCP
     if (std::strcmp(backend, "iocp") == 0)
     {
-        func.template operator()<corosio::iocp_context>("iocp");
+        func([]() -> std::unique_ptr<corosio::basic_io_context> {
+            return std::make_unique<corosio::iocp_context>();
+        }, "iocp");
         return 0;
     }
 #endif
@@ -93,6 +106,6 @@ int dispatch_backend(const char* backend, Func&& func)
     return 1;
 }
 
-} // namespace bench
+} // namespace perf
 
-#endif // BENCH_COMMON_BACKEND_SELECTION_HPP
+#endif // BOOST_COROSIO_PERF_BACKEND_SELECTION_HPP

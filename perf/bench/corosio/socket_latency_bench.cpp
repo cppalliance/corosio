@@ -10,7 +10,6 @@
 #include "benchmarks.hpp"
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
@@ -19,8 +18,11 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/write.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cstring>
 #include <iostream>
+#include <thread>
 #include <vector>
 
 #include "../common/benchmark.hpp"
@@ -31,126 +33,141 @@ namespace capy = boost::capy;
 namespace corosio_bench {
 namespace {
 
-capy::task<> pingpong_task(
+capy::task<> pingpong_client_task(
     corosio::tcp_socket& client,
     corosio::tcp_socket& server,
     std::size_t message_size,
-    int iterations,
-    bench::statistics& stats )
+    std::atomic<bool>& running,
+    int64_t& iterations,
+    perf::statistics& stats )
 {
     std::vector<char> send_buf( message_size, 'P' );
     std::vector<char> recv_buf( message_size );
 
-    for( int i = 0; i < iterations; ++i )
+    while( running.load( std::memory_order_relaxed ) )
     {
-        bench::stopwatch sw;
+        perf::stopwatch sw;
 
         auto [ec1, n1] = co_await capy::write(
             client, capy::const_buffer( send_buf.data(), send_buf.size() ) );
         if( ec1 )
-        {
-            std::cerr << "    Write error: " << ec1.message() << "\n";
             co_return;
-        }
 
         auto [ec2, n2] = co_await capy::read(
             server, capy::mutable_buffer( recv_buf.data(), recv_buf.size() ) );
         if( ec2 )
-        {
-            std::cerr << "    Server read error: " << ec2.message() << "\n";
             co_return;
-        }
 
         auto [ec3, n3] = co_await capy::write(
             server, capy::const_buffer( recv_buf.data(), n2 ) );
         if( ec3 )
-        {
-            std::cerr << "    Server write error: " << ec3.message() << "\n";
             co_return;
-        }
 
         auto [ec4, n4] = co_await capy::read(
             client, capy::mutable_buffer( recv_buf.data(), recv_buf.size() ) );
         if( ec4 )
-        {
-            std::cerr << "    Client read error: " << ec4.message() << "\n";
             co_return;
-        }
 
         double rtt_us = sw.elapsed_us();
         stats.add( rtt_us );
+        ++iterations;
     }
+
+    client.shutdown( corosio::tcp_socket::shutdown_send );
 }
 
-template<typename Context>
-bench::benchmark_result bench_pingpong_latency( std::size_t message_size, int iterations )
+bench::benchmark_result bench_pingpong_latency(
+    perf::context_factory factory, std::size_t message_size, double duration_s )
 {
-    std::cout << "  Message size: " << message_size << " bytes, ";
-    std::cout << "Iterations: " << iterations << "\n";
+    std::cout << "  Message size: " << message_size << " bytes\n";
 
-    Context ioc;
-    auto [client, server] = corosio::test::make_socket_pair( ioc );
+    auto ioc = factory();
+    auto [client, server] = corosio::test::make_socket_pair( *ioc );
 
     client.set_no_delay( true );
     server.set_no_delay( true );
 
-    bench::statistics latency_stats;
+    std::atomic<bool> running{ true };
+    int64_t iterations = 0;
+    perf::statistics latency_stats;
 
-    capy::run_async( ioc.get_executor() )(
-        pingpong_task( client, server, message_size, iterations, latency_stats ) );
-    ioc.run();
+    capy::run_async( ioc->get_executor() )(
+        pingpong_client_task(
+            client, server, message_size, running, iterations, latency_stats ) );
 
-    bench::print_latency_stats( latency_stats, "Round-trip latency" );
-    std::cout << "\n";
+    std::thread timer( [&]()
+    {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>( duration_s ) );
+        running.store( false, std::memory_order_relaxed );
+    } );
+
+    ioc->run();
+    timer.join();
+
+    perf::print_latency_stats( latency_stats, "Round-trip latency" );
+    std::cout << "  Iterations: " << iterations << "\n\n";
 
     client.close();
     server.close();
 
     return bench::benchmark_result( "pingpong_" + std::to_string( message_size ) )
         .add( "message_size", static_cast<double>( message_size ) )
-        .add( "iterations", iterations )
+        .add( "iterations", static_cast<double>( iterations ) )
         .add_latency_stats( "rtt", latency_stats );
 }
 
-template<typename Context>
-bench::benchmark_result bench_concurrent_latency( int num_pairs, std::size_t message_size, int iterations )
+bench::benchmark_result bench_concurrent_latency(
+    perf::context_factory factory, int num_pairs, std::size_t message_size, double duration_s )
 {
     std::cout << "  Concurrent pairs: " << num_pairs << ", ";
-    std::cout << "Message size: " << message_size << " bytes, ";
-    std::cout << "Iterations: " << iterations << "\n";
+    std::cout << "Message size: " << message_size << " bytes\n";
 
-    Context ioc;
+    auto ioc = factory();
 
     std::vector<corosio::tcp_socket> clients;
     std::vector<corosio::tcp_socket> servers;
-    std::vector<bench::statistics> stats( num_pairs );
+    std::vector<perf::statistics> stats( num_pairs );
+    std::vector<int64_t> iters( num_pairs, 0 );
 
     clients.reserve( num_pairs );
     servers.reserve( num_pairs );
 
     for( int i = 0; i < num_pairs; ++i )
     {
-        auto [c, s] = corosio::test::make_socket_pair( ioc );
+        auto [c, s] = corosio::test::make_socket_pair( *ioc );
         c.set_no_delay( true );
         s.set_no_delay( true );
         clients.push_back( std::move( c ) );
         servers.push_back( std::move( s ) );
     }
 
+    std::atomic<bool> running{ true };
+
     for( int p = 0; p < num_pairs; ++p )
     {
-        capy::run_async( ioc.get_executor() )(
-            pingpong_task( clients[p], servers[p], message_size, iterations, stats[p] ) );
+        capy::run_async( ioc->get_executor() )(
+            pingpong_client_task(
+                clients[p], servers[p], message_size, running, iters[p], stats[p] ) );
     }
 
-    ioc.run();
+    std::thread timer( [&]()
+    {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>( duration_s ) );
+        running.store( false, std::memory_order_relaxed );
+    } );
+
+    ioc->run();
+    timer.join();
 
     std::cout << "  Per-pair results:\n";
     for( int i = 0; i < num_pairs && i < 3; ++i )
     {
         std::cout << "    Pair " << i << ": mean="
-                  << bench::format_latency( stats[i].mean() )
-                  << ", p99=" << bench::format_latency( stats[i].p99() )
+                  << perf::format_latency( stats[i].mean() )
+                  << ", p99=" << perf::format_latency( stats[i].p99() )
+                  << ", iters=" << iters[i]
                   << "\n";
     }
     if( num_pairs > 3 )
@@ -164,9 +181,9 @@ bench::benchmark_result bench_concurrent_latency( int num_pairs, std::size_t mes
         total_p99 += s.p99();
     }
     std::cout << "  Average mean latency: "
-              << bench::format_latency( total_mean / num_pairs ) << "\n";
+              << perf::format_latency( total_mean / num_pairs ) << "\n";
     std::cout << "  Average p99 latency:  "
-              << bench::format_latency( total_p99 / num_pairs ) << "\n\n";
+              << perf::format_latency( total_p99 / num_pairs ) << "\n\n";
 
     for( auto& c : clients )
         c.close();
@@ -176,24 +193,24 @@ bench::benchmark_result bench_concurrent_latency( int num_pairs, std::size_t mes
     return bench::benchmark_result( "concurrent_" + std::to_string( num_pairs ) + "_pairs" )
         .add( "num_pairs", num_pairs )
         .add( "message_size", static_cast<double>( message_size ) )
-        .add( "iterations", iterations )
         .add( "avg_mean_latency_us", total_mean / num_pairs )
         .add( "avg_p99_latency_us", total_p99 / num_pairs );
 }
 
 } // anonymous namespace
 
-template<typename Context>
 void run_socket_latency_benchmarks(
+    perf::context_factory factory,
     bench::result_collector& collector,
-    char const* filter )
+    char const* filter,
+    double duration_s )
 {
     bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
 
     // Warm up
     {
-        Context ioc;
-        auto [c, s] = corosio::test::make_socket_pair( ioc );
+        auto ioc = factory();
+        auto [c, s] = corosio::test::make_socket_pair( *ioc );
         char buf[64] = {};
         auto task = [&]() -> capy::task<>
         {
@@ -203,43 +220,28 @@ void run_socket_latency_benchmarks(
                 (void)co_await s.read_some( capy::mutable_buffer( buf, sizeof( buf ) ) );
             }
         };
-        capy::run_async( ioc.get_executor() )( task() );
-        ioc.run();
+        capy::run_async( ioc->get_executor() )( task() );
+        ioc->run();
         c.close();
         s.close();
     }
 
     std::vector<std::size_t> message_sizes = { 1, 64, 1024 };
-    int iterations = 1000000;
 
     if( run_all || std::strcmp( filter, "pingpong" ) == 0 )
     {
-        bench::print_header( "Ping-Pong Round-Trip Latency" );
+        perf::print_header( "Ping-Pong Round-Trip Latency (Corosio)" );
         for( auto size : message_sizes )
-            collector.add( bench_pingpong_latency<Context>( size, iterations ) );
+            collector.add( bench_pingpong_latency( factory, size, duration_s ) );
     }
 
     if( run_all || std::strcmp( filter, "concurrent" ) == 0 )
     {
-        bench::print_header( "Concurrent Socket Pairs Latency" );
-        collector.add( bench_concurrent_latency<Context>( 1, 64, 1000000 ) );
-        collector.add( bench_concurrent_latency<Context>( 4, 64, 500000 ) );
-        collector.add( bench_concurrent_latency<Context>( 16, 64, 250000 ) );
+        perf::print_header( "Concurrent Socket Pairs Latency (Corosio)" );
+        collector.add( bench_concurrent_latency( factory, 1, 64, duration_s ) );
+        collector.add( bench_concurrent_latency( factory, 4, 64, duration_s ) );
+        collector.add( bench_concurrent_latency( factory, 16, 64, duration_s ) );
     }
 }
-
-// Explicit instantiations
-#if BOOST_COROSIO_HAS_EPOLL
-template void run_socket_latency_benchmarks<corosio::epoll_context>(
-    bench::result_collector&, char const* );
-#endif
-#if BOOST_COROSIO_HAS_SELECT
-template void run_socket_latency_benchmarks<corosio::select_context>(
-    bench::result_collector&, char const* );
-#endif
-#if BOOST_COROSIO_HAS_IOCP
-template void run_socket_latency_benchmarks<corosio::iocp_context>(
-    bench::result_collector&, char const* );
-#endif
 
 } // namespace corosio_bench
