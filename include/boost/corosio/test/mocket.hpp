@@ -56,7 +56,7 @@ class BOOST_COROSIO_DECL mocket
     tcp_socket sock_;
     std::string provide_;
     std::string expect_;
-    capy::test::fuse* fuse_;
+    capy::test::fuse fuse_;
     std::size_t max_read_size_;
     std::size_t max_write_size_;
 
@@ -90,7 +90,7 @@ public:
     */
     mocket(
         capy::execution_context& ctx,
-        capy::test::fuse& f,
+        capy::test::fuse f = {},
         std::size_t max_read_size = std::size_t(-1),
         std::size_t max_write_size = std::size_t(-1));
 
@@ -242,7 +242,7 @@ validate_expect(
     auto const match_size = (std::min)(written.size(), expect_.size());
     if (std::memcmp(written.data(), expect_.data(), match_size) != 0)
     {
-        fuse_->fail();
+        fuse_.fail();
         bytes_written = 0;
         return false;
     }
@@ -442,7 +442,7 @@ BOOST_COROSIO_DECL
 std::pair<mocket, tcp_socket>
 make_mocket_pair(
     capy::execution_context& ctx,
-    capy::test::fuse& f,
+    capy::test::fuse f = {},
     std::size_t max_read_size = std::size_t(-1),
     std::size_t max_write_size = std::size_t(-1));
 
