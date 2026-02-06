@@ -23,6 +23,7 @@
 #include <atomic>
 #include <chrono>
 #include <limits>
+#include <utility>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -176,22 +177,16 @@ drain_private_queue(
 
 } // namespace
 
-//------------------------------------------------------------------------------
-// Deferred I/O processing for descriptor_state
-//------------------------------------------------------------------------------
-
 void
 descriptor_state::
 operator()()
 {
-    // Clear enqueued flag so we can be re-enqueued if more events arrive
     is_enqueued_.store(false, std::memory_order_relaxed);
 
     // Take ownership of impl ref set by close_socket() to prevent
     // the owning impl from being freed while we're executing
     auto prevent_impl_destruction = std::move(impl_ref_);
 
-    // Get and clear ready events atomically
     std::uint32_t ev = ready_events_.exchange(0, std::memory_order_acquire);
     if (ev == 0)
     {
@@ -201,7 +196,6 @@ operator()()
 
     op_queue local_ops;
 
-    // Check for error condition (EPOLLERR only - EPOLLHUP alone is just peer close)
     int err = 0;
     if (ev & EPOLLERR)
     {
@@ -212,134 +206,86 @@ operator()()
             err = EIO;
     }
 
-    // Process EPOLLIN (read ready)
-    if (ev & EPOLLIN)
+    epoll_op* rd = nullptr;
+    epoll_op* wr = nullptr;
+    epoll_op* cn = nullptr;
     {
-        epoll_op* op = nullptr;
+        std::lock_guard lock(mutex);
+        if (ev & EPOLLIN)
         {
-            std::lock_guard lock(mutex);
-            op = read_op;
-            read_op = nullptr;
-            if (!op)
+            rd = std::exchange(read_op, nullptr);
+            if (!rd)
                 read_ready = true;
         }
-        if (op)
+        if (ev & EPOLLOUT)
         {
-            if (err)
-            {
-                op->complete(err, 0);
-                local_ops.push(op);
-            }
-            else
-            {
-                op->perform_io();
-                if (op->errn == EAGAIN || op->errn == EWOULDBLOCK)
-                {
-                    op->errn = 0;
-                    std::lock_guard lock(mutex);
-                    read_op = op;
-                }
-                else
-                {
-                    local_ops.push(op);
-                }
-            }
-        }
-    }
-
-    // Process EPOLLOUT (write/connect ready)
-    if (ev & EPOLLOUT)
-    {
-        epoll_op* conn_op = nullptr;
-        epoll_op* wr_op = nullptr;
-        {
-            std::lock_guard lock(mutex);
-            conn_op = connect_op;
-            connect_op = nullptr;
-            wr_op = write_op;
-            write_op = nullptr;
-            if (!conn_op && !wr_op)
+            cn = std::exchange(connect_op, nullptr);
+            wr = std::exchange(write_op, nullptr);
+            if (!cn && !wr)
                 write_ready = true;
         }
-
-        if (conn_op)
+        if (err && !(ev & (EPOLLIN | EPOLLOUT)))
         {
-            if (err)
-            {
-                conn_op->complete(err, 0);
-                local_ops.push(conn_op);
-            }
-            else
-            {
-                conn_op->perform_io();
-                if (conn_op->errn == EAGAIN || conn_op->errn == EWOULDBLOCK)
-                {
-                    conn_op->errn = 0;
-                    std::lock_guard lock(mutex);
-                    connect_op = conn_op;
-                }
-                else
-                {
-                    local_ops.push(conn_op);
-                }
-            }
-        }
-
-        if (wr_op)
-        {
-            if (err)
-            {
-                wr_op->complete(err, 0);
-                local_ops.push(wr_op);
-            }
-            else
-            {
-                wr_op->perform_io();
-                if (wr_op->errn == EAGAIN || wr_op->errn == EWOULDBLOCK)
-                {
-                    wr_op->errn = 0;
-                    std::lock_guard lock(mutex);
-                    write_op = wr_op;
-                }
-                else
-                {
-                    local_ops.push(wr_op);
-                }
-            }
+            rd = std::exchange(read_op, nullptr);
+            wr = std::exchange(write_op, nullptr);
+            cn = std::exchange(connect_op, nullptr);
         }
     }
 
-    // Handle error-only events (no EPOLLIN/EPOLLOUT)
-    if (err && !(ev & (EPOLLIN | EPOLLOUT)))
+    // Non-null after I/O means EAGAIN; re-register under lock below
+    if (rd)
     {
-        epoll_op* rd_op = nullptr;
-        epoll_op* wr_op = nullptr;
-        epoll_op* conn_op = nullptr;
-        {
-            std::lock_guard lock(mutex);
-            rd_op = read_op;
-            read_op = nullptr;
-            wr_op = write_op;
-            write_op = nullptr;
-            conn_op = connect_op;
-            connect_op = nullptr;
-        }
+        if (err)
+            rd->complete(err, 0);
+        else
+            rd->perform_io();
 
-        if (rd_op)
+        if (rd->errn == EAGAIN || rd->errn == EWOULDBLOCK)
         {
-            rd_op->complete(err, 0);
-            local_ops.push(rd_op);
+            rd->errn = 0;
         }
-        if (wr_op)
+        else
         {
-            wr_op->complete(err, 0);
-            local_ops.push(wr_op);
+            local_ops.push(rd);
+            rd = nullptr;
         }
-        if (conn_op)
+    }
+
+    if (cn)
+    {
+        if (err)
+            cn->complete(err, 0);
+        else
+            cn->perform_io();
+        local_ops.push(cn);
+        cn = nullptr;
+    }
+
+    if (wr)
+    {
+        if (err)
+            wr->complete(err, 0);
+        else
+            wr->perform_io();
+
+        if (wr->errn == EAGAIN || wr->errn == EWOULDBLOCK)
         {
-            conn_op->complete(err, 0);
-            local_ops.push(conn_op);
+            wr->errn = 0;
         }
+        else
+        {
+            local_ops.push(wr);
+            wr = nullptr;
+        }
+    }
+
+    if (rd || wr)
+    {
+        std::lock_guard lock(mutex);
+        if (rd)
+            read_op = rd;
+        if (wr)
+            write_op = wr;
     }
 
     // Execute first handler inline — the scheduler's work_cleanup
@@ -352,12 +298,9 @@ operator()()
     }
     else
     {
-        // All EAGAIN — offset the -1 that work_cleanup will apply
         scheduler_->compensating_work_started();
     }
 }
-
-//------------------------------------------------------------------------------
 
 epoll_scheduler::
 epoll_scheduler(
@@ -705,21 +648,12 @@ register_descriptor(int fd, descriptor_state* desc) const
         detail::throw_system_error(make_err(errno), "epoll_ctl (register)");
 
     desc->registered_events = ev.events;
-    desc->is_registered = true;
     desc->fd = fd;
     desc->scheduler_ = this;
 
     std::lock_guard lock(desc->mutex);
     desc->read_ready = false;
     desc->write_ready = false;
-}
-
-void
-epoll_scheduler::
-update_descriptor_events(int, descriptor_state*, std::uint32_t) const
-{
-    // Provides memory fence for operation pointer visibility across threads
-    std::atomic_thread_fence(std::memory_order_seq_cst);
 }
 
 void
@@ -1128,7 +1062,10 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* c
         // Handle operation
         if (op != nullptr)
         {
-            lock.unlock();
+            if (!completed_ops_.empty())
+                unlock_and_signal_one(lock);
+            else
+                lock.unlock();
 
             work_cleanup on_exit{this, &lock, ctx};
             (void)on_exit;
