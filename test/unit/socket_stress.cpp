@@ -20,15 +20,10 @@
 //
 // Tests run on all backends (epoll, IOCP, select).
 
-#include <boost/corosio/detail/platform.hpp>
-
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
-#include <boost/corosio/io_context.hpp>
-#if BOOST_COROSIO_HAS_SELECT
-#include <boost/corosio/select_context.hpp>
-#endif
 #include <boost/corosio/timer.hpp>
+
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -40,7 +35,7 @@
 #include <cstring>
 #include <vector>
 
-
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -126,7 +121,7 @@ make_stress_pair(Context& ctx)
 //------------------------------------------------------------------------------
 
 template<class Context>
-struct stop_token_stress_test_impl
+struct stop_token_stress_test
 {
     void
     run()
@@ -244,13 +239,7 @@ struct stop_token_stress_test_impl
     }
 };
 
-struct stop_token_stress_test : stop_token_stress_test_impl<io_context> {};
-TEST_SUITE(stop_token_stress_test, "boost.corosio.socket_stress.stop_token");
-
-#if BOOST_COROSIO_HAS_SELECT
-struct stop_token_stress_test_select : stop_token_stress_test_impl<select_context> {};
-TEST_SUITE(stop_token_stress_test_select, "boost.corosio.socket_stress.stop_token.select");
-#endif
+COROSIO_BACKEND_TESTS(stop_token_stress_test, "boost.corosio.socket_stress.stop_token")
 
 //------------------------------------------------------------------------------
 // Stress Test 2: Synchronous Completion Race (ready_ flag)
@@ -260,7 +249,7 @@ TEST_SUITE(stop_token_stress_test_select, "boost.corosio.socket_stress.stop_toke
 //------------------------------------------------------------------------------
 
 template<class Context>
-struct sync_completion_stress_test_impl
+struct sync_completion_stress_test
 {
     void
     run()
@@ -334,13 +323,7 @@ struct sync_completion_stress_test_impl
     }
 };
 
-struct sync_completion_stress_test : sync_completion_stress_test_impl<io_context> {};
-TEST_SUITE(sync_completion_stress_test, "boost.corosio.socket_stress.sync_completion");
-
-#if BOOST_COROSIO_HAS_SELECT
-struct sync_completion_stress_test_select : sync_completion_stress_test_impl<select_context> {};
-TEST_SUITE(sync_completion_stress_test_select, "boost.corosio.socket_stress.sync_completion.select");
-#endif
+COROSIO_BACKEND_TESTS(sync_completion_stress_test, "boost.corosio.socket_stress.sync_completion")
 
 //------------------------------------------------------------------------------
 // Stress Test 3: Rapid Cancel/Close Cycles
@@ -350,7 +333,7 @@ TEST_SUITE(sync_completion_stress_test_select, "boost.corosio.socket_stress.sync
 //------------------------------------------------------------------------------
 
 template<class Context>
-struct cancel_close_stress_test_impl
+struct cancel_close_stress_test
 {
     void
     run()
@@ -479,13 +462,7 @@ struct cancel_close_stress_test_impl
     }
 };
 
-struct cancel_close_stress_test : cancel_close_stress_test_impl<io_context> {};
-TEST_SUITE(cancel_close_stress_test, "boost.corosio.socket_stress.cancel_close");
-
-#if BOOST_COROSIO_HAS_SELECT
-struct cancel_close_stress_test_select : cancel_close_stress_test_impl<select_context> {};
-TEST_SUITE(cancel_close_stress_test_select, "boost.corosio.socket_stress.cancel_close.select");
-#endif
+COROSIO_BACKEND_TESTS(cancel_close_stress_test, "boost.corosio.socket_stress.cancel_close")
 
 //------------------------------------------------------------------------------
 // Stress Test 4: Concurrent Operations
@@ -495,7 +472,7 @@ TEST_SUITE(cancel_close_stress_test_select, "boost.corosio.socket_stress.cancel_
 //------------------------------------------------------------------------------
 
 template<class Context>
-struct concurrent_ops_stress_test_impl
+struct concurrent_ops_stress_test
 {
     void
     run()
@@ -588,13 +565,7 @@ struct concurrent_ops_stress_test_impl
     }
 };
 
-struct concurrent_ops_stress_test : concurrent_ops_stress_test_impl<io_context> {};
-TEST_SUITE(concurrent_ops_stress_test, "boost.corosio.socket_stress.concurrent_ops");
-
-#if BOOST_COROSIO_HAS_SELECT
-struct concurrent_ops_stress_test_select : concurrent_ops_stress_test_impl<select_context> {};
-TEST_SUITE(concurrent_ops_stress_test_select, "boost.corosio.socket_stress.concurrent_ops.select");
-#endif
+COROSIO_BACKEND_TESTS(concurrent_ops_stress_test, "boost.corosio.socket_stress.concurrent_ops")
 
 //------------------------------------------------------------------------------
 // Stress Test 5: Accept/Connect Race
@@ -604,7 +575,7 @@ TEST_SUITE(concurrent_ops_stress_test_select, "boost.corosio.socket_stress.concu
 //------------------------------------------------------------------------------
 
 template<class Context>
-struct accept_stress_test_impl
+struct accept_stress_test
 {
     void
     run()
@@ -686,13 +657,7 @@ struct accept_stress_test_impl
     }
 };
 
-struct accept_stress_test : accept_stress_test_impl<io_context> {};
-TEST_SUITE(accept_stress_test, "boost.corosio.socket_stress.accept");
-
-#if BOOST_COROSIO_HAS_SELECT
-struct accept_stress_test_select : accept_stress_test_impl<select_context> {};
-TEST_SUITE(accept_stress_test_select, "boost.corosio.socket_stress.accept.select");
-#endif
+COROSIO_BACKEND_TESTS(accept_stress_test, "boost.corosio.socket_stress.accept")
 
 } // namespace boost::corosio
 

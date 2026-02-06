@@ -10,19 +10,13 @@
 // Test that header file is self-contained.
 #include <boost/corosio/timer.hpp>
 
-#include <boost/corosio/io_context.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
-// Include platform-specific context headers for multi-backend testing
-#include <boost/corosio/detail/platform.hpp>
-#if BOOST_COROSIO_HAS_SELECT
-#include <boost/corosio/select_context.hpp>
-#endif
-
 #include <chrono>
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -35,7 +29,7 @@ namespace boost::corosio {
 //------------------------------------------------
 
 template<class Context>
-struct timer_test_impl
+struct timer_test
 {
     //--------------------------------------------
     // Construction and move semantics
@@ -665,18 +659,6 @@ struct timer_test_impl
     }
 };
 
-//------------------------------------------------
-// Register test suites for each available backend
-//------------------------------------------------
-
-// Default io_context (platform default backend)
-struct timer_test : timer_test_impl<io_context> {};
-TEST_SUITE(timer_test, "boost.corosio.timer");
-
-// POSIX: also test with select_context explicitly
-#if BOOST_COROSIO_HAS_SELECT
-struct timer_test_select : timer_test_impl<select_context> {};
-TEST_SUITE(timer_test_select, "boost.corosio.timer.select");
-#endif
+COROSIO_BACKEND_TESTS(timer_test, "boost.corosio.timer")
 
 } // namespace boost::corosio

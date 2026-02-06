@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -25,7 +26,7 @@
 #endif
 
 #if BOOST_COROSIO_HAS_KQUEUE
-// #include <boost/corosio/kqueue_context.hpp>
+#include <boost/corosio/kqueue_context.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_SELECT
@@ -43,8 +44,8 @@ namespace boost::corosio {
     This is a type alias for the platform's default I/O backend:
     - Windows: `iocp_context` (I/O Completion Ports)
     - Linux: `epoll_context` (epoll)
-    - BSD/macOS: `kqueue_context` (kqueue) [future]
-    - Other POSIX: `select_context` (select) [future]
+    - BSD/macOS: `kqueue_context` (kqueue) (macOS verified, BSD future)
+    - Other POSIX: `select_context` (select)
 
     For explicit backend selection, use the concrete context types
     directly (e.g., `epoll_context`, `iocp_context`).
@@ -82,8 +83,7 @@ using io_context = iocp_context;
 #elif BOOST_COROSIO_HAS_EPOLL
 using io_context = epoll_context;
 #elif BOOST_COROSIO_HAS_KQUEUE
-// using io_context = kqueue_context;
-using io_context = select_context;  // fallback until kqueue implemented
+using io_context = kqueue_context;
 #elif BOOST_COROSIO_HAS_SELECT
 using io_context = select_context;
 #endif
