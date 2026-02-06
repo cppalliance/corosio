@@ -10,9 +10,7 @@
 #include "benchmarks.hpp"
 
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/detached.hpp>
-#include <boost/asio/awaitable.hpp>
+#include <boost/asio/post.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -22,29 +20,16 @@
 #include <thread>
 #include <vector>
 
-#include "../common/benchmark.hpp"
+#include "../../common/benchmark.hpp"
 
 namespace asio = boost::asio;
 
-namespace asio_bench {
+namespace asio_callback_bench {
 namespace {
 
-asio::awaitable<void> increment_task( int64_t& counter )
-{
-    ++counter;
-    co_return;
-}
-
-asio::awaitable<void> atomic_increment_task( std::atomic<int64_t>& counter )
-{
-    counter.fetch_add( 1, std::memory_order_relaxed );
-    co_return;
-}
-
-// Pattern A: Batch + poll/restart loop
 bench::benchmark_result bench_single_threaded_post( double duration_s )
 {
-    perf::print_header( "Single-threaded Handler Post (Asio Coroutines)" );
+    perf::print_header( "Single-threaded Handler Post (Asio Callbacks)" );
 
     asio::io_context ioc;
     int64_t counter = 0;
@@ -57,7 +42,7 @@ bench::benchmark_result bench_single_threaded_post( double duration_s )
     while( std::chrono::steady_clock::now() < deadline )
     {
         for( int i = 0; i < batch_size; ++i )
-            asio::co_spawn( ioc, increment_task( counter ), asio::detached );
+            asio::post( ioc, [&counter] { ++counter; } );
 
         ioc.poll();
         ioc.restart();
@@ -79,10 +64,9 @@ bench::benchmark_result bench_single_threaded_post( double duration_s )
         .add( "ops_per_sec", ops_per_sec );
 }
 
-// Pattern B: Batch-refill from timer thread
 bench::benchmark_result bench_multithreaded_scaling( double duration_s, int max_threads )
 {
-    perf::print_header( "Multi-threaded Scaling (Asio Coroutines)" );
+    perf::print_header( "Multi-threaded Scaling (Asio Callbacks)" );
 
     bench::benchmark_result result( "multithreaded_scaling" );
 
@@ -96,7 +80,10 @@ bench::benchmark_result bench_multithreaded_scaling( double duration_s, int max_
         std::atomic<int64_t> counter{ 0 };
 
         for( int i = 0; i < batch_size; ++i )
-            asio::co_spawn( ioc, atomic_increment_task( counter ), asio::detached );
+            asio::post( ioc, [&counter]
+            {
+                counter.fetch_add( 1, std::memory_order_relaxed );
+            } );
 
         perf::stopwatch sw;
 
@@ -108,7 +95,10 @@ bench::benchmark_result bench_multithreaded_scaling( double duration_s, int max_
             while( std::chrono::steady_clock::now() < deadline )
             {
                 for( int i = 0; i < batch_size; ++i )
-                    asio::co_spawn( ioc, atomic_increment_task( counter ), asio::detached );
+                    asio::post( ioc, [&counter]
+                    {
+                        counter.fetch_add( 1, std::memory_order_relaxed );
+                    } );
                 std::this_thread::yield();
             }
             running.store( false, std::memory_order_relaxed );
@@ -151,10 +141,9 @@ bench::benchmark_result bench_multithreaded_scaling( double duration_s, int max_
     return result;
 }
 
-// Pattern A: Batch + poll/restart loop
 bench::benchmark_result bench_interleaved_post_run( double duration_s, int handlers_per_iteration )
 {
-    perf::print_header( "Interleaved Post/Run (Asio Coroutines)" );
+    perf::print_header( "Interleaved Post/Run (Asio Callbacks)" );
 
     asio::io_context ioc;
     int64_t counter = 0;
@@ -166,7 +155,7 @@ bench::benchmark_result bench_interleaved_post_run( double duration_s, int handl
     while( std::chrono::steady_clock::now() < deadline )
     {
         for( int i = 0; i < handlers_per_iteration; ++i )
-            asio::co_spawn( ioc, increment_task( counter ), asio::detached );
+            asio::post( ioc, [&counter] { ++counter; } );
 
         ioc.poll();
         ioc.restart();
@@ -190,10 +179,9 @@ bench::benchmark_result bench_interleaved_post_run( double duration_s, int handl
         .add( "ops_per_sec", ops_per_sec );
 }
 
-// Pattern B: Concurrent post and run with batch-refill
 bench::benchmark_result bench_concurrent_post_run( double duration_s, int num_threads )
 {
-    perf::print_header( "Concurrent Post and Run (Asio Coroutines)" );
+    perf::print_header( "Concurrent Post and Run (Asio Callbacks)" );
 
     asio::io_context ioc;
     std::atomic<bool> running{ true };
@@ -211,7 +199,10 @@ bench::benchmark_result bench_concurrent_post_run( double duration_s, int num_th
             while( running.load( std::memory_order_relaxed ) )
             {
                 for( int i = 0; i < batch_size; ++i )
-                    asio::co_spawn( ioc, atomic_increment_task( counter ), asio::detached );
+                    asio::post( ioc, [&counter]
+                    {
+                        counter.fetch_add( 1, std::memory_order_relaxed );
+                    } );
                 ioc.poll();
                 ioc.restart();
             }
@@ -261,7 +252,7 @@ void run_io_context_benchmarks(
         asio::io_context ioc;
         int64_t counter = 0;
         for( int i = 0; i < 1000; ++i )
-            asio::co_spawn( ioc, increment_task( counter ), asio::detached );
+            asio::post( ioc, [&counter] { ++counter; } );
         ioc.run();
     }
 
@@ -278,4 +269,4 @@ void run_io_context_benchmarks(
         collector.add( bench_concurrent_post_run( duration_s, 4 ) );
 }
 
-} // namespace asio_bench
+} // namespace asio_callback_bench

@@ -8,12 +8,8 @@
 //
 
 #include "benchmarks.hpp"
-#include "socket_utils.hpp"
+#include "../socket_utils.hpp"
 
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/detached.hpp>
-#include <boost/asio/awaitable.hpp>
-#include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
@@ -22,77 +18,128 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <thread>
 #include <vector>
 
-#include "../common/benchmark.hpp"
+#include "../../common/benchmark.hpp"
 
-namespace asio_bench {
+namespace asio = boost::asio;
+using tcp = asio::ip::tcp;
+
+namespace asio_callback_bench {
 namespace {
 
-// Pattern C: coroutine loops check running flag
-asio::awaitable<void> pingpong_client_task(
-    tcp::socket& client,
-    tcp::socket& server,
-    std::size_t message_size,
-    std::atomic<bool>& running,
-    int64_t& iterations,
-    perf::statistics& stats )
+struct pingpong_op
 {
-    std::vector<char> send_buf( message_size, 'P' );
-    std::vector<char> recv_buf( message_size );
+    enum phase { write_client, read_server, write_server, read_client };
 
-    try
+    tcp::socket& client;
+    tcp::socket& server;
+    std::vector<char> send_buf;
+    std::vector<char> recv_buf;
+    std::atomic<bool>& running;
+    int64_t& iterations;
+    perf::statistics& stats;
+    perf::stopwatch sw;
+    phase phase_;
+
+    pingpong_op(
+        tcp::socket& c,
+        tcp::socket& s,
+        std::size_t message_size,
+        std::atomic<bool>& r,
+        int64_t& iters,
+        perf::statistics& st )
+        : client( c )
+        , server( s )
+        , send_buf( message_size, 'P' )
+        , recv_buf( message_size )
+        , running( r )
+        , iterations( iters )
+        , stats( st )
+        , phase_( write_client )
     {
-        while( running.load( std::memory_order_relaxed ) )
-        {
-            perf::stopwatch sw;
-
-            co_await asio::async_write(
-                client,
-                asio::buffer( send_buf.data(), send_buf.size() ),
-                asio::use_awaitable );
-
-            co_await asio::async_read(
-                server,
-                asio::buffer( recv_buf.data(), recv_buf.size() ),
-                asio::use_awaitable );
-
-            co_await asio::async_write(
-                server,
-                asio::buffer( recv_buf.data(), recv_buf.size() ),
-                asio::use_awaitable );
-
-            co_await asio::async_read(
-                client,
-                asio::buffer( recv_buf.data(), recv_buf.size() ),
-                asio::use_awaitable );
-
-            double rtt_us = sw.elapsed_us();
-            stats.add( rtt_us );
-            ++iterations;
-        }
-
-        client.shutdown( tcp::socket::shutdown_send );
     }
-    catch( std::exception const& ) {}
-}
+
+    void start()
+    {
+        if( !running.load( std::memory_order_relaxed ) )
+        {
+            client.shutdown( tcp::socket::shutdown_send );
+            return;
+        }
+        sw.reset();
+        phase_ = write_client;
+        do_step();
+    }
+
+    void do_step()
+    {
+        switch( phase_ )
+        {
+        case write_client:
+            asio::async_write( client,
+                asio::buffer( send_buf ),
+                [this]( boost::system::error_code ec, std::size_t )
+                {
+                    if( ec ) return;
+                    phase_ = read_server;
+                    do_step();
+                } );
+            break;
+
+        case read_server:
+            asio::async_read( server,
+                asio::buffer( recv_buf ),
+                [this]( boost::system::error_code ec, std::size_t )
+                {
+                    if( ec ) return;
+                    phase_ = write_server;
+                    do_step();
+                } );
+            break;
+
+        case write_server:
+            asio::async_write( server,
+                asio::buffer( recv_buf ),
+                [this]( boost::system::error_code ec, std::size_t )
+                {
+                    if( ec ) return;
+                    phase_ = read_client;
+                    do_step();
+                } );
+            break;
+
+        case read_client:
+            asio::async_read( client,
+                asio::buffer( recv_buf ),
+                [this]( boost::system::error_code ec, std::size_t )
+                {
+                    if( ec ) return;
+                    stats.add( sw.elapsed_us() );
+                    ++iterations;
+                    start();
+                } );
+            break;
+        }
+    }
+};
 
 bench::benchmark_result bench_pingpong_latency( std::size_t message_size, double duration_s )
 {
     std::cout << "  Message size: " << message_size << " bytes\n";
 
     asio::io_context ioc;
-    auto [client, server] = make_socket_pair( ioc );
+    auto [client, server] = asio_bench::make_socket_pair( ioc );
 
     std::atomic<bool> running{ true };
     int64_t iterations = 0;
     perf::statistics latency_stats;
 
-    asio::co_spawn( ioc,
-        pingpong_client_task(
-            client, server, message_size, running, iterations, latency_stats ),
-        asio::detached );
+    pingpong_op op( client, server, message_size, running, iterations, latency_stats );
+
+    op.start();
 
     std::thread timer( [&]()
     {
@@ -134,19 +181,21 @@ bench::benchmark_result bench_concurrent_latency(
 
     for( int i = 0; i < num_pairs; ++i )
     {
-        auto [c, s] = make_socket_pair( ioc );
+        auto [c, s] = asio_bench::make_socket_pair( ioc );
         clients.push_back( std::move( c ) );
         servers.push_back( std::move( s ) );
     }
 
     std::atomic<bool> running{ true };
 
+    // Stable addresses needed for concurrent ops
+    std::vector<std::unique_ptr<pingpong_op>> ops;
+    ops.reserve( num_pairs );
     for( int p = 0; p < num_pairs; ++p )
     {
-        asio::co_spawn( ioc,
-            pingpong_client_task(
-                clients[p], servers[p], message_size, running, iters[p], stats[p] ),
-            asio::detached );
+        ops.push_back( std::make_unique<pingpong_op>(
+            clients[p], servers[p], message_size, running, iters[p], stats[p] ) );
+        ops.back()->start();
     }
 
     std::thread timer( [&]()
@@ -207,7 +256,7 @@ void run_socket_latency_benchmarks(
     // Warm up
     {
         asio::io_context ioc;
-        auto [c, s] = make_socket_pair( ioc );
+        auto [c, s] = asio_bench::make_socket_pair( ioc );
         char buf[64] = {};
         for( int i = 0; i < 100; ++i )
         {
@@ -222,18 +271,18 @@ void run_socket_latency_benchmarks(
 
     if( run_all || std::strcmp( filter, "pingpong" ) == 0 )
     {
-        perf::print_header( "Ping-Pong Round-Trip Latency (Asio Coroutines)" );
+        perf::print_header( "Ping-Pong Round-Trip Latency (Asio Callbacks)" );
         for( auto size : message_sizes )
             collector.add( bench_pingpong_latency( size, duration_s ) );
     }
 
     if( run_all || std::strcmp( filter, "concurrent" ) == 0 )
     {
-        perf::print_header( "Concurrent Socket Pairs Latency (Asio Coroutines)" );
+        perf::print_header( "Concurrent Socket Pairs Latency (Asio Callbacks)" );
         collector.add( bench_concurrent_latency( 1, 64, duration_s ) );
         collector.add( bench_concurrent_latency( 4, 64, duration_s ) );
         collector.add( bench_concurrent_latency( 16, 64, duration_s ) );
     }
 }
 
-} // namespace asio_bench
+} // namespace asio_callback_bench
