@@ -112,14 +112,6 @@ public:
     */
     void register_descriptor(int fd, descriptor_state* desc) const;
 
-    /** Update events for a persistently registered descriptor.
-
-        @param fd The file descriptor.
-        @param desc Pointer to descriptor data.
-        @param events The new events to monitor.
-    */
-    void update_descriptor_events(int fd, descriptor_state* desc, std::uint32_t events) const;
-
     /** Deregister a persistently registered descriptor.
 
         @param fd The file descriptor to deregister.

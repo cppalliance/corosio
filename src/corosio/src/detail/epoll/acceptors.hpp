@@ -60,7 +60,6 @@ public:
     void cancel() noexcept override;
     void cancel_single_op(epoll_op& op) noexcept;
     void close_socket() noexcept;
-    void update_epoll_events() noexcept;
     void set_local_endpoint(endpoint ep) noexcept { local_endpoint_ = ep; }
 
     epoll_acceptor_service& service() noexcept { return svc_; }

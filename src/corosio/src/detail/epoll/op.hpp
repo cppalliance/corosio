@@ -124,7 +124,6 @@ struct descriptor_state : scheduler_op
     // Set during registration only (no mutex needed)
     std::uint32_t registered_events = 0;
     int fd = -1;
-    bool is_registered = false;
 
     // For deferred I/O - set by reactor, read by scheduler
     std::atomic<std::uint32_t> ready_events_{0};
@@ -134,12 +133,6 @@ struct descriptor_state : scheduler_op
     // Prevents impl destruction while this descriptor_state is queued.
     // Set by close_socket() when is_enqueued_ is true, cleared by operator().
     std::shared_ptr<void> impl_ref_;
-
-    /// Set ready events atomically.
-    void set_ready_events(std::uint32_t ev) noexcept
-    {
-        ready_events_.store(ev, std::memory_order_relaxed);
-    }
 
     /// Add ready events atomically.
     void add_ready_events(std::uint32_t ev) noexcept
@@ -238,17 +231,6 @@ struct epoll_op : scheduler_op
     void request_cancel() noexcept
     {
         cancelled.store(true, std::memory_order_release);
-    }
-
-    void start(std::stop_token token)
-    {
-        cancelled.store(false, std::memory_order_release);
-        stop_cb.reset();
-        socket_impl_ = nullptr;
-        acceptor_impl_ = nullptr;
-
-        if (token.stop_possible())
-            stop_cb.emplace(token, canceller{this});
     }
 
     void start(std::stop_token token, epoll_socket_impl* impl)

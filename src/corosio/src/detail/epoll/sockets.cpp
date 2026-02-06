@@ -19,6 +19,8 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/buffers.hpp>
 
+#include <utility>
+
 #include <errno.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -117,14 +119,6 @@ epoll_socket_impl::
 
 void
 epoll_socket_impl::
-update_epoll_events() noexcept
-{
-    // With EPOLLET, update_descriptor_events just provides a memory fence
-    svc_.scheduler().update_descriptor_events(fd_, &desc_state_, 0);
-}
-
-void
-epoll_socket_impl::
 release()
 {
     close_socket();
@@ -211,10 +205,7 @@ connect(
             {
                 std::lock_guard lock(desc_state_.mutex);
                 if (desc_state_.connect_op == &op)
-                {
-                    claimed = desc_state_.connect_op;
-                    desc_state_.connect_op = nullptr;
-                }
+                    claimed = std::exchange(desc_state_.connect_op, nullptr);
             }
             if (claimed)
             {
@@ -304,10 +295,7 @@ do_read_io()
             {
                 std::lock_guard lock(desc_state_.mutex);
                 if (desc_state_.read_op == &op)
-                {
-                    claimed = desc_state_.read_op;
-                    desc_state_.read_op = nullptr;
-                }
+                    claimed = std::exchange(desc_state_.read_op, nullptr);
             }
             if (claimed)
             {
@@ -386,10 +374,7 @@ do_write_io()
             {
                 std::lock_guard lock(desc_state_.mutex);
                 if (desc_state_.write_op == &op)
-                {
-                    claimed = desc_state_.write_op;
-                    desc_state_.write_op = nullptr;
-                }
+                    claimed = std::exchange(desc_state_.write_op, nullptr);
             }
             if (claimed)
             {
@@ -653,20 +638,11 @@ cancel() noexcept
     {
         std::lock_guard lock(desc_state_.mutex);
         if (desc_state_.connect_op == &conn_)
-        {
-            conn_claimed = desc_state_.connect_op;
-            desc_state_.connect_op = nullptr;
-        }
+            conn_claimed = std::exchange(desc_state_.connect_op, nullptr);
         if (desc_state_.read_op == &rd_)
-        {
-            rd_claimed = desc_state_.read_op;
-            desc_state_.read_op = nullptr;
-        }
+            rd_claimed = std::exchange(desc_state_.read_op, nullptr);
         if (desc_state_.write_op == &wr_)
-        {
-            wr_claimed = desc_state_.write_op;
-            desc_state_.write_op = nullptr;
-        }
+            wr_claimed = std::exchange(desc_state_.write_op, nullptr);
     }
 
     if (conn_claimed)
@@ -706,10 +682,7 @@ cancel_single_op(epoll_op& op) noexcept
         {
             std::lock_guard lock(desc_state_.mutex);
             if (*desc_op_ptr == &op)
-            {
-                claimed = *desc_op_ptr;
-                *desc_op_ptr = nullptr;
-            }
+                claimed = std::exchange(*desc_op_ptr, nullptr);
         }
         if (claimed)
         {
@@ -747,7 +720,6 @@ close_socket() noexcept
     }
 
     desc_state_.fd = -1;
-    desc_state_.is_registered = false;
     {
         std::lock_guard lock(desc_state_.mutex);
         desc_state_.read_op = nullptr;

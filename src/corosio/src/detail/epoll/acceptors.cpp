@@ -16,6 +16,8 @@
 #include "src/detail/endpoint_convert.hpp"
 #include "src/detail/make_err.hpp"
 
+#include <utility>
+
 #include <errno.h>
 #include <netinet/in.h>
 #include <sys/epoll.h>
@@ -142,13 +144,6 @@ epoll_acceptor_impl(epoll_acceptor_service& svc) noexcept
 
 void
 epoll_acceptor_impl::
-update_epoll_events() noexcept
-{
-    svc_.scheduler().update_descriptor_events(fd_, &desc_state_, 0);
-}
-
-void
-epoll_acceptor_impl::
 release()
 {
     close_socket();
@@ -234,10 +229,7 @@ accept(
             {
                 std::lock_guard lock(desc_state_.mutex);
                 if (desc_state_.read_op == &op)
-                {
-                    claimed = desc_state_.read_op;
-                    desc_state_.read_op = nullptr;
-                }
+                    claimed = std::exchange(desc_state_.read_op, nullptr);
             }
             if (claimed)
             {
@@ -273,10 +265,7 @@ cancel() noexcept
     {
         std::lock_guard lock(desc_state_.mutex);
         if (desc_state_.read_op == &acc_)
-        {
-            claimed = desc_state_.read_op;
-            desc_state_.read_op = nullptr;
-        }
+            claimed = std::exchange(desc_state_.read_op, nullptr);
     }
     if (claimed)
     {
@@ -296,10 +285,7 @@ cancel_single_op(epoll_op& op) noexcept
     {
         std::lock_guard lock(desc_state_.mutex);
         if (desc_state_.read_op == &op)
-        {
-            claimed = desc_state_.read_op;
-            desc_state_.read_op = nullptr;
-        }
+            claimed = std::exchange(desc_state_.read_op, nullptr);
     }
     if (claimed)
     {
@@ -333,7 +319,6 @@ close_socket() noexcept
     }
 
     desc_state_.fd = -1;
-    desc_state_.is_registered = false;
     {
         std::lock_guard lock(desc_state_.mutex);
         desc_state_.read_op = nullptr;

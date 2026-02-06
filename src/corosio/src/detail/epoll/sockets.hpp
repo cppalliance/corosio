@@ -147,7 +147,6 @@ public:
     void cancel() noexcept override;
     void cancel_single_op(epoll_op& op) noexcept;
     void close_socket() noexcept;
-    void update_epoll_events() noexcept;
     void set_socket(int fd) noexcept { fd_ = fd; }
     void set_endpoints(endpoint local, endpoint remote) noexcept
     {
@@ -221,9 +220,6 @@ public:
 private:
     std::unique_ptr<epoll_socket_state> state_;
 };
-
-// Backward compatibility alias
-using epoll_sockets = epoll_socket_service;
 
 } // namespace boost::corosio::detail
 
