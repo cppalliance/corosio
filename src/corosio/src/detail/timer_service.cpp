@@ -38,6 +38,26 @@ struct timer_op final : scheduler_op
     std::error_code ec_value;
     scheduler* sched = nullptr;
 
+    timer_op() noexcept
+        : scheduler_op(&timer_op::do_complete)
+    {
+    }
+
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t,
+        std::uint32_t)
+    {
+        auto* self = static_cast<timer_op*>(base);
+        if (!owner)
+        {
+            delete self;
+            return;
+        }
+        (*self)();
+    }
+
     void operator()() override
     {
         if (ec_out)
