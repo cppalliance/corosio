@@ -10,7 +10,8 @@
 #include "corosio/benchmarks.hpp"
 
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
-#include "asio/benchmarks.hpp"
+#include "asio/coroutine/benchmarks.hpp"
+#include "asio/callback/benchmarks.hpp"
 #endif
 
 #include <boost/corosio/io_context.hpp>
@@ -41,10 +42,12 @@ void print_usage( char const* program_name )
     std::cout << "Libraries (--library):\n";
     std::cout << "  corosio             Boost.Corosio benchmarks (default)\n";
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
-    std::cout << "  asio                Boost.Asio comparison benchmarks\n";
-    std::cout << "  all                 Run both libraries\n";
+    std::cout << "  asio                Boost.Asio coroutine benchmarks\n";
+    std::cout << "  asio_callback       Boost.Asio callback benchmarks\n";
+    std::cout << "  all                 Run all libraries\n";
 #else
     std::cout << "  asio                (not available — Boost.Asio not found)\n";
+    std::cout << "  asio_callback       (not available — Boost.Asio not found)\n";
     std::cout << "  all                 (not available — Boost.Asio not found)\n";
 #endif
     std::cout << "\n";
@@ -174,15 +177,16 @@ int main( int argc, char* argv[] )
 
     bool want_corosio = std::strcmp( library, "corosio" ) == 0 || std::strcmp( library, "all" ) == 0;
     bool want_asio = std::strcmp( library, "asio" ) == 0 || std::strcmp( library, "all" ) == 0;
+    bool want_asio_callback = std::strcmp( library, "asio_callback" ) == 0 || std::strcmp( library, "all" ) == 0;
 
-    if( !want_corosio && !want_asio )
+    if( !want_corosio && !want_asio && !want_asio_callback )
     {
-        std::cerr << "Error: Unknown library '" << library << "'. Use corosio, asio, or all.\n";
+        std::cerr << "Error: Unknown library '" << library << "'. Use corosio, asio, asio_callback, or all.\n";
         return 1;
     }
 
 #ifndef BOOST_COROSIO_BENCH_HAS_ASIO
-    if( want_asio )
+    if( want_asio || want_asio_callback )
     {
         std::cerr << "Error: Boost.Asio benchmarks are not available (Boost.Asio was not found at build time).\n";
         return 1;
@@ -198,8 +202,10 @@ int main( int argc, char* argv[] )
             bench::result_collector collector( name );
             collector.set_duration( duration_s );
 
-            if( !want_corosio )
+            if( !want_corosio && !want_asio_callback )
                 collector.set_backend( "asio" );
+            else if( !want_corosio && !want_asio )
+                collector.set_backend( "asio_callback" );
 
             if( want_corosio )
             {
@@ -231,6 +237,8 @@ int main( int argc, char* argv[] )
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
                     if( want_asio )
                         asio_bench::run_io_context_benchmarks( collector, b, duration_s );
+                    if( want_asio_callback )
+                        asio_callback_bench::run_io_context_benchmarks( collector, b, duration_s );
 #endif
                 }
             }
@@ -247,6 +255,8 @@ int main( int argc, char* argv[] )
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
                     if( want_asio )
                         asio_bench::run_socket_throughput_benchmarks( collector, b, duration_s );
+                    if( want_asio_callback )
+                        asio_callback_bench::run_socket_throughput_benchmarks( collector, b, duration_s );
 #endif
                 }
             }
@@ -263,6 +273,8 @@ int main( int argc, char* argv[] )
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
                     if( want_asio )
                         asio_bench::run_socket_latency_benchmarks( collector, b, duration_s );
+                    if( want_asio_callback )
+                        asio_callback_bench::run_socket_latency_benchmarks( collector, b, duration_s );
 #endif
                 }
             }
@@ -279,6 +291,8 @@ int main( int argc, char* argv[] )
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
                     if( want_asio )
                         asio_bench::run_http_server_benchmarks( collector, b, duration_s );
+                    if( want_asio_callback )
+                        asio_callback_bench::run_http_server_benchmarks( collector, b, duration_s );
 #endif
                 }
             }

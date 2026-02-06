@@ -8,7 +8,7 @@
 //
 
 #include "benchmarks.hpp"
-#include "socket_utils.hpp"
+#include "../socket_utils.hpp"
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
@@ -25,7 +25,7 @@
 #include <thread>
 #include <vector>
 
-#include "../common/benchmark.hpp"
+#include "../../common/benchmark.hpp"
 
 namespace asio_bench {
 namespace {

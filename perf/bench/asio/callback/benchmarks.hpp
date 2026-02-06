@@ -7,12 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef ASIO_BENCH_BENCHMARKS_HPP
-#define ASIO_BENCH_BENCHMARKS_HPP
+#ifndef ASIO_CALLBACK_BENCH_BENCHMARKS_HPP
+#define ASIO_CALLBACK_BENCH_BENCHMARKS_HPP
 
-#include "../common/benchmark.hpp"
+#include "../../common/benchmark.hpp"
 
-namespace asio_bench {
+namespace asio_callback_bench {
 
 /** Run io_context benchmarks.
 
@@ -62,6 +62,6 @@ void run_http_server_benchmarks(
     char const* filter,
     double duration_s );
 
-} // namespace asio_bench
+} // namespace asio_callback_bench
 
 #endif

@@ -39,10 +39,14 @@ endif ()
 
 if (TARGET Boost::asio)
     target_sources(corosio_bench PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/asio/io_context_bench.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/asio/socket_throughput_bench.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/asio/socket_latency_bench.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/asio/http_server_bench.cpp)
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/io_context_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/socket_throughput_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/socket_latency_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/http_server_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/io_context_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/socket_throughput_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/socket_latency_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/http_server_bench.cpp)
     target_link_libraries(corosio_bench PRIVATE Boost::asio)
     target_compile_definitions(corosio_bench PRIVATE BOOST_COROSIO_BENCH_HAS_ASIO=1)
 endif ()
