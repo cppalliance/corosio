@@ -317,6 +317,13 @@ close_socket() noexcept
 {
     cancel();
 
+    if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
+    {
+        try {
+            desc_state_.impl_ref_ = shared_from_this();
+        } catch (std::bad_weak_ptr const&) {}
+    }
+
     if (fd_ >= 0)
     {
         if (desc_state_.registered_events != 0)

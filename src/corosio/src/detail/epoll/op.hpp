@@ -131,6 +131,10 @@ struct descriptor_state : scheduler_op
     std::atomic<bool> is_enqueued_{false};
     epoll_scheduler const* scheduler_ = nullptr;
 
+    // Prevents impl destruction while this descriptor_state is queued.
+    // Set by close_socket() when is_enqueued_ is true, cleared by operator().
+    std::shared_ptr<void> impl_ref_;
+
     /// Set ready events atomically.
     void set_ready_events(std::uint32_t ev) noexcept
     {
