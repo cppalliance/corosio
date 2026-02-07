@@ -502,6 +502,337 @@ testMtls( StreamFactory make_stream )
     }
 }
 
+//------------------------------------------------------------------------------
+//
+// Reset Tests
+//
+//------------------------------------------------------------------------------
+
+/** Test explicit reset() between TLS sessions.
+
+    Verifies that calling reset() after shutdown allows the
+    same stream objects to perform a new handshake and data
+    transfer. Two full rounds on the same stream pair.
+*/
+template<typename StreamFactory, std::size_t N>
+void
+testReset(
+    StreamFactory make_stream,
+    std::array<context_mode, N> const& modes )
+{
+    for( auto mode : modes )
+    {
+        io_context ioc;
+        auto [m1, m2] = corosio::test::make_mocket_pair( ioc );
+
+        auto [client_ctx, server_ctx] = make_contexts( mode );
+        auto client = make_stream( m1, client_ctx );
+        auto server = make_stream( m2, server_ctx );
+
+        auto do_round = [&]( std::string const& msg ) -> capy::task<>
+        {
+            std::error_code client_ec;
+            std::error_code server_ec;
+
+            // Handshake
+            auto hs_client = [&]() -> capy::task<>
+            {
+                auto [ec] = co_await client.handshake( tls_stream::client );
+                client_ec = ec;
+            };
+            auto hs_server = [&]() -> capy::task<>
+            {
+                auto [ec] = co_await server.handshake( tls_stream::server );
+                server_ec = ec;
+            };
+
+            capy::run_async( ioc.get_executor() )( hs_client() );
+            capy::run_async( ioc.get_executor() )( hs_server() );
+            ioc.run();
+            ioc.restart();
+
+            BOOST_TEST( !client_ec );
+            BOOST_TEST( !server_ec );
+            if( client_ec || server_ec )
+                co_return;
+
+            // Data transfer
+            auto xfer = [&]() -> capy::task<>
+            {
+                // Client writes
+                auto [wec, wn] = co_await client.write_some(
+                    capy::const_buffer( msg.data(), msg.size() ) );
+                BOOST_TEST( !wec );
+                if( wec )
+                    co_return;
+
+                // Server reads
+                std::string buf( msg.size(), '\0' );
+                auto [rec, rn] = co_await server.read_some(
+                    capy::mutable_buffer( buf.data(), buf.size() ) );
+                BOOST_TEST( !rec );
+                if( !rec )
+                    BOOST_TEST( buf.substr( 0, rn ) == msg.substr( 0, rn ) );
+            };
+            capy::run_async( ioc.get_executor() )( xfer() );
+            ioc.run();
+            ioc.restart();
+
+            // Shutdown both sides concurrently
+            auto sd_client = [&]() -> capy::task<>
+            {
+                (void) co_await client.shutdown();
+            };
+            auto sd_server = [&]() -> capy::task<>
+            {
+                // Read until close_notify, then send ours
+                char drain[32];
+                (void) co_await server.read_some(
+                    capy::mutable_buffer( drain, sizeof( drain ) ) );
+                (void) co_await server.shutdown();
+            };
+
+            capy::run_async( ioc.get_executor() )( sd_client() );
+            capy::run_async( ioc.get_executor() )( sd_server() );
+            ioc.run();
+            ioc.restart();
+
+            co_return;
+        };
+
+        // Round 1
+        auto r1 = [&]() -> capy::task<>
+        {
+            co_await do_round( "hello1" );
+        };
+        capy::run_async( ioc.get_executor() )( r1() );
+        ioc.run();
+        ioc.restart();
+
+        // Explicit reset
+        client.reset();
+        server.reset();
+
+        // Round 2
+        auto r2 = [&]() -> capy::task<>
+        {
+            co_await do_round( "hello2" );
+        };
+        capy::run_async( ioc.get_executor() )( r2() );
+        ioc.run();
+
+        m1.close();
+        m2.close();
+    }
+}
+
+/** Test implicit reset via handshake().
+
+    Verifies that calling handshake() on a previously-used stream
+    automatically resets, without an explicit reset() call.
+*/
+template<typename StreamFactory, std::size_t N>
+void
+testResetViaHandshake(
+    StreamFactory make_stream,
+    std::array<context_mode, N> const& modes )
+{
+    for( auto mode : modes )
+    {
+        io_context ioc;
+        auto [m1, m2] = corosio::test::make_mocket_pair( ioc );
+
+        auto [client_ctx, server_ctx] = make_contexts( mode );
+        auto client = make_stream( m1, client_ctx );
+        auto server = make_stream( m2, server_ctx );
+
+        auto do_round = [&]( std::string const& msg ) -> capy::task<>
+        {
+            std::error_code client_ec;
+            std::error_code server_ec;
+
+            auto hs_client = [&]() -> capy::task<>
+            {
+                auto [ec] = co_await client.handshake( tls_stream::client );
+                client_ec = ec;
+            };
+            auto hs_server = [&]() -> capy::task<>
+            {
+                auto [ec] = co_await server.handshake( tls_stream::server );
+                server_ec = ec;
+            };
+
+            capy::run_async( ioc.get_executor() )( hs_client() );
+            capy::run_async( ioc.get_executor() )( hs_server() );
+            ioc.run();
+            ioc.restart();
+
+            BOOST_TEST( !client_ec );
+            BOOST_TEST( !server_ec );
+            if( client_ec || server_ec )
+                co_return;
+
+            auto xfer = [&]() -> capy::task<>
+            {
+                auto [wec, wn] = co_await client.write_some(
+                    capy::const_buffer( msg.data(), msg.size() ) );
+                BOOST_TEST( !wec );
+                if( wec )
+                    co_return;
+
+                std::string buf( msg.size(), '\0' );
+                auto [rec, rn] = co_await server.read_some(
+                    capy::mutable_buffer( buf.data(), buf.size() ) );
+                BOOST_TEST( !rec );
+                if( !rec )
+                    BOOST_TEST( buf.substr( 0, rn ) == msg.substr( 0, rn ) );
+            };
+            capy::run_async( ioc.get_executor() )( xfer() );
+            ioc.run();
+            ioc.restart();
+
+            auto sd_client = [&]() -> capy::task<>
+            {
+                (void) co_await client.shutdown();
+            };
+            auto sd_server = [&]() -> capy::task<>
+            {
+                char drain[32];
+                (void) co_await server.read_some(
+                    capy::mutable_buffer( drain, sizeof( drain ) ) );
+                (void) co_await server.shutdown();
+            };
+
+            capy::run_async( ioc.get_executor() )( sd_client() );
+            capy::run_async( ioc.get_executor() )( sd_server() );
+            ioc.run();
+            ioc.restart();
+
+            co_return;
+        };
+
+        // Round 1
+        auto r1 = [&]() -> capy::task<>
+        {
+            co_await do_round( "round1" );
+        };
+        capy::run_async( ioc.get_executor() )( r1() );
+        ioc.run();
+        ioc.restart();
+
+        // No explicit reset -- handshake() should auto-reset
+
+        // Round 2
+        auto r2 = [&]() -> capy::task<>
+        {
+            co_await do_round( "round2" );
+        };
+        capy::run_async( ioc.get_executor() )( r2() );
+        ioc.run();
+
+        m1.close();
+        m2.close();
+    }
+}
+
+/** Test reset with fuse/max_size variations.
+
+    Stresses chunked I/O across reset boundaries.
+*/
+template<typename StreamFactory>
+void
+testResetFuse( StreamFactory make_stream )
+{
+    for( auto max_size : tls_max_sizes )
+    {
+        if( max_size < 64 )
+            continue;
+
+        capy::test::fuse f;
+        f.armed( [&]( capy::test::fuse& ) -> capy::task<>
+        {
+            io_context ioc;
+            auto [m1, m2] = corosio::test::make_mocket_pair(
+                ioc, f, max_size, max_size );
+
+            auto client_ctx = make_client_context();
+            auto server_ctx = make_server_context();
+
+            auto client = make_stream( m1, client_ctx );
+            auto server = make_stream( m2, server_ctx );
+
+            // Round 1
+            {
+                std::error_code cec, sec;
+                auto hsc = [&]() -> capy::task<>
+                {
+                    auto [ec] = co_await client.handshake( tls_stream::client );
+                    cec = ec;
+                };
+                auto hss = [&]() -> capy::task<>
+                {
+                    auto [ec] = co_await server.handshake( tls_stream::server );
+                    sec = ec;
+                };
+                capy::run_async( ioc.get_executor() )( hsc() );
+                capy::run_async( ioc.get_executor() )( hss() );
+                ioc.run();
+                ioc.restart();
+                BOOST_TEST( !cec );
+                BOOST_TEST( !sec );
+                if( cec || sec )
+                    co_return;
+
+                // Shutdown
+                auto sdc = [&]() -> capy::task<>
+                {
+                    (void) co_await client.shutdown();
+                };
+                auto sds = [&]() -> capy::task<>
+                {
+                    char drain[32];
+                    (void) co_await server.read_some(
+                        capy::mutable_buffer( drain, sizeof( drain ) ) );
+                    (void) co_await server.shutdown();
+                };
+                capy::run_async( ioc.get_executor() )( sdc() );
+                capy::run_async( ioc.get_executor() )( sds() );
+                ioc.run();
+                ioc.restart();
+            }
+
+            // Reset both
+            client.reset();
+            server.reset();
+
+            // Round 2
+            {
+                std::error_code cec, sec;
+                auto hsc = [&]() -> capy::task<>
+                {
+                    auto [ec] = co_await client.handshake( tls_stream::client );
+                    cec = ec;
+                };
+                auto hss = [&]() -> capy::task<>
+                {
+                    auto [ec] = co_await server.handshake( tls_stream::server );
+                    sec = ec;
+                };
+                capy::run_async( ioc.get_executor() )( hsc() );
+                capy::run_async( ioc.get_executor() )( hss() );
+                ioc.run();
+                ioc.restart();
+                BOOST_TEST( !cec );
+                BOOST_TEST( !sec );
+            }
+
+            m1.close();
+            m2.close();
+            co_return;
+        } );
+    }
+}
+
 } // namespace boost::corosio::test
 
 #endif

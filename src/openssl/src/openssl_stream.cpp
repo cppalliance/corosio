@@ -277,6 +277,7 @@ struct openssl_stream::impl
     tls_context ctx_;
     SSL* ssl_ = nullptr;
     BIO* ext_bio_ = nullptr;
+    bool used_ = false;
 
     std::vector<char> in_buf_;
     std::vector<char> out_buf_;
@@ -299,6 +300,31 @@ struct openssl_stream::impl
             BIO_free(ext_bio_);
         if(ssl_)
             SSL_free(ssl_);
+    }
+
+    void
+    reset()
+    {
+        if(!ssl_)
+            return;
+
+        // Preserves SSL* and BIO pair, releases session state
+        SSL_clear(ssl_);
+
+        // Drain stale data from the external BIO
+        char drain[1024];
+        while(BIO_ctrl_pending(ext_bio_) > 0)
+            BIO_read(ext_bio_, drain, sizeof(drain));
+
+        // SSL_clear clears per-session settings; reapply hostname
+        auto& cd = detail::get_tls_context_data(ctx_);
+        if(!cd.hostname.empty())
+        {
+            SSL_set_tlsext_host_name(ssl_, cd.hostname.c_str());
+            SSL_set1_host(ssl_, cd.hostname.c_str());
+        }
+
+        used_ = false;
     }
 
     //--------------------------------------------------------------------------
@@ -499,6 +525,9 @@ struct openssl_stream::impl
     capy::io_task<>
     do_handshake(int type)
     {
+        if(used_)
+            reset();
+
         std::error_code ec;
 
         while(true)
@@ -512,6 +541,7 @@ struct openssl_stream::impl
 
             if(ret == 1)
             {
+                used_ = true;
                 ec = co_await flush_output();
                 co_return {ec};
             }
@@ -733,6 +763,13 @@ openssl_stream::
 shutdown()
 {
     co_return co_await impl_->do_shutdown();
+}
+
+void
+openssl_stream::
+reset()
+{
+    impl_->reset();
 }
 
 std::string_view

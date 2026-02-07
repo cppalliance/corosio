@@ -124,6 +124,32 @@ public:
     virtual capy::io_task<>
     shutdown() = 0;
 
+    /** Reset TLS session state for reuse.
+
+        Releases TLS session state including session keys and peer
+        certificates, returning the stream to a state where
+        `handshake()` can be called again. Internal memory
+        allocations (I/O buffers) are preserved.
+
+        Calling `handshake()` on a previously-used stream
+        implicitly performs a reset first, so explicit calls
+        are only needed to eagerly release session state.
+
+        @par Preconditions
+        No TLS operation (handshake, read, write, shutdown) is
+        in progress.
+
+        @par Thread Safety
+        Not thread safe. The caller must ensure no concurrent
+        operations are in progress on this stream.
+
+        @note If called mid-session before `shutdown()`, pending
+            TLS data is discarded and the peer will observe a
+            truncated stream.
+    */
+    virtual void
+    reset() = 0;
+
     /** Returns a reference to the underlying stream.
 
         Provides access to the type-erased underlying stream for

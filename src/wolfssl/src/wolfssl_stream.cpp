@@ -290,6 +290,7 @@ struct wolfssl_stream::impl
     capy::any_stream& s_;
     tls_context ctx_;
     WOLFSSL* ssl_ = nullptr;
+    bool used_ = false;
 
     // Buffers for read operations
     std::vector<char> read_in_buf_;
@@ -339,6 +340,26 @@ struct wolfssl_stream::impl
         if(ssl_)
             wolfSSL_free(ssl_);
         // WOLFSSL_CTX* is owned by cached native context, not freed here
+    }
+
+    // Releases WOLFSSL object and resets buffer positions.
+    // I/O buffer vectors keep their allocations.
+    void
+    reset()
+    {
+        if(ssl_)
+        {
+            wolfSSL_free(ssl_);
+            ssl_ = nullptr;
+        }
+        read_in_pos_ = 0;
+        read_in_len_ = 0;
+        read_out_len_ = 0;
+        write_in_pos_ = 0;
+        write_in_len_ = 0;
+        write_out_len_ = 0;
+        current_op_ = nullptr;
+        used_ = false;
     }
 
     //--------------------------------------------------------------------------
@@ -637,6 +658,9 @@ struct wolfssl_stream::impl
     capy::io_task<>
     do_handshake(int type)
     {
+        if(used_)
+            reset();
+
         std::error_code ec;
 
         // Initialize SSL object for the specified role (deferred from construction)
@@ -667,6 +691,7 @@ struct wolfssl_stream::impl
             if(ret == WOLFSSL_SUCCESS)
             {
                 // Handshake completed successfully
+                used_ = true;
                 // Flush any remaining output
                 if(read_out_len_ > 0)
                 {
@@ -966,6 +991,13 @@ wolfssl_stream::
 shutdown()
 {
     co_return co_await impl_->do_shutdown();
+}
+
+void
+wolfssl_stream::
+reset()
+{
+    impl_->reset();
 }
 
 std::string_view
