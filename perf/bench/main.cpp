@@ -56,6 +56,9 @@ void print_usage( char const* program_name )
     std::cout << "  socket_throughput   Socket throughput tests\n";
     std::cout << "  socket_latency      Socket latency tests\n";
     std::cout << "  http_server         HTTP server benchmarks\n";
+    std::cout << "  timer               Timer schedule/cancel/fire benchmarks\n";
+    std::cout << "  accept_churn        Accept churn (connect/accept/close) benchmarks\n";
+    std::cout << "  fan_out             Fan-out/fan-in coordination benchmarks\n";
     std::cout << "  all                 Run all categories (default)\n";
     std::cout << "\n";
     std::cout << "Individual benchmarks (--bench):\n";
@@ -63,6 +66,9 @@ void print_usage( char const* program_name )
     std::cout << "  socket_throughput:  unidirectional, bidirectional\n";
     std::cout << "  socket_latency:     pingpong, concurrent\n";
     std::cout << "  http_server:        single_conn, concurrent, multithread\n";
+    std::cout << "  timer:              schedule_cancel, fire_rate, concurrent\n";
+    std::cout << "  accept_churn:       sequential, concurrent, burst\n";
+    std::cout << "  fan_out:            fork_join, nested, concurrent_parents\n";
     std::cout << "\n";
     perf::print_available_backends();
 }
@@ -293,6 +299,60 @@ int main( int argc, char* argv[] )
                         asio_bench::run_http_server_benchmarks( collector, b, duration_s );
                     if( want_asio_callback )
                         asio_callback_bench::run_http_server_benchmarks( collector, b, duration_s );
+#endif
+                }
+            }
+
+            if( run_all_cats || std::strcmp( category_filter, "timer" ) == 0 )
+            {
+                char const* benches[] = { "schedule_cancel", "fire_rate", "concurrent" };
+                for( auto* b : benches )
+                {
+                    if( !want_bench( b ) )
+                        continue;
+                    if( want_corosio )
+                        corosio_bench::run_timer_benchmarks( factory, collector, b, duration_s );
+#ifdef BOOST_COROSIO_BENCH_HAS_ASIO
+                    if( want_asio )
+                        asio_bench::run_timer_benchmarks( collector, b, duration_s );
+                    if( want_asio_callback )
+                        asio_callback_bench::run_timer_benchmarks( collector, b, duration_s );
+#endif
+                }
+            }
+
+            if( run_all_cats || std::strcmp( category_filter, "accept_churn" ) == 0 )
+            {
+                char const* benches[] = { "sequential", "concurrent", "burst" };
+                for( auto* b : benches )
+                {
+                    if( !want_bench( b ) )
+                        continue;
+                    if( want_corosio )
+                        corosio_bench::run_accept_churn_benchmarks( factory, collector, b, duration_s );
+#ifdef BOOST_COROSIO_BENCH_HAS_ASIO
+                    if( want_asio )
+                        asio_bench::run_accept_churn_benchmarks( collector, b, duration_s );
+                    if( want_asio_callback )
+                        asio_callback_bench::run_accept_churn_benchmarks( collector, b, duration_s );
+#endif
+                }
+            }
+
+            if( run_all_cats || std::strcmp( category_filter, "fan_out" ) == 0 )
+            {
+                char const* benches[] = { "fork_join", "nested", "concurrent_parents" };
+                for( auto* b : benches )
+                {
+                    if( !want_bench( b ) )
+                        continue;
+                    if( want_corosio )
+                        corosio_bench::run_fan_out_benchmarks( factory, collector, b, duration_s );
+#ifdef BOOST_COROSIO_BENCH_HAS_ASIO
+                    if( want_asio )
+                        asio_bench::run_fan_out_benchmarks( collector, b, duration_s );
+                    if( want_asio_callback )
+                        asio_callback_bench::run_fan_out_benchmarks( collector, b, duration_s );
 #endif
                 }
             }
