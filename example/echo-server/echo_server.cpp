@@ -53,7 +53,7 @@ public:
             auto [ec, n] = co_await sock_.read_some(
                 capy::mutable_buffer(buf_.data(), buf_.size()));
 
-            if (ec || n == 0)
+            if (ec)
                 break;
 
             buf_.resize(n);
