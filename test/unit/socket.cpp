@@ -490,6 +490,8 @@ struct socket_test_impl
                         recv_data.data() + total_recv,
                         size - total_recv));
                 BOOST_TEST(!ec);
+                if(ec)
+                    break;
                 total_recv += n;
             }
 
@@ -525,11 +527,11 @@ struct socket_test_impl
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(std::string_view(buf, n1), "final");
 
-            // Next read should get EOF (0 bytes or error)
+            // Next read should get EOF
             auto [ec2, n2] = co_await b.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            // EOF indicated by error or zero bytes
-            BOOST_TEST(ec2 || n2 == 0);
+            BOOST_TEST(ec2 == capy::cond::eof);
+            BOOST_TEST_EQ(n2, 0u);
         };
         capy::run_async(ioc.get_executor())(task(s1, s2));
 
