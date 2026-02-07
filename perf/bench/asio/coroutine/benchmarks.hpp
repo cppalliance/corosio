@@ -62,6 +62,42 @@ void run_http_server_benchmarks(
     char const* filter,
     double duration_s );
 
+/** Run timer benchmarks.
+
+    @param collector Results collector.
+    @param filter Optional filter: nullptr or "all" runs all, or a specific
+           benchmark name (schedule_cancel, fire_rate, concurrent).
+    @param duration_s Duration in seconds for each benchmark.
+*/
+void run_timer_benchmarks(
+    bench::result_collector& collector,
+    char const* filter,
+    double duration_s );
+
+/** Run accept churn benchmarks.
+
+    @param collector Results collector.
+    @param filter Optional filter: nullptr or "all" runs all, or a specific
+           benchmark name (sequential, concurrent, burst).
+    @param duration_s Duration in seconds for each benchmark.
+*/
+void run_accept_churn_benchmarks(
+    bench::result_collector& collector,
+    char const* filter,
+    double duration_s );
+
+/** Run fan-out/fan-in benchmarks.
+
+    @param collector Results collector.
+    @param filter Optional filter: nullptr or "all" runs all, or a specific
+           benchmark name (fork_join, nested, concurrent_parents).
+    @param duration_s Duration in seconds for each benchmark.
+*/
+void run_fan_out_benchmarks(
+    bench::result_collector& collector,
+    char const* filter,
+    double duration_s );
+
 } // namespace asio_bench
 
 #endif
