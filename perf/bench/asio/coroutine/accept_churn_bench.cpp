@@ -58,6 +58,8 @@ bench::benchmark_result bench_sequential_churn( double duration_s )
 
                 auto client = std::make_unique<tcp::socket>( ioc );
                 auto server = std::make_unique<tcp::socket>( ioc );
+                client->open( tcp::v4() );
+                client->set_option( asio::socket_base::linger( true, 0 ) );
 
                 // Spawn connect, await accept
                 asio::co_spawn( ioc,
@@ -98,6 +100,7 @@ bench::benchmark_result bench_sequential_churn( double duration_s )
         std::this_thread::sleep_for(
             std::chrono::duration<double>( duration_s ) );
         running.store( false, std::memory_order_relaxed );
+        ioc.stop();
     } );
 
     ioc.run();
@@ -157,6 +160,8 @@ bench::benchmark_result bench_concurrent_churn( int num_loops, double duration_s
 
                 auto client = std::make_unique<tcp::socket>( ioc );
                 auto server = std::make_unique<tcp::socket>( ioc );
+                client->open( tcp::v4() );
+                client->set_option( asio::socket_base::linger( true, 0 ) );
 
                 asio::co_spawn( ioc,
                     [&client, ep]() -> asio::awaitable<void>
@@ -195,6 +200,7 @@ bench::benchmark_result bench_concurrent_churn( int num_loops, double duration_s
         std::this_thread::sleep_for(
             std::chrono::duration<double>( duration_s ) );
         running.store( false, std::memory_order_relaxed );
+        ioc.stop();
     } );
 
     ioc.run();
@@ -269,6 +275,9 @@ bench::benchmark_result bench_burst_churn( int burst_size, double duration_s )
                 for( int i = 0; i < burst_size; ++i )
                 {
                     clients.push_back( std::make_unique<tcp::socket>( ioc ) );
+                    clients.back()->open( tcp::v4() );
+                    clients.back()->set_option(
+                        asio::socket_base::linger( true, 0 ) );
                     asio::co_spawn( ioc,
                         [&c = *clients.back(), ep]() -> asio::awaitable<void>
                         {
@@ -305,6 +314,7 @@ bench::benchmark_result bench_burst_churn( int burst_size, double duration_s )
         std::this_thread::sleep_for(
             std::chrono::duration<double>( duration_s ) );
         running.store( false, std::memory_order_relaxed );
+        ioc.stop();
     } );
 
     ioc.run();
