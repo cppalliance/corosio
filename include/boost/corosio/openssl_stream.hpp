@@ -124,6 +124,9 @@ public:
     capy::io_task<>
     shutdown() override;
 
+    void
+    reset() override;
+
     capy::any_stream&
     next_layer() noexcept override
     {

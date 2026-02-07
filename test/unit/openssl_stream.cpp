@@ -102,6 +102,10 @@ struct openssl_stream_test
         test::testSniCallback( make_stream );
         test::testMtls( make_stream );
 
+        test::testReset( make_stream, cert_modes );
+        test::testResetViaHandshake( make_stream, cert_modes );
+        test::testResetFuse( make_stream );
+
         testCertificateChain();
         testName();
     }
