@@ -170,8 +170,11 @@ accept(
 
     sockaddr_in addr{};
     socklen_t addrlen = sizeof(addr);
-    int accepted = ::accept4(fd_, reinterpret_cast<sockaddr*>(&addr),
+    int accepted;
+    do {
+        accepted = ::accept4(fd_, reinterpret_cast<sockaddr*>(&addr),
                              &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
+    } while (accepted < 0 && errno == EINTR);
 
     if (accepted >= 0)
     {
