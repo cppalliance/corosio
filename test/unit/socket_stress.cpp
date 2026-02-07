@@ -40,11 +40,6 @@
 #include <cstring>
 #include <vector>
 
-#if BOOST_COROSIO_POSIX
-#include <unistd.h>
-#else
-#include <process.h>
-#endif
 
 #include "test_suite.hpp"
 
@@ -63,26 +58,9 @@ get_stress_duration()
     return default_stress_seconds;
 }
 
-std::atomic<std::uint16_t> stress_port_counter{0};
-
-std::uint16_t
-get_stress_port() noexcept
-{
-    constexpr std::uint16_t port_base = 50000;
-    constexpr std::uint16_t port_range = 15000;
-
-#if BOOST_COROSIO_POSIX
-    auto pid = static_cast<std::uint32_t>(getpid());
-#else
-    auto pid = static_cast<std::uint32_t>(_getpid());
-#endif
-    auto pid_offset = static_cast<std::uint16_t>((pid * 7919) % port_range);
-    auto offset = stress_port_counter.fetch_add(1, std::memory_order_relaxed);
-    return static_cast<std::uint16_t>(port_base + ((pid_offset + offset) % port_range));
-}
-
 // Create a connected tcp_socket pair for stress testing.
-// Must be called BEFORE context::run().
+// Uses ephemeral port (0) so the OS assigns an available port,
+// avoiding TIME_WAIT collisions on back-to-back runs.
 template<class Context>
 std::pair<tcp_socket, tcp_socket>
 make_stress_pair(Context& ctx)
@@ -94,22 +72,10 @@ make_stress_pair(Context& ctx)
     bool accept_done = false;
     bool connect_done = false;
 
-    std::uint16_t port = 0;
     tcp_acceptor acc(ctx);
-    bool listening = false;
-    for (int attempt = 0; attempt < 50; ++attempt)
-    {
-        port = get_stress_port();
-        if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
-        {
-            listening = true;
-            break;
-        }
-        acc.close();
-        acc = tcp_acceptor(ctx);
-    }
-    if (!listening)
-        throw std::runtime_error("stress_pair: failed to find available port");
+    if (auto ec = acc.listen(endpoint(ipv4_address::loopback(), 0)))
+        throw std::runtime_error("stress_pair listen failed: " + ec.message());
+    auto port = acc.local_endpoint().port();
 
     tcp_socket s1(ctx);
     tcp_socket s2(ctx);
@@ -652,26 +618,13 @@ struct accept_stress_test_impl
         std::atomic<std::size_t> connections{0};
         std::atomic<bool> stop_flag{false};
 
-        // Find available port
-        std::uint16_t port = 0;
         tcp_acceptor acc(ioc);
-        bool listening = false;
-        for (int attempt = 0; attempt < 50; ++attempt)
+        if (auto ec = acc.listen(endpoint(ipv4_address::loopback(), 0)))
         {
-            port = get_stress_port();
-            if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
-            {
-                listening = true;
-                break;
-            }
-            acc.close();
-            acc = tcp_acceptor(ioc);
-        }
-        if (!listening)
-        {
-            BOOST_ERROR("accept_stress: failed to find available port");
+            BOOST_ERROR("accept_stress: listen failed");
             return;
         }
+        auto port = acc.local_endpoint().port();
 
         // Acceptor task
         auto acceptor_task = [&]() -> capy::task<>
