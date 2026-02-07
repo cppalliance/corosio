@@ -66,6 +66,7 @@ bench::benchmark_result bench_sequential_churn(
             corosio::tcp_socket client( *ioc );
             corosio::tcp_socket server( *ioc );
             client.open();
+            client.set_linger( true, 0 );
 
             // Spawn connect, await accept
             capy::run_async( ioc->get_executor() )(
@@ -175,6 +176,7 @@ bench::benchmark_result bench_concurrent_churn(
             corosio::tcp_socket client( *ioc );
             corosio::tcp_socket server( *ioc );
             client.open();
+            client.set_linger( true, 0 );
 
             capy::run_async( ioc->get_executor() )(
                 [&]() -> capy::task<>
@@ -298,6 +300,7 @@ bench::benchmark_result bench_burst_churn(
             {
                 clients.emplace_back( *ioc );
                 clients.back().open();
+                clients.back().set_linger( true, 0 );
                 capy::run_async( ioc->get_executor() )(
                     [&c = clients.back(), ep]() -> capy::task<>
                     {
