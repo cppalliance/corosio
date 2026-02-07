@@ -312,7 +312,11 @@ struct epoll_read_op : epoll_op
 
     void perform_io() noexcept override
     {
-        ssize_t n = ::readv(fd, iovecs, iovec_count);
+        ssize_t n;
+        do {
+            n = ::readv(fd, iovecs, iovec_count);
+        } while (n < 0 && errno == EINTR);
+
         if (n >= 0)
             complete(0, static_cast<std::size_t>(n));
         else
@@ -341,7 +345,11 @@ struct epoll_write_op : epoll_op
         msg.msg_iov = iovecs;
         msg.msg_iovlen = static_cast<std::size_t>(iovec_count);
 
-        ssize_t n = ::sendmsg(fd, &msg, MSG_NOSIGNAL);
+        ssize_t n;
+        do {
+            n = ::sendmsg(fd, &msg, MSG_NOSIGNAL);
+        } while (n < 0 && errno == EINTR);
+
         if (n >= 0)
             complete(0, static_cast<std::size_t>(n));
         else
@@ -370,8 +378,11 @@ struct epoll_accept_op : epoll_op
     {
         sockaddr_in addr{};
         socklen_t addrlen = sizeof(addr);
-        int new_fd = ::accept4(fd, reinterpret_cast<sockaddr*>(&addr),
+        int new_fd;
+        do {
+            new_fd = ::accept4(fd, reinterpret_cast<sockaddr*>(&addr),
                                &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
+        } while (new_fd < 0 && errno == EINTR);
 
         if (new_fd >= 0)
         {

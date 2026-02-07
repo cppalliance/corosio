@@ -230,7 +230,10 @@ do_read_io()
 {
     auto& op = rd_;
 
-    ssize_t n = ::readv(fd_, op.iovecs, op.iovec_count);
+    ssize_t n;
+    do {
+        n = ::readv(fd_, op.iovecs, op.iovec_count);
+    } while (n < 0 && errno == EINTR);
 
     if (n > 0)
     {
@@ -320,7 +323,10 @@ do_write_io()
     msg.msg_iov = op.iovecs;
     msg.msg_iovlen = static_cast<std::size_t>(op.iovec_count);
 
-    ssize_t n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
+    ssize_t n;
+    do {
+        n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
+    } while (n < 0 && errno == EINTR);
 
     if (n > 0)
     {
