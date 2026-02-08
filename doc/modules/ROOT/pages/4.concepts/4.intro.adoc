@@ -1,0 +1,12 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Concepts and Design
+
+This section examines the foundational ideas behind Corosio's architecture. Every library makes design choices—some obvious, some subtle—and understanding them helps you write better code. You will find explanations of the core protocols and abstractions that give Corosio its character: how coroutines maintain thread affinity without locks, why certain trade-offs were chosen, and what constraints shaped the API. Whether you are evaluating Corosio for a project or extending it with custom components, the material here provides the reasoning behind what you see in the rest of the documentation.

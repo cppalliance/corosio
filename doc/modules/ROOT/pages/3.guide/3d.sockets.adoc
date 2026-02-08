@@ -174,7 +174,7 @@ auto [ec, n] = co_await corosio::read(s, buf);
 // n == buffer_size(buf) or error occurred
 ----
 
-See xref:composed-operations.adoc[Composed Operations] for details.
+See xref:3g.composed-operations.adoc[Composed Operations] for details.
 
 == Writing Data
 
@@ -296,7 +296,7 @@ std::array<capy::mutable_buffer, 2> bufs = {
 co_await s.read_some(bufs);
 ----
 
-See xref:buffers.adoc[Buffer Sequences] for details.
+See xref:3n.buffers.adoc[Buffer Sequences] for details.
 
 == Thread Safety
 
@@ -342,7 +342,7 @@ capy::task<void> echo_client(corosio::io_context& ioc)
 
 == Next Steps
 
-* xref:tcp_acceptor.adoc[Acceptors] — Accept incoming connections
-* xref:endpoints.adoc[Endpoints] — IP addresses and ports
-* xref:composed-operations.adoc[Composed Operations] — read() and write()
-* xref:../tutorials/echo-server.adoc[Echo Server Tutorial] — Server example
+* xref:3e.tcp-acceptor.adoc[Acceptors] — Accept incoming connections
+* xref:3f.endpoints.adoc[Endpoints] — IP addresses and ports
+* xref:3g.composed-operations.adoc[Composed Operations] — read() and write()
+* xref:../2.tutorials/2a.echo-server.adoc[Echo Server Tutorial] — Server example
