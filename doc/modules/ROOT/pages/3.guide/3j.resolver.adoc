@@ -1,0 +1,364 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Name Resolution
+
+The `resolver` class performs asynchronous DNS lookups, converting hostnames
+to IP addresses. It wraps the system's `getaddrinfo()` function with an
+asynchronous interface.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/resolver.hpp>
+namespace corosio = boost::corosio;
+----
+
+== Overview
+
+[source,cpp]
+----
+corosio::resolver r(ioc);
+auto [ec, results] = co_await r.resolve("www.example.com", "https");
+
+for (auto const& entry : results)
+{
+    auto ep = entry.get_endpoint();
+    std::cout << ep.v4_address().to_string() << ":" << ep.port() << "\n";
+}
+----
+
+== Construction
+
+[source,cpp]
+----
+corosio::io_context ioc;
+corosio::resolver r(ioc);  // From execution context
+----
+
+== Resolving Names
+
+=== Basic Resolution
+
+[source,cpp]
+----
+auto [ec, results] = co_await r.resolve("www.example.com", "80");
+----
+
+The host can be:
+
+* A hostname: `"www.example.com"`
+* An IPv4 address string: `"192.168.1.1"`
+* An IPv6 address string: `"::1"` or `"2001:db8::1"`
+
+The service can be:
+
+* A service name: `"http"`, `"https"`, `"ssh"`
+* A port number string: `"80"`, `"443"`, `"22"`
+* An empty string: `""` (returns port 0)
+
+=== With Flags
+
+[source,cpp]
+----
+auto [ec, results] = co_await r.resolve(
+    "www.example.com",
+    "https",
+    corosio::resolve_flags::address_configured);
+----
+
+== Resolve Flags
+
+[cols="1,3"]
+|===
+| Flag | Description
+
+| `none`
+| No special behavior (default)
+
+| `passive`
+| Return addresses suitable for `bind()` (server use)
+
+| `numeric_host`
+| Host is a numeric address string, don't perform DNS lookup
+
+| `numeric_service`
+| Service is a port number string, don't look up service name
+
+| `address_configured`
+| Only return IPv4 if the system has IPv4 configured, same for IPv6
+
+| `v4_mapped`
+| If no IPv6 addresses found, return IPv4-mapped IPv6 addresses
+
+| `all_matching`
+| With `v4_mapped`, return all matching IPv4 and IPv6 addresses
+|===
+
+Flags can be combined:
+
+[source,cpp]
+----
+auto flags =
+    corosio::resolve_flags::numeric_host |
+    corosio::resolve_flags::numeric_service;
+
+auto [ec, results] = co_await r.resolve("127.0.0.1", "8080", flags);
+----
+
+== Working with Results
+
+The `resolver_results` class is a range of `resolver_entry` objects:
+
+[source,cpp]
+----
+for (auto const& entry : results)
+{
+    corosio::endpoint ep = entry.get_endpoint();
+
+    if (ep.is_v4())
+        std::cout << "IPv4: " << ep.v4_address().to_string();
+    else
+        std::cout << "IPv6: " << ep.v6_address().to_string();
+
+    std::cout << ":" << ep.port() << "\n";
+}
+----
+
+=== resolver_results Interface
+
+[source,cpp]
+----
+class resolver_results
+{
+public:
+    using iterator = /* ... */;
+    using const_iterator = /* ... */;
+
+    std::size_t size() const;
+    bool empty() const;
+
+    const_iterator begin() const;
+    const_iterator end() const;
+};
+----
+
+=== resolver_entry Interface
+
+[source,cpp]
+----
+class resolver_entry
+{
+public:
+    corosio::endpoint get_endpoint() const;
+
+    // Implicit conversion to endpoint
+    operator corosio::endpoint() const;
+
+    // Query strings used in the resolution
+    std::string const& host_name() const;
+    std::string const& service_name() const;
+};
+----
+
+== Connecting to Resolved Addresses
+
+Try each address until one works:
+
+[source,cpp]
+----
+capy::task<void> connect_to_service(
+    corosio::io_context& ioc,
+    std::string_view host,
+    std::string_view service)
+{
+    corosio::resolver r(ioc);
+    auto [resolve_ec, results] = co_await r.resolve(host, service);
+
+    if (resolve_ec)
+        throw boost::system::system_error(resolve_ec);
+
+    if (results.empty())
+        throw std::runtime_error("No addresses found");
+
+    corosio::tcp_socket sock(ioc);
+    sock.open();
+
+    boost::system::error_code last_error;
+    for (auto const& entry : results)
+    {
+        auto [ec] = co_await sock.connect(entry.get_endpoint());
+        if (!ec)
+            co_return;  // Connected successfully
+
+        last_error = ec;
+        sock.close();
+        sock.open();
+    }
+
+    throw boost::system::system_error(last_error);
+}
+----
+
+== Cancellation
+
+=== cancel()
+
+Cancel pending resolution:
+
+[source,cpp]
+----
+r.cancel();
+----
+
+The resolution completes with `operation_canceled`.
+
+=== Stop Token Cancellation
+
+Resolver operations support stop token cancellation through the affine
+protocol.
+
+== Error Handling
+
+Common resolution errors:
+
+[cols="1,2"]
+|===
+| Error | Meaning
+
+| `host_not_found`
+| Hostname doesn't exist
+
+| `no_data`
+| Hostname exists but has no addresses
+
+| `service_not_found`
+| Unknown service name
+
+| `operation_canceled`
+| Resolution was cancelled
+|===
+
+== Move Semantics
+
+Resolvers are move-only:
+
+[source,cpp]
+----
+corosio::resolver r1(ioc);
+corosio::resolver r2 = std::move(r1);  // OK
+
+corosio::resolver r3 = r2;  // Error: deleted copy constructor
+----
+
+IMPORTANT: Source and destination must share the same execution context.
+
+== Thread Safety
+
+[cols="1,2"]
+|===
+| Operation | Thread Safety
+
+| Distinct resolvers
+| Safe from different threads
+
+| Same resolver
+| NOT safe for concurrent operations
+|===
+
+=== Single-Inflight Constraint
+
+Each resolver can only have ONE resolve operation in progress at a time.
+Starting a second resolve() while the first is still pending results in
+undefined behavior.
+
+[source,cpp]
+----
+// CORRECT: Sequential resolves on same resolver
+auto [ec1, r1] = co_await resolver.resolve("host1", "80");
+auto [ec2, r2] = co_await resolver.resolve("host2", "80");
+
+// CORRECT: Parallel resolves with separate resolver instances
+corosio::resolver r1(ioc), r2(ioc);
+// In separate coroutines:
+auto [ec1, res1] = co_await r1.resolve("host1", "80");
+auto [ec2, res2] = co_await r2.resolve("host2", "80");
+
+// WRONG: Concurrent resolves on same resolver - UNDEFINED BEHAVIOR
+auto f1 = resolver.resolve("host1", "80");
+auto f2 = resolver.resolve("host2", "80");  // BAD: overlaps with f1
+----
+
+If you need to resolve multiple hostnames concurrently, create a separate
+resolver instance for each.
+
+== Example: HTTP Client with Resolution
+
+[source,cpp]
+----
+capy::task<void> http_get(
+    corosio::io_context& ioc,
+    std::string_view hostname)
+{
+    // Resolve hostname
+    corosio::resolver r(ioc);
+    auto [resolve_ec, results] = co_await r.resolve(hostname, "80");
+
+    if (resolve_ec)
+    {
+        std::cerr << "Resolution failed: " << resolve_ec.message() << "\n";
+        co_return;
+    }
+
+    // Connect to first address
+    corosio::tcp_socket sock(ioc);
+    sock.open();
+
+    for (auto const& entry : results)
+    {
+        auto [ec] = co_await sock.connect(entry);
+        if (!ec)
+            break;
+    }
+
+    if (!sock.is_open())
+    {
+        std::cerr << "Failed to connect\n";
+        co_return;
+    }
+
+    // Send HTTP request
+    std::string request =
+        "GET / HTTP/1.1\r\n"
+        "Host: " + std::string(hostname) + "\r\n"
+        "Connection: close\r\n"
+        "\r\n";
+
+    (co_await corosio::write(
+        sock, capy::const_buffer(request.data(), request.size()))).value();
+
+    // Read response
+    std::string response;
+    co_await corosio::read(sock, response);
+
+    std::cout << response << "\n";
+}
+----
+
+== Platform Notes
+
+The resolver uses the system's `getaddrinfo()` function. On most platforms,
+this is a blocking call executed on a thread pool to avoid blocking the
+I/O context.
+
+== Next Steps
+
+* xref:3f.endpoints.adoc[Endpoints] — Working with resolved addresses
+* xref:3d.sockets.adoc[Sockets] — Connecting to endpoints
+* xref:../2.tutorials/2c.dns-lookup.adoc[DNS Lookup Tutorial] — Complete example

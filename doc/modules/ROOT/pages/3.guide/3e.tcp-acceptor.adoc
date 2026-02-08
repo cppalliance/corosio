@@ -313,7 +313,7 @@ capy::task<void> run_server(corosio::io_context& ioc)
 
 == Relationship to tcp_server
 
-For production servers, consider using xref:tcp-server.adoc[tcp_server] which
+For production servers, consider using xref:3k.tcp-server.adoc[tcp_server] which
 provides:
 
 * Worker pool management
@@ -326,6 +326,6 @@ upon.
 
 == Next Steps
 
-* xref:sockets.adoc[Sockets] — Using accepted connections
-* xref:tcp-server.adoc[TCP Server] — Higher-level server framework
-* xref:../tutorials/echo-server.adoc[Echo Server Tutorial] — Complete example
+* xref:3d.sockets.adoc[Sockets] — Using accepted connections
+* xref:3k.tcp-server.adoc[TCP Server] — Higher-level server framework
+* xref:../2.tutorials/2a.echo-server.adoc[Echo Server Tutorial] — Complete example

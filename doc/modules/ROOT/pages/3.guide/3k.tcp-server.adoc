@@ -1,0 +1,391 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= TCP Server
+
+The `tcp_server` class provides a framework for building TCP servers with
+connection pooling. It manages acceptors, worker pools, and connection
+lifecycle automatically.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/tcp_server.hpp>
+#include <boost/corosio/io_context.hpp>
+#include <boost/capy/task.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+
+== Overview
+
+`tcp_server` is a base class designed for inheritance. You derive from it,
+define your worker type, and implement the connection handling logic. The
+framework handles:
+
+* Listening on multiple ports
+* Accepting connections
+* Worker pool management
+* Coroutine lifecycle
+
+[source,cpp]
+----
+class echo_server : public corosio::tcp_server
+{
+    struct worker : worker_base
+    {
+        corosio::io_context& ctx_;
+        corosio::tcp_socket sock_;
+        std::string buf;
+
+        explicit worker(corosio::io_context& ctx)
+            : ctx_(ctx)
+            , sock_(ctx)
+        {
+            buf.reserve(4096);
+        }
+
+        corosio::tcp_socket& socket() override { return sock_; }
+
+        void run(launcher launch) override
+        {
+            launch(ctx_.get_executor(), do_echo());
+        }
+
+        capy::task<void> do_echo();
+    };
+
+public:
+    echo_server(corosio::io_context& ioc)
+        : tcp_server(ioc, ioc.get_executor())
+    {
+        wv_.reserve(100);
+        for (int i = 0; i < 100; ++i)
+            wv_.emplace<worker>(ioc);
+    }
+};
+----
+
+== The Worker Pattern
+
+Workers are preallocated objects that handle connections. Each worker contains
+a socket and any state needed for a session.
+
+=== worker_base
+
+The `worker_base` class is the foundation:
+
+[source,cpp]
+----
+class worker_base
+{
+public:
+    virtual ~worker_base() = default;
+    virtual void run(launcher launch) = 0;
+    virtual corosio::tcp_socket& socket() = 0;
+};
+----
+
+Your worker inherits from `worker_base`, owns its socket, and implements the
+required methods:
+
+[source,cpp]
+----
+struct my_worker : tcp_server::worker_base
+{
+    corosio::io_context& ctx_;
+    corosio::tcp_socket sock_;
+    std::string request_buf;
+    std::string response_buf;
+
+    explicit my_worker(corosio::io_context& ctx)
+        : ctx_(ctx)
+        , sock_(ctx)
+    {}
+
+    corosio::tcp_socket& socket() override { return sock_; }
+
+    void run(launcher launch) override
+    {
+        launch(ctx_.get_executor(), handle_connection());
+    }
+
+    capy::task<void> handle_connection()
+    {
+        // Handle the connection using sock_
+        // Worker is automatically returned to pool when coroutine ends
+    }
+};
+----
+
+=== The workers Container
+
+The `workers` class manages the worker pool:
+
+[source,cpp]
+----
+class workers
+{
+public:
+    template<class T, class... Args>
+    T& emplace(Args&&... args);
+
+    void reserve(std::size_t n);
+    std::size_t size() const noexcept;
+};
+----
+
+Use `emplace()` to add workers during construction:
+
+[source,cpp]
+----
+my_server(corosio::io_context& ioc)
+    : tcp_server(ioc, ioc.get_executor())
+{
+    wv_.reserve(max_workers);
+    for (int i = 0; i < max_workers; ++i)
+        wv_.emplace<my_worker>(ioc);
+}
+----
+
+Workers are stored polymorphically, allowing different worker types if needed.
+
+== The Launcher
+
+When a connection is accepted, `tcp_server` calls your worker's `run()`
+method with a `launcher` object. The launcher manages the coroutine lifecycle:
+
+[source,cpp]
+----
+void run(launcher launch) override
+{
+    // Create and launch the session coroutine
+    launch(executor, my_coroutine());
+}
+----
+
+The launcher:
+
+1. Starts your coroutine on the specified executor
+2. Tracks the worker as in-use
+3. Returns the worker to the pool when the coroutine completes
+
+You must call the launcher exactly once. Failure to call it returns the
+worker immediately. Calling it multiple times throws `std::logic_error`.
+
+=== Launcher Signature
+
+[source,cpp]
+----
+template<class Executor>
+void operator()(Executor const& ex, capy::task<void> task);
+----
+
+The executor determines where the coroutine runs. Typically you use the
+I/O context's executor:
+
+[source,cpp]
+----
+launch(ctx_.get_executor(), handle_connection());
+----
+
+== Binding and Starting
+
+=== bind()
+
+Bind to a local endpoint:
+
+[source,cpp]
+----
+auto ec = server.bind(corosio::endpoint(8080));
+if (ec)
+    std::cerr << "Bind failed: " << ec.message() << "\n";
+----
+
+You can bind to multiple ports:
+
+[source,cpp]
+----
+server.bind(corosio::endpoint(80));
+server.bind(corosio::endpoint(443));
+----
+
+=== start()
+
+Begin accepting connections:
+
+[source,cpp]
+----
+server.start();
+----
+
+After `start()`, the server:
+
+1. Listens on all bound ports
+2. Accepts incoming connections
+3. Assigns connections to available workers
+4. Calls each worker's `run()` method
+
+The accept loop runs until the `io_context` stops.
+
+== Complete Example
+
+[source,cpp]
+----
+#include <boost/corosio/tcp_server.hpp>
+#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/write.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/buffers.hpp>
+#include <iostream>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+
+class echo_server : public corosio::tcp_server
+{
+    struct worker : worker_base
+    {
+        corosio::io_context& ctx_;
+        corosio::tcp_socket sock_;
+        std::string buf;
+
+        explicit worker(corosio::io_context& ctx)
+            : ctx_(ctx)
+            , sock_(ctx)
+        {
+            buf.reserve(4096);
+        }
+
+        corosio::tcp_socket& socket() override { return sock_; }
+
+        void run(launcher launch) override
+        {
+            launch(ctx_.get_executor(), do_session());
+        }
+
+        capy::task<void> do_session()
+        {
+            for (;;)
+            {
+                buf.resize(4096);
+                auto [ec, n] = co_await sock_.read_some(
+                    capy::mutable_buffer(buf.data(), buf.size()));
+
+                if (ec || n == 0)
+                    break;
+
+                buf.resize(n);
+                auto [wec, wn] = co_await corosio::write(
+                    sock_, capy::const_buffer(buf.data(), buf.size()));
+
+                if (wec)
+                    break;
+            }
+
+            sock_.close();
+        }
+    };
+
+public:
+    echo_server(corosio::io_context& ctx, int max_workers)
+        : tcp_server(ctx, ctx.get_executor())
+    {
+        wv_.reserve(max_workers);
+        for (int i = 0; i < max_workers; ++i)
+            wv_.emplace<worker>(ctx);
+    }
+};
+
+int main()
+{
+    corosio::io_context ioc;
+
+    echo_server server(ioc, 100);
+
+    auto ec = server.bind(corosio::endpoint(8080));
+    if (ec)
+    {
+        std::cerr << "Bind failed: " << ec.message() << "\n";
+        return 1;
+    }
+
+    std::cout << "Echo server listening on port 8080\n";
+
+    server.start();
+    ioc.run();
+}
+----
+
+== Design Considerations
+
+=== Why a Worker Pool?
+
+A worker pool provides:
+
+* **Bounded resources**: Fixed maximum connections
+* **No per-connection allocation**: Sockets and buffers preallocated
+* **Simple lifecycle**: Workers cycle between idle and active states
+
+=== Worker Reuse
+
+When a session coroutine completes, its worker automatically returns to the
+idle pool. The next accepted connection receives this worker. Ensure your
+worker's state is properly reset between connections:
+
+[source,cpp]
+----
+capy::task<void> do_session()
+{
+    // Reset state at session start
+    request_.clear();
+    response_.clear();
+
+    // ... handle connection ...
+
+    // Socket closed, worker returns to pool
+}
+----
+
+=== Multiple Ports
+
+`tcp_server` can listen on multiple ports simultaneously. All ports share
+the same worker pool:
+
+[source,cpp]
+----
+server.bind(corosio::endpoint(80));    // HTTP
+server.bind(corosio::endpoint(443));   // HTTPS
+server.start();
+----
+
+=== Connection Rejection
+
+When all workers are busy, the server cannot accept new connections until
+a worker becomes available. The TCP listen backlog holds pending connections
+during this time.
+
+For high-traffic scenarios, size your worker pool appropriately or implement
+connection limits at a higher layer.
+
+== Thread Safety
+
+The `tcp_server` class is not thread-safe. All operations on the server
+must occur from coroutines running on its `io_context`. Workers may not be
+accessed concurrently.
+
+For multi-threaded operation, create one server per thread, or use external
+synchronization.
+
+== Next Steps
+
+* xref:3d.sockets.adoc[Sockets] — Socket operations
+* xref:3b.concurrent-programming.adoc[Concurrent Programming] — Coroutine patterns
+* xref:../2.tutorials/2a.echo-server.adoc[Echo Server Tutorial] — Simpler approach
