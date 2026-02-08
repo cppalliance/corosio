@@ -246,7 +246,7 @@ private:
     // True while a thread is blocked in epoll_wait. Used by
     // wake_one_thread_and_unlock and work_finished to know when
     // an eventfd interrupt is needed instead of a condvar signal.
-    mutable bool task_running_ = false;
+    mutable std::atomic<bool> task_running_{false};
 
     // True when the reactor has been told to do a non-blocking poll
     // (more handlers queued or poll mode). Prevents redundant eventfd
@@ -258,6 +258,11 @@ private:
 
     // Edge-triggered eventfd state
     mutable std::atomic<bool> eventfd_armed_{false};
+
+    // Set when the earliest timer changes; flushed before epoll_wait
+    // blocks. Avoids timerfd_settime syscalls for timers that are
+    // scheduled then cancelled without being waited on.
+    mutable std::atomic<bool> timerfd_stale_{false};
 
     // Sentinel operation for interleaving reactor runs with handler execution.
     // Ensures the reactor runs periodically even when handlers are continuously

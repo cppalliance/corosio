@@ -144,37 +144,6 @@ find_context(epoll_scheduler const* self) noexcept
     return nullptr;
 }
 
-/// Flush private work count to global counter.
-void
-flush_private_work(
-    scheduler_context* ctx,
-    std::atomic<long>& outstanding_work) noexcept
-{
-    if (ctx && ctx->private_outstanding_work > 0)
-    {
-        outstanding_work.fetch_add(
-            ctx->private_outstanding_work, std::memory_order_relaxed);
-        ctx->private_outstanding_work = 0;
-    }
-}
-
-/// Drain private queue to global queue, flushing work count first.
-///
-/// @return True if any ops were drained.
-bool
-drain_private_queue(
-    scheduler_context* ctx,
-    std::atomic<long>& outstanding_work,
-    op_queue& completed_ops) noexcept
-{
-    if (!ctx || ctx->private_queue.empty())
-        return false;
-
-    flush_private_work(ctx, outstanding_work);
-    completed_ops.splice(ctx->private_queue);
-    return true;
-}
-
 } // namespace
 
 void
@@ -312,7 +281,7 @@ epoll_scheduler(
     , outstanding_work_(0)
     , stopped_(false)
     , shutdown_(false)
-    , task_running_(false)
+    , task_running_{false}
     , task_interrupted_(false)
     , state_(0)
 {
@@ -365,7 +334,12 @@ epoll_scheduler(
     timer_svc_->set_on_earliest_changed(
         timer_service::callback(
             this,
-            [](void* p) { static_cast<epoll_scheduler*>(p)->update_timerfd(); }));
+            [](void* p) {
+                auto* self = static_cast<epoll_scheduler*>(p);
+                self->timerfd_stale_.store(true, std::memory_order_release);
+                if (self->task_running_.load(std::memory_order_relaxed))
+                    self->interrupt_reactor();
+            }));
 
     // Initialize resolver service
     get_resolver_service(ctx, *this);
@@ -682,7 +656,7 @@ work_finished() const noexcept
         // Both are needed because they target different blocking mechanisms.
         std::unique_lock lock(mutex_);
         signal_all(lock);
-        if (task_running_ && !task_interrupted_)
+        if (task_running_.load(std::memory_order_relaxed) && !task_interrupted_)
         {
             task_interrupted_ = true;
             lock.unlock();
@@ -818,7 +792,7 @@ wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
     if (maybe_unlock_and_signal_one(lock))
         return;
 
-    if (task_running_ && !task_interrupted_)
+    if (task_running_.load(std::memory_order_relaxed) && !task_interrupted_)
     {
         task_interrupted_ = true;
         lock.unlock();
@@ -881,15 +855,26 @@ struct work_cleanup
 struct task_cleanup
 {
     epoll_scheduler const* scheduler;
+    std::unique_lock<std::mutex>* lock;
     scheduler_context* ctx;
 
     ~task_cleanup()
     {
-        if (ctx && ctx->private_outstanding_work > 0)
+        if (!ctx)
+            return;
+
+        if (ctx->private_outstanding_work > 0)
         {
             scheduler->outstanding_work_.fetch_add(
                 ctx->private_outstanding_work, std::memory_order_relaxed);
             ctx->private_outstanding_work = 0;
+        }
+
+        if (!ctx->private_queue.empty())
+        {
+            if (!lock->owns_lock())
+                lock->lock();
+            scheduler->completed_ops_.splice(ctx->private_queue);
         }
     }
 };
@@ -940,22 +925,21 @@ run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
     if (lock.owns_lock())
         lock.unlock();
 
-    // Flush private work count when reactor completes
-    task_cleanup on_exit{this, ctx};
-    (void)on_exit;
+    task_cleanup on_exit{this, &lock, ctx};
+
+    // Flush deferred timerfd programming before blocking
+    if (timerfd_stale_.exchange(false, std::memory_order_acquire))
+        update_timerfd();
 
     // Event loop runs without mutex held
-
     epoll_event events[128];
     int nfds = ::epoll_wait(epoll_fd_, events, 128, timeout_ms);
-    int saved_errno = errno;
 
-    if (nfds < 0 && saved_errno != EINTR)
-        detail::throw_system_error(make_err(saved_errno), "epoll_wait");
+    if (nfds < 0 && errno != EINTR)
+        detail::throw_system_error(make_err(errno), "epoll_wait");
 
     bool check_timers = false;
     op_queue local_ops;
-    int completions_queued = 0;
 
     // Process events without holding the mutex
     for (int i = 0; i < nfds; ++i)
@@ -987,7 +971,6 @@ run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
                 std::memory_order_release, std::memory_order_relaxed))
         {
             local_ops.push(desc);
-            ++completions_queued;
         }
     }
 
@@ -998,25 +981,10 @@ run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
         update_timerfd();
     }
 
-    // --- Acquire mutex only for queue operations ---
     lock.lock();
 
     if (!local_ops.empty())
         completed_ops_.splice(local_ops);
-
-    // Drain private queue to global (work count handled by task_cleanup)
-    if (ctx && !ctx->private_queue.empty())
-    {
-        completions_queued += ctx->private_outstanding_work;
-        completed_ops_.splice(ctx->private_queue);
-    }
-
-    // Signal and wake one waiter if work is queued
-    if (completions_queued > 0)
-    {
-        if (maybe_unlock_and_signal_one(lock))
-            lock.lock();
-    }
 }
 
 std::size_t
@@ -1033,8 +1001,7 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* c
         // Handle reactor sentinel - time to poll for I/O
         if (op == &task_op_)
         {
-            bool more_handlers = !completed_ops_.empty() ||
-                (ctx && !ctx->private_queue.empty());
+            bool more_handlers = !completed_ops_.empty();
 
             // Nothing to run the reactor for: no pending work to wait on,
             // or caller requested a non-blocking poll
@@ -1047,14 +1014,14 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* c
             }
 
             task_interrupted_ = more_handlers || timeout_us == 0;
-            task_running_ = true;
+            task_running_.store(true, std::memory_order_relaxed);
 
             if (more_handlers)
                 unlock_and_signal_one(lock);
 
             run_task(lock, ctx);
 
-            task_running_ = false;
+            task_running_.store(false, std::memory_order_relaxed);
             completed_ops_.push(&task_op_);
             continue;
         }
@@ -1068,15 +1035,10 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* c
                 lock.unlock();
 
             work_cleanup on_exit{this, &lock, ctx};
-            (void)on_exit;
 
             (*op)();
             return 1;
         }
-
-        // No work from global queue - try private queue before blocking
-        if (drain_private_queue(ctx, outstanding_work_, completed_ops_))
-            continue;
 
         // No pending work to wait on, or caller requested non-blocking poll
         if (outstanding_work_.load(std::memory_order_acquire) == 0 ||
