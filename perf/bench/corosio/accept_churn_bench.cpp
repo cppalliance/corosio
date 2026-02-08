@@ -111,6 +111,7 @@ bench::benchmark_result bench_sequential_churn(
         std::this_thread::sleep_for(
             std::chrono::duration<double>( duration_s ) );
         running.store( false, std::memory_order_relaxed );
+        ioc->stop();
     } );
 
     ioc->run();
@@ -219,6 +220,7 @@ bench::benchmark_result bench_concurrent_churn(
         std::this_thread::sleep_for(
             std::chrono::duration<double>( duration_s ) );
         running.store( false, std::memory_order_relaxed );
+        ioc->stop();
     } );
 
     ioc->run();
@@ -338,6 +340,7 @@ bench::benchmark_result bench_burst_churn(
         std::this_thread::sleep_for(
             std::chrono::duration<double>( duration_s ) );
         running.store( false, std::memory_order_relaxed );
+        ioc->stop();
     } );
 
     ioc->run();
