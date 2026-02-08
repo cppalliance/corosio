@@ -573,5 +573,5 @@ Common errors include:
 
 == Next Steps
 
-* xref:../guide/tls.adoc[TLS Encryption] — Using TLS streams
-* xref:http-client.adoc[HTTP Client Tutorial] — HTTPS example
+* xref:../3.guide/3l.tls.adoc[TLS Encryption] — Using TLS streams
+* xref:2b.http-client.adoc[HTTP Client Tutorial] — HTTPS example

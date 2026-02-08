@@ -1,0 +1,264 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Echo Server Tutorial
+
+This tutorial builds a production-quality echo server using the `tcp_server`
+framework. We'll explore worker pools, connection lifecycle, and the launcher
+pattern.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/tcp_server.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/buffers.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+
+== Overview
+
+An echo server accepts TCP connections and sends back whatever data clients
+send. While simple, this pattern demonstrates core concepts:
+
+* Using `tcp_server` for connection management
+* Implementing workers with `worker_base`
+* Launching session coroutines with `launcher`
+* Reading and writing data with sockets
+
+== Architecture
+
+The `tcp_server` framework uses a worker pool pattern:
+
+1. Derive from `tcp_server` and define your worker type
+2. Preallocate workers during construction
+3. The framework accepts connections and dispatches them to idle workers
+4. Workers run session coroutines and return to the pool when done
+
+This avoids allocation during operation and limits resource usage.
+
+== Worker Implementation
+
+Workers derive from `worker_base` and implement two methods:
+
+[source,cpp]
+----
+class echo_server : public corosio::tcp_server
+{
+    class worker : public worker_base
+    {
+        corosio::io_context& ctx_;
+        corosio::tcp_socket sock_;
+        std::string buf_;
+
+    public:
+        explicit worker(corosio::io_context& ctx)
+            : ctx_(ctx)
+            , sock_(ctx)
+        {
+            buf_.reserve(4096);
+        }
+
+        corosio::tcp_socket& socket() override
+        {
+            return sock_;
+        }
+
+        void run(launcher launch) override
+        {
+            launch(ctx_.get_executor(), do_session());
+        }
+
+        capy::task<> do_session();
+    };
+----
+
+Each worker:
+
+* Stores a reference to the `io_context` for executor access
+* Owns its socket (returned via `socket()`)
+* Owns any per-connection state (like the buffer)
+* Implements `run()` to launch the session coroutine
+
+== Session Coroutine
+
+The session coroutine handles one connection:
+
+[source,cpp]
+----
+capy::task<> echo_server::worker::do_session()
+{
+    for (;;)
+    {
+        buf_.resize(4096);
+
+        // Read some data
+        auto [ec, n] = co_await sock_.read_some(
+            capy::mutable_buffer(buf_.data(), buf_.size()));
+
+        if (ec || n == 0)
+            break;
+
+        buf_.resize(n);
+
+        // Echo it back
+        auto [wec, wn] = co_await corosio::write(
+            sock_, capy::const_buffer(buf_.data(), buf_.size()));
+
+        if (wec)
+            break;
+    }
+
+    sock_.close();
+}
+----
+
+Notice:
+
+* We reuse the worker's buffer across reads
+* `read_some()` returns when _any_ data arrives
+* `corosio::write()` writes _all_ data (it's a composed operation)
+* When the coroutine ends, the launcher returns the worker to the pool
+
+== Server Construction
+
+The server constructor populates the worker pool:
+
+[source,cpp]
+----
+public:
+    echo_server(corosio::io_context& ctx, int max_workers)
+        : tcp_server(ctx, ctx.get_executor())
+    {
+        wv_.reserve(max_workers);
+        for (int i = 0; i < max_workers; ++i)
+            wv_.emplace<worker>(ctx);
+    }
+};
+----
+
+Workers are stored polymorphically via `wv_.emplace<T>()`, allowing different
+worker types if needed.
+
+== Main Function
+
+[source,cpp]
+----
+int main(int argc, char* argv[])
+{
+    if (argc != 3)
+    {
+        std::cerr << "Usage: echo_server <port> <max-workers>\n";
+        return 1;
+    }
+
+    auto port = static_cast<std::uint16_t>(std::atoi(argv[1]));
+    int max_workers = std::atoi(argv[2]);
+
+    corosio::io_context ioc;
+
+    echo_server server(ioc, max_workers);
+
+    auto ec = server.bind(corosio::endpoint(port));
+    if (ec)
+    {
+        std::cerr << "Bind failed: " << ec.message() << "\n";
+        return 1;
+    }
+
+    std::cout << "Echo server listening on port " << port
+              << " with " << max_workers << " workers\n";
+
+    server.start();
+    ioc.run();
+}
+----
+
+== Key Design Decisions
+
+=== Why tcp_server?
+
+The `tcp_server` framework provides:
+
+* **Automatic pool management**: Workers cycle between idle and active states
+* **Safe lifecycle**: The launcher ensures workers return to the pool
+* **Multiple ports**: Bind to several endpoints sharing one worker pool
+
+=== Why Worker Pooling?
+
+* **Bounded memory**: Fixed number of connections
+* **No allocation**: Sockets and buffers preallocated
+* **Simple accounting**: Framework tracks worker availability
+
+=== Why Composed Write?
+
+The `corosio::write()` free function ensures all data is sent:
+
+[source,cpp]
+----
+// write_some: may write partial data
+auto [ec, n] = co_await sock.write_some(buf);  // n might be < buf.size()
+
+// write: writes all data or fails
+auto [ec, n] = co_await corosio::write(sock, buf);  // n == buf.size() or error
+----
+
+For echo servers, we want complete message delivery.
+
+=== Why Not Use Exceptions?
+
+The session loop needs to handle EOF gracefully. Using structured bindings:
+
+[source,cpp]
+----
+auto [ec, n] = co_await sock.read_some(buf);
+if (ec || n == 0)
+    break;  // Normal termination path
+----
+
+With exceptions, EOF would require a try-catch:
+
+[source,cpp]
+----
+try {
+    auto n = (co_await sock.read_some(buf)).value();
+} catch (...) {
+    // EOF is an exception here
+}
+----
+
+== Testing
+
+Start the server:
+
+[source,bash]
+----
+$ ./echo_server 8080 10
+Echo server listening on port 8080 with 10 workers
+----
+
+Connect with netcat:
+
+[source,bash]
+----
+$ nc localhost 8080
+Hello
+Hello
+World
+World
+----
+
+== Next Steps
+
+* xref:2b.http-client.adoc[HTTP Client] — Build an HTTP client
+* xref:../3.guide/3k.tcp-server.adoc[TCP Server Guide] — Deep dive into tcp_server
+* xref:../3.guide/3d.sockets.adoc[Sockets Guide] — Deep dive into socket operations
+* xref:../3.guide/3g.composed-operations.adoc[Composed Operations] — Understanding read/write

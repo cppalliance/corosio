@@ -293,6 +293,6 @@ capy::task<packet_header> read_header(corosio::io_stream& stream)
 
 == Next Steps
 
-* xref:composed-operations.adoc[Composed Operations] — Using buffers with read/write
-* xref:sockets.adoc[Sockets] — Socket I/O operations
-* xref:../tutorials/echo-server.adoc[Echo Server Tutorial] — Practical usage
+* xref:3g.composed-operations.adoc[Composed Operations] — Using buffers with read/write
+* xref:3d.sockets.adoc[Sockets] — Socket I/O operations
+* xref:../2.tutorials/2a.echo-server.adoc[Echo Server Tutorial] — Practical usage

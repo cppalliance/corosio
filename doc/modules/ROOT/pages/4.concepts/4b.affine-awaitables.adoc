@@ -1,0 +1,316 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Affine Awaitables
+
+The _affine awaitable protocol_ is a core concept in Corosio that enables
+automatic executor affinity propagation through coroutine chains. This page
+explains how it works and why it matters.
+
+== The Problem
+
+When an I/O operation completes, _some_ thread receives the completion
+notification. Without affinity tracking:
+
+----
+Thread 1: coroutine starts → co_await read() → suspends
+Thread 2: (I/O completes) → coroutine resumes here (surprise!)
+----
+
+Your coroutine might resume on an arbitrary thread, forcing you to add
+synchronization everywhere.
+
+== The Solution: Executor Affinity
+
+Affinity means a coroutine is bound to a specific executor. All resumptions
+occur through that executor:
+
+----
+Thread 1: coroutine starts → co_await read() → suspends
+Thread 1: (executor dispatches) → coroutine resumes here (correct!)
+----
+
+When you launch a coroutine with `run_async(ex)`, it has affinity to executor
+`ex`. All its I/O operations capture `ex` and resume through it.
+
+== How Affinity Propagates
+
+The affine awaitable protocol passes the executor through `co_await`:
+
+[source,cpp]
+----
+capy::run_async(ex)(parent());  // parent has affinity to ex
+
+task<void> parent()
+{
+    co_await child();  // child inherits ex
+}
+
+task<void> child()
+{
+    co_await sock.read_some(buf);  // read captures ex, resumes through ex
+}
+----
+
+Each `co_await` passes the current dispatcher to the awaited operation.
+
+== The Protocol in Detail
+
+An affine awaitable provides special `await_suspend` overloads that receive
+the dispatcher:
+
+[source,cpp]
+----
+struct my_awaitable
+{
+    bool await_ready() const noexcept;
+    Result await_resume() const noexcept;
+
+    // Standard form (for compatibility)
+    void await_suspend(std::coroutine_handle<> h);
+
+    // Affine form: receives dispatcher
+    template<capy::dispatcher Dispatcher>
+    auto await_suspend(
+        std::coroutine_handle<> h,
+        Dispatcher const& d) -> std::coroutine_handle<>;
+
+    // Affine form with stop token: receives dispatcher and cancellation
+    template<capy::dispatcher Dispatcher>
+    auto await_suspend(
+        std::coroutine_handle<> h,
+        Dispatcher const& d,
+        std::stop_token token) -> std::coroutine_handle<>;
+};
+----
+
+The task's `await_transform` selects the appropriate overload based on
+what the awaitable supports.
+
+== Corosio Awaitables
+
+All Corosio I/O operations return affine awaitables:
+
+[source,cpp]
+----
+// socket::connect returns connect_awaitable
+auto [ec] = co_await sock.connect(endpoint);
+
+// socket::read_some returns read_some_awaitable
+auto [ec, n] = co_await sock.read_some(buffer);
+
+// timer::wait returns wait_awaitable
+auto [ec] = co_await timer.wait();
+----
+
+Each stores the dispatcher provided during `await_suspend` and uses it
+to resume the coroutine when the operation completes.
+
+== Dispatcher Type Erasure
+
+Corosio uses `capy::any_dispatcher` for type erasure:
+
+[source,cpp]
+----
+template<capy::dispatcher Dispatcher>
+auto await_suspend(
+    std::coroutine_handle<> h,
+    Dispatcher const& d) -> std::coroutine_handle<>
+{
+    // Store type-erased dispatcher
+    impl_->do_operation(h, capy::any_dispatcher(d), ...);
+    return std::noop_coroutine();
+}
+----
+
+This allows the implementation to work with any executor type without
+templating everything.
+
+== Symmetric Transfer
+
+When a child coroutine completes, it resumes its parent. If both have the
+same executor, _symmetric transfer_ provides a direct tail call:
+
+[source,cpp]
+----
+task<void> parent()
+{
+    co_await child();  // child completes, transfers directly to parent
+}
+----
+
+No executor involvement, no queuing—just a direct coroutine-to-coroutine
+transfer.
+
+The mechanism:
+
+1. Child's final suspend awaitable returns parent's handle
+2. Compiler generates tail call to `coroutine_handle::resume()`
+3. Parent resumes immediately on same thread
+
+If executors differ, the child posts to the parent's executor instead.
+
+== Cancellation Support
+
+Affine awaitables can receive a stop token:
+
+[source,cpp]
+----
+template<capy::dispatcher Dispatcher>
+auto await_suspend(
+    std::coroutine_handle<> h,
+    Dispatcher const& d,
+    std::stop_token token) -> std::coroutine_handle<>
+{
+    // Can check token.stop_requested()
+    // Can register for stop notification
+}
+----
+
+Corosio operations check `stop_requested()` in `await_ready()` and during
+the operation for prompt cancellation.
+
+== Flow Diagram Notation
+
+To reason about affinity, use this compact notation:
+
+[cols="1,3"]
+|===
+| Symbol | Meaning
+
+| `c`, `c1`, `c2`
+| Coroutines (lazy tasks)
+
+| `io`
+| I/O operation
+
+| `->`
+| `co_await` leading to a coroutine or I/O
+
+| `!`
+| Coroutine with explicit executor affinity
+
+| `ex`, `ex1`, `ex2`
+| Executors
+|===
+
+=== Simple Chain
+
+----
+!c -> io
+----
+
+Coroutine `c` has affinity. The I/O captures that affinity and resumes
+through it.
+
+=== Nested Coroutines
+
+----
+!c1 -> c2 -> io
+----
+
+* `c1` has explicit affinity to `ex`
+* `c2` inherits affinity from `c1`
+* I/O captures `ex`
+* When I/O completes: resume through `ex`
+* When `c2` completes: symmetric transfer to `c1`
+
+== Implementing Affine Awaitables
+
+To implement your own affine awaitable:
+
+[source,cpp]
+----
+struct my_async_op
+{
+    // Required members
+    operation_state& state_;
+
+    bool await_ready() const noexcept
+    {
+        return state_.is_complete();
+    }
+
+    Result await_resume() const noexcept
+    {
+        return state_.get_result();
+    }
+
+    // Affine suspend with dispatcher
+    template<capy::dispatcher Dispatcher>
+    auto await_suspend(
+        std::coroutine_handle<> h,
+        Dispatcher const& d) -> std::coroutine_handle<>
+    {
+        // Store h and d, start operation
+        state_.start(h, d);
+        return std::noop_coroutine();
+    }
+
+    // Affine suspend with dispatcher and stop token
+    template<capy::dispatcher Dispatcher>
+    auto await_suspend(
+        std::coroutine_handle<> h,
+        Dispatcher const& d,
+        std::stop_token token) -> std::coroutine_handle<>
+    {
+        state_.start(h, d, token);
+        return std::noop_coroutine();
+    }
+};
+----
+
+When the operation completes, use the dispatcher to resume:
+
+[source,cpp]
+----
+void complete()
+{
+    dispatcher_(continuation_);  // Resume through dispatcher
+}
+----
+
+== Legacy Awaitable Compatibility
+
+Not all awaitables support the affine protocol. Capy's task provides
+automatic compatibility through `await_transform`:
+
+* If awaitable is affine: zero-overhead dispatch
+* If awaitable is standard: wrap in trampoline coroutine
+
+The trampoline ensures correct affinity at the cost of one extra
+coroutine frame.
+
+== Summary
+
+[cols="1,3"]
+|===
+| Concept | Description
+
+| Executor affinity
+| Coroutine bound to specific executor
+
+| Propagation
+| Children inherit affinity via `co_await`
+
+| Affine protocol
+| `await_suspend` receives dispatcher parameter
+
+| Symmetric transfer
+| Zero-overhead resumption when executors match
+
+| any_dispatcher
+| Type-erased dispatcher for implementation
+|===
+
+== Next Steps
+
+* xref:../3.guide/3c.io-context.adoc[I/O Context] — The execution context
+* xref:../3.guide/3m.error-handling.adoc[Error Handling] — Cancellation patterns
+* xref:4a.design-rationale.adoc[Design Rationale] — Why this design

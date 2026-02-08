@@ -1,0 +1,323 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Error Handling
+
+Corosio provides flexible error handling through the `io_result` type, which
+supports both error-code and exception-based patterns.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio.hpp>
+#include <boost/capy/error.hpp>
+#include <boost/system/error_code.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+
+== The io_result Type
+
+Every I/O operation returns an `io_result<T>` that contains:
+
+* An error code (always present)
+* Additional values depending on the operation
+
+[source,cpp]
+----
+// Void result (connect, handshake)
+io_result<>                    // Contains: ec
+
+// Single value (read_some, write_some)
+io_result<std::size_t>         // Contains: ec, n (bytes transferred)
+
+// Typed result (resolve)
+io_result<resolver_results>    // Contains: ec, results
+----
+
+== Structured Bindings Pattern
+
+Use structured bindings to extract results:
+
+[source,cpp]
+----
+// Void result
+auto [ec] = co_await sock.connect(endpoint);
+if (ec)
+    std::cerr << "Connect failed: " << ec.message() << "\n";
+
+// Value result
+auto [ec, n] = co_await sock.read_some(buffer);
+if (ec)
+    std::cerr << "Read failed: " << ec.message() << "\n";
+else
+    std::cout << "Read " << n << " bytes\n";
+----
+
+This pattern gives you full control over error handling.
+
+== Exception Pattern
+
+Call `.value()` to throw on error:
+
+[source,cpp]
+----
+// Throws system_error if connect fails
+(co_await sock.connect(endpoint)).value();
+
+// Returns bytes transferred, throws on error
+auto n = (co_await sock.read_some(buffer)).value();
+----
+
+The `.value()` method:
+
+* Returns the value(s) if no error
+* Throws `boost::system::system_error` if `ec` is set
+
+== Boolean Conversion
+
+`io_result` is contextually convertible to `bool`:
+
+[source,cpp]
+----
+auto result = co_await sock.connect(endpoint);
+if (result)
+    std::cout << "Connected successfully\n";
+else
+    std::cerr << "Failed: " << result.ec.message() << "\n";
+----
+
+Returns `true` if the operation succeeded (no error).
+
+== Choosing a Pattern
+
+=== Use Structured Bindings When:
+
+* Errors are expected and need handling (EOF, timeout)
+* You want to log errors without throwing
+* Performance is critical (no exception overhead)
+* You need partial success information (bytes transferred)
+
+[source,cpp]
+----
+auto [ec, n] = co_await sock.read_some(buf);
+if (ec == capy::error::eof)
+{
+    std::cout << "End of stream after " << n << " bytes\n";
+    // Not an exceptional condition
+}
+----
+
+=== Use Exceptions When:
+
+* Errors are truly exceptional
+* You want concise, linear code
+* Errors should propagate to a central handler
+* You don't need partial success information
+
+[source,cpp]
+----
+(co_await sock.connect(endpoint)).value();
+(co_await corosio::write(sock, request)).value();
+auto response = (co_await corosio::read(sock, buffer)).value();
+// Any error throws immediately
+----
+
+== Common Error Codes
+
+=== I/O Errors
+
+[cols="1,2"]
+|===
+| Error | Meaning
+
+| `capy::error::eof`
+| End of stream reached
+
+| `connection_refused`
+| No server at endpoint
+
+| `connection_reset`
+| Peer reset connection
+
+| `broken_pipe`
+| Write to closed connection
+
+| `timed_out`
+| Operation timed out
+
+| `network_unreachable`
+| No route to host
+|===
+
+=== Cancellation
+
+[cols="1,2"]
+|===
+| Error | Meaning
+
+| `capy::error::canceled`
+| Cancelled via `cancel()` method
+
+| `operation_canceled`
+| Cancelled via stop token
+|===
+
+Check cancellation portably:
+
+[source,cpp]
+----
+if (ec == capy::cond::canceled)
+    std::cout << "Operation was cancelled\n";
+----
+
+== EOF Handling
+
+End-of-stream is signaled by `capy::error::eof`:
+
+[source,cpp]
+----
+auto [ec, n] = co_await corosio::read(stream, buffer);
+if (ec == capy::error::eof)
+{
+    std::cout << "Stream ended, read " << n << " bytes total\n";
+    // This is often expected, not an error
+}
+else if (ec)
+{
+    std::cerr << "Unexpected error: " << ec.message() << "\n";
+}
+----
+
+When using `.value()` on read operations, EOF throws an exception. Filter
+it if expected:
+
+[source,cpp]
+----
+auto [ec, n] = co_await corosio::read(stream, response);
+if (ec && ec != capy::error::eof)
+    throw boost::system::system_error(ec);
+// EOF is expected when server closes connection
+----
+
+== Partial Success
+
+Some operations may partially succeed before an error:
+
+[source,cpp]
+----
+auto [ec, n] = co_await corosio::write(stream, large_buffer);
+if (ec)
+{
+    std::cerr << "Error after writing " << n << " of "
+              << buffer_size(large_buffer) << " bytes\n";
+    // Can potentially resume from here
+}
+----
+
+The composed operations (`read()`, `write()`) return the total bytes
+transferred even when returning an error.
+
+== Error Categories
+
+Corosio uses Boost.System error codes, which support categories:
+
+[source,cpp]
+----
+if (ec.category() == boost::system::system_category())
+    // Operating system error
+
+if (ec.category() == boost::system::generic_category())
+    // Portable POSIX-style error
+
+if (ec.category() == capy::error_category())
+    // Capy-specific error (eof, canceled, etc.)
+----
+
+== Comparing Errors
+
+Use error conditions for portable comparison:
+
+[source,cpp]
+----
+// Specific error (platform-dependent)
+if (ec == make_error_code(system::errc::connection_refused))
+    // ...
+
+// Error condition (portable)
+if (ec == capy::cond::canceled)
+    // Matches any cancellation error
+
+if (ec == capy::cond::eof)
+    // Matches end-of-stream
+----
+
+== Exception Safety in Coroutines
+
+When using exceptions in coroutines, caught exceptions don't leak:
+
+[source,cpp]
+----
+capy::task<void> safe_operation()
+{
+    try
+    {
+        (co_await sock.connect(endpoint)).value();
+    }
+    catch (boost::system::system_error const& e)
+    {
+        std::cerr << "Connect failed: " << e.what() << "\n";
+        // Exception handled here, doesn't propagate
+    }
+}
+----
+
+Uncaught exceptions in a task are stored and rethrown when the task is
+awaited.
+
+== Example: Robust Connection
+
+[source,cpp]
+----
+capy::task<void> connect_with_retry(
+    corosio::io_context& ioc,
+    corosio::endpoint ep,
+    int max_retries)
+{
+    corosio::tcp_socket sock(ioc);
+    corosio::timer delay(ioc);
+
+    for (int attempt = 0; attempt < max_retries; ++attempt)
+    {
+        sock.open();
+        auto [ec] = co_await sock.connect(ep);
+
+        if (!ec)
+            co_return;  // Success
+
+        std::cerr << "Attempt " << (attempt + 1)
+                  << " failed: " << ec.message() << "\n";
+
+        sock.close();
+
+        // Wait before retry (exponential backoff)
+        delay.expires_after(std::chrono::seconds(1 << attempt));
+        co_await delay.wait();
+    }
+
+    throw std::runtime_error("Failed to connect after retries");
+}
+----
+
+== Next Steps
+
+* xref:3d.sockets.adoc[Sockets] — Socket operations
+* xref:3g.composed-operations.adoc[Composed Operations] — read() and write()
+* xref:../4.concepts/4b.affine-awaitables.adoc[Affine Awaitables] — Cancellation support

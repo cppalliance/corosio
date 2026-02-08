@@ -253,6 +253,6 @@ use from any thread.
 
 == Next Steps
 
-* xref:sockets.adoc[Sockets] — Connect to endpoints
-* xref:resolver.adoc[Name Resolution] — Convert hostnames to endpoints
-* xref:../tutorials/dns-lookup.adoc[DNS Lookup Tutorial] — Practical resolution
+* xref:3d.sockets.adoc[Sockets] — Connect to endpoints
+* xref:3j.resolver.adoc[Name Resolution] — Convert hostnames to endpoints
+* xref:../2.tutorials/2c.dns-lookup.adoc[DNS Lookup Tutorial] — Practical resolution
