@@ -276,6 +276,6 @@ capy::task<std::string> read_http_response(corosio::io_stream& stream)
 
 == Next Steps
 
-* xref:3d.sockets.adoc[Sockets] — The underlying stream interface
-* xref:3n.buffers.adoc[Buffer Sequences] — Working with buffers
-* xref:../2.tutorials/2b.http-client.adoc[HTTP Client Tutorial] — Practical example
+* xref:4d.sockets.adoc[Sockets] — The underlying stream interface
+* xref:4n.buffers.adoc[Buffer Sequences] — Working with buffers
+* xref:../3.tutorials/3b.http-client.adoc[HTTP Client Tutorial] — Practical example

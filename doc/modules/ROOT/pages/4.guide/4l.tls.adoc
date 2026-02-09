@@ -660,6 +660,6 @@ target_link_libraries(my_target PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 
 == Next Steps
 
-* xref:3d.sockets.adoc[Sockets] — The underlying stream
-* xref:3g.composed-operations.adoc[Composed Operations] — read() and write()
-* xref:../2.tutorials/2d.tls-context.adoc[TLS Context Tutorial] — Step-by-step configuration
+* xref:4d.sockets.adoc[Sockets] — The underlying stream
+* xref:4g.composed-operations.adoc[Composed Operations] — read() and write()
+* xref:../3.tutorials/3d.tls-context.adoc[TLS Context Tutorial] — Step-by-step configuration

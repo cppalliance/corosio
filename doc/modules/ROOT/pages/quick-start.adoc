@@ -200,9 +200,9 @@ failed.
 
 Now that you have a working echo server:
 
-* xref:3.guide/3k.tcp-server.adoc[TCP Server Guide] — Deep dive into tcp_server
-* xref:3.guide/3a.tcp-networking.adoc[TCP/IP Networking] — Networking fundamentals
-* xref:3.guide/3b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
-* xref:2.tutorials/2b.http-client.adoc[HTTP Client Tutorial] — Make HTTP requests
-* xref:3.guide/3c.io-context.adoc[I/O Context Guide] — Understand the event loop
-* xref:3.guide/3d.sockets.adoc[Sockets Guide] — Deep dive into socket operations
+* xref:4.guide/4k.tcp-server.adoc[TCP Server Guide] — Deep dive into tcp_server
+* xref:4.guide/4a.tcp-networking.adoc[TCP/IP Networking] — Networking fundamentals
+* xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
+* xref:3.tutorials/3b.http-client.adoc[HTTP Client Tutorial] — Make HTTP requests
+* xref:4.guide/4c.io-context.adoc[I/O Context Guide] — Understand the event loop
+* xref:4.guide/4d.sockets.adoc[Sockets Guide] — Deep dive into socket operations

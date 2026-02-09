@@ -258,7 +258,7 @@ World
 
 == Next Steps
 
-* xref:2b.http-client.adoc[HTTP Client] — Build an HTTP client
-* xref:../3.guide/3k.tcp-server.adoc[TCP Server Guide] — Deep dive into tcp_server
-* xref:../3.guide/3d.sockets.adoc[Sockets Guide] — Deep dive into socket operations
-* xref:../3.guide/3g.composed-operations.adoc[Composed Operations] — Understanding read/write
+* xref:3b.http-client.adoc[HTTP Client] — Build an HTTP client
+* xref:../4.guide/4k.tcp-server.adoc[TCP Server Guide] — Deep dive into tcp_server
+* xref:../4.guide/4d.sockets.adoc[Sockets Guide] — Deep dive into socket operations
+* xref:../4.guide/4g.composed-operations.adoc[Composed Operations] — Understanding read/write

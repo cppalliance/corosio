@@ -318,6 +318,5 @@ capy::task<void> connect_with_retry(
 
 == Next Steps
 
-* xref:3d.sockets.adoc[Sockets] — Socket operations
-* xref:3g.composed-operations.adoc[Composed Operations] — read() and write()
-* xref:../4.concepts/4b.affine-awaitables.adoc[Affine Awaitables] — Cancellation support
+* xref:4d.sockets.adoc[Sockets] — Socket operations
+* xref:4g.composed-operations.adoc[Composed Operations] — read() and write()
