@@ -10,10 +10,8 @@
 #include "src/detail/timer_service.hpp"
 
 #include <boost/corosio/detail/scheduler.hpp>
-#include "src/detail/intrusive.hpp"
 #include "src/detail/scheduler_op.hpp"
 #include <boost/capy/error.hpp>
-#include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <system_error>
 
@@ -24,75 +22,105 @@
 #include <stop_token>
 #include <vector>
 
+/*
+    Timer Service
+    =============
+
+    The public timer class holds an opaque timer_impl* and forwards
+    all operations through extern free functions defined at the bottom
+    of this file.
+
+    Data Structures
+    ---------------
+    timer_impl holds per-timer state: expiry, coroutine handle,
+    executor, embedded completion_op, heap index, and free-list link.
+
+    timer_service_impl owns a min-heap of active timers and a free
+    list of recycled impls. The heap is ordered by expiry time; the
+    scheduler queries nearest_expiry() to set the epoll/timerfd
+    timeout.
+
+    Optimization Strategy
+    ---------------------
+    The common timer lifecycle is: construct, set expiry, cancel or
+    wait, destroy. Several optimizations target this path:
+
+    1. Deferred heap insertion — expires_after() stores the expiry
+       but does not insert into the heap. Insertion happens in
+       wait(). If the timer is cancelled or destroyed before wait(),
+       the heap is never touched and no mutex is taken. This also
+       enables the already-expired fast path: when wait() sees
+       expiry <= now before inserting, it posts the coroutine
+       handle to the executor and returns noop_coroutine — no
+       heap, no mutex, no epoll. This is only possible because
+       the coroutine API guarantees wait() always follows
+       expires_after(); callback APIs cannot assume this call
+       order.
+
+    2. Thread-local impl cache — A single-slot per-thread cache of
+       timer_impl avoids the mutex on create/destroy for the common
+       create-then-destroy-on-same-thread pattern. The RAII wrapper
+       tl_impl_cache deletes the cached impl when the thread exits.
+
+    3. Thread-local service cache — Caches the {context, service}
+       pair per-thread to skip find_service() on every timer
+       construction.
+
+    4. Embedded completion_op — timer_impl embeds a scheduler_op
+       subclass, eliminating heap allocation per fire/cancel. Its
+       destroy() is a no-op since the timer_impl owns the lifetime.
+
+    5. Cached nearest expiry — An atomic<int64_t> mirrors the heap
+       root's time, updated under the lock. nearest_expiry() and
+       empty() read the atomic without locking.
+
+    6. might_have_pending_waits_ flag — Set on wait(), cleared on
+       cancel. Lets cancel_timer() return without locking when no
+       wait was ever issued.
+
+    With all fast paths hit (idle timer, same thread), the
+    schedule/cancel cycle takes zero mutex locks.
+*/
+
 namespace boost::corosio::detail {
 
 class timer_service_impl;
 
-// Completion operation posted to scheduler when timer expires or is cancelled.
-// Runs inside work_cleanup scope so work accounting is batched correctly.
-struct timer_op final : scheduler_op
-{
-    capy::coro h;
-    capy::executor_ref d;
-    std::error_code* ec_out = nullptr;
-    std::error_code ec_value;
-    scheduler* sched = nullptr;
-
-    timer_op() noexcept
-        : scheduler_op(&timer_op::do_complete)
-    {
-    }
-
-    static void do_complete(
-        void* owner,
-        scheduler_op* base,
-        std::uint32_t,
-        std::uint32_t)
-    {
-        auto* self = static_cast<timer_op*>(base);
-        if (!owner)
-        {
-            delete self;
-            return;
-        }
-        (*self)();
-    }
-
-    void operator()() override
-    {
-        if (ec_out)
-            *ec_out = ec_value;
-
-        // Capture before posting (coro may destroy this op)
-        auto* service = sched;
-        sched = nullptr;
-
-        d.post(h);
-
-        // Balance the on_work_started() from timer_impl::wait()
-        if (service)
-            service->on_work_finished();
-
-        delete this;
-    }
-
-    void destroy() override
-    {
-        delete this;
-    }
-};
+void timer_service_invalidate_cache() noexcept;
 
 struct timer_impl
     : timer::timer_impl
-    , intrusive_list<timer_impl>::node
 {
     using clock_type = std::chrono::steady_clock;
     using time_point = clock_type::time_point;
     using duration = clock_type::duration;
 
+    // Embedded completion op — avoids heap allocation per fire/cancel
+    struct completion_op final : scheduler_op
+    {
+        timer_impl* impl_ = nullptr;
+
+        static void do_complete(
+            void* owner,
+            scheduler_op* base,
+            std::uint32_t,
+            std::uint32_t);
+
+        completion_op() noexcept
+            : scheduler_op(&do_complete)
+        {
+        }
+
+        void operator()() override;
+        // No-op — lifetime owned by timer_impl, not the scheduler queue
+        void destroy() override {}
+    };
+
     timer_service_impl* svc_ = nullptr;
     time_point expiry_;
     std::size_t heap_index_ = (std::numeric_limits<std::size_t>::max)();
+    // Lets cancel_timer() skip the lock when no wait() was ever issued
+    bool might_have_pending_waits_ = false;
 
     // Wait operation state
     std::coroutine_handle<> h_;
@@ -101,9 +129,16 @@ struct timer_impl
     std::stop_token token_;
     bool waiting_ = false;
 
+    completion_op op_;
+    std::error_code ec_value_;
+
+    // Free list linkage (reused when impl is on free_list)
+    timer_impl* next_free_ = nullptr;
+
     explicit timer_impl(timer_service_impl& svc) noexcept
         : svc_(&svc)
     {
+        op_.impl_ = this;
     }
 
     void release() override;
@@ -115,7 +150,8 @@ struct timer_impl
         std::error_code*) override;
 };
 
-//------------------------------------------------------------------------------
+timer_impl* try_pop_tl_cache(timer_service_impl*) noexcept;
+bool try_push_tl_cache(timer_impl*) noexcept;
 
 class timer_service_impl : public timer_service
 {
@@ -134,9 +170,13 @@ private:
     scheduler* sched_ = nullptr;
     mutable std::mutex mutex_;
     std::vector<heap_entry> heap_;
-    intrusive_list<timer_impl> timers_;
-    intrusive_list<timer_impl> free_list_;
+    timer_impl* free_list_ = nullptr;
+    // Tracks impls not on free-list, for shutdown correctness
+    std::size_t live_count_ = 0;
     callback on_earliest_changed_;
+    // Avoids mutex in nearest_expiry() and empty()
+    mutable std::atomic<std::int64_t> cached_nearest_ns_{
+        (std::numeric_limits<std::int64_t>::max)()};
 
 public:
     timer_service_impl(capy::execution_context&, scheduler& sched)
@@ -147,9 +187,7 @@ public:
 
     scheduler& get_scheduler() noexcept { return *sched_; }
 
-    ~timer_service_impl()
-    {
-    }
+    ~timer_service_impl() = default;
 
     timer_service_impl(timer_service_impl const&) = delete;
     timer_service_impl& operator=(timer_service_impl const&) = delete;
@@ -161,73 +199,108 @@ public:
 
     void shutdown() override
     {
-        // Cancel all waiting timers and destroy coroutine handles
-        // This properly decrements outstanding_work_ for each waiting timer
-        while (auto* impl = timers_.pop_front())
+        timer_service_invalidate_cache();
+
+        // Cancel waiting timers still in the heap
+        for (auto& entry : heap_)
         {
+            auto* impl = entry.timer_;
             if (impl->waiting_)
             {
                 impl->waiting_ = false;
-                // Destroy the coroutine handle without resuming
                 impl->h_.destroy();
-                // Decrement work count to avoid leak
                 sched_->on_work_finished();
             }
+            impl->heap_index_ = (std::numeric_limits<std::size_t>::max)();
             delete impl;
+            --live_count_;
         }
-        while (auto* impl = free_list_.pop_front())
-            delete impl;
+        heap_.clear();
+        cached_nearest_ns_.store(
+            (std::numeric_limits<std::int64_t>::max)(),
+            std::memory_order_release);
+
+        // Delete free-listed impls
+        while (free_list_)
+        {
+            auto* next = free_list_->next_free_;
+            delete free_list_;
+            free_list_ = next;
+        }
+
+        // Any live timers not in heap and not on free list are still
+        // referenced by timer objects — they'll call destroy_impl()
+        // which will delete them (live_count_ tracks this).
     }
 
     timer::timer_impl* create_impl() override
     {
-        std::lock_guard lock(mutex_);
-        timer_impl* impl;
-        if (auto* p = free_list_.pop_front())
+        timer_impl* impl = try_pop_tl_cache(this);
+        if (impl)
         {
-            impl = p;
+            impl->svc_ = this;
             impl->heap_index_ = (std::numeric_limits<std::size_t>::max)();
+            impl->might_have_pending_waits_ = false;
+            return impl;
+        }
+
+        std::lock_guard lock(mutex_);
+        if (free_list_)
+        {
+            impl = free_list_;
+            free_list_ = impl->next_free_;
+            impl->next_free_ = nullptr;
+            impl->heap_index_ = (std::numeric_limits<std::size_t>::max)();
+            impl->might_have_pending_waits_ = false;
         }
         else
         {
             impl = new timer_impl(*this);
         }
-        timers_.push_back(impl);
+        ++live_count_;
         return impl;
     }
 
     void destroy_impl(timer_impl& impl)
     {
+        if (impl.heap_index_ != (std::numeric_limits<std::size_t>::max)())
+        {
+            std::lock_guard lock(mutex_);
+            remove_timer_impl(impl);
+            refresh_cached_nearest();
+        }
+
+        if (try_push_tl_cache(&impl))
+            return;
+
         std::lock_guard lock(mutex_);
-        remove_timer_impl(impl);
-        timers_.remove(&impl);
-        free_list_.push_back(&impl);
+        impl.next_free_ = free_list_;
+        free_list_ = &impl;
+        --live_count_;
     }
 
+    // Heap insertion deferred to wait() — avoids lock when timer is idle
     void update_timer(timer_impl& impl, time_point new_time)
     {
+        bool in_heap =
+            (impl.heap_index_ != (std::numeric_limits<std::size_t>::max)());
+        if (!in_heap && !impl.waiting_)
+            return;
+
         bool notify = false;
         bool was_waiting = false;
-        std::coroutine_handle<> h;
-        capy::executor_ref d;
-        std::error_code* ec_out = nullptr;
 
         {
             std::lock_guard lock(mutex_);
 
-            // If currently waiting, cancel the pending wait
             if (impl.waiting_)
             {
                 was_waiting = true;
                 impl.waiting_ = false;
-                h = impl.h_;
-                d = impl.d_;
-                ec_out = impl.ec_out_;
             }
 
             if (impl.heap_index_ < heap_.size())
             {
-                // Already in heap, update position
                 time_point old_time = heap_[impl.heap_index_].time_;
                 heap_[impl.heap_index_].time_ = new_time;
 
@@ -235,46 +308,52 @@ public:
                     up_heap(impl.heap_index_);
                 else
                     down_heap(impl.heap_index_);
-            }
-            else
-            {
-                // Not in heap, add it
-                impl.heap_index_ = heap_.size();
-                heap_.push_back({new_time, &impl});
-                up_heap(heap_.size() - 1);
+
+                notify = (impl.heap_index_ == 0);
             }
 
-            // Notify if this timer is now the earliest
-            notify = (impl.heap_index_ == 0);
+            refresh_cached_nearest();
         }
 
-        // Post cancelled waiter as scheduler_op (runs inside work_cleanup scope)
         if (was_waiting)
         {
-            auto* op = new timer_op;
-            op->h = h;
-            op->d = std::move(d);
-            op->ec_out = ec_out;
-            op->ec_value = make_error_code(capy::error::canceled);
-            op->sched = sched_;
-            sched_->post(op);
+            impl.ec_value_ = make_error_code(capy::error::canceled);
+            sched_->post(&impl.op_);
         }
 
         if (notify)
             on_earliest_changed_();
     }
 
-    void remove_timer(timer_impl& impl)
+    // Called from wait() when timer hasn't been inserted into the heap yet
+    void insert_timer(timer_impl& impl)
     {
-        std::lock_guard lock(mutex_);
-        remove_timer_impl(impl);
+        bool notify = false;
+        {
+            std::lock_guard lock(mutex_);
+            impl.heap_index_ = heap_.size();
+            heap_.push_back({impl.expiry_, &impl});
+            up_heap(heap_.size() - 1);
+            notify = (impl.heap_index_ == 0);
+            refresh_cached_nearest();
+        }
+        if (notify)
+            on_earliest_changed_();
     }
 
     void cancel_timer(timer_impl& impl)
     {
-        std::coroutine_handle<> h;
-        capy::executor_ref d;
-        std::error_code* ec_out = nullptr;
+        if (!impl.might_have_pending_waits_)
+            return;
+
+        // Not in heap and not waiting — just clear the flag
+        if (impl.heap_index_ == (std::numeric_limits<std::size_t>::max)()
+            && !impl.waiting_)
+        {
+            impl.might_have_pending_waits_ = false;
+            return;
+        }
+
         bool was_waiting = false;
 
         {
@@ -284,41 +363,34 @@ public:
             {
                 was_waiting = true;
                 impl.waiting_ = false;
-                h = impl.h_;
-                d = std::move(impl.d_);
-                ec_out = impl.ec_out_;
             }
+            refresh_cached_nearest();
         }
 
-        // Post cancelled waiter as scheduler_op (runs inside work_cleanup scope)
+        impl.might_have_pending_waits_ = false;
+
         if (was_waiting)
         {
-            auto* op = new timer_op;
-            op->h = h;
-            op->d = std::move(d);
-            op->ec_out = ec_out;
-            op->ec_value = make_error_code(capy::error::canceled);
-            op->sched = sched_;
-            sched_->post(op);
+            impl.ec_value_ = make_error_code(capy::error::canceled);
+            sched_->post(&impl.op_);
         }
     }
 
     bool empty() const noexcept override
     {
-        std::lock_guard lock(mutex_);
-        return heap_.empty();
+        return cached_nearest_ns_.load(std::memory_order_acquire)
+            == (std::numeric_limits<std::int64_t>::max)();
     }
 
     time_point nearest_expiry() const noexcept override
     {
-        std::lock_guard lock(mutex_);
-        return heap_.empty() ? time_point::max() : heap_[0].time_;
+        auto ns = cached_nearest_ns_.load(std::memory_order_acquire);
+        return time_point(time_point::duration(ns));
     }
 
     std::size_t process_expired() override
     {
-        // Collect expired timer_ops while holding lock
-        std::vector<timer_op*> expired;
+        std::vector<timer_impl*> expired;
 
         {
             std::lock_guard lock(mutex_);
@@ -332,27 +404,29 @@ public:
                 if (t->waiting_)
                 {
                     t->waiting_ = false;
-                    auto* op = new timer_op;
-                    op->h = t->h_;
-                    op->d = std::move(t->d_);
-                    op->ec_out = t->ec_out_;
-                    op->ec_value = {};  // Success
-                    op->sched = sched_;
-                    expired.push_back(op);
+                    t->ec_value_ = {};
+                    expired.push_back(t);
                 }
-                // If not waiting, timer is removed but not dispatched -
-                // wait() will handle this by checking expiry
             }
+
+            refresh_cached_nearest();
         }
 
-        // Post ops to scheduler (they run inside work_cleanup scope)
-        for (auto* op : expired)
-            sched_->post(op);
+        for (auto* t : expired)
+            sched_->post(&t->op_);
 
         return expired.size();
     }
 
 private:
+    void refresh_cached_nearest() noexcept
+    {
+        auto ns = heap_.empty()
+            ? (std::numeric_limits<std::int64_t>::max)()
+            : heap_[0].time_.time_since_epoch().count();
+        cached_nearest_ns_.store(ns, std::memory_order_release);
+    }
+
     void remove_timer_impl(timer_impl& impl)
     {
         std::size_t index = impl.heap_index_;
@@ -419,7 +493,31 @@ private:
     }
 };
 
-//------------------------------------------------------------------------------
+void
+timer_impl::completion_op::
+do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t,
+    std::uint32_t)
+{
+    if (!owner)
+        return;
+    static_cast<completion_op*>(base)->operator()();
+}
+
+void
+timer_impl::completion_op::
+operator()()
+{
+    auto* impl = impl_;
+    if (impl->ec_out_)
+        *impl->ec_out_ = impl->ec_value_;
+
+    auto& sched = impl->svc_->get_scheduler();
+    impl->d_.post(impl->h_);
+    sched.on_work_finished();
+}
 
 void
 timer_impl::
@@ -436,16 +534,17 @@ wait(
     std::stop_token token,
     std::error_code* ec)
 {
-    // Check if timer already expired (not in heap anymore)
-    bool already_expired = (heap_index_ == (std::numeric_limits<std::size_t>::max)());
-
-    if (already_expired)
+    if (heap_index_ == (std::numeric_limits<std::size_t>::max)())
     {
-        // Timer already expired - post for work tracking
-        if (ec)
-            *ec = {};
-        d.post(h);
-        return std::noop_coroutine();
+        if (expiry_ <= clock_type::now())
+        {
+            if (ec)
+                *ec = {};
+            d.post(h);
+            return std::noop_coroutine();
+        }
+
+        svc_->insert_timer(*this);
     }
 
     h_ = h;
@@ -453,29 +552,72 @@ wait(
     token_ = std::move(token);
     ec_out_ = ec;
     waiting_ = true;
+    might_have_pending_waits_ = true;
     svc_->get_scheduler().on_work_started();
-    // completion is always posted to scheduler queue, never inline.
     return std::noop_coroutine();
 }
 
-//------------------------------------------------------------------------------
-//
 // Extern free functions called from timer.cpp
 //
-//------------------------------------------------------------------------------
+// Thread-local caches invalidated by timer_service_invalidate_cache()
+// during shutdown. The service cache avoids find_service overhead per
+// timer construction. The impl cache avoids the free-list mutex for
+// the common create-then-destroy-on-same-thread pattern.
+static thread_local capy::execution_context* cached_ctx = nullptr;
+static thread_local timer_service_impl* cached_svc = nullptr;
+
+// RAII wrapper deletes the cached impl when the thread exits
+struct tl_impl_cache
+{
+    timer_impl* ptr = nullptr;
+    ~tl_impl_cache() { delete ptr; }
+};
+static thread_local tl_impl_cache tl_cached_impl;
+
+timer_impl*
+try_pop_tl_cache(timer_service_impl* svc) noexcept
+{
+    if (tl_cached_impl.ptr && tl_cached_impl.ptr->svc_ == svc)
+    {
+        auto* impl = tl_cached_impl.ptr;
+        tl_cached_impl.ptr = nullptr;
+        return impl;
+    }
+    return nullptr;
+}
+
+bool
+try_push_tl_cache(timer_impl* impl) noexcept
+{
+    if (!tl_cached_impl.ptr)
+    {
+        tl_cached_impl.ptr = impl;
+        return true;
+    }
+    return false;
+}
+
+void
+timer_service_invalidate_cache() noexcept
+{
+    cached_ctx = nullptr;
+    cached_svc = nullptr;
+    delete tl_cached_impl.ptr;
+    tl_cached_impl.ptr = nullptr;
+}
 
 timer::timer_impl*
 timer_service_create(capy::execution_context& ctx)
 {
-    auto* svc = ctx.find_service<timer_service>();
-    if (!svc)
+    if (cached_ctx != &ctx)
     {
-        // Timer service not yet created - this happens if io_context
-        // hasn't been constructed yet, or if the scheduler didn't
-        // initialize the timer service
-        throw std::runtime_error("timer_service not found");
+        cached_svc = static_cast<timer_service_impl*>(
+            ctx.find_service<timer_service>());
+        if (!cached_svc)
+            throw std::runtime_error("timer_service not found");
+        cached_ctx = &ctx;
     }
-    return svc->create_impl();
+    return cached_svc->create_impl();
 }
 
 void
