@@ -433,7 +433,34 @@ read_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    // Symmetric transfer ensures caller is suspended before I/O starts
+    // Speculative read: bypass initiator when data is ready
+    ssize_t n;
+    do {
+        n = ::readv(fd_, op.iovecs, op.iovec_count);
+    } while (n < 0 && errno == EINTR);
+
+    if (n > 0)
+    {
+        op.complete(0, static_cast<std::size_t>(n));
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    if (n == 0)
+    {
+        op.complete(0, 0);
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    if (errno != EAGAIN && errno != EWOULDBLOCK)
+    {
+        op.complete(errno, 0);
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    // EAGAIN — full async path
     return read_initiator_.start<&epoll_socket_impl::do_read_io>(this);
 }
 
@@ -457,7 +484,6 @@ write_some(
     op.start(token, this);
     op.impl_ptr = shared_from_this();
 
-    // Must prepare buffers before initiator runs
     capy::mutable_buffer bufs[epoll_write_op::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_write_op::max_buffers));
 
@@ -474,7 +500,38 @@ write_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    // Symmetric transfer ensures caller is suspended before I/O starts
+    // Speculative write: bypass initiator when buffer space is ready
+    msghdr msg{};
+    msg.msg_iov = op.iovecs;
+    msg.msg_iovlen = static_cast<std::size_t>(op.iovec_count);
+
+    ssize_t n;
+    do {
+        n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
+    } while (n < 0 && errno == EINTR);
+
+    if (n > 0)
+    {
+        op.complete(0, static_cast<std::size_t>(n));
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    if (n == 0)
+    {
+        op.complete(0, 0);
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    if (errno != EAGAIN && errno != EWOULDBLOCK)
+    {
+        op.complete(errno, 0);
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    // EAGAIN — full async path
     return write_initiator_.start<&epoll_socket_impl::do_write_io>(this);
 }
 
