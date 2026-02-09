@@ -529,7 +529,7 @@ testReset(
         auto client = make_stream( m1, client_ctx );
         auto server = make_stream( m2, server_ctx );
 
-        auto do_round = [&]( std::string const& msg ) -> capy::task<>
+        auto do_round = [&]( std::string const& msg )
         {
             std::error_code client_ec;
             std::error_code server_ec;
@@ -554,7 +554,7 @@ testReset(
             BOOST_TEST( !client_ec );
             BOOST_TEST( !server_ec );
             if( client_ec || server_ec )
-                co_return;
+                return;
 
             // Data transfer
             auto xfer = [&]() -> capy::task<>
@@ -596,30 +596,17 @@ testReset(
             capy::run_async( ioc.get_executor() )( sd_server() );
             ioc.run();
             ioc.restart();
-
-            co_return;
         };
 
         // Round 1
-        auto r1 = [&]() -> capy::task<>
-        {
-            co_await do_round( "hello1" );
-        };
-        capy::run_async( ioc.get_executor() )( r1() );
-        ioc.run();
-        ioc.restart();
+        do_round( "hello1" );
 
         // Explicit reset
         client.reset();
         server.reset();
 
         // Round 2
-        auto r2 = [&]() -> capy::task<>
-        {
-            co_await do_round( "hello2" );
-        };
-        capy::run_async( ioc.get_executor() )( r2() );
-        ioc.run();
+        do_round( "hello2" );
 
         m1.close();
         m2.close();
@@ -646,7 +633,7 @@ testResetViaHandshake(
         auto client = make_stream( m1, client_ctx );
         auto server = make_stream( m2, server_ctx );
 
-        auto do_round = [&]( std::string const& msg ) -> capy::task<>
+        auto do_round = [&]( std::string const& msg )
         {
             std::error_code client_ec;
             std::error_code server_ec;
@@ -670,7 +657,7 @@ testResetViaHandshake(
             BOOST_TEST( !client_ec );
             BOOST_TEST( !server_ec );
             if( client_ec || server_ec )
-                co_return;
+                return;
 
             auto xfer = [&]() -> capy::task<>
             {
@@ -707,28 +694,15 @@ testResetViaHandshake(
             capy::run_async( ioc.get_executor() )( sd_server() );
             ioc.run();
             ioc.restart();
-
-            co_return;
         };
 
         // Round 1
-        auto r1 = [&]() -> capy::task<>
-        {
-            co_await do_round( "round1" );
-        };
-        capy::run_async( ioc.get_executor() )( r1() );
-        ioc.run();
-        ioc.restart();
+        do_round( "round1" );
 
         // No explicit reset -- handshake() should auto-reset
 
         // Round 2
-        auto r2 = [&]() -> capy::task<>
-        {
-            co_await do_round( "round2" );
-        };
-        capy::run_async( ioc.get_executor() )( r2() );
-        ioc.run();
+        do_round( "round2" );
 
         m1.close();
         m2.close();
@@ -749,7 +723,7 @@ testResetFuse( StreamFactory make_stream )
             continue;
 
         capy::test::fuse f;
-        f.armed( [&]( capy::test::fuse& ) -> capy::task<>
+        f.armed( [&]( capy::test::fuse& )
         {
             io_context ioc;
             auto [m1, m2] = corosio::test::make_mocket_pair(
@@ -781,7 +755,7 @@ testResetFuse( StreamFactory make_stream )
                 BOOST_TEST( !cec );
                 BOOST_TEST( !sec );
                 if( cec || sec )
-                    co_return;
+                    return;
 
                 // Shutdown
                 auto sdc = [&]() -> capy::task<>
@@ -828,7 +802,6 @@ testResetFuse( StreamFactory make_stream )
 
             m1.close();
             m2.close();
-            co_return;
         } );
     }
 }
