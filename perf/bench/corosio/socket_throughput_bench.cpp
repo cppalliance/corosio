@@ -79,7 +79,7 @@ bench::benchmark_result bench_throughput(
                 break;
             total_written += n;
         }
-        writer.shutdown( corosio::tcp_socket::shutdown_send );
+        writer.close();
     };
 
     auto read_task = [&]() -> capy::task<>
@@ -118,9 +118,6 @@ bench::benchmark_result bench_throughput(
               << elapsed << " s\n";
     std::cout << "    Throughput: " << perf::format_throughput( throughput ) << "\n\n";
 
-    writer.close();
-    reader.close();
-
     return bench::benchmark_result( "throughput_" + std::to_string( chunk_size ) )
         .add( "chunk_size", static_cast<double>( chunk_size ) )
         .add( "bytes_written", static_cast<double>( total_written ) )
@@ -156,7 +153,7 @@ bench::benchmark_result bench_bidirectional_throughput(
             if( ec ) break;
             written1 += n;
         }
-        sock1.shutdown( corosio::tcp_socket::shutdown_send );
+        sock1.cancel();
     };
 
     auto read1_task = [&]() -> capy::task<>
@@ -180,7 +177,7 @@ bench::benchmark_result bench_bidirectional_throughput(
             if( ec ) break;
             written2 += n;
         }
-        sock2.shutdown( corosio::tcp_socket::shutdown_send );
+        sock2.cancel();
     };
 
     auto read2_task = [&]() -> capy::task<>

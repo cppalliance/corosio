@@ -68,6 +68,8 @@ capy::task<> sub_request(
 
     auto [rec, rn] = co_await capy::read(
         client, capy::mutable_buffer( recv_buf, 64 ) );
+    (void)rec;
+    (void)rn;
     remaining.fetch_sub( 1, std::memory_order_release );
 }
 

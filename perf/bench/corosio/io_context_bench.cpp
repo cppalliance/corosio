@@ -119,7 +119,7 @@ bench::benchmark_result bench_multithreaded_scaling(
 
         std::vector<std::thread> runners;
         for( int t = 0; t < num_threads; ++t )
-            runners.emplace_back( [&ioc, &running, &ex, &counter, batch_size]()
+            runners.emplace_back( [&ioc, &running]()
             {
                 while( running.load( std::memory_order_relaxed ) )
                 {

@@ -197,7 +197,7 @@ bench::benchmark_result bench_fork_join( int fan_out, double duration_s )
     int64_t cycles = 0;
     perf::statistics latency_stats;
 
-    fork_join_op op{ ioc, clients, servers, fan_out, running, cycles, latency_stats };
+    fork_join_op op{ ioc, clients, servers, fan_out, running, cycles, latency_stats, {}, {} };
 
     perf::stopwatch total_sw;
 
@@ -355,7 +355,7 @@ bench::benchmark_result bench_nested(
     perf::statistics latency_stats;
 
     nested_op op{ ioc, clients, servers, groups, subs_per_group,
-                  running, cycles, latency_stats };
+                  running, cycles, latency_stats, {}, {}, {} };
 
     perf::stopwatch total_sw;
 

@@ -177,8 +177,8 @@ bench::benchmark_result bench_single_connection( double duration_s )
     int64_t request_count = 0;
     perf::statistics latency_stats;
 
-    server_op sop{ server, completed_requests };
-    client_op cop{ client, running, request_count, latency_stats };
+    server_op sop{ server, completed_requests, {} };
+    client_op cop{ client, running, request_count, latency_stats, {}, {} };
 
     perf::stopwatch total_sw;
 
@@ -249,9 +249,9 @@ bench::benchmark_result bench_concurrent_connections( int num_connections, doubl
     for( int i = 0; i < num_connections; ++i )
     {
         sops.push_back( std::make_unique<server_op>(
-            server_op{ servers[i], server_completed[i] } ) );
+            server_op{ servers[i], server_completed[i], {} } ) );
         cops.push_back( std::make_unique<client_op>(
-            client_op{ clients[i], running, client_counts[i], stats[i] } ) );
+            client_op{ clients[i], running, client_counts[i], stats[i], {}, {} } ) );
         sops.back()->start();
         cops.back()->start();
     }
@@ -338,9 +338,9 @@ bench::benchmark_result bench_multithread(
     for( int i = 0; i < num_connections; ++i )
     {
         sops.push_back( std::make_unique<server_op>(
-            server_op{ servers[i], server_completed[i] } ) );
+            server_op{ servers[i], server_completed[i], {} } ) );
         cops.push_back( std::make_unique<client_op>(
-            client_op{ clients[i], running, client_counts[i], stats[i] } ) );
+            client_op{ clients[i], running, client_counts[i], stats[i], {}, {} } ) );
         sops.back()->start();
         cops.back()->start();
     }

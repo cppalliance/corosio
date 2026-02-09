@@ -67,7 +67,7 @@ struct sequential_churn_op
             } );
 
         acc.async_accept( *server,
-            [this]( boost::system::error_code ec )
+            []( boost::system::error_code ec )
             {
                 // Accept completed; write initiated from connect handler
                 (void)ec;
@@ -124,7 +124,7 @@ bench::benchmark_result bench_sequential_churn( double duration_s )
     int64_t cycles = 0;
     perf::statistics latency_stats;
 
-    sequential_churn_op op{ ioc, acc, ep, running, cycles, latency_stats };
+    sequential_churn_op op{ ioc, acc, ep, running, cycles, latency_stats, {}, {}, {} };
 
     perf::stopwatch total_sw;
 
@@ -191,7 +191,7 @@ bench::benchmark_result bench_concurrent_churn( int num_loops, double duration_s
             asio::ip::address_v4::loopback(), acceptors[i]->local_endpoint().port() );
         ops.push_back( std::make_unique<sequential_churn_op>(
             sequential_churn_op{ ioc, *acceptors[i], ep, running,
-                                 cycle_counts[i], stats[i] } ) );
+                                 cycle_counts[i], stats[i], {}, {}, {} } ) );
         ops.back()->start();
     }
 
@@ -323,7 +323,7 @@ bench::benchmark_result bench_burst_churn( int burst_size, double duration_s )
     int64_t total_accepted = 0;
     perf::statistics burst_stats;
 
-    burst_churn_op op{ ioc, acc, ep, running, total_accepted, burst_stats, burst_size };
+    burst_churn_op op{ ioc, acc, ep, running, total_accepted, burst_stats, burst_size, {}, {}, {}, {} };
 
     perf::stopwatch total_sw;
 
