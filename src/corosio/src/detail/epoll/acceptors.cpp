@@ -195,52 +195,42 @@ accept(
         svc_.work_started();
         op.impl_ptr = shared_from_this();
 
-        bool perform_now = false;
+        std::lock_guard lock(desc_state_.mutex);
+        if (desc_state_.read_ready)
         {
-            std::lock_guard lock(desc_state_.mutex);
-            if (desc_state_.read_ready)
-            {
-                desc_state_.read_ready = false;
-                perform_now = true;
-            }
-            else
-            {
-                desc_state_.read_op = &op;
-            }
-        }
-
-        if (perform_now)
-        {
+            desc_state_.read_ready = false;
             op.perform_io();
             if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
             {
                 op.errn = 0;
-                std::lock_guard lock(desc_state_.mutex);
-                desc_state_.read_op = &op;
+                if (op.cancelled.load(std::memory_order_acquire))
+                {
+                    svc_.post(&op);
+                    svc_.work_finished();
+                }
+                else
+                {
+                    desc_state_.read_op = &op;
+                }
             }
             else
             {
                 svc_.post(&op);
                 svc_.work_finished();
             }
-            return std::noop_coroutine();
         }
-
-        if (op.cancelled.load(std::memory_order_acquire))
+        else
         {
-            epoll_op* claimed = nullptr;
+            if (op.cancelled.load(std::memory_order_acquire))
             {
-                std::lock_guard lock(desc_state_.mutex);
-                if (desc_state_.read_op == &op)
-                    claimed = std::exchange(desc_state_.read_op, nullptr);
-            }
-            if (claimed)
-            {
-                svc_.post(claimed);
+                svc_.post(&op);
                 svc_.work_finished();
             }
+            else
+            {
+                desc_state_.read_op = &op;
+            }
         }
-        // completion is always posted to scheduler queue, never inline.
         return std::noop_coroutine();
     }
 
