@@ -277,6 +277,6 @@ capy::task<void> heartbeat(
 
 == Next Steps
 
-* xref:3i.signals.adoc[Signal Handling] — Respond to OS signals
-* xref:3c.io-context.adoc[I/O Context] — The event loop
-* xref:3m.error-handling.adoc[Error Handling] — Cancellation patterns
+* xref:4i.signals.adoc[Signal Handling] — Respond to OS signals
+* xref:4c.io-context.adoc[I/O Context] — The event loop
+* xref:4m.error-handling.adoc[Error Handling] — Cancellation patterns

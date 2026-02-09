@@ -11,7 +11,7 @@
 
 This chapter introduces the networking concepts you need to understand before
 using Corosio. If you're already comfortable with TCP/IP, sockets, and the
-client-server model, you can skip to xref:3c.io-context.adoc[I/O Context].
+client-server model, you can skip to xref:4c.io-context.adoc[I/O Context].
 
 == What is a Network?
 
@@ -752,6 +752,6 @@ For a deeper understanding of TCP/IP:
 
 == Next Steps
 
-* xref:3b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
-* xref:3c.io-context.adoc[I/O Context] — The event loop
-* xref:3d.sockets.adoc[Sockets] — Socket operations in detail
+* xref:4b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
+* xref:4c.io-context.adoc[I/O Context] — The event loop
+* xref:4d.sockets.adoc[Sockets] — Socket operations in detail

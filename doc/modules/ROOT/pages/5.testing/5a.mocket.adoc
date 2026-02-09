@@ -255,5 +255,5 @@ co_await run_server(server);
 
 == Next Steps
 
-* xref:../3.guide/3d.sockets.adoc[Sockets Guide] — The socket interface mockets implement
-* xref:../3.guide/3m.error-handling.adoc[Error Handling] — Testing error paths
+* xref:../4.guide/4d.sockets.adoc[Sockets Guide] — The socket interface mockets implement
+* xref:../4.guide/4m.error-handling.adoc[Error Handling] — Testing error paths

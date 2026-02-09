@@ -1,0 +1,78 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= What Happens When You Connect
+
+Your program calls `connect`, and a moment later bytes arrive on a machine halfway around the world. Between those two events, a handful of protocols cooperate to make it happen. Understanding what each one does -- and where your code fits in the picture -- is the foundation for everything that follows.
+
+== The Journey of a Message
+
+Suppose your program wants to send the string `"hello"` to a server at address `192.0.2.50` on port `8080`. Here is what happens, roughly, from the moment you call `send` to the moment the server's application reads the data:
+
+. Your application hands `"hello"` to TCP through the operating system's socket interface.
+. TCP prepends its own header -- containing the destination port (`8080`), a sequence number to track byte position, and a checksum. The five bytes of `"hello"` are now wrapped inside a TCP *segment*.
+. The TCP segment is passed down to IP, which prepends another header -- containing the destination address (`192.0.2.50`), the source address of your machine, and a time-to-live field that prevents the packet from circling the network forever. The whole thing is now an IP *packet*.
+. The IP packet is handed to the network hardware, which frames it for whatever physical medium connects your machine to the next hop -- Ethernet, Wi-Fi, or something else. This frame goes out on the wire.
+
+At each stage, the original data gets wrapped in another header, like putting a letter in an envelope, then putting that envelope in a shipping box. This is called *encapsulation*: each protocol adds its own metadata around the payload it received from above.
+
+== Arriving at the Other End
+
+When the packet reaches the destination machine, the process runs in reverse:
+
+. The network hardware strips the link-level framing and hands the IP packet to the operating system.
+. IP examines its header, confirms the packet is addressed to this machine, and looks at the *protocol* field to determine whether the payload belongs to TCP or UDP. It strips the IP header and passes the segment up.
+. TCP examines the destination port number in its header. Port `8080` identifies which application should receive the data. TCP strips its own header and delivers `"hello"` to the server's socket.
+
+This reverse process is called *demultiplexing*. The destination machine receives a stream of raw packets from the network and uses the headers to sort each one to the correct protocol, then to the correct application. Without demultiplexing, every program on the machine would see every packet, which would be chaos.
+
+== Only a Few Protocols Matter
+
+The full roster of internet protocols is enormous, but for application development you only need to know a handful:
+
+*IP* (Internet Protocol):: Handles addressing and routing. Every packet carries a source and destination IP address, and routers use these addresses to forward the packet toward its destination one hop at a time. IP makes no guarantees about delivery -- packets can arrive out of order, arrive twice, or not arrive at all.
+
+*TCP* (Transmission Control Protocol):: Builds a reliable, ordered byte stream on top of IP. Your program writes bytes into one end and they come out in the same order at the other end, even if the underlying packets took different routes or needed to be retransmitted. TCP also handles flow control so a fast sender does not overwhelm a slow receiver.
+
+*UDP* (User Datagram Protocol):: A thinner alternative to TCP. Each send produces exactly one datagram, and each receive consumes exactly one. There are no guarantees about delivery or ordering. UDP is the right choice when speed matters more than completeness -- things like real-time audio, video, or DNS lookups.
+
+*DNS* (Domain Name System):: Translates human-readable names like `www.example.com` into IP addresses like `93.184.215.14`. Almost every connection your program makes begins with a DNS query, even if you never see it explicitly.
+
+These four, plus the hardware underneath, account for nearly everything that happens when your program communicates over the internet. Later sections examine each one in detail.
+
+== Encapsulation in Practice
+
+To make this concrete, consider the bytes on the wire when your program sends `"hello"` over TCP. The final packet contains, from outermost to innermost:
+
+[cols="1,3"]
+|===
+| Component | Contents
+
+| Ethernet header
+| Source and destination MAC addresses, EtherType field indicating IP
+
+| IP header
+| Version, header length, total length, TTL, protocol (TCP), source IP, destination IP
+
+| TCP header
+| Source port, destination port, sequence number, acknowledgment number, flags, window size, checksum
+
+| Application data
+| The five bytes: `h`, `e`, `l`, `l`, `o`
+|===
+
+Each protocol only reads and removes its own header. TCP never inspects the IP header. IP never inspects the Ethernet header. This separation is what allows protocols to be mixed and matched independently -- you can run TCP over Wi-Fi or over a fiber-optic link without changing a single line of your application code.
+
+== Where Your Code Lives
+
+As an application developer, you operate at the top of this stack. You open a socket, connect to an address and port, and read or write data. The operating system handles TCP segmentation, IP routing, and hardware framing on your behalf. You never construct an IP header or compute a TCP checksum by hand.
+
+This is a good thing. The protocols below your application are mature, heavily optimized, and implemented in the kernel. Your job is to use them correctly -- to understand what TCP promises and what it does not, to know when UDP is a better fit, and to handle the errors that arise when the network does not cooperate.
+
+That understanding begins with the next section: how machines are identified on the internet.

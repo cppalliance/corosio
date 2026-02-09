@@ -386,6 +386,6 @@ synchronization.
 
 == Next Steps
 
-* xref:3d.sockets.adoc[Sockets] — Socket operations
-* xref:3b.concurrent-programming.adoc[Concurrent Programming] — Coroutine patterns
-* xref:../2.tutorials/2a.echo-server.adoc[Echo Server Tutorial] — Simpler approach
+* xref:4d.sockets.adoc[Sockets] — Socket operations
+* xref:4b.concurrent-programming.adoc[Concurrent Programming] — Coroutine patterns
+* xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Simpler approach

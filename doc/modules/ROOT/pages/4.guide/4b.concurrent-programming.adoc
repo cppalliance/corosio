@@ -328,8 +328,6 @@ Corosio operations implement the affine awaitable protocol. When you `co_await`
 an I/O operation, it captures your executor and resumes through it. This
 happens automatically—you don't need explicit dispatch calls.
 
-See xref:../4.concepts/4b.affine-awaitables.adoc[Affine Awaitables] for details.
-
 == Strands: Synchronization Without Locks
 
 A _strand_ guarantees that handlers posted to it don't run concurrently. Even
@@ -536,7 +534,7 @@ for (int i = 0; i < max_workers; ++i)
 ----
 
 Corosio's `tcp_server` class implements this pattern—see
-xref:3k.tcp-server.adoc[TCP Server] for details.
+xref:4k.tcp-server.adoc[TCP Server] for details.
 
 === Pipelines
 
@@ -632,6 +630,5 @@ provides excellent performance with simple, race-free code.
 
 == Next Steps
 
-* xref:3c.io-context.adoc[I/O Context] — The event loop in detail
-* xref:../4.concepts/4b.affine-awaitables.adoc[Affine Awaitables] — How affinity propagates
-* xref:../2.tutorials/2a.echo-server.adoc[Echo Server] — Practical concurrency example
+* xref:4c.io-context.adoc[I/O Context] — The event loop in detail
+* xref:../3.tutorials/3a.echo-server.adoc[Echo Server] — Practical concurrency example
