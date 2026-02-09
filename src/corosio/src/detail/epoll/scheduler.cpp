@@ -20,7 +20,6 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
 
-#include <atomic>
 #include <chrono>
 #include <limits>
 #include <utility>
@@ -337,7 +336,7 @@ epoll_scheduler(
             [](void* p) {
                 auto* self = static_cast<epoll_scheduler*>(p);
                 self->timerfd_stale_.store(true, std::memory_order_release);
-                if (self->task_running_.load(std::memory_order_relaxed))
+                if (self->task_running_.load(std::memory_order_acquire))
                     self->interrupt_reactor();
             }));
 
@@ -409,7 +408,6 @@ post(capy::coro h) const
         {
             auto h = h_;
             delete this;
-            std::atomic_thread_fence(std::memory_order_acquire);
             h.resume();
         }
 
@@ -1014,7 +1012,7 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* c
             }
 
             task_interrupted_ = more_handlers || timeout_us == 0;
-            task_running_.store(true, std::memory_order_relaxed);
+            task_running_.store(true, std::memory_order_release);
 
             if (more_handlers)
                 unlock_and_signal_one(lock);
