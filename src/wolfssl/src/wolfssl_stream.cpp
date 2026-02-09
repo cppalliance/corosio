@@ -10,7 +10,7 @@
 #include <boost/corosio/wolfssl_stream.hpp>
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/buffers/buffer_array.hpp>
-#include <boost/capy/ex/coro_lock.hpp>
+#include <boost/capy/ex/async_mutex.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/write.hpp>
 
@@ -321,7 +321,7 @@ struct wolfssl_stream::impl
     op_buffers* current_op_ = nullptr;
 
     // Renegotiation can cause both TLS read/write to access the socket
-    capy::coro_lock io_cm_;
+    capy::async_mutex io_cm_;
 
     //--------------------------------------------------------------------------
 

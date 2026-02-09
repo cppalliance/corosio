@@ -10,7 +10,7 @@
 #include <boost/corosio/openssl_stream.hpp>
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/buffers/buffer_array.hpp>
-#include <boost/capy/ex/coro_lock.hpp>
+#include <boost/capy/ex/async_mutex.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/write.hpp>
 
@@ -282,7 +282,7 @@ struct openssl_stream::impl
     std::vector<char> in_buf_;
     std::vector<char> out_buf_;
 
-    capy::coro_lock io_cm_;
+    capy::async_mutex io_cm_;
 
     //--------------------------------------------------------------------------
 
