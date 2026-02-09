@@ -23,8 +23,8 @@ using tcp = asio::ip::tcp;
 /** Create a connected pair of TCP sockets for benchmarking. */
 inline std::pair<tcp::socket, tcp::socket> make_socket_pair( asio::io_context& ioc )
 {
-    tcp::acceptor acceptor( ioc, tcp::endpoint( tcp::v4(), 0 ) );
-    acceptor.set_option( tcp::acceptor::reuse_address( true ) );
+    tcp::acceptor acceptor( ioc, tcp::endpoint( tcp::v4(), 0 ),
+        true /* reuse_address */ );
 
     tcp::socket client( ioc );
     tcp::socket server( ioc );
@@ -35,6 +35,8 @@ inline std::pair<tcp::socket, tcp::socket> make_socket_pair( asio::io_context& i
 
     client.set_option( tcp::no_delay( true ) );
     server.set_option( tcp::no_delay( true ) );
+    client.set_option( asio::socket_base::linger( true, 0 ) );
+    server.set_option( asio::socket_base::linger( true, 0 ) );
 
     return { std::move( client ), std::move( server ) };
 }

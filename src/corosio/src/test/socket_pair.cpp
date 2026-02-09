@@ -81,6 +81,9 @@ make_socket_pair(basic_io_context& ctx)
 
     acc.close();
 
+    s1.set_linger(true, 0);
+    s2.set_linger(true, 0);
+
     return {std::move(s1), std::move(s2)};
 }
 
