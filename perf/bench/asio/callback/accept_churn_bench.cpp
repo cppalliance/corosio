@@ -45,6 +45,8 @@ struct sequential_churn_op
     perf::stopwatch sw;
     char byte = 'X';
     char recv_byte = 0;
+    bool connect_done = false;
+    bool accept_done = false;
 
     void start()
     {
@@ -52,25 +54,31 @@ struct sequential_churn_op
             return;
 
         sw.reset();
+        connect_done = false;
+        accept_done = false;
         client = std::make_unique<tcp::socket>( ioc );
         server = std::make_unique<tcp::socket>( ioc );
         client->open( tcp::v4() );
         client->set_option( asio::socket_base::linger( true, 0 ) );
 
-        // Initiate connect and accept concurrently
         client->async_connect( ep,
             [this]( boost::system::error_code ec )
             {
                 if( ec )
                     return;
-                do_write();
+                connect_done = true;
+                if( accept_done )
+                    do_write();
             } );
 
         acc.async_accept( *server,
-            []( boost::system::error_code ec )
+            [this]( boost::system::error_code ec )
             {
-                // Accept completed; write initiated from connect handler
-                (void)ec;
+                if( ec )
+                    return;
+                accept_done = true;
+                if( connect_done )
+                    do_write();
             } );
     }
 

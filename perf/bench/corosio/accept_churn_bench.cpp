@@ -70,11 +70,11 @@ bench::benchmark_result bench_sequential_churn(
 
             // Spawn connect, await accept
             capy::run_async( ioc->get_executor() )(
-                [&]() -> capy::task<>
+                [](corosio::tcp_socket& c, corosio::endpoint ep) -> capy::task<>
                 {
-                    auto [ec] = co_await client.connect( ep );
+                    auto [ec] = co_await c.connect( ep );
                     (void)ec;
-                }() );
+                }(client, ep) );
 
             auto [aec] = co_await acc.accept( server );
             if( aec )
@@ -111,6 +111,7 @@ bench::benchmark_result bench_sequential_churn(
         std::this_thread::sleep_for(
             std::chrono::duration<double>( duration_s ) );
         running.store( false, std::memory_order_relaxed );
+        acc.close();
         ioc->stop();
     } );
 
@@ -126,8 +127,6 @@ bench::benchmark_result bench_sequential_churn(
     std::cout << "  Throughput:  " << perf::format_rate( conns_per_sec ) << "\n";
     perf::print_latency_stats( latency_stats, "Cycle latency" );
     std::cout << "\n";
-
-    acc.close();
 
     return bench::benchmark_result( "sequential" )
         .add( "cycles", static_cast<double>( cycles ) )
@@ -180,11 +179,11 @@ bench::benchmark_result bench_concurrent_churn(
             client.set_linger( true, 0 );
 
             capy::run_async( ioc->get_executor() )(
-                [&]() -> capy::task<>
+                [](corosio::tcp_socket& c, corosio::endpoint ep) -> capy::task<>
                 {
-                    auto [ec] = co_await client.connect( ep );
+                    auto [ec] = co_await c.connect( ep );
                     (void)ec;
-                }() );
+                }(client, ep) );
 
             auto [aec] = co_await acc.accept( server );
             if( aec )
@@ -220,6 +219,8 @@ bench::benchmark_result bench_concurrent_churn(
         std::this_thread::sleep_for(
             std::chrono::duration<double>( duration_s ) );
         running.store( false, std::memory_order_relaxed );
+        for( auto& a : acceptors )
+            a.close();
         ioc->stop();
     } );
 
@@ -250,9 +251,6 @@ bench::benchmark_result bench_concurrent_churn(
               << perf::format_latency( total_mean / num_loops ) << "\n";
     std::cout << "    Avg p99 latency: "
               << perf::format_latency( total_p99 / num_loops ) << "\n\n";
-
-    for( auto& a : acceptors )
-        a.close();
 
     return bench::benchmark_result( "concurrent_" + std::to_string( num_loops ) )
         .add( "num_loops", num_loops )
@@ -304,11 +302,11 @@ bench::benchmark_result bench_burst_churn(
                 clients.back().open();
                 clients.back().set_linger( true, 0 );
                 capy::run_async( ioc->get_executor() )(
-                    [&c = clients.back(), ep]() -> capy::task<>
+                    [](corosio::tcp_socket& c, corosio::endpoint ep) -> capy::task<>
                     {
                         auto [ec] = co_await c.connect( ep );
                         (void)ec;
-                    }() );
+                    }(clients.back(), ep) );
             }
 
             // Accept all
@@ -340,6 +338,7 @@ bench::benchmark_result bench_burst_churn(
         std::this_thread::sleep_for(
             std::chrono::duration<double>( duration_s ) );
         running.store( false, std::memory_order_relaxed );
+        acc.close();
         ioc->stop();
     } );
 
@@ -355,8 +354,6 @@ bench::benchmark_result bench_burst_churn(
     std::cout << "    Accept rate: " << perf::format_rate( accepts_per_sec ) << "\n";
     perf::print_latency_stats( burst_stats, "Burst latency" );
     std::cout << "\n";
-
-    acc.close();
 
     return bench::benchmark_result( "burst_" + std::to_string( burst_size ) )
         .add( "burst_size", burst_size )

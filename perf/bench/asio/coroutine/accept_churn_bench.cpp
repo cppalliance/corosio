@@ -63,10 +63,10 @@ bench::benchmark_result bench_sequential_churn( double duration_s )
 
                 // Spawn connect, await accept
                 asio::co_spawn( ioc,
-                    [&client, ep]() -> asio::awaitable<void>
+                    [](tcp::socket& c, tcp::endpoint ep) -> asio::awaitable<void>
                     {
-                        co_await client->async_connect( ep, asio::use_awaitable );
-                    }(),
+                        co_await c.async_connect( ep, asio::use_awaitable );
+                    }(*client, ep),
                     asio::detached );
 
                 *server = co_await acc.async_accept( asio::use_awaitable );
@@ -164,10 +164,10 @@ bench::benchmark_result bench_concurrent_churn( int num_loops, double duration_s
                 client->set_option( asio::socket_base::linger( true, 0 ) );
 
                 asio::co_spawn( ioc,
-                    [&client, ep]() -> asio::awaitable<void>
+                    [](tcp::socket& c, tcp::endpoint ep) -> asio::awaitable<void>
                     {
-                        co_await client->async_connect( ep, asio::use_awaitable );
-                    }(),
+                        co_await c.async_connect( ep, asio::use_awaitable );
+                    }(*client, ep),
                     asio::detached );
 
                 *server = co_await acc.async_accept( asio::use_awaitable );
@@ -279,10 +279,10 @@ bench::benchmark_result bench_burst_churn( int burst_size, double duration_s )
                     clients.back()->set_option(
                         asio::socket_base::linger( true, 0 ) );
                     asio::co_spawn( ioc,
-                        [&c = *clients.back(), ep]() -> asio::awaitable<void>
+                        [](tcp::socket& c, tcp::endpoint ep) -> asio::awaitable<void>
                         {
                             co_await c.async_connect( ep, asio::use_awaitable );
-                        }(),
+                        }(*clients.back(), ep),
                         asio::detached );
                 }
 
