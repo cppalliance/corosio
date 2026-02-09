@@ -241,6 +241,6 @@ Or through the affine awaitable protocol when using `capy::jcancellable_task`.
 
 == Next Steps
 
-* xref:../3.guide/3j.resolver.adoc[Resolver Guide] — Full resolver reference
-* xref:../3.guide/3f.endpoints.adoc[Endpoints Guide] — Working with addresses
-* xref:2b.http-client.adoc[HTTP Client] — Use resolved addresses for connections
+* xref:../4.guide/4j.resolver.adoc[Resolver Guide] — Full resolver reference
+* xref:../4.guide/4f.endpoints.adoc[Endpoints Guide] — Working with addresses
+* xref:3b.http-client.adoc[HTTP Client] — Use resolved addresses for connections

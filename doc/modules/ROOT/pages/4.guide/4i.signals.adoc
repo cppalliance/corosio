@@ -425,6 +425,6 @@ The `restart` flag is particularly useful—without it, blocking calls like
 
 == Next Steps
 
-* xref:3h.timers.adoc[Timers] — Timed operations
-* xref:3c.io-context.adoc[I/O Context] — The event loop
-* xref:../2.tutorials/2a.echo-server.adoc[Echo Server Tutorial] — Server example
+* xref:4h.timers.adoc[Timers] — Timed operations
+* xref:4c.io-context.adoc[I/O Context] — The event loop
+* xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Server example

@@ -243,6 +243,6 @@ The `do_request` function works unchanged because both `socket` and
 
 == Next Steps
 
-* xref:2c.dns-lookup.adoc[DNS Lookup] — Resolve hostnames to addresses
-* xref:../3.guide/3l.tls.adoc[TLS Guide] — WolfSSL integration details
-* xref:../3.guide/3g.composed-operations.adoc[Composed Operations] — How read/write work
+* xref:3c.dns-lookup.adoc[DNS Lookup] — Resolve hostnames to addresses
+* xref:../4.guide/4l.tls.adoc[TLS Guide] — WolfSSL integration details
+* xref:../4.guide/4g.composed-operations.adoc[Composed Operations] — How read/write work

@@ -65,8 +65,8 @@ using modern asynchronous programming patterns. This documentation assumes:
 * **Understanding of C++20 coroutines** — `co_await`, `co_return`, awaitables
 * **Basic TCP/IP networking concepts** — clients, servers, ports, connections
 
-If you're new to these topics, see xref:3.guide/3a.tcp-networking.adoc[TCP/IP Networking]
-and xref:3.guide/3b.concurrent-programming.adoc[Concurrent Programming] for background.
+If you're new to these topics, see xref:4.guide/4a.tcp-networking.adoc[TCP/IP Networking]
+and xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] for background.
 
 == Requirements
 
@@ -145,7 +145,7 @@ int main()
 == Next Steps
 
 * xref:quick-start.adoc[Quick Start] — Build a working echo server
-* xref:3.guide/3a.tcp-networking.adoc[TCP/IP Networking] — Networking fundamentals
-* xref:3.guide/3b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
-* xref:3.guide/3c.io-context.adoc[I/O Context] — Understand the event loop
-* xref:3.guide/3d.sockets.adoc[Sockets] — Learn socket operations in detail
+* xref:4.guide/4a.tcp-networking.adoc[TCP/IP Networking] — Networking fundamentals
+* xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
+* xref:4.guide/4c.io-context.adoc[I/O Context] — Understand the event loop
+* xref:4.guide/4d.sockets.adoc[Sockets] — Learn socket operations in detail

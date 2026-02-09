@@ -359,6 +359,6 @@ I/O context.
 
 == Next Steps
 
-* xref:3f.endpoints.adoc[Endpoints] — Working with resolved addresses
-* xref:3d.sockets.adoc[Sockets] — Connecting to endpoints
-* xref:../2.tutorials/2c.dns-lookup.adoc[DNS Lookup Tutorial] — Complete example
+* xref:4f.endpoints.adoc[Endpoints] — Working with resolved addresses
+* xref:4d.sockets.adoc[Sockets] — Connecting to endpoints
+* xref:../3.tutorials/3c.dns-lookup.adoc[DNS Lookup Tutorial] — Complete example
