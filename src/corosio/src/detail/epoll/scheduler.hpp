@@ -101,6 +101,19 @@ public:
     */
     int epoll_fd() const noexcept { return epoll_fd_; }
 
+    /** Reset the thread's inline completion budget.
+
+        Called at the start of each posted completion handler to
+        grant a fresh budget for speculative inline completions.
+    */
+    void reset_inline_budget() const noexcept;
+
+    /** Consume one unit of inline budget if available.
+
+        @return True if budget was available and consumed.
+    */
+    bool try_consume_inline_budget() const noexcept;
+
     /** Register a descriptor for persistent monitoring.
 
         The fd is registered once and stays registered until explicitly
@@ -235,6 +248,7 @@ private:
     int epoll_fd_;
     int event_fd_;                              // for interrupting reactor
     int timer_fd_;                              // timerfd for kernel-managed timer expiry
+    int max_inline_budget_ = 2;
     mutable std::mutex mutex_;
     mutable std::condition_variable cond_;
     mutable op_queue completed_ops_;

@@ -21,7 +21,6 @@
 #include "src/detail/intrusive.hpp"
 #include "src/detail/socket_service.hpp"
 
-#include "src/detail/cached_initiator.hpp"
 #include "src/detail/epoll/op.hpp"
 #include "src/detail/epoll/scheduler.hpp"
 
@@ -161,20 +160,19 @@ public:
     /// Per-descriptor state for persistent epoll registration
     descriptor_state desc_state_;
 
-    cached_initiator read_initiator_;
-    cached_initiator write_initiator_;
-
-    /// Execute the read I/O operation (called by initiator coroutine).
-    void do_read_io();
-
-    /// Execute the write I/O operation (called by initiator coroutine).
-    void do_write_io();
-
 private:
     epoll_socket_service& svc_;
     int fd_ = -1;
     endpoint local_endpoint_;
     endpoint remote_endpoint_;
+
+    void register_op(
+        epoll_op& op,
+        epoll_op*& desc_slot,
+        bool& ready_flag) noexcept;
+
+    friend struct epoll_op;
+    friend struct epoll_connect_op;
 };
 
 /** State for epoll socket service. */

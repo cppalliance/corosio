@@ -189,35 +189,8 @@ struct epoll_op : scheduler_op
         acceptor_impl_ = nullptr;
     }
 
-    void operator()() override
-    {
-        stop_cb.reset();
-
-        if (ec_out)
-        {
-            if (cancelled.load(std::memory_order_acquire))
-                *ec_out = capy::error::canceled;
-            else if (errn != 0)
-                *ec_out = make_err(errn);
-            else if (is_read_operation() && bytes_transferred == 0)
-                *ec_out = capy::error::eof;
-            else
-                *ec_out = {};
-        }
-
-        if (bytes_out)
-            *bytes_out = bytes_transferred;
-
-        // Move to stack before resuming coroutine. The coroutine might close
-        // the socket, releasing the last wrapper ref. If impl_ptr were the
-        // last ref and we destroyed it while still in operator(), we'd have
-        // use-after-free. Moving to local ensures destruction happens at
-        // function exit, after all member accesses are complete.
-        capy::executor_ref saved_ex( std::move( ex ) );
-        std::coroutine_handle<> saved_h( std::move( h ) );
-        auto prevent_premature_destruction = std::move(impl_ptr);
-        dispatch_coro(saved_ex, saved_h).resume();
-    }
+    // Defined in sockets.cpp where epoll_socket_impl is complete
+    void operator()() override;
 
     virtual bool is_read_operation() const noexcept { return false; }
     virtual void cancel() noexcept = 0;
@@ -363,24 +336,23 @@ struct epoll_write_op : epoll_op
 struct epoll_accept_op : epoll_op
 {
     int accepted_fd = -1;
-    io_object::io_object_impl* peer_impl = nullptr;
     io_object::io_object_impl** impl_out = nullptr;
+    sockaddr_in peer_addr{};
 
     void reset() noexcept
     {
         epoll_op::reset();
         accepted_fd = -1;
-        peer_impl = nullptr;
         impl_out = nullptr;
+        peer_addr = {};
     }
 
     void perform_io() noexcept override
     {
-        sockaddr_in addr{};
-        socklen_t addrlen = sizeof(addr);
+        socklen_t addrlen = sizeof(peer_addr);
         int new_fd;
         do {
-            new_fd = ::accept4(fd, reinterpret_cast<sockaddr*>(&addr),
+            new_fd = ::accept4(fd, reinterpret_cast<sockaddr*>(&peer_addr),
                                &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
         } while (new_fd < 0 && errno == EINTR);
 
