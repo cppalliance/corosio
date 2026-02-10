@@ -62,11 +62,10 @@ Corosio's `task<T>` returns `coroutine_handle` from `await_suspend`, enabling co
 
 ```cpp
 // task<T>::await_suspend - returns coroutine_handle
-coro await_suspend(coro cont, executor_ref caller_ex, std::stop_token token)
+coro await_suspend(coro cont, io_env const& env)
 {
-    h_.promise().set_continuation(cont, caller_ex);
-    h_.promise().set_executor(caller_ex);
-    h_.promise().set_stop_token(token);
+    h_.promise().set_continuation(cont, env.executor);
+    h_.promise().set_environment(env);
     return h_;  // compiler tail-calls this handle
 }
 ```
@@ -121,10 +120,10 @@ auto transform_awaitable(Awaitable&& a)
 }
 ```
 
-The `await_suspend` signature accepts additional context parameters:
+The `await_suspend` signature accepts the execution environment:
 
 ```cpp
-coro await_suspend(coro cont, executor_ref caller_ex, std::stop_token token)
+coro await_suspend(coro cont, io_env const& env)
 ```
 
 This design allows third-party awaitable types to integrate with Corosio's I/O system by satisfying the `IoAwaitable` concept.

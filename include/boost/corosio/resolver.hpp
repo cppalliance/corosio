@@ -18,6 +18,7 @@
 #include <boost/corosio/resolver_results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <system_error>
@@ -238,22 +239,12 @@ class BOOST_COROSIO_DECL resolver : public io_object
             return {ec_, std::move(results_)};
         }
 
-        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Ex const& ex) -> std::coroutine_handle<>
+            capy::io_env const& env) -> std::coroutine_handle<>
         {
-            return r_.get().resolve(h, ex, host_, service_, flags_, token_, &ec_, &results_);
-        }
-
-        template<typename Ex>
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
-        {
-            token_ = std::move(token);
-            return r_.get().resolve(h, ex, host_, service_, flags_, token_, &ec_, &results_);
+            token_ = env.stop_token;
+            return r_.get().resolve(h, env.executor, host_, service_, flags_, token_, &ec_, &results_);
         }
     };
 
@@ -288,22 +279,12 @@ class BOOST_COROSIO_DECL resolver : public io_object
             return {ec_, std::move(result_)};
         }
 
-        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Ex const& ex) -> std::coroutine_handle<>
+            capy::io_env const& env) -> std::coroutine_handle<>
         {
-            return r_.get().reverse_resolve(h, ex, ep_, flags_, token_, &ec_, &result_);
-        }
-
-        template<typename Ex>
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
-        {
-            token_ = std::move(token);
-            return r_.get().reverse_resolve(h, ex, ep_, flags_, token_, &ec_, &result_);
+            token_ = env.stop_token;
+            return r_.get().reverse_resolve(h, env.executor, ep_, flags_, token_, &ec_, &result_);
         }
     };
 

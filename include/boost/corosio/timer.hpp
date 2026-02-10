@@ -17,6 +17,7 @@
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <system_error>
 
@@ -69,22 +70,12 @@ class BOOST_COROSIO_DECL timer : public io_object
             return {ec_};
         }
 
-        template<typename Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Ex const& ex) -> std::coroutine_handle<>
+            capy::io_env const& env) -> std::coroutine_handle<>
         {
-            return t_.get().wait(h, ex, token_, &ec_);
-        }
-
-        template<typename Ex>
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            Ex const& ex,
-            std::stop_token token) -> std::coroutine_handle<>
-        {
-            token_ = std::move(token);
-            return t_.get().wait(h, ex, token_, &ec_);
+            token_ = env.stop_token;
+            return t_.get().wait(h, env.executor, token_, &ec_);
         }
     };
 

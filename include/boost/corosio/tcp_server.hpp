@@ -21,6 +21,8 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/any_executor.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 
 #include <coroutine>
@@ -224,15 +226,16 @@ private:
     {
         struct promise_type
         {
-            Ex ex;  // Stored directly in frame, no allocation
-            std::stop_token st;
+            Ex ex;  // Executor stored directly in frame (outlives child tasks)
+            capy::io_env env_;
 
             // For regular coroutines: first arg is executor, second is stop token
             template<class E, class S, class... Args>
                 requires capy::Executor<std::decay_t<E>>
             promise_type(E e, S s, Args&&...)
                 : ex(std::move(e))
-                , st(std::move(s))
+                , env_{capy::executor_ref(ex), std::move(s),
+                       capy::current_frame_allocator()}
             {
             }
 
@@ -242,7 +245,8 @@ private:
                           capy::Executor<std::decay_t<E>>)
             promise_type(Closure&&, E e, S s, Args&&...)
                 : ex(std::move(e))
-                , st(std::move(s))
+                , env_{capy::executor_ref(ex), std::move(s),
+                       capy::current_frame_allocator()}
             {
             }
 
@@ -254,37 +258,25 @@ private:
             void return_void() noexcept {}
             void unhandled_exception() { std::terminate(); }
 
-            // Pass through simple awaitables, inject executor/stop_token for IoAwaitable
-            template<class Awaitable>
+            // Inject io_env for IoAwaitable
+            template<capy::IoAwaitable Awaitable>
             auto await_transform(Awaitable&& a)
             {
                 using AwaitableT = std::decay_t<Awaitable>;
-                // Simple awaitable: has await_suspend(coroutine_handle<>) but not IoAwaitable
-                if constexpr (
-                    requires { a.await_suspend(std::declval<std::coroutine_handle<>>()); } &&
-                    !capy::IoAwaitable<AwaitableT>)
+                struct adapter
                 {
-                    return std::forward<Awaitable>(a);
-                }
-                else
-                {
-                    struct adapter
+                    AwaitableT aw;
+                    capy::io_env const* env;
+
+                    bool await_ready() { return aw.await_ready(); }
+                    decltype(auto) await_resume() { return aw.await_resume(); }
+
+                    auto await_suspend(std::coroutine_handle<promise_type> h)
                     {
-                        AwaitableT aw;
-                        Ex* ex_ptr;
-                        std::stop_token* st_ptr;
-
-                        bool await_ready() { return aw.await_ready(); }
-                        decltype(auto) await_resume() { return aw.await_resume(); }
-
-                        auto await_suspend(std::coroutine_handle<promise_type> h)
-                        {
-                            static_assert(capy::IoAwaitable<AwaitableT>);
-                            return aw.await_suspend(h, *ex_ptr, *st_ptr);
-                        }
-                    };
-                    return adapter{std::forward<Awaitable>(a), &ex, &st};
-                }
+                        return aw.await_suspend(h, *env);
+                    }
+                };
+                return adapter{std::forward<Awaitable>(a), &env_};
             }
         };
 
@@ -324,7 +316,7 @@ private:
         {
             // Executor and stop token stored in promise via constructor
             co_await std::move(t);
-            co_await self->push(*wp);
+            co_await self->push(*wp); // worker goes back to idle list
         }
     };
 
@@ -347,11 +339,10 @@ private:
             return false;
         }
 
-        template<class Ex>
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            Ex const&, std::stop_token) noexcept
+            capy::io_env const&) noexcept
         {
             // Dispatch to server's executor before touching shared state
             self_.ex_.dispatch(h);
@@ -394,11 +385,10 @@ private:
             return !self_.idle_empty();
         }
 
-        template<class Ex>
         bool
         await_suspend(
             std::coroutine_handle<> h,
-            Ex const&, std::stop_token) noexcept
+            capy::io_env const&) noexcept
         {
             // Running on server executor (do_accept runs there)
             wait_.h = h;

@@ -15,6 +15,7 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/io_buffer_param.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <system_error>
 
 #include <coroutine>
@@ -228,11 +229,10 @@ protected:
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            capy::executor_ref ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::io_env const& env) -> std::coroutine_handle<>
         {
-            token_ = std::move(token);
-            return ios_.get().read_some(h, ex, buffers_, token_, &ec_, &bytes_transferred_);
+            token_ = env.stop_token;
+            return ios_.get().read_some(h, env.executor, buffers_, token_, &ec_, &bytes_transferred_);
         }
     };
 
@@ -268,11 +268,10 @@ protected:
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            capy::executor_ref ex,
-            std::stop_token token) -> std::coroutine_handle<>
+            capy::io_env const& env) -> std::coroutine_handle<>
         {
-            token_ = std::move(token);
-            return ios_.get().write_some(h, ex, buffers_, token_, &ec_, &bytes_transferred_);
+            token_ = env.stop_token;
+            return ios_.get().write_some(h, env.executor, buffers_, token_, &ec_, &bytes_transferred_);
         }
     };
 
