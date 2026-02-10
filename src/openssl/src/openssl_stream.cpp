@@ -87,6 +87,22 @@ apply_hostname_verification(SSL* ssl, std::string const& hostname)
 #endif
 }
 
+inline std::error_code
+normalize_openssl_shutdown_read_error(std::error_code ec) noexcept
+{
+    if(!ec)
+        return ec;
+
+    if(ec == make_error_code(capy::error::eof) ||
+       ec == make_error_code(capy::error::canceled) ||
+       ec == std::errc::connection_reset ||
+       ec == std::errc::connection_aborted ||
+       ec == std::errc::broken_pipe)
+        return make_error_code(capy::error::stream_truncated);
+
+    return ec;
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------
@@ -622,8 +638,7 @@ struct openssl_stream::impl
                 ec = co_await read_input();
                 if(ec)
                 {
-                    if(ec == make_error_code(capy::error::eof))
-                        ec = {};
+                    ec = normalize_openssl_shutdown_read_error(ec);
                     co_return {ec};
                 }
             }
@@ -646,8 +661,7 @@ struct openssl_stream::impl
                     ec = co_await read_input();
                     if(ec)
                     {
-                        if(ec == make_error_code(capy::error::eof))
-                            ec = {};
+                        ec = normalize_openssl_shutdown_read_error(ec);
                         co_return {ec};
                     }
                 }

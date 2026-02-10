@@ -87,29 +87,13 @@ constexpr std::size_t default_buffer_size = 16384;
 inline bool
 is_zero_return_error(int err) noexcept
 {
-#if defined(WOLFSSL_ERROR_ZERO_RETURN)
-    if(err == WOLFSSL_ERROR_ZERO_RETURN)
-        return true;
-#endif
-#if defined(SSL_ERROR_ZERO_RETURN)
-    if(err == SSL_ERROR_ZERO_RETURN)
-        return true;
-#endif
-    return false;
+    return err == WOLFSSL_ERROR_ZERO_RETURN;
 }
 
 inline bool
 has_peer_shutdown(WOLFSSL* ssl) noexcept
 {
-    int const shutdown = wolfSSL_get_shutdown(ssl);
-#if defined(WOLFSSL_RECEIVED_SHUTDOWN)
-    return (shutdown & WOLFSSL_RECEIVED_SHUTDOWN) != 0;
-#elif defined(SSL_RECEIVED_SHUTDOWN)
-    return (shutdown & SSL_RECEIVED_SHUTDOWN) != 0;
-#else
-    // Some WolfSSL builds expose only wolfSSL_get_shutdown(), not flag macros.
-    return shutdown != 0;
-#endif
+    return wolfSSL_get_shutdown(ssl) != 0;
 }
 
 } // namespace
