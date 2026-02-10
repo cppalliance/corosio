@@ -61,6 +61,32 @@ namespace {
 
 constexpr std::size_t default_buffer_size = 16384;
 
+inline SSL_METHOD const*
+tls_method_compat() noexcept
+{
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+    return TLS_method();
+#else
+    return SSLv23_method();
+#endif
+}
+
+inline void
+apply_hostname_verification(SSL* ssl, std::string const& hostname)
+{
+    if(hostname.empty())
+        return;
+
+    SSL_set_tlsext_host_name(ssl, hostname.c_str());
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+    SSL_set1_host(ssl, hostname.c_str());
+#else
+    if(auto* param = SSL_get0_param(ssl))
+        X509_VERIFY_PARAM_set1_host(param, hostname.c_str(), 0);
+#endif
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------
@@ -127,7 +153,7 @@ public:
         : ctx_(nullptr)
         , cd_(&cd)
     {
-        ctx_ = SSL_CTX_new(TLS_method());
+        ctx_ = SSL_CTX_new(tls_method_compat());
         if(!ctx_)
             return;
 
@@ -318,11 +344,7 @@ struct openssl_stream::impl
 
         // SSL_clear clears per-session settings; reapply hostname
         auto& cd = detail::get_tls_context_data(ctx_);
-        if(!cd.hostname.empty())
-        {
-            SSL_set_tlsext_host_name(ssl_, cd.hostname.c_str());
-            SSL_set1_host(ssl_, cd.hostname.c_str());
-        }
+        apply_hostname_verification(ssl_, cd.hostname);
 
         used_ = false;
     }
@@ -681,11 +703,7 @@ struct openssl_stream::impl
 
         SSL_set_bio(ssl_, int_bio, int_bio);
 
-        if(!cd.hostname.empty())
-        {
-            SSL_set_tlsext_host_name(ssl_, cd.hostname.c_str());
-            SSL_set1_host(ssl_, cd.hostname.c_str());
-        }
+        apply_hostname_verification(ssl_, cd.hostname);
 
         return {};
     }

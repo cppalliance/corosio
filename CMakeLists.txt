@@ -242,12 +242,12 @@ if (MINGW AND TARGET WolfSSL::WolfSSL)
         INTERFACE_LINK_LIBRARIES ws2_32 crypt32)
 endif()
 if (WolfSSL_FOUND)
-    file(GLOB_RECURSE BOOST_COROSIO_WOLFSSL_HEADERS CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/wolfssl/*.hpp")
+    set(BOOST_COROSIO_WOLFSSL_HEADERS
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/wolfssl_stream.hpp")
     file(GLOB_RECURSE BOOST_COROSIO_WOLFSSL_SOURCES CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/wolfssl/src/*.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/wolfssl/src/*.cpp")
-    source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/wolfssl" PREFIX "include" FILES ${BOOST_COROSIO_WOLFSSL_HEADERS})
+    source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio" PREFIX "include" FILES ${BOOST_COROSIO_WOLFSSL_HEADERS})
     source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/wolfssl/src" PREFIX "src" FILES ${BOOST_COROSIO_WOLFSSL_SOURCES})
     add_library(boost_corosio_wolfssl ${BOOST_COROSIO_WOLFSSL_HEADERS} ${BOOST_COROSIO_WOLFSSL_SOURCES})
     add_library(Boost::corosio_wolfssl ALIAS boost_corosio_wolfssl)
@@ -281,12 +281,12 @@ if (MINGW AND TARGET OpenSSL::Crypto)
         INTERFACE_LINK_LIBRARIES ws2_32 crypt32)
 endif()
 if (OpenSSL_FOUND)
-    file(GLOB_RECURSE BOOST_COROSIO_OPENSSL_HEADERS CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/openssl/*.hpp")
+    set(BOOST_COROSIO_OPENSSL_HEADERS
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/openssl_stream.hpp")
     file(GLOB_RECURSE BOOST_COROSIO_OPENSSL_SOURCES CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/openssl/src/*.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/openssl/src/*.cpp")
-    source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/openssl" PREFIX "include" FILES ${BOOST_COROSIO_OPENSSL_HEADERS})
+    source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio" PREFIX "include" FILES ${BOOST_COROSIO_OPENSSL_HEADERS})
     source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/openssl/src" PREFIX "src" FILES ${BOOST_COROSIO_OPENSSL_SOURCES})
     add_library(boost_corosio_openssl ${BOOST_COROSIO_OPENSSL_HEADERS} ${BOOST_COROSIO_OPENSSL_SOURCES})
     add_library(Boost::corosio_openssl ALIAS boost_corosio_openssl)

@@ -84,6 +84,34 @@ namespace {
 // Default buffer size for TLS I/O
 constexpr std::size_t default_buffer_size = 16384;
 
+inline bool
+is_zero_return_error(int err) noexcept
+{
+#if defined(WOLFSSL_ERROR_ZERO_RETURN)
+    if(err == WOLFSSL_ERROR_ZERO_RETURN)
+        return true;
+#endif
+#if defined(SSL_ERROR_ZERO_RETURN)
+    if(err == SSL_ERROR_ZERO_RETURN)
+        return true;
+#endif
+    return false;
+}
+
+inline bool
+has_peer_shutdown(WOLFSSL* ssl) noexcept
+{
+    int const shutdown = wolfSSL_get_shutdown(ssl);
+#if defined(WOLFSSL_RECEIVED_SHUTDOWN)
+    return (shutdown & WOLFSSL_RECEIVED_SHUTDOWN) != 0;
+#elif defined(SSL_RECEIVED_SHUTDOWN)
+    return (shutdown & SSL_RECEIVED_SHUTDOWN) != 0;
+#else
+    // Some WolfSSL builds expose only wolfSSL_get_shutdown(), not flag macros.
+    return shutdown != 0;
+#endif
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------
@@ -499,7 +527,7 @@ struct wolfssl_stream::impl
                             if(rec == make_error_code(capy::error::eof))
                             {
                                 // Check if we got a proper TLS shutdown
-                                if(wolfSSL_get_shutdown(ssl_) & SSL_RECEIVED_SHUTDOWN)
+                                if(has_peer_shutdown(ssl_))
                                     ec = make_error_code(capy::error::eof);
                                 else
                                     ec = make_error_code(capy::error::stream_truncated);
@@ -529,7 +557,7 @@ struct wolfssl_stream::impl
                             }
                         }
                     }
-                    else if(err == WOLFSSL_ERROR_ZERO_RETURN)
+                    else if(is_zero_return_error(err))
                     {
                         // Clean TLS shutdown - treat as EOF
                         current_op_ = nullptr;
@@ -838,7 +866,7 @@ struct wolfssl_stream::impl
                 {
                     // Just need to flush more - already done above, continue loop
                 }
-                else if(err == WOLFSSL_ERROR_SYSCALL || err == SSL_ERROR_ZERO_RETURN)
+                else if(err == WOLFSSL_ERROR_SYSCALL || is_zero_return_error(err))
                 {
                     // Socket closed or peer sent close_notify - shutdown complete
                     break;
