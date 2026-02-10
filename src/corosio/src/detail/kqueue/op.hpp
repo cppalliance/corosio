@@ -18,7 +18,7 @@
 #include <boost/corosio/io_object.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/error.hpp>
 #include <system_error>
 
@@ -169,7 +169,7 @@ struct kqueue_op : scheduler_op
         void operator()() const noexcept;
     };
 
-    capy::coro h;
+    std::coroutine_handle<> h;
     capy::executor_ref ex;
     std::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
@@ -228,7 +228,7 @@ struct kqueue_op : scheduler_op
         // use-after-free. Moving to local ensures destruction happens at
         // function exit, after all member accesses are complete.
         capy::executor_ref saved_ex( std::move( ex ) );
-        capy::coro saved_h( std::move( h ) );
+        std::coroutine_handle<> saved_h( std::move( h ) );
         auto prevent_premature_destruction = std::move(impl_ptr);
         resume_coro(saved_ex, saved_h);
     }

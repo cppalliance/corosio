@@ -15,7 +15,6 @@
 
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/except.hpp>
-#include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
 #include <system_error>
@@ -143,7 +142,7 @@ enum { max_signal_number = 64 };
 
 struct signal_op : scheduler_op
 {
-    capy::coro h;
+    std::coroutine_handle<> h;
     capy::executor_ref d;
     std::error_code* ec_out = nullptr;
     int* signal_out = nullptr;

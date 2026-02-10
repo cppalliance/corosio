@@ -164,11 +164,11 @@ shutdown()
 
 void
 win_scheduler::
-post(capy::coro h) const
+post(std::coroutine_handle<> h) const
 {
     struct post_handler final : scheduler_op
     {
-        capy::coro h_;
+        std::coroutine_handle<> h_;
 
         static void do_complete(
             void* owner,
@@ -189,7 +189,7 @@ post(capy::coro h) const
             coro.resume();
         }
 
-        explicit post_handler(capy::coro coro)
+        explicit post_handler(std::coroutine_handle<> coro)
             : scheduler_op(&do_complete)
             , h_(coro)
         {

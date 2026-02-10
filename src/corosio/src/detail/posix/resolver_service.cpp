@@ -20,7 +20,7 @@
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/resolver_results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/error.hpp>
 
 #include <netdb.h>
@@ -303,7 +303,7 @@ public:
         };
 
         // Coroutine state
-        capy::coro h;
+        std::coroutine_handle<> h;
         capy::executor_ref ex;
         posix_resolver_impl* impl = nullptr;
 
@@ -346,7 +346,7 @@ public:
         };
 
         // Coroutine state
-        capy::coro h;
+        std::coroutine_handle<> h;
         capy::executor_ref ex;
         posix_resolver_impl* impl = nullptr;
 

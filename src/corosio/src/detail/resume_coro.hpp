@@ -13,7 +13,7 @@
 #include <boost/corosio/basic_io_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/detail/type_id.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 
 namespace boost::corosio::detail {
 
@@ -28,7 +28,7 @@ namespace boost::corosio::detail {
     @param h The coroutine handle to resume.
 */
 inline void
-resume_coro(capy::executor_ref d, capy::coro h)
+resume_coro(capy::executor_ref d, std::coroutine_handle<> h)
 {
     // Fast path: resume directly for io_context executor
     if (&d.type_id() == &capy::detail::type_id<basic_io_context::executor_type>())

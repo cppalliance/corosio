@@ -18,7 +18,7 @@
 #include <boost/corosio/io_object.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/error.hpp>
 #include <system_error>
 
@@ -114,7 +114,7 @@ struct select_op : scheduler_op
         void operator()() const noexcept;
     };
 
-    capy::coro h;
+    std::coroutine_handle<> h;
     capy::executor_ref ex;
     std::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;
@@ -169,7 +169,7 @@ struct select_op : scheduler_op
 
         // Move to stack before destroying the frame
         capy::executor_ref saved_ex( std::move( ex ) );
-        capy::coro saved_h( std::move( h ) );
+        std::coroutine_handle<> saved_h( std::move( h ) );
         impl_ptr.reset();
         saved_ex.dispatch( saved_h );
     }

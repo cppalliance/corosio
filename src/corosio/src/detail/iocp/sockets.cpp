@@ -307,7 +307,7 @@ release_internal()
 std::coroutine_handle<>
 win_socket_impl_internal::
 connect(
-    capy::coro h,
+    std::coroutine_handle<> h,
     capy::executor_ref d,
     endpoint ep,
     std::stop_token token,
@@ -452,7 +452,7 @@ do_write_io()
 std::coroutine_handle<>
 win_socket_impl_internal::
 read_some(
-    capy::coro h,
+    std::coroutine_handle<> h,
     capy::executor_ref d,
     io_buffer_param param,
     std::stop_token token,
@@ -499,7 +499,7 @@ read_some(
 std::coroutine_handle<>
 win_socket_impl_internal::
 write_some(
-    capy::coro h,
+    std::coroutine_handle<> h,
     capy::executor_ref d,
     io_buffer_param param,
     std::stop_token token,
@@ -912,7 +912,7 @@ release_internal()
 std::coroutine_handle<>
 win_acceptor_impl_internal::
 accept(
-    capy::coro h,
+    std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
     std::error_code* ec,

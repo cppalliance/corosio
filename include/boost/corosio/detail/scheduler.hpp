@@ -11,7 +11,7 @@
 #define BOOST_COROSIO_DETAIL_SCHEDULER_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 
 #include <cstddef>
 
@@ -22,7 +22,7 @@ class scheduler_op;
 struct scheduler
 {
     virtual ~scheduler() = default;
-    virtual void post(capy::coro) const = 0;
+    virtual void post(std::coroutine_handle<>) const = 0;
     virtual void post(scheduler_op*) const = 0;
 
     /** Notify scheduler of pending work (for executor use).

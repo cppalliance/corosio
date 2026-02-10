@@ -422,15 +422,15 @@ shutdown()
 
 void
 kqueue_scheduler::
-post(capy::coro h) const
+post(std::coroutine_handle<> h) const
 {
     struct post_handler final
         : scheduler_op
     {
-        capy::coro h_;
+        std::coroutine_handle<> h_;
 
         explicit
-        post_handler(capy::coro h)
+        post_handler(std::coroutine_handle<> h)
             : h_(h)
         {
         }

@@ -69,7 +69,7 @@ enum { max_signal_number = 32 };
 /** Signal wait operation state. */
 struct signal_op : scheduler_op
 {
-    capy::coro h;
+    std::coroutine_handle<> h;
     capy::executor_ref d;
     std::error_code* ec_out = nullptr;
     int* signal_out = nullptr;

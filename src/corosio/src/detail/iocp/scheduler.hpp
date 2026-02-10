@@ -51,7 +51,7 @@ public:
     win_scheduler& operator=(win_scheduler const&) = delete;
 
     void shutdown() override;
-    void post(capy::coro h) const override;
+    void post(std::coroutine_handle<> h) const override;
     void post(scheduler_op* h) const override;
     void on_work_started() noexcept override;
     void on_work_finished() noexcept override;

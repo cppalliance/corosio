@@ -145,14 +145,14 @@ public:
     void release_internal();
 
     std::coroutine_handle<> connect(
-        capy::coro,
+        std::coroutine_handle<>,
         capy::executor_ref,
         endpoint,
         std::stop_token,
         std::error_code*);
 
     std::coroutine_handle<> read_some(
-        capy::coro,
+        std::coroutine_handle<>,
         capy::executor_ref,
         io_buffer_param,
         std::stop_token,
@@ -160,7 +160,7 @@ public:
         std::size_t*);
 
     std::coroutine_handle<> write_some(
-        capy::coro,
+        std::coroutine_handle<>,
         capy::executor_ref,
         io_buffer_param,
         std::stop_token,
@@ -426,7 +426,7 @@ public:
     void release_internal();
 
     std::coroutine_handle<> accept(
-        capy::coro,
+        std::coroutine_handle<>,
         capy::executor_ref,
         std::stop_token,
         std::error_code*,

@@ -119,7 +119,7 @@ operator()()
 
     // Move to stack before destroying the frame
     capy::executor_ref saved_ex( std::move( ex ) );
-    capy::coro saved_h( std::move( h ) );
+    std::coroutine_handle<> saved_h( std::move( h ) );
     impl_ptr.reset();
     saved_ex.dispatch( saved_h );
 }

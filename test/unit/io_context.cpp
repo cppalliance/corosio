@@ -48,7 +48,7 @@ struct counter_coro
 
     std::coroutine_handle<promise_type> h;
 
-    operator capy::coro() const { return h; }
+    operator std::coroutine_handle<>() const { return h; }
 };
 
 inline counter_coro make_coro(int& counter)
@@ -84,7 +84,7 @@ struct atomic_counter_coro
 
     std::coroutine_handle<promise_type> h;
 
-    operator capy::coro() const { return h; }
+    operator std::coroutine_handle<>() const { return h; }
 };
 
 inline atomic_counter_coro make_atomic_coro(std::atomic<int>& counter)
@@ -121,7 +121,7 @@ struct check_coro
 
     std::coroutine_handle<promise_type> h;
 
-    operator capy::coro() const { return h; }
+    operator std::coroutine_handle<>() const { return h; }
 };
 
 inline check_coro make_check_coro(bool& result, io_context::executor_type& ex)

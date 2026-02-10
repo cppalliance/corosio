@@ -191,7 +191,7 @@ operator()()
 
     // Move to stack before resuming. See kqueue_op::operator()() for rationale.
     capy::executor_ref saved_ex( std::move( ex ) );
-    capy::coro saved_h( std::move( h ) );
+    std::coroutine_handle<> saved_h( std::move( h ) );
     auto prevent_premature_destruction = std::move(impl_ptr);
     resume_coro(saved_ex, saved_h);
 }

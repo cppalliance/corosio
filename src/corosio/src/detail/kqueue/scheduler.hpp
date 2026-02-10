@@ -92,7 +92,7 @@ public:
     kqueue_scheduler& operator=(kqueue_scheduler const&) = delete;
 
     void shutdown() override;
-    void post(capy::coro h) const override;
+    void post(std::coroutine_handle<> h) const override;
     void post(scheduler_op* h) const override;
     // scheduler::on_work_started / on_work_finished — non-const, for executors.
     // Tracks work that keeps run() alive; the scheduler stops when the

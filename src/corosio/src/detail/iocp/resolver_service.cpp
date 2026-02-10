@@ -329,7 +329,7 @@ release()
 std::coroutine_handle<>
 win_resolver_impl::
 resolve(
-    capy::coro h,
+    std::coroutine_handle<> h,
     capy::executor_ref d,
     std::string_view host,
     std::string_view service,
@@ -395,7 +395,7 @@ resolve(
 std::coroutine_handle<>
 win_resolver_impl::
 reverse_resolve(
-    capy::coro h,
+    std::coroutine_handle<> h,
     capy::executor_ref d,
     endpoint const& ep,
     reverse_flags flags,

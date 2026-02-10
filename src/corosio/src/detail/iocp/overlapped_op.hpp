@@ -16,7 +16,6 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/coro.hpp>
 #include <boost/capy/error.hpp>
 #include <system_error>
 
@@ -60,7 +59,7 @@ struct overlapped_op
     /** Function pointer type for cancellation hook. */
     using cancel_func_type = void(*)(overlapped_op*) noexcept;
 
-    capy::coro h;
+    std::coroutine_handle<> h;
     capy::executor_ref ex;
     std::error_code* ec_out = nullptr;
     std::size_t* bytes_out = nullptr;

@@ -12,7 +12,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <chrono>
@@ -358,7 +358,7 @@ public:
         @param h The coroutine handle to dispatch.
     */
     void
-    dispatch(capy::coro h) const
+    dispatch(std::coroutine_handle<> h) const
     {
         if (running_in_this_thread())
             h.resume();
@@ -374,7 +374,7 @@ public:
         @param h The coroutine handle to post.
     */
     void
-    post(capy::coro h) const
+    post(std::coroutine_handle<> h) const
     {
         ctx_->sched_->post(h);
     }
