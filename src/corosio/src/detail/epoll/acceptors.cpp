@@ -43,6 +43,9 @@ operator()()
 {
     stop_cb.reset();
 
+    static_cast<epoll_acceptor_impl*>(acceptor_impl_)
+        ->service().scheduler().reset_inline_budget();
+
     bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
 
     if (ec_out)
@@ -55,77 +58,49 @@ operator()()
             *ec_out = {};
     }
 
-    if (success && accepted_fd >= 0)
+    // Set up the peer socket on success
+    if (success && accepted_fd >= 0 && acceptor_impl_)
     {
-        if (acceptor_impl_)
+        auto* socket_svc = static_cast<epoll_acceptor_impl*>(acceptor_impl_)
+            ->service().socket_service();
+        if (socket_svc)
         {
-            auto* socket_svc = static_cast<epoll_acceptor_impl*>(acceptor_impl_)
-                ->service().socket_service();
-            if (socket_svc)
+            auto& impl = static_cast<epoll_socket_impl&>(socket_svc->create_impl());
+            impl.set_socket(accepted_fd);
+
+            impl.desc_state_.fd = accepted_fd;
             {
-                auto& impl = static_cast<epoll_socket_impl&>(socket_svc->create_impl());
-                impl.set_socket(accepted_fd);
-
-                // Register accepted socket with epoll (edge-triggered mode)
-                impl.desc_state_.fd = accepted_fd;
-                {
-                    std::lock_guard lock(impl.desc_state_.mutex);
-                    impl.desc_state_.read_op = nullptr;
-                    impl.desc_state_.write_op = nullptr;
-                    impl.desc_state_.connect_op = nullptr;
-                }
-                socket_svc->scheduler().register_descriptor(accepted_fd, &impl.desc_state_);
-
-                sockaddr_in local_addr{};
-                socklen_t local_len = sizeof(local_addr);
-                sockaddr_in remote_addr{};
-                socklen_t remote_len = sizeof(remote_addr);
-
-                endpoint local_ep, remote_ep;
-                if (::getsockname(accepted_fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
-                    local_ep = from_sockaddr_in(local_addr);
-                if (::getpeername(accepted_fd, reinterpret_cast<sockaddr*>(&remote_addr), &remote_len) == 0)
-                    remote_ep = from_sockaddr_in(remote_addr);
-
-                impl.set_endpoints(local_ep, remote_ep);
-
-                if (impl_out)
-                    *impl_out = &impl;
-
-                accepted_fd = -1;
+                std::lock_guard lock(impl.desc_state_.mutex);
+                impl.desc_state_.read_op = nullptr;
+                impl.desc_state_.write_op = nullptr;
+                impl.desc_state_.connect_op = nullptr;
             }
-            else
-            {
-                if (ec_out && !*ec_out)
-                    *ec_out = make_err(ENOENT);
-                ::close(accepted_fd);
-                accepted_fd = -1;
-                if (impl_out)
-                    *impl_out = nullptr;
-            }
+            socket_svc->scheduler().register_descriptor(accepted_fd, &impl.desc_state_);
+
+            impl.set_endpoints(
+                static_cast<epoll_acceptor_impl*>(acceptor_impl_)->local_endpoint(),
+                from_sockaddr_in(peer_addr));
+
+            if (impl_out)
+                *impl_out = &impl;
+            accepted_fd = -1;
         }
         else
         {
-            ::close(accepted_fd);
-            accepted_fd = -1;
-            if (impl_out)
-                *impl_out = nullptr;
+            // No socket service — treat as error
+            if (ec_out && !*ec_out)
+                *ec_out = make_err(ENOENT);
+            success = false;
         }
     }
-    else
+
+    if (!success || !acceptor_impl_)
     {
         if (accepted_fd >= 0)
         {
             ::close(accepted_fd);
             accepted_fd = -1;
         }
-
-        if (peer_impl)
-        {
-            peer_impl->release();
-            peer_impl = nullptr;
-        }
-
         if (impl_out)
             *impl_out = nullptr;
     }
@@ -183,54 +158,72 @@ accept(
             std::lock_guard lock(desc_state_.mutex);
             desc_state_.read_ready = false;
         }
+
+        if (svc_.scheduler().try_consume_inline_budget())
+        {
+            auto* socket_svc = svc_.socket_service();
+            if (socket_svc)
+            {
+                auto& impl = static_cast<epoll_socket_impl&>(socket_svc->create_impl());
+                impl.set_socket(accepted);
+
+                impl.desc_state_.fd = accepted;
+                {
+                    std::lock_guard lock(impl.desc_state_.mutex);
+                    impl.desc_state_.read_op = nullptr;
+                    impl.desc_state_.write_op = nullptr;
+                    impl.desc_state_.connect_op = nullptr;
+                }
+                socket_svc->scheduler().register_descriptor(accepted, &impl.desc_state_);
+
+                impl.set_endpoints(local_endpoint_, from_sockaddr_in(addr));
+
+                *ec = {};
+                if (impl_out)
+                    *impl_out = &impl;
+            }
+            else
+            {
+                ::close(accepted);
+                *ec = make_err(ENOENT);
+                if (impl_out)
+                    *impl_out = nullptr;
+            }
+            return ex.dispatch(h);
+        }
+
         op.accepted_fd = accepted;
+        op.peer_addr = addr;
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
-        // completion is always posted to scheduler queue, never inline.
         return std::noop_coroutine();
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
-        svc_.work_started();
         op.impl_ptr = shared_from_this();
+        svc_.work_started();
 
         std::lock_guard lock(desc_state_.mutex);
+        bool io_done = false;
         if (desc_state_.read_ready)
         {
             desc_state_.read_ready = false;
             op.perform_io();
-            if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
-            {
+            io_done = (op.errn != EAGAIN && op.errn != EWOULDBLOCK);
+            if (!io_done)
                 op.errn = 0;
-                if (op.cancelled.load(std::memory_order_acquire))
-                {
-                    svc_.post(&op);
-                    svc_.work_finished();
-                }
-                else
-                {
-                    desc_state_.read_op = &op;
-                }
-            }
-            else
-            {
-                svc_.post(&op);
-                svc_.work_finished();
-            }
+        }
+
+        if (io_done || op.cancelled.load(std::memory_order_acquire))
+        {
+            svc_.post(&op);
+            svc_.work_finished();
         }
         else
         {
-            if (op.cancelled.load(std::memory_order_acquire))
-            {
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-            else
-            {
-                desc_state_.read_op = &op;
-            }
+            desc_state_.read_op = &op;
         }
         return std::noop_coroutine();
     }
@@ -246,27 +239,7 @@ void
 epoll_acceptor_impl::
 cancel() noexcept
 {
-    std::shared_ptr<epoll_acceptor_impl> self;
-    try {
-        self = shared_from_this();
-    } catch (const std::bad_weak_ptr&) {
-        return;
-    }
-
-    acc_.request_cancel();
-
-    epoll_op* claimed = nullptr;
-    {
-        std::lock_guard lock(desc_state_.mutex);
-        if (desc_state_.read_op == &acc_)
-            claimed = std::exchange(desc_state_.read_op, nullptr);
-    }
-    if (claimed)
-    {
-        acc_.impl_ptr = self;
-        svc_.post(&acc_);
-        svc_.work_finished();
-    }
+    cancel_single_op(acc_);
 }
 
 void

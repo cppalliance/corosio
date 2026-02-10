@@ -102,11 +102,13 @@ struct scheduler_context
     scheduler_context* next;
     op_queue private_queue;
     long private_outstanding_work;
+    int inline_budget;
 
     scheduler_context(epoll_scheduler const* k, scheduler_context* n)
         : key(k)
         , next(n)
         , private_outstanding_work(0)
+        , inline_budget(0)
     {
     }
 };
@@ -144,6 +146,29 @@ find_context(epoll_scheduler const* self) noexcept
 }
 
 } // namespace
+
+void
+epoll_scheduler::
+reset_inline_budget() const noexcept
+{
+    if (auto* ctx = find_context(this))
+        ctx->inline_budget = max_inline_budget_;
+}
+
+bool
+epoll_scheduler::
+try_consume_inline_budget() const noexcept
+{
+    if (auto* ctx = find_context(this))
+    {
+        if (ctx->inline_budget > 0)
+        {
+            --ctx->inline_budget;
+            return true;
+        }
+    }
+    return false;
+}
 
 void
 descriptor_state::

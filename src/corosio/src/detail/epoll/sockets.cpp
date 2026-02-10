@@ -30,6 +30,39 @@
 
 namespace boost::corosio::detail {
 
+// Register an op with the reactor, handling cached edge events.
+// Called under the EAGAIN/EINPROGRESS path when speculative I/O failed.
+void
+epoll_socket_impl::
+register_op(
+    epoll_op& op,
+    epoll_op*& desc_slot,
+    bool& ready_flag) noexcept
+{
+    svc_.work_started();
+
+    std::lock_guard lock(desc_state_.mutex);
+    bool io_done = false;
+    if (ready_flag)
+    {
+        ready_flag = false;
+        op.perform_io();
+        io_done = (op.errn != EAGAIN && op.errn != EWOULDBLOCK);
+        if (!io_done)
+            op.errn = 0;
+    }
+
+    if (io_done || op.cancelled.load(std::memory_order_acquire))
+    {
+        svc_.post(&op);
+        svc_.work_finished();
+    }
+    else
+    {
+        desc_slot = &op;
+    }
+}
+
 void
 epoll_op::canceller::
 operator()() const noexcept
@@ -68,10 +101,46 @@ cancel() noexcept
 }
 
 void
+epoll_op::
+operator()()
+{
+    stop_cb.reset();
+
+    socket_impl_->svc_.scheduler().reset_inline_budget();
+
+    if (ec_out)
+    {
+        if (cancelled.load(std::memory_order_acquire))
+            *ec_out = capy::error::canceled;
+        else if (errn != 0)
+            *ec_out = make_err(errn);
+        else if (is_read_operation() && bytes_transferred == 0)
+            *ec_out = capy::error::eof;
+        else
+            *ec_out = {};
+    }
+
+    if (bytes_out)
+        *bytes_out = bytes_transferred;
+
+    // Move to stack before resuming coroutine. The coroutine might close
+    // the socket, releasing the last wrapper ref. If impl_ptr were the
+    // last ref and we destroyed it while still in operator(), we'd have
+    // use-after-free. Moving to local ensures destruction happens at
+    // function exit, after all member accesses are complete.
+    capy::executor_ref saved_ex( std::move( ex ) );
+    std::coroutine_handle<> saved_h( std::move( h ) );
+    auto prevent_premature_destruction = std::move(impl_ptr);
+    dispatch_coro(saved_ex, saved_h).resume();
+}
+
+void
 epoll_connect_op::
 operator()()
 {
     stop_cb.reset();
+
+    socket_impl_->svc_.scheduler().reset_inline_budget();
 
     bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
 
@@ -135,236 +204,52 @@ connect(
     std::error_code* ec)
 {
     auto& op = conn_;
-    op.reset();
-    op.h = h;
-    op.ex = ex;
-    op.ec_out = ec;
-    op.fd = fd_;
-    op.target_endpoint = ep;  // Store target for endpoint caching
-    op.start(token, this);
 
     sockaddr_in addr = detail::to_sockaddr_in(ep);
     int result = ::connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
 
     if (result == 0)
     {
-        // Sync success - cache endpoints immediately
-        // Remote is always known; local may fail but we still cache remote
         sockaddr_in local_addr{};
         socklen_t local_len = sizeof(local_addr);
         if (::getsockname(fd_, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
             local_endpoint_ = detail::from_sockaddr_in(local_addr);
         remote_endpoint_ = ep;
-
-        op.complete(0, 0);
-        op.impl_ptr = shared_from_this();
-        svc_.post(&op);
-        // completion is always posted to scheduler queue, never inline.
-        return std::noop_coroutine();
     }
 
-    if (errno == EINPROGRESS)
+    if (result == 0 || errno != EINPROGRESS)
     {
-        svc_.work_started();
+        int err = (result < 0) ? errno : 0;
+        if (svc_.scheduler().try_consume_inline_budget())
+        {
+            *ec = err ? make_err(err) : std::error_code{};
+            return ex.dispatch(h);
+        }
+        op.reset();
+        op.h = h;
+        op.ex = ex;
+        op.ec_out = ec;
+        op.fd = fd_;
+        op.target_endpoint = ep;
+        op.start(token, this);
         op.impl_ptr = shared_from_this();
-
-        std::lock_guard lock(desc_state_.mutex);
-        if (desc_state_.write_ready)
-        {
-            desc_state_.write_ready = false;
-            op.perform_io();
-            if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
-            {
-                op.errn = 0;
-                if (op.cancelled.load(std::memory_order_acquire))
-                {
-                    svc_.post(&op);
-                    svc_.work_finished();
-                }
-                else
-                {
-                    desc_state_.connect_op = &op;
-                }
-            }
-            else
-            {
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-        }
-        else
-        {
-            if (op.cancelled.load(std::memory_order_acquire))
-            {
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-            else
-            {
-                desc_state_.connect_op = &op;
-            }
-        }
+        op.complete(err, 0);
+        svc_.post(&op);
         return std::noop_coroutine();
     }
 
-    op.complete(errno, 0);
+    // EINPROGRESS — register with reactor
+    op.reset();
+    op.h = h;
+    op.ex = ex;
+    op.ec_out = ec;
+    op.fd = fd_;
+    op.target_endpoint = ep;
+    op.start(token, this);
     op.impl_ptr = shared_from_this();
-    svc_.post(&op);
-    // completion is always posted to scheduler queue, never inline.
+
+    register_op(op, desc_state_.connect_op, desc_state_.write_ready);
     return std::noop_coroutine();
-}
-
-void
-epoll_socket_impl::
-do_read_io()
-{
-    auto& op = rd_;
-
-    ssize_t n;
-    do {
-        n = ::readv(fd_, op.iovecs, op.iovec_count);
-    } while (n < 0 && errno == EINTR);
-
-    if (n > 0)
-    {
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            desc_state_.read_ready = false;
-        }
-        op.complete(0, static_cast<std::size_t>(n));
-        svc_.post(&op);
-        return;
-    }
-
-    if (n == 0)
-    {
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            desc_state_.read_ready = false;
-        }
-        op.complete(0, 0);
-        svc_.post(&op);
-        return;
-    }
-
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
-    {
-        svc_.work_started();
-
-        std::lock_guard lock(desc_state_.mutex);
-        if (desc_state_.read_ready)
-        {
-            desc_state_.read_ready = false;
-            op.perform_io();
-            if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
-            {
-                op.errn = 0;
-                if (op.cancelled.load(std::memory_order_acquire))
-                {
-                    svc_.post(&op);
-                    svc_.work_finished();
-                }
-                else
-                {
-                    desc_state_.read_op = &op;
-                }
-            }
-            else
-            {
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-        }
-        else
-        {
-            if (op.cancelled.load(std::memory_order_acquire))
-            {
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-            else
-            {
-                desc_state_.read_op = &op;
-            }
-        }
-        return;
-    }
-
-    op.complete(errno, 0);
-    svc_.post(&op);
-}
-
-void
-epoll_socket_impl::
-do_write_io()
-{
-    auto& op = wr_;
-
-    msghdr msg{};
-    msg.msg_iov = op.iovecs;
-    msg.msg_iovlen = static_cast<std::size_t>(op.iovec_count);
-
-    ssize_t n;
-    do {
-        n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
-    } while (n < 0 && errno == EINTR);
-
-    if (n > 0)
-    {
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            desc_state_.write_ready = false;
-        }
-        op.complete(0, static_cast<std::size_t>(n));
-        svc_.post(&op);
-        return;
-    }
-
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
-    {
-        svc_.work_started();
-
-        std::lock_guard lock(desc_state_.mutex);
-        if (desc_state_.write_ready)
-        {
-            desc_state_.write_ready = false;
-            op.perform_io();
-            if (op.errn == EAGAIN || op.errn == EWOULDBLOCK)
-            {
-                op.errn = 0;
-                if (op.cancelled.load(std::memory_order_acquire))
-                {
-                    svc_.post(&op);
-                    svc_.work_finished();
-                }
-                else
-                {
-                    desc_state_.write_op = &op;
-                }
-            }
-            else
-            {
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-        }
-        else
-        {
-            if (op.cancelled.load(std::memory_order_acquire))
-            {
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-            else
-            {
-                desc_state_.write_op = &op;
-            }
-        }
-        return;
-    }
-
-    op.complete(errno ? errno : EIO, 0);
-    svc_.post(&op);
 }
 
 std::coroutine_handle<>
@@ -379,21 +264,19 @@ read_some(
 {
     auto& op = rd_;
     op.reset();
-    op.h = h;
-    op.ex = ex;
-    op.ec_out = ec;
-    op.bytes_out = bytes_out;
-    op.fd = fd_;
-    op.start(token, this);
-    op.impl_ptr = shared_from_this();
 
-    // Must prepare buffers before initiator runs
     capy::mutable_buffer bufs[epoll_read_op::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_read_op::max_buffers));
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
         op.empty_buffer_read = true;
+        op.h = h;
+        op.ex = ex;
+        op.ec_out = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, this);
+        op.impl_ptr = shared_from_this();
         op.complete(0, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -405,35 +288,50 @@ read_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    // Speculative read: bypass initiator when data is ready
+    // Speculative read
     ssize_t n;
     do {
         n = ::readv(fd_, op.iovecs, op.iovec_count);
     } while (n < 0 && errno == EINTR);
 
-    if (n > 0)
+    if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
     {
-        op.complete(0, static_cast<std::size_t>(n));
+        int err = (n < 0) ? errno : 0;
+        auto bytes = (n > 0) ? static_cast<std::size_t>(n) : std::size_t(0);
+
+        if (svc_.scheduler().try_consume_inline_budget())
+        {
+            if (err)
+                *ec = make_err(err);
+            else if (n == 0)
+                *ec = capy::error::eof;
+            else
+                *ec = {};
+            *bytes_out = bytes;
+            return ex.dispatch(h);
+        }
+        op.h = h;
+        op.ex = ex;
+        op.ec_out = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, this);
+        op.impl_ptr = shared_from_this();
+        op.complete(err, bytes);
         svc_.post(&op);
         return std::noop_coroutine();
     }
 
-    if (n == 0)
-    {
-        op.complete(0, 0);
-        svc_.post(&op);
-        return std::noop_coroutine();
-    }
+    // EAGAIN — register with reactor
+    op.h = h;
+    op.ex = ex;
+    op.ec_out = ec;
+    op.bytes_out = bytes_out;
+    op.fd = fd_;
+    op.start(token, this);
+    op.impl_ptr = shared_from_this();
 
-    if (errno != EAGAIN && errno != EWOULDBLOCK)
-    {
-        op.complete(errno, 0);
-        svc_.post(&op);
-        return std::noop_coroutine();
-    }
-
-    // EAGAIN — full async path
-    return read_initiator_.start<&epoll_socket_impl::do_read_io>(this);
+    register_op(op, desc_state_.read_op, desc_state_.read_ready);
+    return std::noop_coroutine();
 }
 
 std::coroutine_handle<>
@@ -448,19 +346,18 @@ write_some(
 {
     auto& op = wr_;
     op.reset();
-    op.h = h;
-    op.ex = ex;
-    op.ec_out = ec;
-    op.bytes_out = bytes_out;
-    op.fd = fd_;
-    op.start(token, this);
-    op.impl_ptr = shared_from_this();
 
     capy::mutable_buffer bufs[epoll_write_op::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, epoll_write_op::max_buffers));
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
+        op.h = h;
+        op.ex = ex;
+        op.ec_out = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, this);
+        op.impl_ptr = shared_from_this();
         op.complete(0, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -472,7 +369,7 @@ write_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    // Speculative write: bypass initiator when buffer space is ready
+    // Speculative write
     msghdr msg{};
     msg.msg_iov = op.iovecs;
     msg.msg_iovlen = static_cast<std::size_t>(op.iovec_count);
@@ -482,29 +379,39 @@ write_some(
         n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
     } while (n < 0 && errno == EINTR);
 
-    if (n > 0)
+    if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
     {
-        op.complete(0, static_cast<std::size_t>(n));
+        int err = (n < 0) ? errno : 0;
+        auto bytes = (n > 0) ? static_cast<std::size_t>(n) : std::size_t(0);
+
+        if (svc_.scheduler().try_consume_inline_budget())
+        {
+            *ec = err ? make_err(err) : std::error_code{};
+            *bytes_out = bytes;
+            return ex.dispatch(h);
+        }
+        op.h = h;
+        op.ex = ex;
+        op.ec_out = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, this);
+        op.impl_ptr = shared_from_this();
+        op.complete(err, bytes);
         svc_.post(&op);
         return std::noop_coroutine();
     }
 
-    if (n == 0)
-    {
-        op.complete(0, 0);
-        svc_.post(&op);
-        return std::noop_coroutine();
-    }
+    // EAGAIN — register with reactor
+    op.h = h;
+    op.ex = ex;
+    op.ec_out = ec;
+    op.bytes_out = bytes_out;
+    op.fd = fd_;
+    op.start(token, this);
+    op.impl_ptr = shared_from_this();
 
-    if (errno != EAGAIN && errno != EWOULDBLOCK)
-    {
-        op.complete(errno, 0);
-        svc_.post(&op);
-        return std::noop_coroutine();
-    }
-
-    // EAGAIN — full async path
-    return write_initiator_.start<&epoll_socket_impl::do_write_io>(this);
+    register_op(op, desc_state_.write_op, desc_state_.write_ready);
+    return std::noop_coroutine();
 }
 
 std::error_code
