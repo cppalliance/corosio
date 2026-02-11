@@ -37,7 +37,8 @@ epoll_socket_impl::
 register_op(
     epoll_op& op,
     epoll_op*& desc_slot,
-    bool& ready_flag) noexcept
+    bool& ready_flag,
+    bool& cancel_flag) noexcept
 {
     svc_.work_started();
 
@@ -50,6 +51,12 @@ register_op(
         io_done = (op.errn != EAGAIN && op.errn != EWOULDBLOCK);
         if (!io_done)
             op.errn = 0;
+    }
+
+    if (cancel_flag)
+    {
+        cancel_flag = false;
+        op.cancelled.store(true, std::memory_order_relaxed);
     }
 
     if (io_done || op.cancelled.load(std::memory_order_acquire))
@@ -238,7 +245,8 @@ connect(
     op.start(token, this);
     op.impl_ptr = shared_from_this();
 
-    register_op(op, desc_state_.connect_op, desc_state_.write_ready);
+    register_op(op, desc_state_.connect_op, desc_state_.write_ready,
+        desc_state_.connect_cancel_pending);
     return std::noop_coroutine();
 }
 
@@ -320,7 +328,8 @@ read_some(
     op.start(token, this);
     op.impl_ptr = shared_from_this();
 
-    register_op(op, desc_state_.read_op, desc_state_.read_ready);
+    register_op(op, desc_state_.read_op, desc_state_.read_ready,
+        desc_state_.read_cancel_pending);
     return std::noop_coroutine();
 }
 
@@ -400,7 +409,8 @@ write_some(
     op.start(token, this);
     op.impl_ptr = shared_from_this();
 
-    register_op(op, desc_state_.write_op, desc_state_.write_ready);
+    register_op(op, desc_state_.write_op, desc_state_.write_ready,
+        desc_state_.write_cancel_pending);
     return std::noop_coroutine();
 }
 
@@ -571,10 +581,16 @@ cancel() noexcept
         std::lock_guard lock(desc_state_.mutex);
         if (desc_state_.connect_op == &conn_)
             conn_claimed = std::exchange(desc_state_.connect_op, nullptr);
+        else
+            desc_state_.connect_cancel_pending = true;
         if (desc_state_.read_op == &rd_)
             rd_claimed = std::exchange(desc_state_.read_op, nullptr);
+        else
+            desc_state_.read_cancel_pending = true;
         if (desc_state_.write_op == &wr_)
             wr_claimed = std::exchange(desc_state_.write_op, nullptr);
+        else
+            desc_state_.write_cancel_pending = true;
     }
 
     if (conn_claimed)
@@ -615,6 +631,12 @@ cancel_single_op(epoll_op& op) noexcept
             std::lock_guard lock(desc_state_.mutex);
             if (*desc_op_ptr == &op)
                 claimed = std::exchange(*desc_op_ptr, nullptr);
+            else if (&op == &conn_)
+                desc_state_.connect_cancel_pending = true;
+            else if (&op == &rd_)
+                desc_state_.read_cancel_pending = true;
+            else if (&op == &wr_)
+                desc_state_.write_cancel_pending = true;
         }
         if (claimed)
         {
@@ -659,6 +681,9 @@ close_socket() noexcept
         desc_state_.connect_op = nullptr;
         desc_state_.read_ready = false;
         desc_state_.write_ready = false;
+        desc_state_.read_cancel_pending = false;
+        desc_state_.write_cancel_pending = false;
+        desc_state_.connect_cancel_pending = false;
     }
     desc_state_.registered_events = 0;
 

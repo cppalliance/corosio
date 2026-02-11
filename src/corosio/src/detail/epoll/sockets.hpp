@@ -169,7 +169,8 @@ private:
     void register_op(
         epoll_op& op,
         epoll_op*& desc_slot,
-        bool& ready_flag) noexcept;
+        bool& ready_flag,
+        bool& cancel_flag) noexcept;
 
     friend struct epoll_op;
     friend struct epoll_connect_op;

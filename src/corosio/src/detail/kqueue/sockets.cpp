@@ -215,6 +215,11 @@ connect(
             else
             {
                 desc_state_.connect_op = &op;
+                if (desc_state_.connect_cancel_pending)
+                {
+                    desc_state_.connect_cancel_pending = false;
+                    op.cancelled.store(true, std::memory_order_relaxed);
+                }
             }
         }
 
@@ -237,6 +242,11 @@ connect(
                     continue;
                 }
                 desc_state_.connect_op = &op;
+                if (desc_state_.connect_cancel_pending)
+                {
+                    desc_state_.connect_cancel_pending = false;
+                    op.cancelled.store(true, std::memory_order_relaxed);
+                }
                 break;
             }
             return std::noop_coroutine();
@@ -310,6 +320,11 @@ do_read_io()
             else
             {
                 desc_state_.read_op = &op;
+                if (desc_state_.read_cancel_pending)
+                {
+                    desc_state_.read_cancel_pending = false;
+                    op.cancelled.store(true, std::memory_order_relaxed);
+                }
             }
         }
 
@@ -332,9 +347,13 @@ do_read_io()
                     continue;
                 }
                 desc_state_.read_op = &op;
+                if (desc_state_.read_cancel_pending)
+                {
+                    desc_state_.read_cancel_pending = false;
+                    op.cancelled.store(true, std::memory_order_relaxed);
+                }
                 break;
             }
-            return;
         }
 
         if (op.cancelled.load(std::memory_order_acquire))
@@ -394,6 +413,11 @@ do_write_io()
             else
             {
                 desc_state_.write_op = &op;
+                if (desc_state_.write_cancel_pending)
+                {
+                    desc_state_.write_cancel_pending = false;
+                    op.cancelled.store(true, std::memory_order_relaxed);
+                }
             }
         }
 
@@ -416,9 +440,13 @@ do_write_io()
                     continue;
                 }
                 desc_state_.write_op = &op;
+                if (desc_state_.write_cancel_pending)
+                {
+                    desc_state_.write_cancel_pending = false;
+                    op.cancelled.store(true, std::memory_order_relaxed);
+                }
                 break;
             }
-            return;
         }
 
         if (op.cancelled.load(std::memory_order_acquire))
@@ -692,10 +720,16 @@ cancel() noexcept
         std::lock_guard lock(desc_state_.mutex);
         if (desc_state_.connect_op == &conn_)
             conn_claimed = std::exchange(desc_state_.connect_op, nullptr);
+        else
+            desc_state_.connect_cancel_pending = true;
         if (desc_state_.read_op == &rd_)
             rd_claimed = std::exchange(desc_state_.read_op, nullptr);
+        else
+            desc_state_.read_cancel_pending = true;
         if (desc_state_.write_op == &wr_)
             wr_claimed = std::exchange(desc_state_.write_op, nullptr);
+        else
+            desc_state_.write_cancel_pending = true;
     }
 
     if (conn_claimed)
@@ -736,6 +770,12 @@ cancel_single_op(kqueue_op& op) noexcept
             std::lock_guard lock(desc_state_.mutex);
             if (*desc_op_ptr == &op)
                 claimed = std::exchange(*desc_op_ptr, nullptr);
+            else if (&op == &conn_)
+                desc_state_.connect_cancel_pending = true;
+            else if (&op == &rd_)
+                desc_state_.read_cancel_pending = true;
+            else if (&op == &wr_)
+                desc_state_.write_cancel_pending = true;
         }
         if (claimed)
         {
@@ -782,6 +822,9 @@ close_socket() noexcept
         desc_state_.connect_op = nullptr;
         desc_state_.read_ready = false;
         desc_state_.write_ready = false;
+        desc_state_.read_cancel_pending = false;
+        desc_state_.write_cancel_pending = false;
+        desc_state_.connect_cancel_pending = false;
     }
     desc_state_.registered_events = 0;
 
