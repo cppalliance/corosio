@@ -144,7 +144,9 @@ struct descriptor_state : scheduler_op
     void operator()() override;
 
     /// Destroy without invoking.
-    void destroy() override {}
+    /// Called during scheduler::shutdown() drain. Clear impl_ref_ to break
+    /// the self-referential cycle set by close_socket().
+    void destroy() override { impl_ref_.reset(); }
 };
 
 struct epoll_op : scheduler_op
