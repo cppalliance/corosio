@@ -11,6 +11,10 @@
 #include <boost/corosio/io_context.hpp>
 
 #include <boost/capy/concept/executor.hpp>
+#include <boost/capy/ex/async_event.hpp>
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/when_all.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -456,6 +460,35 @@ struct io_context_test
         }
     }
 
+    static capy::task<void>
+    set_event_task(capy::async_event& evt)
+    {
+        evt.set();
+        co_return;
+    }
+
+    static capy::task<void>
+    when_all_set_event_main(bool& finished)
+    {
+        capy::async_event evt;
+        co_await capy::when_all(
+            evt.wait(), set_event_task(evt));
+        finished = true;
+    }
+
+    void
+    testWhenAllSetEvent()
+    {
+        io_context ctx;
+        bool finished = false;
+
+        capy::run_async(ctx.get_executor())(
+            when_all_set_event_main(finished));
+        ctx.run();
+
+        BOOST_TEST(finished);
+    }
+
     void
     run()
     {
@@ -472,6 +505,7 @@ struct io_context_test
         testExecutorRunningInThisThread();
         testMultithreaded();
         testMultithreadedStress();
+        testWhenAllSetEvent();
     }
 };
 
