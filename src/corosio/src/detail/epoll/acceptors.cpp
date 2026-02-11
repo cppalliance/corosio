@@ -48,15 +48,12 @@ operator()()
 
     bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
 
-    if (ec_out)
-    {
-        if (cancelled.load(std::memory_order_acquire))
-            *ec_out = capy::error::canceled;
-        else if (errn != 0)
-            *ec_out = make_err(errn);
-        else
-            *ec_out = {};
-    }
+    if (cancelled.load(std::memory_order_acquire))
+        *ec_out = capy::error::canceled;
+    else if (errn != 0)
+        *ec_out = make_err(errn);
+    else
+        *ec_out = {};
 
     // Set up the peer socket on success
     if (success && accepted_fd >= 0 && acceptor_impl_)
@@ -88,8 +85,7 @@ operator()()
         else
         {
             // No socket service — treat as error
-            if (ec_out && !*ec_out)
-                *ec_out = make_err(ENOENT);
+            *ec_out = make_err(ENOENT);
             success = false;
         }
     }
