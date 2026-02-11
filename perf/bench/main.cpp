@@ -22,6 +22,7 @@
 #include <iostream>
 
 #include "../common/backend_selection.hpp"
+#include "../common/perf.hpp"
 #include "common/benchmark.hpp"
 
 namespace {
@@ -256,6 +257,7 @@ int main( int argc, char* argv[] )
                 {
                     if( !want_bench( b ) )
                         continue;
+                    perf::await_conntrack_drain();
                     if( want_corosio )
                         corosio_bench::run_socket_throughput_benchmarks( factory, collector, b, duration_s );
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
@@ -274,6 +276,7 @@ int main( int argc, char* argv[] )
                 {
                     if( !want_bench( b ) )
                         continue;
+                    perf::await_conntrack_drain();
                     if( want_corosio )
                         corosio_bench::run_socket_latency_benchmarks( factory, collector, b, duration_s );
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
@@ -292,6 +295,7 @@ int main( int argc, char* argv[] )
                 {
                     if( !want_bench( b ) )
                         continue;
+                    perf::await_conntrack_drain();
                     if( want_corosio )
                         corosio_bench::run_http_server_benchmarks( factory, collector, b, duration_s );
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
@@ -328,6 +332,7 @@ int main( int argc, char* argv[] )
                 {
                     if( !want_bench( b ) )
                         continue;
+                    perf::await_conntrack_drain();
                     if( want_corosio )
                         corosio_bench::run_accept_churn_benchmarks( factory, collector, b, duration_s );
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
@@ -346,6 +351,7 @@ int main( int argc, char* argv[] )
                 {
                     if( !want_bench( b ) )
                         continue;
+                    perf::await_conntrack_drain();
                     if( want_corosio )
                         corosio_bench::run_fan_out_benchmarks( factory, collector, b, duration_s );
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO

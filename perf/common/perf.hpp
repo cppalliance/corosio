@@ -13,11 +13,13 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <numeric>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace perf {
@@ -233,6 +235,55 @@ inline void print_latency_stats(statistics const& stats, char const* label)
     std::cout << "    p99.9: " << format_latency(stats.p999()) << "\n";
     std::cout << "    min:   " << format_latency((stats.min)()) << "\n";
     std::cout << "    max:   " << format_latency((stats.max)()) << "\n";
+}
+
+/** Wait for the nf_conntrack table to drain below a safe threshold.
+
+    Linux netfilter connection tracking creates an entry for every TCP
+    connection. When the table is full, new SYN packets are silently
+    dropped, causing ~1 s retransmit delays that corrupt benchmark
+    results.  This function polls the table size and blocks until
+    enough headroom exists for the next benchmark run.
+
+    No-op on non-Linux or when conntrack is not loaded.
+*/
+inline void await_conntrack_drain()
+{
+#ifdef __linux__
+    auto read_value = []( char const* path ) -> long
+    {
+        std::ifstream f( path );
+        long v = -1;
+        if( f.is_open() )
+            f >> v;
+        return v;
+    };
+
+    long ct_max = read_value( "/proc/sys/net/netfilter/nf_conntrack_max" );
+    if( ct_max <= 0 )
+        return;
+
+    long threshold = ct_max * 3 / 4;
+    long count = read_value( "/proc/sys/net/netfilter/nf_conntrack_count" );
+    if( count < 0 || count <= threshold )
+        return;
+
+    std::cout << "  [conntrack] table at " << count << "/" << ct_max
+              << " — waiting to drain below " << threshold << " ..." << std::flush;
+
+    using clock = std::chrono::steady_clock;
+    auto deadline = clock::now() + std::chrono::seconds( 30 );
+
+    while( clock::now() < deadline )
+    {
+        std::this_thread::sleep_for( std::chrono::milliseconds( 200 ) );
+        count = read_value( "/proc/sys/net/netfilter/nf_conntrack_count" );
+        if( count < 0 || count <= threshold )
+            break;
+    }
+
+    std::cout << " " << count << "/" << ct_max << "\n";
+#endif
 }
 
 } // namespace perf
