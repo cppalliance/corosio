@@ -764,6 +764,10 @@ close_socket() noexcept
 
     if (fd_ >= 0)
     {
+        // Send FIN so the peer gets a reliable kqueue notification
+        // before we deregister and close the descriptor.
+        ::shutdown(fd_, SHUT_WR);
+
         if (desc_state_.registered_events != 0)
             svc_.scheduler().deregister_descriptor(fd_);
         ::close(fd_);
