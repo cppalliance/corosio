@@ -22,6 +22,11 @@
 #include <thread>
 #include <vector>
 
+#ifdef __APPLE__
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
+
 namespace perf {
 
 // RAII timer using steady_clock
@@ -260,7 +265,11 @@ print_latency_stats(statistics const& stats, char const* label)
     results.  This function polls the table size and blocks until
     enough headroom exists for the next benchmark run.
 
-    No-op on non-Linux or when conntrack is not loaded.
+    On macOS, polls the TCP protocol-control-block count (which is
+    dominated by TIME_WAIT sockets after a benchmark) and blocks
+    until it drops below 75 % of the ephemeral port range.
+
+    No-op on other platforms or when the relevant knobs are absent.
 */
 inline void
 await_conntrack_drain()
@@ -299,6 +308,44 @@ await_conntrack_drain()
     }
 
     std::cout << " " << count << "/" << ct_max << "\n";
+#elif defined(__APPLE__)
+    // TIME_WAIT sockets from previous benchmark runs can exhaust
+    // ephemeral ports. Poll the TCP PCB count and wait for it to
+    // drop below 75% of the ephemeral port range.
+    auto sysctl_int = [](char const* name) -> long
+    {
+        int val = 0;
+        std::size_t len = sizeof(val);
+        if (sysctlbyname(name, &val, &len, nullptr, 0) == 0)
+            return static_cast<long>(val);
+        return -1;
+    };
+
+    long first = sysctl_int("net.inet.ip.portrange.first");
+    long last  = sysctl_int("net.inet.ip.portrange.last");
+    if (first <= 0 || last <= 0)
+        return;
+
+    long threshold = (last - first + 1) * 3 / 4;
+    long count = sysctl_int("net.inet.tcp.pcbcount");
+    if (count < 0 || count <= threshold)
+        return;
+
+    std::cout << "  [tcp] " << count << " PCBs, waiting to drain below "
+              << threshold << " ..." << std::flush;
+
+    using clock = std::chrono::steady_clock;
+    auto deadline = clock::now() + std::chrono::seconds( 30 );
+
+    while (clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        count = sysctl_int("net.inet.tcp.pcbcount");
+        if (count < 0 || count <= threshold)
+            break;
+    }
+
+    std::cout << " " << count << " PCBs\n";
 #endif
 }
 
