@@ -108,20 +108,16 @@ operator()()
 
     socket_impl_->svc_.scheduler().reset_inline_budget();
 
-    if (ec_out)
-    {
-        if (cancelled.load(std::memory_order_acquire))
-            *ec_out = capy::error::canceled;
-        else if (errn != 0)
-            *ec_out = make_err(errn);
-        else if (is_read_operation() && bytes_transferred == 0)
-            *ec_out = capy::error::eof;
-        else
-            *ec_out = {};
-    }
+    if (cancelled.load(std::memory_order_acquire))
+        *ec_out = capy::error::canceled;
+    else if (errn != 0)
+        *ec_out = make_err(errn);
+    else if (is_read_operation() && bytes_transferred == 0)
+        *ec_out = capy::error::eof;
+    else
+        *ec_out = {};
 
-    if (bytes_out)
-        *bytes_out = bytes_transferred;
+    *bytes_out = bytes_transferred;
 
     // Move to stack before resuming coroutine. The coroutine might close
     // the socket, releasing the last wrapper ref. If impl_ptr were the
@@ -157,18 +153,12 @@ operator()()
         static_cast<epoll_socket_impl*>(socket_impl_)->set_endpoints(local_ep, target_endpoint);
     }
 
-    if (ec_out)
-    {
-        if (cancelled.load(std::memory_order_acquire))
-            *ec_out = capy::error::canceled;
-        else if (errn != 0)
-            *ec_out = make_err(errn);
-        else
-            *ec_out = {};
-    }
-
-    if (bytes_out)
-        *bytes_out = bytes_transferred;
+    if (cancelled.load(std::memory_order_acquire))
+        *ec_out = capy::error::canceled;
+    else if (errn != 0)
+        *ec_out = make_err(errn);
+    else
+        *ec_out = {};
 
     // Move to stack before resuming. See epoll_op::operator()() for rationale.
     capy::executor_ref saved_ex( std::move( ex ) );
