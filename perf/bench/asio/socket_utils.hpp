@@ -12,7 +12,9 @@
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/steady_timer.hpp>
 
+#include <chrono>
 #include <utility>
 
 namespace asio_bench {
@@ -20,14 +22,23 @@ namespace asio_bench {
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
-/** Create a connected pair of TCP sockets for benchmarking. */
-inline std::pair<tcp::socket, tcp::socket> make_socket_pair( asio::io_context& ioc )
-{
-    tcp::acceptor acceptor( ioc, tcp::endpoint( tcp::v4(), 0 ),
-        true /* reuse_address */ );
+// Concrete (non-type-erased) executor types avoid any_io_executor overhead
+using executor_type = asio::io_context::executor_type;
+using tcp_socket = asio::basic_stream_socket<tcp, executor_type>;
+using tcp_acceptor = asio::basic_socket_acceptor<tcp, executor_type>;
+using timer_type = asio::basic_waitable_timer<
+    std::chrono::steady_clock,
+    asio::wait_traits<std::chrono::steady_clock>,
+    executor_type>;
 
-    tcp::socket client( ioc );
-    tcp::socket server( ioc );
+/** Create a connected pair of TCP sockets for benchmarking. */
+inline std::pair<tcp_socket, tcp_socket> make_socket_pair( asio::io_context& ioc )
+{
+    tcp_acceptor acceptor( ioc.get_executor(),
+        tcp::endpoint( tcp::v4(), 0 ), true /* reuse_address */ );
+
+    tcp_socket client( ioc.get_executor() );
+    tcp_socket server( ioc.get_executor() );
 
     auto endpoint = acceptor.local_endpoint();
     client.connect( tcp::endpoint( asio::ip::address_v4::loopback(), endpoint.port() ) );

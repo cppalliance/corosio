@@ -29,6 +29,7 @@
 
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
+using asio_bench::tcp_socket;
 
 namespace asio_callback_bench {
 namespace {
@@ -36,10 +37,10 @@ namespace {
 // Echo server: reads then writes back, loops via callbacks
 struct echo_server_op : std::enable_shared_from_this<echo_server_op>
 {
-    tcp::socket& sock;
+    tcp_socket& sock;
     char buf[64];
 
-    explicit echo_server_op( tcp::socket& s )
+    explicit echo_server_op( tcp_socket& s )
         : sock( s )
     {
     }
@@ -77,13 +78,13 @@ struct echo_server_op : std::enable_shared_from_this<echo_server_op>
 // Single sub-request: write 64 bytes, read 64 bytes, decrement counter
 struct sub_request_op : std::enable_shared_from_this<sub_request_op>
 {
-    tcp::socket& client;
+    tcp_socket& client;
     std::atomic<int>& remaining;
     std::function<void()> on_join;
     char send_buf[64] = {};
     char recv_buf[64];
 
-    sub_request_op( tcp::socket& c, std::atomic<int>& rem,
+    sub_request_op( tcp_socket& c, std::atomic<int>& rem,
         std::function<void()> join_cb )
         : client( c )
         , remaining( rem )
@@ -127,8 +128,8 @@ struct sub_request_op : std::enable_shared_from_this<sub_request_op>
 struct fork_join_op
 {
     asio::io_context& ioc;
-    std::vector<tcp::socket>& clients;
-    std::vector<tcp::socket>& servers;
+    std::vector<tcp_socket>& clients;
+    std::vector<tcp_socket>& servers;
     int fan_out;
     std::atomic<bool>& running;
     int64_t& cycles;
@@ -175,8 +176,8 @@ bench::benchmark_result bench_fork_join( int fan_out, double duration_s )
 
     asio::io_context ioc;
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     clients.reserve( fan_out );
     servers.reserve( fan_out );
 
@@ -233,14 +234,14 @@ bench::benchmark_result bench_fork_join( int fan_out, double duration_s )
 struct nested_group_op
 {
     asio::io_context& ioc;
-    std::vector<tcp::socket>& clients;
+    std::vector<tcp_socket>& clients;
     int base_idx;
     int n;
     std::atomic<int>& groups_remaining;
     std::function<void()> on_all_groups_done;
     std::atomic<int> subs_remaining;
 
-    nested_group_op( asio::io_context& io, std::vector<tcp::socket>& cli,
+    nested_group_op( asio::io_context& io, std::vector<tcp_socket>& cli,
         int base, int count, std::atomic<int>& gr,
         std::function<void()> cb )
         : ioc( io )
@@ -275,8 +276,8 @@ struct nested_group_op
 struct nested_op
 {
     asio::io_context& ioc;
-    std::vector<tcp::socket>& clients;
-    std::vector<tcp::socket>& servers;
+    std::vector<tcp_socket>& clients;
+    std::vector<tcp_socket>& servers;
     int groups;
     int subs_per_group;
     std::atomic<bool>& running;
@@ -332,8 +333,8 @@ bench::benchmark_result bench_nested(
 
     asio::io_context ioc;
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     clients.reserve( total_subs );
     servers.reserve( total_subs );
 
@@ -403,8 +404,8 @@ bench::benchmark_result bench_concurrent_parents(
     int total_subs = num_parents * fan_out;
     asio::io_context ioc;
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     clients.reserve( total_subs );
     servers.reserve( total_subs );
 
@@ -429,8 +430,8 @@ bench::benchmark_result bench_concurrent_parents(
     struct parent_fork_join_op
     {
         asio::io_context& ioc;
-        std::vector<tcp::socket>& clients;
-        std::vector<tcp::socket>& servers;
+        std::vector<tcp_socket>& clients;
+        std::vector<tcp_socket>& servers;
         int base;
         int fan_out;
         int num_parents;
@@ -442,8 +443,8 @@ bench::benchmark_result bench_concurrent_parents(
         perf::stopwatch sw;
 
         parent_fork_join_op( asio::io_context& io,
-            std::vector<tcp::socket>& cli,
-            std::vector<tcp::socket>& srv,
+            std::vector<tcp_socket>& cli,
+            std::vector<tcp_socket>& srv,
             int b, int fo, int np,
             std::atomic<bool>& run,
             std::atomic<int>& pd,

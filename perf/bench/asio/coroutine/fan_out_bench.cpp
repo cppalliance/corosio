@@ -13,7 +13,7 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/awaitable.hpp>
-#include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/deferred.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/steady_timer.hpp>
@@ -34,7 +34,7 @@ using tcp = asio::ip::tcp;
 namespace asio_bench {
 namespace {
 
-asio::awaitable<void> echo_server( tcp::socket& sock )
+asio::awaitable<void, executor_type> echo_server( tcp_socket& sock )
 {
     char buf[64];
     try
@@ -42,16 +42,16 @@ asio::awaitable<void> echo_server( tcp::socket& sock )
         for( ;; )
         {
             auto n = co_await sock.async_read_some(
-                asio::buffer( buf, 64 ), asio::use_awaitable );
+                asio::buffer( buf, 64 ), asio::deferred );
             co_await asio::async_write(
-                sock, asio::buffer( buf, n ), asio::use_awaitable );
+                sock, asio::buffer( buf, n ), asio::deferred );
         }
     }
     catch( std::exception const& ) {}
 }
 
-asio::awaitable<void> sub_request(
-    tcp::socket& client,
+asio::awaitable<void, executor_type> sub_request(
+    tcp_socket& client,
     std::atomic<int>& remaining )
 {
     char send_buf[64] = {};
@@ -60,9 +60,9 @@ asio::awaitable<void> sub_request(
     try
     {
         co_await asio::async_write(
-            client, asio::buffer( send_buf, 64 ), asio::use_awaitable );
+            client, asio::buffer( send_buf, 64 ), asio::deferred );
         co_await asio::async_read(
-            client, asio::buffer( recv_buf, 64 ), asio::use_awaitable );
+            client, asio::buffer( recv_buf, 64 ), asio::deferred );
     }
     catch( std::exception const& ) {}
 
@@ -78,8 +78,8 @@ bench::benchmark_result bench_fork_join( int fan_out, double duration_s )
 
     asio::io_context ioc;
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     clients.reserve( fan_out );
     servers.reserve( fan_out );
 
@@ -97,9 +97,9 @@ bench::benchmark_result bench_fork_join( int fan_out, double duration_s )
     int64_t cycles = 0;
     perf::statistics latency_stats;
 
-    auto parent = [&]() -> asio::awaitable<void>
+    auto parent = [&]() -> asio::awaitable<void, executor_type>
     {
-        asio::steady_timer t( ioc );
+        timer_type t( ioc );
         try
         {
             while( running.load( std::memory_order_relaxed ) )
@@ -115,7 +115,7 @@ bench::benchmark_result bench_fork_join( int fan_out, double duration_s )
                 while( remaining.load( std::memory_order_acquire ) > 0 )
                 {
                     t.expires_after( std::chrono::nanoseconds( 0 ) );
-                    co_await t.async_wait( asio::use_awaitable );
+                    co_await t.async_wait( asio::deferred );
                 }
 
                 latency_stats.add( sw.elapsed_us() );
@@ -173,8 +173,8 @@ bench::benchmark_result bench_nested(
 
     asio::io_context ioc;
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     clients.reserve( total_subs );
     servers.reserve( total_subs );
 
@@ -194,7 +194,7 @@ bench::benchmark_result bench_nested(
 
     auto group_task = [&](
         int base_idx, int n, std::atomic<int>& groups_remaining )
-            -> asio::awaitable<void>
+            -> asio::awaitable<void, executor_type>
     {
         std::atomic<int> subs_remaining{ n };
         for( int i = 0; i < n; ++i )
@@ -202,13 +202,13 @@ bench::benchmark_result bench_nested(
                 sub_request( clients[base_idx + i], subs_remaining ),
                 asio::detached );
 
-        asio::steady_timer t( ioc );
+        timer_type t( ioc );
         try
         {
             while( subs_remaining.load( std::memory_order_acquire ) > 0 )
             {
                 t.expires_after( std::chrono::nanoseconds( 0 ) );
-                co_await t.async_wait( asio::use_awaitable );
+                co_await t.async_wait( asio::deferred );
             }
         }
         catch( std::exception const& ) {}
@@ -216,9 +216,9 @@ bench::benchmark_result bench_nested(
         groups_remaining.fetch_sub( 1, std::memory_order_release );
     };
 
-    auto parent = [&]() -> asio::awaitable<void>
+    auto parent = [&]() -> asio::awaitable<void, executor_type>
     {
-        asio::steady_timer t( ioc );
+        timer_type t( ioc );
         try
         {
             while( running.load( std::memory_order_relaxed ) )
@@ -235,7 +235,7 @@ bench::benchmark_result bench_nested(
                 while( groups_remaining.load( std::memory_order_acquire ) > 0 )
                 {
                     t.expires_after( std::chrono::nanoseconds( 0 ) );
-                    co_await t.async_wait( asio::use_awaitable );
+                    co_await t.async_wait( asio::deferred );
                 }
 
                 latency_stats.add( sw.elapsed_us() );
@@ -296,8 +296,8 @@ bench::benchmark_result bench_concurrent_parents(
     int total_subs = num_parents * fan_out;
     asio::io_context ioc;
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     clients.reserve( total_subs );
     servers.reserve( total_subs );
 
@@ -316,10 +316,10 @@ bench::benchmark_result bench_concurrent_parents(
     std::vector<perf::statistics> stats( num_parents );
     std::atomic<int> parents_done{ 0 };
 
-    auto parent_task = [&]( int parent_idx ) -> asio::awaitable<void>
+    auto parent_task = [&]( int parent_idx ) -> asio::awaitable<void, executor_type>
     {
         int base = parent_idx * fan_out;
-        asio::steady_timer t( ioc );
+        timer_type t( ioc );
 
         try
         {
@@ -336,7 +336,7 @@ bench::benchmark_result bench_concurrent_parents(
                 while( remaining.load( std::memory_order_acquire ) > 0 )
                 {
                     t.expires_after( std::chrono::nanoseconds( 0 ) );
-                    co_await t.async_wait( asio::use_awaitable );
+                    co_await t.async_wait( asio::deferred );
                 }
 
                 stats[parent_idx].add( sw.elapsed_us() );
