@@ -72,10 +72,10 @@ class BOOST_COROSIO_DECL timer : public io_object
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const& env) -> std::coroutine_handle<>
+            capy::io_env const* env) -> std::coroutine_handle<>
         {
-            token_ = env.stop_token;
-            return t_.get().wait(h, env.executor, token_, &ec_);
+            token_ = env->stop_token;
+            return t_.get().wait(h, env->executor, token_, &ec_);
         }
     };
 

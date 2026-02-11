@@ -229,10 +229,10 @@ protected:
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const& env) -> std::coroutine_handle<>
+            capy::io_env const* env) -> std::coroutine_handle<>
         {
-            token_ = env.stop_token;
-            return ios_.get().read_some(h, env.executor, buffers_, token_, &ec_, &bytes_transferred_);
+            token_ = env->stop_token;
+            return ios_.get().read_some(h, env->executor, buffers_, token_, &ec_, &bytes_transferred_);
         }
     };
 
@@ -268,10 +268,10 @@ protected:
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const& env) -> std::coroutine_handle<>
+            capy::io_env const* env) -> std::coroutine_handle<>
         {
-            token_ = env.stop_token;
-            return ios_.get().write_some(h, env.executor, buffers_, token_, &ec_, &bytes_transferred_);
+            token_ = env->stop_token;
+            return ios_.get().write_some(h, env->executor, buffers_, token_, &ec_, &bytes_transferred_);
         }
     };
 

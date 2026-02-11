@@ -74,8 +74,8 @@ tcp_server::operator=(tcp_server&& o) noexcept
 capy::task<void>
 tcp_server::do_accept(tcp_acceptor& acc)
 {
-    auto const& env = co_await capy::this_coro::environment;
-    while(! env.stop_token.stop_requested())
+    auto env = co_await capy::this_coro::environment;
+    while(! env->stop_token.stop_requested())
     {
         // Wait for an idle worker before blocking on accept
         auto& w = co_await pop();

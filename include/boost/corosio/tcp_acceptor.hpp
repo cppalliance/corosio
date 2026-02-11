@@ -103,10 +103,10 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const& env) -> std::coroutine_handle<>
+            capy::io_env const* env) -> std::coroutine_handle<>
         {
-            token_ = env.stop_token;
-            return acc_.get().accept(h, env.executor, token_, &ec_, &peer_impl_);
+            token_ = env->stop_token;
+            return acc_.get().accept(h, env->executor, token_, &ec_, &peer_impl_);
         }
     };
 

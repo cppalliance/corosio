@@ -191,10 +191,10 @@ private:
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const& env) -> std::coroutine_handle<>
+            capy::io_env const* env) -> std::coroutine_handle<>
         {
-            token_ = env.stop_token;
-            return s_.get().wait(h, env.executor, token_, &ec_, &signal_number_);
+            token_ = env->stop_token;
+            return s_.get().wait(h, env->executor, token_, &ec_, &signal_number_);
         }
     };
 

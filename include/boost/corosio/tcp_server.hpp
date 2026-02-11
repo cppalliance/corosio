@@ -273,7 +273,7 @@ private:
 
                     auto await_suspend(std::coroutine_handle<promise_type> h)
                     {
-                        return aw.await_suspend(h, *env);
+                        return aw.await_suspend(h, env);
                     }
                 };
                 return adapter{std::forward<Awaitable>(a), &env_};
@@ -342,7 +342,7 @@ private:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const&) noexcept
+            capy::io_env const*) noexcept
         {
             // Symmetric transfer to server's executor
             return self_.ex_.dispatch(h);
@@ -387,7 +387,7 @@ private:
         bool
         await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const&) noexcept
+            capy::io_env const*) noexcept
         {
             // Running on server executor (do_accept runs there)
             wait_.h = h;
