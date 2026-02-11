@@ -105,7 +105,7 @@ jobs:
             build-cmake: true
             vcpkg-triplet: "x64-mingw-static"
 
-          # macOS (2 configurations)
+          # macOS (3 configurations)
           # Uses select backend (kqueue support planned for future)
           # Requires -fexperimental-library for std::stop_token support in libc++
 
@@ -115,14 +115,28 @@ jobs:
             latest-cxxstd: "20"
             cxx: "clang++"
             cc: "clang"
-            runs-on: "macos-15"
+            runs-on: "macos-26"
             b2-toolset: "clang"
             is-latest: true
-            name: "Apple-Clang (macOS 15, asan+ubsan): C++20"
+            name: "Apple-Clang (macOS 26, asan+ubsan): C++20"
             shared: true
             build-type: "RelWithDebInfo"
             asan: true
             ubsan: true
+            cxxflags: "-fexperimental-library"
+
+          - compiler: "apple-clang"
+            version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++"
+            cc: "clang"
+            runs-on: "macos-15"
+            b2-toolset: "clang"
+            name: "Apple-Clang (macOS 15): C++20"
+            shared: true
+            build-type: "Release"
+            build-cmake: true
             cxxflags: "-fexperimental-library"
 
           - compiler: "apple-clang"
@@ -136,7 +150,6 @@ jobs:
             name: "Apple-Clang (macOS 14): C++20"
             shared: true
             build-type: "Release"
-            build-cmake: true
             cxxflags: "-fexperimental-library"
 
           # Linux GCC (4 configurations)
