@@ -13,7 +13,7 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/awaitable.hpp>
-#include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/deferred.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
@@ -31,9 +31,9 @@ namespace asio_bench {
 namespace {
 
 // Pattern C: coroutine loops check running flag
-asio::awaitable<void> pingpong_client_task(
-    tcp::socket& client,
-    tcp::socket& server,
+asio::awaitable<void, executor_type> pingpong_client_task(
+    tcp_socket& client,
+    tcp_socket& server,
     std::size_t message_size,
     std::atomic<bool>& running,
     int64_t& iterations,
@@ -51,29 +51,29 @@ asio::awaitable<void> pingpong_client_task(
             co_await asio::async_write(
                 client,
                 asio::buffer( send_buf.data(), send_buf.size() ),
-                asio::use_awaitable );
+                asio::deferred );
 
             co_await asio::async_read(
                 server,
                 asio::buffer( recv_buf.data(), recv_buf.size() ),
-                asio::use_awaitable );
+                asio::deferred );
 
             co_await asio::async_write(
                 server,
                 asio::buffer( recv_buf.data(), recv_buf.size() ),
-                asio::use_awaitable );
+                asio::deferred );
 
             co_await asio::async_read(
                 client,
                 asio::buffer( recv_buf.data(), recv_buf.size() ),
-                asio::use_awaitable );
+                asio::deferred );
 
             double rtt_us = sw.elapsed_us();
             stats.add( rtt_us );
             ++iterations;
         }
 
-        client.shutdown( tcp::socket::shutdown_send );
+        client.shutdown( tcp_socket::shutdown_send );
     }
     catch( std::exception const& ) {}
 }
@@ -124,8 +124,8 @@ bench::benchmark_result bench_concurrent_latency(
 
     asio::io_context ioc;
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     std::vector<perf::statistics> stats( num_pairs );
     std::vector<int64_t> iters( num_pairs, 0 );
 

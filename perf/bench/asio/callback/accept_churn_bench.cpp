@@ -8,6 +8,7 @@
 //
 
 #include "benchmarks.hpp"
+#include "../socket_utils.hpp"
 
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/io_context.hpp>
@@ -27,6 +28,8 @@
 
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
+using asio_bench::tcp_socket;
+using asio_bench::tcp_acceptor;
 
 namespace asio_callback_bench {
 namespace {
@@ -35,13 +38,13 @@ namespace {
 struct sequential_churn_op
 {
     asio::io_context& ioc;
-    tcp::acceptor& acc;
+    tcp_acceptor& acc;
     tcp::endpoint ep;
     std::atomic<bool>& running;
     int64_t& cycles;
     perf::statistics& latency_stats;
-    std::unique_ptr<tcp::socket> client;
-    std::unique_ptr<tcp::socket> server;
+    std::unique_ptr<tcp_socket> client;
+    std::unique_ptr<tcp_socket> server;
     perf::stopwatch sw;
     char byte = 'X';
     char recv_byte = 0;
@@ -56,8 +59,8 @@ struct sequential_churn_op
         sw.reset();
         connect_done = false;
         accept_done = false;
-        client = std::make_unique<tcp::socket>( ioc );
-        server = std::make_unique<tcp::socket>( ioc );
+        client = std::make_unique<tcp_socket>( ioc.get_executor() );
+        server = std::make_unique<tcp_socket>( ioc.get_executor() );
         client->open( tcp::v4() );
         client->set_option( asio::socket_base::linger( true, 0 ) );
 
@@ -124,8 +127,8 @@ bench::benchmark_result bench_sequential_churn( double duration_s )
     perf::print_header( "Sequential Accept Churn (Asio Callbacks)" );
 
     asio::io_context ioc;
-    tcp::acceptor acc( ioc, tcp::endpoint( tcp::v4(), 0 ) );
-    acc.set_option( tcp::acceptor::reuse_address( true ) );
+    tcp_acceptor acc( ioc.get_executor(), tcp::endpoint( tcp::v4(), 0 ) );
+    acc.set_option( tcp_acceptor::reuse_address( true ) );
     auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
 
     std::atomic<bool> running{ true };
@@ -179,13 +182,13 @@ bench::benchmark_result bench_concurrent_churn( int num_loops, double duration_s
     std::vector<int64_t> cycle_counts( num_loops, 0 );
     std::vector<perf::statistics> stats( num_loops );
 
-    std::vector<std::unique_ptr<tcp::acceptor>> acceptors;
+    std::vector<std::unique_ptr<tcp_acceptor>> acceptors;
     acceptors.reserve( num_loops );
     for( int i = 0; i < num_loops; ++i )
     {
-        acceptors.push_back( std::make_unique<tcp::acceptor>(
-            ioc, tcp::endpoint( tcp::v4(), 0 ) ) );
-        acceptors.back()->set_option( tcp::acceptor::reuse_address( true ) );
+        acceptors.push_back( std::make_unique<tcp_acceptor>(
+            ioc.get_executor(), tcp::endpoint( tcp::v4(), 0 ) ) );
+        acceptors.back()->set_option( tcp_acceptor::reuse_address( true ) );
     }
 
     std::vector<std::unique_ptr<sequential_churn_op>> ops;
@@ -254,15 +257,15 @@ bench::benchmark_result bench_concurrent_churn( int num_loops, double duration_s
 struct burst_churn_op
 {
     asio::io_context& ioc;
-    tcp::acceptor& acc;
+    tcp_acceptor& acc;
     tcp::endpoint ep;
     std::atomic<bool>& running;
     int64_t& total_accepted;
     perf::statistics& burst_stats;
     int burst_size;
 
-    std::vector<std::unique_ptr<tcp::socket>> clients;
-    std::vector<std::unique_ptr<tcp::socket>> servers;
+    std::vector<std::unique_ptr<tcp_socket>> clients;
+    std::vector<std::unique_ptr<tcp_socket>> servers;
     int accepted_count = 0;
     perf::stopwatch sw;
 
@@ -282,14 +285,14 @@ struct burst_churn_op
         // Initiate all connects and accepts
         for( int i = 0; i < burst_size; ++i )
         {
-            clients.push_back( std::make_unique<tcp::socket>( ioc ) );
+            clients.push_back( std::make_unique<tcp_socket>( ioc.get_executor() ) );
             clients.back()->open( tcp::v4() );
             clients.back()->set_option(
                 asio::socket_base::linger( true, 0 ) );
             clients.back()->async_connect( ep,
                 [](boost::system::error_code) {} );
 
-            servers.push_back( std::make_unique<tcp::socket>( ioc ) );
+            servers.push_back( std::make_unique<tcp_socket>( ioc.get_executor() ) );
             acc.async_accept( *servers.back(),
                 [this]( boost::system::error_code ec )
                 {
@@ -323,8 +326,8 @@ bench::benchmark_result bench_burst_churn( int burst_size, double duration_s )
     std::cout << "  Burst size: " << burst_size << "\n";
 
     asio::io_context ioc;
-    tcp::acceptor acc( ioc, tcp::endpoint( tcp::v4(), 0 ) );
-    acc.set_option( tcp::acceptor::reuse_address( true ) );
+    tcp_acceptor acc( ioc.get_executor(), tcp::endpoint( tcp::v4(), 0 ) );
+    acc.set_option( tcp_acceptor::reuse_address( true ) );
     auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
 
     std::atomic<bool> running{ true };

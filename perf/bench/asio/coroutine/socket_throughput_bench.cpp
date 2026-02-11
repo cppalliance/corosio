@@ -13,7 +13,7 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/awaitable.hpp>
-#include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/deferred.hpp>
 #include <boost/asio/write.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/buffer.hpp>
@@ -45,7 +45,7 @@ bench::benchmark_result bench_throughput( std::size_t chunk_size, double duratio
     std::size_t total_written = 0;
     std::size_t total_read = 0;
 
-    auto write_task = [&]() -> asio::awaitable<void>
+    auto write_task = [&]() -> asio::awaitable<void, executor_type>
     {
         try
         {
@@ -53,15 +53,15 @@ bench::benchmark_result bench_throughput( std::size_t chunk_size, double duratio
             {
                 auto n = co_await writer.async_write_some(
                     asio::buffer( write_buf.data(), chunk_size ),
-                    asio::use_awaitable );
+                    asio::deferred );
                 total_written += n;
             }
-            writer.shutdown( tcp::socket::shutdown_send );
+            writer.shutdown( tcp_socket::shutdown_send );
         }
         catch( std::exception const& ) {}
     };
 
-    auto read_task = [&]() -> asio::awaitable<void>
+    auto read_task = [&]() -> asio::awaitable<void, executor_type>
     {
         try
         {
@@ -69,7 +69,7 @@ bench::benchmark_result bench_throughput( std::size_t chunk_size, double duratio
             {
                 auto n = co_await reader.async_read_some(
                     asio::buffer( read_buf.data(), read_buf.size() ),
-                    asio::use_awaitable );
+                    asio::deferred );
                 if( n == 0 )
                     break;
                 total_read += n;
@@ -127,7 +127,7 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
     std::size_t written1 = 0, read1 = 0;
     std::size_t written2 = 0, read2 = 0;
 
-    auto write1_task = [&]() -> asio::awaitable<void>
+    auto write1_task = [&]() -> asio::awaitable<void, executor_type>
     {
         try
         {
@@ -135,15 +135,15 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
             {
                 auto n = co_await sock1.async_write_some(
                     asio::buffer( buf1.data(), chunk_size ),
-                    asio::use_awaitable );
+                    asio::deferred );
                 written1 += n;
             }
-            sock1.shutdown( tcp::socket::shutdown_send );
+            sock1.shutdown( tcp_socket::shutdown_send );
         }
         catch( std::exception const& ) {}
     };
 
-    auto read1_task = [&]() -> asio::awaitable<void>
+    auto read1_task = [&]() -> asio::awaitable<void, executor_type>
     {
         try
         {
@@ -152,7 +152,7 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
             {
                 auto n = co_await sock2.async_read_some(
                     asio::buffer( rbuf.data(), rbuf.size() ),
-                    asio::use_awaitable );
+                    asio::deferred );
                 if( n == 0 ) break;
                 read1 += n;
             }
@@ -160,7 +160,7 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
         catch( std::exception const& ) {}
     };
 
-    auto write2_task = [&]() -> asio::awaitable<void>
+    auto write2_task = [&]() -> asio::awaitable<void, executor_type>
     {
         try
         {
@@ -168,15 +168,15 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
             {
                 auto n = co_await sock2.async_write_some(
                     asio::buffer( buf2.data(), chunk_size ),
-                    asio::use_awaitable );
+                    asio::deferred );
                 written2 += n;
             }
-            sock2.shutdown( tcp::socket::shutdown_send );
+            sock2.shutdown( tcp_socket::shutdown_send );
         }
         catch( std::exception const& ) {}
     };
 
-    auto read2_task = [&]() -> asio::awaitable<void>
+    auto read2_task = [&]() -> asio::awaitable<void, executor_type>
     {
         try
         {
@@ -185,7 +185,7 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
             {
                 auto n = co_await sock1.async_read_some(
                     asio::buffer( rbuf.data(), rbuf.size() ),
-                    asio::use_awaitable );
+                    asio::deferred );
                 if( n == 0 ) break;
                 read2 += n;
             }

@@ -25,13 +25,14 @@
 
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
+using asio_bench::tcp_socket;
 
 namespace asio_callback_bench {
 namespace {
 
 struct write_op
 {
-    tcp::socket& sock;
+    tcp_socket& sock;
     std::vector<char>& buf;
     std::size_t chunk_size;
     std::atomic<bool>& running;
@@ -41,7 +42,7 @@ struct write_op
     {
         if( !running.load( std::memory_order_relaxed ) )
         {
-            sock.shutdown( tcp::socket::shutdown_send );
+            sock.shutdown( tcp_socket::shutdown_send );
             return;
         }
         sock.async_write_some(
@@ -58,7 +59,7 @@ struct write_op
 
 struct read_op
 {
-    tcp::socket& sock;
+    tcp_socket& sock;
     std::vector<char>& buf;
     std::size_t& total_read;
 

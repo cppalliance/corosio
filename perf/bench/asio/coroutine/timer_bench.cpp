@@ -8,11 +8,12 @@
 //
 
 #include "benchmarks.hpp"
+#include "../socket_utils.hpp"
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/awaitable.hpp>
-#include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/deferred.hpp>
 #include <boost/asio/steady_timer.hpp>
 
 #include <atomic>
@@ -48,7 +49,7 @@ bench::benchmark_result bench_schedule_cancel( double duration_s )
     {
         for( int i = 0; i < batch_size; ++i )
         {
-            asio::steady_timer t( ioc );
+            timer_type t( ioc );
             t.expires_after( std::chrono::hours( 1 ) );
             t.cancel();
             ++counter;
@@ -85,15 +86,15 @@ bench::benchmark_result bench_fire_rate( double duration_s )
     std::atomic<bool> running{ true };
     int64_t counter = 0;
 
-    auto task = [&]() -> asio::awaitable<void>
+    auto task = [&]() -> asio::awaitable<void, executor_type>
     {
-        asio::steady_timer t( ioc );
+        timer_type t( ioc );
         try
         {
             while( running.load( std::memory_order_relaxed ) )
             {
                 t.expires_after( std::chrono::nanoseconds( 0 ) );
-                co_await t.async_wait( asio::use_awaitable );
+                co_await t.async_wait( asio::deferred );
                 ++counter;
             }
         }
@@ -140,16 +141,16 @@ bench::benchmark_result bench_concurrent_timers( int num_timers, double duration
     std::vector<int64_t> fire_counts( num_timers, 0 );
     std::vector<perf::statistics> stats( num_timers );
 
-    auto timer_task = [&]( int idx, std::chrono::microseconds interval ) -> asio::awaitable<void>
+    auto timer_task = [&]( int idx, std::chrono::microseconds interval ) -> asio::awaitable<void, executor_type>
     {
-        asio::steady_timer t( ioc );
+        timer_type t( ioc );
         try
         {
             while( running.load( std::memory_order_relaxed ) )
             {
                 perf::stopwatch sw;
                 t.expires_after( interval );
-                co_await t.async_wait( asio::use_awaitable );
+                co_await t.async_wait( asio::deferred );
                 double latency_us = sw.elapsed_us();
                 stats[idx].add( latency_us );
                 ++fire_counts[idx];

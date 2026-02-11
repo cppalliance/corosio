@@ -28,6 +28,7 @@
 
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
+using asio_bench::tcp_socket;
 
 namespace asio_callback_bench {
 namespace {
@@ -35,7 +36,7 @@ namespace {
 // Two-phase server loop: read request headers, write response
 struct server_op
 {
-    tcp::socket& sock;
+    tcp_socket& sock;
     int64_t& completed_requests;
     std::string buf;
 
@@ -76,7 +77,7 @@ struct server_op
 // Three-phase client loop: write request, read headers, optionally read body
 struct client_op
 {
-    tcp::socket& sock;
+    tcp_socket& sock;
     std::atomic<bool>& running;
     int64_t& request_count;
     perf::statistics& latency_stats;
@@ -87,7 +88,7 @@ struct client_op
     {
         if( !running.load( std::memory_order_relaxed ) )
         {
-            sock.shutdown( tcp::socket::shutdown_send );
+            sock.shutdown( tcp_socket::shutdown_send );
             return;
         }
         sw.reset();
@@ -221,8 +222,8 @@ bench::benchmark_result bench_concurrent_connections( int num_connections, doubl
 
     asio::io_context ioc;
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     std::vector<int64_t> server_completed( num_connections, 0 );
     std::vector<int64_t> client_counts( num_connections, 0 );
     std::vector<perf::statistics> stats( num_connections );
@@ -312,8 +313,8 @@ bench::benchmark_result bench_multithread(
 
     asio::io_context ioc( num_threads );
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     std::vector<int64_t> server_completed( num_connections, 0 );
     std::vector<int64_t> client_counts( num_connections, 0 );
     std::vector<perf::statistics> stats( num_connections );

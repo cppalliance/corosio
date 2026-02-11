@@ -13,7 +13,7 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/awaitable.hpp>
-#include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/deferred.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/read_until.hpp>
@@ -34,8 +34,8 @@ namespace asio_bench {
 namespace {
 
 // Server: loop until read error (EOF from client shutdown)
-asio::awaitable<void> server_task(
-    tcp::socket& sock,
+asio::awaitable<void, executor_type> server_task(
+    tcp_socket& sock,
     int64_t& completed_requests )
 {
     std::string buf;
@@ -48,12 +48,12 @@ asio::awaitable<void> server_task(
                 sock,
                 asio::dynamic_buffer( buf ),
                 "\r\n\r\n",
-                asio::use_awaitable );
+                asio::deferred );
 
             co_await asio::async_write(
                 sock,
                 asio::buffer( bench::http::small_response, bench::http::small_response_size ),
-                asio::use_awaitable );
+                asio::deferred );
 
             ++completed_requests;
             buf.erase( 0, n );
@@ -63,8 +63,8 @@ asio::awaitable<void> server_task(
 }
 
 // Client: loop while running, then shutdown
-asio::awaitable<void> client_task(
-    tcp::socket& sock,
+asio::awaitable<void, executor_type> client_task(
+    tcp_socket& sock,
     std::atomic<bool>& running,
     int64_t& request_count,
     perf::statistics& latency_stats )
@@ -80,13 +80,13 @@ asio::awaitable<void> client_task(
             co_await asio::async_write(
                 sock,
                 asio::buffer( bench::http::small_request, bench::http::small_request_size ),
-                asio::use_awaitable );
+                asio::deferred );
 
             std::size_t header_end = co_await asio::async_read_until(
                 sock,
                 asio::dynamic_buffer( buf ),
                 "\r\n\r\n",
-                asio::use_awaitable );
+                asio::deferred );
 
             std::string_view headers( buf.data(), header_end );
             std::size_t content_length = 0;
@@ -110,7 +110,7 @@ asio::awaitable<void> client_task(
                 co_await asio::async_read(
                     sock,
                     asio::buffer( buf.data() + old_size, need ),
-                    asio::use_awaitable );
+                    asio::deferred );
             }
 
             double latency_us = sw.elapsed_us();
@@ -120,7 +120,7 @@ asio::awaitable<void> client_task(
             buf.erase( 0, total_size );
         }
 
-        sock.shutdown( tcp::socket::shutdown_send );
+        sock.shutdown( tcp_socket::shutdown_send );
     }
     catch( std::exception const& ) {}
 }
@@ -182,8 +182,8 @@ bench::benchmark_result bench_concurrent_connections( int num_connections, doubl
 
     asio::io_context ioc;
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     std::vector<int64_t> server_completed( num_connections, 0 );
     std::vector<int64_t> client_counts( num_connections, 0 );
     std::vector<perf::statistics> stats( num_connections );
@@ -268,8 +268,8 @@ bench::benchmark_result bench_multithread(
 
     asio::io_context ioc( num_threads );
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     std::vector<int64_t> server_completed( num_connections, 0 );
     std::vector<int64_t> client_counts( num_connections, 0 );
     std::vector<perf::statistics> stats( num_connections );

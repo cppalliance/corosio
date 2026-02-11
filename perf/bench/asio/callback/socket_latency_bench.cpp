@@ -26,6 +26,7 @@
 
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
+using asio_bench::tcp_socket;
 
 namespace asio_callback_bench {
 namespace {
@@ -34,8 +35,8 @@ struct pingpong_op
 {
     enum phase { write_client, read_server, write_server, read_client };
 
-    tcp::socket& client;
-    tcp::socket& server;
+    tcp_socket& client;
+    tcp_socket& server;
     std::vector<char> send_buf;
     std::vector<char> recv_buf;
     std::atomic<bool>& running;
@@ -45,8 +46,8 @@ struct pingpong_op
     phase phase_;
 
     pingpong_op(
-        tcp::socket& c,
-        tcp::socket& s,
+        tcp_socket& c,
+        tcp_socket& s,
         std::size_t message_size,
         std::atomic<bool>& r,
         int64_t& iters,
@@ -66,7 +67,7 @@ struct pingpong_op
     {
         if( !running.load( std::memory_order_relaxed ) )
         {
-            client.shutdown( tcp::socket::shutdown_send );
+            client.shutdown( tcp_socket::shutdown_send );
             return;
         }
         sw.reset();
@@ -171,8 +172,8 @@ bench::benchmark_result bench_concurrent_latency(
 
     asio::io_context ioc;
 
-    std::vector<tcp::socket> clients;
-    std::vector<tcp::socket> servers;
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
     std::vector<perf::statistics> stats( num_pairs );
     std::vector<int64_t> iters( num_pairs, 0 );
 

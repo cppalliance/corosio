@@ -8,6 +8,7 @@
 //
 
 #include "benchmarks.hpp"
+#include "../socket_utils.hpp"
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/steady_timer.hpp>
@@ -23,6 +24,7 @@
 #include "../../common/benchmark.hpp"
 
 namespace asio = boost::asio;
+using asio_bench::timer_type;
 
 namespace asio_callback_bench {
 namespace {
@@ -45,7 +47,7 @@ bench::benchmark_result bench_schedule_cancel( double duration_s )
     {
         for( int i = 0; i < batch_size; ++i )
         {
-            asio::steady_timer t( ioc );
+            timer_type t( ioc.get_executor() );
             t.expires_after( std::chrono::hours( 1 ) );
             t.cancel();
             ++counter;
@@ -73,12 +75,12 @@ bench::benchmark_result bench_schedule_cancel( double duration_s )
 
 struct fire_rate_op
 {
-    asio::steady_timer timer;
+    timer_type timer;
     std::atomic<bool>& running;
     int64_t& counter;
 
     fire_rate_op( asio::io_context& ioc, std::atomic<bool>& r, int64_t& c )
-        : timer( ioc )
+        : timer( ioc.get_executor() )
         , running( r )
         , counter( c )
     {
@@ -141,7 +143,7 @@ bench::benchmark_result bench_fire_rate( double duration_s )
 
 struct concurrent_timer_op
 {
-    asio::steady_timer timer;
+    timer_type timer;
     std::atomic<bool>& running;
     std::chrono::microseconds interval;
     int64_t& fire_count;
@@ -154,7 +156,7 @@ struct concurrent_timer_op
         std::chrono::microseconds iv,
         int64_t& fc,
         perf::statistics& st )
-        : timer( ioc )
+        : timer( ioc.get_executor() )
         , running( r )
         , interval( iv )
         , fire_count( fc )
