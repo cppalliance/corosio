@@ -14,6 +14,7 @@
 #include "src/detail/epoll/acceptors.hpp"
 #include "src/detail/epoll/sockets.hpp"
 #include "src/detail/endpoint_convert.hpp"
+#include "src/detail/dispatch_coro.hpp"
 #include "src/detail/make_err.hpp"
 
 #include <utility>
@@ -133,7 +134,7 @@ operator()()
     capy::executor_ref saved_ex( std::move( ex ) );
     std::coroutine_handle<> saved_h( std::move( h ) );
     auto prevent_premature_destruction = std::move(impl_ptr);
-    saved_ex.dispatch( saved_h );
+    dispatch_coro(saved_ex, saved_h).resume();
 }
 
 epoll_acceptor_impl::

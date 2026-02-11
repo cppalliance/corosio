@@ -344,9 +344,8 @@ private:
             std::coroutine_handle<> h,
             capy::io_env const&) noexcept
         {
-            // Dispatch to server's executor before touching shared state
-            self_.ex_.dispatch(h);
-            return std::noop_coroutine();
+            // Symmetric transfer to server's executor
+            return self_.ex_.dispatch(h);
         }
 
         void await_resume() noexcept

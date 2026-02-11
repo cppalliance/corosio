@@ -15,7 +15,7 @@
 #include "src/detail/iocp/scheduler.hpp"
 #include "src/detail/endpoint_convert.hpp"
 #include "src/detail/make_err.hpp"
-#include "src/detail/resume_coro.hpp"
+#include "src/detail/dispatch_coro.hpp"
 
 #include <cstring>
 #include <thread>
@@ -260,7 +260,7 @@ resolve_op::do_complete(
 
     op->cancel_handle = nullptr;
 
-    resume_coro(op->ex, op->h);
+    dispatch_coro(op->ex, op->h).resume();
 }
 
 //------------------------------------------------------------------------------
@@ -305,7 +305,7 @@ reverse_resolve_op::do_complete(
             op->ep, std::move(op->stored_host), std::move(op->stored_service));
     }
 
-    resume_coro(op->ex, op->h);
+    dispatch_coro(op->ex, op->h).resume();
 }
 
 //------------------------------------------------------------------------------

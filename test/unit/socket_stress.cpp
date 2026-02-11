@@ -201,6 +201,16 @@ struct stop_token_stress_test
                             (void)co_await t.wait();
                         }
 
+                        if (!read_done.load(std::memory_order_acquire))
+                        {
+                            std::fprintf(stderr, "  stop_token_stress: read hung on case %d, iter %d\n", i % 3, i);
+                            BOOST_TEST(read_done.load(std::memory_order_acquire));
+                            stop_src.request_stop();
+                            timer t(ioc);
+                            t.expires_after(std::chrono::milliseconds(100));
+                            (void)co_await t.wait();
+                        }
+
                         ++iterations;
                         if (read_ec == capy::cond::canceled)
                             ++cancellations;
@@ -381,10 +391,16 @@ struct cancel_close_stress_test
                         switch (i % 3)
                         {
                         case 0:
+                        {
+                            // Yield to let the posted read_coro start
+                            timer yield_t(ioc);
+                            yield_t.expires_after(std::chrono::microseconds(1));
+                            (void)co_await yield_t.wait();
                             // Cancel via tcp_socket.cancel()
                             s2.cancel();
                             ++cancels;
                             break;
+                        }
                         case 1:
                             // Write data to complete the read normally
                             {
@@ -421,6 +437,7 @@ struct cancel_close_stress_test
                         if (!read_done.load(std::memory_order_acquire))
                         {
                             std::fprintf(stderr, "  cancel_close_stress: read hung on case %d, iter %d\n", i % 3, i);
+                            BOOST_TEST(read_done.load(std::memory_order_acquire));
                             // Force cancel
                             s2.cancel();
                             timer t(ioc);

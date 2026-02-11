@@ -15,7 +15,7 @@
 #include "src/detail/iocp/scheduler.hpp"
 #include "src/detail/endpoint_convert.hpp"
 #include "src/detail/make_err.hpp"
-#include "src/detail/resume_coro.hpp"
+#include "src/detail/dispatch_coro.hpp"
 
 /*
     Windows IOCP Socket Implementation
@@ -75,6 +75,7 @@ void connect_op::do_cancel_impl(overlapped_op* base) noexcept
 void read_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<read_op*>(base);
+    op->cancelled.store(true, std::memory_order_release);
     if (op->internal.is_open())
     {
         ::CancelIoEx(
@@ -86,6 +87,7 @@ void read_op::do_cancel_impl(overlapped_op* base) noexcept
 void write_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<write_op*>(base);
+    op->cancelled.store(true, std::memory_order_release);
     if (op->internal.is_open())
     {
         ::CancelIoEx(
@@ -190,7 +192,7 @@ accept_op::do_complete(
     auto saved_ex = op->ex;
     auto prevent_premature_destruction = std::move(op->acceptor_ptr);
 
-    resume_coro(saved_ex, saved_h);
+    dispatch_coro(saved_ex, saved_h).resume();
 }
 
 //------------------------------------------------------------------------------
@@ -412,7 +414,11 @@ do_read_io()
             return;
         }
     }
-    // Synchronous completion: IOCP will deliver the completion packet
+    // I/O is now pending. If stop was requested before WSARecv
+    // started, the CancelIoEx in the stop callback had nothing
+    // to cancel. Re-check and cancel the now-pending operation.
+    if (op.cancelled.load(std::memory_order_acquire))
+        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
 }
 
 void
@@ -437,14 +443,16 @@ do_write_io()
         DWORD err = ::WSAGetLastError();
         if (err != WSA_IO_PENDING)
         {
-            // Immediate error - must use post(). See do_read_io for explanation.
+            // Immediate error - must use post().
             svc_.work_finished();
             op.dwError = err;
             svc_.post(&op);
             return;
         }
     }
-    // Synchronous completion: IOCP will deliver the completion packet
+    // Re-check cancellation after I/O is pending
+    if (op.cancelled.load(std::memory_order_acquire))
+        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
 }
 
 //------------------------------------------------------------------------------

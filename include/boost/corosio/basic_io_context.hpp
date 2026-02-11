@@ -341,29 +341,21 @@ public:
 
     /** Dispatch a coroutine handle.
 
-        If called from within `run()`, resumes the coroutine inline
-        by calling `h.resume()`. The call returns when the coroutine
-        suspends or completes. Otherwise posts the coroutine for
-        later execution.
-
-        After this function returns, the state of `h` is unspecified.
-        The coroutine may have completed, been destroyed, or suspended
-        at a different suspension point. Callers must not assume `h`
-        remains valid after calling `dispatch`.
-
-        @note Because this function may call `h.resume()` before
-        returning, it cannot be used to implement symmetric transfer
-        from `await_suspend`.
+        Returns a handle for symmetric transfer. If called from
+        within `run()`, returns `h`. Otherwise posts the coroutine
+        for later execution and returns `std::noop_coroutine()`.
 
         @param h The coroutine handle to dispatch.
+
+        @return A handle for symmetric transfer or `std::noop_coroutine()`.
     */
-    void
+    std::coroutine_handle<>
     dispatch(std::coroutine_handle<> h) const
     {
         if (running_in_this_thread())
-            h.resume();
-        else
-            ctx_->sched_->post(h);
+            return h;
+        ctx_->sched_->post(h);
+        return std::noop_coroutine();
     }
 
     /** Post a coroutine for deferred execution.

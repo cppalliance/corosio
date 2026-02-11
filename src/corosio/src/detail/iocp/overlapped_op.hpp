@@ -20,7 +20,7 @@
 #include <system_error>
 
 #include "src/detail/make_err.hpp"
-#include "src/detail/resume_coro.hpp"
+#include "src/detail/dispatch_coro.hpp"
 #include "src/detail/scheduler_op.hpp"
 
 #include <atomic>
@@ -142,13 +142,20 @@ struct overlapped_op
         if (bytes_out)
             *bytes_out = static_cast<std::size_t>(bytes_transferred);
 
-        resume_coro(ex, h);
+        dispatch_coro(ex, h).resume();
     }
 
-    /** Cleanup without invoking handler (for destroy path). */
+    /** Cleanup without invoking handler (for destroy/shutdown path).
+        Destroys the waiting coroutine frame to prevent leaks.
+    */
     void cleanup_only()
     {
         stop_cb.reset();
+        if(h)
+        {
+            h.destroy();
+            h = {};
+        }
     }
 };
 

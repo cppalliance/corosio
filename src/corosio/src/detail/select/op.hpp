@@ -23,6 +23,7 @@
 #include <system_error>
 
 #include "src/detail/make_err.hpp"
+#include "src/detail/dispatch_coro.hpp"
 #include "src/detail/scheduler_op.hpp"
 #include "src/detail/endpoint_convert.hpp"
 
@@ -171,7 +172,7 @@ struct select_op : scheduler_op
         capy::executor_ref saved_ex( std::move( ex ) );
         std::coroutine_handle<> saved_h( std::move( h ) );
         impl_ptr.reset();
-        saved_ex.dispatch( saved_h );
+        dispatch_coro(saved_ex, saved_h).resume();
     }
 
     virtual bool is_read_operation() const noexcept { return false; }

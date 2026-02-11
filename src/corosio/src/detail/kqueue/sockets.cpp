@@ -14,7 +14,7 @@
 #include "src/detail/kqueue/sockets.hpp"
 #include "src/detail/endpoint_convert.hpp"
 #include "src/detail/make_err.hpp"
-#include "src/detail/resume_coro.hpp"
+#include "src/detail/dispatch_coro.hpp"
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/buffers.hpp>
@@ -143,7 +143,7 @@ operator()()
     capy::executor_ref saved_ex( std::move( ex ) );
     std::coroutine_handle<> saved_h( std::move( h ) );
     auto prevent_premature_destruction = std::move(impl_ptr);
-    resume_coro(saved_ex, saved_h);
+    dispatch_coro(saved_ex, saved_h).resume();
 }
 
 kqueue_socket_impl::

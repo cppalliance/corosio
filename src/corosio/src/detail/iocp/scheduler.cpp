@@ -179,7 +179,9 @@ post(std::coroutine_handle<> h) const
             auto* self = static_cast<post_handler*>(base);
             if (!owner)
             {
-                // Destroy path
+                // Destroy path: destroy the coroutine frame, then self
+                if (self->h_)
+                    self->h_.destroy();
                 delete self;
                 return;
             }

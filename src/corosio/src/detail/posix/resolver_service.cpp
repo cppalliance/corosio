@@ -14,7 +14,7 @@
 #include "src/detail/posix/resolver_service.hpp"
 #include "src/detail/endpoint_convert.hpp"
 #include "src/detail/intrusive.hpp"
-#include "src/detail/resume_coro.hpp"
+#include "src/detail/dispatch_coro.hpp"
 #include "src/detail/scheduler_op.hpp"
 
 #include <boost/corosio/detail/scheduler.hpp>
@@ -499,7 +499,7 @@ operator()()
         *out = std::move(stored_results);
 
     impl->svc_.work_finished();
-    resume_coro(ex, h);
+    dispatch_coro(ex, h).resume();
 }
 
 void
@@ -571,7 +571,7 @@ operator()()
     }
 
     impl->svc_.work_finished();
-    resume_coro(ex, h);
+    dispatch_coro(ex, h).resume();
 }
 
 void
