@@ -645,7 +645,10 @@ shutdown()
     while (auto* impl = state_->socket_list_.pop_front())
         impl->close_socket();
 
-    state_->socket_ptrs_.clear();
+    // Don't clear socket_ptrs_ here. The scheduler shuts down after us and
+    // drains completed_ops_, calling destroy() on each queued op. Letting
+    // ~state_ release the ptrs (during service destruction, after scheduler
+    // shutdown) keeps every impl alive until all ops have been drained.
 }
 
 tcp_socket::socket_impl&

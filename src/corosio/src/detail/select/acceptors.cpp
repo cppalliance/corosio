@@ -359,7 +359,9 @@ shutdown()
     while (auto* impl = state_->acceptor_list_.pop_front())
         impl->close_socket();
 
-    state_->acceptor_ptrs_.clear();
+    // Don't clear acceptor_ptrs_ here — same rationale as
+    // select_socket_service::shutdown(). Let ~state_ release ptrs
+    // after scheduler shutdown has drained all queued ops.
 }
 
 tcp_acceptor::acceptor_impl&
