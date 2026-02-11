@@ -121,6 +121,14 @@ struct descriptor_state : scheduler_op
     bool read_ready = false;
     bool write_ready = false;
 
+    // Deferred cancellation: set by cancel() when the target op is not
+    // parked (e.g. completing inline via speculative I/O). Checked when
+    // the next op parks; if set, the op is immediately self-cancelled.
+    // This matches IOCP semantics where CancelIoEx always succeeds.
+    bool read_cancel_pending = false;
+    bool write_cancel_pending = false;
+    bool connect_cancel_pending = false;
+
     // Set during registration only (no mutex needed)
     std::uint32_t registered_events = 0;
     int fd = -1;
