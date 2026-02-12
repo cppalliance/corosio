@@ -93,6 +93,7 @@ bench::benchmark_result bench_sequential_churn(
             if( rec )
                 co_return;
 
+            server.set_linger( true, 0 );
             client.close();
             server.close();
 
@@ -202,6 +203,7 @@ bench::benchmark_result bench_concurrent_churn(
             if( rec )
                 co_return;
 
+            server.set_linger( true, 0 );
             client.close();
             server.close();
 
@@ -325,7 +327,10 @@ bench::benchmark_result bench_burst_churn(
             for( auto& c : clients )
                 c.close();
             for( auto& s : servers )
+            {
+                s.set_linger( true, 0 );
                 s.close();
+            }
 
             burst_stats.add( sw.elapsed_us() );
         }

@@ -294,6 +294,7 @@ win_scheduler::
 restart()
 {
     ::InterlockedExchange(&stopped_, 0);
+    ::InterlockedExchange(&stop_event_posted_, 0);
 }
 
 std::size_t
