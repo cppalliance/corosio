@@ -15,11 +15,10 @@
 #if BOOST_COROSIO_HAS_SELECT
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
+#include "src/detail/scheduler_impl.hpp"
 #include "src/detail/scheduler_op.hpp"
-#include "src/detail/timer_service.hpp"
 
 #include <sys/select.h>
 
@@ -58,7 +57,7 @@ struct select_op;
     All public member functions are thread-safe.
 */
 class select_scheduler
-    : public scheduler
+    : public scheduler_impl
     , public capy::execution_context::service
 {
 public:
@@ -146,7 +145,6 @@ private:
     mutable std::atomic<long> outstanding_work_;
     std::atomic<bool> stopped_;
     bool shutdown_;
-    timer_service* timer_svc_ = nullptr;
 
     // Per-fd state for tracking registered operations
     struct fd_state

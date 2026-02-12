@@ -12,14 +12,18 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
-#include <coroutine>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <chrono>
+#include <coroutine>
 #include <cstddef>
 #include <limits>
 
 namespace boost::corosio {
+
+namespace detail {
+struct timer_service_access;
+} // namespace detail
 
 /** Base class for I/O context implementations.
 
@@ -33,6 +37,8 @@ namespace boost::corosio {
 */
 class BOOST_COROSIO_DECL basic_io_context : public capy::execution_context
 {
+    friend struct detail::timer_service_access;
+
 public:
     /** The executor type for this context. */
     class executor_type;
@@ -254,14 +260,13 @@ protected:
         Derived classes must set sched_ in their constructor body.
     */
     basic_io_context()
-        : sched_(nullptr)
+        : capy::execution_context(this)
+        , sched_(nullptr)
     {
     }
 
     detail::scheduler* sched_;
 };
-
-//------------------------------------------------------------------------------
 
 /** An executor for dispatching work to an I/O context.
 
@@ -391,8 +396,6 @@ public:
         return ctx_ != other.ctx_;
     }
 };
-
-//------------------------------------------------------------------------------
 
 inline
 basic_io_context::executor_type

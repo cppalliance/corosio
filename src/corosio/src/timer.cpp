@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -19,9 +20,10 @@ namespace detail {
 extern timer::timer_impl* timer_service_create(capy::execution_context&);
 extern void timer_service_destroy(timer::timer_impl&) noexcept;
 extern timer::time_point timer_service_expiry(timer::timer_impl&) noexcept;
-extern void timer_service_expires_at(timer::timer_impl&, timer::time_point);
-extern void timer_service_expires_after(timer::timer_impl&, timer::duration);
-extern void timer_service_cancel(timer::timer_impl&) noexcept;
+extern std::size_t timer_service_expires_at(timer::timer_impl&, timer::time_point);
+extern std::size_t timer_service_expires_after(timer::timer_impl&, timer::duration);
+extern std::size_t timer_service_cancel(timer::timer_impl&) noexcept;
+extern std::size_t timer_service_cancel_one(timer::timer_impl&) noexcept;
 
 } // namespace detail
 
@@ -37,6 +39,13 @@ timer(capy::execution_context& ctx)
     : io_object(ctx)
 {
     impl_ = detail::timer_service_create(ctx);
+}
+
+timer::
+timer(capy::execution_context& ctx, time_point t)
+    : timer(ctx)
+{
+    expires_at(t);
 }
 
 timer::
@@ -64,11 +73,18 @@ operator=(timer&& other)
     return *this;
 }
 
-void
+std::size_t
 timer::
 cancel()
 {
-    detail::timer_service_cancel(get());
+    return detail::timer_service_cancel(get());
+}
+
+std::size_t
+timer::
+cancel_one()
+{
+    return detail::timer_service_cancel_one(get());
 }
 
 timer::time_point
@@ -78,18 +94,18 @@ expiry() const
     return detail::timer_service_expiry(get());
 }
 
-void
+std::size_t
 timer::
 expires_at(time_point t)
 {
-    detail::timer_service_expires_at(get(), t);
+    return detail::timer_service_expires_at(get(), t);
 }
 
-void
+std::size_t
 timer::
 expires_after(duration d)
 {
-    detail::timer_service_expires_after(get(), d);
+    return detail::timer_service_expires_after(get(), d);
 }
 
 } // namespace boost::corosio

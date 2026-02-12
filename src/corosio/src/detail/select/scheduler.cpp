@@ -13,6 +13,7 @@
 
 #include "src/detail/select/scheduler.hpp"
 #include "src/detail/select/op.hpp"
+#include "src/detail/timer_service.hpp"
 #include "src/detail/make_err.hpp"
 #include "src/detail/posix/resolver_service.hpp"
 #include "src/detail/posix/signals.hpp"

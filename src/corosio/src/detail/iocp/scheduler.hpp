@@ -15,8 +15,9 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+
+#include "src/detail/scheduler_impl.hpp"
 #include <system_error>
 
 #include "src/detail/scheduler_op.hpp"
@@ -34,10 +35,9 @@ namespace boost::corosio::detail {
 // Forward declarations
 struct overlapped_op;
 class win_timers;
-class timer_service;
 
 class win_scheduler
-    : public scheduler
+    : public scheduler_impl
     , public capy::execution_context::service
 {
 public:
@@ -90,7 +90,6 @@ private:
     mutable win_mutex dispatch_mutex_;
     mutable op_queue completed_ops_;
     std::unique_ptr<win_timers> timers_;
-    timer_service* timer_svc_ = nullptr;
 };
 
 } // namespace boost::corosio::detail
