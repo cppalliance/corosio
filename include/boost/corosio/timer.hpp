@@ -25,6 +25,7 @@
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
+#include <limits>
 #include <stop_token>
 
 namespace boost::corosio {
@@ -79,13 +80,32 @@ class BOOST_COROSIO_DECL timer : public io_object
             capy::io_env const* env) -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return t_.get().wait(h, env->executor, token_, &ec_);
+            auto& impl = t_.get();
+            // Inline fast path: already expired and not in the heap
+            if (impl.heap_index_ == timer_impl::npos &&
+                (impl.expiry_ == (time_point::min)() ||
+                    impl.expiry_ <= clock_type::now()))
+            {
+                ec_ = {};
+                auto d = env->executor;
+                d.post(h);
+                return std::noop_coroutine();
+            }
+            return impl.wait(
+                h, env->executor, std::move(token_), &ec_);
         }
     };
 
 public:
     struct timer_impl : io_object_impl
     {
+        static constexpr std::size_t npos =
+            (std::numeric_limits<std::size_t>::max)();
+
+        std::chrono::steady_clock::time_point expiry_{};
+        std::size_t heap_index_ = npos;
+        bool might_have_pending_waits_ = false;
+
         virtual std::coroutine_handle<> wait(
             std::coroutine_handle<>,
             capy::executor_ref,
@@ -167,7 +187,12 @@ public:
 
         @return The number of operations that were cancelled.
     */
-    std::size_t cancel();
+    std::size_t cancel()
+    {
+        if (!get().might_have_pending_waits_)
+            return 0;
+        return do_cancel();
+    }
 
     /** Cancel one pending asynchronous wait operation.
 
@@ -177,14 +202,22 @@ public:
 
         @return The number of operations that were cancelled (0 or 1).
     */
-    std::size_t cancel_one();
+    std::size_t cancel_one()
+    {
+        if (!get().might_have_pending_waits_)
+            return 0;
+        return do_cancel_one();
+    }
 
     /** Return the timer's expiry time as an absolute time.
 
         @return The expiry time point. If no expiry has been set,
             returns a default-constructed time_point.
     */
-    time_point expiry() const;
+    time_point expiry() const noexcept
+    {
+        return get().expiry_;
+    }
 
     /** Set the timer's expiry time as an absolute time.
 
@@ -194,7 +227,15 @@ public:
 
         @return The number of pending operations that were cancelled.
     */
-    std::size_t expires_at(time_point t);
+    std::size_t expires_at(time_point t)
+    {
+        auto& impl = get();
+        impl.expiry_ = t;
+        if (impl.heap_index_ == timer_impl::npos &&
+            !impl.might_have_pending_waits_)
+            return 0;
+        return do_update_expiry();
+    }
 
     /** Set the timer's expiry time relative to now.
 
@@ -204,7 +245,18 @@ public:
 
         @return The number of pending operations that were cancelled.
     */
-    std::size_t expires_after(duration d);
+    std::size_t expires_after(duration d)
+    {
+        auto& impl = get();
+        if (d <= duration::zero())
+            impl.expiry_ = (time_point::min)();
+        else
+            impl.expiry_ = clock_type::now() + d;
+        if (impl.heap_index_ == timer_impl::npos &&
+            !impl.might_have_pending_waits_)
+            return 0;
+        return do_update_expiry();
+    }
 
     /** Set the timer's expiry time relative to now.
 
@@ -266,6 +318,13 @@ public:
     }
 
 private:
+    // Out-of-line cancel/expiry when inline fast-path
+    // conditions (no waiters, not in heap) are not met.
+    std::size_t do_cancel();
+    std::size_t do_cancel_one();
+    std::size_t do_update_expiry();
+
+    /// Return the underlying implementation.
     timer_impl& get() const noexcept
     {
         return *static_cast<timer_impl*>(impl_);
