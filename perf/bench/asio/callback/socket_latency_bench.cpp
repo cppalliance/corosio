@@ -131,7 +131,7 @@ bench::benchmark_result bench_pingpong_latency( std::size_t message_size, double
 {
     std::cout << "  Message size: " << message_size << " bytes\n";
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     auto [client, server] = asio_bench::make_socket_pair( ioc );
 
     std::atomic<bool> running{ true };
@@ -170,7 +170,7 @@ bench::benchmark_result bench_concurrent_latency(
     std::cout << "  Concurrent pairs: " << num_pairs << ", ";
     std::cout << "Message size: " << message_size << " bytes\n";
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
 
     std::vector<tcp_socket> clients;
     std::vector<tcp_socket> servers;
@@ -256,7 +256,7 @@ void run_socket_latency_benchmarks(
 
     // Warm up
     {
-        asio::io_context ioc;
+        asio::io_context ioc( 1 );
         auto [c, s] = asio_bench::make_socket_pair( ioc );
         char buf[64] = {};
         for( int i = 0; i < 100; ++i )

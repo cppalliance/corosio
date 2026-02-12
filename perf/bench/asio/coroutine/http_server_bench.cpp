@@ -129,7 +129,7 @@ bench::benchmark_result bench_single_connection( double duration_s )
 {
     perf::print_header( "Single Connection (Asio Coroutines)" );
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     auto [client, server] = make_socket_pair( ioc );
 
     std::atomic<bool> running{ true };
@@ -180,7 +180,7 @@ bench::benchmark_result bench_concurrent_connections( int num_connections, doubl
 {
     std::cout << "  Connections: " << num_connections << "\n";
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
 
     std::vector<tcp_socket> clients;
     std::vector<tcp_socket> servers;
@@ -366,7 +366,7 @@ void run_http_server_benchmarks(
 
     // Warm up
     {
-        asio::io_context ioc;
+        asio::io_context ioc( 1 );
         auto [c, s] = make_socket_pair( ioc );
         char buf[256] = {};
         for( int i = 0; i < 10; ++i )

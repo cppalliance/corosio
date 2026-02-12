@@ -39,7 +39,7 @@ bench::benchmark_result bench_sequential_churn( double duration_s )
 {
     perf::print_header( "Sequential Accept Churn (Asio Coroutines)" );
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     tcp_acceptor acc( ioc.get_executor(), tcp::endpoint( tcp::v4(), 0 ) );
     acc.set_option( tcp_acceptor::reuse_address( true ) );
     auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
@@ -132,7 +132,7 @@ bench::benchmark_result bench_concurrent_churn( int num_loops, double duration_s
 {
     std::cout << "  Concurrent loops: " << num_loops << "\n";
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     std::atomic<bool> running{ true };
     std::vector<int64_t> cycle_counts( num_loops, 0 );
     std::vector<perf::statistics> stats( num_loops );
@@ -249,7 +249,7 @@ bench::benchmark_result bench_burst_churn( int burst_size, double duration_s )
 {
     std::cout << "  Burst size: " << burst_size << "\n";
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     tcp_acceptor acc( ioc.get_executor(), tcp::endpoint( tcp::v4(), 0 ) );
     acc.set_option( tcp_acceptor::reuse_address( true ) );
     auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );

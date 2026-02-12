@@ -124,7 +124,7 @@ find_context(kqueue_scheduler const* self) noexcept
 void
 flush_private_work(
     scheduler_context* ctx,
-    std::atomic<std::int64_t>& outstanding_work) noexcept
+    conditional_atomic<std::int64_t>& outstanding_work) noexcept
 {
     if (ctx && ctx->private_outstanding_work > 0)
     {
@@ -140,7 +140,7 @@ flush_private_work(
 bool
 drain_private_queue(
     scheduler_context* ctx,
-    std::atomic<std::int64_t>& outstanding_work,
+    conditional_atomic<std::int64_t>& outstanding_work,
     op_queue& completed_ops) noexcept
 {
     if (!ctx || ctx->private_queue.empty())
@@ -365,14 +365,16 @@ operator()()
 kqueue_scheduler::
 kqueue_scheduler(
     capy::execution_context& ctx,
-    int)
+    int concurrency_hint)
     : kq_fd_(-1)
-    , outstanding_work_(0)
-    , stopped_(false)
+    , mutex_(concurrency_hint != 1)
+    , outstanding_work_(0, concurrency_hint != 1)
+    , stopped_(false, concurrency_hint != 1)
     , shutdown_(false)
     , task_running_(false)
     , task_interrupted_(false)
     , state_(0)
+    , user_event_armed_(false, concurrency_hint != 1)
 {
     // FreeBSD 13+: kqueue1(O_CLOEXEC) available
     kq_fd_ = ::kqueue();
@@ -425,7 +427,7 @@ kqueue_scheduler::
 shutdown()
 {
     {
-        std::unique_lock lock(mutex_);
+        conditional_unique_lock lock(mutex_);
         shutdown_ = true;
 
         while (auto* h = completed_ops_.pop())
@@ -494,7 +496,7 @@ post(std::coroutine_handle<> h) const
     // Slow path: cross-thread post requires mutex
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
     completed_ops_.push(ph.release());
     wake_one_thread_and_unlock(lock);
 }
@@ -515,7 +517,7 @@ post(scheduler_op* h) const
     // Slow path: cross-thread post requires mutex
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
     completed_ops_.push(h);
     wake_one_thread_and_unlock(lock);
 }
@@ -549,7 +551,7 @@ void
 kqueue_scheduler::
 stop()
 {
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
     if (!stopped_.load(std::memory_order_relaxed))
     {
         stopped_.store(true, std::memory_order_release);
@@ -569,7 +571,7 @@ void
 kqueue_scheduler::
 restart()
 {
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
     stopped_.store(false, std::memory_order_release);
 }
 
@@ -584,7 +586,7 @@ run()
     }
 
     thread_context_guard ctx(this);
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
 
     std::size_t n = 0;
     for (;;)
@@ -610,7 +612,7 @@ run_one()
     }
 
     thread_context_guard ctx(this);
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
     return do_one(lock, -1, &ctx.frame_);
 }
 
@@ -625,7 +627,7 @@ wait_one(long usec)
     }
 
     thread_context_guard ctx(this);
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
     return do_one(lock, usec, &ctx.frame_);
 }
 
@@ -640,7 +642,7 @@ poll()
     }
 
     thread_context_guard ctx(this);
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
 
     std::size_t n = 0;
     for (;;)
@@ -666,7 +668,7 @@ poll_one()
     }
 
     thread_context_guard ctx(this);
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
     return do_one(lock, 0, &ctx.frame_);
 }
 
@@ -686,6 +688,8 @@ register_descriptor(int fd, descriptor_state* desc) const
     desc->registered_events = kqueue_event_read | kqueue_event_write;
     desc->fd = fd;
     desc->scheduler_ = this;
+    desc->mutex.set_enabled(locking_enabled());
+    desc->mutex.set_spin_count(mutex_.spin_count());
 
     std::lock_guard lock(desc->mutex);
     desc->read_ready = false;
@@ -722,7 +726,7 @@ work_finished() const noexcept
         // signal_all() wakes threads waiting on the condvar.
         // interrupt_reactor() wakes the reactor thread blocked in kevent().
         // Both are needed because they target different blocking mechanisms.
-        std::unique_lock lock(mutex_);
+        conditional_unique_lock lock(mutex_);
         signal_all(lock);
         if (task_running_ && !task_interrupted_)
         {
@@ -751,7 +755,7 @@ drain_thread_queue(op_queue& queue, std::int64_t count) const
     if (count > 0)
         outstanding_work_.fetch_add(count, std::memory_order_relaxed);
 
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
     completed_ops_.splice(queue);
     if (count > 0)
         maybe_unlock_and_signal_one(lock);
@@ -772,7 +776,7 @@ post_deferred_completions(op_queue& ops) const
     }
 
     // Slow path: add to global queue and wake a thread
-    std::unique_lock lock(mutex_);
+    conditional_unique_lock lock(mutex_);
     completed_ops_.splice(ops);
     wake_one_thread_and_unlock(lock);
 }
@@ -798,7 +802,7 @@ interrupt_reactor() const
 
 void
 kqueue_scheduler::
-signal_all(std::unique_lock<std::mutex>&) const
+signal_all(conditional_unique_lock&) const
 {
     state_ |= signaled_bit;
     cond_.notify_all();
@@ -806,7 +810,7 @@ signal_all(std::unique_lock<std::mutex>&) const
 
 bool
 kqueue_scheduler::
-maybe_unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
+maybe_unlock_and_signal_one(conditional_unique_lock& lock) const
 {
     state_ |= signaled_bit;
     if (state_ > signaled_bit)
@@ -820,7 +824,7 @@ maybe_unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
 
 void
 kqueue_scheduler::
-unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
+unlock_and_signal_one(conditional_unique_lock& lock) const
 {
     state_ |= signaled_bit;
     bool have_waiters = state_ > signaled_bit;
@@ -838,7 +842,7 @@ clear_signal() const
 
 void
 kqueue_scheduler::
-wait_for_signal(std::unique_lock<std::mutex>& lock) const
+wait_for_signal(conditional_unique_lock& lock) const
 {
     while ((state_ & signaled_bit) == 0)
     {
@@ -851,7 +855,7 @@ wait_for_signal(std::unique_lock<std::mutex>& lock) const
 void
 kqueue_scheduler::
 wait_for_signal_for(
-    std::unique_lock<std::mutex>& lock,
+    conditional_unique_lock& lock,
     long timeout_us) const
 {
     if ((state_ & signaled_bit) == 0)
@@ -864,7 +868,7 @@ wait_for_signal_for(
 
 void
 kqueue_scheduler::
-wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
+wake_one_thread_and_unlock(conditional_unique_lock& lock) const
 {
     if (maybe_unlock_and_signal_one(lock))
         return;
@@ -926,7 +930,7 @@ calculate_timeout(long requested_timeout_us) const
 struct work_cleanup
 {
     kqueue_scheduler const* scheduler;
-    std::unique_lock<std::mutex>* lock;
+    conditional_unique_lock* lock;
     scheduler_context* ctx;
 
     ~work_cleanup()
@@ -979,7 +983,7 @@ struct task_cleanup
 
 void
 kqueue_scheduler::
-run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
+run_task(conditional_unique_lock& lock, scheduler_context* ctx)
 {
     long effective_timeout_us = task_interrupted_ ? 0 : calculate_timeout(-1);
 
@@ -1105,7 +1109,7 @@ run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
 
 std::size_t
 kqueue_scheduler::
-do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* ctx)
+do_one(conditional_unique_lock& lock, long timeout_us, scheduler_context* ctx)
 {
     for (;;)
     {

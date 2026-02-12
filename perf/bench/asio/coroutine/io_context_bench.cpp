@@ -46,7 +46,7 @@ bench::benchmark_result bench_single_threaded_post( double duration_s )
 {
     perf::print_header( "Single-threaded Handler Post (Asio Coroutines)" );
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     int64_t counter = 0;
     int constexpr batch_size = 1000;
 
@@ -156,7 +156,7 @@ bench::benchmark_result bench_interleaved_post_run( double duration_s, int handl
 {
     perf::print_header( "Interleaved Post/Run (Asio Coroutines)" );
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     int64_t counter = 0;
 
     perf::stopwatch sw;
@@ -258,7 +258,7 @@ void run_io_context_benchmarks(
 
     // Warm up
     {
-        asio::io_context ioc;
+        asio::io_context ioc( 1 );
         int64_t counter = 0;
         for( int i = 0; i < 1000; ++i )
             asio::co_spawn( ioc, increment_task( counter ), asio::detached );

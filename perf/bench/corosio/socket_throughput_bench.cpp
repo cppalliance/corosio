@@ -56,7 +56,7 @@ bench::benchmark_result bench_throughput(
 {
     std::cout << "  Buffer size: " << chunk_size << " bytes\n";
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     auto [writer, reader] = corosio::test::make_socket_pair( *ioc );
 
     set_nodelay( writer );
@@ -131,7 +131,7 @@ bench::benchmark_result bench_bidirectional_throughput(
 {
     std::cout << "  Buffer size: " << chunk_size << " bytes, bidirectional\n";
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     auto [sock1, sock2] = corosio::test::make_socket_pair( *ioc );
 
     set_nodelay( sock1 );
@@ -245,7 +245,7 @@ void run_socket_throughput_benchmarks(
 
     // Warm up
     {
-        auto ioc = factory();
+        auto ioc = factory( 1 );
         auto [w, r] = corosio::test::make_socket_pair( *ioc );
         std::vector<char> buf( 4096, 'w' );
         auto task = [&]() -> capy::task<>

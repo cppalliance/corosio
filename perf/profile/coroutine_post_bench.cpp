@@ -65,7 +65,7 @@ void run_workload(
     int batch_size,
     std::size_t capture_size)
 {
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     auto ex = ioc->get_executor();
     std::atomic<std::uint64_t> counter{0};
 
@@ -159,7 +159,7 @@ void run_profiler_workload(
     // Warmup
     std::cout << "Warming up (1 second)...\n";
     {
-        auto ioc = factory();
+        auto ioc = factory( 1 );
         auto ex = ioc->get_executor();
         std::atomic<std::uint64_t> warmup_counter{0};
 

@@ -140,7 +140,7 @@ void run_balanced_workload(
     int num_threads,
     int batch_size)
 {
-    auto ioc = factory();
+    auto ioc = factory( num_threads );
     std::atomic<std::uint64_t> counter{0};
     std::atomic<bool> stop{false};
 
@@ -223,7 +223,7 @@ void run_post_only_workload(
     int num_threads,
     int batch_size)
 {
-    auto ioc = factory();
+    auto ioc = factory( num_threads );
     std::atomic<std::uint64_t> counter{0};
     std::atomic<bool> stop{false};
 
@@ -325,7 +325,7 @@ void run_run_only_workload(
     int num_threads,
     int queue_depth)
 {
-    auto ioc = factory();
+    auto ioc = factory( num_threads );
     std::atomic<std::uint64_t> counter{0};
     std::atomic<bool> stop{false};
 
@@ -433,7 +433,7 @@ void run_profiler_workload(
     // Warmup - main thread participates, no sleeping
     std::cout << "Warming up (1 second)...\n";
     {
-        auto ioc = factory();
+        auto ioc = factory( num_threads );
         std::atomic<std::uint64_t> warmup_counter{0};
         std::atomic<bool> stop{false};
 

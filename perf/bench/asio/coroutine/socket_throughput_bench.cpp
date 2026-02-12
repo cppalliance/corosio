@@ -35,7 +35,7 @@ bench::benchmark_result bench_throughput( std::size_t chunk_size, double duratio
 {
     std::cout << "  Buffer size: " << chunk_size << " bytes\n";
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     auto [writer, reader] = make_socket_pair( ioc );
 
     std::vector<char> write_buf( chunk_size, 'x' );
@@ -117,7 +117,7 @@ bench::benchmark_result bench_bidirectional_throughput( std::size_t chunk_size, 
 {
     std::cout << "  Buffer size: " << chunk_size << " bytes, bidirectional\n";
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     auto [sock1, sock2] = make_socket_pair( ioc );
 
     std::vector<char> buf1( chunk_size, 'a' );
@@ -245,7 +245,7 @@ void run_socket_throughput_benchmarks(
 
     // Warm up
     {
-        asio::io_context ioc;
+        asio::io_context ioc( 1 );
         auto [w, r] = make_socket_pair( ioc );
         std::vector<char> buf( 4096, 'w' );
         asio::write( w, asio::buffer( buf ) );

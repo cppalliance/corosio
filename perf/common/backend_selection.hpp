@@ -20,8 +20,25 @@
 
 namespace perf {
 
-/// Factory function pointer that creates a fresh io_context.
-using context_factory = std::unique_ptr<boost::corosio::basic_io_context>(*)();
+/// Factory that creates a fresh io_context with an optional concurrency hint.
+///
+/// The hint controls whether the scheduler uses mutex locking:
+///   hint == 1  → single-threaded mode (all locking elided)
+///   hint != 1  → multi-threaded mode (locking enabled)
+///
+/// Defaults to 0 (multi-threaded, locking enabled). Single-threaded
+/// benchmarks should pass 1 explicitly to opt in to lock elision.
+struct context_factory
+{
+    using create_fn = std::unique_ptr<boost::corosio::basic_io_context>(*)(unsigned);
+    create_fn create;
+
+    std::unique_ptr<boost::corosio::basic_io_context>
+    operator()(unsigned concurrency_hint = 0) const
+    {
+        return create(concurrency_hint);
+    }
+};
 
 /** Return the default backend name for the current platform. */
 inline const char* default_backend_name()
@@ -75,9 +92,9 @@ int dispatch_backend(const char* backend, Func&& func)
 #if BOOST_COROSIO_HAS_EPOLL
     if (std::strcmp(backend, "epoll") == 0)
     {
-        func([]() -> std::unique_ptr<corosio::basic_io_context> {
-            return std::make_unique<corosio::epoll_context>();
-        }, "epoll");
+        func(context_factory{[](unsigned hint) -> std::unique_ptr<corosio::basic_io_context> {
+            return std::make_unique<corosio::epoll_context>(hint);
+        }}, "epoll");
         return 0;
     }
 #endif
@@ -85,9 +102,9 @@ int dispatch_backend(const char* backend, Func&& func)
 #if BOOST_COROSIO_HAS_KQUEUE
     if (std::strcmp(backend, "kqueue") == 0)
     {
-        func([]() -> std::unique_ptr<corosio::basic_io_context> {
-            return std::make_unique<corosio::kqueue_context>();
-        }, "kqueue");
+        func(context_factory{[](unsigned hint) -> std::unique_ptr<corosio::basic_io_context> {
+            return std::make_unique<corosio::kqueue_context>(hint);
+        }}, "kqueue");
         return 0;
     }
 #endif
@@ -95,9 +112,9 @@ int dispatch_backend(const char* backend, Func&& func)
 #if BOOST_COROSIO_HAS_SELECT
     if (std::strcmp(backend, "select") == 0)
     {
-        func([]() -> std::unique_ptr<corosio::basic_io_context> {
-            return std::make_unique<corosio::select_context>();
-        }, "select");
+        func(context_factory{[](unsigned hint) -> std::unique_ptr<corosio::basic_io_context> {
+            return std::make_unique<corosio::select_context>(hint);
+        }}, "select");
         return 0;
     }
 #endif
@@ -105,9 +122,9 @@ int dispatch_backend(const char* backend, Func&& func)
 #if BOOST_COROSIO_HAS_IOCP
     if (std::strcmp(backend, "iocp") == 0)
     {
-        func([]() -> std::unique_ptr<corosio::basic_io_context> {
-            return std::make_unique<corosio::iocp_context>();
-        }, "iocp");
+        func(context_factory{[](unsigned hint) -> std::unique_ptr<corosio::basic_io_context> {
+            return std::make_unique<corosio::iocp_context>(hint);
+        }}, "iocp");
         return 0;
     }
 #endif

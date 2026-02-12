@@ -84,7 +84,7 @@ void run_workload(
     int num_pairs,
     int num_threads)
 {
-    auto ioc = factory();
+    auto ioc = factory( num_threads );
     std::atomic<std::uint64_t> ops{0};
     std::atomic<bool> stop{false};
 
@@ -199,7 +199,7 @@ void run_profiler_workload(
     // Warmup
     std::cout << "Warming up (1 second)...\n";
     {
-        auto ioc = factory();
+        auto ioc = factory( 1 );
         auto [a, b] = corosio::test::make_socket_pair(*ioc);
         a.set_no_delay(true);
         b.set_no_delay(true);

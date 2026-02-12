@@ -17,14 +17,13 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
+#include "src/detail/conditional_atomic.hpp"
+#include "src/detail/conditional_mutex.hpp"
 #include "src/detail/scheduler_impl.hpp"
 #include "src/detail/scheduler_op.hpp"
 
-#include <atomic>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
-#include <mutex>
 
 namespace boost::corosio::detail {
 
@@ -204,9 +203,9 @@ private:
     friend struct work_cleanup;
     friend struct task_cleanup;
 
-    std::size_t do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* ctx);
-    void run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx);
-    void wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const;
+    std::size_t do_one(conditional_unique_lock& lock, long timeout_us, scheduler_context* ctx);
+    void run_task(conditional_unique_lock& lock, scheduler_context* ctx);
+    void wake_one_thread_and_unlock(conditional_unique_lock& lock) const;
     void interrupt_reactor() const;
     long calculate_timeout(long requested_timeout_us) const;
 
@@ -217,7 +216,7 @@ private:
 
         @param lock The held mutex lock.
     */
-    void signal_all(std::unique_lock<std::mutex>& lock) const;
+    void signal_all(conditional_unique_lock& lock) const;
 
     /** Set the signaled state and wake one waiter if any exist.
 
@@ -232,7 +231,7 @@ private:
 
         @return `true` if unlocked and signaled, `false` if lock still held.
     */
-    bool maybe_unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const;
+    bool maybe_unlock_and_signal_one(conditional_unique_lock& lock) const;
 
     /** Set the signaled state, unlock, and wake one waiter if any exist.
 
@@ -244,7 +243,7 @@ private:
 
         @param lock The held mutex lock.
     */
-    void unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const;
+    void unlock_and_signal_one(conditional_unique_lock& lock) const;
 
     /** Clear the signaled state before waiting.
 
@@ -264,7 +263,7 @@ private:
 
         @param lock The held mutex lock.
     */
-    void wait_for_signal(std::unique_lock<std::mutex>& lock) const;
+    void wait_for_signal(conditional_unique_lock& lock) const;
 
     /** Block until signaled or timeout expires.
 
@@ -275,16 +274,18 @@ private:
         @param timeout_us Maximum time to wait in microseconds.
     */
     void wait_for_signal_for(
-        std::unique_lock<std::mutex>& lock,
+        conditional_unique_lock& lock,
         long timeout_us) const;
+
+    bool locking_enabled() const noexcept { return mutex_.enabled(); }
 
     int kq_fd_;
     int max_inline_budget_ = 2;
-    mutable std::mutex mutex_;
-    mutable std::condition_variable cond_;
+    mutable conditional_mutex mutex_;
+    mutable conditional_event cond_;
     mutable op_queue completed_ops_;
-    mutable std::atomic<std::int64_t> outstanding_work_{0};
-    std::atomic<bool> stopped_{false};
+    mutable conditional_atomic<std::int64_t> outstanding_work_{0};
+    conditional_atomic<bool> stopped_{false};
     bool shutdown_ = false;
 
     // True while a thread is blocked in kevent(). Used by
@@ -303,7 +304,7 @@ private:
     mutable std::size_t state_ = 0;
 
     // EVFILT_USER idempotency: prevents redundant NOTE_TRIGGER writes
-    mutable std::atomic<bool> user_event_armed_{false};
+    mutable conditional_atomic<bool> user_event_armed_{false};
 
     // Sentinel operation for interleaving reactor runs with handler execution.
     // Ensures the reactor runs periodically even when handlers are continuously

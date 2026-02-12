@@ -81,7 +81,7 @@ bench::benchmark_result bench_fork_join(
 {
     std::cout << "  Fan-out: " << fan_out << "\n";
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
 
     std::vector<corosio::tcp_socket> clients;
     std::vector<corosio::tcp_socket> servers;
@@ -177,7 +177,7 @@ bench::benchmark_result bench_nested(
     std::cout << "  Groups: " << groups << ", Subs/group: "
               << subs_per_group << " (total " << total_subs << ")\n";
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
 
     std::vector<corosio::tcp_socket> clients;
     std::vector<corosio::tcp_socket> servers;
@@ -294,7 +294,7 @@ bench::benchmark_result bench_concurrent_parents(
               << fan_out << "\n";
 
     int total_subs = num_parents * fan_out;
-    auto ioc = factory();
+    auto ioc = factory( 1 );
 
     std::vector<corosio::tcp_socket> clients;
     std::vector<corosio::tcp_socket> servers;

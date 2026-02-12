@@ -122,7 +122,7 @@ bench::benchmark_result bench_single_connection(
 {
     perf::print_header( "Single Connection (Corosio)" );
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     auto [client, server] = corosio::test::make_socket_pair( *ioc );
 
     client.set_no_delay( true );
@@ -175,7 +175,7 @@ bench::benchmark_result bench_concurrent_connections(
 {
     std::cout << "  Connections: " << num_connections << "\n";
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
 
     std::vector<corosio::tcp_socket> clients;
     std::vector<corosio::tcp_socket> servers;
@@ -261,7 +261,7 @@ bench::benchmark_result bench_multithread(
     std::cout << "  Threads: " << num_threads
               << ", Connections: " << num_connections << "\n";
 
-    auto ioc = factory();
+    auto ioc = factory( num_threads );
 
     std::vector<corosio::tcp_socket> clients;
     std::vector<corosio::tcp_socket> servers;
@@ -362,7 +362,7 @@ void run_http_server_benchmarks(
 
     // Warm up
     {
-        auto ioc = factory();
+        auto ioc = factory( 1 );
         auto [c, s] = corosio::test::make_socket_pair( *ioc );
         char buf[256] = {};
         auto task = [&]() -> capy::task<>

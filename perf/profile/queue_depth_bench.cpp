@@ -57,7 +57,7 @@ void run_workload(
     int queue_depth,
     int num_threads)
 {
-    auto ioc = factory();
+    auto ioc = factory( num_threads );
     auto ex = ioc->get_executor();
     std::atomic<std::uint64_t> counter{0};
 
@@ -147,7 +147,7 @@ void run_profiler_workload(
     // Warmup
     std::cout << "Warming up (1 second)...\n";
     {
-        auto ioc = factory();
+        auto ioc = factory( 1 );
         auto ex = ioc->get_executor();
         std::atomic<std::uint64_t> warmup_counter{0};
 

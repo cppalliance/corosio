@@ -37,7 +37,7 @@ bench::benchmark_result bench_schedule_cancel( double duration_s )
 {
     perf::print_header( "Timer Schedule/Cancel (Asio Coroutines)" );
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     int64_t counter = 0;
     int constexpr batch_size = 1000;
 
@@ -82,7 +82,7 @@ bench::benchmark_result bench_fire_rate( double duration_s )
 {
     perf::print_header( "Timer Fire Rate (Asio Coroutines)" );
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     std::atomic<bool> running{ true };
     int64_t counter = 0;
 
@@ -136,7 +136,7 @@ bench::benchmark_result bench_concurrent_timers( int num_timers, double duration
 {
     std::cout << "  Timers: " << num_timers << "\n";
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
     std::atomic<bool> running{ true };
     std::vector<int64_t> fire_counts( num_timers, 0 );
     std::vector<perf::statistics> stats( num_timers );

@@ -37,7 +37,7 @@ bench::benchmark_result bench_schedule_cancel(
 {
     perf::print_header( "Timer Schedule/Cancel (Corosio)" );
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     int64_t counter = 0;
     int constexpr batch_size = 1000;
 
@@ -83,7 +83,7 @@ bench::benchmark_result bench_fire_rate(
 {
     perf::print_header( "Timer Fire Rate (Corosio)" );
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     std::atomic<bool> running{ true };
     int64_t counter = 0;
 
@@ -136,7 +136,7 @@ bench::benchmark_result bench_concurrent_timers(
 {
     std::cout << "  Timers: " << num_timers << "\n";
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     std::atomic<bool> running{ true };
     std::vector<int64_t> fire_counts( num_timers, 0 );
     std::vector<perf::statistics> stats( num_timers );

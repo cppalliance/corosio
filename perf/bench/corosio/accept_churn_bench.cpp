@@ -41,7 +41,7 @@ bench::benchmark_result bench_sequential_churn(
 {
     perf::print_header( "Sequential Accept Churn (Corosio)" );
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     corosio::tcp_acceptor acc( *ioc );
 
     auto listen_ec = acc.listen( corosio::endpoint( corosio::ipv4_address::loopback(), 0 ) );
@@ -144,7 +144,7 @@ bench::benchmark_result bench_concurrent_churn(
 {
     std::cout << "  Concurrent loops: " << num_loops << "\n";
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     std::atomic<bool> running{ true };
     std::vector<int64_t> cycle_counts( num_loops, 0 );
     std::vector<perf::statistics> stats( num_loops );
@@ -270,7 +270,7 @@ bench::benchmark_result bench_burst_churn(
 {
     std::cout << "  Burst size: " << burst_size << "\n";
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     corosio::tcp_acceptor acc( *ioc );
 
     auto listen_ec = acc.listen( corosio::endpoint( corosio::ipv4_address::loopback(), 0 ) );

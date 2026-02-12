@@ -45,7 +45,7 @@ bench::benchmark_result bench_single_threaded_post(
 {
     perf::print_header( "Single-threaded Handler Post (Corosio)" );
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     auto ex = ioc->get_executor();
     int64_t counter = 0;
     int constexpr batch_size = 1000;
@@ -91,7 +91,7 @@ bench::benchmark_result bench_multithreaded_scaling(
 
     for( int num_threads = 1; num_threads <= max_threads; num_threads *= 2 )
     {
-        auto ioc = factory();
+        auto ioc = factory( max_threads );
         auto ex = ioc->get_executor();
         std::atomic<bool> running{ true };
         std::atomic<int64_t> counter{ 0 };
@@ -158,7 +158,7 @@ bench::benchmark_result bench_interleaved_post_run(
 {
     perf::print_header( "Interleaved Post/Run (Corosio)" );
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     auto ex = ioc->get_executor();
     int64_t counter = 0;
 
@@ -198,7 +198,7 @@ bench::benchmark_result bench_concurrent_post_run(
 {
     perf::print_header( "Concurrent Post and Run (Corosio)" );
 
-    auto ioc = factory();
+    auto ioc = factory( num_threads );
     auto ex = ioc->get_executor();
     std::atomic<bool> running{ true };
     std::atomic<int64_t> counter{ 0 };
@@ -263,7 +263,7 @@ void run_io_context_benchmarks(
 
     // Warm up
     {
-        auto ioc = factory();
+        auto ioc = factory( 1 );
         auto ex = ioc->get_executor();
         int64_t counter = 0;
         for( int i = 0; i < 1000; ++i )

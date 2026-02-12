@@ -76,7 +76,7 @@ bench::benchmark_result bench_fork_join( int fan_out, double duration_s )
 {
     std::cout << "  Fan-out: " << fan_out << "\n";
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
 
     std::vector<tcp_socket> clients;
     std::vector<tcp_socket> servers;
@@ -171,7 +171,7 @@ bench::benchmark_result bench_nested(
     std::cout << "  Groups: " << groups << ", Subs/group: "
               << subs_per_group << " (total " << total_subs << ")\n";
 
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
 
     std::vector<tcp_socket> clients;
     std::vector<tcp_socket> servers;
@@ -294,7 +294,7 @@ bench::benchmark_result bench_concurrent_parents(
               << fan_out << "\n";
 
     int total_subs = num_parents * fan_out;
-    asio::io_context ioc;
+    asio::io_context ioc( 1 );
 
     std::vector<tcp_socket> clients;
     std::vector<tcp_socket> servers;

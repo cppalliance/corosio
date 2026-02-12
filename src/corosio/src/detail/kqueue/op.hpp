@@ -22,6 +22,7 @@
 #include <boost/capy/error.hpp>
 #include <system_error>
 
+#include "src/detail/conditional_mutex.hpp"
 #include "src/detail/scheduler_op.hpp"
 
 #include <unistd.h>
@@ -31,7 +32,6 @@
 #include <atomic>
 #include <cstddef>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <stop_token>
 
@@ -118,7 +118,7 @@ class kqueue_scheduler;
 */
 struct descriptor_state : scheduler_op
 {
-    std::mutex mutex;
+    conditional_mutex mutex;
 
     // Protected by mutex
     kqueue_op* read_op = nullptr;

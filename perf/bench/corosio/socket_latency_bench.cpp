@@ -81,7 +81,7 @@ bench::benchmark_result bench_pingpong_latency(
 {
     std::cout << "  Message size: " << message_size << " bytes\n";
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
     auto [client, server] = corosio::test::make_socket_pair( *ioc );
 
     client.set_no_delay( true );
@@ -123,7 +123,7 @@ bench::benchmark_result bench_concurrent_latency(
     std::cout << "  Concurrent pairs: " << num_pairs << ", ";
     std::cout << "Message size: " << message_size << " bytes\n";
 
-    auto ioc = factory();
+    auto ioc = factory( 1 );
 
     std::vector<corosio::tcp_socket> clients;
     std::vector<corosio::tcp_socket> servers;
@@ -209,7 +209,7 @@ void run_socket_latency_benchmarks(
 
     // Warm up
     {
-        auto ioc = factory();
+        auto ioc = factory( 1 );
         auto [c, s] = corosio::test::make_socket_pair( *ioc );
         char buf[64] = {};
         auto task = [&]() -> capy::task<>
