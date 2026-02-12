@@ -172,10 +172,6 @@ struct timer_impl
     using duration = clock_type::duration;
 
     timer_service_impl* svc_ = nullptr;
-    time_point expiry_;
-    std::size_t heap_index_ = (std::numeric_limits<std::size_t>::max)();
-    // Lets cancel_timer() skip the lock when no wait() was ever issued
-    bool might_have_pending_waits_ = false;
     intrusive_list<waiter_node> waiters_;
 
     // Free list linkage (reused when impl is on free_list)
@@ -702,7 +698,8 @@ wait(
     // scheduler, allowing other queued work to run.
     if (heap_index_ == (std::numeric_limits<std::size_t>::max)())
     {
-        if (expiry_ <= clock_type::now())
+        if (expiry_ == (time_point::min)() ||
+            expiry_ <= clock_type::now())
         {
             if (ec)
                 *ec = {};
@@ -832,25 +829,10 @@ timer_service_destroy(timer::timer_impl& base) noexcept
     static_cast<timer_impl&>(base).release();
 }
 
-timer::time_point
-timer_service_expiry(timer::timer_impl& base) noexcept
-{
-    return static_cast<timer_impl&>(base).expiry_;
-}
-
 std::size_t
-timer_service_expires_at(timer::timer_impl& base, timer::time_point t)
+timer_service_update_expiry(timer::timer_impl& base)
 {
     auto& impl = static_cast<timer_impl&>(base);
-    impl.expiry_ = t;
-    return impl.svc_->update_timer(impl, t);
-}
-
-std::size_t
-timer_service_expires_after(timer::timer_impl& base, timer::duration d)
-{
-    auto& impl = static_cast<timer_impl&>(base);
-    impl.expiry_ = timer::clock_type::now() + d;
     return impl.svc_->update_timer(impl, impl.expiry_);
 }
 

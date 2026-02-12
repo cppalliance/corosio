@@ -19,9 +19,7 @@ namespace detail {
 // Defined in timer_service.cpp
 extern timer::timer_impl* timer_service_create(capy::execution_context&);
 extern void timer_service_destroy(timer::timer_impl&) noexcept;
-extern timer::time_point timer_service_expiry(timer::timer_impl&) noexcept;
-extern std::size_t timer_service_expires_at(timer::timer_impl&, timer::time_point);
-extern std::size_t timer_service_expires_after(timer::timer_impl&, timer::duration);
+extern std::size_t timer_service_update_expiry(timer::timer_impl&);
 extern std::size_t timer_service_cancel(timer::timer_impl&) noexcept;
 extern std::size_t timer_service_cancel_one(timer::timer_impl&) noexcept;
 
@@ -75,37 +73,23 @@ operator=(timer&& other)
 
 std::size_t
 timer::
-cancel()
+do_cancel()
 {
     return detail::timer_service_cancel(get());
 }
 
 std::size_t
 timer::
-cancel_one()
+do_cancel_one()
 {
     return detail::timer_service_cancel_one(get());
 }
 
-timer::time_point
-timer::
-expiry() const
-{
-    return detail::timer_service_expiry(get());
-}
-
 std::size_t
 timer::
-expires_at(time_point t)
+do_update_expiry()
 {
-    return detail::timer_service_expires_at(get(), t);
-}
-
-std::size_t
-timer::
-expires_after(duration d)
-{
-    return detail::timer_service_expires_after(get(), d);
+    return detail::timer_service_update_expiry(get());
 }
 
 } // namespace boost::corosio
