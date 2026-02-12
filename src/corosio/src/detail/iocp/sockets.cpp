@@ -119,10 +119,25 @@ accept_op::do_complete(
 {
     auto* op = static_cast<accept_op*>(base);
 
-    // Destroy path
+    // Destroy path (shutdown). Release resources owned by this
+    // op before destroying the coroutine frame, whose tcp_socket
+    // destructors will handle their own cleanup independently.
     if (!owner)
     {
+        if (op->accepted_socket != INVALID_SOCKET)
+        {
+            ::closesocket(op->accepted_socket);
+            op->accepted_socket = INVALID_SOCKET;
+        }
+
+        if (op->peer_wrapper)
+        {
+            op->peer_wrapper->release();
+            op->peer_wrapper = nullptr;
+        }
+
         op->cleanup_only();
+        op->acceptor_ptr.reset();
         return;
     }
 
@@ -605,6 +620,16 @@ win_sockets(
 win_sockets::
 ~win_sockets()
 {
+    // Delete wrappers that survived shutdown. This runs after
+    // win_scheduler is destroyed (reverse creation order), so
+    // all coroutine frames and their tcp_socket members are gone.
+    for (auto* w = socket_wrapper_list_.pop_front(); w != nullptr;
+         w = socket_wrapper_list_.pop_front())
+        delete w;
+
+    for (auto* w = acceptor_wrapper_list_.pop_front(); w != nullptr;
+         w = acceptor_wrapper_list_.pop_front())
+        delete w;
 }
 
 void
@@ -613,32 +638,21 @@ shutdown()
 {
     std::lock_guard<win_mutex> lock(mutex_);
 
-    // Just close sockets and remove from list
-    // The shared_ptrs held by socket objects and operations will handle destruction
+    // Close all sockets to force pending I/O to complete via IOCP.
+    // Wrappers are NOT deleted here - coroutine frames destroyed
+    // during scheduler shutdown may still hold tcp_socket objects
+    // that reference them. Wrapper deletion is deferred to ~win_sockets
+    // after the scheduler has drained all outstanding operations.
     for (auto* impl = socket_list_.pop_front(); impl != nullptr;
          impl = socket_list_.pop_front())
     {
         impl->close_socket();
-        // Note: impl may still be alive if operations hold shared_ptr
     }
 
     for (auto* impl = acceptor_list_.pop_front(); impl != nullptr;
          impl = acceptor_list_.pop_front())
     {
         impl->close_socket();
-    }
-
-    // Cleanup wrappers
-    for (auto* w = socket_wrapper_list_.pop_front(); w != nullptr;
-         w = socket_wrapper_list_.pop_front())
-    {
-        delete w;
-    }
-
-    for (auto* w = acceptor_wrapper_list_.pop_front(); w != nullptr;
-         w = acceptor_wrapper_list_.pop_front())
-    {
-        delete w;
     }
 }
 
