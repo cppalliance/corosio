@@ -31,32 +31,28 @@
     slots (read_op, write_op, connect_op) and two ready flags
     (read_ready, write_ready) under a per-descriptor mutex.
 
+    Speculative I/O and the pump
+    ----------------------------
+    read_some() and write_some() attempt the syscall (readv/writev)
+    speculatively before suspending the caller. If data is available the
+    result is returned via symmetric transfer — no scheduler queue, no
+    mutex, no reactor round-trip. An inline budget limits consecutive
+    inline completions to prevent starvation of other connections.
+
+    When the speculative attempt returns EAGAIN, register_op() parks the
+    operation in its descriptor_state slot under the per-descriptor mutex.
+    If a cached ready flag fires before parking, register_op() retries
+    the I/O once under the mutex. This eliminates the cached_initiator
+    coroutine frame that previously trampolined into do_read_io() /
+    do_write_io() after the caller suspended.
+
     Ready-flag protocol
     -------------------
     When a kqueue event fires and no operation is pending for that
     direction, the reactor sets the corresponding ready flag instead of
-    dropping the event. When a new operation starts and finds the ready
-    flag set, it performs I/O immediately rather than parking in the
-    descriptor_state slot. This prevents lost wakeups under edge-triggered
-    notification.
-
-    Edge-triggered retry
-    --------------------
-    Because EV_CLEAR delivers each transition exactly once, a single
-    event may correspond to more data than one I/O call can consume. The
-    retry loops in connect(), do_read_io(), and do_write_io() repeat
-    perform_io() while EAGAIN/EWOULDBLOCK is returned and the ready flag
-    has been re-set. When the flag is clear the operation parks in its
-    descriptor_state slot and waits for the next kqueue event.
-
-    Symmetric transfer and the cached_initiator
-    --------------------------------------------
-    read_some() and write_some() return a coroutine_handle<> for symmetric
-    transfer so the caller is fully suspended before any I/O is attempted.
-    The cached_initiator manages a reusable coroutine frame that calls
-    do_read_io / do_write_io after the caller suspends. This avoids a
-    heap allocation per operation and guarantees the caller's state is
-    consistent if a cancellation races with completion.
+    dropping the event. When register_op() finds the ready flag set, it
+    performs I/O immediately rather than parking. This prevents lost
+    wakeups under edge-triggered notification.
 */
 
 #include <errno.h>
@@ -106,10 +102,46 @@ cancel() noexcept
 }
 
 void
+kqueue_op::
+operator()()
+{
+    stop_cb.reset();
+
+    socket_impl_->desc_state_.scheduler_->reset_inline_budget();
+
+    if (ec_out)
+    {
+        if (cancelled.load(std::memory_order_acquire))
+            *ec_out = capy::error::canceled;
+        else if (errn != 0)
+            *ec_out = make_err(errn);
+        else if (is_read_operation() && bytes_transferred == 0)
+            *ec_out = capy::error::eof;
+        else
+            *ec_out = {};
+    }
+
+    if (bytes_out)
+        *bytes_out = bytes_transferred;
+
+    // Move to stack before resuming coroutine. The coroutine might close
+    // the socket, releasing the last wrapper ref. If impl_ptr were the
+    // last ref and we destroyed it while still in operator(), we'd have
+    // use-after-free. Moving to local ensures destruction happens at
+    // function exit, after all member accesses are complete.
+    capy::executor_ref saved_ex( std::move( ex ) );
+    std::coroutine_handle<> saved_h( std::move( h ) );
+    auto prevent_premature_destruction = std::move(impl_ptr);
+    dispatch_coro(saved_ex, saved_h).resume();
+}
+
+void
 kqueue_connect_op::
 operator()()
 {
     stop_cb.reset();
+
+    socket_impl_->desc_state_.scheduler_->reset_inline_budget();
 
     bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
 
@@ -173,301 +205,97 @@ connect(
     std::error_code* ec)
 {
     auto& op = conn_;
-    op.reset();
-    op.h = h;
-    op.ex = ex;
-    op.ec_out = ec;
-    op.fd = fd_;
-    op.target_endpoint = ep;  // Store target for endpoint caching
-    op.start(token, this);
 
     sockaddr_in addr = detail::to_sockaddr_in(ep);
     int result = ::connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
 
+    // Cache endpoints on sync success
     if (result == 0)
     {
-        // Sync success - cache endpoints immediately
         sockaddr_in local_addr{};
         socklen_t local_len = sizeof(local_addr);
         if (::getsockname(fd_, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
             local_endpoint_ = detail::from_sockaddr_in(local_addr);
         remote_endpoint_ = ep;
+    }
 
-        op.complete(0, 0);
+    if (result == 0 || errno != EINPROGRESS)
+    {
+        int err = (result < 0) ? errno : 0;
+
+        if (svc_.scheduler().try_consume_inline_budget())
+        {
+            *ec = err ? make_err(err) : std::error_code{};
+            return dispatch_coro(ex, h);
+        }
+
+        // Budget exhausted — post through queue
+        op.reset();
+        op.h = h;
+        op.ex = ex;
+        op.ec_out = ec;
+        op.fd = fd_;
+        op.target_endpoint = ep;
+        op.start(token, this);
         op.impl_ptr = shared_from_this();
+        op.complete(err, 0);
         svc_.post(&op);
         return std::noop_coroutine();
     }
 
-    if (errno == EINPROGRESS)
-    {
-        svc_.work_started();
-        op.impl_ptr = shared_from_this();
-
-        bool perform_now = false;
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            if (desc_state_.write_ready)
-            {
-                desc_state_.write_ready = false;
-                perform_now = true;
-            }
-            else
-            {
-                desc_state_.connect_op = &op;
-                if (desc_state_.connect_cancel_pending)
-                {
-                    desc_state_.connect_cancel_pending = false;
-                    op.cancelled.store(true, std::memory_order_relaxed);
-                }
-            }
-        }
-
-        if (perform_now)
-        {
-            for (;;)
-            {
-                op.perform_io();
-                if (op.errn != EAGAIN && op.errn != EWOULDBLOCK)
-                {
-                    svc_.post(&op);
-                    svc_.work_finished();
-                    break;
-                }
-                op.errn = 0;
-                std::lock_guard lock(desc_state_.mutex);
-                if (desc_state_.write_ready)
-                {
-                    desc_state_.write_ready = false;
-                    continue;
-                }
-                desc_state_.connect_op = &op;
-                if (desc_state_.connect_cancel_pending)
-                {
-                    desc_state_.connect_cancel_pending = false;
-                    op.cancelled.store(true, std::memory_order_relaxed);
-                }
-                break;
-            }
-            return std::noop_coroutine();
-        }
-
-        if (op.cancelled.load(std::memory_order_acquire))
-        {
-            kqueue_op* claimed = nullptr;
-            {
-                std::lock_guard lock(desc_state_.mutex);
-                if (desc_state_.connect_op == &op)
-                    claimed = std::exchange(desc_state_.connect_op, nullptr);
-            }
-            if (claimed)
-            {
-                svc_.post(claimed);
-                svc_.work_finished();
-            }
-        }
-        return std::noop_coroutine();
-    }
-
-    op.complete(errno, 0);
+    // EINPROGRESS — async path
+    op.reset();
+    op.h = h;
+    op.ex = ex;
+    op.ec_out = ec;
+    op.fd = fd_;
+    op.target_endpoint = ep;
+    op.start(token, this);
     op.impl_ptr = shared_from_this();
-    svc_.post(&op);
+
+    register_op(op, desc_state_.connect_op, desc_state_.write_ready,
+        desc_state_.connect_cancel_pending);
     return std::noop_coroutine();
 }
 
+// Register an op with the reactor, handling cached edge events.
+// Called under the EAGAIN path when speculative I/O failed.
 void
 kqueue_socket_impl::
-do_read_io()
+register_op(
+    kqueue_op& op,
+    kqueue_op*& desc_slot,
+    bool& ready_flag,
+    bool& cancel_flag) noexcept
 {
-    auto& op = rd_;
+    svc_.work_started();
 
-    ssize_t n = ::readv(fd_, op.iovecs, op.iovec_count);
-
-    if (n > 0)
+    std::lock_guard lock(desc_state_.mutex);
+    bool io_done = false;
+    if (ready_flag)
     {
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            desc_state_.read_ready = false;
-        }
-        op.complete(0, static_cast<std::size_t>(n));
+        ready_flag = false;
+        op.perform_io();
+        io_done = (op.errn != EAGAIN && op.errn != EWOULDBLOCK);
+        if (!io_done)
+            op.errn = 0;
+    }
+
+    if (cancel_flag)
+    {
+        cancel_flag = false;
+        op.cancelled.store(true, std::memory_order_relaxed);
+    }
+
+    if (io_done || op.cancelled.load(std::memory_order_acquire))
+    {
         svc_.post(&op);
-        return;
+        svc_.work_finished();
     }
-
-    if (n == 0)
+    else
     {
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            desc_state_.read_ready = false;
-        }
-        op.complete(0, 0);
-        svc_.post(&op);
-        return;
+        desc_slot = &op;
     }
-
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
-    {
-        svc_.work_started();
-
-        bool perform_now = false;
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            if (desc_state_.read_ready)
-            {
-                desc_state_.read_ready = false;
-                perform_now = true;
-            }
-            else
-            {
-                desc_state_.read_op = &op;
-                if (desc_state_.read_cancel_pending)
-                {
-                    desc_state_.read_cancel_pending = false;
-                    op.cancelled.store(true, std::memory_order_relaxed);
-                }
-            }
-        }
-
-        if (perform_now)
-        {
-            for (;;)
-            {
-                op.perform_io();
-                if (op.errn != EAGAIN && op.errn != EWOULDBLOCK)
-                {
-                    svc_.post(&op);
-                    svc_.work_finished();
-                    return;
-                }
-                op.errn = 0;
-                std::lock_guard lock(desc_state_.mutex);
-                if (desc_state_.read_ready)
-                {
-                    desc_state_.read_ready = false;
-                    continue;
-                }
-                desc_state_.read_op = &op;
-                if (desc_state_.read_cancel_pending)
-                {
-                    desc_state_.read_cancel_pending = false;
-                    op.cancelled.store(true, std::memory_order_relaxed);
-                }
-                break;
-            }
-        }
-
-        if (op.cancelled.load(std::memory_order_acquire))
-        {
-            kqueue_op* claimed = nullptr;
-            {
-                std::lock_guard lock(desc_state_.mutex);
-                if (desc_state_.read_op == &op)
-                    claimed = std::exchange(desc_state_.read_op, nullptr);
-            }
-            if (claimed)
-            {
-                svc_.post(claimed);
-                svc_.work_finished();
-            }
-        }
-        return;
-    }
-
-    op.complete(errno, 0);
-    svc_.post(&op);
-}
-
-void
-kqueue_socket_impl::
-do_write_io()
-{
-    auto& op = wr_;
-
-    // SO_NOSIGPIPE is set on the socket at creation time, so writev() is safe.
-    // FreeBSD: Supports MSG_NOSIGNAL on sendmsg()
-    ssize_t n = ::writev(fd_, op.iovecs, op.iovec_count);
-
-    if (n >= 0)
-    {
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            desc_state_.write_ready = false;
-        }
-        op.complete(0, static_cast<std::size_t>(n));
-        svc_.post(&op);
-        return;
-    }
-
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
-    {
-        svc_.work_started();
-
-        bool perform_now = false;
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            if (desc_state_.write_ready)
-            {
-                desc_state_.write_ready = false;
-                perform_now = true;
-            }
-            else
-            {
-                desc_state_.write_op = &op;
-                if (desc_state_.write_cancel_pending)
-                {
-                    desc_state_.write_cancel_pending = false;
-                    op.cancelled.store(true, std::memory_order_relaxed);
-                }
-            }
-        }
-
-        if (perform_now)
-        {
-            for (;;)
-            {
-                op.perform_io();
-                if (op.errn != EAGAIN && op.errn != EWOULDBLOCK)
-                {
-                    svc_.post(&op);
-                    svc_.work_finished();
-                    return;
-                }
-                op.errn = 0;
-                std::lock_guard lock(desc_state_.mutex);
-                if (desc_state_.write_ready)
-                {
-                    desc_state_.write_ready = false;
-                    continue;
-                }
-                desc_state_.write_op = &op;
-                if (desc_state_.write_cancel_pending)
-                {
-                    desc_state_.write_cancel_pending = false;
-                    op.cancelled.store(true, std::memory_order_relaxed);
-                }
-                break;
-            }
-        }
-
-        if (op.cancelled.load(std::memory_order_acquire))
-        {
-            kqueue_op* claimed = nullptr;
-            {
-                std::lock_guard lock(desc_state_.mutex);
-                if (desc_state_.write_op == &op)
-                    claimed = std::exchange(desc_state_.write_op, nullptr);
-            }
-            if (claimed)
-            {
-                svc_.post(claimed);
-                svc_.work_finished();
-            }
-        }
-        return;
-    }
-
-    op.complete(errno, 0);
-    svc_.post(&op);
 }
 
 std::coroutine_handle<>
@@ -482,21 +310,19 @@ read_some(
 {
     auto& op = rd_;
     op.reset();
-    op.h = h;
-    op.ex = ex;
-    op.ec_out = ec;
-    op.bytes_out = bytes_out;
-    op.fd = fd_;
-    op.start(token, this);
-    op.impl_ptr = shared_from_this();
 
-    // Must prepare buffers before initiator runs
     capy::mutable_buffer bufs[kqueue_read_op::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, kqueue_read_op::max_buffers));
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
         op.empty_buffer_read = true;
+        op.h = h;
+        op.ex = ex;
+        op.ec_out = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, this);
+        op.impl_ptr = shared_from_this();
         op.complete(0, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -508,8 +334,57 @@ read_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    // Symmetric transfer ensures caller is suspended before I/O starts
-    return read_initiator_.start<&kqueue_socket_impl::do_read_io>(this);
+    // Speculative read: try I/O before suspending. On success, return via
+    // symmetric transfer without touching the scheduler queue — this creates
+    // a tight pump loop for back-to-back reads on a hot socket.
+    // Budget limits consecutive inline completions to prevent starvation
+    // of other connections competing for scheduler time.
+    ssize_t n;
+    do {
+        n = ::readv(fd_, op.iovecs, op.iovec_count);
+    } while (n < 0 && errno == EINTR);
+
+    if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
+    {
+        int err = (n < 0) ? errno : 0;
+        auto bytes = (n > 0) ? static_cast<std::size_t>(n) : std::size_t(0);
+
+        if (svc_.scheduler().try_consume_inline_budget())
+        {
+            if (err)
+                *ec = make_err(err);
+            else if (n == 0)
+                *ec = capy::error::eof;
+            else
+                *ec = {};
+            *bytes_out = bytes;
+            return dispatch_coro(ex, h);
+        }
+
+        // Budget exhausted — fall through to queue
+        op.h = h;
+        op.ex = ex;
+        op.ec_out = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, this);
+        op.impl_ptr = shared_from_this();
+        op.complete(err, bytes);
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    // EAGAIN — register with reactor
+    op.h = h;
+    op.ex = ex;
+    op.ec_out = ec;
+    op.bytes_out = bytes_out;
+    op.fd = fd_;
+    op.start(token, this);
+    op.impl_ptr = shared_from_this();
+
+    register_op(op, desc_state_.read_op, desc_state_.read_ready,
+        desc_state_.read_cancel_pending);
+    return std::noop_coroutine();
 }
 
 std::coroutine_handle<>
@@ -524,20 +399,18 @@ write_some(
 {
     auto& op = wr_;
     op.reset();
-    op.h = h;
-    op.ex = ex;
-    op.ec_out = ec;
-    op.bytes_out = bytes_out;
-    op.fd = fd_;
-    op.start(token, this);
-    op.impl_ptr = shared_from_this();
 
-    // Must prepare buffers before initiator runs
     capy::mutable_buffer bufs[kqueue_write_op::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, kqueue_write_op::max_buffers));
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
+        op.h = h;
+        op.ex = ex;
+        op.ec_out = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, this);
+        op.impl_ptr = shared_from_this();
         op.complete(0, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -549,8 +422,51 @@ write_some(
         op.iovecs[i].iov_len = bufs[i].size();
     }
 
-    // Symmetric transfer ensures caller is suspended before I/O starts
-    return write_initiator_.start<&kqueue_socket_impl::do_write_io>(this);
+    // Speculative write: try I/O before suspending. On success, return via
+    // symmetric transfer without touching the scheduler queue — this creates
+    // a tight pump loop for back-to-back writes on a hot socket.
+    // Budget limits consecutive inline completions to prevent starvation.
+    ssize_t n;
+    do {
+        n = ::writev(fd_, op.iovecs, op.iovec_count);
+    } while (n < 0 && errno == EINTR);
+
+    if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
+    {
+        int err = (n < 0) ? errno : 0;
+        auto bytes = (n > 0) ? static_cast<std::size_t>(n) : std::size_t(0);
+
+        if (svc_.scheduler().try_consume_inline_budget())
+        {
+            *ec = err ? make_err(err) : std::error_code{};
+            *bytes_out = bytes;
+            return dispatch_coro(ex, h);
+        }
+
+        // Budget exhausted — fall through to queue
+        op.h = h;
+        op.ex = ex;
+        op.ec_out = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, this);
+        op.impl_ptr = shared_from_this();
+        op.complete(err, bytes);
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    // EAGAIN — register with reactor
+    op.h = h;
+    op.ex = ex;
+    op.ec_out = ec;
+    op.bytes_out = bytes_out;
+    op.fd = fd_;
+    op.start(token, this);
+    op.impl_ptr = shared_from_this();
+
+    register_op(op, desc_state_.write_op, desc_state_.write_ready,
+        desc_state_.write_cancel_pending);
+    return std::noop_coroutine();
 }
 
 std::error_code

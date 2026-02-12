@@ -86,6 +86,9 @@ operator()()
 {
     stop_cb.reset();
 
+    static_cast<kqueue_acceptor_impl*>(acceptor_impl_)
+        ->service().scheduler().reset_inline_budget();
+
     bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
 
     if (ec_out)

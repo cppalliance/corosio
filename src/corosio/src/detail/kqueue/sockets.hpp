@@ -21,7 +21,6 @@
 #include "src/detail/intrusive.hpp"
 #include "src/detail/socket_service.hpp"
 
-#include "src/detail/cached_initiator.hpp"
 #include "src/detail/kqueue/op.hpp"
 #include "src/detail/kqueue/scheduler.hpp"
 
@@ -35,13 +34,14 @@
     ============================
 
     Each I/O operation follows the same pattern:
-      1. Try the syscall immediately (non-blocking socket)
-      2. If it succeeds or fails with a real error, post to completion queue
-      3. If EAGAIN/EWOULDBLOCK, register with kqueue and wait
+      1. Try the syscall speculatively (readv/writev) before suspending
+      2. On success, return via symmetric transfer (the "pump" fast path)
+      3. On budget exhaustion, post to the scheduler queue for fairness
+      4. On EAGAIN, register_op() parks the op in the descriptor_state
 
-    This "try first" approach avoids unnecessary kqueue round-trips for
-    operations that can complete immediately (common for small reads/writes
-    on fast local connections).
+    The speculative path avoids scheduler queue, mutex, and reactor
+    round-trips entirely. An inline budget limits consecutive inline
+    completions to prevent starvation of other connections.
 
     Cancellation
     ------------
@@ -155,11 +155,12 @@ public:
     kqueue_read_op rd_;
     kqueue_write_op wr_;
     descriptor_state desc_state_;
-    cached_initiator read_initiator_;
-    cached_initiator write_initiator_;
 
-    void do_read_io();
-    void do_write_io();
+    void register_op(
+        kqueue_op& op,
+        kqueue_op*& desc_slot,
+        bool& ready_flag,
+        bool& cancel_flag) noexcept;
 
 private:
     kqueue_socket_service& svc_;
