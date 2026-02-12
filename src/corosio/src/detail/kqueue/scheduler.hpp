@@ -117,6 +117,19 @@ public:
     */
     int kq_fd() const noexcept { return kq_fd_; }
 
+    /** Reset the thread's inline completion budget.
+
+        Called at the start of each posted completion handler to
+        grant a fresh budget for speculative inline completions.
+    */
+    void reset_inline_budget() const noexcept;
+
+    /** Consume one unit of inline budget if available.
+
+        @return True if budget was available and consumed.
+    */
+    bool try_consume_inline_budget() const noexcept;
+
     /** Register a descriptor for persistent monitoring.
 
         Adds EVFILT_READ and EVFILT_WRITE (both EV_CLEAR) for @a fd
@@ -266,6 +279,7 @@ private:
         long timeout_us) const;
 
     int kq_fd_;
+    int max_inline_budget_ = 2;
     mutable std::mutex mutex_;
     mutable std::condition_variable cond_;
     mutable op_queue completed_ops_;

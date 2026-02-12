@@ -22,10 +22,7 @@
 #include <boost/capy/error.hpp>
 #include <system_error>
 
-#include "src/detail/make_err.hpp"
-#include "src/detail/dispatch_coro.hpp"
 #include "src/detail/scheduler_op.hpp"
-#include "src/detail/endpoint_convert.hpp"
 
 #include <unistd.h>
 #include <errno.h>
@@ -213,35 +210,8 @@ struct kqueue_op : scheduler_op
         acceptor_impl_ = nullptr;
     }
 
-    void operator()() override
-    {
-        stop_cb.reset();
-
-        if (ec_out)
-        {
-            if (cancelled.load(std::memory_order_acquire))
-                *ec_out = capy::error::canceled;
-            else if (errn != 0)
-                *ec_out = make_err(errn);
-            else if (is_read_operation() && bytes_transferred == 0)
-                *ec_out = capy::error::eof;
-            else
-                *ec_out = {};
-        }
-
-        if (bytes_out)
-            *bytes_out = bytes_transferred;
-
-        // Move to stack before resuming coroutine. The coroutine might close
-        // the socket, releasing the last wrapper ref. If impl_ptr were the
-        // last ref and we destroyed it while still in operator(), we'd have
-        // use-after-free. Moving to local ensures destruction happens at
-        // function exit, after all member accesses are complete.
-        capy::executor_ref saved_ex( std::move( ex ) );
-        std::coroutine_handle<> saved_h( std::move( h ) );
-        auto prevent_premature_destruction = std::move(impl_ptr);
-        dispatch_coro(saved_ex, saved_h).resume();
-    }
+    // Defined in sockets.cpp where kqueue_socket_impl is complete
+    void operator()() override;
 
     virtual bool is_read_operation() const noexcept { return false; }
     virtual void cancel() noexcept = 0;
