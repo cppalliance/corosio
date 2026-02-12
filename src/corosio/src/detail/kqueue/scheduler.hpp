@@ -15,11 +15,10 @@
 #if BOOST_COROSIO_HAS_KQUEUE
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
+#include "src/detail/scheduler_impl.hpp"
 #include "src/detail/scheduler_op.hpp"
-#include "src/detail/timer_service.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -57,7 +56,7 @@ struct scheduler_context;
     All public member functions are thread-safe.
 */
 class kqueue_scheduler
-    : public scheduler
+    : public scheduler_impl
     , public capy::execution_context::service
 {
 public:
@@ -273,7 +272,6 @@ private:
     mutable std::atomic<std::int64_t> outstanding_work_{0};
     std::atomic<bool> stopped_{false};
     bool shutdown_ = false;
-    timer_service* timer_svc_ = nullptr;
 
     // True while a thread is blocked in kevent(). Used by
     // wake_one_thread_and_unlock and work_finished to know when

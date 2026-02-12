@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -37,7 +38,7 @@ dispatch_coro(
     capy::executor_ref ex,
     std::coroutine_handle<> h)
 {
-    if (&ex.type_id() == &capy::detail::type_id<basic_io_context::executor_type>())
+    if ( ex.target< basic_io_context::executor_type >() )
         return h;
     return ex.dispatch(h);
 }

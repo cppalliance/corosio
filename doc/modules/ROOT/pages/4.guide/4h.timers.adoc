@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -83,12 +84,17 @@ if (!ec)
 
 === Cancellation
 
+`cancel()` cancels all pending waits. `cancel_one()` cancels only the
+oldest pending wait ( FIFO order ). Both return the number of operations
+cancelled:
+
 [source,cpp]
 ----
-t.cancel();  // Pending wait completes with capy::error::canceled
+std::size_t n = t.cancel();      // Cancel all pending waits
+std::size_t m = t.cancel_one();  // Cancel oldest pending wait (0 or 1)
 ----
 
-The wait completes immediately with an error:
+The cancelled wait completes with an error:
 
 [source,cpp]
 ----
@@ -111,14 +117,47 @@ clock adjustments.
 
 == Resetting Timers
 
-Setting a new expiry cancels any pending wait:
+Setting a new expiry cancels any pending waits and returns the number
+cancelled:
 
 [source,cpp]
 ----
 t.expires_after(10s);
 // Later, before 10s elapses:
-t.expires_after(5s);  // Resets to 5s, cancels previous wait
+std::size_t n = t.expires_after(5s);  // Resets to 5s, cancels previous waits
 ----
+
+== Multiple Waiters
+
+Multiple coroutines can wait on the same timer concurrently. When the
+timer expires, all waiters complete with success. When cancelled, all
+waiters complete with `capy::error::canceled`:
+
+[source,cpp]
+----
+capy::task<void> waiter(corosio::timer& t, int id)
+{
+    auto [ec] = co_await t.wait();
+    if (!ec)
+        std::cout << "Waiter " << id << " expired\n";
+}
+
+capy::task<void> multi_wait(corosio::io_context& ioc)
+{
+    corosio::timer t(ioc);
+    t.expires_after(1s);
+
+    // All three coroutines wait on the same timer
+    co_await capy::when_all(
+        waiter(t, 1),
+        waiter(t, 2),
+        waiter(t, 3));
+}
+----
+
+Each waiter has independent stop token cancellation. Cancelling one
+waiter's stop token does not affect the others. `cancel_one()` cancels
+the oldest waiter only.
 
 == Use Cases
 

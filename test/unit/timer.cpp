@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -15,6 +16,8 @@
 #include <boost/capy/task.hpp>
 
 #include <chrono>
+#include <memory>
+#include <stop_token>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -42,6 +45,28 @@ struct timer_test
         timer t(ioc);
 
         BOOST_TEST_PASS();
+    }
+
+    void
+    testConstructionWithTimePoint()
+    {
+        Context ioc;
+        auto tp = timer::clock_type::now() + std::chrono::seconds(10);
+        timer t(ioc, tp);
+
+        BOOST_TEST(t.expiry() == tp);
+    }
+
+    void
+    testConstructionWithDuration()
+    {
+        Context ioc;
+        auto before = timer::clock_type::now();
+        timer t(ioc, std::chrono::milliseconds(500));
+        auto after = timer::clock_type::now();
+
+        BOOST_TEST(t.expiry() >= before + std::chrono::milliseconds(500));
+        BOOST_TEST(t.expiry() <= after + std::chrono::milliseconds(500));
     }
 
     void
@@ -368,6 +393,66 @@ struct timer_test
         BOOST_TEST(result_ec == capy::cond::canceled);
     }
 
+    void
+    testStopTokenCancellation()
+    {
+        // A pending timer wait should be cancelled when its stop_token
+        // is signaled after the wait has already suspended.
+        Context ioc;
+        timer t(ioc);
+        timer delay(ioc);
+
+        std::stop_source stop_src;
+        bool wait_done = false;
+        bool failsafe_hit = false;
+        std::error_code wait_ec;
+
+        t.expires_after(std::chrono::seconds(60));
+
+        // Waiter task — bound to stop_token
+        auto wait_task = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await t.wait();
+            wait_ec = ec;
+            wait_done = true;
+        };
+
+        // Canceller — short delay then signal stop
+        auto canceller_task = [&]() -> capy::task<>
+        {
+            delay.expires_after(std::chrono::milliseconds(10));
+            (void)co_await delay.wait();
+            stop_src.request_stop();
+        };
+
+        // Failsafe — if stop_token didn't cancel the timer,
+        // fall back to manual cancel so the test doesn't hang
+        auto failsafe_task = [&]() -> capy::task<>
+        {
+            timer ft(ioc);
+            ft.expires_after(std::chrono::milliseconds(1000));
+            auto [ec] = co_await ft.wait();
+            if (!ec && !wait_done)
+            {
+                failsafe_hit = true;
+                t.cancel();
+            }
+        };
+
+        capy::run_async(ioc.get_executor(), stop_src.get_token())(wait_task());
+        capy::run_async(ioc.get_executor())(canceller_task());
+        capy::run_async(ioc.get_executor())(failsafe_task());
+
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == capy::cond::canceled);
+
+        // If the failsafe was hit, stop_token cancellation didn't work —
+        // only the manual t.cancel() fallback rescued the test.
+        BOOST_TEST(!failsafe_hit);
+    }
+
     //--------------------------------------------
     // Multiple timer tests
     //--------------------------------------------
@@ -430,6 +515,366 @@ struct timer_test
 
         BOOST_TEST(t1_done);
         BOOST_TEST(t2_done);
+    }
+
+    //--------------------------------------------
+    // Multiple waiters on one timer
+    //--------------------------------------------
+
+    void
+    testMultipleWaiters()
+    {
+        Context ioc;
+        timer t(ioc);
+
+        bool w1 = false, w2 = false, w3 = false;
+        std::error_code ec1, ec2, ec3;
+
+        t.expires_after(std::chrono::milliseconds(10));
+
+        auto task = [](timer& t_ref, std::error_code& ec_out, bool& done) -> capy::task<>
+        {
+            auto [ec] = co_await t_ref.wait();
+            ec_out = ec;
+            done = true;
+        };
+
+        capy::run_async(ioc.get_executor())(task(t, ec1, w1));
+        capy::run_async(ioc.get_executor())(task(t, ec2, w2));
+        capy::run_async(ioc.get_executor())(task(t, ec3, w3));
+
+        ioc.run();
+
+        BOOST_TEST(w1);
+        BOOST_TEST(w2);
+        BOOST_TEST(w3);
+        BOOST_TEST(!ec1);
+        BOOST_TEST(!ec2);
+        BOOST_TEST(!ec3);
+    }
+
+    void
+    testMultipleWaitersCancelAll()
+    {
+        Context ioc;
+        timer t(ioc);
+        timer delay(ioc);
+
+        bool w1 = false, w2 = false, w3 = false;
+        std::error_code ec1, ec2, ec3;
+
+        t.expires_after(std::chrono::seconds(60));
+        delay.expires_after(std::chrono::milliseconds(10));
+
+        auto task = [](timer& t_ref, std::error_code& ec_out, bool& done) -> capy::task<>
+        {
+            auto [ec] = co_await t_ref.wait();
+            ec_out = ec;
+            done = true;
+        };
+
+        auto cancel_task = [](timer& delay_ref, timer& t_ref) -> capy::task<>
+        {
+            (void)co_await delay_ref.wait();
+            t_ref.cancel();
+        };
+
+        capy::run_async(ioc.get_executor())(task(t, ec1, w1));
+        capy::run_async(ioc.get_executor())(task(t, ec2, w2));
+        capy::run_async(ioc.get_executor())(task(t, ec3, w3));
+        capy::run_async(ioc.get_executor())(cancel_task(delay, t));
+
+        ioc.run();
+
+        BOOST_TEST(w1);
+        BOOST_TEST(w2);
+        BOOST_TEST(w3);
+        BOOST_TEST(ec1 == capy::cond::canceled);
+        BOOST_TEST(ec2 == capy::cond::canceled);
+        BOOST_TEST(ec3 == capy::cond::canceled);
+    }
+
+    void
+    testMultipleWaitersStopTokenCancelsOne()
+    {
+        Context ioc;
+        timer t(ioc);
+        timer delay(ioc);
+
+        std::stop_source stop_src;
+        bool w1 = false, w2 = false;
+        std::error_code ec1, ec2;
+
+        t.expires_after(std::chrono::milliseconds(500));
+        delay.expires_after(std::chrono::milliseconds(10));
+
+        // w1 has a stop_token — will be cancelled individually
+        auto wait_task = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await t.wait();
+            ec1 = ec;
+            w1 = true;
+        };
+
+        // w2 has no stop_token — completes when timer fires
+        auto wait_task2 = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await t.wait();
+            ec2 = ec;
+            w2 = true;
+        };
+
+        auto cancel_one = [&]() -> capy::task<>
+        {
+            (void)co_await delay.wait();
+            stop_src.request_stop();
+        };
+
+        capy::run_async(ioc.get_executor(), stop_src.get_token())(wait_task());
+        capy::run_async(ioc.get_executor())(wait_task2());
+        capy::run_async(ioc.get_executor())(cancel_one());
+
+        ioc.run();
+
+        BOOST_TEST(w1);
+        BOOST_TEST(w2);
+        BOOST_TEST(ec1 == capy::cond::canceled);
+        BOOST_TEST(!ec2);
+    }
+
+    //--------------------------------------------
+    // Destruction cancels pending waiters
+    //--------------------------------------------
+
+    void
+    testDestructionCancelsPendingWaiters()
+    {
+        Context ioc;
+        timer delay(ioc);
+
+        bool w1 = false, w2 = false;
+        std::error_code ec1, ec2;
+
+        auto t = std::make_unique<timer>(ioc);
+        t->expires_after(std::chrono::seconds(60));
+
+        delay.expires_after(std::chrono::milliseconds(10));
+
+        auto wait_task = [](timer& t_ref, std::error_code& ec_out, bool& done) -> capy::task<>
+        {
+            auto [ec] = co_await t_ref.wait();
+            ec_out = ec;
+            done = true;
+        };
+
+        auto destroy_task = [&]() -> capy::task<>
+        {
+            (void)co_await delay.wait();
+            t.reset();
+        };
+
+        capy::run_async(ioc.get_executor())(wait_task(*t, ec1, w1));
+        capy::run_async(ioc.get_executor())(wait_task(*t, ec2, w2));
+        capy::run_async(ioc.get_executor())(destroy_task());
+
+        ioc.run();
+
+        BOOST_TEST(w1);
+        BOOST_TEST(w2);
+        BOOST_TEST(ec1 == capy::cond::canceled);
+        BOOST_TEST(ec2 == capy::cond::canceled);
+    }
+
+    //--------------------------------------------
+    // cancel_one() tests
+    //--------------------------------------------
+
+    void
+    testCancelOne()
+    {
+        Context ioc;
+        timer t(ioc);
+        timer delay(ioc);
+
+        bool w1 = false, w2 = false;
+        std::error_code ec1, ec2;
+
+        t.expires_after(std::chrono::milliseconds(500));
+        delay.expires_after(std::chrono::milliseconds(10));
+
+        auto wait_task = [](timer& t_ref, std::error_code& ec_out, bool& done) -> capy::task<>
+        {
+            auto [ec] = co_await t_ref.wait();
+            ec_out = ec;
+            done = true;
+        };
+
+        auto cancel_one_task = [](timer& delay_ref, timer& t_ref) -> capy::task<>
+        {
+            (void)co_await delay_ref.wait();
+            auto n = t_ref.cancel_one();
+            BOOST_TEST_EQ(n, 1u);
+        };
+
+        capy::run_async(ioc.get_executor())(wait_task(t, ec1, w1));
+        capy::run_async(ioc.get_executor())(wait_task(t, ec2, w2));
+        capy::run_async(ioc.get_executor())(cancel_one_task(delay, t));
+
+        ioc.run();
+
+        BOOST_TEST(w1);
+        BOOST_TEST(w2);
+        // First waiter (FIFO) is cancelled, second fires normally
+        BOOST_TEST(ec1 == capy::cond::canceled);
+        BOOST_TEST(!ec2);
+    }
+
+    void
+    testCancelOneNoWaiters()
+    {
+        Context ioc;
+        timer t(ioc);
+
+        t.expires_after(std::chrono::seconds(60));
+
+        auto n = t.cancel_one();
+        BOOST_TEST_EQ(n, 0u);
+    }
+
+    //--------------------------------------------
+    // Return value tests
+    //--------------------------------------------
+
+    void
+    testCancelReturnsCount()
+    {
+        Context ioc;
+        timer t(ioc);
+        timer delay(ioc);
+
+        bool w1 = false, w2 = false, w3 = false;
+        std::error_code ec1, ec2, ec3;
+
+        t.expires_after(std::chrono::seconds(60));
+        delay.expires_after(std::chrono::milliseconds(10));
+
+        auto wait_task = [](timer& t_ref, std::error_code& ec_out, bool& done) -> capy::task<>
+        {
+            auto [ec] = co_await t_ref.wait();
+            ec_out = ec;
+            done = true;
+        };
+
+        std::size_t cancel_count = 0;
+        auto cancel_task = [&](timer& delay_ref, timer& t_ref) -> capy::task<>
+        {
+            (void)co_await delay_ref.wait();
+            cancel_count = t_ref.cancel();
+        };
+
+        capy::run_async(ioc.get_executor())(wait_task(t, ec1, w1));
+        capy::run_async(ioc.get_executor())(wait_task(t, ec2, w2));
+        capy::run_async(ioc.get_executor())(wait_task(t, ec3, w3));
+        capy::run_async(ioc.get_executor())(cancel_task(delay, t));
+
+        ioc.run();
+
+        BOOST_TEST_EQ(cancel_count, 3u);
+        BOOST_TEST(w1);
+        BOOST_TEST(w2);
+        BOOST_TEST(w3);
+    }
+
+    void
+    testCancelReturnsZeroNoWaiters()
+    {
+        Context ioc;
+        timer t(ioc);
+
+        t.expires_after(std::chrono::seconds(60));
+        auto n = t.cancel();
+        BOOST_TEST_EQ(n, 0u);
+    }
+
+    void
+    testExpiresAtReturnsCount()
+    {
+        Context ioc;
+        timer t(ioc);
+        timer delay(ioc);
+
+        bool w1 = false, w2 = false;
+        std::error_code ec1, ec2;
+
+        t.expires_after(std::chrono::seconds(60));
+        delay.expires_after(std::chrono::milliseconds(10));
+
+        auto wait_task = [](timer& t_ref, std::error_code& ec_out, bool& done) -> capy::task<>
+        {
+            auto [ec] = co_await t_ref.wait();
+            ec_out = ec;
+            done = true;
+        };
+
+        std::size_t expires_count = 0;
+        auto reset_task = [&](timer& delay_ref, timer& t_ref) -> capy::task<>
+        {
+            (void)co_await delay_ref.wait();
+            expires_count = t_ref.expires_at(
+                timer::clock_type::now() + std::chrono::seconds(30));
+        };
+
+        capy::run_async(ioc.get_executor())(wait_task(t, ec1, w1));
+        capy::run_async(ioc.get_executor())(wait_task(t, ec2, w2));
+        capy::run_async(ioc.get_executor())(reset_task(delay, t));
+
+        ioc.run_for(std::chrono::milliseconds(100));
+
+        BOOST_TEST_EQ(expires_count, 2u);
+        BOOST_TEST(w1);
+        BOOST_TEST(w2);
+        BOOST_TEST(ec1 == capy::cond::canceled);
+        BOOST_TEST(ec2 == capy::cond::canceled);
+    }
+
+    void
+    testExpiresAfterReturnsCount()
+    {
+        Context ioc;
+        timer t(ioc);
+        timer delay(ioc);
+
+        bool w1 = false, w2 = false;
+        std::error_code ec1, ec2;
+
+        t.expires_after(std::chrono::seconds(60));
+        delay.expires_after(std::chrono::milliseconds(10));
+
+        auto wait_task = [](timer& t_ref, std::error_code& ec_out, bool& done) -> capy::task<>
+        {
+            auto [ec] = co_await t_ref.wait();
+            ec_out = ec;
+            done = true;
+        };
+
+        std::size_t expires_count = 0;
+        auto reset_task = [&](timer& delay_ref, timer& t_ref) -> capy::task<>
+        {
+            (void)co_await delay_ref.wait();
+            expires_count = t_ref.expires_after(std::chrono::seconds(30));
+        };
+
+        capy::run_async(ioc.get_executor())(wait_task(t, ec1, w1));
+        capy::run_async(ioc.get_executor())(wait_task(t, ec2, w2));
+        capy::run_async(ioc.get_executor())(reset_task(delay, t));
+
+        ioc.run_for(std::chrono::milliseconds(100));
+
+        BOOST_TEST_EQ(expires_count, 2u);
+        BOOST_TEST(w1);
+        BOOST_TEST(w2);
+        BOOST_TEST(ec1 == capy::cond::canceled);
+        BOOST_TEST(ec2 == capy::cond::canceled);
     }
 
     //--------------------------------------------
@@ -614,6 +1059,8 @@ struct timer_test
     {
         // Construction and move semantics
         testConstruction();
+        testConstructionWithTimePoint();
+        testConstructionWithDuration();
         testMoveConstruct();
         testMoveAssign();
         testMoveAssignCrossContextThrows();
@@ -637,10 +1084,29 @@ struct timer_test
         testCancelNoWaiters();
         testCancelMultipleTimes();
         testExpiresAtCancelsWaiter();
+        testStopTokenCancellation();
 
         // Multiple timer tests
         testMultipleTimersDifferentExpiry();
         testMultipleTimersSameExpiry();
+
+        // Multiple waiters on one timer
+        testMultipleWaiters();
+        testMultipleWaitersCancelAll();
+        testMultipleWaitersStopTokenCancelsOne();
+
+        // Destruction cancels pending waiters
+        testDestructionCancelsPendingWaiters();
+
+        // cancel_one() tests
+        testCancelOne();
+        testCancelOneNoWaiters();
+
+        // Return value tests
+        testCancelReturnsCount();
+        testCancelReturnsZeroNoWaiters();
+        testExpiresAtReturnsCount();
+        testExpiresAfterReturnsCount();
 
         // Sequential wait tests
         testSequentialWaits();

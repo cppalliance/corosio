@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -22,10 +23,9 @@
 #include <system_error>
 
 #include <chrono>
-#include <concepts>
 #include <coroutine>
+#include <cstddef>
 #include <stop_token>
-#include <type_traits>
 
 namespace boost::corosio {
 
@@ -35,13 +35,17 @@ namespace boost::corosio {
     awaitable types. The timer can be used to schedule operations
     to occur after a specified duration or at a specific time point.
 
+    Multiple coroutines may wait concurrently on the same timer.
+    When the timer expires, all waiters complete with success. When
+    the timer is cancelled, all waiters complete with an error that
+    compares equal to `capy::cond::canceled`.
+
     Each timer operation participates in the affine awaitable protocol,
     ensuring coroutines resume on the correct executor.
 
     @par Thread Safety
     Distinct objects: Safe.@n
-    Shared objects: Unsafe. A timer must not have concurrent wait
-    operations.
+    Shared objects: Unsafe.
 
     @par Semantics
     Wraps platform timer facilities via the io_context reactor.
@@ -111,6 +115,27 @@ public:
     */
     explicit timer(capy::execution_context& ctx);
 
+    /** Construct a timer with an initial absolute expiry time.
+
+        @param ctx The execution context that will own this timer.
+        @param t The initial expiry time point.
+    */
+    timer(capy::execution_context& ctx, time_point t);
+
+    /** Construct a timer with an initial relative expiry time.
+
+        @param ctx The execution context that will own this timer.
+        @param d The initial expiry duration relative to now.
+    */
+    template<class Rep, class Period>
+    timer(
+        capy::execution_context& ctx,
+        std::chrono::duration<Rep, Period> d)
+        : timer(ctx)
+    {
+        expires_after(d);
+    }
+
     /** Move constructor.
 
         Transfers ownership of the timer resources.
@@ -135,14 +160,26 @@ public:
     timer(timer const&) = delete;
     timer& operator=(timer const&) = delete;
 
-    /** Cancel any pending asynchronous operations.
+    /** Cancel all pending asynchronous wait operations.
 
         All outstanding operations complete with an error code that
         compares equal to `capy::cond::canceled`.
-    */
-    void cancel();
 
-    /** Get the timer's expiry time as an absolute time.
+        @return The number of operations that were cancelled.
+    */
+    std::size_t cancel();
+
+    /** Cancel one pending asynchronous wait operation.
+
+        The oldest pending wait is cancelled (FIFO order). It
+        completes with an error code that compares equal to
+        `capy::cond::canceled`.
+
+        @return The number of operations that were cancelled (0 or 1).
+    */
+    std::size_t cancel_one();
+
+    /** Return the timer's expiry time as an absolute time.
 
         @return The expiry time point. If no expiry has been set,
             returns a default-constructed time_point.
@@ -154,36 +191,47 @@ public:
         Any pending asynchronous wait operations will be cancelled.
 
         @param t The expiry time to be used for the timer.
+
+        @return The number of pending operations that were cancelled.
     */
-    void expires_at(time_point t);
+    std::size_t expires_at(time_point t);
 
     /** Set the timer's expiry time relative to now.
 
         Any pending asynchronous wait operations will be cancelled.
 
         @param d The expiry time relative to now.
+
+        @return The number of pending operations that were cancelled.
     */
-    void expires_after(duration d);
+    std::size_t expires_after(duration d);
 
     /** Set the timer's expiry time relative to now.
 
         This is a convenience overload that accepts any duration type
-        and converts it to the timer's native duration type.
+        and converts it to the timer's native duration type. Any
+        pending asynchronous wait operations will be cancelled.
 
         @param d The expiry time relative to now.
+
+        @return The number of pending operations that were cancelled.
     */
     template<class Rep, class Period>
-    void expires_after(std::chrono::duration<Rep, Period> d)
+    std::size_t expires_after(std::chrono::duration<Rep, Period> d)
     {
-        expires_after(std::chrono::duration_cast<duration>(d));
+        return expires_after(std::chrono::duration_cast<duration>(d));
     }
 
     /** Wait for the timer to expire.
 
+        Multiple coroutines may wait on the same timer concurrently.
+        When the timer expires, all waiters complete with success.
+
         The operation supports cancellation via `std::stop_token` through
         the affine awaitable protocol. If the associated stop token is
-        triggered, the operation completes immediately with an error
-        that compares equal to `capy::cond::canceled`.
+        triggered, only that waiter completes with an error that
+        compares equal to `capy::cond::canceled`; other waiters are
+        unaffected.
 
         @par Example
         @code
