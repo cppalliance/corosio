@@ -697,14 +697,17 @@ wait(
     std::stop_token token,
     std::error_code* ec)
 {
-    // Already-expired fast path — no waiter_node, no mutex
+    // Already-expired fast path — no waiter_node, no mutex.
+    // Post instead of dispatch so the coroutine yields to the
+    // scheduler, allowing other queued work to run.
     if (heap_index_ == (std::numeric_limits<std::size_t>::max)())
     {
         if (expiry_ <= clock_type::now())
         {
             if (ec)
                 *ec = {};
-            return d.dispatch(h);
+            d.post(h);
+            return std::noop_coroutine();
         }
     }
 
