@@ -398,11 +398,12 @@ post_deferred_completions(op_queue& ops)
                 iocp_, 0, key_posted, reinterpret_cast<LPOVERLAPPED>(h)))
             continue;
 
-        // Out of resources, put stuff back
+        // Out of resources, put the failed op and remaining ops back
+        ops.push(h);
         std::lock_guard<win_mutex> lock(dispatch_mutex_);
-        completed_ops_.push(h);
         completed_ops_.splice(ops);
         ::InterlockedExchange(&dispatch_required_, 1);
+        return;
     }
 }
 
@@ -415,8 +416,12 @@ do_one(unsigned long timeout_ms)
         // Check if we need to process timers or deferred ops
         if (::InterlockedCompareExchange(&dispatch_required_, 0, 1) == 1)
         {
-            std::lock_guard<win_mutex> lock(dispatch_mutex_);
-            post_deferred_completions(completed_ops_);
+            op_queue local_ops;
+            {
+                std::lock_guard<win_mutex> lock(dispatch_mutex_);
+                local_ops.splice(completed_ops_);
+            }
+            post_deferred_completions(local_ops);
 
             if (timer_svc_)
                 timer_svc_->process_expired();
