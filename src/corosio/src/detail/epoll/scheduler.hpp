@@ -247,7 +247,6 @@ private:
     int epoll_fd_;
     int event_fd_;                              // for interrupting reactor
     int timer_fd_;                              // timerfd for kernel-managed timer expiry
-    int max_inline_budget_ = 2;
     mutable std::mutex mutex_;
     mutable std::condition_variable cond_;
     mutable op_queue completed_ops_;

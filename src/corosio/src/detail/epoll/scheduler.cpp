@@ -104,12 +104,14 @@ struct scheduler_context
     op_queue private_queue;
     long private_outstanding_work;
     int inline_budget;
+    int inline_budget_max;
 
     scheduler_context(epoll_scheduler const* k, scheduler_context* n)
         : key(k)
         , next(n)
         , private_outstanding_work(0)
-        , inline_budget(0)
+        , inline_budget(2)
+        , inline_budget_max(2)
     {
     }
 };
@@ -153,7 +155,16 @@ epoll_scheduler::
 reset_inline_budget() const noexcept
 {
     if (auto* ctx = find_context(this))
-        ctx->inline_budget = max_inline_budget_;
+    {
+        // Ramp up when previous cycle fully consumed budget (hot path).
+        // Reset on partial consumption (EAGAIN or queue contention).
+        // Leave unchanged when untouched (non-I/O handler).
+        if (ctx->inline_budget == 0)
+            ctx->inline_budget_max = (std::min)(ctx->inline_budget_max * 2, 16);
+        else if (ctx->inline_budget < ctx->inline_budget_max)
+            ctx->inline_budget_max = 2;
+        ctx->inline_budget = ctx->inline_budget_max;
+    }
 }
 
 bool
@@ -162,7 +173,7 @@ try_consume_inline_budget() const noexcept
 {
     if (auto* ctx = find_context(this))
     {
-        if (ctx->inline_budget > 0)
+        if (ctx->private_queue.empty() && ctx->inline_budget > 0)
         {
             --ctx->inline_budget;
             return true;
