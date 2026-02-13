@@ -235,7 +235,7 @@ private:
             promise_type(E e, S s, Args&&...)
                 : ex(std::move(e))
                 , env_{capy::executor_ref(ex), std::move(s),
-                       capy::current_frame_allocator()}
+                       capy::get_current_frame_allocator()}
             {
             }
 
@@ -246,7 +246,7 @@ private:
             promise_type(Closure&&, E e, S s, Args&&...)
                 : ex(std::move(e))
                 , env_{capy::executor_ref(ex), std::move(s),
-                       capy::current_frame_allocator()}
+                       capy::get_current_frame_allocator()}
             {
             }
 
