@@ -105,13 +105,15 @@ struct scheduler_context
     long private_outstanding_work;
     int inline_budget;
     int inline_budget_max;
+    bool unassisted;
 
     scheduler_context(epoll_scheduler const* k, scheduler_context* n)
         : key(k)
         , next(n)
         , private_outstanding_work(0)
-        , inline_budget(2)
+        , inline_budget(0)
         , inline_budget_max(2)
+        , unassisted(false)
     {
     }
 };
@@ -156,9 +158,16 @@ reset_inline_budget() const noexcept
 {
     if (auto* ctx = find_context(this))
     {
-        // Ramp up when previous cycle fully consumed budget (hot path).
-        // Reset on partial consumption (EAGAIN or queue contention).
-        // Leave unchanged when untouched (non-I/O handler).
+        // Cap at 1 when no other thread absorbed queued work,
+        // ensuring peers get scheduled between inline chains.
+        if (ctx->unassisted)
+        {
+            ctx->inline_budget_max = 1;
+            ctx->inline_budget = 1;
+            return;
+        }
+        // Ramp up when previous cycle fully consumed budget.
+        // Reset on partial consumption (EAGAIN hit or peer got scheduled).
         if (ctx->inline_budget == 0)
             ctx->inline_budget_max = (std::min)(ctx->inline_budget_max * 2, 16);
         else if (ctx->inline_budget < ctx->inline_budget_max)
@@ -775,7 +784,7 @@ maybe_unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
     return false;
 }
 
-void
+bool
 epoll_scheduler::
 unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
 {
@@ -784,6 +793,7 @@ unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
     lock.unlock();
     if (have_waiters)
         cond_.notify_one();
+    return have_waiters;
 }
 
 void
@@ -1063,10 +1073,15 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* c
         // Handle operation
         if (op != nullptr)
         {
-            if (!completed_ops_.empty())
-                unlock_and_signal_one(lock);
+            bool more = !completed_ops_.empty();
+
+            if (more)
+                ctx->unassisted = !unlock_and_signal_one(lock);
             else
+            {
+                ctx->unassisted = false;
                 lock.unlock();
+            }
 
             work_cleanup on_exit{this, &lock, ctx};
 

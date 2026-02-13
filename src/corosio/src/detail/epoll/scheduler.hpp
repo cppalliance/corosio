@@ -209,8 +209,10 @@ private:
         Mutex must be held.
 
         @param lock The held mutex lock.
+
+        @return `true` if a waiter was signaled, `false` otherwise.
     */
-    void unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const;
+    bool unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const;
 
     /** Clear the signaled state before waiting.
 
