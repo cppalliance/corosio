@@ -247,7 +247,7 @@ bench::benchmark_result bench_multithread_throughput(
               << ", Connections: " << num_connections
               << ", Buffer: " << chunk_size << " bytes\n";
 
-    asio::io_context ioc( num_threads );
+    asio::io_context ioc;
 
     struct pair_bufs
     {
