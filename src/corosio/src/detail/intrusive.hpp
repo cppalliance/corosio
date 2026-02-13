@@ -109,6 +109,10 @@ public:
             head_->prev_ = nullptr;
         else
             tail_ = nullptr;
+        // Defensive: clear stale linkage so remove() on a
+        // popped node cannot corrupt the list.
+        w->next_ = nullptr;
+        w->prev_ = nullptr;
         return w;
     }
 
@@ -217,6 +221,8 @@ public:
         head_ = head_->next_;
         if(!head_)
             tail_ = nullptr;
+        // Defensive: clear stale linkage on popped node.
+        w->next_ = nullptr;
         return w;
     }
 };
