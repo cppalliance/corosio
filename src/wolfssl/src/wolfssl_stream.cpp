@@ -504,7 +504,12 @@ struct wolfssl_stream::impl
                             read_in_buf_.data() + read_in_len_,
                             read_in_buf_.size() - read_in_len_);
 
-                        auto guard = co_await io_cm_.scoped_lock();
+                        auto [lec, guard] = co_await io_cm_.scoped_lock();
+                        if(lec)
+                        {
+                            current_op_ = nullptr;
+                            co_return {lec, total_read};
+                        }
                         auto [rec, rn] = co_await s_.read_some(rbuf);
                         if(rec)
                         {
@@ -530,7 +535,12 @@ struct wolfssl_stream::impl
                         // Renegotiation
                         if(read_out_len_ > 0)
                         {
-                            auto guard = co_await io_cm_.scoped_lock();
+                            auto [lec, guard] = co_await io_cm_.scoped_lock();
+                            if(lec)
+                            {
+                                current_op_ = nullptr;
+                                co_return {lec, total_read};
+                            }
                             auto [wec, wn] = co_await capy::write(s_,
                                 capy::const_buffer(read_out_buf_.data(), read_out_len_));
                             read_out_len_ = 0;
@@ -600,7 +610,12 @@ struct wolfssl_stream::impl
                         // Flush any pending output
                         if(write_out_len_ > 0)
                         {
-                            auto guard = co_await io_cm_.scoped_lock();
+                            auto [lec, guard] = co_await io_cm_.scoped_lock();
+                            if(lec)
+                            {
+                                current_op_ = nullptr;
+                                co_return {lec, total_written};
+                            }
                             auto [wec, wn] = co_await capy::write(s_,
                                 capy::const_buffer(write_out_buf_.data(), write_out_len_));
                             write_out_len_ = 0;
@@ -622,7 +637,12 @@ struct wolfssl_stream::impl
                     {
                         if(write_out_len_ > 0)
                         {
-                            auto guard = co_await io_cm_.scoped_lock();
+                            auto [lec, guard] = co_await io_cm_.scoped_lock();
+                            if(lec)
+                            {
+                                current_op_ = nullptr;
+                                co_return {lec, total_written};
+                            }
                             auto [wec, wn] = co_await capy::write(s_,
                                 capy::const_buffer(write_out_buf_.data(), write_out_len_));
                             write_out_len_ = 0;
@@ -644,7 +664,12 @@ struct wolfssl_stream::impl
                         capy::mutable_buffer rbuf(
                             write_in_buf_.data() + write_in_len_,
                             write_in_buf_.size() - write_in_len_);
-                        auto guard = co_await io_cm_.scoped_lock();
+                        auto [lec, guard] = co_await io_cm_.scoped_lock();
+                        if(lec)
+                        {
+                            current_op_ = nullptr;
+                            co_return {lec, total_written};
+                        }
                         auto [rec, rn] = co_await s_.read_some(rbuf);
                         if(rec)
                         {
@@ -707,7 +732,12 @@ struct wolfssl_stream::impl
                 // Flush any remaining output
                 if(read_out_len_ > 0)
                 {
-                    auto guard = co_await io_cm_.scoped_lock();
+                    auto [lec, guard] = co_await io_cm_.scoped_lock();
+                    if(lec)
+                    {
+                        ec = lec;
+                        break;
+                    }
                     auto [wec, wn] = co_await capy::write(s_,
                         capy::const_buffer(read_out_buf_.data(), read_out_len_));
                     read_out_len_ = 0;
@@ -725,7 +755,12 @@ struct wolfssl_stream::impl
                     // Must flush (e.g. ClientHello) before reading ServerHello
                     if(read_out_len_ > 0)
                     {
-                        auto guard = co_await io_cm_.scoped_lock();
+                        auto [lec, guard] = co_await io_cm_.scoped_lock();
+                        if(lec)
+                        {
+                            ec = lec;
+                            break;
+                        }
                         auto [wec, wn] = co_await capy::write(s_,
                             capy::const_buffer(read_out_buf_.data(), read_out_len_));
                         read_out_len_ = 0;
@@ -744,7 +779,12 @@ struct wolfssl_stream::impl
                     capy::mutable_buffer rbuf(
                         read_in_buf_.data() + read_in_len_,
                         read_in_buf_.size() - read_in_len_);
-                    auto guard = co_await io_cm_.scoped_lock();
+                    auto [lec, guard] = co_await io_cm_.scoped_lock();
+                    if(lec)
+                    {
+                        ec = lec;
+                        break;
+                    }
                     auto [rec, rn] = co_await s_.read_some(rbuf);
                     if(rec)
                     {
@@ -757,7 +797,12 @@ struct wolfssl_stream::impl
                 {
                     if(read_out_len_ > 0)
                     {
-                        auto guard = co_await io_cm_.scoped_lock();
+                        auto [lec, guard] = co_await io_cm_.scoped_lock();
+                        if(lec)
+                        {
+                            ec = lec;
+                            break;
+                        }
                         auto [wec, wn] = co_await capy::write(s_,
                             capy::const_buffer(read_out_buf_.data(), read_out_len_));
                         read_out_len_ = 0;
@@ -807,7 +852,12 @@ struct wolfssl_stream::impl
                 // Bidirectional shutdown complete - flush any remaining output
                 if(read_out_len_ > 0)
                 {
-                    auto guard = co_await io_cm_.scoped_lock();
+                    auto [lec, guard] = co_await io_cm_.scoped_lock();
+                    if(lec)
+                    {
+                        ec = lec;
+                        break;
+                    }
                     auto [wec, wn] = co_await capy::write(s_,
                         capy::const_buffer(read_out_buf_.data(), read_out_len_));
                     read_out_len_ = 0;
@@ -821,7 +871,9 @@ struct wolfssl_stream::impl
                 // First, flush any pending output (sends our close_notify)
                 if(read_out_len_ > 0)
                 {
-                    auto guard = co_await io_cm_.scoped_lock();
+                    auto [lec, guard] = co_await io_cm_.scoped_lock();
+                    if(lec)
+                        break;
                     auto [wec, wn] = co_await capy::write(s_,
                         capy::const_buffer(read_out_buf_.data(), read_out_len_));
                     read_out_len_ = 0;
@@ -840,7 +892,9 @@ struct wolfssl_stream::impl
                     capy::mutable_buffer rbuf(
                         read_in_buf_.data() + read_in_len_,
                         read_in_buf_.size() - read_in_len_);
-                    auto guard = co_await io_cm_.scoped_lock();
+                    auto [lec, guard] = co_await io_cm_.scoped_lock();
+                    if(lec)
+                        break;
                     auto [rec, rn] = co_await s_.read_some(rbuf);
                     if(rec)
                         break;  // EOF or socket error during shutdown read - acceptable
