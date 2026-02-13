@@ -266,7 +266,7 @@ bench::benchmark_result bench_multithread(
     std::cout << "  Threads: " << num_threads
               << ", Connections: " << num_connections << "\n";
 
-    asio::io_context ioc( num_threads );
+    asio::io_context ioc;
 
     std::vector<tcp_socket> clients;
     std::vector<tcp_socket> servers;
