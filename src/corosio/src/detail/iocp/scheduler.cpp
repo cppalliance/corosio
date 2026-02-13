@@ -44,7 +44,8 @@ namespace boost::corosio::detail {
 
 namespace {
 
-// Max timeout for GQCS to allow periodic re-checking of conditions
+// Max timeout for GQCS to allow periodic re-checking of conditions.
+// Matches Asio's default_gqcs_timeout for pre-Vista compatibility.
 constexpr unsigned long max_gqcs_timeout = 500;
 
 struct scheduler_context
@@ -316,7 +317,6 @@ run()
             break;
         if (n != (std::numeric_limits<std::size_t>::max)())
             ++n;
-        // Check if we should exit after processing work
         if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
         {
             stop();
@@ -428,13 +428,6 @@ do_one(unsigned long timeout_ms)
                 timer_svc_->process_expired();
 
             update_timeout();
-
-            // After processing, check if all work is done
-            if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
-            {
-                stop();
-                return 0;
-            }
         }
 
         DWORD bytes = 0;

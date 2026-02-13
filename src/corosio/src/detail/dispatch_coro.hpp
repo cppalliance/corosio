@@ -38,7 +38,7 @@ dispatch_coro(
     capy::executor_ref ex,
     std::coroutine_handle<> h)
 {
-    if ( ex.target< basic_io_context::executor_type >() )
+    if ( ex.target< basic_io_context::executor_type >() != nullptr )
         return h;
     return ex.dispatch(h);
 }
