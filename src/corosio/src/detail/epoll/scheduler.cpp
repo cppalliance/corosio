@@ -158,12 +158,13 @@ reset_inline_budget() const noexcept
 {
     if (auto* ctx = find_context(this))
     {
-        // Cap at 1 when no other thread absorbed queued work,
-        // ensuring peers get scheduled between inline chains.
+        // Cap when no other thread absorbed queued work. A moderate
+        // cap (4) amortizes scheduling for small buffers while avoiding
+        // bursty I/O that fills socket buffers and stalls large transfers.
         if (ctx->unassisted)
         {
-            ctx->inline_budget_max = 1;
-            ctx->inline_budget = 1;
+            ctx->inline_budget_max = 4;
+            ctx->inline_budget = 4;
             return;
         }
         // Ramp up when previous cycle fully consumed budget.
@@ -182,7 +183,7 @@ try_consume_inline_budget() const noexcept
 {
     if (auto* ctx = find_context(this))
     {
-        if (ctx->private_queue.empty() && ctx->inline_budget > 0)
+        if (ctx->inline_budget > 0)
         {
             --ctx->inline_budget;
             return true;
