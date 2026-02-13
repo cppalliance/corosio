@@ -37,6 +37,8 @@ void print_usage( char const* program_name )
     std::cout << "  --bench <name>      Run only the specified benchmark within category\n";
     std::cout << "  --duration <secs>   Duration per benchmark in seconds (default: 3.0)\n";
     std::cout << "  --output <file>     Write JSON results to file\n";
+    std::cout << "  --enable-microbenchmarks\n";
+    std::cout << "                      Include microbenchmarks in 'all' runs\n";
     std::cout << "  --list              List available backends\n";
     std::cout << "  --help              Show this help message\n";
     std::cout << "\n";
@@ -64,7 +66,7 @@ void print_usage( char const* program_name )
     std::cout << "\n";
     std::cout << "Individual benchmarks (--bench):\n";
     std::cout << "  io_context:         single_threaded, multithreaded, interleaved, concurrent\n";
-    std::cout << "  socket_throughput:  unidirectional, bidirectional\n";
+    std::cout << "  socket_throughput:  unidirectional, bidirectional, multithread\n";
     std::cout << "  socket_latency:     pingpong, concurrent\n";
     std::cout << "  http_server:        single_conn, concurrent, multithread\n";
     std::cout << "  timer:              schedule_cancel, fire_rate, concurrent\n";
@@ -84,6 +86,7 @@ int main( int argc, char* argv[] )
     char const* category_filter = nullptr;
     char const* bench_filter = nullptr;
     double duration_s = 3.0;
+    bool enable_microbenchmark = false;
 
     for( int i = 1; i < argc; ++i )
     {
@@ -164,6 +167,10 @@ int main( int argc, char* argv[] )
                 return 1;
             }
         }
+        else if( std::strcmp( argv[i], "--enable-microbenchmarks" ) == 0 )
+        {
+            enable_microbenchmark = true;
+        }
         else if( std::strcmp( argv[i], "--list" ) == 0 )
         {
             perf::print_available_backends();
@@ -232,7 +239,8 @@ int main( int argc, char* argv[] )
                     || std::strcmp( bench_filter, b ) == 0;
             };
 
-            if( run_all_cats || std::strcmp( category_filter, "io_context" ) == 0 )
+            bool explicit_io_ctx = category_filter && std::strcmp( category_filter, "io_context" ) == 0;
+            if( explicit_io_ctx || ( run_all_cats && enable_microbenchmark ) )
             {
                 char const* benches[] = { "single_threaded", "multithreaded", "interleaved", "concurrent" };
                 for( auto* b : benches )
@@ -252,19 +260,27 @@ int main( int argc, char* argv[] )
 
             if( run_all_cats || std::strcmp( category_filter, "socket_throughput" ) == 0 )
             {
-                char const* benches[] = { "unidirectional", "bidirectional" };
+                char const* benches[] = { "unidirectional", "bidirectional", "multithread" };
                 for( auto* b : benches )
                 {
                     if( !want_bench( b ) )
                         continue;
-                    perf::await_conntrack_drain();
                     if( want_corosio )
+                    {
+                        perf::await_conntrack_drain();
                         corosio_bench::run_socket_throughput_benchmarks( factory, collector, b, duration_s );
+                    }
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
                     if( want_asio )
+                    {
+                        perf::await_conntrack_drain();
                         asio_bench::run_socket_throughput_benchmarks( collector, b, duration_s );
+                    }
                     if( want_asio_callback )
+                    {
+                        perf::await_conntrack_drain();
                         asio_callback_bench::run_socket_throughput_benchmarks( collector, b, duration_s );
+                    }
 #endif
                 }
             }
@@ -276,14 +292,22 @@ int main( int argc, char* argv[] )
                 {
                     if( !want_bench( b ) )
                         continue;
-                    perf::await_conntrack_drain();
                     if( want_corosio )
+                    {
+                        perf::await_conntrack_drain();
                         corosio_bench::run_socket_latency_benchmarks( factory, collector, b, duration_s );
+                    }
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
                     if( want_asio )
+                    {
+                        perf::await_conntrack_drain();
                         asio_bench::run_socket_latency_benchmarks( collector, b, duration_s );
+                    }
                     if( want_asio_callback )
+                    {
+                        perf::await_conntrack_drain();
                         asio_callback_bench::run_socket_latency_benchmarks( collector, b, duration_s );
+                    }
 #endif
                 }
             }
@@ -295,14 +319,22 @@ int main( int argc, char* argv[] )
                 {
                     if( !want_bench( b ) )
                         continue;
-                    perf::await_conntrack_drain();
                     if( want_corosio )
+                    {
+                        perf::await_conntrack_drain();
                         corosio_bench::run_http_server_benchmarks( factory, collector, b, duration_s );
+                    }
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
                     if( want_asio )
+                    {
+                        perf::await_conntrack_drain();
                         asio_bench::run_http_server_benchmarks( collector, b, duration_s );
+                    }
                     if( want_asio_callback )
+                    {
+                        perf::await_conntrack_drain();
                         asio_callback_bench::run_http_server_benchmarks( collector, b, duration_s );
+                    }
 #endif
                 }
             }
@@ -332,14 +364,22 @@ int main( int argc, char* argv[] )
                 {
                     if( !want_bench( b ) )
                         continue;
-                    perf::await_conntrack_drain();
                     if( want_corosio )
+                    {
+                        perf::await_conntrack_drain();
                         corosio_bench::run_accept_churn_benchmarks( factory, collector, b, duration_s );
+                    }
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
                     if( want_asio )
+                    {
+                        perf::await_conntrack_drain();
                         asio_bench::run_accept_churn_benchmarks( collector, b, duration_s );
+                    }
                     if( want_asio_callback )
+                    {
+                        perf::await_conntrack_drain();
                         asio_callback_bench::run_accept_churn_benchmarks( collector, b, duration_s );
+                    }
 #endif
                 }
             }
@@ -351,14 +391,22 @@ int main( int argc, char* argv[] )
                 {
                     if( !want_bench( b ) )
                         continue;
-                    perf::await_conntrack_drain();
                     if( want_corosio )
+                    {
+                        perf::await_conntrack_drain();
                         corosio_bench::run_fan_out_benchmarks( factory, collector, b, duration_s );
+                    }
 #ifdef BOOST_COROSIO_BENCH_HAS_ASIO
                     if( want_asio )
+                    {
+                        perf::await_conntrack_drain();
                         asio_bench::run_fan_out_benchmarks( collector, b, duration_s );
+                    }
                     if( want_asio_callback )
+                    {
+                        perf::await_conntrack_drain();
                         asio_callback_bench::run_fan_out_benchmarks( collector, b, duration_s );
+                    }
 #endif
                 }
             }
