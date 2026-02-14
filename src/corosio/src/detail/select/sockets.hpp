@@ -60,7 +60,7 @@
 
     Service Ownership
     -----------------
-    select_socket_service owns all socket impls. destroy_impl() removes the
+    select_socket_service owns all socket impls. destroy() removes the
     shared_ptr from the map, but the impl may survive if ops still hold
     impl_ptr refs. shutdown() closes all sockets and clears the map; any
     in-flight ops will complete and release their refs.
@@ -81,8 +81,6 @@ class select_socket_impl
 
 public:
     explicit select_socket_impl(select_socket_service& svc) noexcept;
-
-    void release() override;
 
     std::coroutine_handle<> connect(
         std::coroutine_handle<>,
@@ -182,8 +180,10 @@ public:
 
     void shutdown() override;
 
-    tcp_socket::socket_impl& create_impl() override;
-    void destroy_impl(tcp_socket::socket_impl& impl) override;
+    io_object::io_object_impl* construct() override;
+    void destroy(io_object::io_object_impl*) override;
+    void open(io_object::handle&) override;
+    void close(io_object::handle&) override;
     std::error_code open_socket(tcp_socket::socket_impl& impl) override;
 
     select_scheduler& scheduler() const noexcept { return state_->sched_; }

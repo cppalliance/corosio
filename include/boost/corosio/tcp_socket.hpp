@@ -206,10 +206,8 @@ public:
         @param other The socket to move from.
     */
     tcp_socket(tcp_socket&& other) noexcept
-        : io_stream(other.context())
+        : io_stream(std::move(other))
     {
-        impl_ = other.impl_;
-        other.impl_ = nullptr;
     }
 
     /** Move assignment operator.
@@ -227,12 +225,11 @@ public:
     {
         if (this != &other)
         {
-            if (ctx_ != other.ctx_)
+            if (&context() != &other.context())
                 detail::throw_logic_error(
                     "cannot move socket across execution contexts");
             close();
-            impl_ = other.impl_;
-            other.impl_ = nullptr;
+            h_ = std::move(other.h_);
         }
         return *this;
     }
@@ -263,7 +260,11 @@ public:
     */
     bool is_open() const noexcept
     {
-        return impl_ != nullptr;
+#if BOOST_COROSIO_HAS_IOCP
+        return h_ && get().native_handle() != ~native_handle_type(0);
+#else
+        return h_ && get().native_handle() >= 0;
+#endif
     }
 
     /** Initiate an asynchronous connect operation.
@@ -300,7 +301,7 @@ public:
     */
     auto connect(endpoint ep)
     {
-        if (!impl_)
+        if (!is_open())
             detail::throw_logic_error("connect: socket not open");
         return connect_awaitable(*this, ep);
     }
@@ -515,7 +516,7 @@ private:
 
     inline socket_impl& get() const noexcept
     {
-        return *static_cast<socket_impl*>(impl_);
+        return *static_cast<socket_impl*>(h_.get());
     }
 };
 

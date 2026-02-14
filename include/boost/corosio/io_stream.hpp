@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_IO_STREAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/io_buffer_param.hpp>
@@ -312,11 +313,18 @@ protected:
     {
     }
 
+    /// Construct stream from a handle.
+    explicit
+    io_stream(handle h) noexcept
+        : io_object(std::move(h))
+    {
+    }
+
 private:
     /// Return implementation downcasted to stream interface.
     io_stream_impl& get() const noexcept
     {
-        return *static_cast<io_stream_impl*>(impl_);
+        return *static_cast<io_stream_impl*>(h_.get());
     }
 };
 

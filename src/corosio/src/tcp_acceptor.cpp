@@ -13,7 +13,6 @@
 #if BOOST_COROSIO_HAS_IOCP
 #include "src/detail/iocp/sockets.hpp"
 #else
-// POSIX backends use the abstract acceptor_service interface
 #include "src/detail/socket_service.hpp"
 #endif
 
@@ -30,7 +29,11 @@ tcp_acceptor::
 tcp_acceptor::
 tcp_acceptor(
     capy::execution_context& ctx)
-    : io_object(ctx)
+#if BOOST_COROSIO_HAS_IOCP
+    : io_object(create_handle<detail::win_acceptor_service>(ctx))
+#else
+    : io_object(create_handle<detail::acceptor_service>(ctx))
+#endif
 {
 }
 
@@ -38,70 +41,41 @@ std::error_code
 tcp_acceptor::
 listen(endpoint ep, int backlog)
 {
-    if (impl_)
+    if (is_open())
         close();
 
-    std::error_code ec;
-
 #if BOOST_COROSIO_HAS_IOCP
-    auto& svc = ctx_->use_service<detail::win_sockets>();
-    auto& wrapper = svc.create_acceptor_impl();
-    impl_ = &wrapper;
-    ec = svc.open_acceptor(*wrapper.get_internal(), ep, backlog);
+    auto& svc = static_cast<detail::win_acceptor_service&>(h_.service());
 #else
-    // POSIX backends use abstract acceptor_service for runtime polymorphism.
-    // The concrete service (epoll_sockets or select_sockets) must be installed
-    // by the context constructor before any acceptor operations.
-    auto* svc = ctx_->find_service<detail::acceptor_service>();
-    if (!svc)
-    {
-        // Should not happen with properly constructed io_context
-        return make_error_code(std::errc::operation_not_supported);
-    }
-    auto& wrapper = svc->create_acceptor_impl();
-    impl_ = &wrapper;
-    ec = svc->open_acceptor(wrapper, ep, backlog);
+    auto& svc = static_cast<detail::acceptor_service&>(h_.service());
 #endif
-    // Both branches above define 'wrapper' as a reference to the impl
-    if (ec)
-    {
-        wrapper.release();
-        impl_ = nullptr;
-    }
-    return ec;
+    return svc.open_acceptor(
+        *static_cast<tcp_acceptor::acceptor_impl*>(h_.get()), ep, backlog);
 }
 
 void
 tcp_acceptor::
 close()
 {
-    if (!impl_)
+    if (!is_open())
         return;
-
-    // acceptor_impl has virtual release() method
-    impl_->release();
-    impl_ = nullptr;
+    h_.service().close(h_);
 }
 
 void
 tcp_acceptor::
 cancel()
 {
-    if (!impl_)
+    if (!is_open())
         return;
-#if BOOST_COROSIO_HAS_IOCP
-    static_cast<detail::win_acceptor_impl*>(impl_)->get_internal()->cancel();
-#else
-    // acceptor_impl has virtual cancel() method
     get().cancel();
-#endif
 }
 
 endpoint
 tcp_acceptor::
 local_endpoint() const noexcept
 {
-    if (!impl_)
+    if (!is_open())
         return endpoint{};
     return get().local_endpoint();
 }

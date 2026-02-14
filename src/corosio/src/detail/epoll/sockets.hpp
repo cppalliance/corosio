@@ -95,8 +95,6 @@ public:
     explicit epoll_socket_impl(epoll_socket_service& svc) noexcept;
     ~epoll_socket_impl();
 
-    void release() override;
-
     std::coroutine_handle<> connect(
         std::coroutine_handle<>,
         capy::executor_ref,
@@ -207,8 +205,10 @@ public:
 
     void shutdown() override;
 
-    tcp_socket::socket_impl& create_impl() override;
-    void destroy_impl(tcp_socket::socket_impl& impl) override;
+    io_object::io_object_impl* construct() override;
+    void destroy(io_object::io_object_impl*) override;
+    void open(io_object::handle&) override;
+    void close(io_object::handle&) override;
     std::error_code open_socket(tcp_socket::socket_impl& impl) override;
 
     epoll_scheduler& scheduler() const noexcept { return state_->sched_; }

@@ -277,7 +277,7 @@ public:
         }
     }
 
-    timer::timer_impl* create_impl() override
+    io_object::io_object_impl* construct() override
     {
         timer_impl* impl = try_pop_tl_cache(this);
         if (impl)
@@ -303,6 +303,11 @@ public:
             impl = new timer_impl(*this);
         }
         return impl;
+    }
+
+    void destroy(io_object::io_object_impl* p) override
+    {
+        static_cast<timer_impl*>(p)->release();
     }
 
     void destroy_impl(timer_impl& impl)
@@ -809,25 +814,6 @@ struct timer_service_access
         return static_cast<scheduler_impl&>(*ctx.sched_);
     }
 };
-
-timer::timer_impl*
-timer_service_create(capy::execution_context& ctx)
-{
-    if (!ctx.target<basic_io_context>())
-        detail::throw_logic_error();
-    auto& ioctx = static_cast<basic_io_context&>(ctx);
-    auto* svc = static_cast<timer_service_impl*>(
-        timer_service_access::get_scheduler(ioctx).timer_svc_);
-    if (!svc)
-        detail::throw_logic_error();
-    return svc->create_impl();
-}
-
-void
-timer_service_destroy(timer::timer_impl& base) noexcept
-{
-    static_cast<timer_impl&>(base).release();
-}
 
 std::size_t
 timer_service_update_expiry(timer::timer_impl& base)

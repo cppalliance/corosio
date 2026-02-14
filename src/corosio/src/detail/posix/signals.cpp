@@ -216,8 +216,14 @@ public:
     posix_signals_impl(posix_signals_impl const&) = delete;
     posix_signals_impl& operator=(posix_signals_impl const&) = delete;
 
+    io_object::io_object_impl* construct() override;
+
+    void destroy(io_object::io_object_impl* p) override
+    {
+        static_cast<posix_signal_impl*>(p)->release();
+    }
+
     void shutdown() override;
-    signal_set::signal_set_impl& create_impl() override;
 
     void destroy_impl(posix_signal_impl& impl);
 
@@ -485,9 +491,9 @@ shutdown()
     }
 }
 
-signal_set::signal_set_impl&
+io_object::io_object_impl*
 posix_signals_impl::
-create_impl()
+construct()
 {
     auto* impl = new posix_signal_impl(*this);
 
@@ -496,7 +502,7 @@ create_impl()
         impl_list_.push_back(impl);
     }
 
-    return *impl;
+    return impl;
 }
 
 void
@@ -867,28 +873,18 @@ get_signal_service(capy::execution_context& ctx, scheduler& sched)
 //------------------------------------------------------------------------------
 
 signal_set::
-~signal_set()
-{
-    if (impl_)
-        impl_->release();
-}
+~signal_set() = default;
 
 signal_set::
 signal_set(capy::execution_context& ctx)
-    : io_object(ctx)
+    : io_object(create_handle<detail::posix_signals>(ctx))
 {
-    auto* svc = ctx.find_service<detail::posix_signals>();
-    if (!svc)
-        detail::throw_logic_error("signal_set: signal service not initialized");
-    impl_ = &svc->create_impl();
 }
 
 signal_set::
 signal_set(signal_set&& other) noexcept
     : io_object(std::move(other))
 {
-    impl_ = other.impl_;
-    other.impl_ = nullptr;
 }
 
 signal_set&
@@ -897,14 +893,9 @@ operator=(signal_set&& other)
 {
     if (this != &other)
     {
-        if (ctx_ != other.ctx_)
+        if (&context() != &other.context())
             detail::throw_logic_error("signal_set::operator=: context mismatch");
-
-        if (impl_)
-            impl_->release();
-
-        impl_ = other.impl_;
-        other.impl_ = nullptr;
+        h_ = std::move(other.h_);
     }
     return *this;
 }

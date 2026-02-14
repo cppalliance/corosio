@@ -61,7 +61,7 @@ operator()()
                 ->service().socket_service();
             if (socket_svc)
             {
-                auto& impl = static_cast<select_socket_impl&>(socket_svc->create_impl());
+                auto& impl = static_cast<select_socket_impl&>(*socket_svc->construct());
                 impl.set_socket(accepted_fd);
 
                 sockaddr_in local_addr{};
@@ -110,7 +110,10 @@ operator()()
 
         if (peer_impl)
         {
-            peer_impl->release();
+            auto* socket_svc_cleanup = static_cast<select_acceptor_impl*>(acceptor_impl_)
+                ->service().socket_service();
+            if (socket_svc_cleanup)
+                socket_svc_cleanup->destroy(peer_impl);
             peer_impl = nullptr;
         }
 
@@ -129,14 +132,6 @@ select_acceptor_impl::
 select_acceptor_impl(select_acceptor_service& svc) noexcept
     : svc_(svc)
 {
-}
-
-void
-select_acceptor_impl::
-release()
-{
-    close_socket();
-    svc_.destroy_acceptor_impl(*this);
 }
 
 std::coroutine_handle<>
@@ -364,9 +359,9 @@ shutdown()
     // after scheduler shutdown has drained all queued ops.
 }
 
-tcp_acceptor::acceptor_impl&
+io_object::io_object_impl*
 select_acceptor_service::
-create_acceptor_impl()
+construct()
 {
     auto impl = std::make_shared<select_acceptor_impl>(*this);
     auto* raw = impl.get();
@@ -375,17 +370,31 @@ create_acceptor_impl()
     state_->acceptor_list_.push_back(raw);
     state_->acceptor_ptrs_.emplace(raw, std::move(impl));
 
-    return *raw;
+    return raw;
 }
 
 void
 select_acceptor_service::
-destroy_acceptor_impl(tcp_acceptor::acceptor_impl& impl)
+destroy(io_object::io_object_impl* impl)
 {
-    auto* select_impl = static_cast<select_acceptor_impl*>(&impl);
+    auto* select_impl = static_cast<select_acceptor_impl*>(impl);
+    select_impl->close_socket();
     std::lock_guard lock(state_->mutex_);
     state_->acceptor_list_.remove(select_impl);
     state_->acceptor_ptrs_.erase(select_impl);
+}
+
+void
+select_acceptor_service::
+open(io_object::handle&)
+{
+}
+
+void
+select_acceptor_service::
+close(io_object::handle& h)
+{
+    static_cast<select_acceptor_impl*>(h.get())->close_socket();
 }
 
 std::error_code

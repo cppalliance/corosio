@@ -47,34 +47,20 @@ using resolver_service = detail::posix_resolver_service;
 } // namespace
 
 resolver::
-~resolver()
-{
-    if (impl_)
-        impl_->release();
-}
+~resolver() = default;
 
 resolver::
 resolver(
     capy::execution_context& ctx)
-    : io_object(ctx)
+    : io_object(create_handle<resolver_service>(ctx))
 {
-    auto* svc = ctx_->find_service<resolver_service>();
-    if (!svc)
-    {
-        // Resolver service not yet created - this happens if io_context
-        // hasn't been constructed yet, or if the scheduler didn't
-        // initialize the resolver service
-        throw std::runtime_error("resolver_service not found");
-    }
-    auto& impl = svc->create_impl();
-    impl_ = &impl;
 }
 
 void
 resolver::
 cancel()
 {
-    if (impl_)
+    if (h_)
         get().cancel();
 }
 

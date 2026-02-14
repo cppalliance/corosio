@@ -187,14 +187,6 @@ kqueue_socket_impl(kqueue_socket_service& svc) noexcept
 kqueue_socket_impl::
 ~kqueue_socket_impl() = default;
 
-void
-kqueue_socket_impl::
-release()
-{
-    close_socket();
-    svc_.destroy_impl(*this);
-}
-
 std::coroutine_handle<>
 kqueue_socket_impl::
 connect(
@@ -777,9 +769,9 @@ shutdown()
     // shutdown) keeps every impl alive until all ops have been drained.
 }
 
-tcp_socket::socket_impl&
+io_object::io_object_impl*
 kqueue_socket_service::
-create_impl()
+construct()
 {
     auto impl = std::make_shared<kqueue_socket_impl>(*this);
     auto* raw = impl.get();
@@ -790,14 +782,15 @@ create_impl()
         state_->socket_ptrs_.emplace(raw, std::move(impl));
     }
 
-    return *raw;
+    return raw;
 }
 
 void
 kqueue_socket_service::
-destroy_impl(tcp_socket::socket_impl& impl)
+destroy(io_object::io_object_impl* impl)
 {
-    auto* kq_impl = static_cast<kqueue_socket_impl*>(&impl);
+    auto* kq_impl = static_cast<kqueue_socket_impl*>(impl);
+    kq_impl->close_socket();
     std::lock_guard lock(state_->mutex_);
     state_->socket_list_.remove(kq_impl);
     state_->socket_ptrs_.erase(kq_impl);
@@ -861,6 +854,23 @@ open_socket(tcp_socket::socket_impl& impl)
     scheduler().register_descriptor(fd, &kq_impl->desc_state_);
 
     return {};
+}
+
+void
+kqueue_socket_service::
+open(io_object::handle& h)
+{
+    auto ec = open_socket(
+        *static_cast<tcp_socket::socket_impl*>(h.get()));
+    if (ec)
+        detail::throw_system_error(ec, "open");
+}
+
+void
+kqueue_socket_service::
+close(io_object::handle& h)
+{
+    static_cast<kqueue_socket_impl*>(h.get())->close_socket();
 }
 
 void

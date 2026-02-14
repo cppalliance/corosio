@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_TCP_ACCEPTOR_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/io_object.hpp>
 #include <boost/capy/io_result.hpp>
@@ -91,13 +92,8 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled)};
             
-            // Transfer the accepted impl to the peer socket
-            // (acceptor is a friend of socket, so we can access impl_)
             if (!ec_ && peer_impl_)
-            {
-                peer_.close();
-                peer_.impl_ = peer_impl_;
-            }
+                peer_.h_.reset(peer_impl_);
             return {ec_};
         }
 
@@ -144,10 +140,8 @@ public:
         @param other The acceptor to move from.
     */
     tcp_acceptor(tcp_acceptor&& other) noexcept
-        : io_object(other.context())
+        : io_object(std::move(other))
     {
-        impl_ = other.impl_;
-        other.impl_ = nullptr;
     }
 
     /** Move assignment operator.
@@ -165,12 +159,11 @@ public:
     {
         if (this != &other)
         {
-            if (ctx_ != other.ctx_)
+            if (&context() != &other.context())
                 detail::throw_logic_error(
                     "cannot move tcp_acceptor across execution contexts");
             close();
-            impl_ = other.impl_;
-            other.impl_ = nullptr;
+            h_ = std::move(other.h_);
         }
         return *this;
     }
@@ -219,7 +212,7 @@ public:
     */
     bool is_open() const noexcept
     {
-        return impl_ != nullptr;
+        return h_ && get().is_open();
     }
 
     /** Initiate an asynchronous accept operation.
@@ -257,7 +250,7 @@ public:
     */
     auto accept(tcp_socket& peer)
     {
-        if (!impl_)
+        if (!is_open())
             detail::throw_logic_error("accept: acceptor not listening");
         return accept_awaitable(*this, peer);
     }
@@ -299,6 +292,9 @@ public:
         /// Returns the cached local endpoint.
         virtual endpoint local_endpoint() const noexcept = 0;
 
+        /// Return true if the acceptor has a kernel resource open.
+        virtual bool is_open() const noexcept = 0;
+
         /** Cancel any pending asynchronous operations.
 
             All outstanding operations complete with operation_canceled error.
@@ -309,7 +305,7 @@ public:
 private:
     inline acceptor_impl& get() const noexcept
     {
-        return *static_cast<acceptor_impl*>(impl_);
+        return *static_cast<acceptor_impl*>(h_.get());
     }
 };
 

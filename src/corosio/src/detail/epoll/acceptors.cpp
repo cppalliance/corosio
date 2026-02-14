@@ -62,7 +62,7 @@ operator()()
             ->service().socket_service();
         if (socket_svc)
         {
-            auto& impl = static_cast<epoll_socket_impl&>(socket_svc->create_impl());
+            auto& impl = static_cast<epoll_socket_impl&>(*socket_svc->construct());
             impl.set_socket(accepted_fd);
 
             impl.desc_state_.fd = accepted_fd;
@@ -114,14 +114,6 @@ epoll_acceptor_impl(epoll_acceptor_service& svc) noexcept
 {
 }
 
-void
-epoll_acceptor_impl::
-release()
-{
-    close_socket();
-    svc_.destroy_acceptor_impl(*this);
-}
-
 std::coroutine_handle<>
 epoll_acceptor_impl::
 accept(
@@ -160,7 +152,7 @@ accept(
             auto* socket_svc = svc_.socket_service();
             if (socket_svc)
             {
-                auto& impl = static_cast<epoll_socket_impl&>(socket_svc->create_impl());
+                auto& impl = static_cast<epoll_socket_impl&>(*socket_svc->construct());
                 impl.set_socket(accepted);
 
                 impl.desc_state_.fd = accepted;
@@ -320,9 +312,9 @@ shutdown()
     // after scheduler shutdown has drained all queued ops.
 }
 
-tcp_acceptor::acceptor_impl&
+io_object::io_object_impl*
 epoll_acceptor_service::
-create_acceptor_impl()
+construct()
 {
     auto impl = std::make_shared<epoll_acceptor_impl>(*this);
     auto* raw = impl.get();
@@ -331,17 +323,31 @@ create_acceptor_impl()
     state_->acceptor_list_.push_back(raw);
     state_->acceptor_ptrs_.emplace(raw, std::move(impl));
 
-    return *raw;
+    return raw;
 }
 
 void
 epoll_acceptor_service::
-destroy_acceptor_impl(tcp_acceptor::acceptor_impl& impl)
+destroy(io_object::io_object_impl* impl)
 {
-    auto* epoll_impl = static_cast<epoll_acceptor_impl*>(&impl);
+    auto* epoll_impl = static_cast<epoll_acceptor_impl*>(impl);
+    epoll_impl->close_socket();
     std::lock_guard lock(state_->mutex_);
     state_->acceptor_list_.remove(epoll_impl);
     state_->acceptor_ptrs_.erase(epoll_impl);
+}
+
+void
+epoll_acceptor_service::
+open(io_object::handle&)
+{
+}
+
+void
+epoll_acceptor_service::
+close(io_object::handle& h)
+{
+    static_cast<epoll_acceptor_impl*>(h.get())->close_socket();
 }
 
 std::error_code

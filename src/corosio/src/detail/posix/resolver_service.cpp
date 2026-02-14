@@ -434,8 +434,14 @@ public:
     posix_resolver_service_impl(posix_resolver_service_impl const&) = delete;
     posix_resolver_service_impl& operator=(posix_resolver_service_impl const&) = delete;
 
+    io_object::io_object_impl* construct() override;
+
+    void destroy(io_object::io_object_impl* p) override
+    {
+        static_cast<posix_resolver_impl*>(p)->release();
+    }
+
     void shutdown() override;
-    resolver::resolver_impl& create_impl() override;
     void destroy_impl(posix_resolver_impl& impl);
 
     void post(scheduler_op* op);
@@ -828,9 +834,9 @@ shutdown()
     }
 }
 
-resolver::resolver_impl&
+io_object::io_object_impl*
 posix_resolver_service_impl::
-create_impl()
+construct()
 {
     auto ptr = std::make_shared<posix_resolver_impl>(*this);
     auto* impl = ptr.get();
@@ -841,7 +847,7 @@ create_impl()
         resolver_ptrs_[impl] = std::move(ptr);
     }
 
-    return *impl;
+    return impl;
 }
 
 void

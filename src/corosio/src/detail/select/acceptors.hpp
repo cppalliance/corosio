@@ -45,8 +45,6 @@ class select_acceptor_impl
 public:
     explicit select_acceptor_impl(select_acceptor_service& svc) noexcept;
 
-    void release() override;
-
     std::coroutine_handle<> accept(
         std::coroutine_handle<>,
         capy::executor_ref,
@@ -56,7 +54,7 @@ public:
 
     int native_handle() const noexcept { return fd_; }
     endpoint local_endpoint() const noexcept override { return local_endpoint_; }
-    bool is_open() const noexcept { return fd_ >= 0; }
+    bool is_open() const noexcept override { return fd_ >= 0; }
     void cancel() noexcept override;
     void cancel_single_op(select_op& op) noexcept;
     void close_socket() noexcept;
@@ -103,8 +101,10 @@ public:
 
     void shutdown() override;
 
-    tcp_acceptor::acceptor_impl& create_acceptor_impl() override;
-    void destroy_acceptor_impl(tcp_acceptor::acceptor_impl& impl) override;
+    io_object::io_object_impl* construct() override;
+    void destroy(io_object::io_object_impl*) override;
+    void open(io_object::handle&) override;
+    void close(io_object::handle&) override;
     std::error_code open_acceptor(
         tcp_acceptor::acceptor_impl& impl,
         endpoint ep,

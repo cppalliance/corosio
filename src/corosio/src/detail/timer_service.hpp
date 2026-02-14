@@ -20,7 +20,9 @@ namespace boost::corosio::detail {
 
 struct scheduler;
 
-class timer_service : public capy::execution_context::service
+class timer_service
+    : public capy::execution_context::service
+    , public io_object::io_service
 {
 public:
     using clock_type = std::chrono::steady_clock;
@@ -41,8 +43,9 @@ public:
         void operator()() const { if (fn_) fn_(ctx_); }
     };
 
-    // Create timer implementation
-    virtual timer::timer_impl* create_impl() = 0;
+    // io_service no-ops for timers (no kernel resource to open/close)
+    void open(io_object::handle&) override {}
+    void close(io_object::handle&) override {}
 
     // Query methods for scheduler
     virtual bool empty() const noexcept = 0;

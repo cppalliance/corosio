@@ -656,9 +656,9 @@ shutdown()
     }
 }
 
-win_socket_impl&
+io_object::io_object_impl*
 win_sockets::
-create_impl()
+construct()
 {
     auto internal = std::make_shared<win_socket_impl_internal>(*this);
 
@@ -674,7 +674,7 @@ create_impl()
         socket_wrapper_list_.push_back(wrapper);
     }
 
-    return *wrapper;
+    return wrapper;
 }
 
 void
@@ -795,25 +795,25 @@ load_extension_functions()
     ::closesocket(sock);
 }
 
-win_acceptor_impl&
-win_sockets::
-create_acceptor_impl()
+io_object::io_object_impl*
+win_acceptor_service::
+construct()
 {
-    auto internal = std::make_shared<win_acceptor_impl_internal>(*this);
+    auto internal = std::make_shared<win_acceptor_impl_internal>(svc_);
 
     {
-        std::lock_guard<win_mutex> lock(mutex_);
-        acceptor_list_.push_back(internal.get());
+        std::lock_guard<win_mutex> lock(svc_.mutex_);
+        svc_.acceptor_list_.push_back(internal.get());
     }
 
     auto* wrapper = new win_acceptor_impl(std::move(internal));
 
     {
-        std::lock_guard<win_mutex> lock(mutex_);
-        acceptor_wrapper_list_.push_back(wrapper);
+        std::lock_guard<win_mutex> lock(svc_.mutex_);
+        svc_.acceptor_wrapper_list_.push_back(wrapper);
     }
 
-    return *wrapper;
+    return wrapper;
 }
 
 void
@@ -952,7 +952,7 @@ accept(
     op.start(token);
 
     // Create wrapper for the peer socket (service owns it)
-    auto& peer_wrapper = svc_.create_impl();
+    auto& peer_wrapper = static_cast<win_socket_impl&>(*svc_.construct());
 
     // Create the accepted socket
     SOCKET accepted = ::WSASocketW(

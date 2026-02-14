@@ -253,9 +253,20 @@ private:
 class win_resolver_service
     : private win_wsa_init
     , public capy::execution_context::service
+    , public io_object::io_service
 {
 public:
     using key_type = win_resolver_service;
+
+    io_object::io_object_impl* construct() override;
+
+    void destroy(io_object::io_object_impl* p) override
+    {
+        static_cast<win_resolver_impl*>(p)->release();
+    }
+
+    void open(io_object::handle&) override {}
+    void close(io_object::handle&) override {}
 
     /** Construct the resolver service.
 
@@ -272,9 +283,6 @@ public:
 
     /** Shut down the service. */
     void shutdown() override;
-
-    /** Create a new resolver implementation. */
-    win_resolver_impl& create_impl();
 
     /** Destroy a resolver implementation. */
     void destroy_impl(win_resolver_impl& impl);

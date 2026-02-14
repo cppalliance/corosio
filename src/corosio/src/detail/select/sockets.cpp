@@ -16,6 +16,8 @@
 #include "src/detail/dispatch_coro.hpp"
 #include "src/detail/make_err.hpp"
 
+#include <boost/corosio/detail/except.hpp>
+
 #include <boost/capy/buffers.hpp>
 
 #include <errno.h>
@@ -109,14 +111,6 @@ select_socket_impl::
 select_socket_impl(select_socket_service& svc) noexcept
     : svc_(svc)
 {
-}
-
-void
-select_socket_impl::
-release()
-{
-    close_socket();
-    svc_.destroy_impl(*this);
 }
 
 std::coroutine_handle<>
@@ -651,9 +645,9 @@ shutdown()
     // shutdown) keeps every impl alive until all ops have been drained.
 }
 
-tcp_socket::socket_impl&
+io_object::io_object_impl*
 select_socket_service::
-create_impl()
+construct()
 {
     auto impl = std::make_shared<select_socket_impl>(*this);
     auto* raw = impl.get();
@@ -664,14 +658,15 @@ create_impl()
         state_->socket_ptrs_.emplace(raw, std::move(impl));
     }
 
-    return *raw;
+    return raw;
 }
 
 void
 select_socket_service::
-destroy_impl(tcp_socket::socket_impl& impl)
+destroy(io_object::io_object_impl* impl)
 {
-    auto* select_impl = static_cast<select_socket_impl*>(&impl);
+    auto* select_impl = static_cast<select_socket_impl*>(impl);
+    select_impl->close_socket();
     std::lock_guard lock(state_->mutex_);
     state_->socket_list_.remove(select_impl);
     state_->socket_ptrs_.erase(select_impl);
@@ -718,6 +713,23 @@ open_socket(tcp_socket::socket_impl& impl)
 
     select_impl->fd_ = fd;
     return {};
+}
+
+void
+select_socket_service::
+open(io_object::handle& h)
+{
+    auto ec = open_socket(
+        *static_cast<tcp_socket::socket_impl*>(h.get()));
+    if (ec)
+        detail::throw_system_error(ec, "open");
+}
+
+void
+select_socket_service::
+close(io_object::handle& h)
+{
+    static_cast<select_socket_impl*>(h.get())->close_socket();
 }
 
 void

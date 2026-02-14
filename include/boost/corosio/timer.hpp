@@ -327,7 +327,7 @@ private:
     /// Return the underlying implementation.
     timer_impl& get() const noexcept
     {
-        return *static_cast<timer_impl*>(impl_);
+        return *static_cast<timer_impl*>(h_.get());
     }
 };
 
