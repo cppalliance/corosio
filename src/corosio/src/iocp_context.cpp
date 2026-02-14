@@ -12,6 +12,8 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include "src/detail/iocp/scheduler.hpp"
+#include "src/detail/iocp/sockets.hpp"
+#include "src/detail/iocp/signals.hpp"
 
 #include <thread>
 
@@ -29,6 +31,10 @@ iocp_context(
 {
     sched_ = &make_service<detail::win_scheduler>(
         static_cast<int>(concurrency_hint));
+
+    auto& sockets = make_service<detail::win_sockets>();
+    make_service<detail::win_acceptor_service>(sockets);
+    make_service<detail::win_signals>();
 }
 
 iocp_context::

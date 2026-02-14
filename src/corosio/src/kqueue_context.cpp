@@ -44,9 +44,6 @@ kqueue_context(
     sched_ = &make_service<detail::kqueue_scheduler>(
         static_cast<int>(concurrency_hint));
 
-    // Install socket/acceptor services.
-    // These use socket_service and acceptor_service as key_type,
-    // enabling runtime polymorphism.
     make_service<detail::kqueue_socket_service>();
     make_service<detail::kqueue_acceptor_service>();
 }
