@@ -21,7 +21,6 @@
 //   profile_queue_depth --depth 10000 --threads 4  # Moderate queue, multi-thread dispatch
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/detail/platform.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 

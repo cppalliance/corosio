@@ -18,7 +18,6 @@
 //   - coro.resume() cost
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/detail/platform.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 

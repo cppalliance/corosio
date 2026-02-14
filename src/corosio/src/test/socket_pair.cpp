@@ -11,7 +11,6 @@
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <system_error>
 #include <boost/corosio/basic_io_context.hpp>
-#include <boost/corosio/detail/platform.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
