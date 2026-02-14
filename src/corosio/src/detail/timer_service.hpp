@@ -43,10 +43,6 @@ public:
         void operator()() const { if (fn_) fn_(ctx_); }
     };
 
-    // io_service no-ops for timers (no kernel resource to open/close)
-    void open(io_object::handle&) override {}
-    void close(io_object::handle&) override {}
-
     // Query methods for scheduler
     virtual bool empty() const noexcept = 0;
     virtual time_point nearest_expiry() const noexcept = 0;

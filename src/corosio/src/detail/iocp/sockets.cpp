@@ -195,7 +195,7 @@ accept_op::do_complete(
 
         if (op->peer_wrapper)
         {
-            op->peer_wrapper->release();
+            op->acceptor_ptr->socket_service().destroy(op->peer_wrapper);
             op->peer_wrapper = nullptr;
         }
 
@@ -304,13 +304,6 @@ win_socket_impl_internal::
 ~win_socket_impl_internal()
 {
     svc_.unregister_impl(*this);
-}
-
-void
-win_socket_impl_internal::
-release_internal()
-{
-    close_socket();
 }
 
 std::coroutine_handle<>
@@ -592,14 +585,12 @@ close_socket() noexcept
 
 void
 win_socket_impl::
-release()
+close_internal() noexcept
 {
     if (internal_)
     {
-        auto& svc = internal_->svc_;
-        internal_->release_internal();
+        internal_->close_socket();
         internal_.reset();
-        svc.destroy_impl(*this);
     }
 }
 
@@ -910,22 +901,6 @@ win_acceptor_impl_internal::
     svc_.unregister_acceptor_impl(*this);
 }
 
-void
-win_acceptor_impl_internal::
-release_internal()
-{
-    // Cancel pending I/O before closing to ensure operations
-    // complete with ERROR_OPERATION_ABORTED via IOCP
-    if (socket_ != INVALID_SOCKET)
-    {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(socket_),
-            nullptr);
-    }
-    close_socket();
-    // Destruction happens automatically when all shared_ptrs are released
-}
-
 std::coroutine_handle<>
 win_acceptor_impl_internal::
 accept(
@@ -960,7 +935,7 @@ accept(
 
     if (accepted == INVALID_SOCKET)
     {
-        peer_wrapper.release();
+        svc_.destroy(&peer_wrapper);
         op.dwError = ::WSAGetLastError();
         svc_.post(&op);
         // completion is always posted to scheduler queue, never inline.
@@ -977,7 +952,7 @@ accept(
     {
         DWORD err = ::GetLastError();
         ::closesocket(accepted);
-        peer_wrapper.release();
+        svc_.destroy(&peer_wrapper);
         op.dwError = err;
         svc_.post(&op);
         // completion is always posted to scheduler queue, never inline.
@@ -993,7 +968,7 @@ accept(
     if (!accept_ex)
     {
         ::closesocket(accepted);
-        peer_wrapper.release();
+        svc_.destroy(&peer_wrapper);
         op.peer_wrapper = nullptr;
         op.accepted_socket = INVALID_SOCKET;
         op.dwError = WSAEOPNOTSUPP;
@@ -1022,7 +997,7 @@ accept(
         {
             svc_.work_finished();
             ::closesocket(accepted);
-            peer_wrapper.release();
+            svc_.destroy(&peer_wrapper);
             op.peer_wrapper = nullptr;
             op.accepted_socket = INVALID_SOCKET;
             op.dwError = err;
@@ -1069,14 +1044,12 @@ close_socket() noexcept
 
 void
 win_acceptor_impl::
-release()
+close_internal() noexcept
 {
     if (internal_)
     {
-        auto& svc = internal_->svc_;
-        internal_->release_internal();
+        internal_->close_socket();
         internal_.reset();
-        svc.destroy_acceptor_impl(*this);
     }
 }
 

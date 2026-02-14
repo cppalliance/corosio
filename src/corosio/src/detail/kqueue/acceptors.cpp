@@ -465,12 +465,6 @@ destroy(io_object::io_object_impl* impl)
 
 void
 kqueue_acceptor_service::
-open(io_object::handle&)
-{
-}
-
-void
-kqueue_acceptor_service::
 close(io_object::handle& h)
 {
     static_cast<kqueue_acceptor_impl*>(h.get())->close_socket();

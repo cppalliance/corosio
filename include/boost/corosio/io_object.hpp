@@ -52,15 +52,12 @@ public:
     struct io_object_impl
     {
         virtual ~io_object_impl() = default;
-
-        /// Release associated resources without closing.
-        virtual void release() {}
     };
 
     /** Service interface for I/O object lifecycle management.
 
         Platform backends implement this interface to manage the
-        creation, opening, closing, and destruction of I/O object
+        creation, closing, and destruction of I/O object
         implementations.
     */
     struct io_service
@@ -73,11 +70,8 @@ public:
         /// Destroy the implementation, closing kernel resources and freeing memory.
         virtual void destroy(io_object_impl*) = 0;
 
-        /// Open the I/O object, creating the kernel resource.
-        virtual void open(handle&) = 0;
-
         /// Close the I/O object, releasing kernel resources without deallocating.
-        virtual void close(handle&) = 0;
+        virtual void close(handle&) {}
     };
 
     /** RAII wrapper for I/O object implementation lifetime.
@@ -149,12 +143,6 @@ public:
             return impl_ != nullptr;
         }
 
-        /// Return the execution context.
-        capy::execution_context& context() const noexcept
-        {
-            return *ctx_;
-        }
-
         /// Return the associated I/O service.
         io_service& service() const noexcept
         {
@@ -167,18 +155,6 @@ public:
             return impl_;
         }
 
-        /** Release ownership of the implementation without destroying.
-
-            The caller is responsible for eventually passing the
-            returned pointer to the service's destroy() method.
-
-            @return The implementation pointer, or nullptr if empty.
-        */
-        io_object_impl* release() noexcept
-        {
-            return std::exchange(impl_, nullptr);
-        }
-
         /** Replace the implementation, destroying the old one.
 
             @param p The new implementation to own. May be nullptr.
@@ -186,10 +162,29 @@ public:
         void reset(io_object_impl* p) noexcept
         {
             if (impl_)
+            {
+                svc_->close(*this);
                 svc_->destroy(impl_);
+            }
             impl_ = p;
         }
+
+        /// Return the execution context.
+        capy::execution_context& context() const noexcept
+        {
+            return *ctx_;
+        }
     };
+
+    /// Return the execution context.
+    capy::execution_context&
+    context() const noexcept
+    {
+        return h_.context();
+    }
+
+protected:
+    virtual ~io_object() = default;
 
     /** Create a handle bound to a service found in the context.
 
@@ -209,16 +204,6 @@ public:
                 "io_object::create_handle: service not installed");
         return handle(ctx, *svc);
     }
-
-    /// Return the execution context.
-    capy::execution_context&
-    context() const noexcept
-    {
-        return h_.context();
-    }
-
-protected:
-    virtual ~io_object() = default;
 
     /// Construct an I/O object from a handle.
     explicit

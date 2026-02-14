@@ -717,16 +717,6 @@ open_socket(tcp_socket::socket_impl& impl)
 
 void
 select_socket_service::
-open(io_object::handle& h)
-{
-    auto ec = open_socket(
-        *static_cast<tcp_socket::socket_impl*>(h.get()));
-    if (ec)
-        detail::throw_system_error(ec, "open");
-}
-
-void
-select_socket_service::
 close(io_object::handle& h)
 {
     static_cast<select_socket_impl*>(h.get())->close_socket();

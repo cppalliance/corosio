@@ -62,10 +62,6 @@ class posix_resolver_service
     , public io_object::io_service
 {
 public:
-    // io_service no-ops for resolvers (no kernel resource to open/close)
-    void open(io_object::handle&) override {}
-    void close(io_object::handle&) override {}
-
 protected:
     posix_resolver_service() = default;
 };

@@ -386,12 +386,6 @@ destroy(io_object::io_object_impl* impl)
 
 void
 select_acceptor_service::
-open(io_object::handle&)
-{
-}
-
-void
-select_acceptor_service::
 close(io_object::handle& h)
 {
     static_cast<select_acceptor_impl*>(h.get())->close_socket();

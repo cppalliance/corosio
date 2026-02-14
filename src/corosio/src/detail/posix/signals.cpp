@@ -186,8 +186,6 @@ class posix_signal_impl
 public:
     explicit posix_signal_impl(posix_signals_impl& svc) noexcept;
 
-    void release() override;
-
     std::coroutine_handle<> wait(
         std::coroutine_handle<>,
         capy::executor_ref,
@@ -220,7 +218,10 @@ public:
 
     void destroy(io_object::io_object_impl* p) override
     {
-        static_cast<posix_signal_impl*>(p)->release();
+        auto& impl = static_cast<posix_signal_impl&>(*p);
+        impl.clear();
+        impl.cancel();
+        destroy_impl(impl);
     }
 
     void shutdown() override;
@@ -381,15 +382,6 @@ posix_signal_impl::
 posix_signal_impl(posix_signals_impl& svc) noexcept
     : svc_(svc)
 {
-}
-
-void
-posix_signal_impl::
-release()
-{
-    clear();
-    cancel();
-    svc_.destroy_impl(*this);
 }
 
 std::coroutine_handle<>

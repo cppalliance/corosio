@@ -50,10 +50,6 @@ class posix_signals
     , public io_object::io_service
 {
 public:
-    // io_service no-ops for signal sets (no kernel resource to open/close)
-    void open(io_object::handle&) override {}
-    void close(io_object::handle&) override {}
-
 protected:
     posix_signals() = default;
 };

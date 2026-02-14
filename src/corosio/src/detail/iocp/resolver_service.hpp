@@ -204,8 +204,6 @@ class win_resolver_impl
 public:
     explicit win_resolver_impl(win_resolver_service& svc) noexcept;
 
-    void release() override;
-
     std::coroutine_handle<> resolve(
         std::coroutine_handle<>,
         capy::executor_ref,
@@ -262,11 +260,10 @@ public:
 
     void destroy(io_object::io_object_impl* p) override
     {
-        static_cast<win_resolver_impl*>(p)->release();
+        auto& impl = static_cast<win_resolver_impl&>(*p);
+        impl.cancel();
+        destroy_impl(impl);
     }
-
-    void open(io_object::handle&) override {}
-    void close(io_object::handle&) override {}
 
     /** Construct the resolver service.
 

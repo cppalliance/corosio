@@ -209,9 +209,6 @@ public:
     /// Destroy an impl previously returned by construct().
     void destroy(io_object::io_object_impl*) override;
 
-    /// Open the acceptor (no-op; opening is done by open_acceptor).
-    void open(io_object::handle&) override;
-
     /// Close the acceptor's listening socket.
     void close(io_object::handle&) override;
 
