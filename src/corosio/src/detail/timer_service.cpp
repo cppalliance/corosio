@@ -179,9 +179,6 @@ struct timer_impl
 
     explicit timer_impl(timer_service_impl& svc) noexcept;
 
-
-    void release() override;
-
     std::coroutine_handle<> wait(
         std::coroutine_handle<>,
         capy::executor_ref,
@@ -307,7 +304,7 @@ public:
 
     void destroy(io_object::io_object_impl* p) override
     {
-        static_cast<timer_impl*>(p)->release();
+        destroy_impl(static_cast<timer_impl&>(*p));
     }
 
     void destroy_impl(timer_impl& impl)
@@ -681,13 +678,6 @@ operator()()
 
     d.post(h);
     sched.on_work_finished();
-}
-
-void
-timer_impl::
-release()
-{
-    svc_->destroy_impl(*this);
 }
 
 std::coroutine_handle<>

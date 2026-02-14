@@ -318,14 +318,6 @@ win_resolver_impl(win_resolver_service& svc) noexcept
 {
 }
 
-void
-win_resolver_impl::
-release()
-{
-    cancel();
-    svc_.destroy_impl(*this);
-}
-
 std::coroutine_handle<>
 win_resolver_impl::
 resolve(

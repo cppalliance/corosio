@@ -381,8 +381,6 @@ public:
     {
     }
 
-    void release() override;
-
     std::coroutine_handle<> resolve(
         std::coroutine_handle<>,
         capy::executor_ref,
@@ -438,7 +436,9 @@ public:
 
     void destroy(io_object::io_object_impl* p) override
     {
-        static_cast<posix_resolver_impl*>(p)->release();
+        auto& impl = static_cast<posix_resolver_impl&>(*p);
+        impl.cancel();
+        destroy_impl(impl);
     }
 
     void shutdown() override;
@@ -608,14 +608,6 @@ start(std::stop_token token)
 //------------------------------------------------------------------------------
 // posix_resolver_impl implementation
 //------------------------------------------------------------------------------
-
-void
-posix_resolver_impl::
-release()
-{
-    cancel();
-    svc_.destroy_impl(*this);
-}
 
 std::coroutine_handle<>
 posix_resolver_impl::

@@ -188,16 +188,6 @@ win_signal_impl(win_signals& svc) noexcept
 {
 }
 
-void
-win_signal_impl::
-release()
-{
-    // Clear all signals and cancel pending wait
-    clear();
-    cancel();
-    svc_.destroy_impl(*this);
-}
-
 std::coroutine_handle<>
 win_signal_impl::
 wait(
@@ -317,7 +307,10 @@ void
 win_signals::
 destroy(io_object::io_object_impl* p)
 {
-    static_cast<win_signal_impl*>(p)->release();
+    auto& impl = static_cast<win_signal_impl&>(*p);
+    impl.clear();
+    impl.cancel();
+    destroy_impl(impl);
 }
 
 void

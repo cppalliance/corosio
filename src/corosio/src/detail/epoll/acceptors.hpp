@@ -104,7 +104,6 @@ public:
 
     io_object::io_object_impl* construct() override;
     void destroy(io_object::io_object_impl*) override;
-    void open(io_object::handle&) override;
     void close(io_object::handle&) override;
     std::error_code open_acceptor(
         tcp_acceptor::acceptor_impl& impl,

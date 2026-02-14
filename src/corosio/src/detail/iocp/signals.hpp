@@ -122,8 +122,6 @@ class win_signal_impl
 public:
     explicit win_signal_impl(win_signals& svc) noexcept;
 
-    void release() override;
-
     std::coroutine_handle<> wait(
         std::coroutine_handle<>,
         capy::executor_ref,
@@ -163,8 +161,6 @@ public:
 
     io_object::io_object_impl* construct() override;
     void destroy(io_object::io_object_impl*) override;
-    void open(io_object::handle&) override {}
-    void close(io_object::handle&) override {}
 
     /** Construct the signal service.
 

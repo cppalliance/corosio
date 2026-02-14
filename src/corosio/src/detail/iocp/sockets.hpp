@@ -143,8 +143,6 @@ public:
     explicit win_socket_impl_internal(win_sockets& svc) noexcept;
     ~win_socket_impl_internal();
 
-    void release_internal();
-
     std::coroutine_handle<> connect(
         std::coroutine_handle<>,
         capy::executor_ref,
@@ -213,7 +211,7 @@ public:
     {
     }
 
-    void release() override;
+    void close_internal() noexcept;
 
     std::coroutine_handle<> connect(
         std::coroutine_handle<> h,
@@ -424,7 +422,8 @@ public:
     explicit win_acceptor_impl_internal(win_sockets& svc) noexcept;
     ~win_acceptor_impl_internal();
 
-    void release_internal();
+    /// Return the owning socket service.
+    win_sockets& socket_service() noexcept { return svc_; }
 
     std::coroutine_handle<> accept(
         std::coroutine_handle<>,
@@ -469,7 +468,7 @@ public:
     {
     }
 
-    void release() override;
+    void close_internal() noexcept;
 
     std::coroutine_handle<> accept(
         std::coroutine_handle<> h,
@@ -529,15 +528,11 @@ public:
     void destroy(io_object::io_object_impl* p) override
     {
         if (p)
-            p->release();
-    }
-
-    void open(io_object::handle& h) override
-    {
-        auto& wrapper = static_cast<win_socket_impl&>(*h.get());
-        std::error_code ec = open_socket(*wrapper.get_internal());
-        if (ec)
-            detail::throw_system_error(ec, "tcp_socket::open");
+        {
+            auto& wrapper = static_cast<win_socket_impl&>(*p);
+            wrapper.close_internal();
+            destroy_impl(wrapper);
+        }
     }
 
     void close(io_object::handle& h) override
@@ -662,10 +657,13 @@ public:
     void destroy(io_object::io_object_impl* p) override
     {
         if (p)
-            p->release();
+        {
+            auto& wrapper = static_cast<win_acceptor_impl&>(*p);
+            wrapper.close_internal();
+            svc_.destroy_acceptor_impl(wrapper);
+        }
     }
 
-    void open(io_object::handle&) override {}
     void close(io_object::handle& h) override
     {
         auto& wrapper = static_cast<win_acceptor_impl&>(*h.get());
