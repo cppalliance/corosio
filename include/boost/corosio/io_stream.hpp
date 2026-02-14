@@ -11,7 +11,6 @@
 #define BOOST_COROSIO_IO_STREAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/io_buffer_param.hpp>
@@ -305,14 +304,6 @@ public:
     };
 
 protected:
-    /// Construct stream bound to the given execution context.
-    explicit
-    io_stream(
-        capy::execution_context& ctx) noexcept
-        : io_object(ctx)
-    {
-    }
-
     /// Construct stream from a handle.
     explicit
     io_stream(handle h) noexcept

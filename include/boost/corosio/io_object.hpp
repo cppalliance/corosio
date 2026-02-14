@@ -96,17 +96,14 @@ public:
         ~handle()
         {
             if(impl_)
+            {
+                svc_->close(*this);
                 svc_->destroy(impl_);
+            }
         }
 
         /// Construct an empty handle.
         handle() = default;
-
-        /// Construct a handle bound to a context only.
-        explicit handle(capy::execution_context& ctx) noexcept
-            : ctx_(&ctx)
-        {
-        }
 
         /// Construct a handle bound to a context and service.
         handle(
@@ -132,7 +129,10 @@ public:
             if (this != &other)
             {
                 if (impl_)
+                {
+                    svc_->close(*this);
                     svc_->destroy(impl_);
+                }
                 ctx_ = std::exchange(other.ctx_, nullptr);
                 svc_ = std::exchange(other.svc_, nullptr);
                 impl_ = std::exchange(other.impl_, nullptr);
@@ -219,14 +219,6 @@ public:
 
 protected:
     virtual ~io_object() = default;
-
-    /// Construct an I/O object bound to the given context.
-    explicit
-    io_object(
-        capy::execution_context& ctx) noexcept
-        : h_(ctx)
-    {
-    }
 
     /// Construct an I/O object from a handle.
     explicit
