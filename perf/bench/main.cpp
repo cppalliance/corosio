@@ -15,7 +15,6 @@
 #endif
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/detail/platform.hpp>
 
 #include <cstdlib>
 #include <cstring>

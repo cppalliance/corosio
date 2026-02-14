@@ -11,7 +11,6 @@
 #define BOOST_COROSIO_TCP_ACCEPTOR_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/io_object.hpp>
 #include <boost/capy/io_result.hpp>

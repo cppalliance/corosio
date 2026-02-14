@@ -18,8 +18,6 @@
 //
 // Tests run for a configurable duration (default 1 second).
 
-#include <boost/corosio/detail/platform.hpp>
-
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tls_stream.hpp>
 #include <boost/corosio/timer.hpp>
