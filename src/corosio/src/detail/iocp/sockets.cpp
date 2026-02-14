@@ -310,14 +310,6 @@ void
 win_socket_impl_internal::
 release_internal()
 {
-    // Cancel pending I/O before closing to ensure operations
-    // complete with ERROR_OPERATION_ABORTED via IOCP
-    if (socket_ != INVALID_SOCKET)
-    {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(socket_),
-            nullptr);
-    }
     close_socket();
 }
 
@@ -586,6 +578,9 @@ close_socket() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(socket_),
+            nullptr);
         ::closesocket(socket_);
         socket_ = INVALID_SOCKET;
     }
@@ -1061,6 +1056,9 @@ close_socket() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(socket_),
+            nullptr);
         ::closesocket(socket_);
         socket_ = INVALID_SOCKET;
     }
