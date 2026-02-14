@@ -212,7 +212,7 @@ connect(
         if (svc_.scheduler().try_consume_inline_budget())
         {
             *ec = err ? make_err(err) : std::error_code{};
-            return ex.dispatch(h);
+            return dispatch_coro(ex, h);
         }
         op.reset();
         op.h = h;
@@ -298,7 +298,7 @@ read_some(
             else
                 *ec = {};
             *bytes_out = bytes;
-            return ex.dispatch(h);
+            return dispatch_coro(ex, h);
         }
         op.h = h;
         op.ex = ex;
@@ -379,7 +379,7 @@ write_some(
         {
             *ec = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            return ex.dispatch(h);
+            return dispatch_coro(ex, h);
         }
         op.h = h;
         op.ex = ex;

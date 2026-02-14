@@ -177,7 +177,7 @@ accept(
                 if (impl_out)
                     *impl_out = nullptr;
             }
-            return ex.dispatch(h);
+            return dispatch_coro(ex, h);
         }
 
         op.accepted_fd = accepted;
