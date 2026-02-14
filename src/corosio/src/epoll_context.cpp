@@ -32,9 +32,6 @@ epoll_context(
     sched_ = &make_service<detail::epoll_scheduler>(
         static_cast<int>(concurrency_hint));
 
-    // Install socket/acceptor services.
-    // These use socket_service and acceptor_service as key_type,
-    // enabling runtime polymorphism.
     make_service<detail::epoll_socket_service>();
     make_service<detail::epoll_acceptor_service>();
 }
