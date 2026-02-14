@@ -65,8 +65,6 @@ class kqueue_acceptor_impl
 public:
     explicit kqueue_acceptor_impl(kqueue_acceptor_service& svc) noexcept;
 
-    void release() override;
-
     /** Initiate an asynchronous accept on the listening socket.
 
         Attempts a synchronous accept first. If the socket would block
@@ -118,7 +116,7 @@ public:
 
     int native_handle() const noexcept { return fd_; }
     endpoint local_endpoint() const noexcept override { return local_endpoint_; }
-    bool is_open() const noexcept { return fd_ >= 0; }
+    bool is_open() const noexcept override { return fd_ >= 0; }
 
     /** Cancel any pending accept operation.
 
@@ -205,16 +203,17 @@ public:
     */
     void shutdown() override;
 
-    /** Create a new acceptor impl owned by this service.
-        The returned tcp_acceptor::acceptor_impl must be destroyed
-        via destroy_acceptor_impl() or by shutdown().
-    */
-    tcp_acceptor::acceptor_impl& create_acceptor_impl() override;
+    /// Construct a new acceptor impl owned by this service.
+    io_object::io_object_impl* construct() override;
 
-    /** Remove and destroy an impl previously returned by
-        create_acceptor_impl(). Closes the socket if still open.
-    */
-    void destroy_acceptor_impl(tcp_acceptor::acceptor_impl& impl) override;
+    /// Destroy an impl previously returned by construct().
+    void destroy(io_object::io_object_impl*) override;
+
+    /// Open the acceptor (no-op; opening is done by open_acceptor).
+    void open(io_object::handle&) override;
+
+    /// Close the acceptor's listening socket.
+    void close(io_object::handle&) override;
 
     /** Bind and listen on @p ep with the given @p backlog.
         Registers the fd with kqueue on success and caches the

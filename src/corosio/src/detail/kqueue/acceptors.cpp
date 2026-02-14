@@ -109,7 +109,7 @@ operator()()
                 ->service().socket_service();
             if (socket_svc)
             {
-                auto& impl = static_cast<kqueue_socket_impl&>(socket_svc->create_impl());
+                auto& impl = static_cast<kqueue_socket_impl&>(*socket_svc->construct());
                 impl.set_socket(accepted_fd);
 
                 // Register accepted socket with kqueue (edge-triggered via EV_CLEAR)
@@ -130,7 +130,7 @@ operator()()
                         *ec_out = make_err(errno);
                     ::close(accepted_fd);
                     accepted_fd = -1;
-                    socket_svc->destroy_impl(impl);
+                    socket_svc->destroy(&impl);
                     if (impl_out)
                         *impl_out = nullptr;
                 }
@@ -184,7 +184,10 @@ operator()()
 
         if (peer_impl)
         {
-            peer_impl->release();
+            auto* socket_svc_cleanup = static_cast<kqueue_acceptor_impl*>(acceptor_impl_)
+                ->service().socket_service();
+            if (socket_svc_cleanup)
+                socket_svc_cleanup->destroy(peer_impl);
             peer_impl = nullptr;
         }
 
@@ -203,14 +206,6 @@ kqueue_acceptor_impl::
 kqueue_acceptor_impl(kqueue_acceptor_service& svc) noexcept
     : svc_(svc)
 {
-}
-
-void
-kqueue_acceptor_impl::
-release()
-{
-    close_socket();
-    svc_.destroy_acceptor_impl(*this);
 }
 
 std::coroutine_handle<>
@@ -443,9 +438,9 @@ shutdown()
     // after scheduler shutdown has drained all queued ops.
 }
 
-tcp_acceptor::acceptor_impl&
+io_object::io_object_impl*
 kqueue_acceptor_service::
-create_acceptor_impl()
+construct()
 {
     auto impl = std::make_shared<kqueue_acceptor_impl>(*this);
     auto* raw = impl.get();
@@ -454,17 +449,31 @@ create_acceptor_impl()
     state_->acceptor_list_.push_back(raw);
     state_->acceptor_ptrs_.emplace(raw, std::move(impl));
 
-    return *raw;
+    return raw;
 }
 
 void
 kqueue_acceptor_service::
-destroy_acceptor_impl(tcp_acceptor::acceptor_impl& impl)
+destroy(io_object::io_object_impl* impl)
 {
-    auto* kq_impl = static_cast<kqueue_acceptor_impl*>(&impl);
+    auto* kq_impl = static_cast<kqueue_acceptor_impl*>(impl);
+    kq_impl->close_socket();
     std::lock_guard lock(state_->mutex_);
     state_->acceptor_list_.remove(kq_impl);
     state_->acceptor_ptrs_.erase(kq_impl);
+}
+
+void
+kqueue_acceptor_service::
+open(io_object::handle&)
+{
+}
+
+void
+kqueue_acceptor_service::
+close(io_object::handle& h)
+{
+    static_cast<kqueue_acceptor_impl*>(h.get())->close_socket();
 }
 
 std::error_code

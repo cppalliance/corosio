@@ -154,10 +154,17 @@ public:
 
     @note Only available on Windows platforms.
 */
-class win_signals : public capy::execution_context::service
+class win_signals
+    : public capy::execution_context::service
+    , public io_object::io_service
 {
 public:
     using key_type = win_signals;
+
+    io_object::io_object_impl* construct() override;
+    void destroy(io_object::io_object_impl*) override;
+    void open(io_object::handle&) override {}
+    void close(io_object::handle&) override {}
 
     /** Construct the signal service.
 
@@ -173,9 +180,6 @@ public:
 
     /** Shut down the service. */
     void shutdown() override;
-
-    /** Create a new signal implementation. */
-    win_signal_impl& create_impl();
 
     /** Destroy a signal implementation. */
     void destroy_impl(win_signal_impl& impl);

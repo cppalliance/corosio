@@ -322,10 +322,8 @@ public:
         @param other The resolver to move from.
     */
     resolver(resolver&& other) noexcept
-        : io_object(other.context())
+        : io_object(std::move(other))
     {
-        impl_ = other.impl_;
-        other.impl_ = nullptr;
     }
 
     /** Move assignment operator.
@@ -344,12 +342,10 @@ public:
     {
         if (this != &other)
         {
-            if (ctx_ != other.ctx_)
+            if (&context() != &other.context())
                 detail::throw_logic_error(
                     "cannot move resolver across execution contexts");
-            cancel();
-            impl_ = other.impl_;
-            other.impl_ = nullptr;
+            h_ = std::move(other.h_);
         }
         return *this;
     }
@@ -477,7 +473,7 @@ public:
 private:
     inline resolver_impl& get() const noexcept
     {
-        return *static_cast<resolver_impl*>(impl_);
+        return *static_cast<resolver_impl*>(h_.get());
     }
 };
 

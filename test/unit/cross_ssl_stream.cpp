@@ -75,13 +75,13 @@ struct cross_ssl_stream_test
     static auto
     make_openssl( io_stream& s, tls_context ctx )
     {
-        return openssl_stream( s, ctx );
+        return openssl_stream( &s, ctx );
     }
 
     static auto
     make_wolfssl( io_stream& s, tls_context ctx )
     {
-        return wolfssl_stream( s, ctx );
+        return wolfssl_stream( &s, ctx );
     }
 
     void

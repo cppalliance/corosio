@@ -57,11 +57,14 @@ struct scheduler;
     implementation (posix_resolver_service_impl) is created via
     get_resolver_service() which passes the scheduler reference.
 */
-class posix_resolver_service : public capy::execution_context::service
+class posix_resolver_service
+    : public capy::execution_context::service
+    , public io_object::io_service
 {
 public:
-    /** Create a new resolver implementation. */
-    virtual resolver::resolver_impl& create_impl() = 0;
+    // io_service no-ops for resolvers (no kernel resource to open/close)
+    void open(io_object::handle&) override {}
+    void close(io_object::handle&) override {}
 
 protected:
     posix_resolver_service() = default;

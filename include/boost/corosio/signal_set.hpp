@@ -377,7 +377,7 @@ public:
 private:
     signal_set_impl& get() const noexcept
     {
-        return *static_cast<signal_set_impl*>(impl_);
+        return *static_cast<signal_set_impl*>(h_.get());
     }
 };
 

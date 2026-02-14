@@ -183,14 +183,6 @@ epoll_socket_impl(epoll_socket_service& svc) noexcept
 epoll_socket_impl::
 ~epoll_socket_impl() = default;
 
-void
-epoll_socket_impl::
-release()
-{
-    close_socket();
-    svc_.destroy_impl(*this);
-}
-
 std::coroutine_handle<>
 epoll_socket_impl::
 connect(
@@ -720,9 +712,9 @@ shutdown()
     // shutdown) keeps every impl alive until all ops have been drained.
 }
 
-tcp_socket::socket_impl&
+io_object::io_object_impl*
 epoll_socket_service::
-create_impl()
+construct()
 {
     auto impl = std::make_shared<epoll_socket_impl>(*this);
     auto* raw = impl.get();
@@ -733,14 +725,15 @@ create_impl()
         state_->socket_ptrs_.emplace(raw, std::move(impl));
     }
 
-    return *raw;
+    return raw;
 }
 
 void
 epoll_socket_service::
-destroy_impl(tcp_socket::socket_impl& impl)
+destroy(io_object::io_object_impl* impl)
 {
-    auto* epoll_impl = static_cast<epoll_socket_impl*>(&impl);
+    auto* epoll_impl = static_cast<epoll_socket_impl*>(impl);
+    epoll_impl->close_socket();
     std::lock_guard lock(state_->mutex_);
     state_->socket_list_.remove(epoll_impl);
     state_->socket_ptrs_.erase(epoll_impl);
@@ -770,6 +763,23 @@ open_socket(tcp_socket::socket_impl& impl)
     scheduler().register_descriptor(fd, &epoll_impl->desc_state_);
 
     return {};
+}
+
+void
+epoll_socket_service::
+open(io_object::handle& h)
+{
+    auto ec = open_socket(
+        *static_cast<tcp_socket::socket_impl*>(h.get()));
+    if (ec)
+        detail::throw_system_error(ec, "open");
+}
+
+void
+epoll_socket_service::
+close(io_object::handle& h)
+{
+    static_cast<epoll_socket_impl*>(h.get())->close_socket();
 }
 
 void

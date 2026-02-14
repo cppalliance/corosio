@@ -299,9 +299,9 @@ shutdown()
     }
 }
 
-win_signal_impl&
+io_object::io_object_impl*
 win_signals::
-create_impl()
+construct()
 {
     auto* impl = new win_signal_impl(*this);
 
@@ -310,7 +310,14 @@ create_impl()
         impl_list_.push_back(impl);
     }
 
-    return *impl;
+    return impl;
+}
+
+void
+win_signals::
+destroy(io_object::io_object_impl* p)
+{
+    static_cast<win_signal_impl*>(p)->release();
 }
 
 void
@@ -648,25 +655,18 @@ remove_service(win_signals* service)
 } // namespace detail
 
 signal_set::
-~signal_set()
-{
-    if (impl_)
-        impl_->release();
-}
+~signal_set() = default;
 
 signal_set::
 signal_set(capy::execution_context& ctx)
-    : io_object(ctx)
+    : io_object(create_handle<detail::win_signals>(ctx))
 {
-    impl_ = &ctx.use_service<detail::win_signals>().create_impl();
 }
 
 signal_set::
 signal_set(signal_set&& other) noexcept
     : io_object(std::move(other))
 {
-    impl_ = other.impl_;
-    other.impl_ = nullptr;
 }
 
 signal_set&
@@ -675,14 +675,9 @@ operator=(signal_set&& other)
 {
     if (this != &other)
     {
-        if (ctx_ != other.ctx_)
+        if (&context() != &other.context())
             detail::throw_logic_error("signal_set::operator=: context mismatch");
-
-        if (impl_)
-            impl_->release();
-
-        impl_ = other.impl_;
-        other.impl_ = nullptr;
+        h_ = std::move(other.h_);
     }
     return *this;
 }

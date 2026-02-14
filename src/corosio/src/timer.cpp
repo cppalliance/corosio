@@ -11,14 +11,13 @@
 #include <boost/corosio/timer.hpp>
 
 #include <boost/corosio/detail/except.hpp>
+#include "src/detail/timer_service.hpp"
 
 namespace boost::corosio {
 
 namespace detail {
 
 // Defined in timer_service.cpp
-extern timer::timer_impl* timer_service_create(capy::execution_context&);
-extern void timer_service_destroy(timer::timer_impl&) noexcept;
 extern std::size_t timer_service_update_expiry(timer::timer_impl&);
 extern std::size_t timer_service_cancel(timer::timer_impl&) noexcept;
 extern std::size_t timer_service_cancel_one(timer::timer_impl&) noexcept;
@@ -26,17 +25,12 @@ extern std::size_t timer_service_cancel_one(timer::timer_impl&) noexcept;
 } // namespace detail
 
 timer::
-~timer()
-{
-    if (impl_)
-        detail::timer_service_destroy(get());
-}
+~timer() = default;
 
 timer::
 timer(capy::execution_context& ctx)
-    : io_object(ctx)
+    : io_object(create_handle<detail::timer_service>(ctx))
 {
-    impl_ = detail::timer_service_create(ctx);
 }
 
 timer::
@@ -48,10 +42,8 @@ timer(capy::execution_context& ctx, time_point t)
 
 timer::
 timer(timer&& other) noexcept
-    : io_object(other.context())
+    : io_object(std::move(other))
 {
-    impl_ = other.impl_;
-    other.impl_ = nullptr;
 }
 
 timer&
@@ -60,13 +52,10 @@ operator=(timer&& other)
 {
     if (this != &other)
     {
-        if (ctx_ != other.ctx_)
+        if (&context() != &other.context())
             detail::throw_logic_error(
                 "cannot move timer across execution contexts");
-        if (impl_)
-            detail::timer_service_destroy(get());
-        impl_ = other.impl_;
-        other.impl_ = nullptr;
+        h_ = std::move(other.h_);
     }
     return *this;
 }

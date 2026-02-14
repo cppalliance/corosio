@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -485,6 +486,11 @@ public:
         return internal_->local_endpoint();
     }
 
+    bool is_open() const noexcept override
+    {
+        return internal_ && internal_->is_open();
+    }
+
     void cancel() noexcept override
     {
         internal_->cancel();
@@ -518,10 +524,27 @@ class win_sockets
 public:
     using key_type = win_sockets;
 
-    void open(io_object::handle&) override {}
-    void close(io_object::handle&) override {}
-    void destroy(io_object::implementation*) override {}
-    io_object::implementation* construct() override { return nullptr; }
+    io_object::io_object_impl* construct() override;
+
+    void destroy(io_object::io_object_impl* p) override
+    {
+        if (p)
+            p->release();
+    }
+
+    void open(io_object::handle& h) override
+    {
+        auto& wrapper = static_cast<win_socket_impl&>(*h.get());
+        std::error_code ec = open_socket(*wrapper.get_internal());
+        if (ec)
+            detail::throw_system_error(ec, "tcp_socket::open");
+    }
+
+    void close(io_object::handle& h) override
+    {
+        auto& wrapper = static_cast<win_socket_impl&>(*h.get());
+        wrapper.get_internal()->close_socket();
+    }
 
     /** Construct the socket service.
 
@@ -541,11 +564,6 @@ public:
     /** Shut down the service. */
     void shutdown() override;
 
-    /** Create a new socket implementation wrapper.
-        The service owns the returned object.
-    */
-    win_socket_impl& create_impl();
-
     /** Destroy a socket implementation wrapper.
         Removes from tracking list and deletes.
     */
@@ -562,11 +580,6 @@ public:
         @return Error code, or success.
     */
     std::error_code open_socket(win_socket_impl_internal& impl);
-
-    /** Create a new acceptor implementation wrapper.
-        The service owns the returned object.
-    */
-    win_acceptor_impl& create_acceptor_impl();
 
     /** Destroy an acceptor implementation wrapper.
         Removes from tracking list and deletes.
@@ -609,6 +622,8 @@ public:
     void work_finished() noexcept;
 
 private:
+    friend class win_acceptor_service;
+
     void load_extension_functions();
 
     win_scheduler& sched_;
@@ -620,6 +635,57 @@ private:
     void* iocp_;
     LPFN_CONNECTEX connect_ex_ = nullptr;
     LPFN_ACCEPTEX accept_ex_ = nullptr;
+};
+
+//------------------------------------------------------------------------------
+
+/** IOCP acceptor service wrapping win_sockets for acceptor lifecycle.
+
+    Provides io_service + acceptor_service interface for tcp_acceptor
+    on Windows. Delegates to win_sockets for actual socket operations.
+*/
+class win_acceptor_service
+    : public capy::execution_context::service
+    , public io_object::io_service
+{
+public:
+    using key_type = win_acceptor_service;
+
+    win_acceptor_service(capy::execution_context& ctx, win_sockets& svc)
+        : svc_(svc)
+    {
+        (void)ctx;
+    }
+
+    io_object::io_object_impl* construct() override;
+
+    void destroy(io_object::io_object_impl* p) override
+    {
+        if (p)
+            p->release();
+    }
+
+    void open(io_object::handle&) override {}
+    void close(io_object::handle& h) override
+    {
+        auto& wrapper = static_cast<win_acceptor_impl&>(*h.get());
+        wrapper.get_internal()->close_socket();
+    }
+
+    /** Open, bind, and listen on an acceptor socket. */
+    std::error_code open_acceptor(
+        tcp_acceptor::acceptor_impl& impl,
+        endpoint ep,
+        int backlog)
+    {
+        auto& wrapper = static_cast<win_acceptor_impl&>(impl);
+        return svc_.open_acceptor(*wrapper.get_internal(), ep, backlog);
+    }
+
+    void shutdown() override {}
+
+private:
+    win_sockets& svc_;
 };
 
 } // namespace boost::corosio::detail

@@ -551,9 +551,9 @@ shutdown()
     }
 }
 
-win_resolver_impl&
+io_object::io_object_impl*
 win_resolver_service::
-create_impl()
+construct()
 {
     auto ptr = std::make_shared<win_resolver_impl>(*this);
     auto* impl = ptr.get();
@@ -564,7 +564,7 @@ create_impl()
         resolver_ptrs_[impl] = std::move(ptr);
     }
 
-    return *impl;
+    return impl;
 }
 
 void
