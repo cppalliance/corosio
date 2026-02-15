@@ -543,7 +543,7 @@ shutdown()
     }
 }
 
-io_object::io_object_impl*
+io_object::implementation*
 win_resolver_service::
 construct()
 {

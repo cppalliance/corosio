@@ -289,7 +289,7 @@ shutdown()
     }
 }
 
-io_object::io_object_impl*
+io_object::implementation*
 win_signals::
 construct()
 {
@@ -305,7 +305,7 @@ construct()
 
 void
 win_signals::
-destroy(io_object::io_object_impl* p)
+destroy(io_object::implementation* p)
 {
     auto& impl = static_cast<win_signal_impl&>(*p);
     impl.clear();

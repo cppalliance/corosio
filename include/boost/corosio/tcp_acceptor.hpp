@@ -73,7 +73,7 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
         tcp_socket& peer_;
         std::stop_token token_;
         mutable std::error_code ec_;
-        mutable io_object::io_object_impl* peer_impl_ = nullptr;
+        mutable io_object::implementation* peer_impl_ = nullptr;
 
         accept_awaitable(tcp_acceptor& acc, tcp_socket& peer) noexcept
             : acc_(acc)
@@ -279,14 +279,14 @@ public:
     */
     endpoint local_endpoint() const noexcept;
 
-    struct acceptor_impl : io_object_impl
+    struct implementation : io_object::implementation
     {
         virtual std::coroutine_handle<> accept(
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,
             std::error_code*,
-            io_object_impl**) = 0;
+            io_object::implementation**) = 0;
 
         /// Returns the cached local endpoint.
         virtual endpoint local_endpoint() const noexcept = 0;
@@ -302,9 +302,9 @@ public:
     };
 
 private:
-    inline acceptor_impl& get() const noexcept
+    inline implementation& get() const noexcept
     {
-        return *static_cast<acceptor_impl*>(h_.get());
+        return *static_cast<implementation*>(h_.get());
     }
 };
 

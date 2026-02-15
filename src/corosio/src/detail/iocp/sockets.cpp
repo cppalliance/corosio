@@ -642,7 +642,7 @@ shutdown()
     }
 }
 
-io_object::io_object_impl*
+io_object::implementation*
 win_sockets::
 construct()
 {
@@ -781,7 +781,7 @@ load_extension_functions()
     ::closesocket(sock);
 }
 
-io_object::io_object_impl*
+io_object::implementation*
 win_acceptor_service::
 construct()
 {
@@ -908,7 +908,7 @@ accept(
     capy::executor_ref d,
     std::stop_token token,
     std::error_code* ec,
-    io_object::io_object_impl** impl_out)
+    io_object::implementation** impl_out)
 {
     // Keep acceptor internal alive during I/O
     acc_.acceptor_ptr = shared_from_this();

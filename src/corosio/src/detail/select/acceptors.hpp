@@ -36,7 +36,7 @@ class select_socket_service;
 
 /// Acceptor implementation for select backend.
 class select_acceptor_impl
-    : public tcp_acceptor::acceptor_impl
+    : public tcp_acceptor::implementation
     , public std::enable_shared_from_this<select_acceptor_impl>
     , public intrusive_list<select_acceptor_impl>::node
 {
@@ -50,7 +50,7 @@ public:
         capy::executor_ref,
         std::stop_token,
         std::error_code*,
-        io_object::io_object_impl**) override;
+        io_object::implementation**) override;
 
     int native_handle() const noexcept { return fd_; }
     endpoint local_endpoint() const noexcept override { return local_endpoint_; }
@@ -101,11 +101,11 @@ public:
 
     void shutdown() override;
 
-    io_object::io_object_impl* construct() override;
-    void destroy(io_object::io_object_impl*) override;
+    io_object::implementation* construct() override;
+    void destroy(io_object::implementation*) override;
     void close(io_object::handle&) override;
     std::error_code open_acceptor(
-        tcp_acceptor::acceptor_impl& impl,
+        tcp_acceptor::implementation& impl,
         endpoint ep,
         int backlog) override;
 

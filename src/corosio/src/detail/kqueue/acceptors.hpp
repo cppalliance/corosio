@@ -56,7 +56,7 @@ class kqueue_socket_service;
 
 /// Acceptor implementation for kqueue backend.
 class kqueue_acceptor_impl
-    : public tcp_acceptor::acceptor_impl
+    : public tcp_acceptor::implementation
     , public std::enable_shared_from_this<kqueue_acceptor_impl>
     , public intrusive_list<kqueue_acceptor_impl>::node
 {
@@ -100,8 +100,8 @@ public:
         @par Example
         @code
         std::error_code ec;
-        io_object::io_object_impl* peer = nullptr;
-        co_await acceptor_impl.accept(
+        io_object::implementation* peer = nullptr;
+        co_await implementation.accept(
             my_handle, ex, stop_source.get_token(), &ec, &peer);
         if (!ec)
             // peer is a valid kqueue_socket_impl
@@ -112,7 +112,7 @@ public:
         capy::executor_ref ex,
         std::stop_token token,
         std::error_code* ec,
-        io_object::io_object_impl** out_impl) override;
+        io_object::implementation** out_impl) override;
 
     int native_handle() const noexcept { return fd_; }
     endpoint local_endpoint() const noexcept override { return local_endpoint_; }
@@ -204,10 +204,10 @@ public:
     void shutdown() override;
 
     /// Construct a new acceptor impl owned by this service.
-    io_object::io_object_impl* construct() override;
+    io_object::implementation* construct() override;
 
     /// Destroy an impl previously returned by construct().
-    void destroy(io_object::io_object_impl*) override;
+    void destroy(io_object::implementation*) override;
 
     /// Close the acceptor's listening socket.
     void close(io_object::handle&) override;
@@ -218,7 +218,7 @@ public:
         any syscall failure (socket, bind, listen, fcntl).
     */
     std::error_code open_acceptor(
-        tcp_acceptor::acceptor_impl& impl,
+        tcp_acceptor::implementation& impl,
         endpoint ep,
         int backlog) override;
 

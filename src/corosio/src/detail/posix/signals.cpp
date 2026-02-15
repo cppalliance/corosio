@@ -161,7 +161,7 @@ struct signal_registration
 {
     int signal_number = 0;
     signal_set::flags_t flags = signal_set::none;
-    signal_set::signal_set_impl* owner = nullptr;
+    signal_set::implementation* owner = nullptr;
     std::size_t undelivered = 0;
     signal_registration* next_in_table = nullptr;
     signal_registration* prev_in_table = nullptr;
@@ -173,7 +173,7 @@ struct signal_registration
 //------------------------------------------------------------------------------
 
 class posix_signal_impl
-    : public signal_set::signal_set_impl
+    : public signal_set::implementation
     , public intrusive_list<posix_signal_impl>::node
 {
     friend class posix_signals_impl;
@@ -214,9 +214,9 @@ public:
     posix_signals_impl(posix_signals_impl const&) = delete;
     posix_signals_impl& operator=(posix_signals_impl const&) = delete;
 
-    io_object::io_object_impl* construct() override;
+    io_object::implementation* construct() override;
 
-    void destroy(io_object::io_object_impl* p) override
+    void destroy(io_object::implementation* p) override
     {
         auto& impl = static_cast<posix_signal_impl&>(*p);
         impl.clear();
@@ -483,7 +483,7 @@ shutdown()
     }
 }
 
-io_object::io_object_impl*
+io_object::implementation*
 posix_signals_impl::
 construct()
 {

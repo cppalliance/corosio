@@ -194,7 +194,7 @@ struct reverse_resolve_op : overlapped_op
     @note Internal implementation detail. Users interact with resolver class.
 */
 class win_resolver_impl
-    : public resolver::resolver_impl
+    : public resolver::implementation
     , public std::enable_shared_from_this<win_resolver_impl>
     , public intrusive_list<win_resolver_impl>::node
 {
@@ -256,9 +256,9 @@ class win_resolver_service
 public:
     using key_type = win_resolver_service;
 
-    io_object::io_object_impl* construct() override;
+    io_object::implementation* construct() override;
 
-    void destroy(io_object::io_object_impl* p) override
+    void destroy(io_object::implementation* p) override
     {
         auto& impl = static_cast<win_resolver_impl&>(*p);
         impl.cancel();

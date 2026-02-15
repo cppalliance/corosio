@@ -18,9 +18,9 @@ namespace boost::corosio {
 namespace detail {
 
 // Defined in timer_service.cpp
-extern std::size_t timer_service_update_expiry(timer::timer_impl&);
-extern std::size_t timer_service_cancel(timer::timer_impl&) noexcept;
-extern std::size_t timer_service_cancel_one(timer::timer_impl&) noexcept;
+extern std::size_t timer_service_update_expiry(timer::implementation&);
+extern std::size_t timer_service_cancel(timer::implementation&) noexcept;
+extern std::size_t timer_service_cancel_one(timer::implementation&) noexcept;
 
 } // namespace detail
 

@@ -44,13 +44,13 @@ open()
         return;
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc = static_cast<detail::win_sockets&>(h_.service());
-    auto& wrapper = static_cast<tcp_socket::socket_impl&>(*h_.get());
+    auto& wrapper = static_cast<tcp_socket::implementation&>(*h_.get());
     std::error_code ec = svc.open_socket(
         *static_cast<detail::win_socket_impl&>(wrapper).get_internal());
 #else
     auto& svc = static_cast<detail::socket_service&>(h_.service());
     std::error_code ec = svc.open_socket(
-        static_cast<tcp_socket::socket_impl&>(*h_.get()));
+        static_cast<tcp_socket::implementation&>(*h_.get()));
 #endif
     if (ec)
         detail::throw_system_error(ec, "tcp_socket::open");

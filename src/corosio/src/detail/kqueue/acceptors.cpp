@@ -215,7 +215,7 @@ accept(
     capy::executor_ref ex,
     std::stop_token token,
     std::error_code* ec,
-    io_object::io_object_impl** impl_out)
+    io_object::implementation** impl_out)
 {
     auto& op = acc_;
     op.reset();
@@ -438,7 +438,7 @@ shutdown()
     // after scheduler shutdown has drained all queued ops.
 }
 
-io_object::io_object_impl*
+io_object::implementation*
 kqueue_acceptor_service::
 construct()
 {
@@ -454,7 +454,7 @@ construct()
 
 void
 kqueue_acceptor_service::
-destroy(io_object::io_object_impl* impl)
+destroy(io_object::implementation* impl)
 {
     auto* kq_impl = static_cast<kqueue_acceptor_impl*>(impl);
     kq_impl->close_socket();
@@ -473,7 +473,7 @@ close(io_object::handle& h)
 std::error_code
 kqueue_acceptor_service::
 open_acceptor(
-    tcp_acceptor::acceptor_impl& impl,
+    tcp_acceptor::implementation& impl,
     endpoint ep,
     int backlog)
 {

@@ -46,7 +46,7 @@
        establishes the flags; subsequent registrations must match or use
        dont_care.
 
-    3. Polymorphic implementation: signal_set_impl is an abstract base that
+    3. Polymorphic implementation: implementation is an abstract base that
        platform-specific implementations (posix_signal_impl, win_signal_impl)
        derive from. This allows the public API to be platform-agnostic.
 
@@ -199,7 +199,7 @@ private:
     };
 
 public:
-    struct signal_set_impl : io_object_impl
+    struct implementation : io_object::implementation
     {
         virtual std::coroutine_handle<> wait(
             std::coroutine_handle<>,
@@ -375,9 +375,9 @@ public:
     }
 
 private:
-    signal_set_impl& get() const noexcept
+    implementation& get() const noexcept
     {
-        return *static_cast<signal_set_impl*>(h_.get());
+        return *static_cast<implementation*>(h_.get());
     }
 };
 

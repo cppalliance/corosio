@@ -50,7 +50,7 @@ listen(endpoint ep, int backlog)
     auto& svc = static_cast<detail::acceptor_service&>(h_.service());
 #endif
     return svc.open_acceptor(
-        *static_cast<tcp_acceptor::acceptor_impl*>(h_.get()), ep, backlog);
+        *static_cast<tcp_acceptor::implementation*>(h_.get()), ep, backlog);
 }
 
 void

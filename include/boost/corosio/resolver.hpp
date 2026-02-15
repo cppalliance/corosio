@@ -446,7 +446,7 @@ public:
     void cancel();
 
 public:
-    struct resolver_impl : io_object_impl
+    struct implementation : io_object::implementation
     {
         virtual std::coroutine_handle<> resolve(
             std::coroutine_handle<>,
@@ -471,9 +471,9 @@ public:
     };
 
 private:
-    inline resolver_impl& get() const noexcept
+    inline implementation& get() const noexcept
     {
-        return *static_cast<resolver_impl*>(h_.get());
+        return *static_cast<implementation*>(h_.get());
     }
 };
 
