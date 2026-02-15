@@ -109,7 +109,7 @@ struct signal_registration
     @note Internal implementation detail. Users interact with signal_set class.
 */
 class win_signal_impl
-    : public signal_set::signal_set_impl
+    : public signal_set::implementation
     , public intrusive_list<win_signal_impl>::node
 {
     friend class win_signals;
@@ -159,8 +159,8 @@ class win_signals
 public:
     using key_type = win_signals;
 
-    io_object::io_object_impl* construct() override;
-    void destroy(io_object::io_object_impl*) override;
+    io_object::implementation* construct() override;
+    void destroy(io_object::implementation*) override;
 
     /** Construct the signal service.
 

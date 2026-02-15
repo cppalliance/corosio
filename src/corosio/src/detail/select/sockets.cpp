@@ -645,7 +645,7 @@ shutdown()
     // shutdown) keeps every impl alive until all ops have been drained.
 }
 
-io_object::io_object_impl*
+io_object::implementation*
 select_socket_service::
 construct()
 {
@@ -663,7 +663,7 @@ construct()
 
 void
 select_socket_service::
-destroy(io_object::io_object_impl* impl)
+destroy(io_object::implementation* impl)
 {
     auto* select_impl = static_cast<select_socket_impl*>(impl);
     select_impl->close_socket();
@@ -674,7 +674,7 @@ destroy(io_object::io_object_impl* impl)
 
 std::error_code
 select_socket_service::
-open_socket(tcp_socket::socket_impl& impl)
+open_socket(tcp_socket::implementation& impl)
 {
     auto* select_impl = static_cast<select_socket_impl*>(&impl);
     select_impl->close_socket();

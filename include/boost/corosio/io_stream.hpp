@@ -282,7 +282,7 @@ public:
         read and write operations for each supported platform (IOCP,
         epoll, kqueue, io_uring).
     */
-    struct io_stream_impl : io_object_impl
+    struct implementation : io_object::implementation
     {
         /// Initiate platform read operation.
         virtual std::coroutine_handle<> read_some(
@@ -313,9 +313,9 @@ protected:
 
 private:
     /// Return implementation downcasted to stream interface.
-    io_stream_impl& get() const noexcept
+    implementation& get() const noexcept
     {
-        return *static_cast<io_stream_impl*>(h_.get());
+        return *static_cast<implementation*>(h_.get());
     }
 };
 

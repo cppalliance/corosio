@@ -346,7 +346,7 @@ struct epoll_write_op : epoll_op
 struct epoll_accept_op : epoll_op
 {
     int accepted_fd = -1;
-    io_object::io_object_impl** impl_out = nullptr;
+    io_object::implementation** impl_out = nullptr;
     sockaddr_in peer_addr{};
 
     void reset() noexcept

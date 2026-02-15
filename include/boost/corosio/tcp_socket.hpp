@@ -95,7 +95,7 @@ public:
         int timeout = 0;  // seconds
     };
 
-    struct socket_impl : io_stream_impl
+    struct implementation : io_stream::implementation
     {
         virtual std::coroutine_handle<> connect(
             std::coroutine_handle<>,
@@ -514,9 +514,9 @@ public:
 private:
     friend class tcp_acceptor;
 
-    inline socket_impl& get() const noexcept
+    inline implementation& get() const noexcept
     {
-        return *static_cast<socket_impl*>(h_.get());
+        return *static_cast<implementation*>(h_.get());
     }
 };
 

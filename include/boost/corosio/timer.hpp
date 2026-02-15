@@ -82,7 +82,7 @@ class BOOST_COROSIO_DECL timer : public io_object
             token_ = env->stop_token;
             auto& impl = t_.get();
             // Inline fast path: already expired and not in the heap
-            if (impl.heap_index_ == timer_impl::npos &&
+            if (impl.heap_index_ == implementation::npos &&
                 (impl.expiry_ == (time_point::min)() ||
                     impl.expiry_ <= clock_type::now()))
             {
@@ -97,7 +97,7 @@ class BOOST_COROSIO_DECL timer : public io_object
     };
 
 public:
-    struct timer_impl : io_object_impl
+    struct implementation : io_object::implementation
     {
         static constexpr std::size_t npos =
             (std::numeric_limits<std::size_t>::max)();
@@ -231,7 +231,7 @@ public:
     {
         auto& impl = get();
         impl.expiry_ = t;
-        if (impl.heap_index_ == timer_impl::npos &&
+        if (impl.heap_index_ == implementation::npos &&
             !impl.might_have_pending_waits_)
             return 0;
         return do_update_expiry();
@@ -252,7 +252,7 @@ public:
             impl.expiry_ = (time_point::min)();
         else
             impl.expiry_ = clock_type::now() + d;
-        if (impl.heap_index_ == timer_impl::npos &&
+        if (impl.heap_index_ == implementation::npos &&
             !impl.might_have_pending_waits_)
             return 0;
         return do_update_expiry();
@@ -325,9 +325,9 @@ private:
     std::size_t do_update_expiry();
 
     /// Return the underlying implementation.
-    timer_impl& get() const noexcept
+    implementation& get() const noexcept
     {
-        return *static_cast<timer_impl*>(h_.get());
+        return *static_cast<implementation*>(h_.get());
     }
 };
 

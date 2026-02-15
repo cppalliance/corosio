@@ -283,7 +283,7 @@ class posix_resolver_service_impl;
     Shared objects: Unsafe. See single-inflight contract above.
 */
 class posix_resolver_impl
-    : public resolver::resolver_impl
+    : public resolver::implementation
     , public std::enable_shared_from_this<posix_resolver_impl>
     , public intrusive_list<posix_resolver_impl>::node
 {
@@ -432,9 +432,9 @@ public:
     posix_resolver_service_impl(posix_resolver_service_impl const&) = delete;
     posix_resolver_service_impl& operator=(posix_resolver_service_impl const&) = delete;
 
-    io_object::io_object_impl* construct() override;
+    io_object::implementation* construct() override;
 
-    void destroy(io_object::io_object_impl* p) override
+    void destroy(io_object::implementation* p) override
     {
         auto& impl = static_cast<posix_resolver_impl&>(*p);
         impl.cancel();
@@ -826,7 +826,7 @@ shutdown()
     }
 }
 
-io_object::io_object_impl*
+io_object::implementation*
 posix_resolver_service_impl::
 construct()
 {

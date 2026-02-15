@@ -769,7 +769,7 @@ shutdown()
     // shutdown) keeps every impl alive until all ops have been drained.
 }
 
-io_object::io_object_impl*
+io_object::implementation*
 kqueue_socket_service::
 construct()
 {
@@ -787,7 +787,7 @@ construct()
 
 void
 kqueue_socket_service::
-destroy(io_object::io_object_impl* impl)
+destroy(io_object::implementation* impl)
 {
     auto* kq_impl = static_cast<kqueue_socket_impl*>(impl);
     kq_impl->close_socket();
@@ -798,7 +798,7 @@ destroy(io_object::io_object_impl* impl)
 
 std::error_code
 kqueue_socket_service::
-open_socket(tcp_socket::socket_impl& impl)
+open_socket(tcp_socket::implementation& impl)
 {
     auto* kq_impl = static_cast<kqueue_socket_impl*>(&impl);
     kq_impl->close_socket();

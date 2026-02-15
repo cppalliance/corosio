@@ -100,7 +100,7 @@ struct accept_op : overlapped_op
     win_socket_impl* peer_wrapper = nullptr;
     std::shared_ptr<win_acceptor_impl_internal> acceptor_ptr;
     SOCKET listen_socket = INVALID_SOCKET;
-    io_object::io_object_impl** impl_out = nullptr;
+    io_object::implementation** impl_out = nullptr;
     char addr_buf[2 * (sizeof(sockaddr_in6) + 16)];
 
     static void do_complete(void* owner, scheduler_op* base,
@@ -194,13 +194,13 @@ private:
 
 /** Socket implementation wrapper for IOCP-based I/O.
 
-    This class is the public-facing socket_impl that holds a shared_ptr
+    This class is the public-facing implementation that holds a shared_ptr
     to the internal state. The shared_ptr is hidden from the public interface.
 
     @note Internal implementation detail. Users interact with socket class.
 */
 class win_socket_impl
-    : public tcp_socket::socket_impl
+    : public tcp_socket::implementation
     , public intrusive_list<win_socket_impl>::node
 {
     std::shared_ptr<win_socket_impl_internal> internal_;
@@ -430,7 +430,7 @@ public:
         capy::executor_ref,
         std::stop_token,
         std::error_code*,
-        io_object::io_object_impl**);
+        io_object::implementation**);
 
     SOCKET native_handle() const noexcept { return socket_; }
     endpoint local_endpoint() const noexcept { return local_endpoint_; }
@@ -451,13 +451,13 @@ private:
 
 /** Acceptor implementation wrapper for IOCP-based I/O.
 
-    This class is the public-facing acceptor_impl that holds a shared_ptr
+    This class is the public-facing implementation that holds a shared_ptr
     to the internal state. The shared_ptr is hidden from the public interface.
 
     @note Internal implementation detail. Users interact with acceptor class.
 */
 class win_acceptor_impl
-    : public tcp_acceptor::acceptor_impl
+    : public tcp_acceptor::implementation
     , public intrusive_list<win_acceptor_impl>::node
 {
     std::shared_ptr<win_acceptor_impl_internal> internal_;
@@ -475,7 +475,7 @@ public:
         capy::executor_ref d,
         std::stop_token token,
         std::error_code* ec,
-        io_object::io_object_impl** impl_out) override
+        io_object::implementation** impl_out) override
     {
         return internal_->accept(h, d, token, ec, impl_out);
     }
@@ -523,9 +523,9 @@ class win_sockets
 public:
     using key_type = win_sockets;
 
-    io_object::io_object_impl* construct() override;
+    io_object::implementation* construct() override;
 
-    void destroy(io_object::io_object_impl* p) override
+    void destroy(io_object::implementation* p) override
     {
         if (p)
         {
@@ -652,9 +652,9 @@ public:
         (void)ctx;
     }
 
-    io_object::io_object_impl* construct() override;
+    io_object::implementation* construct() override;
 
-    void destroy(io_object::io_object_impl* p) override
+    void destroy(io_object::implementation* p) override
     {
         if (p)
         {
@@ -672,7 +672,7 @@ public:
 
     /** Open, bind, and listen on an acceptor socket. */
     std::error_code open_acceptor(
-        tcp_acceptor::acceptor_impl& impl,
+        tcp_acceptor::implementation& impl,
         endpoint ep,
         int backlog)
     {

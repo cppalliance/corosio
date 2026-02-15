@@ -68,7 +68,7 @@ public:
         @param impl The socket implementation to open.
         @return Error code on failure, empty on success.
     */
-    virtual std::error_code open_socket(tcp_socket::socket_impl& impl) = 0;
+    virtual std::error_code open_socket(tcp_socket::implementation& impl) = 0;
 
 protected:
     socket_service() = default;
@@ -103,7 +103,7 @@ public:
         @return Error code on failure, empty on success.
     */
     virtual std::error_code open_acceptor(
-        tcp_acceptor::acceptor_impl& impl,
+        tcp_acceptor::implementation& impl,
         endpoint ep,
         int backlog) = 0;
 

@@ -49,9 +49,9 @@ public:
 
         Derived classes provide platform-specific operation dispatch.
     */
-    struct io_object_impl
+    struct implementation
     {
-        virtual ~io_object_impl() = default;
+        virtual ~implementation() = default;
     };
 
     /** Service interface for I/O object lifecycle management.
@@ -65,10 +65,10 @@ public:
         virtual ~io_service() = default;
 
         /// Construct a new implementation instance.
-        virtual io_object_impl* construct() = 0;
+        virtual implementation* construct() = 0;
 
         /// Destroy the implementation, closing kernel resources and freeing memory.
-        virtual void destroy(io_object_impl*) = 0;
+        virtual void destroy(implementation*) = 0;
 
         /// Close the I/O object, releasing kernel resources without deallocating.
         virtual void close(handle&) {}
@@ -83,7 +83,7 @@ public:
     {
         capy::execution_context* ctx_ = nullptr;
         io_service* svc_ = nullptr;
-        io_object_impl* impl_ = nullptr;
+        implementation* impl_ = nullptr;
 
     public:
         /// Destroy the handle and its implementation.
@@ -150,7 +150,7 @@ public:
         }
 
         /// Return the platform implementation.
-        io_object_impl* get() const noexcept
+        implementation* get() const noexcept
         {
             return impl_;
         }
@@ -159,7 +159,7 @@ public:
 
             @param p The new implementation to own. May be nullptr.
         */
-        void reset(io_object_impl* p) noexcept
+        void reset(implementation* p) noexcept
         {
             if (impl_)
             {

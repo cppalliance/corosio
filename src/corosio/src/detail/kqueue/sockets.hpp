@@ -78,7 +78,7 @@ class kqueue_socket_impl;
 
 /// Socket implementation for kqueue backend.
 class kqueue_socket_impl
-    : public tcp_socket::socket_impl
+    : public tcp_socket::implementation
     , public std::enable_shared_from_this<kqueue_socket_impl>
     , public intrusive_list<kqueue_socket_impl>::node
 {
@@ -198,10 +198,10 @@ public:
 
     void shutdown() override;
 
-    io_object::io_object_impl* construct() override;
-    void destroy(io_object::io_object_impl*) override;
+    io_object::implementation* construct() override;
+    void destroy(io_object::implementation*) override;
     void close(io_object::handle&) override;
-    std::error_code open_socket(tcp_socket::socket_impl& impl) override;
+    std::error_code open_socket(tcp_socket::implementation& impl) override;
 
     kqueue_scheduler& scheduler() const noexcept { return state_->sched_; }
     void post(kqueue_op* op);

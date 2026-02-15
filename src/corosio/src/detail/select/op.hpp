@@ -322,8 +322,8 @@ struct select_write_op : select_op
 struct select_accept_op : select_op
 {
     int accepted_fd = -1;
-    io_object::io_object_impl* peer_impl = nullptr;
-    io_object::io_object_impl** impl_out = nullptr;
+    io_object::implementation* peer_impl = nullptr;
+    io_object::implementation** impl_out = nullptr;
 
     void reset() noexcept
     {
