@@ -132,7 +132,7 @@ accept_op::do_complete(
 
         if (op->peer_wrapper)
         {
-            op->peer_wrapper->release();
+            op->peer_wrapper->close_internal();
             op->peer_wrapper = nullptr;
         }
 
