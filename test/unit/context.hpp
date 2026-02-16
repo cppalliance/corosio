@@ -45,32 +45,36 @@
 // Per-backend registration macros (empty when backend not available)
 
 #if BOOST_COROSIO_HAS_IOCP
-#define COROSIO_TEST_IOCP_(impl, name) \
-    struct impl##_iocp : impl<iocp_context> {}; \
+#define COROSIO_TEST_IOCP_(impl, name)      \
+    struct impl##_iocp : impl<iocp_context> \
+    {};                                     \
     TEST_SUITE(impl##_iocp, name ".iocp");
 #else
 #define COROSIO_TEST_IOCP_(impl, name)
 #endif
 
 #if BOOST_COROSIO_HAS_EPOLL
-#define COROSIO_TEST_EPOLL_(impl, name) \
-    struct impl##_epoll : impl<epoll_context> {}; \
+#define COROSIO_TEST_EPOLL_(impl, name)       \
+    struct impl##_epoll : impl<epoll_context> \
+    {};                                       \
     TEST_SUITE(impl##_epoll, name ".epoll");
 #else
 #define COROSIO_TEST_EPOLL_(impl, name)
 #endif
 
 #if BOOST_COROSIO_HAS_KQUEUE
-#define COROSIO_TEST_KQUEUE_(impl, name) \
-    struct impl##_kqueue : impl<kqueue_context> {}; \
+#define COROSIO_TEST_KQUEUE_(impl, name)        \
+    struct impl##_kqueue : impl<kqueue_context> \
+    {};                                         \
     TEST_SUITE(impl##_kqueue, name ".kqueue");
 #else
 #define COROSIO_TEST_KQUEUE_(impl, name)
 #endif
 
 #if BOOST_COROSIO_HAS_SELECT
-#define COROSIO_TEST_SELECT_(impl, name) \
-    struct impl##_select : impl<select_context> {}; \
+#define COROSIO_TEST_SELECT_(impl, name)        \
+    struct impl##_select : impl<select_context> \
+    {};                                         \
     TEST_SUITE(impl##_select, name ".select");
 #else
 #define COROSIO_TEST_SELECT_(impl, name)

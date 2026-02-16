@@ -14,7 +14,6 @@
 #include "src/detail/posix/signals.hpp"
 
 #include <boost/corosio/detail/scheduler.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
 #include <system_error>
@@ -71,7 +70,7 @@
     3. When wait() is called via start_wait():
        - First check for queued signals (undelivered > 0); if found, post
          immediate completion without blocking
-       - Otherwise, set waiting_ = true and call on_work_started() to keep
+       - Otherwise, set waiting_ = true and call work_started() to keep
          the io_context alive
 
     Locking Protocol
@@ -117,7 +116,7 @@
     -------------
 
     When waiting for a signal:
-      - start_wait() calls sched_->on_work_started() to prevent io_context::run()
+      - start_wait() calls sched_->work_started() to prevent io_context::run()
         from returning while we wait
       - signal_op::svc is set to point to the service
       - signal_op::operator()() calls work_finished() after resuming the coroutine
@@ -134,11 +133,12 @@ namespace detail {
 class posix_signals_impl;
 
 // Maximum signal number supported (NSIG is typically 64 on Linux)
-enum { max_signal_number = 64 };
+enum
+{
+    max_signal_number = 64
+};
 
-//------------------------------------------------------------------------------
 // signal_op - pending wait operation
-//------------------------------------------------------------------------------
 
 struct signal_op : scheduler_op
 {
@@ -147,15 +147,13 @@ struct signal_op : scheduler_op
     std::error_code* ec_out = nullptr;
     int* signal_out = nullptr;
     int signal_number = 0;
-    posix_signals_impl* svc = nullptr;  // For work_finished callback
+    posix_signals_impl* svc = nullptr; // For work_finished callback
 
     void operator()() override;
     void destroy() override;
 };
 
-//------------------------------------------------------------------------------
 // signal_registration - per-signal registration tracking
-//------------------------------------------------------------------------------
 
 struct signal_registration
 {
@@ -168,11 +166,9 @@ struct signal_registration
     signal_registration* next_in_set = nullptr;
 };
 
-//------------------------------------------------------------------------------
 // posix_signal_impl - per-signal_set implementation
-//------------------------------------------------------------------------------
 
-class posix_signal_impl
+class posix_signal_impl final
     : public signal_set::implementation
     , public intrusive_list<posix_signal_impl>::node
 {
@@ -199,17 +195,15 @@ public:
     void cancel() override;
 };
 
-//------------------------------------------------------------------------------
 // posix_signals_impl - concrete service implementation
-//------------------------------------------------------------------------------
 
-class posix_signals_impl : public posix_signals
+class posix_signals_impl final : public posix_signals
 {
 public:
     using key_type = posix_signals;
 
     posix_signals_impl(capy::execution_context& ctx, scheduler& sched);
-    ~posix_signals_impl();
+    ~posix_signals_impl() override;
 
     posix_signals_impl(posix_signals_impl const&) = delete;
     posix_signals_impl& operator=(posix_signals_impl const&) = delete;
@@ -219,7 +213,7 @@ public:
     void destroy(io_object::implementation* p) override
     {
         auto& impl = static_cast<posix_signal_impl&>(*p);
-        impl.clear();
+        [[maybe_unused]] auto n = impl.clear();
         impl.cancel();
         destroy_impl(impl);
     }
@@ -229,13 +223,9 @@ public:
     void destroy_impl(posix_signal_impl& impl);
 
     std::error_code add_signal(
-        posix_signal_impl& impl,
-        int signal_number,
-        signal_set::flags_t flags);
+        posix_signal_impl& impl, int signal_number, signal_set::flags_t flags);
 
-    std::error_code remove_signal(
-        posix_signal_impl& impl,
-        int signal_number);
+    std::error_code remove_signal(posix_signal_impl& impl, int signal_number);
 
     std::error_code clear_signals(posix_signal_impl& impl);
 
@@ -267,9 +257,7 @@ private:
     posix_signals_impl* prev_ = nullptr;
 };
 
-//------------------------------------------------------------------------------
 // Global signal state
-//------------------------------------------------------------------------------
 
 namespace {
 
@@ -281,7 +269,8 @@ struct signal_state
     signal_set::flags_t registered_flags[max_signal_number] = {};
 };
 
-signal_state* get_signal_state()
+signal_state*
+get_signal_state()
 {
     static signal_state state;
     return &state;
@@ -289,7 +278,8 @@ signal_state* get_signal_state()
 
 // Check if requested flags are supported on this platform.
 // Returns true if all flags are supported, false otherwise.
-bool flags_supported(signal_set::flags_t flags)
+bool
+flags_supported([[maybe_unused]] signal_set::flags_t flags)
 {
 #ifndef SA_NOCLDWAIT
     if (flags & signal_set::no_child_wait)
@@ -300,7 +290,8 @@ bool flags_supported(signal_set::flags_t flags)
 
 // Map abstract flags to sigaction() flags.
 // Caller must ensure flags_supported() returns true first.
-int to_sigaction_flags(signal_set::flags_t flags)
+int
+to_sigaction_flags(signal_set::flags_t flags)
 {
     int sa_flags = 0;
     if (flags & signal_set::restart)
@@ -319,9 +310,8 @@ int to_sigaction_flags(signal_set::flags_t flags)
 }
 
 // Check if two flag values are compatible
-bool flags_compatible(
-    signal_set::flags_t existing,
-    signal_set::flags_t requested)
+bool
+flags_compatible(signal_set::flags_t existing, signal_set::flags_t requested)
 {
     // dont_care is always compatible
     if ((existing & signal_set::dont_care) ||
@@ -334,7 +324,8 @@ bool flags_compatible(
 }
 
 // C signal handler - must be async-signal-safe
-extern "C" void corosio_posix_signal_handler(int signal_number)
+extern "C" void
+corosio_posix_signal_handler(int signal_number)
 {
     posix_signals_impl::deliver_signal(signal_number);
     // Note: With sigaction(), the handler persists automatically
@@ -343,13 +334,10 @@ extern "C" void corosio_posix_signal_handler(int signal_number)
 
 } // namespace
 
-//------------------------------------------------------------------------------
 // signal_op implementation
-//------------------------------------------------------------------------------
 
 void
-signal_op::
-operator()()
+signal_op::operator()()
 {
     if (ec_out)
         *ec_out = {};
@@ -362,31 +350,26 @@ operator()()
 
     d.post(h);
 
-    // Balance the on_work_started() from start_wait
+    // Balance the work_started() from start_wait
     if (service)
         service->work_finished();
 }
 
 void
-signal_op::
-destroy()
+signal_op::destroy()
 {
     // No-op: signal_op is embedded in posix_signal_impl
 }
 
-//------------------------------------------------------------------------------
 // posix_signal_impl implementation
-//------------------------------------------------------------------------------
 
-posix_signal_impl::
-posix_signal_impl(posix_signals_impl& svc) noexcept
+posix_signal_impl::posix_signal_impl(posix_signals_impl& svc) noexcept
     : svc_(svc)
 {
 }
 
 std::coroutine_handle<>
-posix_signal_impl::
-wait(
+posix_signal_impl::wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
@@ -416,39 +399,33 @@ wait(
 }
 
 std::error_code
-posix_signal_impl::
-add(int signal_number, signal_set::flags_t flags)
+posix_signal_impl::add(int signal_number, signal_set::flags_t flags)
 {
     return svc_.add_signal(*this, signal_number, flags);
 }
 
 std::error_code
-posix_signal_impl::
-remove(int signal_number)
+posix_signal_impl::remove(int signal_number)
 {
     return svc_.remove_signal(*this, signal_number);
 }
 
 std::error_code
-posix_signal_impl::
-clear()
+posix_signal_impl::clear()
 {
     return svc_.clear_signals(*this);
 }
 
 void
-posix_signal_impl::
-cancel()
+posix_signal_impl::cancel()
 {
     svc_.cancel_wait(*this);
 }
 
-//------------------------------------------------------------------------------
 // posix_signals_impl implementation
-//------------------------------------------------------------------------------
 
-posix_signals_impl::
-posix_signals_impl(capy::execution_context&, scheduler& sched)
+posix_signals_impl::posix_signals_impl(
+    capy::execution_context&, scheduler& sched)
     : sched_(&sched)
 {
     for (int i = 0; i < max_signal_number; ++i)
@@ -459,15 +436,13 @@ posix_signals_impl(capy::execution_context&, scheduler& sched)
     add_service(this);
 }
 
-posix_signals_impl::
-~posix_signals_impl()
+posix_signals_impl::~posix_signals_impl()
 {
     remove_service(this);
 }
 
 void
-posix_signals_impl::
-shutdown()
+posix_signals_impl::shutdown()
 {
     std::lock_guard lock(mutex_);
 
@@ -484,8 +459,7 @@ shutdown()
 }
 
 io_object::implementation*
-posix_signals_impl::
-construct()
+posix_signals_impl::construct()
 {
     auto* impl = new posix_signal_impl(*this);
 
@@ -498,8 +472,7 @@ construct()
 }
 
 void
-posix_signals_impl::
-destroy_impl(posix_signal_impl& impl)
+posix_signals_impl::destroy_impl(posix_signal_impl& impl)
 {
     {
         std::lock_guard lock(mutex_);
@@ -510,11 +483,8 @@ destroy_impl(posix_signal_impl& impl)
 }
 
 std::error_code
-posix_signals_impl::
-add_signal(
-    posix_signal_impl& impl,
-    int signal_number,
-    signal_set::flags_t flags)
+posix_signals_impl::add_signal(
+    posix_signal_impl& impl, int signal_number, signal_set::flags_t flags)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
         return make_error_code(std::errc::invalid_argument);
@@ -594,10 +564,7 @@ add_signal(
 }
 
 std::error_code
-posix_signals_impl::
-remove_signal(
-    posix_signal_impl& impl,
-    int signal_number)
+posix_signals_impl::remove_signal(posix_signal_impl& impl, int signal_number)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
         return make_error_code(std::errc::invalid_argument);
@@ -649,8 +616,7 @@ remove_signal(
 }
 
 std::error_code
-posix_signals_impl::
-clear_signals(posix_signal_impl& impl)
+posix_signals_impl::clear_signals(posix_signal_impl& impl)
 {
     signal_state* state = get_signal_state();
     std::lock_guard state_lock(state->mutex);
@@ -697,8 +663,7 @@ clear_signals(posix_signal_impl& impl)
 }
 
 void
-posix_signals_impl::
-cancel_wait(posix_signal_impl& impl)
+posix_signals_impl::cancel_wait(posix_signal_impl& impl)
 {
     bool was_waiting = false;
     signal_op* op = nullptr;
@@ -720,13 +685,12 @@ cancel_wait(posix_signal_impl& impl)
         if (op->signal_out)
             *op->signal_out = 0;
         op->d.post(op->h);
-        sched_->on_work_finished();
+        sched_->work_finished();
     }
 }
 
 void
-posix_signals_impl::
-start_wait(posix_signal_impl& impl, signal_op* op)
+posix_signals_impl::start_wait(posix_signal_impl& impl, signal_op* op)
 {
     {
         std::lock_guard lock(mutex_);
@@ -751,13 +715,12 @@ start_wait(posix_signal_impl& impl, signal_op* op)
         impl.waiting_ = true;
         // svc=this: signal_op::operator() will call work_finished() to balance this
         op->svc = this;
-        sched_->on_work_started();
+        sched_->work_started();
     }
 }
 
 void
-posix_signals_impl::
-deliver_signal(int signal_number)
+posix_signals_impl::deliver_signal(int signal_number)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
         return;
@@ -773,7 +736,8 @@ deliver_signal(int signal_number)
         signal_registration* reg = service->registrations_[signal_number];
         while (reg)
         {
-            posix_signal_impl* impl = static_cast<posix_signal_impl*>(reg->owner);
+            posix_signal_impl* impl =
+                static_cast<posix_signal_impl*>(reg->owner);
 
             if (impl->waiting_)
             {
@@ -794,29 +758,25 @@ deliver_signal(int signal_number)
 }
 
 void
-posix_signals_impl::
-work_started() noexcept
+posix_signals_impl::work_started() noexcept
 {
     sched_->work_started();
 }
 
 void
-posix_signals_impl::
-work_finished() noexcept
+posix_signals_impl::work_finished() noexcept
 {
     sched_->work_finished();
 }
 
 void
-posix_signals_impl::
-post(signal_op* op)
+posix_signals_impl::post(signal_op* op)
 {
     sched_->post(op);
 }
 
 void
-posix_signals_impl::
-add_service(posix_signals_impl* service)
+posix_signals_impl::add_service(posix_signals_impl* service)
 {
     signal_state* state = get_signal_state();
     std::lock_guard lock(state->mutex);
@@ -829,8 +789,7 @@ add_service(posix_signals_impl* service)
 }
 
 void
-posix_signals_impl::
-remove_service(posix_signals_impl* service)
+posix_signals_impl::remove_service(posix_signals_impl* service)
 {
     signal_state* state = get_signal_state();
     std::lock_guard lock(state->mutex);
@@ -848,9 +807,7 @@ remove_service(posix_signals_impl* service)
     }
 }
 
-//------------------------------------------------------------------------------
 // get_signal_service - factory function
-//------------------------------------------------------------------------------
 
 posix_signals&
 get_signal_service(capy::execution_context& ctx, scheduler& sched)
@@ -860,62 +817,48 @@ get_signal_service(capy::execution_context& ctx, scheduler& sched)
 
 } // namespace detail
 
-//------------------------------------------------------------------------------
 // signal_set implementation
-//------------------------------------------------------------------------------
 
-signal_set::
-~signal_set() = default;
+signal_set::~signal_set() = default;
 
-signal_set::
-signal_set(capy::execution_context& ctx)
+signal_set::signal_set(capy::execution_context& ctx)
     : io_object(create_handle<detail::posix_signals>(ctx))
 {
 }
 
-signal_set::
-signal_set(signal_set&& other) noexcept
+signal_set::signal_set(signal_set&& other) noexcept
     : io_object(std::move(other))
 {
 }
 
 signal_set&
-signal_set::
-operator=(signal_set&& other)
+signal_set::operator=(signal_set&& other) noexcept
 {
     if (this != &other)
-    {
-        if (&context() != &other.context())
-            detail::throw_logic_error("signal_set::operator=: context mismatch");
         h_ = std::move(other.h_);
-    }
     return *this;
 }
 
 std::error_code
-signal_set::
-add(int signal_number, flags_t flags)
+signal_set::add(int signal_number, flags_t flags)
 {
     return get().add(signal_number, flags);
 }
 
 std::error_code
-signal_set::
-remove(int signal_number)
+signal_set::remove(int signal_number)
 {
     return get().remove(signal_number);
 }
 
 std::error_code
-signal_set::
-clear()
+signal_set::clear()
 {
     return get().clear();
 }
 
 void
-signal_set::
-cancel()
+signal_set::cancel()
 {
     get().cancel();
 }

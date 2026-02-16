@@ -219,7 +219,6 @@ public:
     }
 };
 
-//------------------------------------------------
 
 /** Endpoint format detection result.
 
@@ -228,10 +227,10 @@ public:
 */
 enum class endpoint_format
 {
-    ipv4_no_port,      ///< "192.168.1.1"
-    ipv4_with_port,    ///< "192.168.1.1:8080"
-    ipv6_no_port,      ///< "::1" or "1:2:3:4:5:6:7:8"
-    ipv6_bracketed     ///< "[::1]" or "[::1]:8080"
+    ipv4_no_port,   ///< "192.168.1.1"
+    ipv4_with_port, ///< "192.168.1.1:8080"
+    ipv6_no_port,   ///< "::1" or "1:2:3:4:5:6:7:8"
+    ipv6_bracketed  ///< "[::1]" or "[::1]:8080"
 };
 
 /** Detect the format of an endpoint string.
@@ -248,8 +247,7 @@ enum class endpoint_format
     @return The detected endpoint format.
 */
 BOOST_COROSIO_DECL
-endpoint_format
-detect_endpoint_format(std::string_view s) noexcept;
+endpoint_format detect_endpoint_format(std::string_view s) noexcept;
 
 /** Parse an endpoint from a string.
 
@@ -279,14 +277,10 @@ detect_endpoint_format(std::string_view s) noexcept;
     @param ep The endpoint to store the result.
     @return An error code (empty on success).
 */
-[[nodiscard]] BOOST_COROSIO_DECL
-std::error_code
-parse_endpoint(
-    std::string_view s,
-    endpoint& ep) noexcept;
+[[nodiscard]] BOOST_COROSIO_DECL std::error_code
+parse_endpoint(std::string_view s, endpoint& ep) noexcept;
 
-inline
-endpoint::endpoint(std::string_view s)
+inline endpoint::endpoint(std::string_view s)
 {
     auto ec = parse_endpoint(s, *this);
     if (ec)

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -19,15 +20,12 @@
 
 namespace boost::corosio {
 
-tcp_socket::
-~tcp_socket()
+tcp_socket::~tcp_socket()
 {
     close();
 }
 
-tcp_socket::
-tcp_socket(
-    capy::execution_context& ctx)
+tcp_socket::tcp_socket(capy::execution_context& ctx)
 #if BOOST_COROSIO_HAS_IOCP
     : io_stream(create_handle<detail::win_sockets>(ctx))
 #else
@@ -37,8 +35,7 @@ tcp_socket(
 }
 
 void
-tcp_socket::
-open()
+tcp_socket::open()
 {
     if (is_open())
         return;
@@ -49,16 +46,15 @@ open()
         *static_cast<detail::win_socket_impl&>(wrapper).get_internal());
 #else
     auto& svc = static_cast<detail::socket_service&>(h_.service());
-    std::error_code ec = svc.open_socket(
-        static_cast<tcp_socket::implementation&>(*h_.get()));
+    std::error_code ec =
+        svc.open_socket(static_cast<tcp_socket::implementation&>(*h_.get()));
 #endif
     if (ec)
         detail::throw_system_error(ec, "tcp_socket::open");
 }
 
 void
-tcp_socket::
-close()
+tcp_socket::close()
 {
     if (!is_open())
         return;
@@ -66,8 +62,7 @@ close()
 }
 
 void
-tcp_socket::
-cancel()
+tcp_socket::cancel()
 {
     if (!is_open())
         return;
@@ -75,21 +70,22 @@ cancel()
 }
 
 void
-tcp_socket::
-shutdown(shutdown_type what)
+tcp_socket::shutdown(shutdown_type what)
 {
     if (is_open())
-        get().shutdown(what);
+    {
+        // Best-effort: errors like ENOTCONN are expected and unhelpful
+        [[maybe_unused]] auto ec = get().shutdown(what);
+    }
 }
 
 native_handle_type
-tcp_socket::
-native_handle() const noexcept
+tcp_socket::native_handle() const noexcept
 {
     if (!is_open())
     {
 #if BOOST_COROSIO_HAS_IOCP
-        return static_cast<native_handle_type>(~0ull);  // INVALID_SOCKET
+        return static_cast<native_handle_type>(~0ull); // INVALID_SOCKET
 #else
         return -1;
 #endif
@@ -98,8 +94,7 @@ native_handle() const noexcept
 }
 
 void
-tcp_socket::
-set_no_delay(bool value)
+tcp_socket::set_no_delay(bool value)
 {
     if (!is_open())
         detail::throw_logic_error("set_no_delay: socket not open");
@@ -109,8 +104,7 @@ set_no_delay(bool value)
 }
 
 bool
-tcp_socket::
-no_delay() const
+tcp_socket::no_delay() const
 {
     if (!is_open())
         detail::throw_logic_error("no_delay: socket not open");
@@ -122,8 +116,7 @@ no_delay() const
 }
 
 void
-tcp_socket::
-set_keep_alive(bool value)
+tcp_socket::set_keep_alive(bool value)
 {
     if (!is_open())
         detail::throw_logic_error("set_keep_alive: socket not open");
@@ -133,8 +126,7 @@ set_keep_alive(bool value)
 }
 
 bool
-tcp_socket::
-keep_alive() const
+tcp_socket::keep_alive() const
 {
     if (!is_open())
         detail::throw_logic_error("keep_alive: socket not open");
@@ -146,8 +138,7 @@ keep_alive() const
 }
 
 void
-tcp_socket::
-set_receive_buffer_size(int size)
+tcp_socket::set_receive_buffer_size(int size)
 {
     if (!is_open())
         detail::throw_logic_error("set_receive_buffer_size: socket not open");
@@ -157,8 +148,7 @@ set_receive_buffer_size(int size)
 }
 
 int
-tcp_socket::
-receive_buffer_size() const
+tcp_socket::receive_buffer_size() const
 {
     if (!is_open())
         detail::throw_logic_error("receive_buffer_size: socket not open");
@@ -170,8 +160,7 @@ receive_buffer_size() const
 }
 
 void
-tcp_socket::
-set_send_buffer_size(int size)
+tcp_socket::set_send_buffer_size(int size)
 {
     if (!is_open())
         detail::throw_logic_error("set_send_buffer_size: socket not open");
@@ -181,8 +170,7 @@ set_send_buffer_size(int size)
 }
 
 int
-tcp_socket::
-send_buffer_size() const
+tcp_socket::send_buffer_size() const
 {
     if (!is_open())
         detail::throw_logic_error("send_buffer_size: socket not open");
@@ -194,8 +182,7 @@ send_buffer_size() const
 }
 
 void
-tcp_socket::
-set_linger(bool enabled, int timeout)
+tcp_socket::set_linger(bool enabled, int timeout)
 {
     if (!is_open())
         detail::throw_logic_error("set_linger: socket not open");
@@ -205,8 +192,7 @@ set_linger(bool enabled, int timeout)
 }
 
 tcp_socket::linger_options
-tcp_socket::
-linger() const
+tcp_socket::linger() const
 {
     if (!is_open())
         detail::throw_logic_error("linger: socket not open");
@@ -218,8 +204,7 @@ linger() const
 }
 
 endpoint
-tcp_socket::
-local_endpoint() const noexcept
+tcp_socket::local_endpoint() const noexcept
 {
     if (!is_open())
         return endpoint{};
@@ -227,8 +212,7 @@ local_endpoint() const noexcept
 }
 
 endpoint
-tcp_socket::
-remote_endpoint() const noexcept
+tcp_socket::remote_endpoint() const noexcept
 {
     if (!is_open())
         return endpoint{};

@@ -101,7 +101,6 @@ namespace boost::corosio::detail {
 class win_resolver_service;
 class win_resolver_impl;
 
-//------------------------------------------------------------------------------
 
 /** Resolve operation state. */
 struct resolve_op : overlapped_op
@@ -116,10 +115,7 @@ struct resolve_op : overlapped_op
     win_resolver_impl* impl = nullptr;
 
     /** Completion callback for GetAddrInfoExW. */
-    static void CALLBACK completion(
-        DWORD dwError,
-        DWORD bytes,
-        OVERLAPPED* ov);
+    static void CALLBACK completion(DWORD dwError, DWORD bytes, OVERLAPPED* ov);
 
     static void do_complete(
         void* owner,
@@ -150,7 +146,6 @@ struct reverse_resolve_op : overlapped_op
     reverse_resolve_op() noexcept;
 };
 
-//------------------------------------------------------------------------------
 
 /** Resolver implementation for IOCP-based async DNS.
 
@@ -193,7 +188,7 @@ struct reverse_resolve_op : overlapped_op
 
     @note Internal implementation detail. Users interact with resolver class.
 */
-class win_resolver_impl
+class win_resolver_impl final
     : public resolver::implementation
     , public std::enable_shared_from_this<win_resolver_impl>
     , public intrusive_list<win_resolver_impl>::node
@@ -232,7 +227,6 @@ private:
     win_resolver_service& svc_;
 };
 
-//------------------------------------------------------------------------------
 
 /** Windows IOCP resolver management service.
 
@@ -248,7 +242,7 @@ private:
 
     @note Only available on Windows platforms with _WIN32_WINNT >= 0x0602.
 */
-class win_resolver_service
+class win_resolver_service final
     : private win_wsa_init
     , public capy::execution_context::service
     , public io_object::io_service
@@ -309,8 +303,8 @@ private:
     std::atomic<bool> shutting_down_{false};
     std::size_t active_threads_ = 0;
     intrusive_list<win_resolver_impl> resolver_list_;
-    std::unordered_map<win_resolver_impl*,
-        std::shared_ptr<win_resolver_impl>> resolver_ptrs_;
+    std::unordered_map<win_resolver_impl*, std::shared_ptr<win_resolver_impl>>
+        resolver_ptrs_;
 };
 
 } // namespace boost::corosio::detail

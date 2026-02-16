@@ -31,15 +31,12 @@
 
 namespace boost::corosio {
 
-kqueue_context::
-kqueue_context()
+kqueue_context::kqueue_context()
     : kqueue_context(std::max(std::thread::hardware_concurrency(), 1u))
 {
 }
 
-kqueue_context::
-kqueue_context(
-    unsigned concurrency_hint)
+kqueue_context::kqueue_context(unsigned concurrency_hint)
 {
     sched_ = &make_service<detail::kqueue_scheduler>(
         static_cast<int>(concurrency_hint));
@@ -48,8 +45,7 @@ kqueue_context(
     make_service<detail::kqueue_acceptor_service>();
 }
 
-kqueue_context::
-~kqueue_context()
+kqueue_context::~kqueue_context()
 {
     shutdown();
     destroy();

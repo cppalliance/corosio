@@ -90,18 +90,18 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled)};
-            
+
             if (!ec_ && peer_impl_)
                 peer_.h_.reset(peer_impl_);
             return {ec_};
         }
 
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            capy::io_env const* env) -> std::coroutine_handle<>
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return acc_.get().accept(h, env->executor, token_, &ec_, &peer_impl_);
+            return acc_.get().accept(
+                h, env->executor, token_, &ec_, &peer_impl_);
         }
     };
 
@@ -110,7 +110,7 @@ public:
 
         Closes the acceptor if open, cancelling any pending operations.
     */
-    ~tcp_acceptor();
+    ~tcp_acceptor() override;
 
     /** Construct an acceptor from an execution context.
 
@@ -125,10 +125,9 @@ public:
         @param ex The executor whose context will own the acceptor.
     */
     template<class Ex>
-        requires (!std::same_as<std::remove_cvref_t<Ex>, tcp_acceptor>) &&
-                 capy::Executor<Ex>
-    explicit tcp_acceptor(Ex const& ex)
-        : tcp_acceptor(ex.context())
+        requires(!std::same_as<std::remove_cvref_t<Ex>, tcp_acceptor>) &&
+        capy::Executor<Ex>
+    explicit tcp_acceptor(Ex const& ex) : tcp_acceptor(ex.context())
     {
     }
 
@@ -138,29 +137,19 @@ public:
 
         @param other The acceptor to move from.
     */
-    tcp_acceptor(tcp_acceptor&& other) noexcept
-        : io_object(std::move(other))
-    {
-    }
+    tcp_acceptor(tcp_acceptor&& other) noexcept : io_object(std::move(other)) {}
 
     /** Move assignment operator.
 
         Closes any existing acceptor and transfers ownership.
-        The source and destination must share the same execution context.
-
         @param other The acceptor to move from.
 
         @return Reference to this acceptor.
-
-        @throws std::logic_error if the acceptors have different execution contexts.
     */
-    tcp_acceptor& operator=(tcp_acceptor&& other)
+    tcp_acceptor& operator=(tcp_acceptor&& other) noexcept
     {
         if (this != &other)
         {
-            if (&context() != &other.context())
-                detail::throw_logic_error(
-                    "cannot move tcp_acceptor across execution contexts");
             close();
             h_ = std::move(other.h_);
         }

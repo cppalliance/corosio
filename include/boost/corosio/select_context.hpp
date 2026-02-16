@@ -69,8 +69,7 @@ public:
             will call `run()`. If greater than 1, thread-safe
             synchronization is used internally.
     */
-    explicit
-    select_context(unsigned concurrency_hint);
+    explicit select_context(unsigned concurrency_hint);
 
     /** Destructor. */
     ~select_context();

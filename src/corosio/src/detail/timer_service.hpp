@@ -32,15 +32,21 @@ public:
     class callback
     {
         void* ctx_ = nullptr;
-        void(*fn_)(void*) = nullptr;
+        void (*fn_)(void*) = nullptr;
 
     public:
         callback() = default;
-        callback(void* ctx, void(*fn)(void*)) noexcept
-            : ctx_(ctx), fn_(fn) {}
+        callback(void* ctx, void (*fn)(void*)) noexcept : ctx_(ctx), fn_(fn) {}
 
-        explicit operator bool() const noexcept { return fn_ != nullptr; }
-        void operator()() const { if (fn_) fn_(ctx_); }
+        explicit operator bool() const noexcept
+        {
+            return fn_ != nullptr;
+        }
+        void operator()() const
+        {
+            if (fn_)
+                fn_(ctx_);
+        }
     };
 
     // Query methods for scheduler
@@ -59,8 +65,7 @@ protected:
 
 // Get or create the timer service for the given context
 timer_service&
-get_timer_service(
-    capy::execution_context& ctx, scheduler& sched);
+get_timer_service(capy::execution_context& ctx, scheduler& sched);
 
 } // namespace boost::corosio::detail
 

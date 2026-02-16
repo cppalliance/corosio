@@ -30,11 +30,7 @@ class test_worker : public tcp_server::worker_base
     corosio::tcp_socket sock_;
 
 public:
-    explicit test_worker(io_context& ctx)
-        : ctx_(ctx)
-        , sock_(ctx)
-    {
-    }
+    explicit test_worker(io_context& ctx) : ctx_(ctx), sock_(ctx) {}
 
     corosio::tcp_socket& socket() override
     {
@@ -43,14 +39,13 @@ public:
 
     void run(tcp_server::launcher launch) override
     {
-        launch(ctx_.get_executor(),
-            [](corosio::tcp_socket* sock) -> capy::task<>
-            {
+        launch(
+            ctx_.get_executor(), [](corosio::tcp_socket* sock) -> capy::task<> {
                 // Echo one message and close
                 char buf[64];
                 auto [ec, n] = co_await sock->read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
-                if(!ec)
+                if (!ec)
                     (void)co_await sock->write_some(capy::const_buffer(buf, n));
                 sock->close();
             }(&sock_));
@@ -62,7 +57,7 @@ make_test_workers(io_context& ctx, int n)
 {
     std::vector<std::unique_ptr<tcp_server::worker_base>> v;
     v.reserve(n);
-    for(int i = 0; i < n; ++i)
+    for (int i = 0; i < n; ++i)
         v.push_back(std::make_unique<test_worker>(ctx));
     return v;
 }
@@ -71,8 +66,7 @@ make_test_workers(io_context& ctx, int n)
 class test_server : public tcp_server
 {
 public:
-    test_server(io_context& ctx)
-        : tcp_server(ctx, ctx.get_executor())
+    test_server(io_context& ctx) : tcp_server(ctx, ctx.get_executor())
     {
         set_workers(make_test_workers(ctx, 4));
     }
@@ -82,8 +76,7 @@ public:
 
 struct tcp_server_test
 {
-    void
-    testStopServer()
+    void testStopServer()
     {
         io_context ioc;
         test_server srv(ioc);
@@ -98,11 +91,8 @@ struct tcp_server_test
         srv.start();
 
         // Client task: request stop after brief delay
-        auto client_task = [](
-            io_context* ioc,
-            test_server* srv,
-            std::atomic<bool>* client_done) -> capy::task<>
-        {
+        auto client_task = [](io_context* ioc, test_server* srv,
+                              std::atomic<bool>* client_done) -> capy::task<> {
             // Brief delay to ensure server accept loop is running
             timer t(*ioc);
             t.expires_after(std::chrono::milliseconds(10));
@@ -122,15 +112,14 @@ struct tcp_server_test
         BOOST_TEST(client_done.load());
     }
 
-    void
-    testStopWithActiveConnection()
+    void testStopWithActiveConnection()
     {
         io_context ioc;
 
         // Find an available port
         tcp_acceptor acc(ioc);
         std::uint16_t port = 0;
-        for(int attempt = 0; attempt < 20; ++attempt)
+        for (int attempt = 0; attempt < 20; ++attempt)
         {
             port = static_cast<std::uint16_t>(49152 + (attempt * 7) % 16383);
             if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
@@ -151,26 +140,23 @@ struct tcp_server_test
         srv.start();
 
         // Client connects, exchanges data, then triggers stop
-        auto client_task = [](
-            io_context* ioc,
-            std::uint16_t port,
-            test_server* srv,
-            std::atomic<bool>* connection_handled,
-            std::atomic<bool>* stop_requested) -> capy::task<>
-        {
+        auto client_task =
+            [](io_context* ioc, std::uint16_t port, test_server* srv,
+               std::atomic<bool>* connection_handled,
+               std::atomic<bool>* stop_requested) -> capy::task<> {
             tcp_socket client(*ioc);
             client.open();
 
             auto [connect_ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
-            if(connect_ec)
+            if (connect_ec)
             {
                 co_return;
             }
 
             // Send data
-            auto [write_ec, written] = co_await client.write_some(
-                capy::const_buffer("hello", 5));
+            auto [write_ec, written] =
+                co_await client.write_some(capy::const_buffer("hello", 5));
             BOOST_TEST(!write_ec);
 
             // Read echo
@@ -196,8 +182,7 @@ struct tcp_server_test
         BOOST_TEST(stop_requested.load());
     }
 
-    void
-    testStartIdempotent()
+    void testStartIdempotent()
     {
         io_context ioc;
         test_server srv(ioc);
@@ -207,12 +192,9 @@ struct tcp_server_test
 
         // Calling start() twice should be safe
         srv.start();
-        srv.start();  // Second call should be no-op
+        srv.start(); // Second call should be no-op
 
-        auto task = [](
-            io_context* ioc,
-            test_server* srv) -> capy::task<>
-        {
+        auto task = [](io_context* ioc, test_server* srv) -> capy::task<> {
             timer t(*ioc);
             t.expires_after(std::chrono::milliseconds(10));
             (void)co_await t.wait();
@@ -223,8 +205,7 @@ struct tcp_server_test
         ioc.run();
     }
 
-    void
-    testStopIdempotent()
+    void testStopIdempotent()
     {
         io_context ioc;
         test_server srv(ioc);
@@ -234,25 +215,21 @@ struct tcp_server_test
 
         srv.start();
 
-        auto task = [](
-            io_context* ioc,
-            test_server* srv) -> capy::task<>
-        {
+        auto task = [](io_context* ioc, test_server* srv) -> capy::task<> {
             timer t(*ioc);
             t.expires_after(std::chrono::milliseconds(10));
             (void)co_await t.wait();
 
             // Calling stop() twice should be safe
             srv->stop();
-            srv->stop();  // Second call should be no-op
+            srv->stop(); // Second call should be no-op
         }(&ioc, &srv);
 
         capy::run_async(ioc.get_executor())(std::move(task));
         ioc.run();
     }
 
-    void
-    testStopWithoutStart()
+    void testStopWithoutStart()
     {
         io_context ioc;
         test_server srv(ioc);
@@ -264,8 +241,7 @@ struct tcp_server_test
         srv.stop();
     }
 
-    void
-    testRestart()
+    void testRestart()
     {
         // Test the "stop the world" pattern:
         // start -> run -> stop -> run (drain) -> join -> restart
@@ -275,7 +251,7 @@ struct tcp_server_test
         // Find an available port
         tcp_acceptor acc(ioc);
         std::uint16_t port = 0;
-        for(int attempt = 0; attempt < 20; ++attempt)
+        for (int attempt = 0; attempt < 20; ++attempt)
         {
             port = static_cast<std::uint16_t>(49152 + (attempt * 7) % 16383);
             if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
@@ -294,35 +270,30 @@ struct tcp_server_test
         // First session
         srv.start();
 
-        auto task1 = [](
-            io_context* ioc,
-            std::uint16_t port,
-            int* count) -> capy::task<>
-        {
+        auto task1 = [](io_context* ioc, std::uint16_t port,
+                        int* count) -> capy::task<> {
             tcp_socket client(*ioc);
             client.open();
             auto [connect_ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
-            if(!connect_ec)
+            if (!connect_ec)
             {
-                auto [write_ec, written] = co_await client.write_some(
-                    capy::const_buffer("hello", 5));
-                if(!write_ec)
+                auto [write_ec, written] =
+                    co_await client.write_some(capy::const_buffer("hello", 5));
+                if (!write_ec)
                 {
                     char buf[64];
                     auto [read_ec, n] = co_await client.read_some(
                         capy::mutable_buffer(buf, sizeof(buf)));
-                    if(!read_ec)
+                    if (!read_ec)
                         ++(*count);
                 }
             }
             client.close();
         }(&ioc, port, &connections_handled);
 
-        auto stop_task1 = [](
-            io_context* ioc,
-            test_server* srv) -> capy::task<>
-        {
+        auto stop_task1 = [](io_context* ioc,
+                             test_server* srv) -> capy::task<> {
             timer t(*ioc);
             t.expires_after(std::chrono::milliseconds(50));
             (void)co_await t.wait();
@@ -340,35 +311,30 @@ struct tcp_server_test
         ioc.restart();
         srv.start();
 
-        auto task2 = [](
-            io_context* ioc,
-            std::uint16_t port,
-            int* count) -> capy::task<>
-        {
+        auto task2 = [](io_context* ioc, std::uint16_t port,
+                        int* count) -> capy::task<> {
             tcp_socket client(*ioc);
             client.open();
             auto [connect_ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
-            if(!connect_ec)
+            if (!connect_ec)
             {
-                auto [write_ec, written] = co_await client.write_some(
-                    capy::const_buffer("world", 5));
-                if(!write_ec)
+                auto [write_ec, written] =
+                    co_await client.write_some(capy::const_buffer("world", 5));
+                if (!write_ec)
                 {
                     char buf[64];
                     auto [read_ec, n] = co_await client.read_some(
                         capy::mutable_buffer(buf, sizeof(buf)));
-                    if(!read_ec)
+                    if (!read_ec)
                         ++(*count);
                 }
             }
             client.close();
         }(&ioc, port, &connections_handled);
 
-        auto stop_task2 = [](
-            io_context* ioc,
-            test_server* srv) -> capy::task<>
-        {
+        auto stop_task2 = [](io_context* ioc,
+                             test_server* srv) -> capy::task<> {
             timer t(*ioc);
             t.expires_after(std::chrono::milliseconds(50));
             (void)co_await t.wait();
@@ -383,8 +349,7 @@ struct tcp_server_test
         BOOST_TEST_EQ(connections_handled, 2);
     }
 
-    void
-    testStartWithoutJoinThrows()
+    void testStartWithoutJoinThrows()
     {
         // Deterministic test: start() throws if previous session not joined
         io_context ioc;
@@ -406,7 +371,7 @@ struct tcp_server_test
         {
             srv.start();
         }
-        catch(std::logic_error const&)
+        catch (std::logic_error const&)
         {
             threw = true;
         }
@@ -417,15 +382,14 @@ struct tcp_server_test
         srv.join();
 
         // After join, start should work
-        ioc.restart();  // Required before running again
+        ioc.restart(); // Required before running again
         srv.start();
         srv.stop();
         ioc.run();
         srv.join();
     }
 
-    void
-    testListenErrorCode()
+    void testListenErrorCode()
     {
         io_context ioc;
 
@@ -445,8 +409,7 @@ struct tcp_server_test
         BOOST_TEST(acc2.local_endpoint().port() != 0);
     }
 
-    void
-    testBindSuccess()
+    void testBindSuccess()
     {
         io_context ioc;
 
@@ -456,8 +419,7 @@ struct tcp_server_test
         BOOST_TEST(!ec);
     }
 
-    void
-    testListenErrorNonLocalAddress()
+    void testListenErrorNonLocalAddress()
     {
         io_context ioc;
 
@@ -471,8 +433,7 @@ struct tcp_server_test
         BOOST_TEST(!acc.is_open());
     }
 
-    void
-    testBindErrorNonLocalAddress()
+    void testBindErrorNonLocalAddress()
     {
         io_context ioc;
 
@@ -482,8 +443,7 @@ struct tcp_server_test
         BOOST_TEST(ec);
     }
 
-    void
-    testListenOnOpenAcceptor()
+    void testListenOnOpenAcceptor()
     {
         io_context ioc;
         tcp_acceptor acc(ioc);
@@ -499,8 +459,7 @@ struct tcp_server_test
         BOOST_TEST(acc.is_open());
     }
 
-    void
-    run()
+    void run()
     {
         testStopServer();
         testStopWithActiveConnection();

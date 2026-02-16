@@ -89,7 +89,7 @@ public:
         /// Destroy the handle and its implementation.
         ~handle()
         {
-            if(impl_)
+            if (impl_)
             {
                 svc_->close(*this);
                 svc_->destroy(impl_);
@@ -100,9 +100,7 @@ public:
         handle() = default;
 
         /// Construct a handle bound to a context and service.
-        handle(
-            capy::execution_context& ctx,
-            io_service& svc)
+        handle(capy::execution_context& ctx, io_service& svc)
             : ctx_(&ctx)
             , svc_(&svc)
             , impl_(svc_->construct())
@@ -177,8 +175,7 @@ public:
     };
 
     /// Return the execution context.
-    capy::execution_context&
-    context() const noexcept
+    capy::execution_context& context() const noexcept
     {
         return h_.context();
     }
@@ -206,17 +203,10 @@ protected:
     }
 
     /// Construct an I/O object from a handle.
-    explicit
-    io_object(handle h) noexcept
-        : h_(std::move(h))
-    {
-    }
+    explicit io_object(handle h) noexcept : h_(std::move(h)) {}
 
     /// Move construct from another I/O object.
-    io_object(io_object&& other) noexcept
-        : h_(std::move(other.h_))
-    {
-    }
+    io_object(io_object&& other) noexcept : h_(std::move(other.h_)) {}
 
     /// Move assign from another I/O object.
     io_object& operator=(io_object&& other) noexcept

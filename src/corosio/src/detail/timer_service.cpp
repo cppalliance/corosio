@@ -115,8 +115,7 @@ struct waiter_node;
 
 void timer_service_invalidate_cache() noexcept;
 
-struct waiter_node
-    : intrusive_list<waiter_node>::node
+struct waiter_node : intrusive_list<waiter_node>::node
 {
     // Embedded completion op — avoids heap allocation per fire/cancel
     struct completion_op final : scheduler_op
@@ -124,15 +123,9 @@ struct waiter_node
         waiter_node* waiter_ = nullptr;
 
         static void do_complete(
-            void* owner,
-            scheduler_op* base,
-            std::uint32_t,
-            std::uint32_t);
+            void* owner, scheduler_op* base, std::uint32_t, std::uint32_t);
 
-        completion_op() noexcept
-            : scheduler_op(&do_complete)
-        {
-        }
+        completion_op() noexcept : scheduler_op(&do_complete) {}
 
         void operator()() override;
         // No-op — lifetime owned by waiter_node, not the scheduler queue
@@ -164,8 +157,7 @@ struct waiter_node
     }
 };
 
-struct implementation
-    : timer::implementation
+struct implementation final : timer::implementation
 {
     using clock_type = std::chrono::steady_clock;
     using time_point = clock_type::time_point;
@@ -191,7 +183,7 @@ bool try_push_tl_cache(implementation*) noexcept;
 waiter_node* try_pop_waiter_tl_cache() noexcept;
 bool try_push_waiter_tl_cache(waiter_node*) noexcept;
 
-class timer_service_impl : public timer_service
+class timer_service_impl final : public timer_service
 {
 public:
     using clock_type = std::chrono::steady_clock;
@@ -222,9 +214,12 @@ public:
     {
     }
 
-    scheduler& get_scheduler() noexcept { return *sched_; }
+    scheduler& get_scheduler() noexcept
+    {
+        return *sched_;
+    }
 
-    ~timer_service_impl() = default;
+    ~timer_service_impl() override = default;
 
     timer_service_impl(timer_service_impl const&) = delete;
     timer_service_impl& operator=(timer_service_impl const&) = delete;
@@ -246,7 +241,7 @@ public:
             {
                 w->stop_cb_.reset();
                 w->h_.destroy();
-                sched_->on_work_finished();
+                sched_->work_finished();
                 delete w;
             }
             impl->heap_index_ = (std::numeric_limits<std::size_t>::max)();
@@ -430,8 +425,8 @@ public:
             return 0;
 
         // Not in heap and no waiters — just clear the flag
-        if (impl.heap_index_ == (std::numeric_limits<std::size_t>::max)()
-            && impl.waiters_.empty())
+        if (impl.heap_index_ == (std::numeric_limits<std::size_t>::max)() &&
+            impl.waiters_.empty())
         {
             impl.might_have_pending_waits_ = false;
             return 0;
@@ -515,8 +510,8 @@ public:
 
     bool empty() const noexcept override
     {
-        return cached_nearest_ns_.load(std::memory_order_acquire)
-            == (std::numeric_limits<std::int64_t>::max)();
+        return cached_nearest_ns_.load(std::memory_order_acquire) ==
+            (std::numeric_limits<std::int64_t>::max)();
     }
 
     time_point nearest_expiry() const noexcept override
@@ -562,9 +557,8 @@ public:
 private:
     void refresh_cached_nearest() noexcept
     {
-        auto ns = heap_.empty()
-            ? (std::numeric_limits<std::int64_t>::max)()
-            : heap_[0].time_.time_since_epoch().count();
+        auto ns = heap_.empty() ? (std::numeric_limits<std::int64_t>::max)()
+                                : heap_[0].time_.time_since_epoch().count();
         cached_nearest_ns_.store(ns, std::memory_order_release);
     }
 
@@ -611,9 +605,11 @@ private:
         std::size_t child = index * 2 + 1;
         while (child < heap_.size())
         {
-            std::size_t min_child = (child + 1 == heap_.size() ||
-                heap_[child].time_ < heap_[child + 1].time_)
-                ? child : child + 1;
+            std::size_t min_child =
+                (child + 1 == heap_.size() ||
+                 heap_[child].time_ < heap_[child + 1].time_)
+                ? child
+                : child + 1;
 
             if (heap_[index].time_ < heap_[min_child].time_)
                 break;
@@ -634,26 +630,17 @@ private:
     }
 };
 
-implementation::
-implementation(timer_service_impl& svc) noexcept
-    : svc_(&svc)
-{
-}
+implementation::implementation(timer_service_impl& svc) noexcept : svc_(&svc) {}
 
 void
-waiter_node::canceller::
-operator()() const
+waiter_node::canceller::operator()() const
 {
     waiter_->svc_->cancel_waiter(waiter_);
 }
 
 void
-waiter_node::completion_op::
-do_complete(
-    void* owner,
-    scheduler_op* base,
-    std::uint32_t,
-    std::uint32_t)
+waiter_node::completion_op::do_complete(
+    void* owner, scheduler_op* base, std::uint32_t, std::uint32_t)
 {
     if (!owner)
         return;
@@ -661,8 +648,7 @@ do_complete(
 }
 
 void
-waiter_node::completion_op::
-operator()()
+waiter_node::completion_op::operator()()
 {
     auto* w = waiter_;
     w->stop_cb_.reset();
@@ -677,12 +663,11 @@ operator()()
     svc->destroy_waiter(w);
 
     d.post(h);
-    sched.on_work_finished();
+    sched.work_finished();
 }
 
 std::coroutine_handle<>
-implementation::
-wait(
+implementation::wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
@@ -693,8 +678,7 @@ wait(
     // scheduler, allowing other queued work to run.
     if (heap_index_ == (std::numeric_limits<std::size_t>::max)())
     {
-        if (expiry_ == (time_point::min)() ||
-            expiry_ <= clock_type::now())
+        if (expiry_ == (time_point::min)() || expiry_ <= clock_type::now())
         {
             if (ec)
                 *ec = {};
@@ -707,13 +691,13 @@ wait(
     w->impl_ = this;
     w->svc_ = svc_;
     w->h_ = h;
-    w->d_ = std::move(d);
+    w->d_ = d;
     w->token_ = std::move(token);
     w->ec_out_ = ec;
 
     svc_->insert_waiter(*this, w);
     might_have_pending_waits_ = true;
-    svc_->get_scheduler().on_work_started();
+    svc_->get_scheduler().work_started();
 
     if (w->token_.stop_possible())
         w->stop_cb_.emplace(w->token_, waiter_node::canceller{w});
@@ -804,6 +788,14 @@ struct timer_service_access
         return static_cast<scheduler_impl&>(*ctx.sched_);
     }
 };
+
+// Bypass find_service() mutex by reading the scheduler's cached pointer
+io_object::io_service&
+timer_service_direct(capy::execution_context& ctx) noexcept
+{
+    return *timer_service_access::get_scheduler(
+        static_cast<basic_io_context&>(ctx)).timer_svc_;
+}
 
 std::size_t
 timer_service_update_expiry(timer::implementation& base)

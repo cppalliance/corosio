@@ -12,7 +12,6 @@
 #define BOOST_COROSIO_TIMER_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/error.hpp>
@@ -75,24 +74,22 @@ class BOOST_COROSIO_DECL timer : public io_object
             return {ec_};
         }
 
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            capy::io_env const* env) -> std::coroutine_handle<>
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
             auto& impl = t_.get();
             // Inline fast path: already expired and not in the heap
             if (impl.heap_index_ == implementation::npos &&
                 (impl.expiry_ == (time_point::min)() ||
-                    impl.expiry_ <= clock_type::now()))
+                 impl.expiry_ <= clock_type::now()))
             {
                 ec_ = {};
                 auto d = env->executor;
                 d.post(h);
                 return std::noop_coroutine();
             }
-            return impl.wait(
-                h, env->executor, std::move(token_), &ec_);
+            return impl.wait(h, env->executor, std::move(token_), &ec_);
         }
     };
 
@@ -127,7 +124,7 @@ public:
 
         Cancels any pending operations and releases timer resources.
     */
-    ~timer();
+    ~timer() override;
 
     /** Construct a timer from an execution context.
 
@@ -148,9 +145,7 @@ public:
         @param d The initial expiry duration relative to now.
     */
     template<class Rep, class Period>
-    timer(
-        capy::execution_context& ctx,
-        std::chrono::duration<Rep, Period> d)
+    timer(capy::execution_context& ctx, std::chrono::duration<Rep, Period> d)
         : timer(ctx)
     {
         expires_after(d);
@@ -167,15 +162,12 @@ public:
     /** Move assignment operator.
 
         Closes any existing timer and transfers ownership.
-        The source and destination must share the same execution context.
 
         @param other The timer to move from.
 
         @return Reference to this timer.
-
-        @throws std::logic_error if the timers have different execution contexts.
     */
-    timer& operator=(timer&& other);
+    timer& operator=(timer&& other) noexcept;
 
     timer(timer const&) = delete;
     timer& operator=(timer const&) = delete;

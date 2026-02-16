@@ -42,7 +42,6 @@
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 
-//------------------------------------------------------------------------------
 
 // Ping-pong coroutine: alternately write then read on a socket pair
 // Passed by IILE parameters to avoid capture use-after-free
@@ -74,7 +73,6 @@ capy::task<> ping_pong(
     }
 }
 
-//------------------------------------------------------------------------------
 
 // Run the profiler workload for the specified duration
 void run_workload(
@@ -176,7 +174,6 @@ void run_workload(
     std::cout << "  Avg rate:   " << perf::format_rate(avg_rate) << "\n";
 }
 
-//------------------------------------------------------------------------------
 
 void run_profiler_workload(
     perf::context_factory factory,
@@ -228,7 +225,6 @@ void run_profiler_workload(
     std::cout << "\nWorkload complete.\n";
 }
 
-//------------------------------------------------------------------------------
 
 void print_usage(const char* program_name)
 {

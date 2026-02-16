@@ -52,7 +52,6 @@
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 
-//------------------------------------------------------------------------------
 
 enum class workload_mode
 {
@@ -68,7 +67,6 @@ capy::task<> empty_task(std::atomic<std::uint64_t>& counter)
     co_return;
 }
 
-//------------------------------------------------------------------------------
 
 // Worker thread for balanced mode - posts and polls
 void balanced_worker(
@@ -131,7 +129,6 @@ void run_only_worker(
     }
 }
 
-//------------------------------------------------------------------------------
 
 void run_balanced_workload(
     perf::context_factory factory,
@@ -409,7 +406,6 @@ void run_run_only_workload(
     std::cout << "  Avg rate:   " << perf::format_rate(avg_rate) << "\n";
 }
 
-//------------------------------------------------------------------------------
 
 void run_profiler_workload(
     perf::context_factory factory,
@@ -490,7 +486,6 @@ void run_profiler_workload(
     std::cout << "\nWorkload complete.\n";
 }
 
-//------------------------------------------------------------------------------
 
 void print_usage(const char* program_name)
 {

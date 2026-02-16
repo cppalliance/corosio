@@ -21,14 +21,11 @@
 
 namespace boost::corosio::test {
 
-//------------------------------------------------
 // Mocket-specific tests
-//------------------------------------------------
 
 struct mocket_test
 {
-    void
-    testProvideExpect()
+    void testProvideExpect()
     {
         io_context ioc;
         capy::test::fuse f;
@@ -44,13 +41,11 @@ struct mocket_test
         // Set expectation for mocket's writes
         m.expect("expected_write");
 
-        auto task = [](mocket& m_ref) -> capy::task<>
-        {
+        auto task = [](mocket& m_ref) -> capy::task<> {
             char buf[32] = {};
 
             // Mocket reads from its own provide buffer
-            auto [ec1, n1] = co_await m_ref.read_some(
-                capy::make_buffer(buf));
+            auto [ec1, n1] = co_await m_ref.read_some(capy::make_buffer(buf));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(std::string_view(buf, n1), "staged_read_data");
 
@@ -70,8 +65,7 @@ struct mocket_test
         peer.close();
     }
 
-    void
-    testCloseWithUnconsumedData()
+    void testCloseWithUnconsumedData()
     {
         io_context ioc;
         capy::test::fuse f;
@@ -88,8 +82,7 @@ struct mocket_test
         peer.close();
     }
 
-    void
-    testCloseWithUnconsumedProvide()
+    void testCloseWithUnconsumedProvide()
     {
         io_context ioc;
         capy::test::fuse f;
@@ -106,8 +99,7 @@ struct mocket_test
         peer.close();
     }
 
-    void
-    testPassthrough()
+    void testPassthrough()
     {
         io_context ioc;
         capy::test::fuse f;
@@ -115,30 +107,28 @@ struct mocket_test
         auto [m, peer] = make_mocket_pair(ioc, f);
 
         // Test passthrough when provide/expect buffers are empty
-        auto task = [](mocket& m_ref, tcp_socket& peer_ref) -> capy::task<>
-        {
+        auto task = [](mocket& m_ref, tcp_socket& peer_ref) -> capy::task<> {
             char buf[32] = {};
 
             // Write from mocket, read from peer
-            auto [ec1, n1] = co_await m_ref.write_some(
-                capy::const_buffer("hello", 5));
+            auto [ec1, n1] =
+                co_await m_ref.write_some(capy::const_buffer("hello", 5));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, 5u);
 
-            auto [ec2, n2] = co_await peer_ref.read_some(
-                capy::make_buffer(buf));
+            auto [ec2, n2] =
+                co_await peer_ref.read_some(capy::make_buffer(buf));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(n2, 5u);
             BOOST_TEST_EQ(std::string_view(buf, n2), "hello");
 
             // Write from peer, read from mocket
-            auto [ec3, n3] = co_await peer_ref.write_some(
-                capy::const_buffer("world", 5));
+            auto [ec3, n3] =
+                co_await peer_ref.write_some(capy::const_buffer("world", 5));
             BOOST_TEST(!ec3);
             BOOST_TEST_EQ(n3, 5u);
 
-            auto [ec4, n4] = co_await m_ref.read_some(
-                capy::make_buffer(buf));
+            auto [ec4, n4] = co_await m_ref.read_some(capy::make_buffer(buf));
             BOOST_TEST(!ec4);
             BOOST_TEST_EQ(n4, 5u);
             BOOST_TEST_EQ(std::string_view(buf, n4), "world");
@@ -151,8 +141,7 @@ struct mocket_test
         peer.close();
     }
 
-    void
-    run()
+    void run()
     {
         testProvideExpect();
         testCloseWithUnconsumedData();

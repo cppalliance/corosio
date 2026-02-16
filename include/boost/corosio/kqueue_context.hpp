@@ -65,8 +65,7 @@ public:
         @throws std::system_error if creating the kqueue file descriptor
             or registering the EVFILT_USER interrupt event fails.
     */
-    explicit
-    kqueue_context(unsigned concurrency_hint);
+    explicit kqueue_context(unsigned concurrency_hint);
 
     /** Destructor.
 

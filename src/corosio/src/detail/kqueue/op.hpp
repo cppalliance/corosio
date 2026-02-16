@@ -82,7 +82,7 @@ namespace boost::corosio::detail {
 // These match the epoll numeric values (EPOLLIN=0x1, EPOLLOUT=0x4,
 // EPOLLERR=0x8) so that descriptor_state::operator()() uses the same
 // flag-checking logic as the epoll backend.
-static constexpr std::uint32_t kqueue_event_read  = 0x001;
+static constexpr std::uint32_t kqueue_event_read = 0x001;
 static constexpr std::uint32_t kqueue_event_write = 0x004;
 static constexpr std::uint32_t kqueue_event_error = 0x008;
 
@@ -116,7 +116,7 @@ class kqueue_scheduler;
     The mutex protects operation pointers and ready flags during I/O.
     ready_events_ and is_enqueued_ are atomic for lock-free reactor access.
 */
-struct descriptor_state : scheduler_op
+struct descriptor_state final : scheduler_op
 {
     std::mutex mutex;
 
@@ -165,7 +165,10 @@ struct descriptor_state : scheduler_op
     /// Destroy without invoking.
     /// Called during scheduler::shutdown() drain. Clear impl_ref_ to break
     /// the self-referential cycle set by close_socket().
-    void destroy() override { impl_ref_.reset(); }
+    void destroy() override
+    {
+        impl_ref_.reset();
+    }
 };
 
 struct kqueue_op : scheduler_op
@@ -213,7 +216,10 @@ struct kqueue_op : scheduler_op
     // Defined in sockets.cpp where kqueue_socket_impl is complete
     void operator()() override;
 
-    virtual bool is_read_operation() const noexcept { return false; }
+    virtual bool is_read_operation() const noexcept
+    {
+        return false;
+    }
     virtual void cancel() noexcept = 0;
 
     void destroy() override
@@ -258,8 +264,7 @@ struct kqueue_op : scheduler_op
     virtual void perform_io() noexcept {}
 };
 
-
-struct kqueue_connect_op : kqueue_op
+struct kqueue_connect_op final : kqueue_op
 {
     endpoint target_endpoint;
 
@@ -284,8 +289,7 @@ struct kqueue_connect_op : kqueue_op
     void cancel() noexcept override;
 };
 
-
-struct kqueue_read_op : kqueue_op
+struct kqueue_read_op final : kqueue_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -316,8 +320,7 @@ struct kqueue_read_op : kqueue_op
     void cancel() noexcept override;
 };
 
-
-struct kqueue_write_op : kqueue_op
+struct kqueue_write_op final : kqueue_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -344,8 +347,7 @@ struct kqueue_write_op : kqueue_op
     void cancel() noexcept override;
 };
 
-
-struct kqueue_accept_op : kqueue_op
+struct kqueue_accept_op final : kqueue_op
 {
     int accepted_fd = -1;
     io_object::implementation* peer_impl = nullptr;
@@ -365,13 +367,15 @@ struct kqueue_accept_op : kqueue_op
         socklen_t addrlen = sizeof(addr_storage);
 
         // FreeBSD: Can use accept4(fd, addr, len, SOCK_NONBLOCK | SOCK_CLOEXEC)
-        int new_fd = ::accept(fd, reinterpret_cast<sockaddr*>(&addr_storage), &addrlen);
+        int new_fd =
+            ::accept(fd, reinterpret_cast<sockaddr*>(&addr_storage), &addrlen);
 
         if (new_fd >= 0)
         {
             // Set non-blocking
             int flags = ::fcntl(new_fd, F_GETFL, 0);
-            if (flags == -1 || ::fcntl(new_fd, F_SETFL, flags | O_NONBLOCK) == -1)
+            if (flags == -1 ||
+                ::fcntl(new_fd, F_SETFL, flags | O_NONBLOCK) == -1)
             {
                 int err = errno;
                 ::close(new_fd);
@@ -390,7 +394,8 @@ struct kqueue_accept_op : kqueue_op
 
             // Suppress SIGPIPE on accepted sockets; macOS lacks MSG_NOSIGNAL
             int one = 1;
-            if (::setsockopt(new_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) == -1)
+            if (::setsockopt(
+                    new_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) == -1)
             {
                 int err = errno;
                 ::close(new_fd);

@@ -16,7 +16,6 @@
 #include "src/detail/posix/resolver_service.hpp"
 #endif
 
-#include <stdexcept>
 
 /*
     Resolver Frontend
@@ -46,19 +45,15 @@ using resolver_service = detail::posix_resolver_service;
 
 } // namespace
 
-resolver::
-~resolver() = default;
+resolver::~resolver() = default;
 
-resolver::
-resolver(
-    capy::execution_context& ctx)
+resolver::resolver(capy::execution_context& ctx)
     : io_object(create_handle<resolver_service>(ctx))
 {
 }
 
 void
-resolver::
-cancel()
+resolver::cancel()
 {
     if (h_)
         get().cancel();

@@ -7,7 +7,8 @@
 
 #include <boost/corosio.hpp>
 
-int main()
+int
+main()
 {
     return 0;
 }

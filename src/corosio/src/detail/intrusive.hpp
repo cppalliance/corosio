@@ -12,7 +12,6 @@
 
 namespace boost::corosio::detail {
 
-//------------------------------------------------
 
 /** An intrusive doubly linked list.
 
@@ -60,30 +59,27 @@ public:
     intrusive_list& operator=(intrusive_list const&) = delete;
     intrusive_list& operator=(intrusive_list&&) = delete;
 
-    bool
-    empty() const noexcept
+    bool empty() const noexcept
     {
         return head_ == nullptr;
     }
 
-    void
-    push_back(T* w) noexcept
+    void push_back(T* w) noexcept
     {
         w->next_ = nullptr;
         w->prev_ = tail_;
-        if(tail_)
+        if (tail_)
             tail_->next_ = w;
         else
             head_ = w;
         tail_ = w;
     }
 
-    void
-    splice_back(intrusive_list& other) noexcept
+    void splice_back(intrusive_list& other) noexcept
     {
-        if(other.empty())
+        if (other.empty())
             return;
-        if(tail_)
+        if (tail_)
         {
             tail_->next_ = other.head_;
             other.head_->prev_ = tail_;
@@ -98,14 +94,13 @@ public:
         other.tail_ = nullptr;
     }
 
-    T*
-    pop_front() noexcept
+    T* pop_front() noexcept
     {
-        if(!head_)
+        if (!head_)
             return nullptr;
         T* w = head_;
         head_ = head_->next_;
-        if(head_)
+        if (head_)
             head_->prev_ = nullptr;
         else
             tail_ = nullptr;
@@ -116,21 +111,19 @@ public:
         return w;
     }
 
-    void
-    remove(T* w) noexcept
+    void remove(T* w) noexcept
     {
-        if(w->prev_)
+        if (w->prev_)
             w->prev_->next_ = w->next_;
         else
             head_ = w->next_;
-        if(w->next_)
+        if (w->next_)
             w->next_->prev_ = w->prev_;
         else
             tail_ = w->prev_;
     }
 };
 
-//------------------------------------------------
 
 /** An intrusive singly linked FIFO queue.
 
@@ -181,29 +174,26 @@ public:
     intrusive_queue& operator=(intrusive_queue const&) = delete;
     intrusive_queue& operator=(intrusive_queue&&) = delete;
 
-    bool
-    empty() const noexcept
+    bool empty() const noexcept
     {
         return head_ == nullptr;
     }
 
-    void
-    push(T* w) noexcept
+    void push(T* w) noexcept
     {
         w->next_ = nullptr;
-        if(tail_)
+        if (tail_)
             tail_->next_ = w;
         else
             head_ = w;
         tail_ = w;
     }
 
-    void
-    splice(intrusive_queue& other) noexcept
+    void splice(intrusive_queue& other) noexcept
     {
-        if(other.empty())
+        if (other.empty())
             return;
-        if(tail_)
+        if (tail_)
             tail_->next_ = other.head_;
         else
             head_ = other.head_;
@@ -212,14 +202,13 @@ public:
         other.tail_ = nullptr;
     }
 
-    T*
-    pop() noexcept
+    T* pop() noexcept
     {
-        if(!head_)
+        if (!head_)
             return nullptr;
         T* w = head_;
         head_ = head_->next_;
-        if(!head_)
+        if (!head_)
             tail_ = nullptr;
         // Defensive: clear stale linkage on popped node.
         w->next_ = nullptr;

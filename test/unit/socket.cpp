@@ -34,9 +34,9 @@
 #include <stdexcept>
 
 #if BOOST_COROSIO_POSIX
-#include <unistd.h>   // getpid()
+#include <unistd.h> // getpid()
 #else
-#include <process.h>  // _getpid()
+#include <process.h> // _getpid()
 #endif
 
 #include "context.hpp"
@@ -70,23 +70,21 @@ make_socket_pair_t(Context& ctx)
     s2.open();
 
     capy::run_async(ex)(
-        [](tcp_acceptor& a, tcp_socket& s,
-           std::error_code& ec_out, bool& done_out) -> capy::task<>
-        {
+        [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+           bool& done_out) -> capy::task<> {
             auto [ec] = co_await a.accept(s);
             ec_out = ec;
             done_out = true;
         }(acc, s1, accept_ec, accept_done));
 
     capy::run_async(ex)(
-        [](tcp_socket& s, endpoint ep,
-           std::error_code& ec_out, bool& done_out) -> capy::task<>
-        {
+        [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+           bool& done_out) -> capy::task<> {
             auto [ec] = co_await s.connect(ep);
             ec_out = ec;
             done_out = true;
-        }(s2, endpoint(ipv4_address::loopback(), port),
-          connect_ec, connect_done));
+        }(s2, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
     ctx.run();
     ctx.restart();
@@ -112,8 +110,7 @@ static_assert(capy::WriteStream<tcp_socket>);
 template<class Context>
 struct socket_test
 {
-    void
-    testConstruction()
+    void testConstruction()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -122,8 +119,7 @@ struct socket_test
         BOOST_TEST_EQ(sock.is_open(), false);
     }
 
-    void
-    testOpen()
+    void testOpen()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -137,8 +133,7 @@ struct socket_test
         BOOST_TEST_EQ(sock.is_open(), false);
     }
 
-    void
-    testMoveConstruct()
+    void testMoveConstruct()
     {
         Context ioc;
         tcp_socket sock1(ioc);
@@ -153,8 +148,7 @@ struct socket_test
         sock2.close();
     }
 
-    void
-    testMoveAssign()
+    void testMoveAssign()
     {
         Context ioc;
         tcp_socket sock1(ioc);
@@ -173,22 +167,20 @@ struct socket_test
 
     // Basic Read/Write Operations
 
-    void
-    testReadSome()
+    void testReadSome()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
-            auto [ec1, n1] = co_await a.write_some(
-                capy::const_buffer("hello", 5));
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
+            auto [ec1, n1] =
+                co_await a.write_some(capy::const_buffer("hello", 5));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, 5u);
 
             char buf[32] = {};
-            auto [ec2, n2] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec2, n2] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(n2, 5u);
             BOOST_TEST_EQ(std::string_view(buf, n2), "hello");
@@ -200,20 +192,18 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testWriteSome()
+    void testWriteSome()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             char const* messages[] = {"abc", "defgh", "ijklmnop"};
             for (auto msg : messages)
             {
                 std::size_t len = std::strlen(msg);
-                auto [ec, n] = co_await a.write_some(
-                    capy::const_buffer(msg, len));
+                auto [ec, n] =
+                    co_await a.write_some(capy::const_buffer(msg, len));
                 BOOST_TEST(!ec);
                 BOOST_TEST_EQ(n, len);
 
@@ -231,23 +221,21 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testPartialRead()
+    void testPartialRead()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write 5 bytes but try to read into 1024-byte buffer
-            auto [ec1, n1] = co_await a.write_some(
-                capy::const_buffer("test!", 5));
+            auto [ec1, n1] =
+                co_await a.write_some(capy::const_buffer("test!", 5));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, 5u);
 
             char buf[1024] = {};
-            auto [ec2, n2] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec2, n2] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec2);
             // read_some returns what's available, not buffer size
             BOOST_TEST_EQ(n2, 5u);
@@ -260,34 +248,32 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testSequentialReadWrite()
+    void testSequentialReadWrite()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             char buf[32] = {};
 
             // First exchange
             (void)co_await a.write_some(capy::const_buffer("one", 3));
-            auto [ec1, n1] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec1, n1] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(std::string_view(buf, n1), "one");
 
             // Second exchange
             (void)co_await a.write_some(capy::const_buffer("two", 3));
-            auto [ec2, n2] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec2, n2] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(std::string_view(buf, n2), "two");
 
             // Third exchange
             (void)co_await a.write_some(capy::const_buffer("three", 5));
-            auto [ec3, n3] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec3, n3] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec3);
             BOOST_TEST_EQ(std::string_view(buf, n3), "three");
         };
@@ -298,35 +284,33 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testBidirectionalSimultaneous()
+    void testBidirectionalSimultaneous()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             char buf[32] = {};
 
             // Write from a, read from b
-            auto [ec1, n1] = co_await a.write_some(
-                capy::const_buffer("from_a", 6));
+            auto [ec1, n1] =
+                co_await a.write_some(capy::const_buffer("from_a", 6));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, 6u);
 
-            auto [ec2, n2] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec2, n2] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(std::string_view(buf, n2), "from_a");
 
             // Write from b, read from a
-            auto [ec3, n3] = co_await b.write_some(
-                capy::const_buffer("from_b", 6));
+            auto [ec3, n3] =
+                co_await b.write_some(capy::const_buffer("from_b", 6));
             BOOST_TEST(!ec3);
             BOOST_TEST_EQ(n3, 6u);
 
-            auto [ec4, n4] = co_await a.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec4, n4] =
+                co_await a.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec4);
             BOOST_TEST_EQ(std::string_view(buf, n4), "from_b");
 
@@ -334,13 +318,13 @@ struct socket_test
             (void)co_await a.write_some(capy::const_buffer("msg_a", 5));
             (void)co_await b.write_some(capy::const_buffer("msg_b", 5));
 
-            auto [ec5, n5] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec5, n5] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec5);
             BOOST_TEST_EQ(std::string_view(buf, n5), "msg_a");
 
-            auto [ec6, n6] = co_await a.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec6, n6] =
+                co_await a.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec6);
             BOOST_TEST_EQ(std::string_view(buf, n6), "msg_b");
         };
@@ -351,21 +335,17 @@ struct socket_test
         s2.close();
     }
 
-    //------------------------------------------------
     // Buffer Variations
-    //------------------------------------------------
 
-    void
-    testEmptyBuffer()
+    void testEmptyBuffer()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write with empty buffer
-            auto [ec1, n1] = co_await a.write_some(
-                capy::const_buffer(nullptr, 0));
+            auto [ec1, n1] =
+                co_await a.write_some(capy::const_buffer(nullptr, 0));
             // Empty write should succeed with 0 bytes
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, 0u);
@@ -374,8 +354,8 @@ struct socket_test
             (void)co_await a.write_some(capy::const_buffer("x", 1));
 
             // Read with empty buffer should return 0
-            auto [ec2, n2] = co_await b.read_some(
-                capy::mutable_buffer(nullptr, 0));
+            auto [ec2, n2] =
+                co_await b.read_some(capy::mutable_buffer(nullptr, 0));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(n2, 0u);
 
@@ -390,25 +370,23 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testSmallBuffer()
+    void testSmallBuffer()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Single byte writes
             for (char c = 'A'; c <= 'E'; ++c)
             {
-                auto [ec1, n1] = co_await a.write_some(
-                    capy::const_buffer(&c, 1));
+                auto [ec1, n1] =
+                    co_await a.write_some(capy::const_buffer(&c, 1));
                 BOOST_TEST(!ec1);
                 BOOST_TEST_EQ(n1, 1u);
 
                 char buf = 0;
-                auto [ec2, n2] = co_await b.read_some(
-                    capy::mutable_buffer(&buf, 1));
+                auto [ec2, n2] =
+                    co_await b.read_some(capy::mutable_buffer(&buf, 1));
                 BOOST_TEST(!ec2);
                 BOOST_TEST_EQ(n2, 1u);
                 BOOST_TEST_EQ(buf, c);
@@ -421,14 +399,12 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testLargeBuffer()
+    void testLargeBuffer()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // 64KB data - larger than typical TCP segment
             constexpr std::size_t size = 64 * 1024;
             std::vector<char> send_data(size);
@@ -444,8 +420,7 @@ struct socket_test
             {
                 auto [ec, n] = co_await a.write_some(
                     capy::const_buffer(
-                        send_data.data() + total_sent,
-                        size - total_sent));
+                        send_data.data() + total_sent, size - total_sent));
                 BOOST_TEST(!ec);
                 total_sent += n;
             }
@@ -455,10 +430,9 @@ struct socket_test
             {
                 auto [ec, n] = co_await b.read_some(
                     capy::mutable_buffer(
-                        recv_data.data() + total_recv,
-                        size - total_recv));
+                        recv_data.data() + total_recv, size - total_recv));
                 BOOST_TEST(!ec);
-                if(ec)
+                if (ec)
                     break;
                 total_recv += n;
             }
@@ -476,28 +450,26 @@ struct socket_test
 
     // EOF and Closure Handling
 
-    void
-    testReadAfterPeerClose()
+    void testReadAfterPeerClose()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then close
             (void)co_await a.write_some(capy::const_buffer("final", 5));
             a.close();
 
             // Read the data
             char buf[32] = {};
-            auto [ec1, n1] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec1, n1] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(std::string_view(buf, n1), "final");
 
             // Next read should get EOF
-            auto [ec2, n2] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec2, n2] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(ec2 == capy::cond::eof);
             BOOST_TEST_EQ(n2, 0u);
         };
@@ -508,14 +480,12 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testWriteAfterPeerClose()
+    void testWriteAfterPeerClose()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Close the receiving end
             b.close();
 
@@ -528,8 +498,8 @@ struct socket_test
             // We need to write enough data to fill the tcp_socket buffer and
             // trigger the error. macOS has larger buffers than Linux.
             std::error_code last_ec;
-            std::array<char, 8192> buf{};  // Larger buffer per write
-            for (int i = 0; i < 100; ++i)  // More iterations
+            std::array<char, 8192> buf{}; // Larger buffer per write
+            for (int i = 0; i < 100; ++i) // More iterations
             {
                 auto [ec, n] = co_await a.write_some(
                     capy::const_buffer(buf.data(), buf.size()));
@@ -549,14 +519,12 @@ struct socket_test
 
     // Cancellation
 
-    void
-    testCancelRead()
+    void testCancelRead()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [&](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [&](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Start a timer to cancel the read
             timer t(a.context());
             t.expires_after(std::chrono::milliseconds(50));
@@ -568,8 +536,7 @@ struct socket_test
             // Store lambda in variable to ensure it outlives the coroutine.
             // Lambda coroutines capture 'this' by reference, so the lambda
             // must remain alive while the coroutine is suspended.
-            auto nested_coro = [&b, &read_done, &read_ec]() -> capy::task<>
-            {
+            auto nested_coro = [&b, &read_done, &read_ec]() -> capy::task<> {
                 char buf[32];
                 auto [ec, n] = co_await b.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
@@ -597,14 +564,12 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testCloseWhileReading()
+    void testCloseWhileReading()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [&](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [&](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             timer t(a.context());
             t.expires_after(std::chrono::milliseconds(50));
 
@@ -614,8 +579,7 @@ struct socket_test
             // Store lambda in variable to ensure it outlives the coroutine.
             // Lambda coroutines capture 'this' by reference, so the lambda
             // must remain alive while the coroutine is suspended.
-            auto nested_coro = [&b, &read_done, &read_ec]() -> capy::task<>
-            {
+            auto nested_coro = [&b, &read_done, &read_ec]() -> capy::task<> {
                 char buf[32];
                 auto [ec, n] = co_await b.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
@@ -643,8 +607,7 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testStopTokenCancellation()
+    void testStopTokenCancellation()
     {
         // Verifies that std::stop_token properly cancels pending I/O.
         // On Linux/epoll, this requires the backend to actually unregister from
@@ -659,22 +622,20 @@ struct socket_test
         std::error_code read_ec;
 
         // Reader task - signals ready then blocks waiting for data
-        auto reader_task = [&]() -> capy::task<>
-        {
+        auto reader_task = [&]() -> capy::task<> {
             // Signal we're about to start the blocking read
             (void)co_await s2.write_some(capy::const_buffer("R", 1));
 
             // Now block waiting for data that will never come
             char buf[32];
-            auto [ec, n] = co_await s2.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec, n] =
+                co_await s2.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             read_ec = ec;
             read_done = true;
         };
 
         // Canceller task - waits for reader to be ready, then requests stop
-        auto canceller_task = [&]() -> capy::task<>
-        {
+        auto canceller_task = [&]() -> capy::task<> {
             // Wait for reader's "ready" signal
             char buf[1];
             (void)co_await s1.read_some(capy::mutable_buffer(buf, 1));
@@ -684,8 +645,7 @@ struct socket_test
         };
 
         // Failsafe task - detects if stop_token cancellation didn't work
-        auto failsafe_task = [&]() -> capy::task<>
-        {
+        auto failsafe_task = [&]() -> capy::task<> {
             timer t(ioc);
             t.expires_after(std::chrono::milliseconds(1000));
             auto [ec] = co_await t.wait();
@@ -700,7 +660,8 @@ struct socket_test
         };
 
         // Launch all tasks
-        capy::run_async(ioc.get_executor(), stop_src.get_token())(reader_task());
+        capy::run_async(
+            ioc.get_executor(), stop_src.get_token())(reader_task());
         capy::run_async(ioc.get_executor())(canceller_task());
         capy::run_async(ioc.get_executor())(failsafe_task());
 
@@ -719,23 +680,21 @@ struct socket_test
 
     // Composed Operations
 
-    void
-    testReadFull()
+    void testReadFull()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write exactly 100 bytes
             std::string send_data(100, 'X');
-            (void)co_await capy::write(a, capy::const_buffer(
-                send_data.data(), send_data.size()));
+            (void)co_await capy::write(
+                a, capy::const_buffer(send_data.data(), send_data.size()));
 
             // Read exactly 100 bytes using corosio::read
             char buf[100] = {};
-            auto [ec, n] = co_await capy::read(b, capy::mutable_buffer(
-                buf, sizeof(buf)));
+            auto [ec, n] =
+                co_await capy::read(b, capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 100u);
             BOOST_TEST_EQ(std::string_view(buf, n), send_data);
@@ -747,24 +706,22 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testWriteFull()
+    void testWriteFull()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             std::string send_data(500, 'Y');
-            auto [ec1, n1] = co_await capy::write(a, capy::const_buffer(
-                send_data.data(), send_data.size()));
+            auto [ec1, n1] = co_await capy::write(
+                a, capy::const_buffer(send_data.data(), send_data.size()));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, 500u);
 
             // Read it back
             std::string recv_data(500, 0);
-            auto [ec2, n2] = co_await capy::read(b, capy::mutable_buffer(
-                recv_data.data(), recv_data.size()));
+            auto [ec2, n2] = co_await capy::read(
+                b, capy::mutable_buffer(recv_data.data(), recv_data.size()));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(n2, 500u);
             BOOST_TEST_EQ(recv_data, send_data);
@@ -776,21 +733,20 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testReadString()
+    void testReadString()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             std::string send_data = "Hello, this is a test message!";
             (void)co_await capy::write(a, capy::make_buffer(send_data));
             a.close();
 
             // Read into string until EOF using dynamic buffer
             std::string result;
-            auto [ec, n] = co_await capy::read(b, capy::string_dynamic_buffer(&result));
+            auto [ec, n] =
+                co_await capy::read(b, capy::string_dynamic_buffer(&result));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, send_data.size());
             BOOST_TEST_EQ(result, send_data);
@@ -802,23 +758,21 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testReadPartialEOF()
+    void testReadPartialEOF()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Send 50 bytes but try to read 100
             std::string send_data(50, 'Z');
-            (void)co_await capy::write(a, capy::const_buffer(
-                send_data.data(), send_data.size()));
+            (void)co_await capy::write(
+                a, capy::const_buffer(send_data.data(), send_data.size()));
             a.close();
 
             char buf[100] = {};
-            auto [ec, n] = co_await capy::read(b, capy::mutable_buffer(
-                buf, sizeof(buf)));
+            auto [ec, n] =
+                co_await capy::read(b, capy::mutable_buffer(buf, sizeof(buf)));
             // Should get EOF after reading available data
             BOOST_TEST(ec == capy::error::eof);
             BOOST_TEST_EQ(n, 50u);
@@ -833,28 +787,26 @@ struct socket_test
 
     // Shutdown
 
-    void
-    testShutdownSend()
+    void testShutdownSend()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then shutdown send
             (void)co_await a.write_some(capy::const_buffer("hello", 5));
             a.shutdown(tcp_socket::shutdown_send);
 
             // Read the data
             char buf[32] = {};
-            auto [ec1, n1] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec1, n1] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(std::string_view(buf, n1), "hello");
 
             // Next read should get EOF
-            auto [ec2, n2] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec2, n2] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(ec2 == capy::cond::eof);
         };
         capy::run_async(ioc.get_executor())(task(s1, s2));
@@ -864,14 +816,12 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testShutdownReceive()
+    void testShutdownReceive()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Shutdown receive on b
             b.shutdown(tcp_socket::shutdown_receive);
 
@@ -879,8 +829,8 @@ struct socket_test
             (void)co_await b.write_some(capy::const_buffer("from_b", 6));
 
             char buf[32] = {};
-            auto [ec, n] = co_await a.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec, n] =
+                co_await a.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(std::string_view(buf, n), "from_b");
         };
@@ -891,8 +841,7 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testShutdownOnClosedSocket()
+    void testShutdownOnClosedSocket()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -903,28 +852,26 @@ struct socket_test
         sock.shutdown(tcp_socket::shutdown_both);
     }
 
-    void
-    testShutdownBothSendDirection()
+    void testShutdownBothSendDirection()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then shutdown both
             (void)co_await a.write_some(capy::const_buffer("goodbye", 7));
             a.shutdown(tcp_socket::shutdown_both);
 
             // Peer should receive the data
             char buf[32] = {};
-            auto [ec1, n1] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec1, n1] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(std::string_view(buf, n1), "goodbye");
 
             // Next read should get EOF
-            auto [ec2, n2] = co_await b.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec2, n2] =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(ec2 == capy::cond::eof);
         };
         capy::run_async(ioc.get_executor())(task(s1, s2));
@@ -936,8 +883,7 @@ struct socket_test
 
     // Socket Options
 
-    void
-    testNoDelay()
+    void testNoDelay()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -956,8 +902,7 @@ struct socket_test
         sock.close();
     }
 
-    void
-    testKeepAlive()
+    void testKeepAlive()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -975,8 +920,7 @@ struct socket_test
         sock.close();
     }
 
-    void
-    testReceiveBufferSize()
+    void testReceiveBufferSize()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -995,8 +939,7 @@ struct socket_test
         sock.close();
     }
 
-    void
-    testSendBufferSize()
+    void testSendBufferSize()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -1015,8 +958,7 @@ struct socket_test
         sock.close();
     }
 
-    void
-    testLinger()
+    void testLinger()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -1042,8 +984,7 @@ struct socket_test
         sock.close();
     }
 
-    void
-    testLingerValidation()
+    void testLingerValidation()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -1064,8 +1005,7 @@ struct socket_test
         sock.close();
     }
 
-    void
-    testSocketOptionsOnConnectedSocket()
+    void testSocketOptionsOnConnectedSocket()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
@@ -1093,28 +1033,26 @@ struct socket_test
 
     // Data Integrity
 
-    void
-    testLargeTransfer()
+    void testLargeTransfer()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // 128KB payload
             constexpr std::size_t size = 128 * 1024;
             std::vector<char> send_data(size);
             for (std::size_t i = 0; i < size; ++i)
                 send_data[i] = static_cast<char>((i * 7 + 13) & 0xFF);
 
-            auto [ec1, n1] = co_await capy::write(a, capy::const_buffer(
-                send_data.data(), send_data.size()));
+            auto [ec1, n1] = co_await capy::write(
+                a, capy::const_buffer(send_data.data(), send_data.size()));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, size);
 
             std::vector<char> recv_data(size);
-            auto [ec2, n2] = co_await capy::read(b, capy::mutable_buffer(
-                recv_data.data(), recv_data.size()));
+            auto [ec2, n2] = co_await capy::read(
+                b, capy::mutable_buffer(recv_data.data(), recv_data.size()));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(n2, size);
             BOOST_TEST(send_data == recv_data);
@@ -1126,27 +1064,25 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testBinaryData()
+    void testBinaryData()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // All 256 byte values
             std::array<unsigned char, 256> send_data;
             for (int i = 0; i < 256; ++i)
                 send_data[i] = static_cast<unsigned char>(i);
 
-            auto [ec1, n1] = co_await capy::write(a, capy::const_buffer(
-                send_data.data(), send_data.size()));
+            auto [ec1, n1] = co_await capy::write(
+                a, capy::const_buffer(send_data.data(), send_data.size()));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, 256u);
 
             std::array<unsigned char, 256> recv_data = {};
-            auto [ec2, n2] = co_await capy::read(b, capy::mutable_buffer(
-                recv_data.data(), recv_data.size()));
+            auto [ec2, n2] = co_await capy::read(
+                b, capy::mutable_buffer(recv_data.data(), recv_data.size()));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(n2, 256u);
             BOOST_TEST(send_data == recv_data);
@@ -1160,8 +1096,7 @@ struct socket_test
 
     // Endpoint Query Tests
 
-    void
-    testEndpointsEphemeralPort()
+    void testEndpointsEphemeralPort()
     {
         // Test with ephemeral port (port 0 - OS assigns)
         Context ioc;
@@ -1180,15 +1115,13 @@ struct socket_test
         tcp_socket server(ioc);
         client.open();
 
-        auto task = [&]() -> capy::task<>
-        {
+        auto task = [&]() -> capy::task<> {
             // Connect to the acceptor
             auto [ec] = co_await client.connect(acc.local_endpoint());
             BOOST_TEST(!ec);
         };
 
-        auto accept_task = [&]() -> capy::task<>
-        {
+        auto accept_task = [&]() -> capy::task<> {
             auto [ec] = co_await acc.accept(server);
             BOOST_TEST(!ec);
         };
@@ -1216,8 +1149,7 @@ struct socket_test
         acc.close();
     }
 
-    void
-    testEndpointsSpecifiedPort()
+    void testEndpointsSpecifiedPort()
     {
         // Test with a specified port number
         Context ioc;
@@ -1231,7 +1163,8 @@ struct socket_test
 #endif
         auto fast_rand = [&rng_state]() -> std::uint16_t {
             rng_state = rng_state * 1103515245 + 12345;
-            return static_cast<std::uint16_t>((rng_state >> 16) & 0x3F) + 1;  // 1-64
+            return static_cast<std::uint16_t>((rng_state >> 16) & 0x3F) +
+                1; // 1-64
         };
 
         // Try to find an available port outside the ephemeral range
@@ -1250,7 +1183,10 @@ struct socket_test
         }
         if (!found)
         {
-            std::fprintf(stderr, "testEndpointsSpecifiedPort: failed to find available port after 100 attempts\n");
+            std::fprintf(
+                stderr,
+                "testEndpointsSpecifiedPort: failed to find available port "
+                "after 100 attempts\n");
             return;
         }
 
@@ -1261,15 +1197,13 @@ struct socket_test
         tcp_socket server(ioc);
         client.open();
 
-        auto task = [&]() -> capy::task<>
-        {
+        auto task = [&]() -> capy::task<> {
             auto [ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), test_port));
             BOOST_TEST(!ec);
         };
 
-        auto accept_task = [&]() -> capy::task<>
-        {
+        auto accept_task = [&]() -> capy::task<> {
             auto [ec] = co_await acc.accept(server);
             BOOST_TEST(!ec);
         };
@@ -1281,7 +1215,8 @@ struct socket_test
 
         // Client's remote endpoint should equal the endpoint passed to connect()
         BOOST_TEST(client.remote_endpoint().port() == test_port);
-        BOOST_TEST(client.remote_endpoint() ==
+        BOOST_TEST(
+            client.remote_endpoint() ==
             endpoint(ipv4_address::loopback(), test_port));
 
         // Server's local endpoint should have the specified port
@@ -1292,8 +1227,7 @@ struct socket_test
         acc.close();
     }
 
-    void
-    testEndpointOnClosedSocket()
+    void testEndpointOnClosedSocket()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -1305,8 +1239,7 @@ struct socket_test
         BOOST_TEST(sock.remote_endpoint().port() == 0);
     }
 
-    void
-    testEndpointBeforeConnect()
+    void testEndpointBeforeConnect()
     {
         Context ioc;
         tcp_socket sock(ioc);
@@ -1319,18 +1252,16 @@ struct socket_test
         sock.close();
     }
 
-    void
-    testEndpointsAfterConnectFailure()
+    void testEndpointsAfterConnectFailure()
     {
         Context ioc;
         tcp_socket sock(ioc);
         sock.open();
 
-        auto task = [&]() -> capy::task<>
-        {
+        auto task = [&]() -> capy::task<> {
             // Connect to an unreachable address (localhost on unlikely port)
-            auto [ec] = co_await sock.connect(
-                endpoint(ipv4_address::loopback(), 1));  // Port 1 is typically closed
+            auto [ec] = co_await sock.connect(endpoint(
+                ipv4_address::loopback(), 1)); // Port 1 is typically closed
             // We expect this to fail (connection refused or similar)
             BOOST_TEST(ec);
         };
@@ -1345,8 +1276,7 @@ struct socket_test
         sock.close();
     }
 
-    void
-    testEndpointsMoveConstruct()
+    void testEndpointsMoveConstruct()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
@@ -1375,8 +1305,7 @@ struct socket_test
         s3.close();
     }
 
-    void
-    testEndpointsMoveAssign()
+    void testEndpointsMoveAssign()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
@@ -1404,8 +1333,7 @@ struct socket_test
         s3.close();
     }
 
-    void
-    testEndpointsConsistentReads()
+    void testEndpointsConsistentReads()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
@@ -1427,8 +1355,7 @@ struct socket_test
         s2.close();
     }
 
-    void
-    testEndpointsAfterCloseAndReopen()
+    void testEndpointsAfterCloseAndReopen()
     {
         Context ioc;
         auto [s1, s2] = make_socket_pair_t<Context>(ioc);
@@ -1457,8 +1384,7 @@ struct socket_test
         s2.close();
     }
 
-    void
-    run()
+    void run()
     {
         testConstruction();
         testOpen();

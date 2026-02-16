@@ -45,20 +45,17 @@ public:
     win_mutex(win_mutex const&) = delete;
     win_mutex& operator=(win_mutex const&) = delete;
 
-    void
-    lock() noexcept
+    void lock() noexcept
     {
         ::EnterCriticalSection(&cs_);
     }
 
-    void
-    unlock() noexcept
+    void unlock() noexcept
     {
         ::LeaveCriticalSection(&cs_);
     }
 
-    bool
-    try_lock() noexcept
+    bool try_lock() noexcept
     {
         return ::TryEnterCriticalSection(&cs_) != 0;
     }

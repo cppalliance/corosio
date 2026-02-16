@@ -108,7 +108,7 @@ class epoll_scheduler;
     The mutex protects operation pointers and ready flags during I/O.
     ready_events_ and is_enqueued_ are atomic for lock-free reactor access.
 */
-struct descriptor_state : scheduler_op
+struct descriptor_state final : scheduler_op
 {
     std::mutex mutex;
 
@@ -154,7 +154,10 @@ struct descriptor_state : scheduler_op
     /// Destroy without invoking.
     /// Called during scheduler::shutdown() drain. Clear impl_ref_ to break
     /// the self-referential cycle set by close_socket().
-    void destroy() override { impl_ref_.reset(); }
+    void destroy() override
+    {
+        impl_ref_.reset();
+    }
 };
 
 struct epoll_op : scheduler_op
@@ -202,7 +205,10 @@ struct epoll_op : scheduler_op
     // Defined in sockets.cpp where epoll_socket_impl is complete
     void operator()() override;
 
-    virtual bool is_read_operation() const noexcept { return false; }
+    virtual bool is_read_operation() const noexcept
+    {
+        return false;
+    }
     virtual void cancel() noexcept = 0;
 
     void destroy() override
@@ -216,6 +222,7 @@ struct epoll_op : scheduler_op
         cancelled.store(true, std::memory_order_release);
     }
 
+    // NOLINTNEXTLINE(performance-unnecessary-value-param)
     void start(std::stop_token token, epoll_socket_impl* impl)
     {
         cancelled.store(false, std::memory_order_release);
@@ -227,6 +234,7 @@ struct epoll_op : scheduler_op
             stop_cb.emplace(token, canceller{this});
     }
 
+    // NOLINTNEXTLINE(performance-unnecessary-value-param)
     void start(std::stop_token token, epoll_acceptor_impl* impl)
     {
         cancelled.store(false, std::memory_order_release);
@@ -247,8 +255,7 @@ struct epoll_op : scheduler_op
     virtual void perform_io() noexcept {}
 };
 
-
-struct epoll_connect_op : epoll_op
+struct epoll_connect_op final : epoll_op
 {
     endpoint target_endpoint;
 
@@ -273,8 +280,7 @@ struct epoll_connect_op : epoll_op
     void cancel() noexcept override;
 };
 
-
-struct epoll_read_op : epoll_op
+struct epoll_read_op final : epoll_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -296,9 +302,11 @@ struct epoll_read_op : epoll_op
     void perform_io() noexcept override
     {
         ssize_t n;
-        do {
+        do
+        {
             n = ::readv(fd, iovecs, iovec_count);
-        } while (n < 0 && errno == EINTR);
+        }
+        while (n < 0 && errno == EINTR);
 
         if (n >= 0)
             complete(0, static_cast<std::size_t>(n));
@@ -309,8 +317,7 @@ struct epoll_read_op : epoll_op
     void cancel() noexcept override;
 };
 
-
-struct epoll_write_op : epoll_op
+struct epoll_write_op final : epoll_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -329,9 +336,11 @@ struct epoll_write_op : epoll_op
         msg.msg_iovlen = static_cast<std::size_t>(iovec_count);
 
         ssize_t n;
-        do {
+        do
+        {
             n = ::sendmsg(fd, &msg, MSG_NOSIGNAL);
-        } while (n < 0 && errno == EINTR);
+        }
+        while (n < 0 && errno == EINTR);
 
         if (n >= 0)
             complete(0, static_cast<std::size_t>(n));
@@ -342,8 +351,7 @@ struct epoll_write_op : epoll_op
     void cancel() noexcept override;
 };
 
-
-struct epoll_accept_op : epoll_op
+struct epoll_accept_op final : epoll_op
 {
     int accepted_fd = -1;
     io_object::implementation** impl_out = nullptr;
@@ -361,10 +369,13 @@ struct epoll_accept_op : epoll_op
     {
         socklen_t addrlen = sizeof(peer_addr);
         int new_fd;
-        do {
-            new_fd = ::accept4(fd, reinterpret_cast<sockaddr*>(&peer_addr),
-                               &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
-        } while (new_fd < 0 && errno == EINTR);
+        do
+        {
+            new_fd = ::accept4(
+                fd, reinterpret_cast<sockaddr*>(&peer_addr), &addrlen,
+                SOCK_NONBLOCK | SOCK_CLOEXEC);
+        }
+        while (new_fd < 0 && errno == EINTR);
 
         if (new_fd >= 0)
         {

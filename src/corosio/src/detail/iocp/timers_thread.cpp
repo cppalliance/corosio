@@ -17,16 +17,15 @@
 
 namespace boost::corosio::detail {
 
-win_timers_thread::
-win_timers_thread(void* iocp, long* dispatch_required) noexcept
+win_timers_thread::win_timers_thread(
+    void* iocp, long* dispatch_required) noexcept
     : win_timers(dispatch_required)
     , iocp_(iocp)
 {
     waitable_timer_ = ::CreateWaitableTimerW(nullptr, FALSE, nullptr);
 }
 
-win_timers_thread::
-~win_timers_thread()
+win_timers_thread::~win_timers_thread()
 {
     stop();
     if (waitable_timer_)
@@ -34,8 +33,7 @@ win_timers_thread::
 }
 
 void
-win_timers_thread::
-start()
+win_timers_thread::start()
 {
     if (!waitable_timer_)
         return;
@@ -44,8 +42,7 @@ start()
 }
 
 void
-win_timers_thread::
-stop()
+win_timers_thread::stop()
 {
     if (::InterlockedExchange(&shutdown_, 1) == 0)
     {
@@ -54,7 +51,8 @@ stop()
         {
             LARGE_INTEGER due_time;
             due_time.QuadPart = 0;
-            ::SetWaitableTimer(waitable_timer_, &due_time, 0, nullptr, nullptr, FALSE);
+            ::SetWaitableTimer(
+                waitable_timer_, &due_time, 0, nullptr, nullptr, FALSE);
         }
     }
 
@@ -63,8 +61,7 @@ stop()
 }
 
 void
-win_timers_thread::
-update_timeout(time_point next_expiry)
+win_timers_thread::update_timeout(time_point next_expiry)
 {
     if (!waitable_timer_)
         return;
@@ -86,7 +83,8 @@ update_timeout(time_point next_expiry)
     {
         // Convert duration to 100ns units (negative = relative)
         auto duration = next_expiry - now;
-        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration)
+                      .count();
         due_time.QuadPart = -(ns / 100);
         if (due_time.QuadPart == 0)
             due_time.QuadPart = -1; // At least 100ns
@@ -96,8 +94,7 @@ update_timeout(time_point next_expiry)
 }
 
 void
-win_timers_thread::
-thread_func()
+win_timers_thread::thread_func()
 {
     while (::InterlockedExchangeAdd(&shutdown_, 0) == 0)
     {
@@ -110,10 +107,7 @@ thread_func()
 
         ::InterlockedExchange(dispatch_required_, 1);
         ::PostQueuedCompletionStatus(
-            static_cast<HANDLE>(iocp_),
-            0,
-            key_wake_dispatch,
-            nullptr);
+            static_cast<HANDLE>(iocp_), 0, key_wake_dispatch, nullptr);
     }
 }
 

@@ -19,15 +19,11 @@
 
 namespace boost::corosio {
 
-iocp_context::
-iocp_context()
-    : iocp_context(std::thread::hardware_concurrency())
+iocp_context::iocp_context() : iocp_context(std::thread::hardware_concurrency())
 {
 }
 
-iocp_context::
-iocp_context(
-    unsigned concurrency_hint)
+iocp_context::iocp_context(unsigned concurrency_hint)
 {
     sched_ = &make_service<detail::win_scheduler>(
         static_cast<int>(concurrency_hint));
@@ -37,8 +33,7 @@ iocp_context(
     make_service<detail::win_signals>();
 }
 
-iocp_context::
-~iocp_context()
+iocp_context::~iocp_context()
 {
     shutdown();
     destroy();

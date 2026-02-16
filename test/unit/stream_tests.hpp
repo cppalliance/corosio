@@ -44,14 +44,14 @@ test_echo(S1& a, S2& b, std::string_view test_data = "hello")
         auto [ec1, n1] = co_await a.write_some(
             capy::const_buffer(test_data.data(), test_data.size()));
         BOOST_TEST(!ec1);
-        if(ec1)
+        if (ec1)
             co_return;
         BOOST_TEST_EQ(n1, test_data.size());
 
-        auto [ec2, n2] = co_await b.read_some(
-            capy::mutable_buffer(buf.data(), buf.size()));
+        auto [ec2, n2] =
+            co_await b.read_some(capy::mutable_buffer(buf.data(), buf.size()));
         BOOST_TEST(!ec2);
-        if(ec2)
+        if (ec2)
             co_return;
         BOOST_TEST_EQ(n2, test_data.size());
         BOOST_TEST(std::memcmp(buf.data(), test_data.data(), n2) == 0);
@@ -62,14 +62,14 @@ test_echo(S1& a, S2& b, std::string_view test_data = "hello")
         auto [ec3, n3] = co_await b.write_some(
             capy::const_buffer(test_data.data(), test_data.size()));
         BOOST_TEST(!ec3);
-        if(ec3)
+        if (ec3)
             co_return;
         BOOST_TEST_EQ(n3, test_data.size());
 
-        auto [ec4, n4] = co_await a.read_some(
-            capy::mutable_buffer(buf.data(), buf.size()));
+        auto [ec4, n4] =
+            co_await a.read_some(capy::mutable_buffer(buf.data(), buf.size()));
         BOOST_TEST(!ec4);
-        if(ec4)
+        if (ec4)
             co_return;
         BOOST_TEST_EQ(n4, test_data.size());
         BOOST_TEST(std::memcmp(buf.data(), test_data.data(), n4) == 0);
@@ -87,13 +87,13 @@ test_echo(S1& a, S2& b, std::string_view test_data = "hello")
 inline std::string
 scaled_test_data(std::size_t max_size)
 {
-    if(max_size <= 1)
-        return "Hello World!1234";  // 16 bytes
-    if(max_size <= 13)
-        return std::string(64, 'X');  // 64 bytes
-    if(max_size <= 64)
-        return std::string(256, 'Y');  // 256 bytes
-    return std::string(1024, 'Z');  // 1KB
+    if (max_size <= 1)
+        return "Hello World!1234"; // 16 bytes
+    if (max_size <= 13)
+        return std::string(64, 'X'); // 64 bytes
+    if (max_size <= 64)
+        return std::string(256, 'Y'); // 256 bytes
+    return std::string(1024, 'Z');    // 1KB
 }
 
 } // namespace boost::corosio::test

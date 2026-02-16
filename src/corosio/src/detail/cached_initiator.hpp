@@ -75,16 +75,26 @@ private:
 
             static void operator delete(void*) noexcept {}
 
-            std::suspend_always initial_suspend() noexcept { return {}; }
-            std::suspend_always final_suspend() noexcept { return {}; }
+            std::suspend_always initial_suspend() noexcept
+            {
+                return {};
+            }
+            std::suspend_always final_suspend() noexcept
+            {
+                return {};
+            }
 
             initiator_coro get_return_object()
             {
-                return {std::coroutine_handle<promise_type>::from_promise(*this)};
+                return {
+                    std::coroutine_handle<promise_type>::from_promise(*this)};
             }
 
             void return_void() {}
-            void unhandled_exception() { std::terminate(); }
+            void unhandled_exception()
+            {
+                std::terminate();
+            }
         };
 
         using handle_type = std::coroutine_handle<promise_type>;

@@ -126,8 +126,7 @@ struct thread_context_guard
 {
     scheduler_context frame_;
 
-    explicit thread_context_guard(
-        epoll_scheduler const* ctx) noexcept
+    explicit thread_context_guard(epoll_scheduler const* ctx) noexcept
         : frame_(ctx, context_stack.get())
     {
         context_stack.set(&frame_);
@@ -136,7 +135,8 @@ struct thread_context_guard
     ~thread_context_guard() noexcept
     {
         if (!frame_.private_queue.empty())
-            frame_.key->drain_thread_queue(frame_.private_queue, frame_.private_outstanding_work);
+            frame_.key->drain_thread_queue(
+                frame_.private_queue, frame_.private_outstanding_work);
         context_stack.set(frame_.next);
     }
 };
@@ -153,8 +153,7 @@ find_context(epoll_scheduler const* self) noexcept
 } // namespace
 
 void
-epoll_scheduler::
-reset_inline_budget() const noexcept
+epoll_scheduler::reset_inline_budget() const noexcept
 {
     if (auto* ctx = find_context(this))
     {
@@ -178,8 +177,7 @@ reset_inline_budget() const noexcept
 }
 
 bool
-epoll_scheduler::
-try_consume_inline_budget() const noexcept
+epoll_scheduler::try_consume_inline_budget() const noexcept
 {
     if (auto* ctx = find_context(this))
     {
@@ -193,8 +191,7 @@ try_consume_inline_budget() const noexcept
 }
 
 void
-descriptor_state::
-operator()()
+descriptor_state::operator()()
 {
     is_enqueued_.store(false, std::memory_order_relaxed);
 
@@ -316,10 +313,7 @@ operator()()
     }
 }
 
-epoll_scheduler::
-epoll_scheduler(
-    capy::execution_context& ctx,
-    int)
+epoll_scheduler::epoll_scheduler(capy::execution_context& ctx, int)
     : epoll_fd_(-1)
     , event_fd_(-1)
     , timer_fd_(-1)
@@ -377,14 +371,12 @@ epoll_scheduler(
 
     timer_svc_ = &get_timer_service(ctx, *this);
     timer_svc_->set_on_earliest_changed(
-        timer_service::callback(
-            this,
-            [](void* p) {
-                auto* self = static_cast<epoll_scheduler*>(p);
-                self->timerfd_stale_.store(true, std::memory_order_release);
-                if (self->task_running_.load(std::memory_order_acquire))
-                    self->interrupt_reactor();
-            }));
+        timer_service::callback(this, [](void* p) {
+            auto* self = static_cast<epoll_scheduler*>(p);
+            self->timerfd_stale_.store(true, std::memory_order_release);
+            if (self->task_running_.load(std::memory_order_acquire))
+                self->interrupt_reactor();
+        }));
 
     // Initialize resolver service
     get_resolver_service(ctx, *this);
@@ -396,8 +388,7 @@ epoll_scheduler(
     completed_ops_.push(&task_op_);
 }
 
-epoll_scheduler::
-~epoll_scheduler()
+epoll_scheduler::~epoll_scheduler()
 {
     if (timer_fd_ >= 0)
         ::close(timer_fd_);
@@ -408,8 +399,7 @@ epoll_scheduler::
 }
 
 void
-epoll_scheduler::
-shutdown()
+epoll_scheduler::shutdown()
 {
     {
         std::unique_lock lock(mutex_);
@@ -434,21 +424,15 @@ shutdown()
 }
 
 void
-epoll_scheduler::
-post(std::coroutine_handle<> h) const
+epoll_scheduler::post(std::coroutine_handle<> h) const
 {
-    struct post_handler final
-        : scheduler_op
+    struct post_handler final : scheduler_op
     {
         std::coroutine_handle<> h_;
 
-        explicit
-        post_handler(std::coroutine_handle<> h)
-            : h_(h)
-        {
-        }
+        explicit post_handler(std::coroutine_handle<> h) : h_(h) {}
 
-        ~post_handler() = default;
+        ~post_handler() override = default;
 
         void operator()() override
         {
@@ -483,8 +467,7 @@ post(std::coroutine_handle<> h) const
 }
 
 void
-epoll_scheduler::
-post(scheduler_op* h) const
+epoll_scheduler::post(scheduler_op* h) const
 {
     // Fast path: same thread posts to private queue
     // Only count locally; work_cleanup batches to global counter
@@ -503,24 +486,8 @@ post(scheduler_op* h) const
     wake_one_thread_and_unlock(lock);
 }
 
-void
-epoll_scheduler::
-on_work_started() noexcept
-{
-    outstanding_work_.fetch_add(1, std::memory_order_relaxed);
-}
-
-void
-epoll_scheduler::
-on_work_finished() noexcept
-{
-    if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
-        stop();
-}
-
 bool
-epoll_scheduler::
-running_in_this_thread() const noexcept
+epoll_scheduler::running_in_this_thread() const noexcept
 {
     for (auto* c = context_stack.get(); c != nullptr; c = c->next)
         if (c->key == this)
@@ -529,8 +496,7 @@ running_in_this_thread() const noexcept
 }
 
 void
-epoll_scheduler::
-stop()
+epoll_scheduler::stop()
 {
     std::unique_lock lock(mutex_);
     if (!stopped_)
@@ -542,24 +508,21 @@ stop()
 }
 
 bool
-epoll_scheduler::
-stopped() const noexcept
+epoll_scheduler::stopped() const noexcept
 {
     std::unique_lock lock(mutex_);
     return stopped_;
 }
 
 void
-epoll_scheduler::
-restart()
+epoll_scheduler::restart()
 {
     std::unique_lock lock(mutex_);
     stopped_ = false;
 }
 
 std::size_t
-epoll_scheduler::
-run()
+epoll_scheduler::run()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -584,8 +547,7 @@ run()
 }
 
 std::size_t
-epoll_scheduler::
-run_one()
+epoll_scheduler::run_one()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -599,8 +561,7 @@ run_one()
 }
 
 std::size_t
-epoll_scheduler::
-wait_one(long usec)
+epoll_scheduler::wait_one(long usec)
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -614,8 +575,7 @@ wait_one(long usec)
 }
 
 std::size_t
-epoll_scheduler::
-poll()
+epoll_scheduler::poll()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -640,8 +600,7 @@ poll()
 }
 
 std::size_t
-epoll_scheduler::
-poll_one()
+epoll_scheduler::poll_one()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -655,8 +614,7 @@ poll_one()
 }
 
 void
-epoll_scheduler::
-register_descriptor(int fd, descriptor_state* desc) const
+epoll_scheduler::register_descriptor(int fd, descriptor_state* desc) const
 {
     epoll_event ev{};
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLERR | EPOLLHUP;
@@ -675,43 +633,26 @@ register_descriptor(int fd, descriptor_state* desc) const
 }
 
 void
-epoll_scheduler::
-deregister_descriptor(int fd) const
+epoll_scheduler::deregister_descriptor(int fd) const
 {
     ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
 }
 
 void
-epoll_scheduler::
-work_started() const noexcept
+epoll_scheduler::work_started() noexcept
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void
-epoll_scheduler::
-work_finished() const noexcept
+epoll_scheduler::work_finished() noexcept
 {
     if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
-    {
-        // Last work item completed - wake all threads so they can exit.
-        // signal_all() wakes threads waiting on the condvar.
-        // interrupt_reactor() wakes the reactor thread blocked in epoll_wait().
-        // Both are needed because they target different blocking mechanisms.
-        std::unique_lock lock(mutex_);
-        signal_all(lock);
-        if (task_running_.load(std::memory_order_relaxed) && !task_interrupted_)
-        {
-            task_interrupted_ = true;
-            lock.unlock();
-            interrupt_reactor();
-        }
-    }
+        stop();
 }
 
 void
-epoll_scheduler::
-compensating_work_started() const noexcept
+epoll_scheduler::compensating_work_started() const noexcept
 {
     auto* ctx = find_context(this);
     if (ctx)
@@ -719,8 +660,7 @@ compensating_work_started() const noexcept
 }
 
 void
-epoll_scheduler::
-drain_thread_queue(op_queue& queue, long count) const
+epoll_scheduler::drain_thread_queue(op_queue& queue, long count) const
 {
     // Note: outstanding_work_ was already incremented when posting
     std::unique_lock lock(mutex_);
@@ -730,8 +670,7 @@ drain_thread_queue(op_queue& queue, long count) const
 }
 
 void
-epoll_scheduler::
-post_deferred_completions(op_queue& ops) const
+epoll_scheduler::post_deferred_completions(op_queue& ops) const
 {
     if (ops.empty())
         return;
@@ -750,13 +689,13 @@ post_deferred_completions(op_queue& ops) const
 }
 
 void
-epoll_scheduler::
-interrupt_reactor() const
+epoll_scheduler::interrupt_reactor() const
 {
     // Only write if not already armed to avoid redundant writes
     bool expected = false;
-    if (eventfd_armed_.compare_exchange_strong(expected, true,
-            std::memory_order_release, std::memory_order_relaxed))
+    if (eventfd_armed_.compare_exchange_strong(
+            expected, true, std::memory_order_release,
+            std::memory_order_relaxed))
     {
         std::uint64_t val = 1;
         [[maybe_unused]] auto r = ::write(event_fd_, &val, sizeof(val));
@@ -764,16 +703,15 @@ interrupt_reactor() const
 }
 
 void
-epoll_scheduler::
-signal_all(std::unique_lock<std::mutex>&) const
+epoll_scheduler::signal_all(std::unique_lock<std::mutex>&) const
 {
     state_ |= 1;
     cond_.notify_all();
 }
 
 bool
-epoll_scheduler::
-maybe_unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
+epoll_scheduler::maybe_unlock_and_signal_one(
+    std::unique_lock<std::mutex>& lock) const
 {
     state_ |= 1;
     if (state_ > 1)
@@ -786,8 +724,7 @@ maybe_unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
 }
 
 bool
-epoll_scheduler::
-unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
+epoll_scheduler::unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
 {
     state_ |= 1;
     bool have_waiters = state_ > 1;
@@ -798,15 +735,13 @@ unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
 }
 
 void
-epoll_scheduler::
-clear_signal() const
+epoll_scheduler::clear_signal() const
 {
     state_ &= ~std::size_t(1);
 }
 
 void
-epoll_scheduler::
-wait_for_signal(std::unique_lock<std::mutex>& lock) const
+epoll_scheduler::wait_for_signal(std::unique_lock<std::mutex>& lock) const
 {
     while ((state_ & 1) == 0)
     {
@@ -817,10 +752,8 @@ wait_for_signal(std::unique_lock<std::mutex>& lock) const
 }
 
 void
-epoll_scheduler::
-wait_for_signal_for(
-    std::unique_lock<std::mutex>& lock,
-    long timeout_us) const
+epoll_scheduler::wait_for_signal_for(
+    std::unique_lock<std::mutex>& lock, long timeout_us) const
 {
     if ((state_ & 1) == 0)
     {
@@ -831,8 +764,8 @@ wait_for_signal_for(
 }
 
 void
-epoll_scheduler::
-wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
+epoll_scheduler::wake_one_thread_and_unlock(
+    std::unique_lock<std::mutex>& lock) const
 {
     if (maybe_unlock_and_signal_one(lock))
         return;
@@ -861,7 +794,7 @@ wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
 */
 struct work_cleanup
 {
-    epoll_scheduler const* scheduler;
+    epoll_scheduler* scheduler;
     std::unique_lock<std::mutex>* lock;
     scheduler_context* ctx;
 
@@ -871,7 +804,8 @@ struct work_cleanup
         {
             long produced = ctx->private_outstanding_work;
             if (produced > 1)
-                scheduler->outstanding_work_.fetch_add(produced - 1, std::memory_order_relaxed);
+                scheduler->outstanding_work_.fetch_add(
+                    produced - 1, std::memory_order_relaxed);
             else if (produced < 1)
                 scheduler->work_finished();
             // produced == 1: net zero, handler consumed what it produced
@@ -925,8 +859,7 @@ struct task_cleanup
 };
 
 void
-epoll_scheduler::
-update_timerfd() const
+epoll_scheduler::update_timerfd() const
 {
     auto nearest = timer_svc_->nearest_expiry();
 
@@ -948,7 +881,8 @@ update_timerfd() const
         else
         {
             auto nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                nearest - now).count();
+                            nearest - now)
+                            .count();
             ts.it_value.tv_sec = nsec / 1000000000;
             ts.it_value.tv_nsec = nsec % 1000000000;
             // Ensure non-zero to avoid disarming if duration rounds to 0
@@ -962,8 +896,8 @@ update_timerfd() const
 }
 
 void
-epoll_scheduler::
-run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
+epoll_scheduler::run_task(
+    std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
 {
     int timeout_ms = task_interrupted_ ? 0 : -1;
 
@@ -992,6 +926,8 @@ run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
         if (events[i].data.ptr == nullptr)
         {
             std::uint64_t val;
+            // Mutex released above; analyzer can't track unlock via ref
+            // NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection)
             [[maybe_unused]] auto r = ::read(event_fd_, &val, sizeof(val));
             eventfd_armed_.store(false, std::memory_order_relaxed);
             continue;
@@ -1000,7 +936,9 @@ run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
         if (events[i].data.ptr == &timer_fd_)
         {
             std::uint64_t expirations;
-            [[maybe_unused]] auto r = ::read(timer_fd_, &expirations, sizeof(expirations));
+            // NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection)
+            [[maybe_unused]] auto r =
+                ::read(timer_fd_, &expirations, sizeof(expirations));
             check_timers = true;
             continue;
         }
@@ -1012,8 +950,9 @@ run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
 
         // Only enqueue if not already enqueued
         bool expected = false;
-        if (desc->is_enqueued_.compare_exchange_strong(expected, true,
-                std::memory_order_release, std::memory_order_relaxed))
+        if (desc->is_enqueued_.compare_exchange_strong(
+                expected, true, std::memory_order_release,
+                std::memory_order_relaxed))
         {
             local_ops.push(desc);
         }
@@ -1033,8 +972,8 @@ run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
 }
 
 std::size_t
-epoll_scheduler::
-do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* ctx)
+epoll_scheduler::do_one(
+    std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* ctx)
 {
     for (;;)
     {
@@ -1052,7 +991,7 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* c
             // or caller requested a non-blocking poll
             if (!more_handlers &&
                 (outstanding_work_.load(std::memory_order_acquire) == 0 ||
-                    timeout_us == 0))
+                 timeout_us == 0))
             {
                 completed_ops_.push(&task_op_);
                 return 0;

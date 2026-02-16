@@ -22,8 +22,9 @@
 
 // MinGW may not have GetAddrInfoExCancel declared
 #if defined(__MINGW32__) || defined(__MINGW64__)
-extern "C" {
-INT WSAAPI GetAddrInfoExCancel(LPHANDLE lpHandle);
+extern "C"
+{
+    INT WSAAPI GetAddrInfoExCancel(LPHANDLE lpHandle);
 }
 #endif
 
@@ -79,18 +80,14 @@ to_wide(std::string_view s)
         return {};
 
     int len = ::MultiByteToWideChar(
-        CP_UTF8, 0,
-        s.data(), static_cast<int>(s.size()),
-        nullptr, 0);
+        CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
 
     if (len <= 0)
         return {};
 
     std::wstring result(static_cast<std::size_t>(len), L'\0');
     ::MultiByteToWideChar(
-        CP_UTF8, 0,
-        s.data(), static_cast<int>(s.size()),
-        result.data(), len);
+        CP_UTF8, 0, s.data(), static_cast<int>(s.size()), result.data(), len);
 
     return result;
 }
@@ -143,19 +140,15 @@ from_wide(std::wstring_view s)
         return {};
 
     int len = ::WideCharToMultiByte(
-        CP_UTF8, 0,
-        s.data(), static_cast<int>(s.size()),
-        nullptr, 0,
-        nullptr, nullptr);
+        CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0, nullptr,
+        nullptr);
 
     if (len <= 0)
         return {};
 
     std::string result(static_cast<std::size_t>(len), '\0');
     ::WideCharToMultiByte(
-        CP_UTF8, 0,
-        s.data(), static_cast<int>(s.size()),
-        result.data(), len,
+        CP_UTF8, 0, s.data(), static_cast<int>(s.size()), result.data(), len,
         nullptr, nullptr);
 
     return result;
@@ -164,9 +157,7 @@ from_wide(std::wstring_view s)
 // Convert ADDRINFOEXW results to resolver_results
 resolver_results
 convert_results(
-    ADDRINFOEXW* ai,
-    std::string_view host,
-    std::string_view service)
+    ADDRINFOEXW* ai, std::string_view host, std::string_view service)
 {
     std::vector<resolver_entry> entries;
 
@@ -191,16 +182,10 @@ convert_results(
 
 } // namespace
 
-//------------------------------------------------------------------------------
 // resolve_op
-//------------------------------------------------------------------------------
 
 void CALLBACK
-resolve_op::
-completion(
-    DWORD dwError,
-    DWORD /*bytes*/,
-    OVERLAPPED* ov)
+resolve_op::completion(DWORD dwError, DWORD /*bytes*/, OVERLAPPED* ov)
 {
     auto* op = static_cast<resolve_op*>(ov);
     op->dwError = dwError;
@@ -208,10 +193,7 @@ completion(
     op->impl->svc_.post(op);
 }
 
-resolve_op::resolve_op() noexcept
-    : overlapped_op(&do_complete)
-{
-}
+resolve_op::resolve_op() noexcept : overlapped_op(&do_complete) {}
 
 void
 resolve_op::do_complete(
@@ -247,7 +229,8 @@ resolve_op::do_complete(
             *op->ec_out = {};
     }
 
-    if (op->out && !op->cancelled.load(std::memory_order_acquire) && op->dwError == 0 && op->results)
+    if (op->out && !op->cancelled.load(std::memory_order_acquire) &&
+        op->dwError == 0 && op->results)
     {
         *op->out = convert_results(op->results, op->host, op->service);
     }
@@ -263,12 +246,9 @@ resolve_op::do_complete(
     dispatch_coro(op->ex, op->h).resume();
 }
 
-//------------------------------------------------------------------------------
 // reverse_resolve_op
-//------------------------------------------------------------------------------
 
-reverse_resolve_op::reverse_resolve_op() noexcept
-    : overlapped_op(&do_complete)
+reverse_resolve_op::reverse_resolve_op() noexcept : overlapped_op(&do_complete)
 {
 }
 
@@ -299,7 +279,8 @@ reverse_resolve_op::do_complete(
             *op->ec_out = {};
     }
 
-    if (op->result_out && !op->cancelled.load(std::memory_order_acquire) && op->gai_error == 0)
+    if (op->result_out && !op->cancelled.load(std::memory_order_acquire) &&
+        op->gai_error == 0)
     {
         *op->result_out = reverse_resolver_result(
             op->ep, std::move(op->stored_host), std::move(op->stored_service));
@@ -308,19 +289,15 @@ reverse_resolve_op::do_complete(
     dispatch_coro(op->ex, op->h).resume();
 }
 
-//------------------------------------------------------------------------------
 // win_resolver_impl
-//------------------------------------------------------------------------------
 
-win_resolver_impl::
-win_resolver_impl(win_resolver_service& svc) noexcept
+win_resolver_impl::win_resolver_impl(win_resolver_service& svc) noexcept
     : svc_(svc)
 {
 }
 
 std::coroutine_handle<>
-win_resolver_impl::
-resolve(
+win_resolver_impl::resolve(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::string_view host,
@@ -353,14 +330,8 @@ resolve(
 
     int result = ::GetAddrInfoExW(
         op.host_w.empty() ? nullptr : op.host_w.c_str(),
-        op.service_w.empty() ? nullptr : op.service_w.c_str(),
-        NS_DNS,
-        nullptr,
-        &hints,
-        &op.results,
-        nullptr,
-        &op,
-        &resolve_op::completion,
+        op.service_w.empty() ? nullptr : op.service_w.c_str(), NS_DNS, nullptr,
+        &hints, &op.results, nullptr, &op, &resolve_op::completion,
         &op.cancel_handle);
 
     if (result != WSA_IO_PENDING)
@@ -385,8 +356,7 @@ resolve(
 }
 
 std::coroutine_handle<>
-win_resolver_impl::
-reverse_resolve(
+win_resolver_impl::reverse_resolve(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     endpoint const& ep,
@@ -440,10 +410,8 @@ reverse_resolve(
             wchar_t service[NI_MAXSERV];
 
             int result = ::GetNameInfoW(
-                reinterpret_cast<sockaddr*>(&ss), ss_len,
-                host, NI_MAXHOST,
-                service, NI_MAXSERV,
-                flags_to_ni_flags(reverse_op_.flags));
+                reinterpret_cast<sockaddr*>(&ss), ss_len, host, NI_MAXHOST,
+                service, NI_MAXSERV, flags_to_ni_flags(reverse_op_.flags));
 
             if (!reverse_op_.cancelled.load(std::memory_order_acquire))
             {
@@ -476,7 +444,7 @@ reverse_resolve(
 
         // Set error and post completion to avoid hanging the coroutine
         svc_.work_finished();
-        reverse_op_.gai_error = WSAENOBUFS;  // Map to "not enough memory"
+        reverse_op_.gai_error = WSAENOBUFS; // Map to "not enough memory"
         svc_.post(&reverse_op_);
     }
     // completion is always posted to scheduler queue, never inline.
@@ -484,8 +452,7 @@ reverse_resolve(
 }
 
 void
-win_resolver_impl::
-cancel() noexcept
+win_resolver_impl::cancel() noexcept
 {
     op_.request_cancel();
     reverse_op_.request_cancel();
@@ -496,27 +463,19 @@ cancel() noexcept
     }
 }
 
-//------------------------------------------------------------------------------
 // win_resolver_service
-//------------------------------------------------------------------------------
 
-win_resolver_service::
-win_resolver_service(
-    capy::execution_context& ctx,
-    scheduler& sched)
+win_resolver_service::win_resolver_service(
+    capy::execution_context& ctx, scheduler& sched)
     : sched_(sched)
 {
     (void)ctx;
 }
 
-win_resolver_service::
-~win_resolver_service()
-{
-}
+win_resolver_service::~win_resolver_service() {}
 
 void
-win_resolver_service::
-shutdown()
+win_resolver_service::shutdown()
 {
     {
         std::lock_guard<win_mutex> lock(mutex_);
@@ -544,8 +503,7 @@ shutdown()
 }
 
 io_object::implementation*
-win_resolver_service::
-construct()
+win_resolver_service::construct()
 {
     auto ptr = std::make_shared<win_resolver_impl>(*this);
     auto* impl = ptr.get();
@@ -560,8 +518,7 @@ construct()
 }
 
 void
-win_resolver_service::
-destroy_impl(win_resolver_impl& impl)
+win_resolver_service::destroy_impl(win_resolver_impl& impl)
 {
     std::lock_guard<win_mutex> lock(mutex_);
     resolver_list_.remove(&impl);
@@ -569,37 +526,32 @@ destroy_impl(win_resolver_impl& impl)
 }
 
 void
-win_resolver_service::
-post(overlapped_op* op)
+win_resolver_service::post(overlapped_op* op)
 {
     sched_.post(op);
 }
 
 void
-win_resolver_service::
-work_started() noexcept
+win_resolver_service::work_started() noexcept
 {
     sched_.work_started();
 }
 
 void
-win_resolver_service::
-work_finished() noexcept
+win_resolver_service::work_finished() noexcept
 {
     sched_.work_finished();
 }
 
 void
-win_resolver_service::
-thread_started() noexcept
+win_resolver_service::thread_started() noexcept
 {
     std::lock_guard<win_mutex> lock(mutex_);
     ++active_threads_;
 }
 
 void
-win_resolver_service::
-thread_finished() noexcept
+win_resolver_service::thread_finished() noexcept
 {
     std::lock_guard<win_mutex> lock(mutex_);
     --active_threads_;
@@ -607,8 +559,7 @@ thread_finished() noexcept
 }
 
 bool
-win_resolver_service::
-is_shutting_down() const noexcept
+win_resolver_service::is_shutting_down() const noexcept
 {
     return shutting_down_.load(std::memory_order_acquire);
 }

@@ -62,9 +62,11 @@ class win_signals;
 class win_signal_impl;
 
 // Maximum signal number supported
-enum { max_signal_number = 32 };
+enum
+{
+    max_signal_number = 32
+};
 
-//------------------------------------------------------------------------------
 
 /** Signal wait operation state. */
 struct signal_op : scheduler_op
@@ -86,7 +88,6 @@ struct signal_op : scheduler_op
     signal_op() noexcept;
 };
 
-//------------------------------------------------------------------------------
 
 /** Per-signal registration tracking. */
 struct signal_registration
@@ -99,7 +100,6 @@ struct signal_registration
     signal_registration* next_in_set = nullptr;
 };
 
-//------------------------------------------------------------------------------
 
 /** Signal set implementation for Windows.
 
@@ -108,7 +108,7 @@ struct signal_registration
 
     @note Internal implementation detail. Users interact with signal_set class.
 */
-class win_signal_impl
+class win_signal_impl final
     : public signal_set::implementation
     , public intrusive_list<win_signal_impl>::node
 {
@@ -135,7 +135,6 @@ public:
     void cancel() override;
 };
 
-//------------------------------------------------------------------------------
 
 /** Windows signal management service.
 
@@ -152,7 +151,7 @@ public:
 
     @note Only available on Windows platforms.
 */
-class win_signals
+class win_signals final
     : public capy::execution_context::service
     , public io_object::io_service
 {
@@ -188,9 +187,7 @@ public:
         @return Success, or an error.
     */
     std::error_code add_signal(
-        win_signal_impl& impl,
-        int signal_number,
-        signal_set::flags_t flags);
+        win_signal_impl& impl, int signal_number, signal_set::flags_t flags);
 
     /** Remove a signal from a signal set.
 
@@ -198,9 +195,7 @@ public:
         @param signal_number The signal to unregister.
         @return Success, or an error.
     */
-    std::error_code remove_signal(
-        win_signal_impl& impl,
-        int signal_number);
+    std::error_code remove_signal(win_signal_impl& impl, int signal_number);
 
     /** Remove all signals from a signal set.
 

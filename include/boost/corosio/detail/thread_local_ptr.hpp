@@ -16,11 +16,11 @@
 
 // Detect thread-local storage mechanism
 #if !defined(BOOST_COROSIO_TLS_KEYWORD)
-# if defined(_MSC_VER)
-#  define BOOST_COROSIO_TLS_KEYWORD __declspec(thread)
-# elif defined(__GNUC__) || defined(__clang__)
-#  define BOOST_COROSIO_TLS_KEYWORD __thread
-# endif
+#if defined(_MSC_VER)
+#define BOOST_COROSIO_TLS_KEYWORD __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define BOOST_COROSIO_TLS_KEYWORD __thread
+#endif
 #endif
 
 namespace boost::corosio::detail {
@@ -70,7 +70,6 @@ namespace boost::corosio::detail {
 template<class T>
 class thread_local_ptr;
 
-//------------------------------------------------------------------------------
 
 #if defined(BOOST_COROSIO_TLS_KEYWORD)
 
@@ -93,8 +92,7 @@ public:
 
         @return The stored pointer, or nullptr if not set.
     */
-    T*
-    get() const noexcept
+    T* get() const noexcept
     {
         return ptr_;
     }
@@ -103,8 +101,7 @@ public:
 
         @param p The pointer to store. The user manages its lifetime.
     */
-    void
-    set(T* p) noexcept
+    void set(T* p) noexcept
     {
         ptr_ = p;
     }
@@ -113,8 +110,7 @@ public:
 
         @pre get() != nullptr
     */
-    T&
-    operator*() const noexcept
+    T& operator*() const noexcept
     {
         return *ptr_;
     }
@@ -123,8 +119,7 @@ public:
 
         @pre get() != nullptr
     */
-    T*
-    operator->() const noexcept
+    T* operator->() const noexcept
         requires std::is_class_v<T>
     {
         return ptr_;
@@ -135,8 +130,8 @@ public:
         @param p The pointer to store.
         @return The stored pointer.
     */
-    T*
-    operator=(T* p) noexcept
+    // NOLINTNEXTLINE(misc-unconventional-assign-operator)
+    T* operator=(T* p) noexcept
     {
         ptr_ = p;
         return p;
@@ -146,7 +141,6 @@ public:
 template<class T>
 BOOST_COROSIO_TLS_KEYWORD T* thread_local_ptr<T>::ptr_ = nullptr;
 
-//------------------------------------------------------------------------------
 
 #else
 
@@ -164,33 +158,29 @@ public:
     thread_local_ptr(thread_local_ptr const&) = delete;
     thread_local_ptr& operator=(thread_local_ptr const&) = delete;
 
-    T*
-    get() const noexcept
+    T* get() const noexcept
     {
         return ptr_;
     }
 
-    void
-    set(T* p) noexcept
+    void set(T* p) noexcept
     {
         ptr_ = p;
     }
 
-    T&
-    operator*() const noexcept
+    T& operator*() const noexcept
     {
         return *ptr_;
     }
 
-    T*
-    operator->() const noexcept
+    T* operator->() const noexcept
         requires std::is_class_v<T>
     {
         return ptr_;
     }
 
-    T*
-    operator=(T* p) noexcept
+    // NOLINTNEXTLINE(misc-unconventional-assign-operator)
+    T* operator=(T* p) noexcept
     {
         ptr_ = p;
         return p;

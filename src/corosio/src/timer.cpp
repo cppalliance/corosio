@@ -10,9 +10,6 @@
 
 #include <boost/corosio/timer.hpp>
 
-#include <boost/corosio/detail/except.hpp>
-#include "src/detail/timer_service.hpp"
-
 namespace boost::corosio {
 
 namespace detail {
@@ -21,62 +18,47 @@ namespace detail {
 extern std::size_t timer_service_update_expiry(timer::implementation&);
 extern std::size_t timer_service_cancel(timer::implementation&) noexcept;
 extern std::size_t timer_service_cancel_one(timer::implementation&) noexcept;
+extern io_object::io_service&
+timer_service_direct(capy::execution_context&) noexcept;
 
 } // namespace detail
 
-timer::
-~timer() = default;
+timer::~timer() = default;
 
-timer::
-timer(capy::execution_context& ctx)
-    : io_object(create_handle<detail::timer_service>(ctx))
+timer::timer(capy::execution_context& ctx)
+    : io_object(handle(ctx, detail::timer_service_direct(ctx)))
 {
 }
 
-timer::
-timer(capy::execution_context& ctx, time_point t)
-    : timer(ctx)
+timer::timer(capy::execution_context& ctx, time_point t) : timer(ctx)
 {
     expires_at(t);
 }
 
-timer::
-timer(timer&& other) noexcept
-    : io_object(std::move(other))
-{
-}
+timer::timer(timer&& other) noexcept : io_object(std::move(other)) {}
 
 timer&
-timer::
-operator=(timer&& other)
+timer::operator=(timer&& other) noexcept
 {
     if (this != &other)
-    {
-        if (&context() != &other.context())
-            detail::throw_logic_error(
-                "cannot move timer across execution contexts");
         h_ = std::move(other.h_);
-    }
     return *this;
 }
 
 std::size_t
-timer::
-do_cancel()
+timer::do_cancel()
 {
     return detail::timer_service_cancel(get());
 }
 
 std::size_t
-timer::
-do_cancel_one()
+timer::do_cancel_one()
 {
     return detail::timer_service_cancel_one(get());
 }
 
 std::size_t
-timer::
-do_update_expiry()
+timer::do_update_expiry()
 {
     return detail::timer_service_update_expiry(get());
 }

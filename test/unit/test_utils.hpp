@@ -30,11 +30,9 @@
 
 namespace boost::corosio::test {
 
-//------------------------------------------------------------------------------
 //
 // Embedded Test Certificates
 //
-//------------------------------------------------------------------------------
 
 // Self-signed server certificate from Boost.Beast
 // Subject: C=US, ST=CA, L=Los Angeles, O=Beast, CN=www.example.com
@@ -562,19 +560,17 @@ inline constexpr char const* server_fullchain_pem =
     "fDrPhvAUJTaYU/pWeMqNGpOBmvGyiXh9\n"
     "-----END CERTIFICATE-----\n";
 
-//------------------------------------------------------------------------------
 //
 // Context Helpers
 //
-//------------------------------------------------------------------------------
 
 /** Create a context with anonymous ciphers (no certificates needed). */
 inline tls_context
 make_anon_context()
 {
     tls_context ctx;
-    ctx.set_verify_mode( tls_verify_mode::none );
-    ctx.set_ciphersuites( "aNULL:eNULL:@SECLEVEL=0" );
+    ctx.set_verify_mode(tls_verify_mode::none);
+    ctx.set_ciphersuites("aNULL:eNULL:@SECLEVEL=0");
     return ctx;
 }
 
@@ -583,9 +579,9 @@ inline tls_context
 make_server_context()
 {
     tls_context ctx;
-    ctx.use_certificate( server_cert_pem, tls_file_format::pem );
-    ctx.use_private_key( server_key_pem, tls_file_format::pem );
-    ctx.set_verify_mode( tls_verify_mode::none );
+    ctx.use_certificate(server_cert_pem, tls_file_format::pem);
+    ctx.use_private_key(server_key_pem, tls_file_format::pem);
+    ctx.set_verify_mode(tls_verify_mode::none);
     return ctx;
 }
 
@@ -594,8 +590,8 @@ inline tls_context
 make_client_context()
 {
     tls_context ctx;
-    ctx.add_certificate_authority( ca_cert_pem );
-    ctx.set_verify_mode( tls_verify_mode::peer );
+    ctx.add_certificate_authority(ca_cert_pem);
+    ctx.set_verify_mode(tls_verify_mode::peer);
     return ctx;
 }
 
@@ -604,8 +600,8 @@ inline tls_context
 make_wrong_ca_context()
 {
     tls_context ctx;
-    ctx.add_certificate_authority( wrong_ca_cert_pem );
-    ctx.set_verify_mode( tls_verify_mode::peer );
+    ctx.add_certificate_authority(wrong_ca_cert_pem);
+    ctx.set_verify_mode(tls_verify_mode::peer);
     return ctx;
 }
 
@@ -614,86 +610,78 @@ inline tls_context
 make_verify_no_cert_context()
 {
     tls_context ctx;
-    ctx.set_verify_mode( tls_verify_mode::require_peer );
+    ctx.set_verify_mode(tls_verify_mode::require_peer);
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // Context Configuration Modes
 //
-//------------------------------------------------------------------------------
 
 enum class context_mode
 {
-    anon,           // Anonymous ciphers, no certificates
-    shared_cert,    // Both use same context with server cert
-    separate_cert   // Server has cert, client trusts CA
+    anon,         // Anonymous ciphers, no certificates
+    shared_cert,  // Both use same context with server cert
+    separate_cert // Server has cert, client trusts CA
 };
 
 /** Create client and server contexts for the given mode. */
 inline std::pair<tls_context, tls_context>
-make_contexts( context_mode mode )
+make_contexts(context_mode mode)
 {
-    switch( mode )
+    switch (mode)
     {
     case context_mode::anon:
-        return { make_anon_context(), make_anon_context() };
+        return {make_anon_context(), make_anon_context()};
     case context_mode::shared_cert:
     {
         auto ctx = make_server_context();
-        ctx.add_certificate_authority( ca_cert_pem );
-        return { ctx, ctx };
+        ctx.add_certificate_authority(ca_cert_pem);
+        return {ctx, ctx};
     }
     case context_mode::separate_cert:
-        return { make_client_context(), make_server_context() };
+        return {make_client_context(), make_server_context()};
     }
-    return { make_anon_context(), make_anon_context() };
+    return {make_anon_context(), make_anon_context()};
 }
 
-//------------------------------------------------------------------------------
 //
 // Test Coroutines
 //
-//------------------------------------------------------------------------------
 
 /** Test bidirectional data transfer on connected streams. */
 template<typename StreamA, typename StreamB>
 capy::task<>
-test_stream( StreamA& a, StreamB& b )
+test_stream(StreamA& a, StreamB& b)
 {
     char buf[32] = {};
 
     // Write from a, read from b
-    auto [ec1, n1] = co_await a.write_some(
-        capy::const_buffer( "hello", 5 ) );
-    BOOST_TEST( !ec1 );
-    BOOST_TEST_EQ( n1, 5u );
+    auto [ec1, n1] = co_await a.write_some(capy::const_buffer("hello", 5));
+    BOOST_TEST(!ec1);
+    BOOST_TEST_EQ(n1, 5u);
 
-    auto [ec2, n2] = co_await b.read_some(
-        capy::mutable_buffer( buf, sizeof( buf ) ) );
-    BOOST_TEST( !ec2 );
-    BOOST_TEST_EQ( n2, 5u );
-    BOOST_TEST_EQ( std::string_view( buf, n2 ), "hello" );
+    auto [ec2, n2] =
+        co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+    BOOST_TEST(!ec2);
+    BOOST_TEST_EQ(n2, 5u);
+    BOOST_TEST_EQ(std::string_view(buf, n2), "hello");
 
     // Write from b, read from a
-    auto [ec3, n3] = co_await b.write_some(
-        capy::const_buffer( "world", 5 ) );
-    BOOST_TEST( !ec3 );
-    BOOST_TEST_EQ( n3, 5u );
+    auto [ec3, n3] = co_await b.write_some(capy::const_buffer("world", 5));
+    BOOST_TEST(!ec3);
+    BOOST_TEST_EQ(n3, 5u);
 
-    auto [ec4, n4] = co_await a.read_some(
-        capy::mutable_buffer( buf, sizeof( buf ) ) );
-    BOOST_TEST( !ec4 );
-    BOOST_TEST_EQ( n4, 5u );
-    BOOST_TEST_EQ( std::string_view( buf, n4 ), "world" );
+    auto [ec4, n4] =
+        co_await a.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+    BOOST_TEST(!ec4);
+    BOOST_TEST_EQ(n4, 5u);
+    BOOST_TEST_EQ(std::string_view(buf, n4), "world");
 }
 
-//------------------------------------------------------------------------------
 //
 // Parameterized Test Runner
 //
-//------------------------------------------------------------------------------
 
 /** Run a complete TLS test: handshake, data transfer, shutdown.
     
@@ -710,39 +698,38 @@ run_tls_test(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server )
+    ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair( ioc );
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
-    auto client = make_client( s1, client_ctx );
-    auto server = make_server( s2, server_ctx );
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
 
     // Store lambdas in named variables before invoking - anonymous lambda + immediate
     // invocation pattern [...](){}() can cause capture corruption with run_async
-    auto client_task = [&client]() -> capy::task<>
-    {
-        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
-        BOOST_TEST( !ec );
+    auto client_task = [&client]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
+        BOOST_TEST(!ec);
     };
 
-    auto server_task = [&server]() -> capy::task<>
-    {
-        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
-        BOOST_TEST( !ec );
+    auto server_task = [&server]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(
+            std::remove_reference_t<decltype(server)>::server);
+        BOOST_TEST(!ec);
     };
 
-    capy::run_async( ioc.get_executor() )( client_task() );
-    capy::run_async( ioc.get_executor() )( server_task() );
+    capy::run_async(ioc.get_executor())(client_task());
+    capy::run_async(ioc.get_executor())(server_task());
 
     ioc.run();
     ioc.restart();
 
     // Bidirectional data transfer
-    auto transfer_task = [&client, &server]() -> capy::task<>
-    {
-        co_await test_stream( client, server );
+    auto transfer_task = [&client, &server]() -> capy::task<> {
+        co_await test_stream(client, server);
     };
-    capy::run_async( ioc.get_executor() )( transfer_task() );
+    capy::run_async(ioc.get_executor())(transfer_task());
 
     ioc.run();
 
@@ -772,39 +759,38 @@ run_tls_test_no_shutdown(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server )
+    ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair( ioc );
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
-    auto client = make_client( s1, client_ctx );
-    auto server = make_server( s2, server_ctx );
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
 
     // Store lambdas in named variables before invoking - anonymous lambda + immediate
     // invocation pattern [...](){}() can cause capture corruption with run_async
-    auto client_task = [&client]() -> capy::task<>
-    {
-        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
-        BOOST_TEST( !ec );
+    auto client_task = [&client]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
+        BOOST_TEST(!ec);
     };
 
-    auto server_task = [&server]() -> capy::task<>
-    {
-        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
-        BOOST_TEST( !ec );
+    auto server_task = [&server]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(
+            std::remove_reference_t<decltype(server)>::server);
+        BOOST_TEST(!ec);
     };
 
-    capy::run_async( ioc.get_executor() )( client_task() );
-    capy::run_async( ioc.get_executor() )( server_task() );
+    capy::run_async(ioc.get_executor())(client_task());
+    capy::run_async(ioc.get_executor())(server_task());
 
     ioc.run();
     ioc.restart();
 
     // Bidirectional data transfer
-    auto transfer_task = [&client, &server]() -> capy::task<>
-    {
-        co_await test_stream( client, server );
+    auto transfer_task = [&client, &server]() -> capy::task<> {
+        co_await test_stream(client, server);
     };
-    capy::run_async( ioc.get_executor() )( transfer_task() );
+    capy::run_async(ioc.get_executor())(transfer_task());
 
     ioc.run();
 
@@ -832,12 +818,12 @@ run_tls_test_fail(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server )
+    ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair( ioc );
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
-    auto client = make_client( s1, client_ctx );
-    auto server = make_server( s2, server_ctx );
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
 
     bool client_failed = false;
     bool server_failed = false;
@@ -845,63 +831,88 @@ run_tls_test_fail(
     bool server_done = false;
 
     // Timer to unblock stuck handshakes (failsafe only)
-    timer timeout( ioc );
-    timeout.expires_after( std::chrono::milliseconds( 200 ) );
+    timer timeout(ioc);
+    timeout.expires_after(std::chrono::milliseconds(200));
 
     // Store lambdas in named variables before invoking - anonymous lambda + immediate
     // invocation pattern [...](){}() can cause capture corruption with run_async
-    auto client_task = [&client, &client_failed, &client_done, &server_done, &timeout, &s1, &s2]() -> capy::task<>
-    {
-        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
-        if( ec )
+    auto client_task = [&client, &client_failed, &client_done, &server_done,
+                        &timeout, &s1, &s2]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
+        if (ec)
         {
             client_failed = true;
             // Cancel then close sockets to unblock server immediately (IOCP needs cancel)
-            if( s1.is_open() ) { s1.cancel(); s1.close(); }
-            if( s2.is_open() ) { s2.cancel(); s2.close(); }
+            if (s1.is_open())
+            {
+                s1.cancel();
+                s1.close();
+            }
+            if (s2.is_open())
+            {
+                s2.cancel();
+                s2.close();
+            }
         }
         client_done = true;
-        if( server_done )
+        if (server_done)
             timeout.cancel();
     };
 
-    auto server_task = [&server, &server_failed, &server_done, &client_done, &timeout, &s1, &s2]() -> capy::task<>
-    {
-        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
-        if( ec )
+    auto server_task = [&server, &server_failed, &server_done, &client_done,
+                        &timeout, &s1, &s2]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(
+            std::remove_reference_t<decltype(server)>::server);
+        if (ec)
         {
             server_failed = true;
             // Cancel then close sockets to unblock client immediately (IOCP needs cancel)
-            if( s1.is_open() ) { s1.cancel(); s1.close(); }
-            if( s2.is_open() ) { s2.cancel(); s2.close(); }
+            if (s1.is_open())
+            {
+                s1.cancel();
+                s1.close();
+            }
+            if (s2.is_open())
+            {
+                s2.cancel();
+                s2.close();
+            }
         }
         server_done = true;
-        if( client_done )
+        if (client_done)
             timeout.cancel();
     };
 
     bool failsafe_hit = false;
-    auto timeout_task = [&timeout, &failsafe_hit, &s1, &s2]() -> capy::task<>
-    {
+    auto timeout_task = [&timeout, &failsafe_hit, &s1, &s2]() -> capy::task<> {
         auto [ec] = co_await timeout.wait();
-        if( !ec )
+        if (!ec)
         {
             failsafe_hit = true;
             // Timer expired - cancel pending operations then close sockets
-            if( s1.is_open() ) { s1.cancel(); s1.close(); }
-            if( s2.is_open() ) { s2.cancel(); s2.close(); }
+            if (s1.is_open())
+            {
+                s1.cancel();
+                s1.close();
+            }
+            if (s2.is_open())
+            {
+                s2.cancel();
+                s2.close();
+            }
         }
     };
 
-    capy::run_async( ioc.get_executor() )( client_task() );
-    capy::run_async( ioc.get_executor() )( server_task() );
-    capy::run_async( ioc.get_executor() )( timeout_task() );
+    capy::run_async(ioc.get_executor())(client_task());
+    capy::run_async(ioc.get_executor())(server_task());
+    capy::run_async(ioc.get_executor())(timeout_task());
 
     ioc.run();
-    BOOST_TEST( !failsafe_hit );  // failsafe timeout should not be hit
+    BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
 
     // At least one side should have failed
-    BOOST_TEST( client_failed || server_failed );
+    BOOST_TEST(client_failed || server_failed);
 
     s1.close();
     s2.close();
@@ -930,38 +941,37 @@ run_tls_shutdown_test(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server )
+    ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair( ioc );
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
-    auto client = make_client( s1, client_ctx );
-    auto server = make_server( s2, server_ctx );
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
 
     // Handshake phase
-    auto client_hs = [&client]() -> capy::task<>
-    {
-        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
-        BOOST_TEST( !ec );
+    auto client_hs = [&client]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
+        BOOST_TEST(!ec);
     };
 
-    auto server_hs = [&server]() -> capy::task<>
-    {
-        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
-        BOOST_TEST( !ec );
+    auto server_hs = [&server]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(
+            std::remove_reference_t<decltype(server)>::server);
+        BOOST_TEST(!ec);
     };
 
-    capy::run_async( ioc.get_executor() )( client_hs() );
-    capy::run_async( ioc.get_executor() )( server_hs() );
+    capy::run_async(ioc.get_executor())(client_hs());
+    capy::run_async(ioc.get_executor())(server_hs());
 
     ioc.run();
     ioc.restart();
 
     // Data transfer phase
-    auto transfer_task = [&client, &server]() -> capy::task<>
-    {
-        co_await test_stream( client, server );
+    auto transfer_task = [&client, &server]() -> capy::task<> {
+        co_await test_stream(client, server);
     };
-    capy::run_async( ioc.get_executor() )( transfer_task() );
+    capy::run_async(ioc.get_executor())(transfer_task());
 
     ioc.run();
     ioc.restart();
@@ -971,50 +981,60 @@ run_tls_shutdown_test(
     bool done = false;
 
     // Failsafe timer in case of bugs
-    timer failsafe( ioc );
-    failsafe.expires_after( std::chrono::milliseconds( 200 ) );
+    timer failsafe(ioc);
+    failsafe.expires_after(std::chrono::milliseconds(200));
 
-    auto client_shutdown = [&client, &done, &failsafe]() -> capy::task<>
-    {
+    auto client_shutdown = [&client, &done, &failsafe]() -> capy::task<> {
         auto [ec] = co_await client.shutdown();
         done = true;
         failsafe.cancel();
-        BOOST_TEST( !ec || ec == capy::cond::stream_truncated ||
-                    ec == capy::cond::eof || ec == capy::cond::canceled );
+        BOOST_TEST(
+            !ec || ec == capy::cond::stream_truncated ||
+            ec == capy::cond::eof || ec == capy::cond::canceled);
     };
 
-    auto server_read_then_close = [&server, &s2]() -> capy::task<>
-    {
+    auto server_read_then_close = [&server, &s2]() -> capy::task<> {
         char buf[32];
-        auto [ec, n] = co_await server.read_some(
-            capy::mutable_buffer( buf, sizeof( buf ) ) );
-        BOOST_TEST( ec == capy::cond::eof || ec == capy::cond::stream_truncated ||
-                    ec == capy::cond::canceled );
+        auto [ec, n] =
+            co_await server.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+        BOOST_TEST(
+            ec == capy::cond::eof || ec == capy::cond::stream_truncated ||
+            ec == capy::cond::canceled);
         // Close socket to unblock client's shutdown
         s2.cancel();
         s2.close();
     };
 
     bool failsafe_hit = false;
-    auto failsafe_task = [&failsafe, &failsafe_hit, &done, &s1, &s2]() -> capy::task<>
-    {
+    auto failsafe_task = [&failsafe, &failsafe_hit, &done, &s1,
+                          &s2]() -> capy::task<> {
         auto [ec] = co_await failsafe.wait();
-        if( !ec && !done )
+        if (!ec && !done)
         {
             failsafe_hit = true;
-            if( s1.is_open() ) { s1.cancel(); s1.close(); }
-            if( s2.is_open() ) { s2.cancel(); s2.close(); }
+            if (s1.is_open())
+            {
+                s1.cancel();
+                s1.close();
+            }
+            if (s2.is_open())
+            {
+                s2.cancel();
+                s2.close();
+            }
         }
     };
 
-    capy::run_async( ioc.get_executor() )( client_shutdown() );
-    capy::run_async( ioc.get_executor() )( server_read_then_close() );
-    capy::run_async( ioc.get_executor() )( failsafe_task() );
+    capy::run_async(ioc.get_executor())(client_shutdown());
+    capy::run_async(ioc.get_executor())(server_read_then_close());
+    capy::run_async(ioc.get_executor())(failsafe_task());
 
     ioc.run();
-    BOOST_TEST( !failsafe_hit );  // failsafe timeout should not be hit
-    if( s1.is_open() ) s1.close();
-    if( s2.is_open() ) s2.close();
+    BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
+    if (s1.is_open())
+        s1.close();
+    if (s2.is_open())
+        s2.close();
 }
 
 /** Run a test for stream truncation (socket close without TLS shutdown).
@@ -1035,38 +1055,37 @@ run_tls_truncation_test(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server )
+    ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair( ioc );
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
-    auto client = make_client( s1, client_ctx );
-    auto server = make_server( s2, server_ctx );
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
 
     // Handshake phase
-    auto client_hs = [&client]() -> capy::task<>
-    {
-        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
-        BOOST_TEST( !ec );
+    auto client_hs = [&client]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
+        BOOST_TEST(!ec);
     };
 
-    auto server_hs = [&server]() -> capy::task<>
-    {
-        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
-        BOOST_TEST( !ec );
+    auto server_hs = [&server]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(
+            std::remove_reference_t<decltype(server)>::server);
+        BOOST_TEST(!ec);
     };
 
-    capy::run_async( ioc.get_executor() )( client_hs() );
-    capy::run_async( ioc.get_executor() )( server_hs() );
+    capy::run_async(ioc.get_executor())(client_hs());
+    capy::run_async(ioc.get_executor())(server_hs());
 
     ioc.run();
     ioc.restart();
 
     // Data transfer phase
-    auto transfer_task = [&client, &server]() -> capy::task<>
-    {
-        co_await test_stream( client, server );
+    auto transfer_task = [&client, &server]() -> capy::task<> {
+        co_await test_stream(client, server);
     };
-    capy::run_async( ioc.get_executor() )( transfer_task() );
+    capy::run_async(ioc.get_executor())(transfer_task());
 
     ioc.run();
     ioc.restart();
@@ -1076,69 +1095,75 @@ run_tls_truncation_test(
     bool failsafe_hit = false;
 
     // Timeout to prevent deadlock
-    timer timeout( ioc );
+    timer timeout(ioc);
     // IOCP peer-close propagation can be bursty under TLS backends.
-    timeout.expires_after( std::chrono::milliseconds( 750 ) );
+    timeout.expires_after(std::chrono::milliseconds(750));
 
-    auto client_close = [&s1, &s2]() -> capy::task<>
-    {
+    auto client_close = [&s1, &s2]() -> capy::task<> {
         // Cancel and close underlying socket without TLS shutdown (IOCP needs cancel)
         s1.cancel();
         s1.close();
         // Wake the peer read path immediately after abrupt close.
-        if( s2.is_open() )
+        if (s2.is_open())
             s2.cancel();
         co_return;
     };
 
-    auto server_read_truncated = [&server, &read_done, &timeout]() -> capy::task<>
-    {
+    auto server_read_truncated = [&server, &read_done,
+                                  &timeout]() -> capy::task<> {
         char buf[32];
-        auto [ec, n] = co_await server.read_some(
-            capy::mutable_buffer( buf, sizeof( buf ) ) );
+        auto [ec, n] =
+            co_await server.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         read_done = true;
         timeout.cancel();
         // Under IOCP + TLS backends, abrupt peer close may surface as an error
         // or as a zero-byte completion after cancellation/close unblocks the read.
-        BOOST_TEST( !!ec || n == 0 );
+        BOOST_TEST(!!ec || n == 0);
     };
 
-    auto timeout_task = [&timeout, &failsafe_hit, &s1, &s2]() -> capy::task<>
-    {
+    auto timeout_task = [&timeout, &failsafe_hit, &s1, &s2]() -> capy::task<> {
         auto [ec] = co_await timeout.wait();
-        if( !ec )
+        if (!ec)
         {
             failsafe_hit = true;
             // Timer expired - cancel pending operations (check if still open)
-            if( s1.is_open() ) { s1.cancel(); s1.close(); }
-            if( s2.is_open() ) { s2.cancel(); s2.close(); }
+            if (s1.is_open())
+            {
+                s1.cancel();
+                s1.close();
+            }
+            if (s2.is_open())
+            {
+                s2.cancel();
+                s2.close();
+            }
         }
     };
 
-    capy::run_async( ioc.get_executor() )( client_close() );
-    capy::run_async( ioc.get_executor() )( server_read_truncated() );
-    capy::run_async( ioc.get_executor() )( timeout_task() );
+    capy::run_async(ioc.get_executor())(client_close());
+    capy::run_async(ioc.get_executor())(server_read_truncated());
+    capy::run_async(ioc.get_executor())(timeout_task());
 
     ioc.run();
-    BOOST_TEST( read_done );
-    if( s1.is_open() ) s1.close();
-    if( s2.is_open() ) s2.close();
+    BOOST_TEST(read_done);
+    if (s1.is_open())
+        s1.close();
+    if (s2.is_open())
+        s2.close();
 }
 
-//------------------------------------------------------------------------------
 //
 // Additional Context Helpers for Extended Tests
 //
-//------------------------------------------------------------------------------
 
 /** Create a server context using chain certificates (signed by intermediate CA). */
 inline tls_context
 make_chain_server_context()
 {
     tls_context ctx;
-    ctx.use_certificate( chain_server_cert_pem, tls_file_format::pem );
-    ctx.use_private_key( chain_server_key_pem, tls_file_format::pem );
-    ctx.set_verify_mode( tls_verify_mode::none );
+    ctx.use_certificate(chain_server_cert_pem, tls_file_format::pem);
+    ctx.use_private_key(chain_server_key_pem, tls_file_format::pem);
+    ctx.set_verify_mode(tls_verify_mode::none);
     return ctx;
 }
 
@@ -1151,9 +1176,9 @@ make_fullchain_server_context()
 {
     tls_context ctx;
     // use_certificate_chain expects entity cert followed by intermediate(s)
-    ctx.use_certificate_chain( server_fullchain_pem );
-    ctx.use_private_key( chain_server_key_pem, tls_file_format::pem );
-    ctx.set_verify_mode( tls_verify_mode::none );
+    ctx.use_certificate_chain(server_fullchain_pem);
+    ctx.use_private_key(chain_server_key_pem, tls_file_format::pem);
+    ctx.set_verify_mode(tls_verify_mode::none);
     return ctx;
 }
 
@@ -1163,8 +1188,8 @@ inline tls_context
 make_rootonly_client_context()
 {
     tls_context ctx;
-    ctx.add_certificate_authority( root_ca_cert_pem );
-    ctx.set_verify_mode( tls_verify_mode::peer );
+    ctx.add_certificate_authority(root_ca_cert_pem);
+    ctx.set_verify_mode(tls_verify_mode::peer);
     return ctx;
 }
 
@@ -1174,9 +1199,9 @@ make_chain_client_context()
 {
     tls_context ctx;
     // Trust both root and intermediate CA for chain verification
-    ctx.add_certificate_authority( root_ca_cert_pem );
-    ctx.add_certificate_authority( intermediate_cert_pem );
-    ctx.set_verify_mode( tls_verify_mode::peer );
+    ctx.add_certificate_authority(root_ca_cert_pem);
+    ctx.add_certificate_authority(intermediate_cert_pem);
+    ctx.set_verify_mode(tls_verify_mode::peer);
     return ctx;
 }
 
@@ -1186,8 +1211,8 @@ inline tls_context
 make_expired_server_context()
 {
     tls_context ctx;
-    ctx.use_certificate( expired_cert_pem, tls_file_format::pem );
-    ctx.use_private_key( expired_key_pem, tls_file_format::pem );
+    ctx.use_certificate(expired_cert_pem, tls_file_format::pem);
+    ctx.use_private_key(expired_key_pem, tls_file_format::pem);
     return ctx;
 }
 
@@ -1198,8 +1223,8 @@ make_expired_client_context()
 {
     tls_context ctx;
     // Trust the expired cert as its own CA (self-signed)
-    ctx.add_certificate_authority( expired_cert_pem );
-    ctx.set_verify_mode( tls_verify_mode::peer );
+    ctx.add_certificate_authority(expired_cert_pem);
+    ctx.set_verify_mode(tls_verify_mode::peer);
     return ctx;
 }
 
@@ -1208,9 +1233,9 @@ inline tls_context
 make_wrong_host_server_context()
 {
     tls_context ctx;
-    ctx.use_certificate( wrong_host_cert_pem, tls_file_format::pem );
-    ctx.use_private_key( wrong_host_key_pem, tls_file_format::pem );
-    ctx.set_verify_mode( tls_verify_mode::none );
+    ctx.use_certificate(wrong_host_cert_pem, tls_file_format::pem);
+    ctx.use_private_key(wrong_host_key_pem, tls_file_format::pem);
+    ctx.set_verify_mode(tls_verify_mode::none);
     return ctx;
 }
 
@@ -1219,12 +1244,12 @@ inline tls_context
 make_mtls_client_context()
 {
     tls_context ctx;
-    ctx.use_certificate( client_cert_pem, tls_file_format::pem );
-    ctx.use_private_key( client_key_pem, tls_file_format::pem );
+    ctx.use_certificate(client_cert_pem, tls_file_format::pem);
+    ctx.use_private_key(client_key_pem, tls_file_format::pem);
     // Trust both root and intermediate CA for chain verification
-    ctx.add_certificate_authority( root_ca_cert_pem );
-    ctx.add_certificate_authority( intermediate_cert_pem );
-    ctx.set_verify_mode( tls_verify_mode::peer );
+    ctx.add_certificate_authority(root_ca_cert_pem);
+    ctx.add_certificate_authority(intermediate_cert_pem);
+    ctx.set_verify_mode(tls_verify_mode::peer);
     return ctx;
 }
 
@@ -1233,12 +1258,12 @@ inline tls_context
 make_mtls_server_context()
 {
     tls_context ctx;
-    ctx.use_certificate( chain_server_cert_pem, tls_file_format::pem );
-    ctx.use_private_key( chain_server_key_pem, tls_file_format::pem );
+    ctx.use_certificate(chain_server_cert_pem, tls_file_format::pem);
+    ctx.use_private_key(chain_server_key_pem, tls_file_format::pem);
     // Trust both root and intermediate CA for chain verification
-    ctx.add_certificate_authority( root_ca_cert_pem );
-    ctx.add_certificate_authority( intermediate_cert_pem );
-    ctx.set_verify_mode( tls_verify_mode::require_peer );
+    ctx.add_certificate_authority(root_ca_cert_pem);
+    ctx.add_certificate_authority(intermediate_cert_pem);
+    ctx.set_verify_mode(tls_verify_mode::require_peer);
     return ctx;
 }
 
@@ -1247,8 +1272,8 @@ inline tls_context
 make_untrusted_ca_client_context()
 {
     tls_context ctx;
-    ctx.add_certificate_authority( untrusted_ca_cert_pem );
-    ctx.set_verify_mode( tls_verify_mode::peer );
+    ctx.add_certificate_authority(untrusted_ca_cert_pem);
+    ctx.set_verify_mode(tls_verify_mode::peer);
     return ctx;
 }
 
@@ -1260,20 +1285,18 @@ make_invalid_mtls_client_context()
 {
     tls_context ctx;
     // Use the self-signed server cert as client cert - server won't trust it
-    ctx.use_certificate( server_cert_pem, tls_file_format::pem );
-    ctx.use_private_key( server_key_pem, tls_file_format::pem );
+    ctx.use_certificate(server_cert_pem, tls_file_format::pem);
+    ctx.use_private_key(server_key_pem, tls_file_format::pem);
     // Trust the chain CAs so we can verify server
-    ctx.add_certificate_authority( root_ca_cert_pem );
-    ctx.add_certificate_authority( intermediate_cert_pem );
-    ctx.set_verify_mode( tls_verify_mode::peer );
+    ctx.add_certificate_authority(root_ca_cert_pem);
+    ctx.add_certificate_authority(intermediate_cert_pem);
+    ctx.set_verify_mode(tls_verify_mode::peer);
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // Connection Reset Test
 //
-//------------------------------------------------------------------------------
 
 /** Run a test for connection reset during handshake.
 
@@ -1293,31 +1316,30 @@ run_connection_reset_test(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server )
+    ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair( ioc );
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
-    auto client = make_client( s1, client_ctx );
-    auto server = make_server( s2, server_ctx );
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
 
     bool client_failed = false;
 
     // Timeout protection
-    timer timeout( ioc );
-    timeout.expires_after( std::chrono::milliseconds( 200 ) );
+    timer timeout(ioc);
+    timeout.expires_after(std::chrono::milliseconds(200));
 
-    auto client_task = [&client, &client_failed, &timeout]() -> capy::task<>
-    {
-        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
+    auto client_task = [&client, &client_failed, &timeout]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
         // Should fail because server closed socket
-        if( ec )
+        if (ec)
             client_failed = true;
         timeout.cancel();
     };
 
     // Server closes socket immediately (simulates connection reset)
-    auto server_task = [&s2]() -> capy::task<>
-    {
+    auto server_task = [&s2]() -> capy::task<> {
         // Cancel and close socket to simulate connection reset (IOCP needs cancel)
         s2.cancel();
         s2.close();
@@ -1325,10 +1347,9 @@ run_connection_reset_test(
     };
 
     bool failsafe_hit = false;
-    auto timeout_task = [&timeout, &failsafe_hit, &s1]() -> capy::task<>
-    {
+    auto timeout_task = [&timeout, &failsafe_hit, &s1]() -> capy::task<> {
         auto [ec] = co_await timeout.wait();
-        if( !ec && s1.is_open() )
+        if (!ec && s1.is_open())
         {
             failsafe_hit = true;
             s1.cancel();
@@ -1336,24 +1357,24 @@ run_connection_reset_test(
         }
     };
 
-    capy::run_async( ioc.get_executor() )( client_task() );
-    capy::run_async( ioc.get_executor() )( server_task() );
-    capy::run_async( ioc.get_executor() )( timeout_task() );
+    capy::run_async(ioc.get_executor())(client_task());
+    capy::run_async(ioc.get_executor())(server_task());
+    capy::run_async(ioc.get_executor())(timeout_task());
 
     ioc.run();
 
-    BOOST_TEST( !failsafe_hit );  // failsafe timeout should not be hit
-    BOOST_TEST( client_failed );
+    BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
+    BOOST_TEST(client_failed);
 
-    if( s1.is_open() ) s1.close();
-    if( s2.is_open() ) s2.close();
+    if (s1.is_open())
+        s1.close();
+    if (s2.is_open())
+        s2.close();
 }
 
-//------------------------------------------------------------------------------
 //
 // Stop Token Cancellation Test
 //
-//------------------------------------------------------------------------------
 
 /** Run a test for stop token cancellation during handshake.
 
@@ -1376,62 +1397,71 @@ run_stop_token_handshake_test(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server )
+    ServerStreamFactory make_server)
 {
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
-    auto [s1, s2] = corosio::test::make_socket_pair( ioc );
-
-    auto client = make_client( s1, client_ctx );
-    auto server = make_server( s2, server_ctx );
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
 
     std::stop_source stop_src;
     bool client_got_error = false;
 
     // Failsafe timeout to prevent infinite hang if cancellation doesn't work
     // 2000ms allows headroom for CI with coverage instrumentation
-    timer failsafe( ioc );
-    failsafe.expires_after( std::chrono::milliseconds( 2000 ) );
+    timer failsafe(ioc);
+    failsafe.expires_after(std::chrono::milliseconds(2000));
 
     // Client handshake - will be cancelled while waiting for ServerHello
-    auto client_task = [&client, &client_got_error, &failsafe]() -> capy::task<>
-    {
-        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
-        if( ec )
+    auto client_task = [&client, &client_got_error,
+                        &failsafe]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
+        if (ec)
             client_got_error = true;
         failsafe.cancel();
     };
 
     // Server waits for ClientHello then cancels - deterministic synchronization
-    auto server_task = [&s2, &stop_src]() -> capy::task<>
-    {
+    auto server_task = [&s2, &stop_src]() -> capy::task<> {
         // Wait for client to send ClientHello (proves client started handshake)
         char buf[1];
-        (void)co_await s2.read_some( capy::mutable_buffer( buf, 1 ) );
+        (void)co_await s2.read_some(capy::mutable_buffer(buf, 1));
         // Client is now blocked waiting for ServerHello - cancel it
         stop_src.request_stop();
     };
 
     bool failsafe_hit = false;
-    auto failsafe_task = [&failsafe, &failsafe_hit, &s1, &s2]() -> capy::task<>
-    {
+    auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
+                          &s2]() -> capy::task<> {
         auto [ec] = co_await failsafe.wait();
-        if( !ec )
+        if (!ec)
         {
             failsafe_hit = true;
-            if( s1.is_open() ) { s1.cancel(); s1.close(); }
-            if( s2.is_open() ) { s2.cancel(); s2.close(); }
+            if (s1.is_open())
+            {
+                s1.cancel();
+                s1.close();
+            }
+            if (s2.is_open())
+            {
+                s2.cancel();
+                s2.close();
+            }
         }
     };
-    capy::run_async( ioc.get_executor(), stop_src.get_token() )( client_task() );
-    capy::run_async( ioc.get_executor() )( server_task() );
-    capy::run_async( ioc.get_executor() )( failsafe_task() );
+    capy::run_async(ioc.get_executor(), stop_src.get_token())(client_task());
+    capy::run_async(ioc.get_executor())(server_task());
+    capy::run_async(ioc.get_executor())(failsafe_task());
     ioc.run();
 
-    BOOST_TEST( !failsafe_hit );  // failsafe timeout should not be hit
-    BOOST_TEST( client_got_error );
+    BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
+    BOOST_TEST(client_got_error);
 
-    if( s1.is_open() ) s1.close();
-    if( s2.is_open() ) s2.close();
+    if (s1.is_open())
+        s1.close();
+    if (s2.is_open())
+        s2.close();
 }
 
 /** Run a test for stop token cancellation during read.
@@ -1450,29 +1480,28 @@ run_stop_token_read_test(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server )
+    ServerStreamFactory make_server)
 {
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
-    auto [s1, s2] = corosio::test::make_socket_pair( ioc );
-
-    auto client = make_client( s1, client_ctx );
-    auto server = make_server( s2, server_ctx );
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
 
     // Handshake phase
-    auto client_hs = [&client]() -> capy::task<>
-    {
-        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
-        BOOST_TEST( !ec );
+    auto client_hs = [&client]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
+        BOOST_TEST(!ec);
     };
 
-    auto server_hs = [&server]() -> capy::task<>
-    {
-        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
-        BOOST_TEST( !ec );
+    auto server_hs = [&server]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(
+            std::remove_reference_t<decltype(server)>::server);
+        BOOST_TEST(!ec);
     };
 
-    capy::run_async( ioc.get_executor() )( client_hs() );
-    capy::run_async( ioc.get_executor() )( server_hs() );
+    capy::run_async(ioc.get_executor())(client_hs());
+    capy::run_async(ioc.get_executor())(server_hs());
 
     ioc.run();
     ioc.restart();
@@ -1482,15 +1511,14 @@ run_stop_token_read_test(
     bool read_got_error = false;
 
     // Failsafe timeout - 2000ms allows headroom for CI with coverage instrumentation
-    timer failsafe( ioc );
-    failsafe.expires_after( std::chrono::milliseconds( 2000 ) );
+    timer failsafe(ioc);
+    failsafe.expires_after(std::chrono::milliseconds(2000));
 
-    auto client_read = [&client, &read_got_error, &failsafe]() -> capy::task<>
-    {
+    auto client_read = [&client, &read_got_error, &failsafe]() -> capy::task<> {
         char buf[32];
-        auto [ec, n] = co_await client.read_some(
-            capy::mutable_buffer( buf, sizeof( buf ) ) );
-        if( ec )
+        auto [ec, n] =
+            co_await client.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+        if (ec)
             read_got_error = true;
         failsafe.cancel();
     };
@@ -1498,33 +1526,42 @@ run_stop_token_read_test(
     // Server triggers cancellation immediately - client will block on read
     // since server never sends data. This is deterministic because the
     // client read is queued first and will suspend waiting for socket data.
-    auto server_cancel = [&stop_src]() -> capy::task<>
-    {
+    auto server_cancel = [&stop_src]() -> capy::task<> {
         stop_src.request_stop();
         co_return;
     };
 
     bool failsafe_hit = false;
-    auto failsafe_task = [&failsafe, &failsafe_hit, &s1, &s2]() -> capy::task<>
-    {
+    auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
+                          &s2]() -> capy::task<> {
         auto [ec] = co_await failsafe.wait();
-        if( !ec )
+        if (!ec)
         {
             failsafe_hit = true;
-            if( s1.is_open() ) { s1.cancel(); s1.close(); }
-            if( s2.is_open() ) { s2.cancel(); s2.close(); }
+            if (s1.is_open())
+            {
+                s1.cancel();
+                s1.close();
+            }
+            if (s2.is_open())
+            {
+                s2.cancel();
+                s2.close();
+            }
         }
     };
-    capy::run_async( ioc.get_executor(), stop_src.get_token() )( client_read() );
-    capy::run_async( ioc.get_executor() )( server_cancel() );
-    capy::run_async( ioc.get_executor() )( failsafe_task() );
+    capy::run_async(ioc.get_executor(), stop_src.get_token())(client_read());
+    capy::run_async(ioc.get_executor())(server_cancel());
+    capy::run_async(ioc.get_executor())(failsafe_task());
     ioc.run();
 
-    BOOST_TEST( !failsafe_hit );  // failsafe timeout should not be hit
-    BOOST_TEST( read_got_error );
+    BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
+    BOOST_TEST(read_got_error);
 
-    if( s1.is_open() ) s1.close();
-    if( s2.is_open() ) s2.close();
+    if (s1.is_open())
+        s1.close();
+    if (s2.is_open())
+        s2.close();
 }
 
 /** Run a test for stop token cancellation during write.
@@ -1543,29 +1580,28 @@ run_stop_token_write_test(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server )
+    ServerStreamFactory make_server)
 {
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
-    auto [s1, s2] = corosio::test::make_socket_pair( ioc );
-
-    auto client = make_client( s1, client_ctx );
-    auto server = make_server( s2, server_ctx );
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
 
     // Handshake phase
-    auto client_hs = [&client]() -> capy::task<>
-    {
-        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
-        BOOST_TEST( !ec );
+    auto client_hs = [&client]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
+        BOOST_TEST(!ec);
     };
 
-    auto server_hs = [&server]() -> capy::task<>
-    {
-        auto [ec] = co_await server.handshake( std::remove_reference_t<decltype(server)>::server );
-        BOOST_TEST( !ec );
+    auto server_hs = [&server]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(
+            std::remove_reference_t<decltype(server)>::server);
+        BOOST_TEST(!ec);
     };
 
-    capy::run_async( ioc.get_executor() )( client_hs() );
-    capy::run_async( ioc.get_executor() )( server_hs() );
+    capy::run_async(ioc.get_executor())(client_hs());
+    capy::run_async(ioc.get_executor())(server_hs());
 
     ioc.run();
     ioc.restart();
@@ -1575,20 +1611,20 @@ run_stop_token_write_test(
     bool write_got_error = false;
 
     // Large buffer to fill socket buffer and cause blocking
-    std::vector<char> large_buf( 1024 * 1024, 'X' );
+    std::vector<char> large_buf(1024 * 1024, 'X');
 
     // Failsafe timeout - 2000ms allows headroom for CI with coverage instrumentation
-    timer failsafe( ioc );
-    failsafe.expires_after( std::chrono::milliseconds( 2000 ) );
+    timer failsafe(ioc);
+    failsafe.expires_after(std::chrono::milliseconds(2000));
 
-    auto client_write = [&client, &large_buf, &write_got_error, &failsafe]() -> capy::task<>
-    {
+    auto client_write = [&client, &large_buf, &write_got_error,
+                         &failsafe]() -> capy::task<> {
         // Write in loop until cancelled or error
-        for( int i = 0; i < 100; ++i )
+        for (int i = 0; i < 100; ++i)
         {
             auto [ec, n] = co_await client.write_some(
-                capy::const_buffer( large_buf.data(), large_buf.size() ) );
-            if( ec )
+                capy::const_buffer(large_buf.data(), large_buf.size()));
+            if (ec)
             {
                 write_got_error = true;
                 failsafe.cancel();
@@ -1599,43 +1635,50 @@ run_stop_token_write_test(
     };
 
     // Server waits for data then cancels - deterministic synchronization
-    auto server_cancel = [&s2, &stop_src]() -> capy::task<>
-    {
+    auto server_cancel = [&s2, &stop_src]() -> capy::task<> {
         // Wait for client to send some data (proves client started writing)
         char buf[1];
-        (void)co_await s2.read_some( capy::mutable_buffer( buf, 1 ) );
+        (void)co_await s2.read_some(capy::mutable_buffer(buf, 1));
         // Client is now writing - cancel it
         stop_src.request_stop();
     };
 
     bool failsafe_hit = false;
-    auto failsafe_task = [&failsafe, &failsafe_hit, &s1, &s2]() -> capy::task<>
-    {
+    auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
+                          &s2]() -> capy::task<> {
         auto [ec] = co_await failsafe.wait();
-        if( !ec )
+        if (!ec)
         {
             failsafe_hit = true;
-            if( s1.is_open() ) { s1.cancel(); s1.close(); }
-            if( s2.is_open() ) { s2.cancel(); s2.close(); }
+            if (s1.is_open())
+            {
+                s1.cancel();
+                s1.close();
+            }
+            if (s2.is_open())
+            {
+                s2.cancel();
+                s2.close();
+            }
         }
     };
-    capy::run_async( ioc.get_executor(), stop_src.get_token() )( client_write() );
-    capy::run_async( ioc.get_executor() )( server_cancel() );
-    capy::run_async( ioc.get_executor() )( failsafe_task() );
+    capy::run_async(ioc.get_executor(), stop_src.get_token())(client_write());
+    capy::run_async(ioc.get_executor())(server_cancel());
+    capy::run_async(ioc.get_executor())(failsafe_task());
     ioc.run();
 
-    BOOST_TEST( !failsafe_hit );  // failsafe timeout should not be hit
-    BOOST_TEST( write_got_error );
+    BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
+    BOOST_TEST(write_got_error);
 
-    if( s1.is_open() ) s1.close();
-    if( s2.is_open() ) s2.close();
+    if (s1.is_open())
+        s1.close();
+    if (s2.is_open())
+        s2.close();
 }
 
-//------------------------------------------------------------------------------
 //
 // Socket Error Propagation Test
 //
-//------------------------------------------------------------------------------
 
 /** Run a test for socket.cancel() error propagation.
 
@@ -1652,60 +1695,69 @@ run_socket_cancel_test(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server )
+    ServerStreamFactory make_server)
 {
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
-    auto [s1, s2] = corosio::test::make_socket_pair( ioc );
-
-    auto client = make_client( s1, client_ctx );
-    auto server = make_server( s2, server_ctx );
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
 
     bool client_got_error = false;
 
     // Failsafe timeout - 2000ms allows headroom for CI with coverage instrumentation
-    timer failsafe( ioc );
-    failsafe.expires_after( std::chrono::milliseconds( 2000 ) );
+    timer failsafe(ioc);
+    failsafe.expires_after(std::chrono::milliseconds(2000));
 
     // Client starts handshake - will be cancelled
-    auto client_task = [&client, &client_got_error, &failsafe]() -> capy::task<>
-    {
-        auto [ec] = co_await client.handshake( std::remove_reference_t<decltype(client)>::client );
-        if( ec )
+    auto client_task = [&client, &client_got_error,
+                        &failsafe]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
+        if (ec)
             client_got_error = true;
         failsafe.cancel();
     };
 
     // Server waits for ClientHello then cancels - deterministic synchronization
-    auto server_task = [&s1, &s2]() -> capy::task<>
-    {
+    auto server_task = [&s1, &s2]() -> capy::task<> {
         // Wait for client to send ClientHello (proves client started handshake)
         char buf[1];
-        (void)co_await s2.read_some( capy::mutable_buffer( buf, 1 ) );
+        (void)co_await s2.read_some(capy::mutable_buffer(buf, 1));
         // Client is now blocked waiting for ServerHello - cancel its socket
         s1.cancel();
     };
 
     bool failsafe_hit = false;
-    auto failsafe_task = [&failsafe, &failsafe_hit, &s1, &s2]() -> capy::task<>
-    {
+    auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
+                          &s2]() -> capy::task<> {
         auto [ec] = co_await failsafe.wait();
-        if( !ec )
+        if (!ec)
         {
             failsafe_hit = true;
-            if( s1.is_open() ) { s1.cancel(); s1.close(); }
-            if( s2.is_open() ) { s2.cancel(); s2.close(); }
+            if (s1.is_open())
+            {
+                s1.cancel();
+                s1.close();
+            }
+            if (s2.is_open())
+            {
+                s2.cancel();
+                s2.close();
+            }
         }
     };
-    capy::run_async( ioc.get_executor() )( client_task() );
-    capy::run_async( ioc.get_executor() )( server_task() );
-    capy::run_async( ioc.get_executor() )( failsafe_task() );
+    capy::run_async(ioc.get_executor())(client_task());
+    capy::run_async(ioc.get_executor())(server_task());
+    capy::run_async(ioc.get_executor())(failsafe_task());
     ioc.run();
 
-    BOOST_TEST( !failsafe_hit );  // failsafe timeout should not be hit
-    BOOST_TEST( client_got_error );
+    BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
+    BOOST_TEST(client_got_error);
 
-    if( s1.is_open() ) s1.close();
-    if( s2.is_open() ) s2.close();
+    if (s1.is_open())
+        s1.close();
+    if (s2.is_open())
+        s2.close();
 }
 
 } // namespace boost::corosio::test

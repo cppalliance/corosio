@@ -28,8 +28,7 @@ namespace boost::corosio::test {
     @return A pair of connected sockets.
 */
 BOOST_COROSIO_DECL
-std::pair<tcp_socket, tcp_socket>
-make_socket_pair(basic_io_context& ctx);
+std::pair<tcp_socket, tcp_socket> make_socket_pair(basic_io_context& ctx);
 
 } // namespace boost::corosio::test
 

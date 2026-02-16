@@ -19,14 +19,14 @@ namespace boost::corosio {
 // Callable wrapper for passing to test helper templates
 struct openssl_stream_factory
 {
-    auto operator()( tcp_socket& s, tls_context ctx ) const
+    auto operator()(tcp_socket& s, tls_context ctx) const
     {
-        return openssl_stream( &s, ctx );
+        return openssl_stream(&s, ctx);
     }
 
-    auto operator()( corosio::test::mocket& s, tls_context ctx ) const
+    auto operator()(corosio::test::mocket& s, tls_context ctx) const
     {
-        return openssl_stream( &s, ctx );
+        return openssl_stream(&s, ctx);
     }
 };
 
@@ -36,15 +36,11 @@ struct openssl_stream_test
 
     // Context modes supported by OpenSSL (includes anon ciphers)
     static constexpr std::array<test::context_mode, 3> all_modes = {
-        test::context_mode::anon,
-        test::context_mode::shared_cert,
-        test::context_mode::separate_cert
-    };
+        test::context_mode::anon, test::context_mode::shared_cert,
+        test::context_mode::separate_cert};
 
     static constexpr std::array<test::context_mode, 2> cert_modes = {
-        test::context_mode::shared_cert,
-        test::context_mode::separate_cert
-    };
+        test::context_mode::shared_cert, test::context_mode::separate_cert};
 
     void testName()
     {
@@ -52,10 +48,10 @@ struct openssl_stream_test
 
         io_context ioc;
         auto ctx = make_anon_context();
-        tcp_socket sock( ioc );
-        openssl_stream stream( &sock, ctx );
+        tcp_socket sock(ioc);
+        openssl_stream stream(&sock, ctx);
 
-        BOOST_TEST( stream.name() == "openssl" );
+        BOOST_TEST(stream.name() == "openssl");
     }
 
     /** Test certificate chain validation (OpenSSL-specific).
@@ -72,8 +68,7 @@ struct openssl_stream_test
             io_context ioc;
             auto client_ctx = make_rootonly_client_context();
             auto server_ctx = make_fullchain_server_context();
-            run_tls_test( ioc, client_ctx, server_ctx,
-                make_stream, make_stream );
+            run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
         }
 
         // Server sends only entity cert (fails)
@@ -81,37 +76,37 @@ struct openssl_stream_test
             io_context ioc;
             auto client_ctx = make_rootonly_client_context();
             auto server_ctx = make_chain_server_context();
-            run_tls_test_fail( ioc, client_ctx, server_ctx,
-                make_stream, make_stream );
+            run_tls_test_fail(
+                ioc, client_ctx, server_ctx, make_stream, make_stream);
         }
     }
 
     void run()
     {
-        test::testHandshakeFuse( make_stream );
-        test::testReadWriteFuse( make_stream );
-        test::testShutdownFuse( make_stream );
-        test::testSuccessCases( make_stream, all_modes );
-        test::testFailureCases( make_stream );
-        test::testTlsShutdown( make_stream, cert_modes );
-        test::testStreamTruncated( make_stream, cert_modes );
-        test::testStopTokenCancellation( make_stream );
-        test::testSocketErrorPropagation( make_stream );
-        test::testCertificateValidation( make_stream );
-        test::testSni( make_stream );
-        test::testSniCallback( make_stream );
-        test::testMtls( make_stream );
+        test::testHandshakeFuse(make_stream);
+        test::testReadWriteFuse(make_stream);
+        test::testShutdownFuse(make_stream);
+        test::testSuccessCases(make_stream, all_modes);
+        test::testFailureCases(make_stream);
+        test::testTlsShutdown(make_stream, cert_modes);
+        test::testStreamTruncated(make_stream, cert_modes);
+        test::testStopTokenCancellation(make_stream);
+        test::testSocketErrorPropagation(make_stream);
+        test::testCertificateValidation(make_stream);
+        test::testSni(make_stream);
+        test::testSniCallback(make_stream);
+        test::testMtls(make_stream);
 
-        test::testReset( make_stream, cert_modes );
-        test::testResetViaHandshake( make_stream, cert_modes );
-        test::testResetFuse( make_stream );
+        test::testReset(make_stream, cert_modes);
+        test::testResetViaHandshake(make_stream, cert_modes);
+        test::testResetFuse(make_stream);
 
         testCertificateChain();
         testName();
     }
 };
 
-TEST_SUITE( openssl_stream_test, "boost.corosio.openssl_stream" );
+TEST_SUITE(openssl_stream_test, "boost.corosio.openssl_stream");
 
 } // namespace boost::corosio
 

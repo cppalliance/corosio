@@ -44,16 +44,13 @@ make_err(unsigned long dwError) noexcept
     if (dwError == 0)
         return {};
 
-    if (dwError == ERROR_OPERATION_ABORTED ||
-        dwError == ERROR_CANCELLED)
+    if (dwError == ERROR_OPERATION_ABORTED || dwError == ERROR_CANCELLED)
         return capy::error::canceled;
 
     if (dwError == ERROR_HANDLE_EOF)
         return capy::error::eof;
 
-    return std::error_code(
-        static_cast<int>(dwError),
-        std::system_category());
+    return std::error_code(static_cast<int>(dwError), std::system_category());
 }
 
 #endif

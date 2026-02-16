@@ -213,10 +213,12 @@ jobs:
             container: "ubuntu:24.04"
             b2-toolset: "clang"
             is-latest: true
-            name: "Clang 20: C++20-23"
+            name: "Clang 20: C++20-23 (clang-tidy)"
             shared: true
             build-type: "Release"
             build-cmake: true
+            install: "clang-tidy-20"
+            clang-tidy: true
 
           - compiler: "clang"
             version: "20"
@@ -702,6 +704,7 @@ jobs:
           extra-args: |
             -D Boost_VERBOSE=ON
             -D BOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}"
+            -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
             ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
             ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
             ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
@@ -712,6 +715,15 @@ jobs:
           package: false
           package-artifact: false
           ref-source-dir: boost-root/libs/corosio
+
+      - name: Run clang-tidy
+        if: ${{ matrix.clang-tidy }}
+        run: |
+          python3 -c "import json; [print(e['file']) for e in json.load(open('boost-root/__build_cmake_test__/compile_commands.json'))]" \
+            | grep '/libs/corosio/src/' \
+            | xargs -r clang-tidy-20 \
+                -p boost-root/__build_cmake_test__ \
+                --warnings-as-errors='*'
 
       - name: Set Path
         if: startsWith(matrix.runs-on, 'windows') && matrix.shared

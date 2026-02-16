@@ -18,11 +18,11 @@ namespace boost::corosio::detail {
 [[noreturn]] BOOST_COROSIO_DECL void throw_logic_error();
 [[noreturn]] BOOST_COROSIO_DECL void throw_logic_error(char const* what);
 
-[[noreturn]] BOOST_COROSIO_DECL void throw_system_error(std::error_code const& ec);
+[[noreturn]] BOOST_COROSIO_DECL void
+throw_system_error(std::error_code const& ec);
 
-[[noreturn]] BOOST_COROSIO_DECL void throw_system_error(
-    std::error_code const& ec,
-    char const* what);
+[[noreturn]] BOOST_COROSIO_DECL void
+throw_system_error(std::error_code const& ec, char const* what);
 
 } // namespace boost::corosio::detail
 

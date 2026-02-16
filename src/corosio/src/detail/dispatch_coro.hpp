@@ -34,11 +34,9 @@ namespace boost::corosio::detail {
     @return A handle for symmetric transfer or `std::noop_coroutine()`.
 */
 inline std::coroutine_handle<>
-dispatch_coro(
-    capy::executor_ref ex,
-    std::coroutine_handle<> h)
+dispatch_coro(capy::executor_ref ex, std::coroutine_handle<> h)
 {
-    if ( ex.target< basic_io_context::executor_type >() != nullptr )
+    if (ex.target<basic_io_context::executor_type>() != nullptr)
         return h;
     return ex.dispatch(h);
 }

@@ -21,18 +21,15 @@
 
 namespace boost::corosio {
 
-//------------------------------------------------
 // Acceptor-specific tests
 // Focus: acceptor construction, basic interface, and cancellation
 //
 // Tests are templated on the context type to run with all available backends.
-//------------------------------------------------
 
 template<class Context>
 struct acceptor_test
 {
-    void
-    testConstruction()
+    void testConstruction()
     {
         Context ioc;
         tcp_acceptor acc(ioc);
@@ -41,14 +38,13 @@ struct acceptor_test
         BOOST_TEST_EQ(acc.is_open(), false);
     }
 
-    void
-    testListen()
+    void testListen()
     {
         Context ioc;
         tcp_acceptor acc(ioc);
 
         // Listen on a port
-        auto ec = acc.listen(endpoint(0));  // Port 0 = ephemeral port
+        auto ec = acc.listen(endpoint(0)); // Port 0 = ephemeral port
         BOOST_TEST(!ec);
         BOOST_TEST_EQ(acc.is_open(), true);
 
@@ -57,8 +53,7 @@ struct acceptor_test
         BOOST_TEST_EQ(acc.is_open(), false);
     }
 
-    void
-    testMoveConstruct()
+    void testMoveConstruct()
     {
         Context ioc;
         tcp_acceptor acc1(ioc);
@@ -74,8 +69,7 @@ struct acceptor_test
         acc2.close();
     }
 
-    void
-    testMoveAssign()
+    void testMoveAssign()
     {
         Context ioc;
         tcp_acceptor acc1(ioc);
@@ -93,12 +87,9 @@ struct acceptor_test
         acc2.close();
     }
 
-    //------------------------------------------------
     // Cancellation Tests
-    //------------------------------------------------
 
-    void
-    testCancelAccept()
+    void testCancelAccept()
     {
         // Tests that cancel() properly cancels a pending accept operation.
         // This exercises the acceptor_ptr shared_ptr that keeps the
@@ -113,16 +104,15 @@ struct acceptor_test
         std::error_code accept_ec;
         tcp_socket peer(ioc);
 
-        auto task = [&]() -> capy::task<>
-        {
+        auto task = [&]() -> capy::task<> {
             // Start a timer to cancel the accept
             timer t(ioc);
             t.expires_after(std::chrono::milliseconds(50));
 
             // Launch accept that will block (no incoming connections)
             // Store lambda in variable to ensure it outlives the coroutine.
-            auto nested_coro = [&acc, &peer, &accept_done, &accept_ec]() -> capy::task<>
-            {
+            auto nested_coro = [&acc, &peer, &accept_done,
+                                &accept_ec]() -> capy::task<> {
                 auto [ec] = co_await acc.accept(peer);
                 accept_ec = ec;
                 accept_done = true;
@@ -147,8 +137,7 @@ struct acceptor_test
         acc.close();
     }
 
-    void
-    testCloseWhilePendingAccept()
+    void testCloseWhilePendingAccept()
     {
         // Tests that close() properly handles a pending accept operation.
         // This is the key test for the cancel/destruction race condition:
@@ -166,16 +155,16 @@ struct acceptor_test
 
         // Pattern from tcp_socket tests: run a single coroutine that manages
         // the nested coroutine and close operation
-        auto task = [&ioc, &acc, &peer, &accept_done, &accept_ec]() -> capy::task<>
-        {
+        auto task = [&ioc, &acc, &peer, &accept_done,
+                     &accept_ec]() -> capy::task<> {
             timer t(ioc);
             t.expires_after(std::chrono::milliseconds(50));
 
             // Store lambda in variable to ensure it outlives the coroutine.
             // Lambda coroutines capture 'this' by reference, so the lambda
             // must remain alive while the coroutine is suspended.
-            auto nested_coro = [&acc, &peer, &accept_done, &accept_ec]() -> capy::task<>
-            {
+            auto nested_coro = [&acc, &peer, &accept_done,
+                                &accept_ec]() -> capy::task<> {
                 auto [ec] = co_await acc.accept(peer);
                 accept_ec = ec;
                 accept_done = true;
@@ -198,8 +187,7 @@ struct acceptor_test
         ioc.run();
     }
 
-    void
-    run()
+    void run()
     {
         testConstruction();
         testListen();

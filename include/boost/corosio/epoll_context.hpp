@@ -55,8 +55,7 @@ public:
             will call `run()`. If greater than 1, thread-safe
             synchronization is used internally.
     */
-    explicit
-    epoll_context(unsigned concurrency_hint);
+    explicit epoll_context(unsigned concurrency_hint);
 
     /** Destructor. */
     ~epoll_context();

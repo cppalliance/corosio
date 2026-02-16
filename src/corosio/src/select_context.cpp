@@ -19,15 +19,12 @@
 
 namespace boost::corosio {
 
-select_context::
-select_context()
+select_context::select_context()
     : select_context(std::thread::hardware_concurrency())
 {
 }
 
-select_context::
-select_context(
-    unsigned concurrency_hint)
+select_context::select_context(unsigned concurrency_hint)
 {
     sched_ = &make_service<detail::select_scheduler>(
         static_cast<int>(concurrency_hint));
@@ -36,8 +33,7 @@ select_context(
     make_service<detail::select_acceptor_service>();
 }
 
-select_context::
-~select_context()
+select_context::~select_context()
 {
     shutdown();
     destroy();

@@ -51,7 +51,7 @@ struct scheduler_context;
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class epoll_scheduler
+class epoll_scheduler final
     : public scheduler_impl
     , public capy::execution_context::service
 {
@@ -66,12 +66,10 @@ public:
         @param ctx Reference to the owning execution_context.
         @param concurrency_hint Hint for expected thread count (unused).
     */
-    epoll_scheduler(
-        capy::execution_context& ctx,
-        int concurrency_hint = -1);
+    epoll_scheduler(capy::execution_context& ctx, int concurrency_hint = -1);
 
     /// Destroy the scheduler.
-    ~epoll_scheduler();
+    ~epoll_scheduler() override;
 
     epoll_scheduler(epoll_scheduler const&) = delete;
     epoll_scheduler& operator=(epoll_scheduler const&) = delete;
@@ -79,8 +77,6 @@ public:
     void shutdown() override;
     void post(std::coroutine_handle<> h) const override;
     void post(scheduler_op* h) const override;
-    void on_work_started() noexcept override;
-    void on_work_finished() noexcept override;
     bool running_in_this_thread() const noexcept override;
     void stop() override;
     bool stopped() const noexcept override;
@@ -98,7 +94,10 @@ public:
 
         @return The epoll file descriptor.
     */
-    int epoll_fd() const noexcept { return epoll_fd_; }
+    int epoll_fd() const noexcept
+    {
+        return epoll_fd_;
+    }
 
     /** Reset the thread's inline completion budget.
 
@@ -130,11 +129,8 @@ public:
     */
     void deregister_descriptor(int fd) const;
 
-    /** For use by I/O operations to track pending work. */
-    void work_started() const noexcept override;
-
-    /** For use by I/O operations to track completed work. */
-    void work_finished() const noexcept override;
+    void work_started() noexcept override;
+    void work_finished() noexcept override;
 
     /** Offset a forthcoming work_finished from work_cleanup.
 
@@ -170,7 +166,10 @@ private:
     friend struct work_cleanup;
     friend struct task_cleanup;
 
-    std::size_t do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* ctx);
+    std::size_t do_one(
+        std::unique_lock<std::mutex>& lock,
+        long timeout_us,
+        scheduler_context* ctx);
     void run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx);
     void wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const;
     void interrupt_reactor() const;
@@ -243,12 +242,11 @@ private:
         @param timeout_us Maximum time to wait in microseconds.
     */
     void wait_for_signal_for(
-        std::unique_lock<std::mutex>& lock,
-        long timeout_us) const;
+        std::unique_lock<std::mutex>& lock, long timeout_us) const;
 
     int epoll_fd_;
-    int event_fd_;                              // for interrupting reactor
-    int timer_fd_;                              // timerfd for kernel-managed timer expiry
+    int event_fd_; // for interrupting reactor
+    int timer_fd_; // timerfd for kernel-managed timer expiry
     mutable std::mutex mutex_;
     mutable std::condition_variable cond_;
     mutable op_queue completed_ops_;

@@ -40,30 +40,29 @@ make_socket_pair(basic_io_context& ctx)
     s2.open();
 
     capy::run_async(ex)(
-        [](tcp_acceptor& a, tcp_socket& s,
-           std::error_code& ec_out, bool& done_out) -> capy::task<>
-        {
+        [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+           bool& done_out) -> capy::task<> {
             auto [ec] = co_await a.accept(s);
             ec_out = ec;
             done_out = true;
         }(acc, s1, accept_ec, accept_done));
 
     capy::run_async(ex)(
-        [](tcp_socket& s, endpoint ep,
-           std::error_code& ec_out, bool& done_out) -> capy::task<>
-        {
+        [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+           bool& done_out) -> capy::task<> {
             auto [ec] = co_await s.connect(ep);
             ec_out = ec;
             done_out = true;
-        }(s2, endpoint(ipv4_address::loopback(), port),
-          connect_ec, connect_done));
+        }(s2, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
     ctx.run();
     ctx.restart();
 
     if (!accept_done || accept_ec)
     {
-        std::fprintf(stderr, "socket_pair: accept failed (done=%d, ec=%s)\n",
+        std::fprintf(
+            stderr, "socket_pair: accept failed (done=%d, ec=%s)\n",
             accept_done, accept_ec.message().c_str());
         acc.close();
         throw std::runtime_error("socket_pair accept failed");
@@ -71,7 +70,8 @@ make_socket_pair(basic_io_context& ctx)
 
     if (!connect_done || connect_ec)
     {
-        std::fprintf(stderr, "socket_pair: connect failed (done=%d, ec=%s)\n",
+        std::fprintf(
+            stderr, "socket_pair: connect failed (done=%d, ec=%s)\n",
             connect_done, connect_ec.message().c_str());
         acc.close();
         s1.close();

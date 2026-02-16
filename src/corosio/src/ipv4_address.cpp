@@ -14,17 +14,13 @@
 
 namespace boost::corosio {
 
-ipv4_address::ipv4_address(uint_type u) noexcept
-    : addr_(u)
-{
-}
+ipv4_address::ipv4_address(uint_type u) noexcept : addr_(u) {}
 
 ipv4_address::ipv4_address(bytes_type const& bytes) noexcept
 {
-    addr_ =
-        (static_cast<std::uint32_t>(bytes[0]) << 24) |
+    addr_ = (static_cast<std::uint32_t>(bytes[0]) << 24) |
         (static_cast<std::uint32_t>(bytes[1]) << 16) |
-        (static_cast<std::uint32_t>(bytes[2]) <<  8) |
+        (static_cast<std::uint32_t>(bytes[2]) << 8) |
         (static_cast<std::uint32_t>(bytes[3]));
 }
 
@@ -41,8 +37,8 @@ ipv4_address::to_bytes() const noexcept -> bytes_type
     bytes_type bytes;
     bytes[0] = static_cast<unsigned char>((addr_ >> 24) & 0xff);
     bytes[1] = static_cast<unsigned char>((addr_ >> 16) & 0xff);
-    bytes[2] = static_cast<unsigned char>((addr_ >>  8) & 0xff);
-    bytes[3] = static_cast<unsigned char>( addr_        & 0xff);
+    bytes[2] = static_cast<unsigned char>((addr_ >> 8) & 0xff);
+    bytes[3] = static_cast<unsigned char>(addr_ & 0xff);
     return bytes;
 }
 
@@ -99,8 +95,7 @@ std::size_t
 ipv4_address::print_impl(char* dest) const noexcept
 {
     auto const start = dest;
-    auto const write = [](char*& dest, unsigned char v)
-    {
+    auto const write = [](char*& dest, unsigned char v) {
         if (v >= 100)
         {
             *dest++ = '0' + v / 100;
@@ -119,23 +114,19 @@ ipv4_address::print_impl(char* dest) const noexcept
     *dest++ = '.';
     write(dest, static_cast<unsigned char>((addr_ >> 16) & 0xff));
     *dest++ = '.';
-    write(dest, static_cast<unsigned char>((addr_ >>  8) & 0xff));
+    write(dest, static_cast<unsigned char>((addr_ >> 8) & 0xff));
     *dest++ = '.';
-    write(dest, static_cast<unsigned char>( addr_        & 0xff));
+    write(dest, static_cast<unsigned char>(addr_ & 0xff));
     return static_cast<std::size_t>(dest - start);
 }
 
-//------------------------------------------------
 
 namespace {
 
 // Parse a decimal octet (0-255), no leading zeros except "0"
 // Returns true on success, advances `it`
 bool
-parse_dec_octet(
-    char const*& it,
-    char const* end,
-    unsigned char& octet) noexcept
+parse_dec_octet(char const*& it, char const* end, unsigned char& octet) noexcept
 {
     if (it == end)
         return false;
@@ -183,9 +174,7 @@ parse_dec_octet(
 } // namespace
 
 std::error_code
-parse_ipv4_address(
-    std::string_view s,
-    ipv4_address& addr) noexcept
+parse_ipv4_address(std::string_view s, ipv4_address& addr) noexcept
 {
     auto it = s.data();
     auto const end = it + s.size();
@@ -211,8 +200,8 @@ parse_ipv4_address(
     if (it != end)
         return std::make_error_code(std::errc::invalid_argument);
 
-    addr = ipv4_address(ipv4_address::bytes_type{{
-        octets[0], octets[1], octets[2], octets[3]}});
+    addr = ipv4_address(
+        ipv4_address::bytes_type{{octets[0], octets[1], octets[2], octets[3]}});
 
     return {};
 }

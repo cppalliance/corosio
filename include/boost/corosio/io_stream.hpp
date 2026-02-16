@@ -208,8 +208,7 @@ protected:
         mutable std::size_t bytes_transferred_ = 0;
 
         read_some_awaitable(
-            io_stream& ios,
-            MutableBufferSequence buffers) noexcept
+            io_stream& ios, MutableBufferSequence buffers) noexcept
             : ios_(ios)
             , buffers_(std::move(buffers))
         {
@@ -227,12 +226,12 @@ protected:
             return {ec_, bytes_transferred_};
         }
 
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            capy::io_env const* env) -> std::coroutine_handle<>
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return ios_.get().read_some(h, env->executor, buffers_, token_, &ec_, &bytes_transferred_);
+            return ios_.get().read_some(
+                h, env->executor, buffers_, token_, &ec_, &bytes_transferred_);
         }
     };
 
@@ -247,8 +246,7 @@ protected:
         mutable std::size_t bytes_transferred_ = 0;
 
         write_some_awaitable(
-            io_stream& ios,
-            ConstBufferSequence buffers) noexcept
+            io_stream& ios, ConstBufferSequence buffers) noexcept
             : ios_(ios)
             , buffers_(std::move(buffers))
         {
@@ -266,12 +264,12 @@ protected:
             return {ec_, bytes_transferred_};
         }
 
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            capy::io_env const* env) -> std::coroutine_handle<>
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return ios_.get().write_some(h, env->executor, buffers_, token_, &ec_, &bytes_transferred_);
+            return ios_.get().write_some(
+                h, env->executor, buffers_, token_, &ec_, &bytes_transferred_);
         }
     };
 
@@ -305,11 +303,7 @@ public:
 
 protected:
     /// Construct stream from a handle.
-    explicit
-    io_stream(handle h) noexcept
-        : io_object(std::move(h))
-    {
-    }
+    explicit io_stream(handle h) noexcept : io_object(std::move(h)) {}
 
 private:
     /// Return implementation downcasted to stream interface.

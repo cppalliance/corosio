@@ -57,7 +57,7 @@ struct overlapped_op
     };
 
     /** Function pointer type for cancellation hook. */
-    using cancel_func_type = void(*)(overlapped_op*) noexcept;
+    using cancel_func_type = void (*)(overlapped_op*) noexcept;
 
     std::coroutine_handle<> h;
     capy::executor_ref ex;
@@ -71,8 +71,7 @@ struct overlapped_op
     std::optional<std::stop_callback<canceller>> stop_cb;
     cancel_func_type cancel_func_ = nullptr;
 
-    explicit overlapped_op(func_type func) noexcept
-        : scheduler_op(func)
+    explicit overlapped_op(func_type func) noexcept : scheduler_op(func)
     {
         reset_overlapped();
     }
@@ -151,7 +150,7 @@ struct overlapped_op
     void cleanup_only()
     {
         stop_cb.reset();
-        if(h)
+        if (h)
         {
             h.destroy();
             h = {};

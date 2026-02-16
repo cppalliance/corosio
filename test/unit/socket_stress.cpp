@@ -77,23 +77,21 @@ make_stress_pair(Context& ctx)
     s2.open();
 
     capy::run_async(ex)(
-        [](tcp_acceptor& a, tcp_socket& s,
-           std::error_code& ec_out, bool& done_out) -> capy::task<>
-        {
+        [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+           bool& done_out) -> capy::task<> {
             auto [ec] = co_await a.accept(s);
             ec_out = ec;
             done_out = true;
         }(acc, s1, accept_ec, accept_done));
 
     capy::run_async(ex)(
-        [](tcp_socket& s, endpoint ep,
-           std::error_code& ec_out, bool& done_out) -> capy::task<>
-        {
+        [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+           bool& done_out) -> capy::task<> {
             auto [ec] = co_await s.connect(ep);
             ec_out = ec;
             done_out = true;
-        }(s2, endpoint(ipv4_address::loopback(), port),
-          connect_ec, connect_done));
+        }(s2, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
     ctx.run();
     ctx.restart();
@@ -109,7 +107,6 @@ make_stress_pair(Context& ctx)
 
 } // namespace
 
-//------------------------------------------------------------------------------
 // Stress Test 1: Stop Token Cancellation Race
 //
 // This test hammers on the race between stop_token firing and
@@ -118,16 +115,16 @@ make_stress_pair(Context& ctx)
 // - While I/O is pending
 // - After IOCP delivers completion but before operator() runs
 // - During operator() execution
-//------------------------------------------------------------------------------
 
 template<class Context>
 struct stop_token_stress_test
 {
-    void
-    run()
+    void run()
     {
         int duration = get_stress_duration();
-        std::fprintf(stderr, "  stop_token_stress: running for %d seconds...\n", duration);
+        std::fprintf(
+            stderr, "  stop_token_stress: running for %d seconds...\n",
+            duration);
 
         Context ioc;
         auto ex = ioc.get_executor();
@@ -141,14 +138,15 @@ struct stop_token_stress_test
         std::atomic<bool> stop_flag{false};
 
         // Worker task: rapidly start reads and cancel via stop_token
-        auto worker = [&]() -> capy::task<>
-        {
+        auto worker = [&]() -> capy::task<> {
             while (!stop_flag.load(std::memory_order_relaxed))
             {
                 try
                 {
                     // Rapidly cycle through cancel scenarios
-                    for (int i = 0; i < 100 && !stop_flag.load(std::memory_order_relaxed); ++i)
+                    for (int i = 0;
+                         i < 100 && !stop_flag.load(std::memory_order_relaxed);
+                         ++i)
                     {
                         std::stop_source stop_src;
 
@@ -157,8 +155,8 @@ struct stop_token_stress_test
                         std::atomic<bool> read_done{false};
                         std::error_code read_ec;
 
-                        auto read_coro = [&read_done, &read_ec, &s2, &buf]() -> capy::task<>
-                        {
+                        auto read_coro = [&read_done, &read_ec, &s2,
+                                          &buf]() -> capy::task<> {
                             auto [ec, n] = co_await s2.read_some(
                                 capy::mutable_buffer(buf, sizeof(buf)));
                             read_ec = ec;
@@ -203,8 +201,13 @@ struct stop_token_stress_test
 
                         if (!read_done.load(std::memory_order_acquire))
                         {
-                            std::fprintf(stderr, "  stop_token_stress: read hung on case %d, iter %d\n", i % 3, i);
-                            BOOST_TEST(read_done.load(std::memory_order_acquire));
+                            std::fprintf(
+                                stderr,
+                                "  stop_token_stress: read hung on case %d, "
+                                "iter %d\n",
+                                i % 3, i);
+                            BOOST_TEST(
+                                read_done.load(std::memory_order_acquire));
                             stop_src.request_stop();
                             timer t(ioc);
                             t.expires_after(std::chrono::milliseconds(100));
@@ -220,14 +223,15 @@ struct stop_token_stress_test
                 }
                 catch (const std::exception& e)
                 {
-                    std::fprintf(stderr, "  stop_token_stress exception: %s\n", e.what());
+                    std::fprintf(
+                        stderr, "  stop_token_stress exception: %s\n",
+                        e.what());
                 }
             }
         };
 
         // Timer to stop the test
-        auto stopper = [&]() -> capy::task<>
-        {
+        auto stopper = [&]() -> capy::task<> {
             timer t(ioc);
             t.expires_after(std::chrono::seconds(duration));
             (void)co_await t.wait();
@@ -239,7 +243,10 @@ struct stop_token_stress_test
 
         ioc.run();
 
-        std::fprintf(stderr, "  stop_token_stress: %zu iterations, %zu cancellations, %zu completions\n",
+        std::fprintf(
+            stderr,
+            "  stop_token_stress: %zu iterations, %zu cancellations, %zu "
+            "completions\n",
             iterations.load(), cancellations.load(), completions.load());
 
         s1.close();
@@ -249,23 +256,23 @@ struct stop_token_stress_test
     }
 };
 
-COROSIO_BACKEND_TESTS(stop_token_stress_test, "boost.corosio.socket_stress.stop_token")
+COROSIO_BACKEND_TESTS(
+    stop_token_stress_test, "boost.corosio.socket_stress.stop_token")
 
-//------------------------------------------------------------------------------
 // Stress Test 2: Synchronous Completion Race (ready_ flag)
 //
 // This test forces many synchronous completions to stress the
 // race between the initiating thread and completion handler thread.
-//------------------------------------------------------------------------------
 
 template<class Context>
 struct sync_completion_stress_test
 {
-    void
-    run()
+    void run()
     {
         int duration = get_stress_duration();
-        std::fprintf(stderr, "  sync_completion_stress: running for %d seconds...\n", duration);
+        std::fprintf(
+            stderr, "  sync_completion_stress: running for %d seconds...\n",
+            duration);
 
         Context ioc;
         auto ex = ioc.get_executor();
@@ -277,27 +284,30 @@ struct sync_completion_stress_test
         std::atomic<bool> stop_flag{false};
 
         // Worker: rapid small writes that often complete synchronously
-        auto worker = [&]() -> capy::task<>
-        {
+        auto worker = [&]() -> capy::task<> {
             while (!stop_flag.load(std::memory_order_relaxed))
             {
                 try
                 {
                     // Rapid small I/O - these often complete synchronously
-                    for (int i = 0; i < 1000 && !stop_flag.load(std::memory_order_relaxed); ++i)
+                    for (int i = 0;
+                         i < 1000 && !stop_flag.load(std::memory_order_relaxed);
+                         ++i)
                     {
                         char data = static_cast<char>(i & 0xFF);
 
                         // Write single byte
                         auto [ec1, n1] = co_await s1.write_some(
                             capy::const_buffer(&data, 1));
-                        if (ec1) break;
+                        if (ec1)
+                            break;
 
                         // Read single byte
                         char buf;
                         auto [ec2, n2] = co_await s2.read_some(
                             capy::mutable_buffer(&buf, 1));
-                        if (ec2) break;
+                        if (ec2)
+                            break;
 
                         BOOST_TEST_EQ(buf, data);
                         ++iterations;
@@ -305,14 +315,15 @@ struct sync_completion_stress_test
                 }
                 catch (const std::exception& e)
                 {
-                    std::fprintf(stderr, "  sync_completion_stress exception: %s\n", e.what());
+                    std::fprintf(
+                        stderr, "  sync_completion_stress exception: %s\n",
+                        e.what());
                 }
             }
         };
 
         // Timer to stop the test
-        auto stopper = [&]() -> capy::task<>
-        {
+        auto stopper = [&]() -> capy::task<> {
             timer t(ioc);
             t.expires_after(std::chrono::seconds(duration));
             (void)co_await t.wait();
@@ -324,7 +335,9 @@ struct sync_completion_stress_test
 
         ioc.run();
 
-        std::fprintf(stderr, "  sync_completion_stress: %zu iterations\n", iterations.load());
+        std::fprintf(
+            stderr, "  sync_completion_stress: %zu iterations\n",
+            iterations.load());
 
         s1.close();
         s2.close();
@@ -333,23 +346,23 @@ struct sync_completion_stress_test
     }
 };
 
-COROSIO_BACKEND_TESTS(sync_completion_stress_test, "boost.corosio.socket_stress.sync_completion")
+COROSIO_BACKEND_TESTS(
+    sync_completion_stress_test, "boost.corosio.socket_stress.sync_completion")
 
-//------------------------------------------------------------------------------
 // Stress Test 3: Rapid Cancel/Close Cycles
 //
 // This test rapidly cancels and closes sockets to stress the
 // cleanup paths and ensure no use-after-free or double-free.
-//------------------------------------------------------------------------------
 
 template<class Context>
 struct cancel_close_stress_test
 {
-    void
-    run()
+    void run()
     {
         int duration = get_stress_duration();
-        std::fprintf(stderr, "  cancel_close_stress: running for %d seconds...\n", duration);
+        std::fprintf(
+            stderr, "  cancel_close_stress: running for %d seconds...\n",
+            duration);
 
         Context ioc;
         auto ex = ioc.get_executor();
@@ -364,21 +377,22 @@ struct cancel_close_stress_test
         std::atomic<bool> stop_flag{false};
 
         // Worker: rapidly cancel operations on pre-created sockets
-        auto worker = [&]() -> capy::task<>
-        {
+        auto worker = [&]() -> capy::task<> {
             while (!stop_flag.load(std::memory_order_relaxed))
             {
                 try
                 {
-                    for (int i = 0; i < 50 && !stop_flag.load(std::memory_order_relaxed); ++i)
+                    for (int i = 0;
+                         i < 50 && !stop_flag.load(std::memory_order_relaxed);
+                         ++i)
                     {
                         // Start a blocking read - use atomic for thread-safe signaling
                         char buf[32];
                         std::atomic<bool> read_done{false};
                         std::error_code read_ec;
 
-                        auto read_coro = [&read_done, &read_ec, &s2, &buf]() -> capy::task<>
-                        {
+                        auto read_coro = [&read_done, &read_ec, &s2,
+                                          &buf]() -> capy::task<> {
                             auto [ec, n] = co_await s2.read_some(
                                 capy::mutable_buffer(buf, sizeof(buf)));
                             read_ec = ec;
@@ -436,8 +450,13 @@ struct cancel_close_stress_test
 
                         if (!read_done.load(std::memory_order_acquire))
                         {
-                            std::fprintf(stderr, "  cancel_close_stress: read hung on case %d, iter %d\n", i % 3, i);
-                            BOOST_TEST(read_done.load(std::memory_order_acquire));
+                            std::fprintf(
+                                stderr,
+                                "  cancel_close_stress: read hung on case %d, "
+                                "iter %d\n",
+                                i % 3, i);
+                            BOOST_TEST(
+                                read_done.load(std::memory_order_acquire));
                             // Force cancel
                             s2.cancel();
                             timer t(ioc);
@@ -450,14 +469,15 @@ struct cancel_close_stress_test
                 }
                 catch (const std::exception& e)
                 {
-                    std::fprintf(stderr, "  cancel_close_stress exception: %s\n", e.what());
+                    std::fprintf(
+                        stderr, "  cancel_close_stress exception: %s\n",
+                        e.what());
                 }
             }
         };
 
         // Timer to stop the test
-        auto stopper = [&]() -> capy::task<>
-        {
+        auto stopper = [&]() -> capy::task<> {
             timer t(ioc);
             t.expires_after(std::chrono::seconds(duration));
             (void)co_await t.wait();
@@ -469,8 +489,12 @@ struct cancel_close_stress_test
 
         ioc.run();
 
-        std::fprintf(stderr, "  cancel_close_stress: %zu iterations (%zu cancels, %zu writes, %zu cancel+write)\n",
-            iterations.load(), cancels.load(), writes.load(), cancel_writes.load());
+        std::fprintf(
+            stderr,
+            "  cancel_close_stress: %zu iterations (%zu cancels, %zu writes, "
+            "%zu cancel+write)\n",
+            iterations.load(), cancels.load(), writes.load(),
+            cancel_writes.load());
 
         s1.close();
         s2.close();
@@ -479,23 +503,23 @@ struct cancel_close_stress_test
     }
 };
 
-COROSIO_BACKEND_TESTS(cancel_close_stress_test, "boost.corosio.socket_stress.cancel_close")
+COROSIO_BACKEND_TESTS(
+    cancel_close_stress_test, "boost.corosio.socket_stress.cancel_close")
 
-//------------------------------------------------------------------------------
 // Stress Test 4: Concurrent Operations
 //
 // This test runs multiple concurrent tcp_socket operations to stress
 // thread safety and completion dispatch.
-//------------------------------------------------------------------------------
 
 template<class Context>
 struct concurrent_ops_stress_test
 {
-    void
-    run()
+    void run()
     {
         int duration = get_stress_duration();
-        std::fprintf(stderr, "  concurrent_ops_stress: running for %d seconds...\n", duration);
+        std::fprintf(
+            stderr, "  concurrent_ops_stress: running for %d seconds...\n",
+            duration);
 
         Context ioc;
         auto ex = ioc.get_executor();
@@ -516,8 +540,8 @@ struct concurrent_ops_stress_test
         for (int i = 0; i < num_pairs; ++i)
         {
             capy::run_async(ex)(
-                [](tcp_socket& s, std::atomic<bool>& stop, std::atomic<std::size_t>& bytes, int idx) -> capy::task<>
-                {
+                [](tcp_socket& s, std::atomic<bool>& stop,
+                   std::atomic<std::size_t>& bytes, int idx) -> capy::task<> {
                     std::size_t sent = 0;
                     char buf[256];
                     std::memset(buf, static_cast<char>(idx), sizeof(buf));
@@ -526,7 +550,8 @@ struct concurrent_ops_stress_test
                     {
                         auto [ec, n] = co_await s.write_some(
                             capy::const_buffer(buf, sizeof(buf)));
-                        if (ec) break;
+                        if (ec)
+                            break;
                         sent += n;
                     }
 
@@ -538,8 +563,8 @@ struct concurrent_ops_stress_test
         for (int i = 0; i < num_pairs; ++i)
         {
             capy::run_async(ex)(
-                [](tcp_socket& s, std::atomic<bool>& stop, std::atomic<std::size_t>& bytes, int) -> capy::task<>
-                {
+                [](tcp_socket& s, std::atomic<bool>& stop,
+                   std::atomic<std::size_t>& bytes, int) -> capy::task<> {
                     std::size_t received = 0;
                     char buf[256];
 
@@ -547,7 +572,8 @@ struct concurrent_ops_stress_test
                     {
                         auto [ec, n] = co_await s.read_some(
                             capy::mutable_buffer(buf, sizeof(buf)));
-                        if (ec) break;
+                        if (ec)
+                            break;
                         received += n;
                     }
 
@@ -556,8 +582,7 @@ struct concurrent_ops_stress_test
         }
 
         // Timer to stop the test
-        auto stopper = [&]() -> capy::task<>
-        {
+        auto stopper = [&]() -> capy::task<> {
             timer t(ioc);
             t.expires_after(std::chrono::seconds(duration));
             (void)co_await t.wait();
@@ -575,30 +600,30 @@ struct concurrent_ops_stress_test
 
         ioc.run();
 
-        std::fprintf(stderr, "  concurrent_ops_stress: %zu total bytes transferred\n",
+        std::fprintf(
+            stderr, "  concurrent_ops_stress: %zu total bytes transferred\n",
             total_bytes.load());
 
         BOOST_TEST(total_bytes.load() > 0);
     }
 };
 
-COROSIO_BACKEND_TESTS(concurrent_ops_stress_test, "boost.corosio.socket_stress.concurrent_ops")
+COROSIO_BACKEND_TESTS(
+    concurrent_ops_stress_test, "boost.corosio.socket_stress.concurrent_ops")
 
-//------------------------------------------------------------------------------
 // Stress Test 5: Accept/Connect Race
 //
 // This test rapidly accepts and connects to stress the acceptor
 // code path and accept completion handling.
-//------------------------------------------------------------------------------
 
 template<class Context>
 struct accept_stress_test
 {
-    void
-    run()
+    void run()
     {
         int duration = get_stress_duration();
-        std::fprintf(stderr, "  accept_stress: running for %d seconds...\n", duration);
+        std::fprintf(
+            stderr, "  accept_stress: running for %d seconds...\n", duration);
 
         Context ioc;
         auto ex = ioc.get_executor();
@@ -615,8 +640,7 @@ struct accept_stress_test
         auto port = acc.local_endpoint().port();
 
         // Acceptor task
-        auto acceptor_task = [&]() -> capy::task<>
-        {
+        auto acceptor_task = [&]() -> capy::task<> {
             while (!stop_flag.load(std::memory_order_relaxed))
             {
                 tcp_socket peer(ioc);
@@ -633,8 +657,7 @@ struct accept_stress_test
         };
 
         // Connector task
-        auto connector_task = [&]() -> capy::task<>
-        {
+        auto connector_task = [&]() -> capy::task<> {
             while (!stop_flag.load(std::memory_order_relaxed))
             {
                 tcp_socket client(ioc);
@@ -655,8 +678,7 @@ struct accept_stress_test
         capy::run_async(ex)(connector_task());
 
         // Timer to stop the test
-        auto stopper = [&]() -> capy::task<>
-        {
+        auto stopper = [&]() -> capy::task<> {
             timer t(ioc);
             t.expires_after(std::chrono::seconds(duration));
             (void)co_await t.wait();
@@ -668,7 +690,8 @@ struct accept_stress_test
 
         ioc.run();
 
-        std::fprintf(stderr, "  accept_stress: %zu connections\n", connections.load());
+        std::fprintf(
+            stderr, "  accept_stress: %zu connections\n", connections.load());
 
         BOOST_TEST(connections.load() > 0);
     }
@@ -677,4 +700,3 @@ struct accept_stress_test
 COROSIO_BACKEND_TESTS(accept_stress_test, "boost.corosio.socket_stress.accept")
 
 } // namespace boost::corosio
-
