@@ -309,7 +309,7 @@ private:
 
         @param lock The held mutex lock.
     */
-    void unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const;
+    bool unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const;
 
     /** Clear the signaled state before waiting.
 
@@ -391,12 +391,16 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE scheduler_context
     op_queue private_queue;
     std::int64_t private_outstanding_work;
     int inline_budget;
+    int inline_budget_max;
+    bool unassisted;
 
     scheduler_context(kqueue_scheduler const* k, scheduler_context* n)
         : key(k)
         , next(n)
         , private_outstanding_work(0)
         , inline_budget(0)
+        , inline_budget_max(2)
+        , unassisted(false)
     {
     }
 };
@@ -468,7 +472,24 @@ inline void
 kqueue_scheduler::reset_inline_budget() const noexcept
 {
     if (auto* ctx = kqueue::find_context(this))
-        ctx->inline_budget = max_inline_budget_;
+    {
+        // Cap when no other thread absorbed queued work. A moderate
+        // cap (4) amortizes scheduling for small buffers while avoiding
+        // bursty I/O that fills socket buffers and stalls large transfers.
+        if (ctx->unassisted)
+        {
+            ctx->inline_budget_max = 4;
+            ctx->inline_budget = 4;
+            return;
+        }
+        // Ramp up when previous cycle fully consumed budget.
+        // Reset on partial consumption (EAGAIN hit or peer got scheduled).
+        if (ctx->inline_budget == 0)
+            ctx->inline_budget_max = (std::min)(ctx->inline_budget_max * 2, 16);
+        else if (ctx->inline_budget < ctx->inline_budget_max)
+            ctx->inline_budget_max = 2;
+        ctx->inline_budget = ctx->inline_budget_max;
+    }
 }
 
 inline bool
@@ -1073,7 +1094,7 @@ kqueue_scheduler::maybe_unlock_and_signal_one(
     return false;
 }
 
-inline void
+inline bool
 kqueue_scheduler::unlock_and_signal_one(
     std::unique_lock<std::mutex>& lock) const
 {
@@ -1082,6 +1103,7 @@ kqueue_scheduler::unlock_and_signal_one(
     lock.unlock();
     if (have_waiters)
         cond_.notify_one();
+    return have_waiters;
 }
 
 inline void
@@ -1378,10 +1400,15 @@ kqueue_scheduler::do_one(
         // Handle operation
         if (op != nullptr)
         {
-            if (!completed_ops_.empty())
-                unlock_and_signal_one(lock);
+            bool more = !completed_ops_.empty();
+
+            if (more)
+                ctx->unassisted = !unlock_and_signal_one(lock);
             else
+            {
+                ctx->unassisted = false;
                 lock.unlock();
+            }
 
             work_cleanup on_exit{this, &lock, ctx};
             (void)on_exit;
