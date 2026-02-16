@@ -159,9 +159,8 @@ kqueue_accept_op::operator()()
                 {
                     if (ec_out)
                         *ec_out = make_err(errno);
-                    ::close(accepted_fd);
-                    accepted_fd = -1;
                     socket_svc->destroy(&impl);
+                    accepted_fd = -1;
                     if (impl_out)
                         *impl_out = nullptr;
                 }
@@ -295,6 +294,64 @@ kqueue_acceptor::accept(
             std::lock_guard lock(desc_state_.mutex);
             desc_state_.read_ready = false;
         }
+
+        if (svc_.scheduler().try_consume_inline_budget())
+        {
+            auto* socket_svc = svc_.socket_service();
+            if (socket_svc)
+            {
+                auto& impl = static_cast<kqueue_socket&>(*socket_svc->construct());
+                impl.set_socket(accepted);
+
+                impl.desc_state_.fd = accepted;
+                {
+                    std::lock_guard lock(impl.desc_state_.mutex);
+                    impl.desc_state_.read_op = nullptr;
+                    impl.desc_state_.write_op = nullptr;
+                    impl.desc_state_.connect_op = nullptr;
+                }
+                socket_svc->scheduler().register_descriptor(accepted, &impl.desc_state_);
+
+                // Suppress SIGPIPE on the accepted socket; macOS lacks MSG_NOSIGNAL
+                int one = 1;
+                if (::setsockopt(accepted, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) == -1)
+                {
+                    int saved_errno = errno;
+                    socket_svc->destroy(&impl);
+                    if (ec)
+                        *ec = make_err(saved_errno);
+                    if (impl_out)
+                        *impl_out = nullptr;
+                }
+                else
+                {
+                    sockaddr_in local_addr{};
+                    socklen_t local_len = sizeof(local_addr);
+                    endpoint local_ep;
+                    if (::getsockname(
+                            accepted,
+                            reinterpret_cast<sockaddr*>(&local_addr),
+                            &local_len) == 0)
+                        local_ep = from_sockaddr_in(local_addr);
+                    impl.set_endpoints(local_ep, from_sockaddr_in(addr));
+                    if (ec)
+                        *ec = {};
+                    if (impl_out)
+                        *impl_out = &impl;
+                }
+                return dispatch_coro(ex, h);
+            }
+            else
+            {
+                ::close(accepted);
+                if (ec)
+                    *ec = make_err(ENOENT);
+                if (impl_out)
+                    *impl_out = nullptr;
+                return dispatch_coro(ex, h);
+            }
+        }
+
         op.accepted_fd = accepted;
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
