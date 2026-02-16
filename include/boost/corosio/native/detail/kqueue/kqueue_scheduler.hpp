@@ -173,6 +173,18 @@ public:
 
         Called at the start of each posted completion handler to
         grant a fresh budget for speculative inline completions.
+        Operates in two modes depending on whether another thread
+        absorbed queued work from the previous dispatch cycle:
+
+        - **Adaptive** (default): the effective cap ramps up when
+          the previous cycle fully consumed its budget (doubles up
+          to 16) and ramps down to the floor (2) when budget was
+          only partially consumed, tracking actual inline demand.
+        - **Unassisted**: entered when no other thread was available
+          to signal (unlock_and_signal_one returned false). Applies
+          a fixed conservative cap (4) to amortize scheduling
+          overhead for small buffers while avoiding bursty I/O that
+          fills socket buffers and stalls large transfers.
     */
     void reset_inline_budget() const noexcept;
 
@@ -308,6 +320,9 @@ private:
         Mutex must be held.
 
         @param lock The held mutex lock.
+
+        @return `true` if at least one waiter was signaled,
+        `false` if no waiters existed.
     */
     bool unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const;
 
@@ -343,7 +358,6 @@ private:
         std::unique_lock<std::mutex>& lock, long timeout_us) const;
 
     int kq_fd_;
-    int max_inline_budget_ = 2;
     mutable std::mutex mutex_;
     mutable std::condition_variable cond_;
     mutable op_queue completed_ops_;

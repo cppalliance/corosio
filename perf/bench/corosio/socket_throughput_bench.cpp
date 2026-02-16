@@ -88,7 +88,6 @@ bench_throughput(std::size_t chunk_size, double duration_s)
             total_written += n;
         }
         writer.shutdown( corosio::tcp_socket::shutdown_send );
-        writer.close();
     };
 
     auto read_task = [&]() -> capy::task<> {
@@ -124,6 +123,9 @@ bench_throughput(std::size_t chunk_size, double duration_s)
               << elapsed << " s\n";
     std::cout << "    Throughput: " << perf::format_throughput(throughput)
               << "\n\n";
+
+    writer.close();
+    reader.close();
 
     return bench::benchmark_result("throughput_" + std::to_string(chunk_size))
         .add("chunk_size", static_cast<double>(chunk_size))
