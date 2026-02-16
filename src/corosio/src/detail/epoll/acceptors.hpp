@@ -19,7 +19,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include "src/detail/intrusive.hpp"
-#include "src/detail/socket_service.hpp"
+#include "src/detail/acceptor_service.hpp"
 
 #include "src/detail/epoll/op.hpp"
 #include "src/detail/epoll/scheduler.hpp"
@@ -35,7 +35,7 @@ class epoll_acceptor_impl;
 class epoll_socket_service;
 
 /// Acceptor implementation for epoll backend.
-class epoll_acceptor_impl
+class epoll_acceptor_impl final
     : public tcp_acceptor::implementation
     , public std::enable_shared_from_this<epoll_acceptor_impl>
     , public intrusive_list<epoll_acceptor_impl>::node
@@ -52,15 +52,30 @@ public:
         std::error_code*,
         io_object::implementation**) override;
 
-    int native_handle() const noexcept { return fd_; }
-    endpoint local_endpoint() const noexcept override { return local_endpoint_; }
-    bool is_open() const noexcept override { return fd_ >= 0; }
+    int native_handle() const noexcept
+    {
+        return fd_;
+    }
+    endpoint local_endpoint() const noexcept override
+    {
+        return local_endpoint_;
+    }
+    bool is_open() const noexcept override
+    {
+        return fd_ >= 0;
+    }
     void cancel() noexcept override;
     void cancel_single_op(epoll_op& op) noexcept;
     void close_socket() noexcept;
-    void set_local_endpoint(endpoint ep) noexcept { local_endpoint_ = ep; }
+    void set_local_endpoint(endpoint ep) noexcept
+    {
+        local_endpoint_ = ep;
+    }
 
-    epoll_acceptor_service& service() noexcept { return svc_; }
+    epoll_acceptor_service& service() noexcept
+    {
+        return svc_;
+    }
 
     epoll_accept_op acc_;
     descriptor_state desc_state_;
@@ -83,7 +98,10 @@ public:
     epoll_scheduler& sched_;
     std::mutex mutex_;
     intrusive_list<epoll_acceptor_impl> acceptor_list_;
-    std::unordered_map<epoll_acceptor_impl*, std::shared_ptr<epoll_acceptor_impl>> acceptor_ptrs_;
+    std::unordered_map<
+        epoll_acceptor_impl*,
+        std::shared_ptr<epoll_acceptor_impl>>
+        acceptor_ptrs_;
 };
 
 /** epoll acceptor service implementation.
@@ -91,11 +109,11 @@ public:
     Inherits from acceptor_service to enable runtime polymorphism.
     Uses key_type = acceptor_service for service lookup.
 */
-class epoll_acceptor_service : public acceptor_service
+class epoll_acceptor_service final : public acceptor_service
 {
 public:
     explicit epoll_acceptor_service(capy::execution_context& ctx);
-    ~epoll_acceptor_service();
+    ~epoll_acceptor_service() override;
 
     epoll_acceptor_service(epoll_acceptor_service const&) = delete;
     epoll_acceptor_service& operator=(epoll_acceptor_service const&) = delete;
@@ -106,11 +124,12 @@ public:
     void destroy(io_object::implementation*) override;
     void close(io_object::handle&) override;
     std::error_code open_acceptor(
-        tcp_acceptor::implementation& impl,
-        endpoint ep,
-        int backlog) override;
+        tcp_acceptor::implementation& impl, endpoint ep, int backlog) override;
 
-    epoll_scheduler& scheduler() const noexcept { return state_->sched_; }
+    epoll_scheduler& scheduler() const noexcept
+    {
+        return state_->sched_;
+    }
     void post(epoll_op* op);
     void work_started() noexcept;
     void work_finished() noexcept;

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -60,8 +61,7 @@ struct thread_context_guard
 {
     scheduler_context frame_;
 
-    explicit thread_context_guard(
-        win_scheduler const* ctx) noexcept
+    explicit thread_context_guard(win_scheduler const* ctx) noexcept
         : frame_{ctx, context_stack.get()}
     {
         context_stack.set(&frame_);
@@ -75,10 +75,7 @@ struct thread_context_guard
 
 } // namespace
 
-win_scheduler::
-win_scheduler(
-    capy::execution_context& ctx,
-    int concurrency_hint)
+win_scheduler::win_scheduler(capy::execution_context& ctx, int concurrency_hint)
     : iocp_(nullptr)
     , outstanding_work_(0)
     , stopped_(0)
@@ -88,10 +85,9 @@ win_scheduler(
 {
     // concurrency_hint < 0 means use system default (DWORD(~0) = max)
     iocp_ = ::CreateIoCompletionPort(
-        INVALID_HANDLE_VALUE,
-        nullptr,
-        0,
-        static_cast<DWORD>(concurrency_hint >= 0 ? concurrency_hint : DWORD(~0)));
+        INVALID_HANDLE_VALUE, nullptr, 0,
+        static_cast<DWORD>(
+            concurrency_hint >= 0 ? concurrency_hint : DWORD(~0)));
 
     if (iocp_ == nullptr)
         detail::throw_system_error(make_err(::GetLastError()));
@@ -106,16 +102,14 @@ win_scheduler(
     ctx.make_service<win_resolver_service>(*this);
 }
 
-win_scheduler::
-~win_scheduler()
+win_scheduler::~win_scheduler()
 {
     if (iocp_ != nullptr)
         ::CloseHandle(iocp_);
 }
 
 void
-win_scheduler::
-shutdown()
+win_scheduler::shutdown()
 {
     ::InterlockedExchange(&shutdown_, 1);
 
@@ -164,18 +158,14 @@ shutdown()
 }
 
 void
-win_scheduler::
-post(std::coroutine_handle<> h) const
+win_scheduler::post(std::coroutine_handle<> h) const
 {
     struct post_handler final : scheduler_op
     {
         std::coroutine_handle<> h_;
 
         static void do_complete(
-            void* owner,
-            scheduler_op* base,
-            std::uint32_t,
-            std::uint32_t)
+            void* owner, scheduler_op* base, std::uint32_t, std::uint32_t)
         {
             auto* self = static_cast<post_handler*>(base);
             if (!owner)
@@ -202,8 +192,8 @@ post(std::coroutine_handle<> h) const
     auto* ph = new post_handler(h);
     ::InterlockedIncrement(&outstanding_work_);
 
-    if (!::PostQueuedCompletionStatus(iocp_, 0,
-            key_posted, reinterpret_cast<LPOVERLAPPED>(ph)))
+    if (!::PostQueuedCompletionStatus(
+            iocp_, 0, key_posted, reinterpret_cast<LPOVERLAPPED>(ph)))
     {
         std::lock_guard<win_mutex> lock(dispatch_mutex_);
         completed_ops_.push(ph);
@@ -212,13 +202,12 @@ post(std::coroutine_handle<> h) const
 }
 
 void
-win_scheduler::
-post(scheduler_op* h) const
+win_scheduler::post(scheduler_op* h) const
 {
     ::InterlockedIncrement(&outstanding_work_);
 
-    if (!::PostQueuedCompletionStatus(iocp_, 0,
-            key_posted, reinterpret_cast<LPOVERLAPPED>(h)))
+    if (!::PostQueuedCompletionStatus(
+            iocp_, 0, key_posted, reinterpret_cast<LPOVERLAPPED>(h)))
     {
         std::lock_guard<win_mutex> lock(dispatch_mutex_);
         completed_ops_.push(h);
@@ -226,23 +215,8 @@ post(scheduler_op* h) const
     }
 }
 
-void
-win_scheduler::
-on_work_started() noexcept
-{
-    ::InterlockedIncrement(&outstanding_work_);
-}
-
-void
-win_scheduler::
-on_work_finished() noexcept
-{
-    ::InterlockedDecrement(&outstanding_work_);
-}
-
 bool
-win_scheduler::
-running_in_this_thread() const noexcept
+win_scheduler::running_in_this_thread() const noexcept
 {
     for (auto* c = context_stack.get(); c != nullptr; c = c->next)
         if (c->key == this)
@@ -251,29 +225,26 @@ running_in_this_thread() const noexcept
 }
 
 void
-win_scheduler::
-work_started() const noexcept
+win_scheduler::work_started() noexcept
 {
     ::InterlockedIncrement(&outstanding_work_);
 }
 
 void
-win_scheduler::
-work_finished() const noexcept
+win_scheduler::work_finished() noexcept
 {
-    ::InterlockedDecrement(&outstanding_work_);
+    if (::InterlockedDecrement(&outstanding_work_) == 0)
+        stop();
 }
 
 void
-win_scheduler::
-stop()
+win_scheduler::stop()
 {
     if (::InterlockedExchange(&stopped_, 1) == 0)
     {
         if (::InterlockedExchange(&stop_event_posted_, 1) == 0)
         {
-            if (!::PostQueuedCompletionStatus(
-                iocp_, 0, key_shutdown, nullptr))
+            if (!::PostQueuedCompletionStatus(iocp_, 0, key_shutdown, nullptr))
             {
                 DWORD dwError = ::GetLastError();
                 detail::throw_system_error(make_err(dwError));
@@ -283,24 +254,21 @@ stop()
 }
 
 bool
-win_scheduler::
-stopped() const noexcept
+win_scheduler::stopped() const noexcept
 {
     // equivalent to atomic read
     return ::InterlockedExchangeAdd(&stopped_, 0) != 0;
 }
 
 void
-win_scheduler::
-restart()
+win_scheduler::restart()
 {
     ::InterlockedExchange(&stopped_, 0);
     ::InterlockedExchange(&stop_event_posted_, 0);
 }
 
 std::size_t
-win_scheduler::
-run()
+win_scheduler::run()
 {
     if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
     {
@@ -327,8 +295,7 @@ run()
 }
 
 std::size_t
-win_scheduler::
-run_one()
+win_scheduler::run_one()
 {
     if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
     {
@@ -341,8 +308,7 @@ run_one()
 }
 
 std::size_t
-win_scheduler::
-wait_one(long usec)
+win_scheduler::wait_one(long usec)
 {
     if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
     {
@@ -351,14 +317,19 @@ wait_one(long usec)
     }
 
     thread_context_guard ctx(this);
-    unsigned long timeout_ms = usec < 0 ? INFINITE :
-        static_cast<unsigned long>((usec + 999) / 1000);
+    unsigned long timeout_ms = INFINITE;
+    if (usec >= 0)
+    {
+        auto ms = (static_cast<long long>(usec) + 999) / 1000;
+        timeout_ms = ms >= 0xFFFFFFFELL
+                         ? static_cast<unsigned long>(0xFFFFFFFE)
+                         : static_cast<unsigned long>(ms);
+    }
     return do_one(timeout_ms);
 }
 
 std::size_t
-win_scheduler::
-poll()
+win_scheduler::poll()
 {
     if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
     {
@@ -376,8 +347,7 @@ poll()
 }
 
 std::size_t
-win_scheduler::
-poll_one()
+win_scheduler::poll_one()
 {
     if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
     {
@@ -390,8 +360,7 @@ poll_one()
 }
 
 void
-win_scheduler::
-post_deferred_completions(op_queue& ops)
+win_scheduler::post_deferred_completions(op_queue& ops)
 {
     while (auto h = ops.pop())
     {
@@ -409,8 +378,7 @@ post_deferred_completions(op_queue& ops)
 }
 
 std::size_t
-win_scheduler::
-do_one(unsigned long timeout_ms)
+win_scheduler::do_one(unsigned long timeout_ms)
 {
     for (;;)
     {
@@ -461,7 +429,7 @@ do_one(unsigned long timeout_ms)
                 }
 
                 ov_op->store_result(bytes, err);
-                on_work_finished();
+                work_finished();
                 ov_op->complete(this, bytes, err);
                 return 1;
             }
@@ -470,7 +438,7 @@ do_one(unsigned long timeout_ms)
             {
                 // Posted scheduler_op*: overlapped is actually a scheduler_op*
                 auto* op = reinterpret_cast<scheduler_op*>(overlapped);
-                on_work_finished();
+                work_finished();
                 op->complete(this, bytes, err);
                 return 1;
             }
@@ -517,26 +485,24 @@ do_one(unsigned long timeout_ms)
 }
 
 void
-win_scheduler::
-on_timer_changed(void* ctx)
+win_scheduler::on_timer_changed(void* ctx)
 {
     static_cast<win_scheduler*>(ctx)->update_timeout();
 }
 
 void
-win_scheduler::
-set_timer_service(timer_service* svc)
+win_scheduler::set_timer_service(timer_service* svc)
 {
     timer_svc_ = svc;
     // Pass 'this' as context - callback routes to correct instance
-    svc->set_on_earliest_changed(timer_service::callback{this, &on_timer_changed});
+    svc->set_on_earliest_changed(
+        timer_service::callback{this, &on_timer_changed});
     if (timers_)
         timers_->start();
 }
 
 void
-win_scheduler::
-update_timeout()
+win_scheduler::update_timeout()
 {
     if (timer_svc_ && timers_)
         timers_->update_timeout(timer_svc_->nearest_expiry());

@@ -22,8 +22,7 @@ namespace boost::corosio::test {
 
 struct socket_pair_test
 {
-    void
-    testCreate()
+    void testCreate()
     {
         io_context ioc;
 
@@ -35,37 +34,33 @@ struct socket_pair_test
         s2.close();
     }
 
-    void
-    testBidirectional()
+    void testBidirectional()
     {
         io_context ioc;
 
         auto [s1, s2] = make_socket_pair(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<>
-        {
+        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             char buf[32] = {};
 
             // Write from s1, read from s2
-            auto [ec1, n1] = co_await a.write_some(
-                capy::const_buffer("hello", 5));
+            auto [ec1, n1] =
+                co_await a.write_some(capy::const_buffer("hello", 5));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(n1, 5u);
 
-            auto [ec2, n2] = co_await b.read_some(
-                capy::make_buffer(buf));
+            auto [ec2, n2] = co_await b.read_some(capy::make_buffer(buf));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(n2, 5u);
             BOOST_TEST_EQ(std::string_view(buf, n2), "hello");
 
             // Write from s2, read from s1
-            auto [ec3, n3] = co_await b.write_some(
-                capy::const_buffer("world", 5));
+            auto [ec3, n3] =
+                co_await b.write_some(capy::const_buffer("world", 5));
             BOOST_TEST(!ec3);
             BOOST_TEST_EQ(n3, 5u);
 
-            auto [ec4, n4] = co_await a.read_some(
-                capy::make_buffer(buf));
+            auto [ec4, n4] = co_await a.read_some(capy::make_buffer(buf));
             BOOST_TEST(!ec4);
             BOOST_TEST_EQ(n4, 5u);
             BOOST_TEST_EQ(std::string_view(buf, n4), "world");
@@ -78,8 +73,7 @@ struct socket_pair_test
         s2.close();
     }
 
-    void
-    run()
+    void run()
     {
         testCreate();
         testBidirectional();

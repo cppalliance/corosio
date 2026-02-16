@@ -14,11 +14,9 @@
 
 using namespace boost::corosio;
 
-//------------------------------------------------------------------------------
 //
 // HTTPS Client Context
 //
-//------------------------------------------------------------------------------
 
 // Basic HTTPS client that trusts system CAs
 tls_context make_https_client()
@@ -65,11 +63,9 @@ tls_context make_http2_client()
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // TLS Server Context
 //
-//------------------------------------------------------------------------------
 
 // Basic TLS server (no client verification)
 tls_context make_basic_server()
@@ -136,11 +132,9 @@ tls_context make_server_encrypted_key()
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // mTLS Client Context
 //
-//------------------------------------------------------------------------------
 
 // Client with client certificate for mTLS
 tls_context make_mtls_client()
@@ -158,11 +152,9 @@ tls_context make_mtls_client()
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // Protocol Version Configuration
 //
-//------------------------------------------------------------------------------
 
 // TLS 1.3 only
 tls_context make_tls13_only()
@@ -192,11 +184,9 @@ tls_context make_tls12_plus()
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // Cipher Suite Configuration
 //
-//------------------------------------------------------------------------------
 
 // High-security cipher configuration
 tls_context make_high_security()
@@ -215,11 +205,9 @@ tls_context make_high_security()
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // Revocation Checking
 //
-//------------------------------------------------------------------------------
 
 // Client with CRL checking
 tls_context make_client_with_crl( std::string_view crl_path )
@@ -282,11 +270,9 @@ tls_context make_hardened_client()
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // Custom Verification
 //
-//------------------------------------------------------------------------------
 
 // Client with custom verification callback
 tls_context make_client_custom_verify()
@@ -330,11 +316,9 @@ tls_context make_client_limited_depth()
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // Loading from Memory
 //
-//------------------------------------------------------------------------------
 
 // Load all credentials from memory buffers
 tls_context make_from_memory(
@@ -367,11 +351,9 @@ tls_context make_from_pkcs12_memory(
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // DER Format
 //
-//------------------------------------------------------------------------------
 
 // Load DER-encoded certificate and key
 tls_context make_from_der()
@@ -384,11 +366,9 @@ tls_context make_from_der()
     return ctx;
 }
 
-//------------------------------------------------------------------------------
 //
 // Shared Context
 //
-//------------------------------------------------------------------------------
 
 // Demonstrate shared ownership
 void demonstrate_sharing()
@@ -410,11 +390,9 @@ void demonstrate_sharing()
     // original is now empty
 }
 
-//------------------------------------------------------------------------------
 //
 // Error Handling Patterns
 //
-//------------------------------------------------------------------------------
 
 // Throw on error (simple code, let exceptions propagate)
 void load_throwing()
@@ -468,11 +446,9 @@ void load_mixed()
     ctx.set_verify_mode( tls_verify_mode::peer ).value();
 }
 
-//------------------------------------------------------------------------------
 //
 // Main (not compiled, just for documentation)
 //
-//------------------------------------------------------------------------------
 
 int main()
 {

@@ -306,9 +306,8 @@ public:
         @param bs The buffer sequence to adapt.
     */
     template<capy::ConstBufferSequence BS>
-    io_buffer_param(BS const& bs) noexcept
-        : bs_(&bs)
-        , fn_(&copy_impl<BS>)
+    io_buffer_param(BS const& bs) noexcept : bs_(&bs)
+                                           , fn_(&copy_impl<BS>)
     {
     }
 
@@ -325,9 +324,7 @@ public:
         @return The number of non-zero buffers copied.
     */
     std::size_t
-    copy_to(
-        capy::mutable_buffer* dest,
-        std::size_t n) const noexcept
+    copy_to(capy::mutable_buffer* dest, std::size_t n) const noexcept
     {
         return fn_(bs_, dest, n);
     }
@@ -335,10 +332,7 @@ public:
 private:
     template<capy::ConstBufferSequence BS>
     static std::size_t
-    copy_impl(
-        void const* p,
-        capy::mutable_buffer* dest,
-        std::size_t n)
+    copy_impl(void const* p, capy::mutable_buffer* dest, std::size_t n)
     {
         auto const& bs = *static_cast<BS const*>(p);
         auto it = capy::begin(bs);
@@ -347,32 +341,31 @@ private:
         std::size_t i = 0;
         if constexpr (capy::MutableBufferSequence<BS>)
         {
-            for(; it != end_it && i < n; ++it)
+            for (; it != end_it && i < n; ++it)
             {
                 capy::mutable_buffer buf(*it);
-                if(buf.size() == 0)
+                if (buf.size() == 0)
                     continue;
                 dest[i++] = buf;
             }
         }
         else
         {
-            for(; it != end_it && i < n; ++it)
+            for (; it != end_it && i < n; ++it)
             {
                 capy::const_buffer buf(*it);
-                if(buf.size() == 0)
+                if (buf.size() == 0)
                     continue;
                 dest[i++] = capy::mutable_buffer(
-                    const_cast<char*>(
-                        static_cast<char const*>(buf.data())),
+                    const_cast<char*>(static_cast<char const*>(buf.data())),
                     buf.size());
             }
         }
         return i;
     }
 
-    using fn_t = std::size_t(*)(void const*,
-        capy::mutable_buffer*, std::size_t);
+    using fn_t =
+        std::size_t (*)(void const*, capy::mutable_buffer*, std::size_t);
 
     void const* bs_;
     fn_t fn_;

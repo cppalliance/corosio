@@ -19,8 +19,7 @@ namespace boost::corosio {
 
 struct ipv4_address_test
 {
-    void
-    testConstruction()
+    void testConstruction()
     {
         // Default construction
         {
@@ -57,12 +56,10 @@ struct ipv4_address_test
         }
     }
 
-    void
-    testParse()
+    void testParse()
     {
         // Valid addresses
-        auto check_valid = [](std::string_view s, std::uint32_t expected)
-        {
+        auto check_valid = [](std::string_view s, std::uint32_t expected) {
             ipv4_address addr;
             auto ec = parse_ipv4_address(s, addr);
             BOOST_TEST(!ec);
@@ -76,8 +73,7 @@ struct ipv4_address_test
         check_valid("127.0.0.1", 0x7F000001);
 
         // Invalid addresses
-        auto check_invalid = [](std::string_view s)
-        {
+        auto check_invalid = [](std::string_view s) {
             ipv4_address addr;
             auto ec = parse_ipv4_address(s, addr);
             BOOST_TEST(bool(ec));
@@ -96,18 +92,17 @@ struct ipv4_address_test
         check_invalid("0.256.0.0");
         check_invalid("0.0.256.0");
         check_invalid("0.0.0.256");
-        check_invalid("00.0.0.0");    // leading zero
-        check_invalid("01.0.0.0");    // leading zero
-        check_invalid("1.02.3.4");    // leading zero
-        check_invalid("1.2.3.4a");    // trailing garbage
-        check_invalid("a1.2.3.4");    // leading garbage
-        check_invalid("1.2.3.4.5");   // too many octets
-        check_invalid("-1.2.3.4");    // negative
-        check_invalid("1000.2.3.4");  // too large
+        check_invalid("00.0.0.0");   // leading zero
+        check_invalid("01.0.0.0");   // leading zero
+        check_invalid("1.02.3.4");   // leading zero
+        check_invalid("1.2.3.4a");   // trailing garbage
+        check_invalid("a1.2.3.4");   // leading garbage
+        check_invalid("1.2.3.4.5");  // too many octets
+        check_invalid("-1.2.3.4");   // negative
+        check_invalid("1000.2.3.4"); // too large
     }
 
-    void
-    testToBytes()
+    void testToBytes()
     {
         ipv4_address a(0x01020304);
         auto bytes = a.to_bytes();
@@ -117,8 +112,7 @@ struct ipv4_address_test
         BOOST_TEST_EQ(bytes[3], 4);
     }
 
-    void
-    testToString()
+    void testToString()
     {
         BOOST_TEST_EQ(ipv4_address(0x00000000).to_string(), "0.0.0.0");
         BOOST_TEST_EQ(ipv4_address(0x01020304).to_string(), "1.2.3.4");
@@ -126,16 +120,14 @@ struct ipv4_address_test
         BOOST_TEST_EQ(ipv4_address(0x0A0B0C0D).to_string(), "10.11.12.13");
     }
 
-    void
-    testToBuffer()
+    void testToBuffer()
     {
         char buf[ipv4_address::max_str_len];
         auto sv = ipv4_address(0x01020304).to_buffer(buf, sizeof(buf));
         BOOST_TEST_EQ(sv, "1.2.3.4");
     }
 
-    void
-    testPredicates()
+    void testPredicates()
     {
         // Loopback
         BOOST_TEST(ipv4_address(0x7F000001).is_loopback());
@@ -154,8 +146,7 @@ struct ipv4_address_test
         BOOST_TEST(!ipv4_address(0xF0000000).is_multicast());
     }
 
-    void
-    testStaticFactories()
+    void testStaticFactories()
     {
         BOOST_TEST(ipv4_address::any().is_unspecified());
         BOOST_TEST_EQ(ipv4_address::any().to_uint(), 0u);
@@ -166,8 +157,7 @@ struct ipv4_address_test
         BOOST_TEST_EQ(ipv4_address::broadcast().to_uint(), 0xFFFFFFFFu);
     }
 
-    void
-    testComparison()
+    void testComparison()
     {
         ipv4_address a1(0x01020304);
         ipv4_address a2(0x01020304);
@@ -179,16 +169,14 @@ struct ipv4_address_test
         BOOST_TEST(!(a1 == a3));
     }
 
-    void
-    testOstream()
+    void testOstream()
     {
         std::ostringstream oss;
         oss << ipv4_address(0xC0A80101);
         BOOST_TEST_EQ(oss.str(), "192.168.1.1");
     }
 
-    void
-    run()
+    void run()
     {
         testConstruction();
         testParse();

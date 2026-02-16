@@ -90,8 +90,7 @@ public:
 
         @param u The integer to construct from.
     */
-    explicit
-    ipv4_address(uint_type u) noexcept;
+    explicit ipv4_address(uint_type u) noexcept;
 
     /** Construct from an array of bytes.
 
@@ -101,8 +100,7 @@ public:
 
         @param bytes The value to construct from.
     */
-    explicit
-    ipv4_address(bytes_type const& bytes) noexcept;
+    explicit ipv4_address(bytes_type const& bytes) noexcept;
 
     /** Construct from a string.
 
@@ -128,22 +126,19 @@ public:
         @see
             @ref parse_ipv4_address.
     */
-    explicit
-    ipv4_address(std::string_view s);
+    explicit ipv4_address(std::string_view s);
 
     /** Return the address as bytes, in network byte order.
 
         @return The address as an array of bytes.
     */
-    bytes_type
-    to_bytes() const noexcept;
+    bytes_type to_bytes() const noexcept;
 
     /** Return the address as an unsigned integer.
 
         @return The address as an unsigned integer.
     */
-    uint_type
-    to_uint() const noexcept;
+    uint_type to_uint() const noexcept;
 
     /** Return the address as a string in dotted decimal format.
 
@@ -154,8 +149,7 @@ public:
 
         @return The address as a string.
     */
-    std::string
-    to_string() const;
+    std::string to_string() const;
 
     /** Write a dotted decimal string representing the address to a buffer.
 
@@ -170,36 +164,31 @@ public:
 
         @param dest_size The size of the output buffer.
     */
-    std::string_view
-    to_buffer(char* dest, std::size_t dest_size) const;
+    std::string_view to_buffer(char* dest, std::size_t dest_size) const;
 
     /** Return true if the address is a loopback address.
 
         @return `true` if the address is a loopback address.
     */
-    bool
-    is_loopback() const noexcept;
+    bool is_loopback() const noexcept;
 
     /** Return true if the address is unspecified.
 
         @return `true` if the address is unspecified.
     */
-    bool
-    is_unspecified() const noexcept;
+    bool is_unspecified() const noexcept;
 
     /** Return true if the address is a multicast address.
 
         @return `true` if the address is a multicast address.
     */
-    bool
-    is_multicast() const noexcept;
+    bool is_multicast() const noexcept;
 
     /** Return true if two addresses are equal.
 
         @return `true` if the addresses are equal, otherwise `false`.
     */
-    friend
-    bool
+    friend bool
     operator==(ipv4_address const& a1, ipv4_address const& a2) noexcept
     {
         return a1.addr_ == a2.addr_;
@@ -209,8 +198,7 @@ public:
 
         @return `true` if the addresses are not equal, otherwise `false`.
     */
-    friend
-    bool
+    friend bool
     operator!=(ipv4_address const& a1, ipv4_address const& a2) noexcept
     {
         return a1.addr_ != a2.addr_;
@@ -220,9 +208,7 @@ public:
 
         @return The any address (0.0.0.0).
     */
-    static
-    ipv4_address
-    any() noexcept
+    static ipv4_address any() noexcept
     {
         return ipv4_address();
     }
@@ -231,9 +217,7 @@ public:
 
         @return The loopback address (127.0.0.1).
     */
-    static
-    ipv4_address
-    loopback() noexcept
+    static ipv4_address loopback() noexcept
     {
         return ipv4_address(0x7F000001);
     }
@@ -242,9 +226,7 @@ public:
 
         @return The broadcast address (255.255.255.255).
     */
-    static
-    ipv4_address
-    broadcast() noexcept
+    static ipv4_address broadcast() noexcept
     {
         return ipv4_address(0xFFFFFFFF);
     }
@@ -258,19 +240,15 @@ public:
         @param addr The address to format.
         @return The output stream.
     */
-    friend
-    BOOST_COROSIO_DECL
-    std::ostream&
+    friend BOOST_COROSIO_DECL std::ostream&
     operator<<(std::ostream& os, ipv4_address const& addr);
 
 private:
     friend class ipv6_address;
 
-    std::size_t
-    print_impl(char* dest) const noexcept;
+    std::size_t print_impl(char* dest) const noexcept;
 };
 
-//------------------------------------------------
 
 /** Return an IPv4 address from an IP address string in dotted decimal form.
 
@@ -278,11 +256,8 @@ private:
     @param addr The address to store the result.
     @return An error code (empty on success).
 */
-[[nodiscard]] BOOST_COROSIO_DECL
-std::error_code
-parse_ipv4_address(
-    std::string_view s,
-    ipv4_address& addr) noexcept;
+[[nodiscard]] BOOST_COROSIO_DECL std::error_code
+parse_ipv4_address(std::string_view s, ipv4_address& addr) noexcept;
 
 } // namespace boost::corosio
 

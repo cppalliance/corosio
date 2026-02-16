@@ -16,10 +16,7 @@ namespace boost::corosio {
 
 struct tls_stream_test
 {
-    void
-    run()
-    {
-    }
+    void run() {}
 };
 
 TEST_SUITE(tls_stream_test, "boost.corosio.tls_stream");

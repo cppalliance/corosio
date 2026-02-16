@@ -65,11 +65,10 @@ namespace boost::corosio {
 
     @see tls_stream, wolfssl_stream
 */
-class BOOST_COROSIO_DECL openssl_stream final
-    : public tls_stream
+class BOOST_COROSIO_DECL openssl_stream final : public tls_stream
 {
     struct impl;
-    capy::any_stream stream_;  // must be first - impl_ holds reference
+    capy::any_stream stream_; // must be first - impl_ holds reference
     impl* impl_;
 
 public:
@@ -84,7 +83,8 @@ public:
         @param ctx The TLS context containing configuration.
     */
     template<capy::Stream S>
-        requires (!std::same_as<std::decay_t<S>, openssl_stream>)
+        requires(!std::same_as<std::decay_t<S>, openssl_stream>)
+    // NOLINTNEXTLINE(performance-unnecessary-value-param)
     openssl_stream(S stream, tls_context ctx)
         : stream_(std::move(stream))
         , impl_(make_impl(stream_, ctx))
@@ -102,6 +102,7 @@ public:
         @param ctx The TLS context containing configuration.
     */
     template<capy::Stream S>
+    // NOLINTNEXTLINE(performance-unnecessary-value-param)
     openssl_stream(S* stream, tls_context ctx)
         : stream_(stream)
         , impl_(make_impl(stream_, ctx))
@@ -113,45 +114,38 @@ public:
         Releases the underlying OpenSSL resources. If constructed
         in owning mode, also destroys the underlying stream.
     */
-    ~openssl_stream();
+    ~openssl_stream() override;
 
     openssl_stream(openssl_stream&&) noexcept;
     openssl_stream& operator=(openssl_stream&&) noexcept;
 
-    capy::io_task<>
-    handshake(handshake_type type) override;
+    capy::io_task<> handshake(handshake_type type) override;
 
-    capy::io_task<>
-    shutdown() override;
+    capy::io_task<> shutdown() override;
 
-    void
-    reset() override;
+    void reset() override;
 
-    capy::any_stream&
-    next_layer() noexcept override
+    capy::any_stream& next_layer() noexcept override
     {
         return stream_;
     }
 
-    capy::any_stream const&
-    next_layer() const noexcept override
+    capy::any_stream const& next_layer() const noexcept override
     {
         return stream_;
     }
 
-    std::string_view
-    name() const noexcept override;
+    std::string_view name() const noexcept override;
 
 protected:
-    capy::io_task<std::size_t>
-    do_read_some(capy::mutable_buffer_array<capy::detail::max_iovec_> buffers) override;
+    capy::io_task<std::size_t> do_read_some(
+        capy::mutable_buffer_array<capy::detail::max_iovec_> buffers) override;
 
-    capy::io_task<std::size_t>
-    do_write_some(capy::const_buffer_array<capy::detail::max_iovec_> buffers) override;
+    capy::io_task<std::size_t> do_write_some(
+        capy::const_buffer_array<capy::detail::max_iovec_> buffers) override;
 
 private:
-    static impl*
-    make_impl(capy::any_stream& stream, tls_context const& ctx);
+    static impl* make_impl(capy::any_stream& stream, tls_context const& ctx);
 };
 
 } // namespace boost::corosio

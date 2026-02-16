@@ -65,15 +65,13 @@
 namespace boost::corosio::detail {
 
 void
-kqueue_op::canceller::
-operator()() const noexcept
+kqueue_op::canceller::operator()() const noexcept
 {
     op->cancel();
 }
 
 void
-kqueue_connect_op::
-cancel() noexcept
+kqueue_connect_op::cancel() noexcept
 {
     if (socket_impl_)
         socket_impl_->cancel_single_op(*this);
@@ -82,8 +80,7 @@ cancel() noexcept
 }
 
 void
-kqueue_read_op::
-cancel() noexcept
+kqueue_read_op::cancel() noexcept
 {
     if (socket_impl_)
         socket_impl_->cancel_single_op(*this);
@@ -92,8 +89,7 @@ cancel() noexcept
 }
 
 void
-kqueue_write_op::
-cancel() noexcept
+kqueue_write_op::cancel() noexcept
 {
     if (socket_impl_)
         socket_impl_->cancel_single_op(*this);
@@ -102,8 +98,7 @@ cancel() noexcept
 }
 
 void
-kqueue_op::
-operator()()
+kqueue_op::operator()()
 {
     stop_cb.reset();
 
@@ -129,15 +124,14 @@ operator()()
     // last ref and we destroyed it while still in operator(), we'd have
     // use-after-free. Moving to local ensures destruction happens at
     // function exit, after all member accesses are complete.
-    capy::executor_ref saved_ex( std::move( ex ) );
-    std::coroutine_handle<> saved_h( std::move( h ) );
+    capy::executor_ref saved_ex(std::move(ex));
+    std::coroutine_handle<> saved_h(std::move(h));
     auto prevent_premature_destruction = std::move(impl_ptr);
     dispatch_coro(saved_ex, saved_h).resume();
 }
 
 void
-kqueue_connect_op::
-operator()()
+kqueue_connect_op::operator()()
 {
     stop_cb.reset();
 
@@ -152,10 +146,12 @@ operator()()
         endpoint local_ep;
         sockaddr_in local_addr{};
         socklen_t local_len = sizeof(local_addr);
-        if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+        if (::getsockname(
+                fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
             local_ep = from_sockaddr_in(local_addr);
         // Always cache remote endpoint; local may be default if getsockname failed
-        static_cast<kqueue_socket_impl*>(socket_impl_)->set_endpoints(local_ep, target_endpoint);
+        static_cast<kqueue_socket_impl*>(socket_impl_)
+            ->set_endpoints(local_ep, target_endpoint);
     }
 
     if (ec_out)
@@ -172,24 +168,21 @@ operator()()
         *bytes_out = bytes_transferred;
 
     // Move to stack before resuming. See kqueue_op::operator()() for rationale.
-    capy::executor_ref saved_ex( std::move( ex ) );
-    std::coroutine_handle<> saved_h( std::move( h ) );
+    capy::executor_ref saved_ex(std::move(ex));
+    std::coroutine_handle<> saved_h(std::move(h));
     auto prevent_premature_destruction = std::move(impl_ptr);
     dispatch_coro(saved_ex, saved_h).resume();
 }
 
-kqueue_socket_impl::
-kqueue_socket_impl(kqueue_socket_service& svc) noexcept
+kqueue_socket_impl::kqueue_socket_impl(kqueue_socket_service& svc) noexcept
     : svc_(svc)
 {
 }
 
-kqueue_socket_impl::
-~kqueue_socket_impl() = default;
+kqueue_socket_impl::~kqueue_socket_impl() = default;
 
 std::coroutine_handle<>
-kqueue_socket_impl::
-connect(
+kqueue_socket_impl::connect(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     endpoint ep,
@@ -199,14 +192,16 @@ connect(
     auto& op = conn_;
 
     sockaddr_in addr = detail::to_sockaddr_in(ep);
-    int result = ::connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    int result =
+        ::connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
 
     // Cache endpoints on sync success
     if (result == 0)
     {
         sockaddr_in local_addr{};
         socklen_t local_len = sizeof(local_addr);
-        if (::getsockname(fd_, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+        if (::getsockname(
+                fd_, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
             local_endpoint_ = detail::from_sockaddr_in(local_addr);
         remote_endpoint_ = ep;
     }
@@ -245,7 +240,8 @@ connect(
     op.start(token, this);
     op.impl_ptr = shared_from_this();
 
-    register_op(op, desc_state_.connect_op, desc_state_.write_ready,
+    register_op(
+        op, desc_state_.connect_op, desc_state_.write_ready,
         desc_state_.connect_cancel_pending);
     return std::noop_coroutine();
 }
@@ -253,8 +249,7 @@ connect(
 // Register an op with the reactor, handling cached edge events.
 // Called under the EAGAIN path when speculative I/O failed.
 void
-kqueue_socket_impl::
-register_op(
+kqueue_socket_impl::register_op(
     kqueue_op& op,
     kqueue_op*& desc_slot,
     bool& ready_flag,
@@ -291,8 +286,7 @@ register_op(
 }
 
 std::coroutine_handle<>
-kqueue_socket_impl::
-read_some(
+kqueue_socket_impl::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     io_buffer_param param,
@@ -304,7 +298,8 @@ read_some(
     op.reset();
 
     capy::mutable_buffer bufs[kqueue_read_op::max_buffers];
-    op.iovec_count = static_cast<int>(param.copy_to(bufs, kqueue_read_op::max_buffers));
+    op.iovec_count =
+        static_cast<int>(param.copy_to(bufs, kqueue_read_op::max_buffers));
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
@@ -332,9 +327,11 @@ read_some(
     // Budget limits consecutive inline completions to prevent starvation
     // of other connections competing for scheduler time.
     ssize_t n;
-    do {
+    do
+    {
         n = ::readv(fd_, op.iovecs, op.iovec_count);
-    } while (n < 0 && errno == EINTR);
+    }
+    while (n < 0 && errno == EINTR);
 
     if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
     {
@@ -374,14 +371,14 @@ read_some(
     op.start(token, this);
     op.impl_ptr = shared_from_this();
 
-    register_op(op, desc_state_.read_op, desc_state_.read_ready,
+    register_op(
+        op, desc_state_.read_op, desc_state_.read_ready,
         desc_state_.read_cancel_pending);
     return std::noop_coroutine();
 }
 
 std::coroutine_handle<>
-kqueue_socket_impl::
-write_some(
+kqueue_socket_impl::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     io_buffer_param param,
@@ -393,7 +390,8 @@ write_some(
     op.reset();
 
     capy::mutable_buffer bufs[kqueue_write_op::max_buffers];
-    op.iovec_count = static_cast<int>(param.copy_to(bufs, kqueue_write_op::max_buffers));
+    op.iovec_count =
+        static_cast<int>(param.copy_to(bufs, kqueue_write_op::max_buffers));
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
@@ -419,9 +417,11 @@ write_some(
     // a tight pump loop for back-to-back writes on a hot socket.
     // Budget limits consecutive inline completions to prevent starvation.
     ssize_t n;
-    do {
+    do
+    {
         n = ::writev(fd_, op.iovecs, op.iovec_count);
-    } while (n < 0 && errno == EINTR);
+    }
+    while (n < 0 && errno == EINTR);
 
     if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
     {
@@ -456,21 +456,27 @@ write_some(
     op.start(token, this);
     op.impl_ptr = shared_from_this();
 
-    register_op(op, desc_state_.write_op, desc_state_.write_ready,
+    register_op(
+        op, desc_state_.write_op, desc_state_.write_ready,
         desc_state_.write_cancel_pending);
     return std::noop_coroutine();
 }
 
 std::error_code
-kqueue_socket_impl::
-shutdown(tcp_socket::shutdown_type what) noexcept
+kqueue_socket_impl::shutdown(tcp_socket::shutdown_type what) noexcept
 {
     int how;
     switch (what)
     {
-    case tcp_socket::shutdown_receive: how = SHUT_RD;   break;
-    case tcp_socket::shutdown_send:    how = SHUT_WR;   break;
-    case tcp_socket::shutdown_both:    how = SHUT_RDWR; break;
+    case tcp_socket::shutdown_receive:
+        how = SHUT_RD;
+        break;
+    case tcp_socket::shutdown_send:
+        how = SHUT_WR;
+        break;
+    case tcp_socket::shutdown_both:
+        how = SHUT_RDWR;
+        break;
     default:
         return make_err(EINVAL);
     }
@@ -480,8 +486,7 @@ shutdown(tcp_socket::shutdown_type what) noexcept
 }
 
 std::error_code
-kqueue_socket_impl::
-set_no_delay(bool value) noexcept
+kqueue_socket_impl::set_no_delay(bool value) noexcept
 {
     int flag = value ? 1 : 0;
     if (::setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) != 0)
@@ -490,8 +495,7 @@ set_no_delay(bool value) noexcept
 }
 
 bool
-kqueue_socket_impl::
-no_delay(std::error_code& ec) const noexcept
+kqueue_socket_impl::no_delay(std::error_code& ec) const noexcept
 {
     int flag = 0;
     socklen_t len = sizeof(flag);
@@ -505,8 +509,7 @@ no_delay(std::error_code& ec) const noexcept
 }
 
 std::error_code
-kqueue_socket_impl::
-set_keep_alive(bool value) noexcept
+kqueue_socket_impl::set_keep_alive(bool value) noexcept
 {
     int flag = value ? 1 : 0;
     if (::setsockopt(fd_, SOL_SOCKET, SO_KEEPALIVE, &flag, sizeof(flag)) != 0)
@@ -515,8 +518,7 @@ set_keep_alive(bool value) noexcept
 }
 
 bool
-kqueue_socket_impl::
-keep_alive(std::error_code& ec) const noexcept
+kqueue_socket_impl::keep_alive(std::error_code& ec) const noexcept
 {
     int flag = 0;
     socklen_t len = sizeof(flag);
@@ -530,8 +532,7 @@ keep_alive(std::error_code& ec) const noexcept
 }
 
 std::error_code
-kqueue_socket_impl::
-set_receive_buffer_size(int size) noexcept
+kqueue_socket_impl::set_receive_buffer_size(int size) noexcept
 {
     if (::setsockopt(fd_, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) != 0)
         return make_err(errno);
@@ -539,8 +540,7 @@ set_receive_buffer_size(int size) noexcept
 }
 
 int
-kqueue_socket_impl::
-receive_buffer_size(std::error_code& ec) const noexcept
+kqueue_socket_impl::receive_buffer_size(std::error_code& ec) const noexcept
 {
     int size = 0;
     socklen_t len = sizeof(size);
@@ -554,8 +554,7 @@ receive_buffer_size(std::error_code& ec) const noexcept
 }
 
 std::error_code
-kqueue_socket_impl::
-set_send_buffer_size(int size) noexcept
+kqueue_socket_impl::set_send_buffer_size(int size) noexcept
 {
     if (::setsockopt(fd_, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)) != 0)
         return make_err(errno);
@@ -563,8 +562,7 @@ set_send_buffer_size(int size) noexcept
 }
 
 int
-kqueue_socket_impl::
-send_buffer_size(std::error_code& ec) const noexcept
+kqueue_socket_impl::send_buffer_size(std::error_code& ec) const noexcept
 {
     int size = 0;
     socklen_t len = sizeof(size);
@@ -578,8 +576,7 @@ send_buffer_size(std::error_code& ec) const noexcept
 }
 
 std::error_code
-kqueue_socket_impl::
-set_linger(bool enabled, int timeout) noexcept
+kqueue_socket_impl::set_linger(bool enabled, int timeout) noexcept
 {
     if (timeout < 0)
         return make_err(EINVAL);
@@ -592,8 +589,7 @@ set_linger(bool enabled, int timeout) noexcept
 }
 
 tcp_socket::linger_options
-kqueue_socket_impl::
-linger(std::error_code& ec) const noexcept
+kqueue_socket_impl::linger(std::error_code& ec) const noexcept
 {
     struct ::linger lg{};
     socklen_t len = sizeof(lg);
@@ -607,15 +603,11 @@ linger(std::error_code& ec) const noexcept
 }
 
 void
-kqueue_socket_impl::
-cancel() noexcept
+kqueue_socket_impl::cancel() noexcept
 {
-    std::shared_ptr<kqueue_socket_impl> self;
-    try {
-        self = shared_from_this();
-    } catch (const std::bad_weak_ptr&) {
+    auto self = weak_from_this().lock();
+    if (!self)
         return;
-    }
 
     conn_.request_cancel();
     rd_.request_cancel();
@@ -661,15 +653,21 @@ cancel() noexcept
 }
 
 void
-kqueue_socket_impl::
-cancel_single_op(kqueue_op& op) noexcept
+kqueue_socket_impl::cancel_single_op(kqueue_op& op) noexcept
 {
+    auto self = weak_from_this().lock();
+    if (!self)
+        return;
+
     op.request_cancel();
 
     kqueue_op** desc_op_ptr = nullptr;
-    if (&op == &conn_) desc_op_ptr = &desc_state_.connect_op;
-    else if (&op == &rd_) desc_op_ptr = &desc_state_.read_op;
-    else if (&op == &wr_) desc_op_ptr = &desc_state_.write_op;
+    if (&op == &conn_)
+        desc_op_ptr = &desc_state_.connect_op;
+    else if (&op == &rd_)
+        desc_op_ptr = &desc_state_.read_op;
+    else if (&op == &wr_)
+        desc_op_ptr = &desc_state_.write_op;
 
     if (desc_op_ptr)
     {
@@ -687,9 +685,7 @@ cancel_single_op(kqueue_op& op) noexcept
         }
         if (claimed)
         {
-            try {
-                op.impl_ptr = shared_from_this();
-            } catch (const std::bad_weak_ptr&) {}
+            op.impl_ptr = self;
             svc_.post(&op);
             svc_.work_finished();
         }
@@ -697,17 +693,51 @@ cancel_single_op(kqueue_op& op) noexcept
 }
 
 void
-kqueue_socket_impl::
-close_socket() noexcept
+kqueue_socket_impl::close_socket() noexcept
 {
-    cancel();
-
-    // Keep impl alive if descriptor_state is queued in the scheduler.
-    if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
+    auto self = weak_from_this().lock();
+    if (self)
     {
-        try {
-            desc_state_.impl_ref_ = shared_from_this();
-        } catch (std::bad_weak_ptr const&) {}
+        conn_.request_cancel();
+        rd_.request_cancel();
+        wr_.request_cancel();
+
+        kqueue_op* conn_claimed = nullptr;
+        kqueue_op* rd_claimed = nullptr;
+        kqueue_op* wr_claimed = nullptr;
+        {
+            std::lock_guard lock(desc_state_.mutex);
+            conn_claimed = std::exchange(desc_state_.connect_op, nullptr);
+            rd_claimed = std::exchange(desc_state_.read_op, nullptr);
+            wr_claimed = std::exchange(desc_state_.write_op, nullptr);
+            desc_state_.read_ready = false;
+            desc_state_.write_ready = false;
+            desc_state_.read_cancel_pending = false;
+            desc_state_.write_cancel_pending = false;
+            desc_state_.connect_cancel_pending = false;
+        }
+
+        if (conn_claimed)
+        {
+            conn_.impl_ptr = self;
+            svc_.post(&conn_);
+            svc_.work_finished();
+        }
+        if (rd_claimed)
+        {
+            rd_.impl_ptr = self;
+            svc_.post(&rd_);
+            svc_.work_finished();
+        }
+        if (wr_claimed)
+        {
+            wr_.impl_ptr = self;
+            svc_.post(&wr_);
+            svc_.work_finished();
+        }
+
+        if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
+            desc_state_.impl_ref_ = self;
     }
 
     if (fd_ >= 0)
@@ -723,37 +753,23 @@ close_socket() noexcept
     }
 
     desc_state_.fd = -1;
-    {
-        std::lock_guard lock(desc_state_.mutex);
-        desc_state_.read_op = nullptr;
-        desc_state_.write_op = nullptr;
-        desc_state_.connect_op = nullptr;
-        desc_state_.read_ready = false;
-        desc_state_.write_ready = false;
-        desc_state_.read_cancel_pending = false;
-        desc_state_.write_cancel_pending = false;
-        desc_state_.connect_cancel_pending = false;
-    }
     desc_state_.registered_events = 0;
 
     local_endpoint_ = endpoint{};
     remote_endpoint_ = endpoint{};
 }
 
-kqueue_socket_service::
-kqueue_socket_service(capy::execution_context& ctx)
-    : state_(std::make_unique<kqueue_socket_state>(ctx.use_service<kqueue_scheduler>()))
+kqueue_socket_service::kqueue_socket_service(capy::execution_context& ctx)
+    : state_(
+          std::make_unique<kqueue_socket_state>(
+              ctx.use_service<kqueue_scheduler>()))
 {
 }
 
-kqueue_socket_service::
-~kqueue_socket_service()
-{
-}
+kqueue_socket_service::~kqueue_socket_service() {}
 
 void
-kqueue_socket_service::
-shutdown()
+kqueue_socket_service::shutdown()
 {
     std::lock_guard lock(state_->mutex_);
 
@@ -770,8 +786,7 @@ shutdown()
 }
 
 io_object::implementation*
-kqueue_socket_service::
-construct()
+kqueue_socket_service::construct()
 {
     auto impl = std::make_shared<kqueue_socket_impl>(*this);
     auto* raw = impl.get();
@@ -786,8 +801,7 @@ construct()
 }
 
 void
-kqueue_socket_service::
-destroy(io_object::implementation* impl)
+kqueue_socket_service::destroy(io_object::implementation* impl)
 {
     auto* kq_impl = static_cast<kqueue_socket_impl*>(impl);
     kq_impl->close_socket();
@@ -797,8 +811,7 @@ destroy(io_object::implementation* impl)
 }
 
 std::error_code
-kqueue_socket_service::
-open_socket(tcp_socket::implementation& impl)
+kqueue_socket_service::open_socket(tcp_socket::implementation& impl)
 {
     auto* kq_impl = static_cast<kqueue_socket_impl*>(&impl);
     kq_impl->close_socket();
@@ -857,29 +870,25 @@ open_socket(tcp_socket::implementation& impl)
 }
 
 void
-kqueue_socket_service::
-close(io_object::handle& h)
+kqueue_socket_service::close(io_object::handle& h)
 {
     static_cast<kqueue_socket_impl*>(h.get())->close_socket();
 }
 
 void
-kqueue_socket_service::
-post(kqueue_op* op)
+kqueue_socket_service::post(kqueue_op* op)
 {
     state_->sched_.post(op);
 }
 
 void
-kqueue_socket_service::
-work_started() noexcept
+kqueue_socket_service::work_started() noexcept
 {
     state_->sched_.work_started();
 }
 
 void
-kqueue_socket_service::
-work_finished() noexcept
+kqueue_socket_service::work_finished() noexcept
 {
     state_->sched_.work_finished();
 }

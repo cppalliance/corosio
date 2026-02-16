@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -71,8 +72,7 @@
 namespace boost::corosio::detail {
 
 void
-kqueue_accept_op::
-cancel() noexcept
+kqueue_accept_op::cancel() noexcept
 {
     if (acceptor_impl_)
         acceptor_impl_->cancel_single_op(*this);
@@ -81,13 +81,14 @@ cancel() noexcept
 }
 
 void
-kqueue_accept_op::
-operator()()
+kqueue_accept_op::operator()()
 {
     stop_cb.reset();
 
     static_cast<kqueue_acceptor_impl*>(acceptor_impl_)
-        ->service().scheduler().reset_inline_budget();
+        ->service()
+        .scheduler()
+        .reset_inline_budget();
 
     bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
 
@@ -105,11 +106,14 @@ operator()()
     {
         if (acceptor_impl_)
         {
-            auto* socket_svc = static_cast<kqueue_acceptor_impl*>(acceptor_impl_)
-                ->service().socket_service();
+            auto* socket_svc =
+                static_cast<kqueue_acceptor_impl*>(acceptor_impl_)
+                    ->service()
+                    .socket_service();
             if (socket_svc)
             {
-                auto& impl = static_cast<kqueue_socket_impl&>(*socket_svc->construct());
+                auto& impl =
+                    static_cast<kqueue_socket_impl&>(*socket_svc->construct());
                 impl.set_socket(accepted_fd);
 
                 // Register accepted socket with kqueue (edge-triggered via EV_CLEAR)
@@ -120,11 +124,14 @@ operator()()
                     impl.desc_state_.write_op = nullptr;
                     impl.desc_state_.connect_op = nullptr;
                 }
-                socket_svc->scheduler().register_descriptor(accepted_fd, &impl.desc_state_);
+                socket_svc->scheduler().register_descriptor(
+                    accepted_fd, &impl.desc_state_);
 
                 // Suppress SIGPIPE on the accepted socket; macOS lacks MSG_NOSIGNAL
                 int one = 1;
-                if (::setsockopt(accepted_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) == -1)
+                if (::setsockopt(
+                        accepted_fd, SOL_SOCKET, SO_NOSIGPIPE, &one,
+                        sizeof(one)) == -1)
                 {
                     if (ec_out)
                         *ec_out = make_err(errno);
@@ -142,9 +149,15 @@ operator()()
                     socklen_t remote_len = sizeof(remote_addr);
 
                     endpoint local_ep, remote_ep;
-                    if (::getsockname(accepted_fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+                    if (::getsockname(
+                            accepted_fd,
+                            reinterpret_cast<sockaddr*>(&local_addr),
+                            &local_len) == 0)
                         local_ep = from_sockaddr_in(local_addr);
-                    if (::getpeername(accepted_fd, reinterpret_cast<sockaddr*>(&remote_addr), &remote_len) == 0)
+                    if (::getpeername(
+                            accepted_fd,
+                            reinterpret_cast<sockaddr*>(&remote_addr),
+                            &remote_len) == 0)
                         remote_ep = from_sockaddr_in(remote_addr);
 
                     impl.set_endpoints(local_ep, remote_ep);
@@ -184,8 +197,10 @@ operator()()
 
         if (peer_impl)
         {
-            auto* socket_svc_cleanup = static_cast<kqueue_acceptor_impl*>(acceptor_impl_)
-                ->service().socket_service();
+            auto* socket_svc_cleanup =
+                static_cast<kqueue_acceptor_impl*>(acceptor_impl_)
+                    ->service()
+                    .socket_service();
             if (socket_svc_cleanup)
                 socket_svc_cleanup->destroy(peer_impl);
             peer_impl = nullptr;
@@ -196,21 +211,20 @@ operator()()
     }
 
     // Move to stack before resuming. See kqueue_op::operator()() for rationale.
-    capy::executor_ref saved_ex( std::move( ex ) );
-    std::coroutine_handle<> saved_h( std::move( h ) );
+    capy::executor_ref saved_ex(std::move(ex));
+    std::coroutine_handle<> saved_h(std::move(h));
     auto prevent_premature_destruction = std::move(impl_ptr);
     dispatch_coro(saved_ex, saved_h).resume();
 }
 
-kqueue_acceptor_impl::
-kqueue_acceptor_impl(kqueue_acceptor_service& svc) noexcept
+kqueue_acceptor_impl::kqueue_acceptor_impl(
+    kqueue_acceptor_service& svc) noexcept
     : svc_(svc)
 {
 }
 
 std::coroutine_handle<>
-kqueue_acceptor_impl::
-accept(
+kqueue_acceptor_impl::accept(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     std::stop_token token,
@@ -333,15 +347,11 @@ accept(
 }
 
 void
-kqueue_acceptor_impl::
-cancel() noexcept
+kqueue_acceptor_impl::cancel() noexcept
 {
-    std::shared_ptr<kqueue_acceptor_impl> self;
-    try {
-        self = shared_from_this();
-    } catch (const std::bad_weak_ptr&) {
+    auto self = weak_from_this().lock();
+    if (!self)
         return;
-    }
 
     acc_.request_cancel();
 
@@ -360,9 +370,12 @@ cancel() noexcept
 }
 
 void
-kqueue_acceptor_impl::
-cancel_single_op(kqueue_op& op) noexcept
+kqueue_acceptor_impl::cancel_single_op(kqueue_op& op) noexcept
 {
+    auto self = weak_from_this().lock();
+    if (!self)
+        return;
+
     op.request_cancel();
 
     kqueue_op* claimed = nullptr;
@@ -373,25 +386,37 @@ cancel_single_op(kqueue_op& op) noexcept
     }
     if (claimed)
     {
-        try {
-            op.impl_ptr = shared_from_this();
-        } catch (const std::bad_weak_ptr&) {}
+        op.impl_ptr = self;
         svc_.post(&op);
         svc_.work_finished();
     }
 }
 
 void
-kqueue_acceptor_impl::
-close_socket() noexcept
+kqueue_acceptor_impl::close_socket() noexcept
 {
-    cancel();
-
-    if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
+    auto self = weak_from_this().lock();
+    if (self)
     {
-        try {
-            desc_state_.impl_ref_ = shared_from_this();
-        } catch (std::bad_weak_ptr const&) {}
+        acc_.request_cancel();
+
+        kqueue_op* claimed = nullptr;
+        {
+            std::lock_guard lock(desc_state_.mutex);
+            claimed = std::exchange(desc_state_.read_op, nullptr);
+            desc_state_.read_ready = false;
+            desc_state_.write_ready = false;
+        }
+
+        if (claimed)
+        {
+            acc_.impl_ptr = self;
+            svc_.post(&acc_);
+            svc_.work_finished();
+        }
+
+        if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
+            desc_state_.impl_ref_ = self;
     }
 
     if (fd_ >= 0)
@@ -403,30 +428,23 @@ close_socket() noexcept
     }
 
     desc_state_.fd = -1;
-    {
-        std::lock_guard lock(desc_state_.mutex);
-        desc_state_.read_op = nullptr;
-        desc_state_.read_ready = false;
-        desc_state_.write_ready = false;
-    }
     desc_state_.registered_events = 0;
 
     local_endpoint_ = endpoint{};
 }
 
-kqueue_acceptor_service::
-kqueue_acceptor_service(capy::execution_context& ctx)
+kqueue_acceptor_service::kqueue_acceptor_service(capy::execution_context& ctx)
     : ctx_(ctx)
-    , state_(std::make_unique<kqueue_acceptor_state>(ctx.use_service<kqueue_scheduler>()))
+    , state_(
+          std::make_unique<kqueue_acceptor_state>(
+              ctx.use_service<kqueue_scheduler>()))
 {
 }
 
-kqueue_acceptor_service::
-~kqueue_acceptor_service() = default;
+kqueue_acceptor_service::~kqueue_acceptor_service() = default;
 
 void
-kqueue_acceptor_service::
-shutdown()
+kqueue_acceptor_service::shutdown()
 {
     std::lock_guard lock(state_->mutex_);
 
@@ -439,8 +457,7 @@ shutdown()
 }
 
 io_object::implementation*
-kqueue_acceptor_service::
-construct()
+kqueue_acceptor_service::construct()
 {
     auto impl = std::make_shared<kqueue_acceptor_impl>(*this);
     auto* raw = impl.get();
@@ -453,8 +470,7 @@ construct()
 }
 
 void
-kqueue_acceptor_service::
-destroy(io_object::implementation* impl)
+kqueue_acceptor_service::destroy(io_object::implementation* impl)
 {
     auto* kq_impl = static_cast<kqueue_acceptor_impl*>(impl);
     kq_impl->close_socket();
@@ -464,18 +480,14 @@ destroy(io_object::implementation* impl)
 }
 
 void
-kqueue_acceptor_service::
-close(io_object::handle& h)
+kqueue_acceptor_service::close(io_object::handle& h)
 {
     static_cast<kqueue_acceptor_impl*>(h.get())->close_socket();
 }
 
 std::error_code
-kqueue_acceptor_service::
-open_acceptor(
-    tcp_acceptor::implementation& impl,
-    endpoint ep,
-    int backlog)
+kqueue_acceptor_service::open_acceptor(
+    tcp_acceptor::implementation& impl, endpoint ep, int backlog)
 {
     auto* kq_impl = static_cast<kqueue_acceptor_impl*>(&impl);
     kq_impl->close_socket();
@@ -540,36 +552,33 @@ open_acceptor(
     // Cache the local endpoint (queries OS for ephemeral port if port was 0)
     sockaddr_in local_addr{};
     socklen_t local_len = sizeof(local_addr);
-    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+    if (::getsockname(
+            fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
         kq_impl->set_local_endpoint(detail::from_sockaddr_in(local_addr));
 
     return {};
 }
 
 void
-kqueue_acceptor_service::
-post(kqueue_op* op)
+kqueue_acceptor_service::post(kqueue_op* op)
 {
     state_->sched_.post(op);
 }
 
 void
-kqueue_acceptor_service::
-work_started() noexcept
+kqueue_acceptor_service::work_started() noexcept
 {
     state_->sched_.work_started();
 }
 
 void
-kqueue_acceptor_service::
-work_finished() noexcept
+kqueue_acceptor_service::work_finished() noexcept
 {
     state_->sched_.work_finished();
 }
 
 kqueue_socket_service*
-kqueue_acceptor_service::
-socket_service() const noexcept
+kqueue_acceptor_service::socket_service() const noexcept
 {
     auto* svc = ctx_.find_service<detail::socket_service>();
     return svc ? dynamic_cast<kqueue_socket_service*>(svc) : nullptr;

@@ -44,7 +44,6 @@ class win_socket_impl_internal;
 class win_acceptor_impl;
 class win_acceptor_impl_internal;
 
-//------------------------------------------------------------------------------
 
 /** Connect operation state. */
 struct connect_op : overlapped_op
@@ -53,8 +52,11 @@ struct connect_op : overlapped_op
     std::shared_ptr<win_socket_impl_internal> internal_ptr;
     endpoint target_endpoint;
 
-    static void do_complete(void* owner, scheduler_op* base,
-        std::uint32_t bytes, std::uint32_t error);
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t bytes,
+        std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
     explicit connect_op(win_socket_impl_internal& internal_) noexcept;
@@ -70,8 +72,11 @@ struct read_op : overlapped_op
     win_socket_impl_internal& internal;
     std::shared_ptr<win_socket_impl_internal> internal_ptr;
 
-    static void do_complete(void* owner, scheduler_op* base,
-        std::uint32_t bytes, std::uint32_t error);
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t bytes,
+        std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
     explicit read_op(win_socket_impl_internal& internal_) noexcept;
@@ -86,8 +91,11 @@ struct write_op : overlapped_op
     win_socket_impl_internal& internal;
     std::shared_ptr<win_socket_impl_internal> internal_ptr;
 
-    static void do_complete(void* owner, scheduler_op* base,
-        std::uint32_t bytes, std::uint32_t error);
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t bytes,
+        std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
     explicit write_op(win_socket_impl_internal& internal_) noexcept;
@@ -103,14 +111,16 @@ struct accept_op : overlapped_op
     io_object::implementation** impl_out = nullptr;
     char addr_buf[2 * (sizeof(sockaddr_in6) + 16)];
 
-    static void do_complete(void* owner, scheduler_op* base,
-        std::uint32_t bytes, std::uint32_t error);
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t bytes,
+        std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
     accept_op() noexcept;
 };
 
-//------------------------------------------------------------------------------
 
 /** Internal socket state for IOCP-based I/O.
 
@@ -166,13 +176,28 @@ public:
         std::error_code*,
         std::size_t*);
 
-    SOCKET native_handle() const noexcept { return socket_; }
-    endpoint local_endpoint() const noexcept { return local_endpoint_; }
-    endpoint remote_endpoint() const noexcept { return remote_endpoint_; }
-    bool is_open() const noexcept { return socket_ != INVALID_SOCKET; }
+    SOCKET native_handle() const noexcept
+    {
+        return socket_;
+    }
+    endpoint local_endpoint() const noexcept
+    {
+        return local_endpoint_;
+    }
+    endpoint remote_endpoint() const noexcept
+    {
+        return remote_endpoint_;
+    }
+    bool is_open() const noexcept
+    {
+        return socket_ != INVALID_SOCKET;
+    }
     void cancel() noexcept;
     void close_socket() noexcept;
-    void set_socket(SOCKET s) noexcept { socket_ = s; }
+    void set_socket(SOCKET s) noexcept
+    {
+        socket_ = s;
+    }
     void set_endpoints(endpoint local, endpoint remote) noexcept
     {
         local_endpoint_ = local;
@@ -190,7 +215,6 @@ private:
     endpoint remote_endpoint_;
 };
 
-//------------------------------------------------------------------------------
 
 /** Socket implementation wrapper for IOCP-based I/O.
 
@@ -199,14 +223,15 @@ private:
 
     @note Internal implementation detail. Users interact with socket class.
 */
-class win_socket_impl
+class win_socket_impl final
     : public tcp_socket::implementation
     , public intrusive_list<win_socket_impl>::node
 {
     std::shared_ptr<win_socket_impl_internal> internal_;
 
 public:
-    explicit win_socket_impl(std::shared_ptr<win_socket_impl_internal> internal) noexcept
+    explicit win_socket_impl(
+        std::shared_ptr<win_socket_impl_internal> internal) noexcept
         : internal_(std::move(internal))
     {
     }
@@ -250,9 +275,15 @@ public:
         int how;
         switch (what)
         {
-        case tcp_socket::shutdown_receive: how = SD_RECEIVE; break;
-        case tcp_socket::shutdown_send:    how = SD_SEND;    break;
-        case tcp_socket::shutdown_both:    how = SD_BOTH;    break;
+        case tcp_socket::shutdown_receive:
+            how = SD_RECEIVE;
+            break;
+        case tcp_socket::shutdown_send:
+            how = SD_SEND;
+            break;
+        case tcp_socket::shutdown_both:
+            how = SD_BOTH;
+            break;
         default:
             return make_err(WSAEINVAL);
         }
@@ -270,8 +301,9 @@ public:
     std::error_code set_no_delay(bool value) noexcept override
     {
         BOOL flag = value ? TRUE : FALSE;
-        if (::setsockopt(internal_->native_handle(), IPPROTO_TCP, TCP_NODELAY,
-                         reinterpret_cast<char*>(&flag), sizeof(flag)) != 0)
+        if (::setsockopt(
+                internal_->native_handle(), IPPROTO_TCP, TCP_NODELAY,
+                reinterpret_cast<char*>(&flag), sizeof(flag)) != 0)
             return make_err(WSAGetLastError());
         return {};
     }
@@ -280,8 +312,9 @@ public:
     {
         BOOL flag = FALSE;
         int len = sizeof(flag);
-        if (::getsockopt(internal_->native_handle(), IPPROTO_TCP, TCP_NODELAY,
-                         reinterpret_cast<char*>(&flag), &len) != 0)
+        if (::getsockopt(
+                internal_->native_handle(), IPPROTO_TCP, TCP_NODELAY,
+                reinterpret_cast<char*>(&flag), &len) != 0)
         {
             ec = make_err(WSAGetLastError());
             return false;
@@ -293,8 +326,9 @@ public:
     std::error_code set_keep_alive(bool value) noexcept override
     {
         BOOL flag = value ? TRUE : FALSE;
-        if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_KEEPALIVE,
-                         reinterpret_cast<char*>(&flag), sizeof(flag)) != 0)
+        if (::setsockopt(
+                internal_->native_handle(), SOL_SOCKET, SO_KEEPALIVE,
+                reinterpret_cast<char*>(&flag), sizeof(flag)) != 0)
             return make_err(WSAGetLastError());
         return {};
     }
@@ -303,8 +337,9 @@ public:
     {
         BOOL flag = FALSE;
         int len = sizeof(flag);
-        if (::getsockopt(internal_->native_handle(), SOL_SOCKET, SO_KEEPALIVE,
-                         reinterpret_cast<char*>(&flag), &len) != 0)
+        if (::getsockopt(
+                internal_->native_handle(), SOL_SOCKET, SO_KEEPALIVE,
+                reinterpret_cast<char*>(&flag), &len) != 0)
         {
             ec = make_err(WSAGetLastError());
             return false;
@@ -315,8 +350,9 @@ public:
 
     std::error_code set_receive_buffer_size(int size) noexcept override
     {
-        if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_RCVBUF,
-                         reinterpret_cast<char*>(&size), sizeof(size)) != 0)
+        if (::setsockopt(
+                internal_->native_handle(), SOL_SOCKET, SO_RCVBUF,
+                reinterpret_cast<char*>(&size), sizeof(size)) != 0)
             return make_err(WSAGetLastError());
         return {};
     }
@@ -325,8 +361,9 @@ public:
     {
         int size = 0;
         int len = sizeof(size);
-        if (::getsockopt(internal_->native_handle(), SOL_SOCKET, SO_RCVBUF,
-                         reinterpret_cast<char*>(&size), &len) != 0)
+        if (::getsockopt(
+                internal_->native_handle(), SOL_SOCKET, SO_RCVBUF,
+                reinterpret_cast<char*>(&size), &len) != 0)
         {
             ec = make_err(WSAGetLastError());
             return 0;
@@ -337,8 +374,9 @@ public:
 
     std::error_code set_send_buffer_size(int size) noexcept override
     {
-        if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_SNDBUF,
-                         reinterpret_cast<char*>(&size), sizeof(size)) != 0)
+        if (::setsockopt(
+                internal_->native_handle(), SOL_SOCKET, SO_SNDBUF,
+                reinterpret_cast<char*>(&size), sizeof(size)) != 0)
             return make_err(WSAGetLastError());
         return {};
     }
@@ -347,8 +385,9 @@ public:
     {
         int size = 0;
         int len = sizeof(size);
-        if (::getsockopt(internal_->native_handle(), SOL_SOCKET, SO_SNDBUF,
-                         reinterpret_cast<char*>(&size), &len) != 0)
+        if (::getsockopt(
+                internal_->native_handle(), SOL_SOCKET, SO_SNDBUF,
+                reinterpret_cast<char*>(&size), &len) != 0)
         {
             ec = make_err(WSAGetLastError());
             return 0;
@@ -364,18 +403,21 @@ public:
         struct ::linger lg;
         lg.l_onoff = enabled ? 1 : 0;
         lg.l_linger = static_cast<u_short>(timeout);
-        if (::setsockopt(internal_->native_handle(), SOL_SOCKET, SO_LINGER,
-                         reinterpret_cast<char*>(&lg), sizeof(lg)) != 0)
+        if (::setsockopt(
+                internal_->native_handle(), SOL_SOCKET, SO_LINGER,
+                reinterpret_cast<char*>(&lg), sizeof(lg)) != 0)
             return make_err(WSAGetLastError());
         return {};
     }
 
-    tcp_socket::linger_options linger(std::error_code& ec) const noexcept override
+    tcp_socket::linger_options
+    linger(std::error_code& ec) const noexcept override
     {
         struct ::linger lg{};
         int len = sizeof(lg);
-        if (::getsockopt(internal_->native_handle(), SOL_SOCKET, SO_LINGER,
-                         reinterpret_cast<char*>(&lg), &len) != 0)
+        if (::getsockopt(
+                internal_->native_handle(), SOL_SOCKET, SO_LINGER,
+                reinterpret_cast<char*>(&lg), &len) != 0)
         {
             ec = make_err(WSAGetLastError());
             return {};
@@ -399,10 +441,12 @@ public:
         internal_->cancel();
     }
 
-    win_socket_impl_internal* get_internal() const noexcept { return internal_.get(); }
+    win_socket_impl_internal* get_internal() const noexcept
+    {
+        return internal_.get();
+    }
 };
 
-//------------------------------------------------------------------------------
 
 /** Internal acceptor state for IOCP-based I/O.
 
@@ -423,7 +467,10 @@ public:
     ~win_acceptor_impl_internal();
 
     /// Return the owning socket service.
-    win_sockets& socket_service() noexcept { return svc_; }
+    win_sockets& socket_service() noexcept
+    {
+        return svc_;
+    }
 
     std::coroutine_handle<> accept(
         std::coroutine_handle<>,
@@ -432,12 +479,24 @@ public:
         std::error_code*,
         io_object::implementation**);
 
-    SOCKET native_handle() const noexcept { return socket_; }
-    endpoint local_endpoint() const noexcept { return local_endpoint_; }
-    bool is_open() const noexcept { return socket_ != INVALID_SOCKET; }
+    SOCKET native_handle() const noexcept
+    {
+        return socket_;
+    }
+    endpoint local_endpoint() const noexcept
+    {
+        return local_endpoint_;
+    }
+    bool is_open() const noexcept
+    {
+        return socket_ != INVALID_SOCKET;
+    }
     void cancel() noexcept;
     void close_socket() noexcept;
-    void set_local_endpoint(endpoint ep) noexcept { local_endpoint_ = ep; }
+    void set_local_endpoint(endpoint ep) noexcept
+    {
+        local_endpoint_ = ep;
+    }
 
     accept_op acc_;
 
@@ -447,7 +506,6 @@ private:
     endpoint local_endpoint_;
 };
 
-//------------------------------------------------------------------------------
 
 /** Acceptor implementation wrapper for IOCP-based I/O.
 
@@ -456,14 +514,15 @@ private:
 
     @note Internal implementation detail. Users interact with acceptor class.
 */
-class win_acceptor_impl
+class win_acceptor_impl final
     : public tcp_acceptor::implementation
     , public intrusive_list<win_acceptor_impl>::node
 {
     std::shared_ptr<win_acceptor_impl_internal> internal_;
 
 public:
-    explicit win_acceptor_impl(std::shared_ptr<win_acceptor_impl_internal> internal) noexcept
+    explicit win_acceptor_impl(
+        std::shared_ptr<win_acceptor_impl_internal> internal) noexcept
         : internal_(std::move(internal))
     {
     }
@@ -495,10 +554,12 @@ public:
         internal_->cancel();
     }
 
-    win_acceptor_impl_internal* get_internal() const noexcept { return internal_.get(); }
+    win_acceptor_impl_internal* get_internal() const noexcept
+    {
+        return internal_.get();
+    }
 };
 
-//------------------------------------------------------------------------------
 
 /** Windows IOCP socket management service.
 
@@ -515,7 +576,7 @@ public:
 
     @note Only available on Windows platforms.
 */
-class win_sockets
+class win_sockets final
     : private win_wsa_init
     , public capy::execution_context::service
     , public io_object::io_service
@@ -593,19 +654,26 @@ public:
         @param backlog The listen backlog.
         @return Error code, or success.
     */
-    std::error_code open_acceptor(
-        win_acceptor_impl_internal& impl,
-        endpoint ep,
-        int backlog);
+    std::error_code
+    open_acceptor(win_acceptor_impl_internal& impl, endpoint ep, int backlog);
 
     /** Return the IOCP handle. */
-    void* native_handle() const noexcept { return iocp_; }
+    void* native_handle() const noexcept
+    {
+        return iocp_;
+    }
 
     /** Return the ConnectEx function pointer. */
-    LPFN_CONNECTEX connect_ex() const noexcept { return connect_ex_; }
+    LPFN_CONNECTEX connect_ex() const noexcept
+    {
+        return connect_ex_;
+    }
 
     /** Return the AcceptEx function pointer. */
-    LPFN_ACCEPTEX accept_ex() const noexcept { return accept_ex_; }
+    LPFN_ACCEPTEX accept_ex() const noexcept
+    {
+        return accept_ex_;
+    }
 
     /** Post an overlapped operation for completion. */
     void post(overlapped_op* op);
@@ -632,14 +700,13 @@ private:
     LPFN_ACCEPTEX accept_ex_ = nullptr;
 };
 
-//------------------------------------------------------------------------------
 
 /** IOCP acceptor service wrapping win_sockets for acceptor lifecycle.
 
     Provides io_service + acceptor_service interface for tcp_acceptor
     on Windows. Delegates to win_sockets for actual socket operations.
 */
-class win_acceptor_service
+class win_acceptor_service final
     : public capy::execution_context::service
     , public io_object::io_service
 {
@@ -671,10 +738,8 @@ public:
     }
 
     /** Open, bind, and listen on an acceptor socket. */
-    std::error_code open_acceptor(
-        tcp_acceptor::implementation& impl,
-        endpoint ep,
-        int backlog)
+    std::error_code
+    open_acceptor(tcp_acceptor::implementation& impl, endpoint ep, int backlog)
     {
         auto& wrapper = static_cast<win_acceptor_impl&>(impl);
         return svc_.open_acceptor(*wrapper.get_internal(), ep, backlog);

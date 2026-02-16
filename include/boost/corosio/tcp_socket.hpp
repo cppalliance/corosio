@@ -34,7 +34,7 @@
 namespace boost::corosio {
 
 #if BOOST_COROSIO_HAS_IOCP
-using native_handle_type = std::uintptr_t;  // SOCKET
+using native_handle_type = std::uintptr_t; // SOCKET
 #else
 using native_handle_type = int;
 #endif
@@ -92,7 +92,7 @@ public:
     struct linger_options
     {
         bool enabled = false;
-        int timeout = 0;  // seconds
+        int timeout = 0; // seconds
     };
 
     struct implementation : io_stream::implementation
@@ -128,7 +128,8 @@ public:
         virtual std::error_code set_send_buffer_size(int size) noexcept = 0;
         virtual int send_buffer_size(std::error_code& ec) const noexcept = 0;
 
-        virtual std::error_code set_linger(bool enabled, int timeout) noexcept = 0;
+        virtual std::error_code
+        set_linger(bool enabled, int timeout) noexcept = 0;
         virtual linger_options linger(std::error_code& ec) const noexcept = 0;
 
         /// Returns the cached local endpoint.
@@ -163,9 +164,8 @@ public:
             return {ec_};
         }
 
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            capy::io_env const* env) -> std::coroutine_handle<>
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
             return s_.get().connect(h, env->executor, endpoint_, token_, &ec_);
@@ -177,7 +177,7 @@ public:
 
         Closes the socket if open, cancelling any pending operations.
     */
-    ~tcp_socket();
+    ~tcp_socket() override;
 
     /** Construct a socket from an execution context.
 
@@ -192,10 +192,9 @@ public:
         @param ex The executor whose context will own the socket.
     */
     template<class Ex>
-        requires (!std::same_as<std::remove_cvref_t<Ex>, tcp_socket>) &&
-                 capy::Executor<Ex>
-    explicit tcp_socket(Ex const& ex)
-        : tcp_socket(ex.context())
+        requires(!std::same_as<std::remove_cvref_t<Ex>, tcp_socket>) &&
+        capy::Executor<Ex>
+    explicit tcp_socket(Ex const& ex) : tcp_socket(ex.context())
     {
     }
 
@@ -205,29 +204,19 @@ public:
 
         @param other The socket to move from.
     */
-    tcp_socket(tcp_socket&& other) noexcept
-        : io_stream(std::move(other))
-    {
-    }
+    tcp_socket(tcp_socket&& other) noexcept : io_stream(std::move(other)) {}
 
     /** Move assignment operator.
 
         Closes any existing socket and transfers ownership.
-        The source and destination must share the same execution context.
-
         @param other The socket to move from.
 
         @return Reference to this socket.
-
-        @throws std::logic_error if the sockets have different execution contexts.
     */
-    tcp_socket& operator=(tcp_socket&& other)
+    tcp_socket& operator=(tcp_socket&& other) noexcept
     {
         if (this != &other)
         {
-            if (&context() != &other.context())
-                detail::throw_logic_error(
-                    "cannot move socket across execution contexts");
             close();
             h_ = std::move(other.h_);
         }
@@ -367,11 +356,9 @@ public:
     */
     void shutdown(shutdown_type what);
 
-    //--------------------------------------------------------------------------
     //
     // Socket Options
     //
-    //--------------------------------------------------------------------------
 
     /** Enable or disable TCP_NODELAY (disable Nagle's algorithm).
 

@@ -36,8 +36,7 @@ namespace boost::corosio::detail {
     @param ep The endpoint to convert. Must be IPv4 (is_v4() == true).
     @return A sockaddr_in structure with fields in network byte order.
 */
-inline
-sockaddr_in
+inline sockaddr_in
 to_sockaddr_in(endpoint const& ep) noexcept
 {
     sockaddr_in sa{};
@@ -53,8 +52,7 @@ to_sockaddr_in(endpoint const& ep) noexcept
     @param ep The endpoint to convert. Must be IPv6 (is_v6() == true).
     @return A sockaddr_in6 structure with fields in network byte order.
 */
-inline
-sockaddr_in6
+inline sockaddr_in6
 to_sockaddr_in6(endpoint const& ep) noexcept
 {
     sockaddr_in6 sa{};
@@ -70,8 +68,7 @@ to_sockaddr_in6(endpoint const& ep) noexcept
     @param sa The sockaddr_in structure with fields in network byte order.
     @return An endpoint with address and port extracted from sa.
 */
-inline
-endpoint
+inline endpoint
 from_sockaddr_in(sockaddr_in const& sa) noexcept
 {
     ipv4_address::bytes_type bytes;
@@ -84,8 +81,7 @@ from_sockaddr_in(sockaddr_in const& sa) noexcept
     @param sa The sockaddr_in6 structure with fields in network byte order.
     @return An endpoint with address and port extracted from sa.
 */
-inline
-endpoint
+inline endpoint
 from_sockaddr_in6(sockaddr_in6 const& sa) noexcept
 {
     ipv6_address::bytes_type bytes;

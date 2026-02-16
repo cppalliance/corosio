@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace boost::corosio::detail {
 
@@ -57,7 +58,7 @@ public:
         @param bytes Bytes transferred (for I/O operations).
         @param error Error code from the operation.
     */
-    using func_type = void(*)(
+    using func_type = void (*)(
         void* owner,
         scheduler_op* op,
         std::uint32_t bytes,
@@ -100,10 +101,7 @@ protected:
 
         Used by epoll/select backends that override operator() and destroy().
     */
-    scheduler_op() noexcept
-        : func_(nullptr)
-    {
-    }
+    scheduler_op() noexcept : func_(nullptr) {}
 
     /** Construct with completion function for function pointer dispatch.
 
@@ -111,10 +109,7 @@ protected:
 
         @param func The static function to call for completion/destruction.
     */
-    explicit scheduler_op(func_type func) noexcept
-        : func_(func)
-    {
-    }
+    explicit scheduler_op(func_type func) noexcept : func_(func) {}
 
     func_type func_;
 
@@ -123,11 +118,9 @@ protected:
     std::byte reserved_[sizeof(void*)] = {};
 };
 
-//------------------------------------------------------------------------------
 
 using op_queue = intrusive_queue<scheduler_op>;
 
-//------------------------------------------------------------------------------
 
 /** An intrusive FIFO queue of scheduler_ops.
 
@@ -160,14 +153,26 @@ public:
 
     ~scheduler_op_queue()
     {
-        while(auto* h = q_.pop())
+        while (auto* h = q_.pop())
             h->destroy();
     }
 
-    bool empty() const noexcept { return q_.empty(); }
-    void push(scheduler_op* h) noexcept { q_.push(h); }
-    void push(scheduler_op_queue& other) noexcept { q_.splice(other.q_); }
-    scheduler_op* pop() noexcept { return q_.pop(); }
+    bool empty() const noexcept
+    {
+        return q_.empty();
+    }
+    void push(scheduler_op* h) noexcept
+    {
+        q_.push(h);
+    }
+    void push(scheduler_op_queue& other) noexcept
+    {
+        q_.splice(other.q_);
+    }
+    scheduler_op* pop() noexcept
+    {
+        return q_.pop();
+    }
 };
 
 } // namespace boost::corosio::detail

@@ -46,10 +46,7 @@ public:
         @param host The host name from the query.
         @param service The service name from the query.
     */
-    resolver_entry(
-        endpoint ep,
-        std::string_view host,
-        std::string_view service)
+    resolver_entry(endpoint ep, std::string_view host, std::string_view service)
         : ep_(ep)
         , host_name_(host)
         , service_name_(service)
@@ -57,8 +54,7 @@ public:
     }
 
     /** Get the endpoint. */
-    endpoint
-    get_endpoint() const noexcept
+    endpoint get_endpoint() const noexcept
     {
         return ep_;
     }
@@ -70,21 +66,18 @@ public:
     }
 
     /** Get the host name from the query. */
-    std::string const&
-    host_name() const noexcept
+    std::string const& host_name() const noexcept
     {
         return host_name_;
     }
 
     /** Get the service name from the query. */
-    std::string const&
-    service_name() const noexcept
+    std::string const& service_name() const noexcept
     {
         return service_name_;
     }
 };
 
-//------------------------------------------------------------------------------
 
 /** A range of entries produced by a resolver.
 
@@ -118,30 +111,26 @@ public:
 
         @param entries The resolved entries.
     */
-    explicit
-    resolver_results(std::vector<resolver_entry> entries)
-        : entries_(std::make_shared<std::vector<resolver_entry>>(
-            std::move(entries)))
+    explicit resolver_results(std::vector<resolver_entry> entries)
+        : entries_(
+              std::make_shared<std::vector<resolver_entry>>(std::move(entries)))
     {
     }
 
     /** Get the number of entries. */
-    size_type
-    size() const noexcept
+    size_type size() const noexcept
     {
         return entries_ ? entries_->size() : 0;
     }
 
     /** Check if the results are empty. */
-    bool
-    empty() const noexcept
+    bool empty() const noexcept
     {
         return !entries_ || entries_->empty();
     }
 
     /** Get an iterator to the first entry. */
-    const_iterator
-    begin() const noexcept
+    const_iterator begin() const noexcept
     {
         if (entries_)
             return entries_->begin();
@@ -149,8 +138,7 @@ public:
     }
 
     /** Get an iterator past the last entry. */
-    const_iterator
-    end() const noexcept
+    const_iterator end() const noexcept
     {
         if (entries_)
             return entries_->end();
@@ -158,48 +146,38 @@ public:
     }
 
     /** Get an iterator to the first entry. */
-    const_iterator
-    cbegin() const noexcept
+    const_iterator cbegin() const noexcept
     {
         return begin();
     }
 
     /** Get an iterator past the last entry. */
-    const_iterator
-    cend() const noexcept
+    const_iterator cend() const noexcept
     {
         return end();
     }
 
     /** Swap with another results object. */
-    void
-    swap(resolver_results& other) noexcept
+    void swap(resolver_results& other) noexcept
     {
         entries_.swap(other.entries_);
     }
 
     /** Test for equality. */
-    friend
-    bool
-    operator==(
-        resolver_results const& a,
-        resolver_results const& b) noexcept
+    friend bool
+    operator==(resolver_results const& a, resolver_results const& b) noexcept
     {
         return a.entries_ == b.entries_;
     }
 
     /** Test for inequality. */
-    friend
-    bool
-    operator!=(
-        resolver_results const& a,
-        resolver_results const& b) noexcept
+    friend bool
+    operator!=(resolver_results const& a, resolver_results const& b) noexcept
     {
         return !(a == b);
     }
 };
 
-//------------------------------------------------------------------------------
 
 /** The result of a reverse DNS resolution.
 
@@ -227,9 +205,7 @@ public:
         @param service The resolved service name.
     */
     reverse_resolver_result(
-        corosio::endpoint ep,
-        std::string host,
-        std::string service)
+        corosio::endpoint ep, std::string host, std::string service)
         : ep_(ep)
         , host_(std::move(host))
         , service_(std::move(service))
@@ -237,22 +213,19 @@ public:
     }
 
     /** Get the endpoint that was resolved. */
-    corosio::endpoint
-    endpoint() const noexcept
+    corosio::endpoint endpoint() const noexcept
     {
         return ep_;
     }
 
     /** Get the resolved host name. */
-    std::string const&
-    host_name() const noexcept
+    std::string const& host_name() const noexcept
     {
         return host_;
     }
 
     /** Get the resolved service name. */
-    std::string const&
-    service_name() const noexcept
+    std::string const& service_name() const noexcept
     {
         return service_;
     }

@@ -44,9 +44,7 @@ namespace {
 // Parse port number from string
 // Returns true on success
 bool
-parse_port(
-    std::string_view s,
-    std::uint16_t& port) noexcept
+parse_port(std::string_view s, std::uint16_t& port) noexcept
 {
     if (s.empty())
         return false;
@@ -69,9 +67,7 @@ parse_port(
 } // namespace
 
 std::error_code
-parse_endpoint(
-    std::string_view s,
-    endpoint& ep) noexcept
+parse_endpoint(std::string_view s, endpoint& ep) noexcept
 {
     if (s.empty())
         return std::make_error_code(std::errc::invalid_argument);

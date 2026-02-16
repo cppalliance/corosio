@@ -28,7 +28,6 @@
 
 namespace boost::corosio::detail {
 
-//------------------------------------------------------------------------------
 // Operation constructors
 
 connect_op::connect_op(win_socket_impl_internal& internal_) noexcept
@@ -52,62 +51,58 @@ write_op::write_op(win_socket_impl_internal& internal_) noexcept
     cancel_func_ = &do_cancel_impl;
 }
 
-accept_op::accept_op() noexcept
-    : overlapped_op(&do_complete)
+accept_op::accept_op() noexcept : overlapped_op(&do_complete)
 {
     cancel_func_ = &do_cancel_impl;
 }
 
-//------------------------------------------------------------------------------
 // Cancellation functions
 
-void connect_op::do_cancel_impl(overlapped_op* base) noexcept
+void
+connect_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<connect_op*>(base);
     if (op->internal.is_open())
     {
         ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()),
-            op);
+            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
     }
 }
 
-void read_op::do_cancel_impl(overlapped_op* base) noexcept
+void
+read_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<read_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
     if (op->internal.is_open())
     {
         ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()),
-            op);
+            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
     }
 }
 
-void write_op::do_cancel_impl(overlapped_op* base) noexcept
+void
+write_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<write_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
     if (op->internal.is_open())
     {
         ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()),
-            op);
+            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
     }
 }
 
-void accept_op::do_cancel_impl(overlapped_op* base) noexcept
+void
+accept_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<accept_op*>(base);
     if (op->listen_socket != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->listen_socket),
-            op);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->listen_socket), op);
     }
 }
 
-//------------------------------------------------------------------------------
 // accept_op completion handler
 
 void
@@ -143,7 +138,8 @@ accept_op::do_complete(
 
     op->stop_cb.reset();
 
-    bool success = (op->dwError == 0 && !op->cancelled.load(std::memory_order_acquire));
+    bool success =
+        (op->dwError == 0 && !op->cancelled.load(std::memory_order_acquire));
 
     if (op->ec_out)
     {
@@ -158,11 +154,8 @@ accept_op::do_complete(
     if (success && op->accepted_socket != INVALID_SOCKET && op->peer_wrapper)
     {
         ::setsockopt(
-            op->accepted_socket,
-            SOL_SOCKET,
-            SO_UPDATE_ACCEPT_CONTEXT,
-            reinterpret_cast<char*>(&op->listen_socket),
-            sizeof(SOCKET));
+            op->accepted_socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
+            reinterpret_cast<char*>(&op->listen_socket), sizeof(SOCKET));
 
         op->peer_wrapper->get_internal()->set_socket(op->accepted_socket);
 
@@ -172,11 +165,13 @@ accept_op::do_complete(
         int remote_len = sizeof(remote_addr);
 
         endpoint local_ep, remote_ep;
-        if (::getsockname(op->accepted_socket,
-            reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+        if (::getsockname(
+                op->accepted_socket, reinterpret_cast<sockaddr*>(&local_addr),
+                &local_len) == 0)
             local_ep = from_sockaddr_in(local_addr);
-        if (::getpeername(op->accepted_socket,
-            reinterpret_cast<sockaddr*>(&remote_addr), &remote_len) == 0)
+        if (::getpeername(
+                op->accepted_socket, reinterpret_cast<sockaddr*>(&remote_addr),
+                &remote_len) == 0)
             remote_ep = from_sockaddr_in(remote_addr);
 
         op->peer_wrapper->get_internal()->set_endpoints(local_ep, remote_ep);
@@ -210,7 +205,6 @@ accept_op::do_complete(
     dispatch_coro(saved_ex, saved_h).resume();
 }
 
-//------------------------------------------------------------------------------
 // connect_op completion handler
 
 void
@@ -229,14 +223,16 @@ connect_op::do_complete(
         return;
     }
 
-    bool success = (op->dwError == 0 && !op->cancelled.load(std::memory_order_acquire));
+    bool success =
+        (op->dwError == 0 && !op->cancelled.load(std::memory_order_acquire));
     if (success && op->internal.is_open())
     {
         endpoint local_ep;
         sockaddr_in local_addr{};
         int local_len = sizeof(local_addr);
-        if (::getsockname(op->internal.native_handle(),
-            reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+        if (::getsockname(
+                op->internal.native_handle(),
+                reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
             local_ep = from_sockaddr_in(local_addr);
         op->internal.set_endpoints(local_ep, op->target_endpoint);
     }
@@ -245,7 +241,6 @@ connect_op::do_complete(
     op->invoke_handler();
 }
 
-//------------------------------------------------------------------------------
 // read_op completion handler
 
 void
@@ -268,7 +263,6 @@ read_op::do_complete(
     op->invoke_handler();
 }
 
-//------------------------------------------------------------------------------
 // write_op completion handler
 
 void
@@ -291,8 +285,7 @@ write_op::do_complete(
     op->invoke_handler();
 }
 
-win_socket_impl_internal::
-win_socket_impl_internal(win_sockets& svc) noexcept
+win_socket_impl_internal::win_socket_impl_internal(win_sockets& svc) noexcept
     : svc_(svc)
     , conn_(*this)
     , rd_(*this)
@@ -300,15 +293,13 @@ win_socket_impl_internal(win_sockets& svc) noexcept
 {
 }
 
-win_socket_impl_internal::
-~win_socket_impl_internal()
+win_socket_impl_internal::~win_socket_impl_internal()
 {
     svc_.unregister_impl(*this);
 }
 
 std::coroutine_handle<>
-win_socket_impl_internal::
-connect(
+win_socket_impl_internal::connect(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     endpoint ep,
@@ -323,7 +314,7 @@ connect(
     op.h = h;
     op.ex = d;
     op.ec_out = ec;
-    op.target_endpoint = ep;  // Store target for endpoint caching
+    op.target_endpoint = ep; // Store target for endpoint caching
     op.start(token);
 
     sockaddr_in bind_addr{};
@@ -331,9 +322,9 @@ connect(
     bind_addr.sin_addr.s_addr = INADDR_ANY;
     bind_addr.sin_port = 0;
 
-    if (::bind(socket_,
-        reinterpret_cast<sockaddr*>(&bind_addr),
-        sizeof(bind_addr)) == SOCKET_ERROR)
+    if (::bind(
+            socket_, reinterpret_cast<sockaddr*>(&bind_addr),
+            sizeof(bind_addr)) == SOCKET_ERROR)
     {
         op.dwError = ::WSAGetLastError();
         svc_.post(&op);
@@ -355,13 +346,8 @@ connect(
     svc_.work_started();
 
     BOOL result = connect_ex(
-        socket_,
-        reinterpret_cast<sockaddr*>(&addr),
-        sizeof(addr),
-        nullptr,
-        0,
-        nullptr,
-        &op);
+        socket_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr), nullptr, 0,
+        nullptr, &op);
 
     if (!result)
     {
@@ -380,11 +366,9 @@ connect(
     return std::noop_coroutine();
 }
 
-//------------------------------------------------------------------------------
 
 void
-win_socket_impl_internal::
-do_read_io()
+win_socket_impl_internal::do_read_io()
 {
     auto& op = rd_;
 
@@ -393,13 +377,7 @@ do_read_io()
     svc_.work_started();
 
     int result = ::WSARecv(
-        socket_,
-        op.wsabufs,
-        op.wsabuf_count,
-        nullptr,
-        &op.flags,
-        &op,
-        nullptr);
+        socket_, op.wsabufs, op.wsabuf_count, nullptr, &op.flags, &op, nullptr);
 
     if (result == SOCKET_ERROR)
     {
@@ -422,21 +400,14 @@ do_read_io()
 }
 
 void
-win_socket_impl_internal::
-do_write_io()
+win_socket_impl_internal::do_write_io()
 {
     auto& op = wr_;
 
     svc_.work_started();
 
     int result = ::WSASend(
-        socket_,
-        op.wsabufs,
-        op.wsabuf_count,
-        nullptr,
-        0,
-        &op,
-        nullptr);
+        socket_, op.wsabufs, op.wsabuf_count, nullptr, 0, &op, nullptr);
 
     if (result == SOCKET_ERROR)
     {
@@ -455,11 +426,9 @@ do_write_io()
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
 }
 
-//------------------------------------------------------------------------------
 
 std::coroutine_handle<>
-win_socket_impl_internal::
-read_some(
+win_socket_impl_internal::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     io_buffer_param param,
@@ -481,8 +450,8 @@ read_some(
 
     // Prepare buffers (must happen before initiator runs)
     capy::mutable_buffer bufs[read_op::max_buffers];
-    op.wsabuf_count = static_cast<DWORD>(
-        param.copy_to(bufs, read_op::max_buffers));
+    op.wsabuf_count =
+        static_cast<DWORD>(param.copy_to(bufs, read_op::max_buffers));
 
     // Handle empty buffer: complete with 0 bytes via post for consistency
     if (op.wsabuf_count == 0)
@@ -505,8 +474,7 @@ read_some(
 }
 
 std::coroutine_handle<>
-win_socket_impl_internal::
-write_some(
+win_socket_impl_internal::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     io_buffer_param param,
@@ -527,8 +495,8 @@ write_some(
 
     // Prepare buffers (must happen before initiator runs)
     capy::mutable_buffer bufs[write_op::max_buffers];
-    op.wsabuf_count = static_cast<DWORD>(
-        param.copy_to(bufs, write_op::max_buffers));
+    op.wsabuf_count =
+        static_cast<DWORD>(param.copy_to(bufs, write_op::max_buffers));
 
     // Handle empty buffer: complete immediately with 0 bytes
     if (op.wsabuf_count == 0)
@@ -550,14 +518,11 @@ write_some(
 }
 
 void
-win_socket_impl_internal::
-cancel() noexcept
+win_socket_impl_internal::cancel() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(socket_),
-            nullptr);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
     }
 
     conn_.request_cancel();
@@ -566,14 +531,11 @@ cancel() noexcept
 }
 
 void
-win_socket_impl_internal::
-close_socket() noexcept
+win_socket_impl_internal::close_socket() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(socket_),
-            nullptr);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
         ::closesocket(socket_);
         socket_ = INVALID_SOCKET;
     }
@@ -584,8 +546,7 @@ close_socket() noexcept
 }
 
 void
-win_socket_impl::
-close_internal() noexcept
+win_socket_impl::close_internal() noexcept
 {
     if (internal_)
     {
@@ -594,17 +555,14 @@ close_internal() noexcept
     }
 }
 
-win_sockets::
-win_sockets(
-    capy::execution_context& ctx)
+win_sockets::win_sockets(capy::execution_context& ctx)
     : sched_(ctx.use_service<win_scheduler>())
     , iocp_(sched_.native_handle())
 {
     load_extension_functions();
 }
 
-win_sockets::
-~win_sockets()
+win_sockets::~win_sockets()
 {
     // Delete wrappers that survived shutdown. This runs after
     // win_scheduler is destroyed (reverse creation order), so
@@ -619,8 +577,7 @@ win_sockets::
 }
 
 void
-win_sockets::
-shutdown()
+win_sockets::shutdown()
 {
     std::lock_guard<win_mutex> lock(mutex_);
 
@@ -643,8 +600,7 @@ shutdown()
 }
 
 io_object::implementation*
-win_sockets::
-construct()
+win_sockets::construct()
 {
     auto internal = std::make_shared<win_socket_impl_internal>(*this);
 
@@ -664,8 +620,7 @@ construct()
 }
 
 void
-win_sockets::
-destroy_impl(win_socket_impl& impl)
+win_sockets::destroy_impl(win_socket_impl& impl)
 {
     {
         std::lock_guard<win_mutex> lock(mutex_);
@@ -675,35 +630,25 @@ destroy_impl(win_socket_impl& impl)
 }
 
 void
-win_sockets::
-unregister_impl(win_socket_impl_internal& impl)
+win_sockets::unregister_impl(win_socket_impl_internal& impl)
 {
     std::lock_guard<win_mutex> lock(mutex_);
     socket_list_.remove(&impl);
 }
 
 std::error_code
-win_sockets::
-open_socket(win_socket_impl_internal& impl)
+win_sockets::open_socket(win_socket_impl_internal& impl)
 {
     impl.close_socket();
 
     SOCKET sock = ::WSASocketW(
-        AF_INET,
-        SOCK_STREAM,
-        IPPROTO_TCP,
-        nullptr,
-        0,
-        WSA_FLAG_OVERLAPPED);
+        AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
     if (sock == INVALID_SOCKET)
         return make_err(::WSAGetLastError());
 
     HANDLE result = ::CreateIoCompletionPort(
-        reinterpret_cast<HANDLE>(sock),
-        static_cast<HANDLE>(iocp_),
-        key_io,
-        0);
+        reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
 
     if (result == nullptr)
     {
@@ -717,37 +662,28 @@ open_socket(win_socket_impl_internal& impl)
 }
 
 void
-win_sockets::
-post(overlapped_op* op)
+win_sockets::post(overlapped_op* op)
 {
     sched_.post(op);
 }
 
 void
-win_sockets::
-work_started() noexcept
+win_sockets::work_started() noexcept
 {
     sched_.work_started();
 }
 
 void
-win_sockets::
-work_finished() noexcept
+win_sockets::work_finished() noexcept
 {
     sched_.work_finished();
 }
 
 void
-win_sockets::
-load_extension_functions()
+win_sockets::load_extension_functions()
 {
     SOCKET sock = ::WSASocketW(
-        AF_INET,
-        SOCK_STREAM,
-        IPPROTO_TCP,
-        nullptr,
-        0,
-        WSA_FLAG_OVERLAPPED);
+        AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
     if (sock == INVALID_SOCKET)
         return;
@@ -756,34 +692,21 @@ load_extension_functions()
 
     GUID connect_ex_guid = WSAID_CONNECTEX;
     ::WSAIoctl(
-        sock,
-        SIO_GET_EXTENSION_FUNCTION_POINTER,
-        &connect_ex_guid,
-        sizeof(connect_ex_guid),
-        &connect_ex_,
-        sizeof(connect_ex_),
-        &bytes,
-        nullptr,
-        nullptr);
+        sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &connect_ex_guid,
+        sizeof(connect_ex_guid), &connect_ex_, sizeof(connect_ex_), &bytes,
+        nullptr, nullptr);
 
     GUID accept_ex_guid = WSAID_ACCEPTEX;
     ::WSAIoctl(
-        sock,
-        SIO_GET_EXTENSION_FUNCTION_POINTER,
-        &accept_ex_guid,
-        sizeof(accept_ex_guid),
-        &accept_ex_,
-        sizeof(accept_ex_),
-        &bytes,
-        nullptr,
-        nullptr);
+        sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &accept_ex_guid,
+        sizeof(accept_ex_guid), &accept_ex_, sizeof(accept_ex_), &bytes,
+        nullptr, nullptr);
 
     ::closesocket(sock);
 }
 
 io_object::implementation*
-win_acceptor_service::
-construct()
+win_acceptor_service::construct()
 {
     auto internal = std::make_shared<win_acceptor_impl_internal>(svc_);
 
@@ -803,8 +726,7 @@ construct()
 }
 
 void
-win_sockets::
-destroy_acceptor_impl(win_acceptor_impl& impl)
+win_sockets::destroy_acceptor_impl(win_acceptor_impl& impl)
 {
     {
         std::lock_guard<win_mutex> lock(mutex_);
@@ -814,43 +736,32 @@ destroy_acceptor_impl(win_acceptor_impl& impl)
 }
 
 void
-win_sockets::
-unregister_acceptor_impl(win_acceptor_impl_internal& impl)
+win_sockets::unregister_acceptor_impl(win_acceptor_impl_internal& impl)
 {
     std::lock_guard<win_mutex> lock(mutex_);
     acceptor_list_.remove(&impl);
 }
 
 std::error_code
-win_sockets::
-open_acceptor(
-    win_acceptor_impl_internal& impl,
-    endpoint ep,
-    int backlog)
+win_sockets::open_acceptor(
+    win_acceptor_impl_internal& impl, endpoint ep, int backlog)
 {
     impl.close_socket();
 
     SOCKET sock = ::WSASocketW(
-        AF_INET,
-        SOCK_STREAM,
-        IPPROTO_TCP,
-        nullptr,
-        0,
-        WSA_FLAG_OVERLAPPED);
+        AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
     if (sock == INVALID_SOCKET)
         return make_err(::WSAGetLastError());
 
     // Allow address reuse
     int reuse = 1;
-    ::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
-        reinterpret_cast<char*>(&reuse), sizeof(reuse));
+    ::setsockopt(
+        sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&reuse),
+        sizeof(reuse));
 
     HANDLE result = ::CreateIoCompletionPort(
-        reinterpret_cast<HANDLE>(sock),
-        static_cast<HANDLE>(iocp_),
-        key_io,
-        0);
+        reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
 
     if (result == nullptr)
     {
@@ -861,9 +772,8 @@ open_acceptor(
 
     // Bind to endpoint
     sockaddr_in addr = detail::to_sockaddr_in(ep);
-    if (::bind(sock,
-        reinterpret_cast<sockaddr*>(&addr),
-        sizeof(addr)) == SOCKET_ERROR)
+    if (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) ==
+        SOCKET_ERROR)
     {
         DWORD dwError = ::WSAGetLastError();
         ::closesocket(sock);
@@ -883,27 +793,26 @@ open_acceptor(
     // Cache the local endpoint (queries OS for ephemeral port if port was 0)
     sockaddr_in local_addr{};
     int local_len = sizeof(local_addr);
-    if (::getsockname(sock, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+    if (::getsockname(
+            sock, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
         impl.set_local_endpoint(detail::from_sockaddr_in(local_addr));
 
     return {};
 }
 
-win_acceptor_impl_internal::
-win_acceptor_impl_internal(win_sockets& svc) noexcept
+win_acceptor_impl_internal::win_acceptor_impl_internal(
+    win_sockets& svc) noexcept
     : svc_(svc)
 {
 }
 
-win_acceptor_impl_internal::
-~win_acceptor_impl_internal()
+win_acceptor_impl_internal::~win_acceptor_impl_internal()
 {
     svc_.unregister_acceptor_impl(*this);
 }
 
 std::coroutine_handle<>
-win_acceptor_impl_internal::
-accept(
+win_acceptor_impl_internal::accept(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
@@ -926,12 +835,7 @@ accept(
 
     // Create the accepted socket
     SOCKET accepted = ::WSASocketW(
-        AF_INET,
-        SOCK_STREAM,
-        IPPROTO_TCP,
-        nullptr,
-        0,
-        WSA_FLAG_OVERLAPPED);
+        AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
     if (accepted == INVALID_SOCKET)
     {
@@ -943,10 +847,7 @@ accept(
     }
 
     HANDLE result = ::CreateIoCompletionPort(
-        reinterpret_cast<HANDLE>(accepted),
-        svc_.native_handle(),
-        key_io,
-        0);
+        reinterpret_cast<HANDLE>(accepted), svc_.native_handle(), key_io, 0);
 
     if (result == nullptr)
     {
@@ -981,14 +882,8 @@ accept(
     svc_.work_started();
 
     BOOL ok = accept_ex(
-        socket_,
-        accepted,
-        op.addr_buf,
-        0,
-        sizeof(sockaddr_in) + 16,
-        sizeof(sockaddr_in) + 16,
-        &bytes_received,
-        &op);
+        socket_, accepted, op.addr_buf, 0, sizeof(sockaddr_in) + 16,
+        sizeof(sockaddr_in) + 16, &bytes_received, &op);
 
     if (!ok)
     {
@@ -1012,28 +907,22 @@ accept(
 }
 
 void
-win_acceptor_impl_internal::
-cancel() noexcept
+win_acceptor_impl_internal::cancel() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(socket_),
-            nullptr);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
     }
 
     acc_.request_cancel();
 }
 
 void
-win_acceptor_impl_internal::
-close_socket() noexcept
+win_acceptor_impl_internal::close_socket() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(socket_),
-            nullptr);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
         ::closesocket(socket_);
         socket_ = INVALID_SOCKET;
     }
@@ -1043,8 +932,7 @@ close_socket() noexcept
 }
 
 void
-win_acceptor_impl::
-close_internal() noexcept
+win_acceptor_impl::close_internal() noexcept
 {
     if (internal_)
     {

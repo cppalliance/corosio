@@ -24,10 +24,8 @@ ipv6_address::ipv6_address(bytes_type const& bytes) noexcept
 ipv6_address::ipv6_address(ipv4_address const& addr) noexcept
 {
     auto const v = addr.to_bytes();
-    addr_ = {{
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0xff, 0xff, v[0], v[1], v[2], v[3]
-    }};
+    addr_ = {
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, v[0], v[1], v[2], v[3]}};
 }
 
 ipv6_address::ipv6_address(std::string_view s)
@@ -69,13 +67,9 @@ ipv6_address::is_loopback() const noexcept
 bool
 ipv6_address::is_v4_mapped() const noexcept
 {
-    return
-        addr_[ 0] == 0 && addr_[ 1] == 0 &&
-        addr_[ 2] == 0 && addr_[ 3] == 0 &&
-        addr_[ 4] == 0 && addr_[ 5] == 0 &&
-        addr_[ 6] == 0 && addr_[ 7] == 0 &&
-        addr_[ 8] == 0 && addr_[ 9] == 0 &&
-        addr_[10] == 0xff &&
+    return addr_[0] == 0 && addr_[1] == 0 && addr_[2] == 0 && addr_[3] == 0 &&
+        addr_[4] == 0 && addr_[5] == 0 && addr_[6] == 0 && addr_[7] == 0 &&
+        addr_[8] == 0 && addr_[9] == 0 && addr_[10] == 0xff &&
         addr_[11] == 0xff;
 }
 
@@ -99,8 +93,7 @@ std::size_t
 ipv6_address::print_impl(char* dest) const noexcept
 {
     auto const count_zeroes = [](unsigned char const* first,
-                                  unsigned char const* const last)
-    {
+                                 unsigned char const* const last) {
         std::size_t n = 0;
         while (first != last)
         {
@@ -112,8 +105,7 @@ ipv6_address::print_impl(char* dest) const noexcept
         return n;
     };
 
-    auto const print_hex = [](char* dest, unsigned short v)
-    {
+    auto const print_hex = [](char* dest, unsigned short v) {
         char const* const dig = "0123456789abcdef";
         if (v >= 0x1000)
         {
@@ -173,8 +165,7 @@ ipv6_address::print_impl(char* dest) const noexcept
     it = addr_.data();
     if (best_pos != 0)
     {
-        unsigned short v = static_cast<unsigned short>(
-            it[0] * 256U + it[1]);
+        unsigned short v = static_cast<unsigned short>(it[0] * 256U + it[1]);
         dest = print_hex(dest, v);
         it += 2;
     }
@@ -196,8 +187,7 @@ ipv6_address::print_impl(char* dest) const noexcept
                 *dest++ = ':';
             continue;
         }
-        unsigned short v = static_cast<unsigned short>(
-            it[0] * 256U + it[1]);
+        unsigned short v = static_cast<unsigned short>(it[0] * 256U + it[1]);
         dest = print_hex(dest, v);
         it += 2;
     }
@@ -220,7 +210,6 @@ ipv6_address::print_impl(char* dest) const noexcept
     return static_cast<std::size_t>(dest - dest0);
 }
 
-//------------------------------------------------
 
 namespace {
 
@@ -274,8 +263,8 @@ parse_h16(
 bool
 maybe_octet(unsigned char const* p) noexcept
 {
-    unsigned short word = static_cast<unsigned short>(
-        p[0]) * 256 + static_cast<unsigned short>(p[1]);
+    unsigned short word = static_cast<unsigned short>(p[0]) * 256 +
+        static_cast<unsigned short>(p[1]);
     if (word > 0x255)
         return false;
     if (((word >> 4) & 0xf) > 9)
@@ -288,9 +277,7 @@ maybe_octet(unsigned char const* p) noexcept
 } // namespace
 
 std::error_code
-parse_ipv6_address(
-    std::string_view s,
-    ipv6_address& addr) noexcept
+parse_ipv6_address(std::string_view s, ipv6_address& addr) noexcept
 {
     auto it = s.data();
     auto const end = it + s.size();
@@ -362,7 +349,7 @@ parse_ipv6_address(
                 // not enough h16
                 return std::make_error_code(std::errc::invalid_argument);
             }
-            if (!maybe_octet(&bytes[2 * (7 - n)]))
+            if (!maybe_octet(&bytes[std::size_t(2) * std::size_t(7 - n)]))
             {
                 // invalid octet
                 return std::make_error_code(std::errc::invalid_argument);
@@ -377,8 +364,8 @@ parse_ipv6_address(
             // Must consume exactly the IPv4 address portion
             // Re-parse to find where it ends
             auto v4_it = it;
-            while (v4_it != end && (*v4_it == '.' || 
-                   (*v4_it >= '0' && *v4_it <= '9')))
+            while (v4_it != end &&
+                   (*v4_it == '.' || (*v4_it >= '0' && *v4_it <= '9')))
                 ++v4_it;
             // Verify it parsed correctly by re-parsing the exact substring
             ipv4_address v4_check;

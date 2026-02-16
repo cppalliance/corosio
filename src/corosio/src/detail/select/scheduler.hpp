@@ -56,7 +56,7 @@ struct select_op;
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class select_scheduler
+class select_scheduler final
     : public scheduler_impl
     , public capy::execution_context::service
 {
@@ -70,11 +70,9 @@ public:
         @param ctx Reference to the owning execution_context.
         @param concurrency_hint Hint for expected thread count (unused).
     */
-    select_scheduler(
-        capy::execution_context& ctx,
-        int concurrency_hint = -1);
+    select_scheduler(capy::execution_context& ctx, int concurrency_hint = -1);
 
-    ~select_scheduler();
+    ~select_scheduler() override;
 
     select_scheduler(select_scheduler const&) = delete;
     select_scheduler& operator=(select_scheduler const&) = delete;
@@ -82,8 +80,6 @@ public:
     void shutdown() override;
     void post(std::coroutine_handle<> h) const override;
     void post(scheduler_op* h) const override;
-    void on_work_started() noexcept override;
-    void on_work_finished() noexcept override;
     bool running_in_this_thread() const noexcept override;
     void stop() override;
     bool stopped() const noexcept override;
@@ -102,7 +98,10 @@ public:
 
         @return The maximum supported file descriptor value.
     */
-    static constexpr int max_fd() noexcept { return FD_SETSIZE - 1; }
+    static constexpr int max_fd() noexcept
+    {
+        return FD_SETSIZE - 1;
+    }
 
     /** Register a file descriptor for monitoring.
 
@@ -119,14 +118,11 @@ public:
     */
     void deregister_fd(int fd, int events) const;
 
-    /** For use by I/O operations to track pending work. */
-    void work_started() const noexcept override;
-
-    /** For use by I/O operations to track completed work. */
-    void work_finished() const noexcept override;
+    void work_started() noexcept override;
+    void work_finished() noexcept override;
 
     // Event flags for register_fd/deregister_fd
-    static constexpr int event_read  = 1;
+    static constexpr int event_read = 1;
     static constexpr int event_write = 2;
 
 private:
@@ -137,7 +133,7 @@ private:
     long calculate_timeout(long requested_timeout_us) const;
 
     // Self-pipe for interrupting select()
-    int pipe_fds_[2];  // [0]=read, [1]=write
+    int pipe_fds_[2]; // [0]=read, [1]=write
 
     mutable std::mutex mutex_;
     mutable std::condition_variable wakeup_event_;

@@ -19,7 +19,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include "src/detail/intrusive.hpp"
-#include "src/detail/socket_service.hpp"
+#include "src/detail/acceptor_service.hpp"
 
 #include "src/detail/kqueue/op.hpp"
 #include "src/detail/kqueue/scheduler.hpp"
@@ -55,7 +55,7 @@ class kqueue_acceptor_impl;
 class kqueue_socket_service;
 
 /// Acceptor implementation for kqueue backend.
-class kqueue_acceptor_impl
+class kqueue_acceptor_impl final
     : public tcp_acceptor::implementation
     , public std::enable_shared_from_this<kqueue_acceptor_impl>
     , public intrusive_list<kqueue_acceptor_impl>::node
@@ -114,9 +114,18 @@ public:
         std::error_code* ec,
         io_object::implementation** out_impl) override;
 
-    int native_handle() const noexcept { return fd_; }
-    endpoint local_endpoint() const noexcept override { return local_endpoint_; }
-    bool is_open() const noexcept override { return fd_ >= 0; }
+    int native_handle() const noexcept
+    {
+        return fd_;
+    }
+    endpoint local_endpoint() const noexcept override
+    {
+        return local_endpoint_;
+    }
+    bool is_open() const noexcept override
+    {
+        return fd_ >= 0;
+    }
 
     /** Cancel any pending accept operation.
 
@@ -154,9 +163,15 @@ public:
         returns false.
     */
     void close_socket() noexcept;
-    void set_local_endpoint(endpoint ep) noexcept { local_endpoint_ = ep; }
+    void set_local_endpoint(endpoint ep) noexcept
+    {
+        local_endpoint_ = ep;
+    }
 
-    kqueue_acceptor_service& service() noexcept { return svc_; }
+    kqueue_acceptor_service& service() noexcept
+    {
+        return svc_;
+    }
 
 private:
     kqueue_acceptor_service& svc_;
@@ -181,7 +196,10 @@ private:
     kqueue_scheduler& sched_;
     std::mutex mutex_;
     intrusive_list<kqueue_acceptor_impl> acceptor_list_;
-    std::unordered_map<kqueue_acceptor_impl*, std::shared_ptr<kqueue_acceptor_impl>> acceptor_ptrs_;
+    std::unordered_map<
+        kqueue_acceptor_impl*,
+        std::shared_ptr<kqueue_acceptor_impl>>
+        acceptor_ptrs_;
 };
 
 /** kqueue acceptor service implementation.
@@ -189,7 +207,7 @@ private:
     Inherits from acceptor_service to enable runtime polymorphism.
     Uses key_type = acceptor_service for service lookup.
 */
-class kqueue_acceptor_service : public acceptor_service
+class kqueue_acceptor_service final : public acceptor_service
 {
 public:
     explicit kqueue_acceptor_service(capy::execution_context& ctx);
@@ -218,11 +236,12 @@ public:
         any syscall failure (socket, bind, listen, fcntl).
     */
     std::error_code open_acceptor(
-        tcp_acceptor::implementation& impl,
-        endpoint ep,
-        int backlog) override;
+        tcp_acceptor::implementation& impl, endpoint ep, int backlog) override;
 
-    kqueue_scheduler& scheduler() const noexcept { return state_->sched_; }
+    kqueue_scheduler& scheduler() const noexcept
+    {
+        return state_->sched_;
+    }
 
     /** Post a completed operation to the scheduler for execution.
 

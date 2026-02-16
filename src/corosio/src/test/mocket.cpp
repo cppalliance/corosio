@@ -23,13 +23,10 @@
 
 namespace boost::corosio::test {
 
-//------------------------------------------------------------------------------
 
-mocket::
-~mocket() = default;
+mocket::~mocket() = default;
 
-mocket::
-mocket(
+mocket::mocket(
     capy::execution_context& ctx,
     capy::test::fuse f,
     std::size_t max_read_size,
@@ -45,20 +42,18 @@ mocket(
         detail::throw_logic_error("mocket: max_write_size cannot be 0");
 }
 
-mocket::
-mocket(mocket&& other) noexcept
+mocket::mocket(mocket&& other) noexcept
     : sock_(std::move(other.sock_))
     , provide_(std::move(other.provide_))
     , expect_(std::move(other.expect_))
-    , fuse_(other.fuse_)
+    , fuse_(std::move(other.fuse_))
     , max_read_size_(other.max_read_size_)
     , max_write_size_(other.max_write_size_)
 {
 }
 
 mocket&
-mocket::
-operator=(mocket&& other) noexcept
+mocket::operator=(mocket&& other) noexcept
 {
     if (this != &other)
     {
@@ -73,22 +68,19 @@ operator=(mocket&& other) noexcept
 }
 
 void
-mocket::
-provide(std::string s)
+mocket::provide(std::string const& s)
 {
-    provide_.append(std::move(s));
+    provide_.append(s);
 }
 
 void
-mocket::
-expect(std::string s)
+mocket::expect(std::string const& s)
 {
-    expect_.append(std::move(s));
+    expect_.append(s);
 }
 
 std::error_code
-mocket::
-close()
+mocket::close()
 {
     if (!sock_.is_open())
         return {};
@@ -112,20 +104,17 @@ close()
 }
 
 void
-mocket::
-cancel()
+mocket::cancel()
 {
     sock_.cancel();
 }
 
 bool
-mocket::
-is_open() const noexcept
+mocket::is_open() const noexcept
 {
     return sock_.is_open();
 }
 
-//------------------------------------------------------------------------------
 
 std::pair<mocket, tcp_socket>
 make_mocket_pair(
@@ -138,7 +127,7 @@ make_mocket_pair(
     auto ex = ioc.get_executor();
 
     // Create the mocket
-    mocket m(ctx, f, max_read_size, max_write_size);
+    mocket m(ctx, std::move(f), max_read_size, max_write_size);
 
     // Create the peer socket
     tcp_socket peer(ctx);
@@ -152,7 +141,8 @@ make_mocket_pair(
     tcp_acceptor acc(ctx);
     auto listen_ec = acc.listen(endpoint(ipv4_address::loopback(), 0));
     if (listen_ec)
-        throw std::runtime_error("mocket listen failed: " + listen_ec.message());
+        throw std::runtime_error(
+            "mocket listen failed: " + listen_ec.message());
     auto port = acc.local_endpoint().port();
 
     // Open peer socket for connect
@@ -163,9 +153,8 @@ make_mocket_pair(
 
     // Launch accept operation
     capy::run_async(ex)(
-        [](tcp_acceptor& a, tcp_socket& s,
-           std::error_code& ec_out, bool& done_out) -> capy::task<>
-        {
+        [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+           bool& done_out) -> capy::task<> {
             auto [ec] = co_await a.accept(s);
             ec_out = ec;
             done_out = true;
@@ -173,14 +162,13 @@ make_mocket_pair(
 
     // Launch connect operation
     capy::run_async(ex)(
-        [](tcp_socket& s, endpoint ep,
-           std::error_code& ec_out, bool& done_out) -> capy::task<>
-        {
+        [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+           bool& done_out) -> capy::task<> {
             auto [ec] = co_await s.connect(ep);
             ec_out = ec;
             done_out = true;
-        }(peer, endpoint(ipv4_address::loopback(), port),
-          connect_ec, connect_done));
+        }(peer, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
     // Run until both complete
     ioc.run();
@@ -189,7 +177,8 @@ make_mocket_pair(
     // Check for errors
     if (!accept_done || accept_ec)
     {
-        std::fprintf(stderr, "make_mocket_pair: accept failed (done=%d, ec=%s)\n",
+        std::fprintf(
+            stderr, "make_mocket_pair: accept failed (done=%d, ec=%s)\n",
             accept_done, accept_ec.message().c_str());
         acc.close();
         throw std::runtime_error("mocket accept failed");
@@ -197,7 +186,8 @@ make_mocket_pair(
 
     if (!connect_done || connect_ec)
     {
-        std::fprintf(stderr, "make_mocket_pair: connect failed (done=%d, ec=%s)\n",
+        std::fprintf(
+            stderr, "make_mocket_pair: connect failed (done=%d, ec=%s)\n",
             connect_done, connect_ec.message().c_str());
         acc.close();
         accepted_socket.close();

@@ -34,7 +34,7 @@ namespace boost::corosio {
 
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4251) // class needs to have dll-interface
+#pragma warning(disable : 4251) // class needs to have dll-interface
 #endif
 
 /** TCP server with pooled workers.
@@ -148,12 +148,11 @@ namespace boost::corosio {
 
     @see worker_base, set_workers, launcher
 */
-class BOOST_COROSIO_DECL
-    tcp_server
+class BOOST_COROSIO_DECL tcp_server
 {
 public:
-    class worker_base;  ///< Abstract base for connection handlers.
-    class launcher;     ///< Move-only handle to launch worker coroutines.
+    class worker_base; ///< Abstract base for connection handlers.
+    class launcher;    ///< Move-only handle to launch worker coroutines.
 
 private:
     struct waiter
@@ -170,11 +169,12 @@ private:
     impl* impl_;
     capy::any_executor ex_;
     waiter* waiters_ = nullptr;
-    worker_base* idle_head_ = nullptr;    // Forward list: available workers
-    worker_base* active_head_ = nullptr;  // Doubly linked: workers handling connections
-    worker_base* active_tail_ = nullptr;  // Tail for O(1) push_back
-    std::size_t active_accepts_ = 0;      // Number of active do_accept coroutines
-    std::shared_ptr<void> storage_;       // Owns the worker container (type-erased)
+    worker_base* idle_head_ = nullptr; // Forward list: available workers
+    worker_base* active_head_ =
+        nullptr; // Doubly linked: workers handling connections
+    worker_base* active_tail_ = nullptr; // Tail for O(1) push_back
+    std::size_t active_accepts_ = 0; // Number of active do_accept coroutines
+    std::shared_ptr<void> storage_;  // Owns the worker container (type-erased)
     bool running_ = false;
 
     // Idle list (forward/singly linked) - push front, pop front
@@ -187,18 +187,22 @@ private:
     worker_base* idle_pop() noexcept
     {
         auto* w = idle_head_;
-        if(w) idle_head_ = w->next_;
+        if (w)
+            idle_head_ = w->next_;
         return w;
     }
 
-    bool idle_empty() const noexcept { return idle_head_ == nullptr; }
+    bool idle_empty() const noexcept
+    {
+        return idle_head_ == nullptr;
+    }
 
     // Active list (doubly linked) - push back, remove anywhere
     void active_push(worker_base* w) noexcept
     {
         w->next_ = nullptr;
         w->prev_ = active_tail_;
-        if(active_tail_)
+        if (active_tail_)
             active_tail_->next_ = w;
         else
             active_head_ = w;
@@ -208,17 +212,17 @@ private:
     void active_remove(worker_base* w) noexcept
     {
         // Skip if not in active list (e.g., after failed accept)
-        if(w != active_head_ && w->prev_ == nullptr)
+        if (w != active_head_ && w->prev_ == nullptr)
             return;
-        if(w->prev_)
+        if (w->prev_)
             w->prev_->next_ = w->next_;
         else
             active_head_ = w->next_;
-        if(w->next_)
+        if (w->next_)
             w->next_->prev_ = w->prev_;
         else
             active_tail_ = w->prev_;
-        w->prev_ = nullptr;  // Mark as not in active list
+        w->prev_ = nullptr; // Mark as not in active list
     }
 
     template<capy::Executor Ex>
@@ -226,7 +230,7 @@ private:
     {
         struct promise_type
         {
-            Ex ex;  // Executor stored directly in frame (outlives child tasks)
+            Ex ex; // Executor stored directly in frame (outlives child tasks)
             capy::io_env env_;
 
             // For regular coroutines: first arg is executor, second is stop token
@@ -234,29 +238,42 @@ private:
                 requires capy::Executor<std::decay_t<E>>
             promise_type(E e, S s, Args&&...)
                 : ex(std::move(e))
-                , env_{capy::executor_ref(ex), std::move(s),
-                       capy::get_current_frame_allocator()}
+                , env_{
+                      capy::executor_ref(ex), std::move(s),
+                      capy::get_current_frame_allocator()}
             {
             }
 
             // For lambda coroutines: first arg is closure, second is executor, third is stop token
             template<class Closure, class E, class S, class... Args>
-                requires (!capy::Executor<std::decay_t<Closure>> && 
-                          capy::Executor<std::decay_t<E>>)
+                requires(!capy::Executor<std::decay_t<Closure>> &&
+                         capy::Executor<std::decay_t<E>>)
             promise_type(Closure&&, E e, S s, Args&&...)
                 : ex(std::move(e))
-                , env_{capy::executor_ref(ex), std::move(s),
-                       capy::get_current_frame_allocator()}
+                , env_{
+                      capy::executor_ref(ex), std::move(s),
+                      capy::get_current_frame_allocator()}
             {
             }
 
-            launch_wrapper get_return_object() noexcept {
-                return {std::coroutine_handle<promise_type>::from_promise(*this)};
+            launch_wrapper get_return_object() noexcept
+            {
+                return {
+                    std::coroutine_handle<promise_type>::from_promise(*this)};
             }
-            std::suspend_always initial_suspend() noexcept { return {}; }
-            std::suspend_never final_suspend() noexcept { return {}; }
+            std::suspend_always initial_suspend() noexcept
+            {
+                return {};
+            }
+            std::suspend_never final_suspend() noexcept
+            {
+                return {};
+            }
             void return_void() noexcept {}
-            void unhandled_exception() { std::terminate(); }
+            void unhandled_exception()
+            {
+                std::terminate();
+            }
 
             // Inject io_env for IoAwaitable
             template<capy::IoAwaitable Awaitable>
@@ -268,8 +285,14 @@ private:
                     AwaitableT aw;
                     capy::io_env const* env;
 
-                    bool await_ready() { return aw.await_ready(); }
-                    decltype(auto) await_resume() { return aw.await_resume(); }
+                    bool await_ready()
+                    {
+                        return aw.await_ready();
+                    }
+                    decltype(auto) await_resume()
+                    {
+                        return aw.await_resume();
+                    }
 
                     auto await_suspend(std::coroutine_handle<promise_type> h)
                     {
@@ -289,7 +312,7 @@ private:
 
         ~launch_wrapper()
         {
-            if(h)
+            if (h)
                 h.destroy();
         }
 
@@ -326,9 +349,7 @@ private:
         worker_base& w_;
 
     public:
-        push_awaitable(
-            tcp_server& self,
-            worker_base& w) noexcept
+        push_awaitable(tcp_server& self, worker_base& w) noexcept
             : self_(self)
             , w_(w)
         {
@@ -340,9 +361,7 @@ private:
         }
 
         std::coroutine_handle<>
-        await_suspend(
-            std::coroutine_handle<> h,
-            capy::io_env const*) noexcept
+        await_suspend(std::coroutine_handle<> h, capy::io_env const*) noexcept
         {
             // Symmetric transfer to server's executor
             return self_.ex_.dispatch(h);
@@ -353,7 +372,7 @@ private:
             // Running on server executor - safe to modify lists
             // Remove from active (if present), then wake waiter or add to idle
             self_.active_remove(&w_);
-            if(self_.waiters_)
+            if (self_.waiters_)
             {
                 auto* wait = self_.waiters_;
                 self_.waiters_ = wait->next;
@@ -373,11 +392,7 @@ private:
         waiter wait_;
 
     public:
-        pop_awaitable(tcp_server& self) noexcept
-            : self_(self)
-            , wait_{}
-        {
-        }
+        pop_awaitable(tcp_server& self) noexcept : self_(self), wait_{} {}
 
         bool await_ready() const noexcept
         {
@@ -385,9 +400,7 @@ private:
         }
 
         bool
-        await_suspend(
-            std::coroutine_handle<> h,
-            capy::io_env const*) noexcept
+        await_suspend(std::coroutine_handle<> h, capy::io_env const*) noexcept
         {
             // Running on server executor (do_accept runs there)
             wait_.h = h;
@@ -400,8 +413,8 @@ private:
         worker_base& await_resume() noexcept
         {
             // Running on server executor
-            if(wait_.w)
-                return *wait_.w;  // Woken by push_awaitable
+            if (wait_.w)
+                return *wait_.w; // Woken by push_awaitable
             return *self_.idle_pop();
         }
     };
@@ -416,7 +429,7 @@ private:
     void push_sync(worker_base& w) noexcept
     {
         active_remove(&w);
-        if(waiters_)
+        if (waiters_)
         {
             auto* wait = waiters_;
             waiters_ = wait->next;
@@ -445,13 +458,12 @@ public:
 
         @see tcp_server, launcher
     */
-    class BOOST_COROSIO_DECL
-        worker_base
+    class BOOST_COROSIO_DECL worker_base
     {
         // Ordered largest to smallest for optimal packing
-        std::stop_source stop_;        // ~16 bytes
-        worker_base* next_ = nullptr;  // 8 bytes - used by idle and active lists
-        worker_base* prev_ = nullptr;  // 8 bytes - used only by active list
+        std::stop_source stop_;       // ~16 bytes
+        worker_base* next_ = nullptr; // 8 bytes - used by idle and active lists
+        worker_base* prev_ = nullptr; // 8 bytes - used only by active list
 
         friend class tcp_server;
 
@@ -485,17 +497,14 @@ public:
 
         @see worker_base::run
     */
-    class BOOST_COROSIO_DECL
-        launcher
+    class BOOST_COROSIO_DECL launcher
     {
         tcp_server* srv_;
         worker_base* w_;
 
         friend class tcp_server;
 
-        launcher(tcp_server& srv, worker_base& w) noexcept
-            : srv_(&srv)
-            , w_(&w)
+        launcher(tcp_server& srv, worker_base& w) noexcept : srv_(&srv), w_(&w)
         {
         }
 
@@ -503,7 +512,7 @@ public:
         /// Return the worker to the pool if not launched.
         ~launcher()
         {
-            if(w_)
+            if (w_)
                 srv_->push_sync(*w_);
         }
 
@@ -530,7 +539,7 @@ public:
         template<class Executor>
         void operator()(Executor const& ex, capy::task<void> task)
         {
-            if(! w_)
+            if (!w_)
                 detail::throw_logic_error(); // launcher already invoked
 
             auto* w = std::exchange(w_, nullptr);
@@ -539,18 +548,23 @@ public:
             srv_->active_push(w);
 
             // Return worker to pool if coroutine setup throws
-            struct guard_t {
+            struct guard_t
+            {
                 tcp_server* srv;
                 worker_base* w;
-                ~guard_t() { if(w) srv->push_sync(*w); }
+                ~guard_t()
+                {
+                    if (w)
+                        srv->push_sync(*w);
+                }
             } guard{srv_, w};
 
             // Reset worker's stop source for this connection
             w->stop_ = {};
             auto st = w->stop_.get_token();
 
-            auto wrapper = launch_coro<Executor>{}(
-                ex, st, srv_, std::move(task), w);
+            auto wrapper =
+                launch_coro<Executor>{}(ex, st, srv_, std::move(task), w);
 
             // Executor and stop token stored in promise via constructor
             ex.post(std::exchange(wrapper.h, nullptr)); // Release before post
@@ -574,12 +588,9 @@ public:
         srv.start();
         @endcode
     */
-    template<
-        capy::ExecutionContext Ctx,
-        capy::Executor Ex>
-    tcp_server(Ctx& ctx, Ex ex)
-        : impl_(make_impl(ctx))
-        , ex_(std::move(ex))
+    template<capy::ExecutionContext Ctx, capy::Executor Ex>
+    tcp_server(Ctx& ctx, Ex ex) : impl_(make_impl(ctx))
+                                , ex_(std::move(ex))
     {
     }
 
@@ -600,8 +611,7 @@ public:
 
         @return The error code if binding fails.
     */
-    std::error_code
-    bind(endpoint ep);
+    std::error_code bind(endpoint ep);
 
     /** Set the worker pool.
 
@@ -627,8 +637,7 @@ public:
             decltype(std::to_address(
                 std::declval<std::ranges::range_value_t<Range>&>())),
             worker_base*>
-    void
-    set_workers(Range&& workers)
+    void set_workers(Range&& workers)
     {
         // Clear existing state
         storage_.reset();
@@ -639,10 +648,9 @@ public:
         // Take ownership and populate idle list
         using StorageType = std::decay_t<Range>;
         auto* p = new StorageType(std::forward<Range>(workers));
-        storage_ = std::shared_ptr<void>(p, [](void* ptr) {
-            delete static_cast<StorageType*>(ptr);
-        });
-        for(auto&& elem : *static_cast<StorageType*>(p))
+        storage_ = std::shared_ptr<void>(
+            p, [](void* ptr) { delete static_cast<StorageType*>(ptr); });
+        for (auto&& elem : *static_cast<StorageType*>(p))
             idle_push(std::to_address(elem));
     }
 

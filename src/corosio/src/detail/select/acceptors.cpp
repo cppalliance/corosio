@@ -26,8 +26,7 @@
 namespace boost::corosio::detail {
 
 void
-select_accept_op::
-cancel() noexcept
+select_accept_op::cancel() noexcept
 {
     if (acceptor_impl_)
         acceptor_impl_->cancel_single_op(*this);
@@ -36,8 +35,7 @@ cancel() noexcept
 }
 
 void
-select_accept_op::
-operator()()
+select_accept_op::operator()()
 {
     stop_cb.reset();
 
@@ -57,11 +55,14 @@ operator()()
     {
         if (acceptor_impl_)
         {
-            auto* socket_svc = static_cast<select_acceptor_impl*>(acceptor_impl_)
-                ->service().socket_service();
+            auto* socket_svc =
+                static_cast<select_acceptor_impl*>(acceptor_impl_)
+                    ->service()
+                    .socket_service();
             if (socket_svc)
             {
-                auto& impl = static_cast<select_socket_impl&>(*socket_svc->construct());
+                auto& impl =
+                    static_cast<select_socket_impl&>(*socket_svc->construct());
                 impl.set_socket(accepted_fd);
 
                 sockaddr_in local_addr{};
@@ -70,9 +71,13 @@ operator()()
                 socklen_t remote_len = sizeof(remote_addr);
 
                 endpoint local_ep, remote_ep;
-                if (::getsockname(accepted_fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+                if (::getsockname(
+                        accepted_fd, reinterpret_cast<sockaddr*>(&local_addr),
+                        &local_len) == 0)
                     local_ep = from_sockaddr_in(local_addr);
-                if (::getpeername(accepted_fd, reinterpret_cast<sockaddr*>(&remote_addr), &remote_len) == 0)
+                if (::getpeername(
+                        accepted_fd, reinterpret_cast<sockaddr*>(&remote_addr),
+                        &remote_len) == 0)
                     remote_ep = from_sockaddr_in(remote_addr);
 
                 impl.set_endpoints(local_ep, remote_ep);
@@ -110,8 +115,10 @@ operator()()
 
         if (peer_impl)
         {
-            auto* socket_svc_cleanup = static_cast<select_acceptor_impl*>(acceptor_impl_)
-                ->service().socket_service();
+            auto* socket_svc_cleanup =
+                static_cast<select_acceptor_impl*>(acceptor_impl_)
+                    ->service()
+                    .socket_service();
             if (socket_svc_cleanup)
                 socket_svc_cleanup->destroy(peer_impl);
             peer_impl = nullptr;
@@ -122,21 +129,20 @@ operator()()
     }
 
     // Move to stack before destroying the frame
-    capy::executor_ref saved_ex( std::move( ex ) );
-    std::coroutine_handle<> saved_h( std::move( h ) );
+    capy::executor_ref saved_ex(ex);
+    std::coroutine_handle<> saved_h(h);
     impl_ptr.reset();
     dispatch_coro(saved_ex, saved_h).resume();
 }
 
-select_acceptor_impl::
-select_acceptor_impl(select_acceptor_service& svc) noexcept
+select_acceptor_impl::select_acceptor_impl(
+    select_acceptor_service& svc) noexcept
     : svc_(svc)
 {
 }
 
 std::coroutine_handle<>
-select_acceptor_impl::
-accept(
+select_acceptor_impl::accept(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     std::stop_token token,
@@ -226,7 +232,8 @@ accept(
 
         // Set registering BEFORE register_fd to close the race window where
         // reactor sees an event before we set registered.
-        op.registered.store(select_registration_state::registering, std::memory_order_release);
+        op.registered.store(
+            select_registration_state::registering, std::memory_order_release);
         svc_.scheduler().register_fd(fd_, &op, select_scheduler::event_read);
 
         // Transition to registered. If this fails, reactor or cancel already
@@ -235,7 +242,8 @@ accept(
         // have run before our register_fd, leaving the fd orphaned.
         auto expected = select_registration_state::registering;
         if (!op.registered.compare_exchange_strong(
-                expected, select_registration_state::registered, std::memory_order_acq_rel))
+                expected, select_registration_state::registered,
+                std::memory_order_acq_rel))
         {
             svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
             // completion is always posted to scheduler queue, never inline.
@@ -246,10 +254,12 @@ accept(
         if (op.cancelled.load(std::memory_order_acquire))
         {
             auto prev = op.registered.exchange(
-                select_registration_state::unregistered, std::memory_order_acq_rel);
+                select_registration_state::unregistered,
+                std::memory_order_acq_rel);
             if (prev != select_registration_state::unregistered)
             {
-                svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
+                svc_.scheduler().deregister_fd(
+                    fd_, select_scheduler::event_read);
                 op.impl_ptr = shared_from_this();
                 svc_.post(&op);
                 svc_.work_finished();
@@ -267,15 +277,11 @@ accept(
 }
 
 void
-select_acceptor_impl::
-cancel() noexcept
+select_acceptor_impl::cancel() noexcept
 {
-    std::shared_ptr<select_acceptor_impl> self;
-    try {
-        self = shared_from_this();
-    } catch (const std::bad_weak_ptr&) {
+    auto self = weak_from_this().lock();
+    if (!self)
         return;
-    }
 
     auto prev = acc_.registered.exchange(
         select_registration_state::unregistered, std::memory_order_acq_rel);
@@ -291,9 +297,12 @@ cancel() noexcept
 }
 
 void
-select_acceptor_impl::
-cancel_single_op(select_op& op) noexcept
+select_acceptor_impl::cancel_single_op(select_op& op) noexcept
 {
+    auto self = weak_from_this().lock();
+    if (!self)
+        return;
+
     // Called from stop_token callback to cancel a specific pending operation.
     auto prev = op.registered.exchange(
         select_registration_state::unregistered, std::memory_order_acq_rel);
@@ -303,51 +312,54 @@ cancel_single_op(select_op& op) noexcept
     {
         svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
 
-        // Keep impl alive until op completes
-        try {
-            op.impl_ptr = shared_from_this();
-        } catch (const std::bad_weak_ptr&) {
-            // Impl is being destroyed, op will be orphaned but that's ok
-        }
-
+        op.impl_ptr = self;
         svc_.post(&op);
         svc_.work_finished();
     }
 }
 
 void
-select_acceptor_impl::
-close_socket() noexcept
+select_acceptor_impl::close_socket() noexcept
 {
-    cancel();
+    auto self = weak_from_this().lock();
+    if (self)
+    {
+        auto prev = acc_.registered.exchange(
+            select_registration_state::unregistered,
+            std::memory_order_acq_rel);
+        acc_.request_cancel();
+
+        if (prev != select_registration_state::unregistered)
+        {
+            svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
+            acc_.impl_ptr = self;
+            svc_.post(&acc_);
+            svc_.work_finished();
+        }
+    }
 
     if (fd_ >= 0)
     {
-        // Unconditionally remove from registered_fds_ to handle edge cases
         svc_.scheduler().deregister_fd(fd_, select_scheduler::event_read);
         ::close(fd_);
         fd_ = -1;
     }
 
-    // Clear cached endpoint
     local_endpoint_ = endpoint{};
 }
 
-select_acceptor_service::
-select_acceptor_service(capy::execution_context& ctx)
+select_acceptor_service::select_acceptor_service(capy::execution_context& ctx)
     : ctx_(ctx)
-    , state_(std::make_unique<select_acceptor_state>(ctx.use_service<select_scheduler>()))
+    , state_(
+          std::make_unique<select_acceptor_state>(
+              ctx.use_service<select_scheduler>()))
 {
 }
 
-select_acceptor_service::
-~select_acceptor_service()
-{
-}
+select_acceptor_service::~select_acceptor_service() {}
 
 void
-select_acceptor_service::
-shutdown()
+select_acceptor_service::shutdown()
 {
     std::lock_guard lock(state_->mutex_);
 
@@ -360,8 +372,7 @@ shutdown()
 }
 
 io_object::implementation*
-select_acceptor_service::
-construct()
+select_acceptor_service::construct()
 {
     auto impl = std::make_shared<select_acceptor_impl>(*this);
     auto* raw = impl.get();
@@ -374,8 +385,7 @@ construct()
 }
 
 void
-select_acceptor_service::
-destroy(io_object::implementation* impl)
+select_acceptor_service::destroy(io_object::implementation* impl)
 {
     auto* select_impl = static_cast<select_acceptor_impl*>(impl);
     select_impl->close_socket();
@@ -385,18 +395,14 @@ destroy(io_object::implementation* impl)
 }
 
 void
-select_acceptor_service::
-close(io_object::handle& h)
+select_acceptor_service::close(io_object::handle& h)
 {
     static_cast<select_acceptor_impl*>(h.get())->close_socket();
 }
 
 std::error_code
-select_acceptor_service::
-open_acceptor(
-    tcp_acceptor::implementation& impl,
-    endpoint ep,
-    int backlog)
+select_acceptor_service::open_acceptor(
+    tcp_acceptor::implementation& impl, endpoint ep, int backlog)
 {
     auto* select_impl = static_cast<select_acceptor_impl*>(&impl);
     select_impl->close_socket();
@@ -456,36 +462,33 @@ open_acceptor(
     // Cache the local endpoint (queries OS for ephemeral port if port was 0)
     sockaddr_in local_addr{};
     socklen_t local_len = sizeof(local_addr);
-    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
+    if (::getsockname(
+            fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
         select_impl->set_local_endpoint(detail::from_sockaddr_in(local_addr));
 
     return {};
 }
 
 void
-select_acceptor_service::
-post(select_op* op)
+select_acceptor_service::post(select_op* op)
 {
     state_->sched_.post(op);
 }
 
 void
-select_acceptor_service::
-work_started() noexcept
+select_acceptor_service::work_started() noexcept
 {
     state_->sched_.work_started();
 }
 
 void
-select_acceptor_service::
-work_finished() noexcept
+select_acceptor_service::work_finished() noexcept
 {
     state_->sched_.work_finished();
 }
 
 select_socket_service*
-select_acceptor_service::
-socket_service() const noexcept
+select_acceptor_service::socket_service() const noexcept
 {
     auto* svc = ctx_.find_service<detail::socket_service>();
     return svc ? dynamic_cast<select_socket_service*>(svc) : nullptr;

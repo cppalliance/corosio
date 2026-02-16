@@ -13,22 +13,19 @@
 #if BOOST_COROSIO_HAS_IOCP
 #include "src/detail/iocp/sockets.hpp"
 #else
-#include "src/detail/socket_service.hpp"
+#include "src/detail/acceptor_service.hpp"
 #endif
 
 #include <boost/corosio/detail/except.hpp>
 
 namespace boost::corosio {
 
-tcp_acceptor::
-~tcp_acceptor()
+tcp_acceptor::~tcp_acceptor()
 {
     close();
 }
 
-tcp_acceptor::
-tcp_acceptor(
-    capy::execution_context& ctx)
+tcp_acceptor::tcp_acceptor(capy::execution_context& ctx)
 #if BOOST_COROSIO_HAS_IOCP
     : io_object(create_handle<detail::win_acceptor_service>(ctx))
 #else
@@ -38,8 +35,7 @@ tcp_acceptor(
 }
 
 std::error_code
-tcp_acceptor::
-listen(endpoint ep, int backlog)
+tcp_acceptor::listen(endpoint ep, int backlog)
 {
     if (is_open())
         close();
@@ -54,8 +50,7 @@ listen(endpoint ep, int backlog)
 }
 
 void
-tcp_acceptor::
-close()
+tcp_acceptor::close()
 {
     if (!is_open())
         return;
@@ -63,8 +58,7 @@ close()
 }
 
 void
-tcp_acceptor::
-cancel()
+tcp_acceptor::cancel()
 {
     if (!is_open())
         return;
@@ -72,8 +66,7 @@ cancel()
 }
 
 endpoint
-tcp_acceptor::
-local_endpoint() const noexcept
+tcp_acceptor::local_endpoint() const noexcept
 {
     if (!is_open())
         return endpoint{};

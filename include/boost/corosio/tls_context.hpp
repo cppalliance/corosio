@@ -19,11 +19,9 @@
 
 namespace boost::corosio {
 
-//------------------------------------------------------------------------------
 //
 // Enumerations
 //
-//------------------------------------------------------------------------------
 
 /** TLS handshake role.
 
@@ -131,8 +129,7 @@ class tls_context;
 
 namespace detail {
 struct tls_context_data;
-tls_context_data const&
-get_tls_context_data( tls_context const& ) noexcept;
+tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
 } // namespace detail
 
 /** A portable TLS context for certificate and settings storage.
@@ -186,16 +183,15 @@ get_tls_context_data( tls_context const& ) noexcept;
 */
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4251)  // shared_ptr needs dll-interface
+#pragma warning(disable : 4251) // shared_ptr needs dll-interface
 #endif
 class BOOST_COROSIO_DECL tls_context
 {
     struct impl;
     std::shared_ptr<impl> impl_;
 
-    friend
-    detail::tls_context_data const&
-    detail::get_tls_context_data( tls_context const& ) noexcept;
+    friend detail::tls_context_data const&
+    detail::get_tls_context_data(tls_context const&) noexcept;
 
 public:
     /** Construct a default TLS context.
@@ -219,7 +215,7 @@ public:
 
         @param other The context to copy from.
     */
-    tls_context( tls_context const& other ) = default;
+    tls_context(tls_context const& other) = default;
 
     /** Copy assignment operator.
 
@@ -230,7 +226,7 @@ public:
 
         @return Reference to this context.
     */
-    tls_context& operator=( tls_context const& other ) = default;
+    tls_context& operator=(tls_context const& other) = default;
 
     /** Move constructor.
 
@@ -239,7 +235,7 @@ public:
 
         @param other The context to move from.
     */
-    tls_context( tls_context&& other ) noexcept = default;
+    tls_context(tls_context&& other) noexcept = default;
 
     /** Move assignment operator.
 
@@ -251,7 +247,7 @@ public:
 
         @return Reference to this context.
     */
-    tls_context& operator=( tls_context&& other ) noexcept = default;
+    tls_context& operator=(tls_context&& other) noexcept = default;
 
     /** Destructor.
 
@@ -261,11 +257,9 @@ public:
     */
     ~tls_context() = default;
 
-    //--------------------------------------------------------------------------
     //
     // Credential Loading
     //
-    //--------------------------------------------------------------------------
 
     /** Load the entity certificate from a memory buffer.
 
@@ -287,9 +281,7 @@ public:
         @see use_private_key
     */
     std::error_code
-    use_certificate(
-        std::string_view certificate,
-        tls_file_format format );
+    use_certificate(std::string_view certificate, tls_file_format format);
 
     /** Load the entity certificate from a file.
 
@@ -313,9 +305,7 @@ public:
         @see use_private_key_file
     */
     std::error_code
-    use_certificate_file(
-        std::string_view filename,
-        tls_file_format format );
+    use_certificate_file(std::string_view filename, tls_file_format format);
 
     /** Load a certificate chain from a memory buffer.
 
@@ -330,8 +320,7 @@ public:
 
         @see use_certificate_chain_file
     */
-    std::error_code
-    use_certificate_chain( std::string_view chain );
+    std::error_code use_certificate_chain(std::string_view chain);
 
     /** Load a certificate chain from a file.
 
@@ -351,8 +340,7 @@ public:
 
         @see use_certificate_chain
     */
-    std::error_code
-    use_certificate_chain_file( std::string_view filename );
+    std::error_code use_certificate_chain_file(std::string_view filename);
 
     /** Load the private key from a memory buffer.
 
@@ -375,9 +363,7 @@ public:
         @see set_password_callback
     */
     std::error_code
-    use_private_key(
-        std::string_view private_key,
-        tls_file_format format );
+    use_private_key(std::string_view private_key, tls_file_format format);
 
     /** Load the private key from a file.
 
@@ -404,9 +390,7 @@ public:
         @see set_password_callback
     */
     std::error_code
-    use_private_key_file(
-        std::string_view filename,
-        tls_file_format format );
+    use_private_key_file(std::string_view filename, tls_file_format format);
 
     /** Load credentials from a PKCS#12 bundle in memory.
 
@@ -424,9 +408,7 @@ public:
         @see use_pkcs12_file
     */
     std::error_code
-    use_pkcs12(
-        std::string_view data,
-        std::string_view passphrase );
+    use_pkcs12(std::string_view data, std::string_view passphrase);
 
     /** Load credentials from a PKCS#12 file.
 
@@ -450,15 +432,11 @@ public:
         @see use_pkcs12
     */
     std::error_code
-    use_pkcs12_file(
-        std::string_view filename,
-        std::string_view passphrase );
+    use_pkcs12_file(std::string_view filename, std::string_view passphrase);
 
-    //--------------------------------------------------------------------------
     //
     // Trust Anchors
     //
-    //--------------------------------------------------------------------------
 
     /** Add a certificate authority for peer verification.
 
@@ -473,8 +451,7 @@ public:
         @see load_verify_file
         @see set_default_verify_paths
     */
-    std::error_code
-    add_certificate_authority( std::string_view ca );
+    std::error_code add_certificate_authority(std::string_view ca);
 
     /** Load CA certificates from a file.
 
@@ -494,8 +471,7 @@ public:
         @see add_certificate_authority
         @see add_verify_path
     */
-    std::error_code
-    load_verify_file( std::string_view filename );
+    std::error_code load_verify_file(std::string_view filename);
 
     /** Add a directory of CA certificates for verification.
 
@@ -516,8 +492,7 @@ public:
         @see load_verify_file
         @see set_default_verify_paths
     */
-    std::error_code
-    add_verify_path( std::string_view path );
+    std::error_code add_verify_path(std::string_view path);
 
     /** Use the system default CA certificate store.
 
@@ -542,14 +517,11 @@ public:
         @see load_verify_file
         @see add_verify_path
     */
-    std::error_code
-    set_default_verify_paths();
+    std::error_code set_default_verify_paths();
 
-    //--------------------------------------------------------------------------
     //
     // Protocol Configuration
     //
-    //--------------------------------------------------------------------------
 
     /** Set the minimum TLS protocol version.
 
@@ -569,8 +541,7 @@ public:
 
         @see set_max_protocol_version
     */
-    std::error_code
-    set_min_protocol_version( tls_version v );
+    std::error_code set_min_protocol_version(tls_version v);
 
     /** Set the maximum TLS protocol version.
 
@@ -584,8 +555,7 @@ public:
 
         @see set_min_protocol_version
     */
-    std::error_code
-    set_max_protocol_version( tls_version v );
+    std::error_code set_max_protocol_version(tls_version v);
 
     /** Set the allowed cipher suites.
 
@@ -606,8 +576,7 @@ public:
         @note For TLS 1.3, use `set_ciphersuites_tls13()` on backends
             that distinguish between TLS 1.2 and 1.3 cipher configuration.
     */
-    std::error_code
-    set_ciphersuites( std::string_view ciphers );
+    std::error_code set_ciphersuites(std::string_view ciphers);
 
     /** Set the ALPN protocol list.
 
@@ -628,14 +597,11 @@ public:
         ctx.set_alpn( { "h2", "http/1.1" } );
         @endcode
     */
-    std::error_code
-    set_alpn( std::initializer_list<std::string_view> protocols );
+    std::error_code set_alpn(std::initializer_list<std::string_view> protocols);
 
-    //--------------------------------------------------------------------------
     //
     // Certificate Verification
     //
-    //--------------------------------------------------------------------------
 
     /** Set the peer certificate verification mode.
 
@@ -657,8 +623,7 @@ public:
 
         @see tls_verify_mode
     */
-    std::error_code
-    set_verify_mode( tls_verify_mode mode );
+    std::error_code set_verify_mode(tls_verify_mode mode);
 
     /** Set the maximum certificate chain verification depth.
 
@@ -670,8 +635,7 @@ public:
 
         @return Success, or an error if the depth is invalid.
     */
-    std::error_code
-    set_verify_depth( int depth );
+    std::error_code set_verify_depth(int depth);
 
     /** Set a custom certificate verification callback.
 
@@ -696,8 +660,7 @@ public:
             depends on the TLS backend.
     */
     template<typename Callback>
-    std::error_code
-    set_verify_callback( Callback callback );
+    std::error_code set_verify_callback(Callback callback);
 
     /** Set the expected server hostname for verification.
 
@@ -719,8 +682,7 @@ public:
         @note This is typically required for HTTPS clients to ensure
             they're connecting to the intended server.
     */
-    void
-    set_hostname( std::string_view hostname );
+    void set_hostname(std::string_view hostname);
 
     /** Set a callback for Server Name Indication (SNI).
 
@@ -753,25 +715,19 @@ public:
         @see set_hostname
     */
     template<typename Callback>
-    void
-    set_servername_callback( Callback callback );
+    void set_servername_callback(Callback callback);
 
 private:
-    void
-    set_servername_callback_impl(
-        std::function<bool( std::string_view )> callback );
+    void set_servername_callback_impl(
+        std::function<bool(std::string_view)> callback);
 
-    void
-    set_password_callback_impl(
-        std::function<std::string( std::size_t, tls_password_purpose )> callback );
+    void set_password_callback_impl(
+        std::function<std::string(std::size_t, tls_password_purpose)> callback);
 
 public:
-
-    //--------------------------------------------------------------------------
     //
     // Revocation Checking
     //
-    //--------------------------------------------------------------------------
 
     /** Add a Certificate Revocation List from memory.
 
@@ -787,8 +743,7 @@ public:
         @see add_crl_file
         @see set_revocation_policy
     */
-    std::error_code
-    add_crl( std::string_view crl );
+    std::error_code add_crl(std::string_view crl);
 
     /** Add a Certificate Revocation List from a file.
 
@@ -808,8 +763,7 @@ public:
         @see add_crl
         @see set_revocation_policy
     */
-    std::error_code
-    add_crl_file( std::string_view filename );
+    std::error_code add_crl_file(std::string_view filename);
 
     /** Set the OCSP staple response for server-side stapling.
 
@@ -828,8 +782,7 @@ public:
         @note This is a server-side operation. Clients use
             `set_require_ocsp_staple()` to require stapled responses.
     */
-    std::error_code
-    set_ocsp_staple( std::string_view response );
+    std::error_code set_ocsp_staple(std::string_view response);
 
     /** Require OCSP stapling from the server.
 
@@ -843,8 +796,7 @@ public:
         @note Not all servers support OCSP stapling. Enable this only
             when connecting to servers known to support it.
     */
-    void
-    set_require_ocsp_staple( bool require );
+    void set_require_ocsp_staple(bool require);
 
     /** Set the certificate revocation checking policy.
 
@@ -865,14 +817,11 @@ public:
         @see tls_revocation_policy
         @see add_crl
     */
-    void
-    set_revocation_policy( tls_revocation_policy policy );
+    void set_revocation_policy(tls_revocation_policy policy);
 
-    //--------------------------------------------------------------------------
     //
     // Password Handling
     //
-    //--------------------------------------------------------------------------
 
     /** Set the password callback for encrypted keys.
 
@@ -903,8 +852,7 @@ public:
         @see tls_password_purpose
     */
     template<typename Callback>
-    void
-    set_password_callback( Callback callback );
+    void set_password_callback(Callback callback);
 };
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -912,18 +860,16 @@ public:
 
 template<typename Callback>
 void
-tls_context::
-set_servername_callback( Callback callback )
+tls_context::set_servername_callback(Callback callback)
 {
-    set_servername_callback_impl( std::move( callback ) );
+    set_servername_callback_impl(std::move(callback));
 }
 
 template<typename Callback>
 void
-tls_context::
-set_password_callback( Callback callback )
+tls_context::set_password_callback(Callback callback)
 {
-    set_password_callback_impl( std::move( callback ) );
+    set_password_callback_impl(std::move(callback));
 }
 
 } // namespace boost::corosio

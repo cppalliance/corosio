@@ -33,8 +33,7 @@ using NtAssociateWaitCompletionPacketFn = NTSTATUS(NTAPI*)(
     BOOLEAN* AlreadySignaled);
 
 using NtCancelWaitCompletionPacketFn = NTSTATUS(NTAPI*)(
-    void* WaitCompletionPacketHandle,
-    BOOLEAN RemoveSignaledPacket);
+    void* WaitCompletionPacketHandle, BOOLEAN RemoveSignaledPacket);
 
 class win_timers_nt final : public win_timers
 {
@@ -52,8 +51,8 @@ class win_timers_nt final : public win_timers
 
 public:
     // Returns nullptr if NT APIs unavailable (pre-Windows 8)
-    static std::unique_ptr<win_timers_nt> try_create(
-        void* iocp, long* dispatch_required);
+    static std::unique_ptr<win_timers_nt>
+    try_create(void* iocp, long* dispatch_required);
 
     ~win_timers_nt();
 

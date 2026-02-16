@@ -77,7 +77,7 @@ class kqueue_socket_service;
 class kqueue_socket_impl;
 
 /// Socket implementation for kqueue backend.
-class kqueue_socket_impl
+class kqueue_socket_impl final
     : public tcp_socket::implementation
     , public std::enable_shared_from_this<kqueue_socket_impl>
     , public intrusive_list<kqueue_socket_impl>::node
@@ -113,7 +113,10 @@ public:
 
     std::error_code shutdown(tcp_socket::shutdown_type what) noexcept override;
 
-    native_handle_type native_handle() const noexcept override { return fd_; }
+    native_handle_type native_handle() const noexcept override
+    {
+        return fd_;
+    }
 
     // Socket options
     std::error_code set_no_delay(bool value) noexcept override;
@@ -129,15 +132,28 @@ public:
     int send_buffer_size(std::error_code& ec) const noexcept override;
 
     std::error_code set_linger(bool enabled, int timeout) noexcept override;
-    tcp_socket::linger_options linger(std::error_code& ec) const noexcept override;
+    tcp_socket::linger_options
+    linger(std::error_code& ec) const noexcept override;
 
-    endpoint local_endpoint() const noexcept override { return local_endpoint_; }
-    endpoint remote_endpoint() const noexcept override { return remote_endpoint_; }
-    bool is_open() const noexcept { return fd_ >= 0; }
+    endpoint local_endpoint() const noexcept override
+    {
+        return local_endpoint_;
+    }
+    endpoint remote_endpoint() const noexcept override
+    {
+        return remote_endpoint_;
+    }
+    bool is_open() const noexcept
+    {
+        return fd_ >= 0;
+    }
     void cancel() noexcept override;
     void cancel_single_op(kqueue_op& op) noexcept;
     void close_socket() noexcept;
-    void set_socket(int fd) noexcept { fd_ = fd; }
+    void set_socket(int fd) noexcept
+    {
+        fd_ = fd;
+    }
     void set_endpoints(endpoint local, endpoint remote) noexcept
     {
         local_endpoint_ = local;
@@ -179,7 +195,8 @@ public:
     kqueue_scheduler& sched_;
     std::mutex mutex_;
     intrusive_list<kqueue_socket_impl> socket_list_;
-    std::unordered_map<kqueue_socket_impl*, std::shared_ptr<kqueue_socket_impl>> socket_ptrs_;
+    std::unordered_map<kqueue_socket_impl*, std::shared_ptr<kqueue_socket_impl>>
+        socket_ptrs_;
 };
 
 /** kqueue socket service implementation.
@@ -187,7 +204,7 @@ public:
     Inherits from socket_service to enable runtime polymorphism.
     Uses key_type = socket_service for service lookup.
 */
-class kqueue_socket_service : public socket_service
+class kqueue_socket_service final : public socket_service
 {
 public:
     explicit kqueue_socket_service(capy::execution_context& ctx);
@@ -203,7 +220,10 @@ public:
     void close(io_object::handle&) override;
     std::error_code open_socket(tcp_socket::implementation& impl) override;
 
-    kqueue_scheduler& scheduler() const noexcept { return state_->sched_; }
+    kqueue_scheduler& scheduler() const noexcept
+    {
+        return state_->sched_;
+    }
     void post(kqueue_op* op);
     void work_started() noexcept;
     void work_finished() noexcept;

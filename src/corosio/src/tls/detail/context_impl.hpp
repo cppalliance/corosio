@@ -38,7 +38,6 @@ public:
 
 struct tls_context_data
 {
-    //--------------------------------------------
     // Credentials
 
     std::string entity_certificate;
@@ -47,14 +46,12 @@ struct tls_context_data
     std::string private_key;
     tls_file_format private_key_format = tls_file_format::pem;
 
-    //--------------------------------------------
     // Trust anchors
 
     std::vector<std::string> ca_certificates;
     std::vector<std::string> verify_paths;
     bool use_default_verify_paths = false;
 
-    //--------------------------------------------
     // Protocol settings
 
     tls_version min_version = tls_version::tls_1_2;
@@ -62,20 +59,17 @@ struct tls_context_data
     std::string ciphersuites;
     std::vector<std::string> alpn_protocols;
 
-    //--------------------------------------------
     // Verification
 
     tls_verify_mode verification_mode = tls_verify_mode::none;
     int verify_depth = 100;
     std::string hostname;
-    std::function<bool( bool, void* )> verify_callback;
+    std::function<bool(bool, void*)> verify_callback;
 
-    //--------------------------------------------
     // SNI (Server Name Indication)
 
-    std::function<bool( std::string_view )> servername_callback;
+    std::function<bool(std::string_view)> servername_callback;
 
-    //--------------------------------------------
     // Revocation
 
     std::vector<std::string> crls;
@@ -83,12 +77,11 @@ struct tls_context_data
     bool require_ocsp_staple = false;
     tls_revocation_policy revocation = tls_revocation_policy::disabled;
 
-    //--------------------------------------------
     // Password
 
-    std::function<std::string( std::size_t, tls_password_purpose )> password_callback;
+    std::function<std::string(std::size_t, tls_password_purpose)>
+        password_callback;
 
-    //--------------------------------------------
     // Cached native contexts (intrusive list)
 
     mutable std::mutex native_contexts_mutex_;
@@ -102,13 +95,12 @@ struct tls_context_data
         @return Pointer to the cached native context.
     */
     template<typename Factory>
-    native_context_base*
-    find( void const* service, Factory&& create ) const
+    native_context_base* find(void const* service, Factory&& create) const
     {
-        std::lock_guard<std::mutex> lock( native_contexts_mutex_ );
+        std::lock_guard<std::mutex> lock(native_contexts_mutex_);
 
-        for( auto* p = native_contexts_; p; p = p->next_ )
-            if( p->service_ == service )
+        for (auto* p = native_contexts_; p; p = p->next_)
+            if (p->service_ == service)
                 return p;
 
         // Not found - create and prepend
@@ -122,7 +114,7 @@ struct tls_context_data
     ~tls_context_data()
     {
         // Clean up cached native contexts (no lock needed - destructor)
-        while( native_contexts_ )
+        while (native_contexts_)
         {
             auto* next = native_contexts_->next_;
             delete native_contexts_;
@@ -133,7 +125,6 @@ struct tls_context_data
 
 } // namespace detail
 
-//------------------------------------------------------------------------------
 
 /** Implementation of tls_context.
 
@@ -141,10 +132,8 @@ struct tls_context_data
     cached native SSL contexts as an intrusive list.
 */
 struct tls_context::impl : detail::tls_context_data
-{
-};
+{};
 
-//------------------------------------------------------------------------------
 
 namespace detail {
 
@@ -158,7 +147,7 @@ namespace detail {
     @return Reference to the context implementation.
 */
 inline tls_context_data const&
-get_tls_context_data( tls_context const& ctx ) noexcept
+get_tls_context_data(tls_context const& ctx) noexcept
 {
     return *ctx.impl_;
 }

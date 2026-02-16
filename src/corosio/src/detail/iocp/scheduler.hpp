@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -36,16 +37,14 @@ namespace boost::corosio::detail {
 struct overlapped_op;
 class win_timers;
 
-class win_scheduler
+class win_scheduler final
     : public scheduler_impl
     , public capy::execution_context::service
 {
 public:
     using key_type = scheduler;
 
-    win_scheduler(
-        capy::execution_context& ctx,
-        int concurrency_hint = -1);
+    win_scheduler(capy::execution_context& ctx, int concurrency_hint = -1);
     ~win_scheduler();
     win_scheduler(win_scheduler const&) = delete;
     win_scheduler& operator=(win_scheduler const&) = delete;
@@ -53,8 +52,6 @@ public:
     void shutdown() override;
     void post(std::coroutine_handle<> h) const override;
     void post(scheduler_op* h) const override;
-    void on_work_started() noexcept override;
-    void on_work_finished() noexcept override;
     bool running_in_this_thread() const noexcept override;
     void stop() override;
     bool stopped() const noexcept override;
@@ -65,11 +62,13 @@ public:
     std::size_t poll() override;
     std::size_t poll_one() override;
 
-    void* native_handle() const noexcept { return iocp_; }
+    void* native_handle() const noexcept
+    {
+        return iocp_;
+    }
 
-    // For use by I/O operations to track pending work
-    void work_started() const noexcept override;
-    void work_finished() const noexcept override;
+    void work_started() noexcept override;
+    void work_finished() noexcept override;
 
     // Timer service integration
     void set_timer_service(timer_service* svc);

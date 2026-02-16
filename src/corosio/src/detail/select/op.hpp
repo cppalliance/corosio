@@ -102,9 +102,9 @@ class select_acceptor_impl;
 */
 enum class select_registration_state : std::uint8_t
 {
-    unregistered,  ///< Not registered with reactor
-    registering,   ///< register_fd() called, not yet confirmed
-    registered     ///< Fully registered, ready for events
+    unregistered, ///< Not registered with reactor
+    registering,  ///< register_fd() called, not yet confirmed
+    registered    ///< Fully registered, ready for events
 };
 
 struct select_op : scheduler_op
@@ -125,7 +125,8 @@ struct select_op : scheduler_op
     std::size_t bytes_transferred = 0;
 
     std::atomic<bool> cancelled{false};
-    std::atomic<select_registration_state> registered{select_registration_state::unregistered};
+    std::atomic<select_registration_state> registered{
+        select_registration_state::unregistered};
     std::optional<std::stop_callback<canceller>> stop_cb;
 
     // Prevents use-after-free when socket is closed with pending ops.
@@ -143,7 +144,8 @@ struct select_op : scheduler_op
         errn = 0;
         bytes_transferred = 0;
         cancelled.store(false, std::memory_order_relaxed);
-        registered.store(select_registration_state::unregistered, std::memory_order_relaxed);
+        registered.store(
+            select_registration_state::unregistered, std::memory_order_relaxed);
         impl_ptr.reset();
         socket_impl_ = nullptr;
         acceptor_impl_ = nullptr;
@@ -169,13 +171,16 @@ struct select_op : scheduler_op
             *bytes_out = bytes_transferred;
 
         // Move to stack before destroying the frame
-        capy::executor_ref saved_ex( std::move( ex ) );
-        std::coroutine_handle<> saved_h( std::move( h ) );
+        capy::executor_ref saved_ex(ex);
+        std::coroutine_handle<> saved_h(h);
         impl_ptr.reset();
         dispatch_coro(saved_ex, saved_h).resume();
     }
 
-    virtual bool is_read_operation() const noexcept { return false; }
+    virtual bool is_read_operation() const noexcept
+    {
+        return false;
+    }
     virtual void cancel() noexcept = 0;
 
     void destroy() override
@@ -189,6 +194,7 @@ struct select_op : scheduler_op
         cancelled.store(true, std::memory_order_release);
     }
 
+    // NOLINTNEXTLINE(performance-unnecessary-value-param)
     void start(std::stop_token token)
     {
         cancelled.store(false, std::memory_order_release);
@@ -200,6 +206,7 @@ struct select_op : scheduler_op
             stop_cb.emplace(token, canceller{this});
     }
 
+    // NOLINTNEXTLINE(performance-unnecessary-value-param)
     void start(std::stop_token token, select_socket_impl* impl)
     {
         cancelled.store(false, std::memory_order_release);
@@ -211,6 +218,7 @@ struct select_op : scheduler_op
             stop_cb.emplace(token, canceller{this});
     }
 
+    // NOLINTNEXTLINE(performance-unnecessary-value-param)
     void start(std::stop_token token, select_acceptor_impl* impl)
     {
         cancelled.store(false, std::memory_order_release);
@@ -231,8 +239,7 @@ struct select_op : scheduler_op
     virtual void perform_io() noexcept {}
 };
 
-
-struct select_connect_op : select_op
+struct select_connect_op final : select_op
 {
     endpoint target_endpoint;
 
@@ -257,8 +264,7 @@ struct select_connect_op : select_op
     void cancel() noexcept override;
 };
 
-
-struct select_read_op : select_op
+struct select_read_op final : select_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -289,8 +295,7 @@ struct select_read_op : select_op
     void cancel() noexcept override;
 };
 
-
-struct select_write_op : select_op
+struct select_write_op final : select_op
 {
     static constexpr std::size_t max_buffers = 16;
     iovec iovecs[max_buffers];
@@ -318,8 +323,7 @@ struct select_write_op : select_op
     void cancel() noexcept override;
 };
 
-
-struct select_accept_op : select_op
+struct select_accept_op final : select_op
 {
     int accepted_fd = -1;
     io_object::implementation* peer_impl = nullptr;

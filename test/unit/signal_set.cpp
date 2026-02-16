@@ -24,22 +24,17 @@
 
 namespace boost::corosio {
 
-//------------------------------------------------
 // Signal set tests
 // Focus: construction, add/remove, wait, and cancellation
 //
 // Tests are templated on the context type to run with all available backends.
-//------------------------------------------------
 
 template<class Context>
 struct signal_set_test
 {
-    //--------------------------------------------
     // Construction and move semantics
-    //--------------------------------------------
 
-    void
-    testConstruction()
+    void testConstruction()
     {
         Context ioc;
         signal_set s(ioc);
@@ -47,8 +42,7 @@ struct signal_set_test
         BOOST_TEST_PASS();
     }
 
-    void
-    testConstructWithOneSignal()
+    void testConstructWithOneSignal()
     {
         Context ioc;
         signal_set s(ioc, SIGINT);
@@ -56,8 +50,7 @@ struct signal_set_test
         BOOST_TEST_PASS();
     }
 
-    void
-    testConstructWithTwoSignals()
+    void testConstructWithTwoSignals()
     {
         Context ioc;
         signal_set s(ioc, SIGINT, SIGTERM);
@@ -65,8 +58,7 @@ struct signal_set_test
         BOOST_TEST_PASS();
     }
 
-    void
-    testConstructWithThreeSignals()
+    void testConstructWithThreeSignals()
     {
         Context ioc;
         signal_set s(ioc, SIGINT, SIGTERM, SIGABRT);
@@ -74,8 +66,7 @@ struct signal_set_test
         BOOST_TEST_PASS();
     }
 
-    void
-    testMoveConstruct()
+    void testMoveConstruct()
     {
         Context ioc;
         signal_set s1(ioc, SIGINT);
@@ -84,8 +75,7 @@ struct signal_set_test
         BOOST_TEST_PASS();
     }
 
-    void
-    testMoveAssign()
+    void testMoveAssign()
     {
         Context ioc;
         signal_set s1(ioc, SIGINT);
@@ -95,23 +85,20 @@ struct signal_set_test
         BOOST_TEST_PASS();
     }
 
-    void
-    testMoveAssignCrossContextThrows()
+    void testMoveAssignCrossContext()
     {
         Context ioc1;
         Context ioc2;
         signal_set s1(ioc1);
         signal_set s2(ioc2);
 
-        BOOST_TEST_THROWS(s2 = std::move(s1), std::logic_error);
+        s2 = std::move(s1);
+        BOOST_TEST_PASS();
     }
 
-    //--------------------------------------------
     // Add/remove/clear tests
-    //--------------------------------------------
 
-    void
-    testAdd()
+    void testAdd()
     {
         Context ioc;
         signal_set s(ioc);
@@ -120,19 +107,17 @@ struct signal_set_test
         BOOST_TEST(!result);
     }
 
-    void
-    testAddDuplicate()
+    void testAddDuplicate()
     {
         Context ioc;
         signal_set s(ioc);
 
         BOOST_TEST(!s.add(SIGINT));
-        auto result = s.add(SIGINT);  // Should be no-op
+        auto result = s.add(SIGINT); // Should be no-op
         BOOST_TEST(!result);
     }
 
-    void
-    testAddInvalidSignal()
+    void testAddInvalidSignal()
     {
         Context ioc;
         signal_set s(ioc);
@@ -141,8 +126,7 @@ struct signal_set_test
         BOOST_TEST(!!result);
     }
 
-    void
-    testRemove()
+    void testRemove()
     {
         Context ioc;
         signal_set s(ioc);
@@ -152,8 +136,7 @@ struct signal_set_test
         BOOST_TEST(!result);
     }
 
-    void
-    testRemoveNotPresent()
+    void testRemoveNotPresent()
     {
         Context ioc;
         signal_set s(ioc);
@@ -163,8 +146,7 @@ struct signal_set_test
         BOOST_TEST(!result);
     }
 
-    void
-    testClear()
+    void testClear()
     {
         Context ioc;
         signal_set s(ioc);
@@ -174,21 +156,17 @@ struct signal_set_test
         BOOST_TEST(!s.clear());
     }
 
-    void
-    testClearEmpty()
+    void testClearEmpty()
     {
         Context ioc;
         signal_set s(ioc);
 
-        BOOST_TEST(!s.clear());  // Should be no-op
+        BOOST_TEST(!s.clear()); // Should be no-op
     }
 
-    //--------------------------------------------
     // Async wait tests
-    //--------------------------------------------
 
-    void
-    testWaitWithSignal()
+    void testWaitWithSignal()
     {
         Context ioc;
         signal_set s(ioc, SIGINT);
@@ -198,19 +176,19 @@ struct signal_set_test
         int received_signal = 0;
         std::error_code result_ec;
 
-        auto wait_task = [](signal_set& s_ref, std::error_code& ec_out, int& sig_out, bool& done_out) -> capy::task<>
-        {
+        auto wait_task = [](signal_set& s_ref, std::error_code& ec_out,
+                            int& sig_out, bool& done_out) -> capy::task<> {
             auto [ec, signum] = co_await s_ref.wait();
             ec_out = ec;
             sig_out = signum;
             done_out = true;
         };
-        capy::run_async(ioc.get_executor())(wait_task(s, result_ec, received_signal, completed));
+        capy::run_async(ioc.get_executor())(
+            wait_task(s, result_ec, received_signal, completed));
 
         // Raise signal after a short delay
         t.expires_after(std::chrono::milliseconds(10));
-        auto raise_task = [](timer& t_ref) -> capy::task<>
-        {
+        auto raise_task = [](timer& t_ref) -> capy::task<> {
             (void)co_await t_ref.wait();
             std::raise(SIGINT);
         };
@@ -222,8 +200,7 @@ struct signal_set_test
         BOOST_TEST_EQ(received_signal, SIGINT);
     }
 
-    void
-    testWaitWithDifferentSignal()
+    void testWaitWithDifferentSignal()
     {
         Context ioc;
         signal_set s(ioc, SIGTERM);
@@ -232,18 +209,18 @@ struct signal_set_test
         bool completed = false;
         int received_signal = 0;
 
-        auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
-        {
+        auto wait_task = [](signal_set& s_ref, int& sig_out,
+                            bool& done_out) -> capy::task<> {
             auto [ec, signum] = co_await s_ref.wait();
             sig_out = signum;
             done_out = true;
             (void)ec;
         };
-        capy::run_async(ioc.get_executor())(wait_task(s, received_signal, completed));
+        capy::run_async(ioc.get_executor())(
+            wait_task(s, received_signal, completed));
 
         t.expires_after(std::chrono::milliseconds(10));
-        auto raise_task = [](timer& t_ref) -> capy::task<>
-        {
+        auto raise_task = [](timer& t_ref) -> capy::task<> {
             (void)co_await t_ref.wait();
             std::raise(SIGTERM);
         };
@@ -254,12 +231,9 @@ struct signal_set_test
         BOOST_TEST_EQ(received_signal, SIGTERM);
     }
 
-    //--------------------------------------------
     // Cancellation tests
-    //--------------------------------------------
 
-    void
-    testCancel()
+    void testCancel()
     {
         Context ioc;
         signal_set s(ioc, SIGINT);
@@ -268,8 +242,8 @@ struct signal_set_test
         bool completed = false;
         std::error_code result_ec;
 
-        auto wait_task = [](signal_set& s_ref, std::error_code& ec_out, bool& done_out) -> capy::task<>
-        {
+        auto wait_task = [](signal_set& s_ref, std::error_code& ec_out,
+                            bool& done_out) -> capy::task<> {
             auto [ec, signum] = co_await s_ref.wait();
             ec_out = ec;
             done_out = true;
@@ -278,8 +252,7 @@ struct signal_set_test
         capy::run_async(ioc.get_executor())(wait_task(s, result_ec, completed));
 
         cancel_timer.expires_after(std::chrono::milliseconds(10));
-        auto cancel_task = [](timer& t_ref, signal_set& s_ref) -> capy::task<>
-        {
+        auto cancel_task = [](timer& t_ref, signal_set& s_ref) -> capy::task<> {
             (void)co_await t_ref.wait();
             s_ref.cancel();
         };
@@ -290,18 +263,16 @@ struct signal_set_test
         BOOST_TEST(result_ec == capy::cond::canceled);
     }
 
-    void
-    testCancelNoWaiters()
+    void testCancelNoWaiters()
     {
         Context ioc;
         signal_set s(ioc, SIGINT);
 
-        s.cancel();  // Should be no-op
+        s.cancel(); // Should be no-op
         BOOST_TEST_PASS();
     }
 
-    void
-    testCancelMultipleTimes()
+    void testCancelMultipleTimes()
     {
         Context ioc;
         signal_set s(ioc, SIGINT);
@@ -312,12 +283,9 @@ struct signal_set_test
         BOOST_TEST_PASS();
     }
 
-    //--------------------------------------------
     // Multiple signal set tests
-    //--------------------------------------------
 
-    void
-    testMultipleSignalSetsOnSameSignal()
+    void testMultipleSignalSetsOnSameSignal()
     {
         Context ioc;
         signal_set s1(ioc, SIGINT);
@@ -329,19 +297,20 @@ struct signal_set_test
         int s1_signal = 0;
         int s2_signal = 0;
 
-        auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
-        {
+        auto wait_task = [](signal_set& s_ref, int& sig_out,
+                            bool& done_out) -> capy::task<> {
             auto [ec, signum] = co_await s_ref.wait();
             sig_out = signum;
             done_out = true;
             (void)ec;
         };
-        capy::run_async(ioc.get_executor())(wait_task(s1, s1_signal, s1_completed));
-        capy::run_async(ioc.get_executor())(wait_task(s2, s2_signal, s2_completed));
+        capy::run_async(ioc.get_executor())(
+            wait_task(s1, s1_signal, s1_completed));
+        capy::run_async(ioc.get_executor())(
+            wait_task(s2, s2_signal, s2_completed));
 
         t.expires_after(std::chrono::milliseconds(10));
-        auto raise_task = [](timer& t_ref) -> capy::task<>
-        {
+        auto raise_task = [](timer& t_ref) -> capy::task<> {
             (void)co_await t_ref.wait();
             std::raise(SIGINT);
         };
@@ -354,8 +323,7 @@ struct signal_set_test
         BOOST_TEST_EQ(s2_signal, SIGINT);
     }
 
-    void
-    testSignalSetWithMultipleSignals()
+    void testSignalSetWithMultipleSignals()
     {
         Context ioc;
         signal_set s(ioc, SIGINT, SIGTERM);
@@ -364,19 +332,19 @@ struct signal_set_test
         bool completed = false;
         int received_signal = 0;
 
-        auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
-        {
+        auto wait_task = [](signal_set& s_ref, int& sig_out,
+                            bool& done_out) -> capy::task<> {
             auto [ec, signum] = co_await s_ref.wait();
             sig_out = signum;
             done_out = true;
             (void)ec;
         };
-        capy::run_async(ioc.get_executor())(wait_task(s, received_signal, completed));
+        capy::run_async(ioc.get_executor())(
+            wait_task(s, received_signal, completed));
 
         // Raise SIGTERM (not SIGINT)
         t.expires_after(std::chrono::milliseconds(10));
-        auto raise_task = [](timer& t_ref) -> capy::task<>
-        {
+        auto raise_task = [](timer& t_ref) -> capy::task<> {
             (void)co_await t_ref.wait();
             std::raise(SIGTERM);
         };
@@ -387,12 +355,9 @@ struct signal_set_test
         BOOST_TEST_EQ(received_signal, SIGTERM);
     }
 
-    //--------------------------------------------
     // Queued signal tests
-    //--------------------------------------------
 
-    void
-    testQueuedSignal()
+    void testQueuedSignal()
     {
         Context ioc;
         signal_set s(ioc, SIGINT);
@@ -403,26 +368,24 @@ struct signal_set_test
         bool completed = false;
         int received_signal = 0;
 
-        auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
-        {
+        auto wait_task = [](signal_set& s_ref, int& sig_out,
+                            bool& done_out) -> capy::task<> {
             auto [ec, signum] = co_await s_ref.wait();
             sig_out = signum;
             done_out = true;
             (void)ec;
         };
-        capy::run_async(ioc.get_executor())(wait_task(s, received_signal, completed));
+        capy::run_async(ioc.get_executor())(
+            wait_task(s, received_signal, completed));
 
         ioc.run();
         BOOST_TEST(completed);
         BOOST_TEST_EQ(received_signal, SIGINT);
     }
 
-    //--------------------------------------------
     // Sequential wait tests
-    //--------------------------------------------
 
-    void
-    testSequentialWaits()
+    void testSequentialWaits()
     {
         Context ioc;
         signal_set s(ioc, SIGINT);
@@ -430,8 +393,8 @@ struct signal_set_test
 
         int wait_count = 0;
 
-        auto task = [](signal_set& s_ref, timer& t_ref, int& count_out) -> capy::task<>
-        {
+        auto task = [](signal_set& s_ref, timer& t_ref,
+                       int& count_out) -> capy::task<> {
             // First wait
             t_ref.expires_after(std::chrono::milliseconds(5));
             (void)co_await t_ref.wait();
@@ -458,12 +421,9 @@ struct signal_set_test
         BOOST_TEST_EQ(wait_count, 2);
     }
 
-    //--------------------------------------------
     // io_result tests
-    //--------------------------------------------
 
-    void
-    testIoResultSuccess()
+    void testIoResultSuccess()
     {
         Context ioc;
         signal_set s(ioc, SIGINT);
@@ -471,8 +431,8 @@ struct signal_set_test
 
         bool result_ok = false;
 
-        auto task = [](signal_set& s_ref, timer& t_ref, bool& ok_out) -> capy::task<>
-        {
+        auto task = [](signal_set& s_ref, timer& t_ref,
+                       bool& ok_out) -> capy::task<> {
             t_ref.expires_after(std::chrono::milliseconds(5));
             (void)co_await t_ref.wait();
             std::raise(SIGINT);
@@ -486,8 +446,7 @@ struct signal_set_test
         BOOST_TEST(result_ok);
     }
 
-    void
-    testIoResultCanceled()
+    void testIoResultCanceled()
     {
         Context ioc;
         signal_set s(ioc, SIGINT);
@@ -496,8 +455,8 @@ struct signal_set_test
         bool result_ok = true;
         std::error_code result_ec;
 
-        auto wait_task = [](signal_set& s_ref, bool& ok_out, std::error_code& ec_out) -> capy::task<>
-        {
+        auto wait_task = [](signal_set& s_ref, bool& ok_out,
+                            std::error_code& ec_out) -> capy::task<> {
             auto result = co_await s_ref.wait();
             ok_out = !result.ec;
             ec_out = result.ec;
@@ -505,8 +464,7 @@ struct signal_set_test
         capy::run_async(ioc.get_executor())(wait_task(s, result_ok, result_ec));
 
         cancel_timer.expires_after(std::chrono::milliseconds(10));
-        auto cancel_task = [](timer& t_ref, signal_set& s_ref) -> capy::task<>
-        {
+        auto cancel_task = [](timer& t_ref, signal_set& s_ref) -> capy::task<> {
             (void)co_await t_ref.wait();
             s_ref.cancel();
         };
@@ -517,8 +475,7 @@ struct signal_set_test
         BOOST_TEST(result_ec == capy::cond::canceled);
     }
 
-    void
-    testIoResultStructuredBinding()
+    void testIoResultStructuredBinding()
     {
         Context ioc;
         signal_set s(ioc, SIGINT);
@@ -527,8 +484,8 @@ struct signal_set_test
         std::error_code captured_ec;
         int captured_signal = 0;
 
-        auto task = [](signal_set& s_ref, timer& t_ref, std::error_code& ec_out, int& sig_out) -> capy::task<>
-        {
+        auto task = [](signal_set& s_ref, timer& t_ref, std::error_code& ec_out,
+                       int& sig_out) -> capy::task<> {
             t_ref.expires_after(std::chrono::milliseconds(5));
             (void)co_await t_ref.wait();
             std::raise(SIGINT);
@@ -537,19 +494,17 @@ struct signal_set_test
             ec_out = ec;
             sig_out = signum;
         };
-        capy::run_async(ioc.get_executor())(task(s, t, captured_ec, captured_signal));
+        capy::run_async(ioc.get_executor())(
+            task(s, t, captured_ec, captured_signal));
 
         ioc.run();
         BOOST_TEST(!captured_ec);
         BOOST_TEST_EQ(captured_signal, SIGINT);
     }
 
-    //--------------------------------------------
     // Signal flags tests (cross-platform)
-    //--------------------------------------------
 
-    void
-    testFlagsBitwiseOperations()
+    void testFlagsBitwiseOperations()
     {
         // Test OR
         auto combined = signal_set::restart | signal_set::no_defer;
@@ -567,8 +522,7 @@ struct signal_set_test
         BOOST_TEST((all_but_restart & signal_set::restart) == signal_set::none);
     }
 
-    void
-    testAddWithNoneFlags()
+    void testAddWithNoneFlags()
     {
         Context ioc;
         signal_set s(ioc);
@@ -578,8 +532,7 @@ struct signal_set_test
         BOOST_TEST(!result);
     }
 
-    void
-    testAddWithDontCareFlags()
+    void testAddWithDontCareFlags()
     {
         Context ioc;
         signal_set s(ioc);
@@ -590,14 +543,11 @@ struct signal_set_test
     }
 
 #if BOOST_COROSIO_POSIX
-    //--------------------------------------------
     // Signal flags tests (POSIX only)
     // Windows returns operation_not_supported for
     // flags other than none/dont_care
-    //--------------------------------------------
 
-    void
-    testAddWithFlags()
+    void testAddWithFlags()
     {
         Context ioc;
         signal_set s(ioc);
@@ -607,8 +557,7 @@ struct signal_set_test
         BOOST_TEST(!result);
     }
 
-    void
-    testAddWithMultipleFlags()
+    void testAddWithMultipleFlags()
     {
         Context ioc;
         signal_set s(ioc);
@@ -618,8 +567,7 @@ struct signal_set_test
         BOOST_TEST(!result);
     }
 
-    void
-    testAddSameSignalSameFlags()
+    void testAddSameSignalSameFlags()
     {
         Context ioc;
         signal_set s(ioc);
@@ -629,8 +577,7 @@ struct signal_set_test
         BOOST_TEST(!s.add(SIGINT, signal_set::restart));
     }
 
-    void
-    testAddSameSignalDifferentFlags()
+    void testAddSameSignalDifferentFlags()
     {
         Context ioc;
         signal_set s(ioc);
@@ -638,11 +585,10 @@ struct signal_set_test
         // Add signal with one flag, then try to add with different flag
         BOOST_TEST(!s.add(SIGINT, signal_set::restart));
         auto result = s.add(SIGINT, signal_set::no_defer);
-        BOOST_TEST(!!result);  // Should fail due to flag mismatch
+        BOOST_TEST(!!result); // Should fail due to flag mismatch
     }
 
-    void
-    testAddSameSignalWithDontCare()
+    void testAddSameSignalWithDontCare()
     {
         Context ioc;
         signal_set s(ioc);
@@ -650,11 +596,10 @@ struct signal_set_test
         // Add signal with specific flags, then add with dont_care
         BOOST_TEST(!s.add(SIGINT, signal_set::restart));
         auto result = s.add(SIGINT, signal_set::dont_care);
-        BOOST_TEST(!result);  // Should succeed with dont_care
+        BOOST_TEST(!result); // Should succeed with dont_care
     }
 
-    void
-    testAddSameSignalDontCareFirst()
+    void testAddSameSignalDontCareFirst()
     {
         Context ioc;
         signal_set s(ioc);
@@ -662,11 +607,10 @@ struct signal_set_test
         // Add signal with dont_care, then add with specific flags
         BOOST_TEST(!s.add(SIGINT, signal_set::dont_care));
         auto result = s.add(SIGINT, signal_set::restart);
-        BOOST_TEST(!result);  // Should succeed
+        BOOST_TEST(!result); // Should succeed
     }
 
-    void
-    testMultipleSetsCompatibleFlags()
+    void testMultipleSetsCompatibleFlags()
     {
         Context ioc;
         signal_set s1(ioc);
@@ -677,8 +621,7 @@ struct signal_set_test
         BOOST_TEST(!s2.add(SIGINT, signal_set::restart));
     }
 
-    void
-    testMultipleSetsIncompatibleFlags()
+    void testMultipleSetsIncompatibleFlags()
     {
         Context ioc;
         signal_set s1(ioc);
@@ -688,11 +631,10 @@ struct signal_set_test
         BOOST_TEST(!s1.add(SIGINT, signal_set::restart));
         // Second set tries to add with different flag
         auto result = s2.add(SIGINT, signal_set::no_defer);
-        BOOST_TEST(!!result);  // Should fail
+        BOOST_TEST(!!result); // Should fail
     }
 
-    void
-    testMultipleSetsWithDontCare()
+    void testMultipleSetsWithDontCare()
     {
         Context ioc;
         signal_set s1(ioc);
@@ -704,8 +646,7 @@ struct signal_set_test
         BOOST_TEST(!s2.add(SIGINT, signal_set::dont_care));
     }
 
-    void
-    testWaitWithFlagsWorks()
+    void testWaitWithFlagsWorks()
     {
         Context ioc;
         signal_set s(ioc);
@@ -717,18 +658,18 @@ struct signal_set_test
         bool completed = false;
         int received_signal = 0;
 
-        auto wait_task = [](signal_set& s_ref, int& sig_out, bool& done_out) -> capy::task<>
-        {
+        auto wait_task = [](signal_set& s_ref, int& sig_out,
+                            bool& done_out) -> capy::task<> {
             auto [ec, signum] = co_await s_ref.wait();
             sig_out = signum;
             done_out = true;
             (void)ec;
         };
-        capy::run_async(ioc.get_executor())(wait_task(s, received_signal, completed));
+        capy::run_async(ioc.get_executor())(
+            wait_task(s, received_signal, completed));
 
         t.expires_after(std::chrono::milliseconds(10));
-        auto raise_task = [](timer& t_ref) -> capy::task<>
-        {
+        auto raise_task = [](timer& t_ref) -> capy::task<> {
             (void)co_await t_ref.wait();
             std::raise(SIGINT);
         };
@@ -740,12 +681,9 @@ struct signal_set_test
     }
 
 #else // !BOOST_COROSIO_POSIX
-    //--------------------------------------------
     // Signal flags tests (Windows only)
-    //--------------------------------------------
 
-    void
-    testFlagsNotSupportedOnWindows()
+    void testFlagsNotSupportedOnWindows()
     {
         Context ioc;
         signal_set s(ioc);
@@ -758,8 +696,7 @@ struct signal_set_test
 
 #endif // BOOST_COROSIO_POSIX
 
-    void
-    run()
+    void run()
     {
         // Construction and move semantics
         testConstruction();
@@ -768,7 +705,7 @@ struct signal_set_test
         testConstructWithThreeSignals();
         testMoveConstruct();
         testMoveAssign();
-        testMoveAssignCrossContextThrows();
+        testMoveAssignCrossContext();
 
         // Add/remove/clear tests
         testAdd();

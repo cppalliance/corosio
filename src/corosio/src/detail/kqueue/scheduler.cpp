@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -96,8 +97,7 @@ struct thread_context_guard
 {
     scheduler_context frame_;
 
-    explicit thread_context_guard(
-        kqueue_scheduler const* ctx) noexcept
+    explicit thread_context_guard(kqueue_scheduler const* ctx) noexcept
         : frame_(ctx, context_stack.get())
     {
         context_stack.set(&frame_);
@@ -106,7 +106,8 @@ struct thread_context_guard
     ~thread_context_guard() noexcept
     {
         if (!frame_.private_queue.empty())
-            frame_.key->drain_thread_queue(frame_.private_queue, frame_.private_outstanding_work);
+            frame_.key->drain_thread_queue(
+                frame_.private_queue, frame_.private_outstanding_work);
         context_stack.set(frame_.next);
     }
 };
@@ -154,16 +155,14 @@ drain_private_queue(
 } // namespace
 
 void
-kqueue_scheduler::
-reset_inline_budget() const noexcept
+kqueue_scheduler::reset_inline_budget() const noexcept
 {
     if (auto* ctx = find_context(this))
         ctx->inline_budget = max_inline_budget_;
 }
 
 bool
-kqueue_scheduler::
-try_consume_inline_budget() const noexcept
+kqueue_scheduler::try_consume_inline_budget() const noexcept
 {
     if (auto* ctx = find_context(this))
     {
@@ -177,8 +176,7 @@ try_consume_inline_budget() const noexcept
 }
 
 void
-descriptor_state::
-operator()()
+descriptor_state::operator()()
 {
     // Release ensures the false is visible to the reactor's CAS on other
     // cores. With relaxed, ARM's store buffer can delay the write,
@@ -362,10 +360,7 @@ operator()()
     }
 }
 
-kqueue_scheduler::
-kqueue_scheduler(
-    capy::execution_context& ctx,
-    int)
+kqueue_scheduler::kqueue_scheduler(capy::execution_context& ctx, int)
     : kq_fd_(-1)
     , outstanding_work_(0)
     , stopped_(false)
@@ -399,9 +394,9 @@ kqueue_scheduler(
 
     timer_svc_ = &get_timer_service(ctx, *this);
     timer_svc_->set_on_earliest_changed(
-        timer_service::callback(
-            this,
-            [](void* p) { static_cast<kqueue_scheduler*>(p)->interrupt_reactor(); }));
+        timer_service::callback(this, [](void* p) {
+            static_cast<kqueue_scheduler*>(p)->interrupt_reactor();
+        }));
 
     // Initialize resolver service
     get_resolver_service(ctx, *this);
@@ -413,16 +408,14 @@ kqueue_scheduler(
     completed_ops_.push(&task_op_);
 }
 
-kqueue_scheduler::
-~kqueue_scheduler()
+kqueue_scheduler::~kqueue_scheduler()
 {
     if (kq_fd_ >= 0)
         ::close(kq_fd_);
 }
 
 void
-kqueue_scheduler::
-shutdown()
+kqueue_scheduler::shutdown()
 {
     {
         std::unique_lock lock(mutex_);
@@ -447,19 +440,13 @@ shutdown()
 }
 
 void
-kqueue_scheduler::
-post(std::coroutine_handle<> h) const
+kqueue_scheduler::post(std::coroutine_handle<> h) const
 {
-    struct post_handler final
-        : scheduler_op
+    struct post_handler final : scheduler_op
     {
         std::coroutine_handle<> h_;
 
-        explicit
-        post_handler(std::coroutine_handle<> h)
-            : h_(h)
-        {
-        }
+        explicit post_handler(std::coroutine_handle<> h) : h_(h) {}
 
         ~post_handler() = default;
 
@@ -500,8 +487,7 @@ post(std::coroutine_handle<> h) const
 }
 
 void
-kqueue_scheduler::
-post(scheduler_op* h) const
+kqueue_scheduler::post(scheduler_op* h) const
 {
     // Fast path: same thread posts to private queue
     // Only count locally; work_cleanup batches to global counter
@@ -520,24 +506,8 @@ post(scheduler_op* h) const
     wake_one_thread_and_unlock(lock);
 }
 
-void
-kqueue_scheduler::
-on_work_started() noexcept
-{
-    outstanding_work_.fetch_add(1, std::memory_order_relaxed);
-}
-
-void
-kqueue_scheduler::
-on_work_finished() noexcept
-{
-    if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
-        stop();
-}
-
 bool
-kqueue_scheduler::
-running_in_this_thread() const noexcept
+kqueue_scheduler::running_in_this_thread() const noexcept
 {
     for (auto* c = context_stack.get(); c != nullptr; c = c->next)
         if (c->key == this)
@@ -546,8 +516,7 @@ running_in_this_thread() const noexcept
 }
 
 void
-kqueue_scheduler::
-stop()
+kqueue_scheduler::stop()
 {
     std::unique_lock lock(mutex_);
     if (!stopped_.load(std::memory_order_relaxed))
@@ -559,23 +528,20 @@ stop()
 }
 
 bool
-kqueue_scheduler::
-stopped() const noexcept
+kqueue_scheduler::stopped() const noexcept
 {
     return stopped_.load(std::memory_order_acquire);
 }
 
 void
-kqueue_scheduler::
-restart()
+kqueue_scheduler::restart()
 {
     std::unique_lock lock(mutex_);
     stopped_.store(false, std::memory_order_release);
 }
 
 std::size_t
-kqueue_scheduler::
-run()
+kqueue_scheduler::run()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -600,8 +566,7 @@ run()
 }
 
 std::size_t
-kqueue_scheduler::
-run_one()
+kqueue_scheduler::run_one()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -615,8 +580,7 @@ run_one()
 }
 
 std::size_t
-kqueue_scheduler::
-wait_one(long usec)
+kqueue_scheduler::wait_one(long usec)
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -630,8 +594,7 @@ wait_one(long usec)
 }
 
 std::size_t
-kqueue_scheduler::
-poll()
+kqueue_scheduler::poll()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -656,8 +619,7 @@ poll()
 }
 
 std::size_t
-kqueue_scheduler::
-poll_one()
+kqueue_scheduler::poll_one()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -671,14 +633,15 @@ poll_one()
 }
 
 void
-kqueue_scheduler::
-register_descriptor(int fd, descriptor_state* desc) const
+kqueue_scheduler::register_descriptor(int fd, descriptor_state* desc) const
 {
     struct kevent changes[2];
-    EV_SET(&changes[0], static_cast<uintptr_t>(fd), EVFILT_READ,
-           EV_ADD | EV_CLEAR, 0, 0, desc);
-    EV_SET(&changes[1], static_cast<uintptr_t>(fd), EVFILT_WRITE,
-           EV_ADD | EV_CLEAR, 0, 0, desc);
+    EV_SET(
+        &changes[0], static_cast<uintptr_t>(fd), EVFILT_READ, EV_ADD | EV_CLEAR,
+        0, 0, desc);
+    EV_SET(
+        &changes[1], static_cast<uintptr_t>(fd), EVFILT_WRITE,
+        EV_ADD | EV_CLEAR, 0, 0, desc);
 
     if (::kevent(kq_fd_, changes, 2, nullptr, 0, nullptr) < 0)
         detail::throw_system_error(make_err(errno), "kevent (register)");
@@ -693,49 +656,34 @@ register_descriptor(int fd, descriptor_state* desc) const
 }
 
 void
-kqueue_scheduler::
-deregister_descriptor(int fd) const
+kqueue_scheduler::deregister_descriptor(int fd) const
 {
     struct kevent changes[2];
-    EV_SET(&changes[0], static_cast<uintptr_t>(fd), EVFILT_READ,
-           EV_DELETE, 0, 0, nullptr);
-    EV_SET(&changes[1], static_cast<uintptr_t>(fd), EVFILT_WRITE,
-           EV_DELETE, 0, 0, nullptr);
+    EV_SET(
+        &changes[0], static_cast<uintptr_t>(fd), EVFILT_READ, EV_DELETE, 0, 0,
+        nullptr);
+    EV_SET(
+        &changes[1], static_cast<uintptr_t>(fd), EVFILT_WRITE, EV_DELETE, 0, 0,
+        nullptr);
     // Ignore errors - fd may already be closed (kqueue auto-removes on close)
     ::kevent(kq_fd_, changes, 2, nullptr, 0, nullptr);
 }
 
 void
-kqueue_scheduler::
-work_started() const noexcept
+kqueue_scheduler::work_started() noexcept
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void
-kqueue_scheduler::
-work_finished() const noexcept
+kqueue_scheduler::work_finished() noexcept
 {
     if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
-    {
-        // Last work item completed - wake all threads so they can exit.
-        // signal_all() wakes threads waiting on the condvar.
-        // interrupt_reactor() wakes the reactor thread blocked in kevent().
-        // Both are needed because they target different blocking mechanisms.
-        std::unique_lock lock(mutex_);
-        signal_all(lock);
-        if (task_running_ && !task_interrupted_)
-        {
-            task_interrupted_ = true;
-            lock.unlock();
-            interrupt_reactor();
-        }
-    }
+        stop();
 }
 
 void
-kqueue_scheduler::
-compensating_work_started() const noexcept
+kqueue_scheduler::compensating_work_started() const noexcept
 {
     auto* ctx = find_context(this);
     if (ctx)
@@ -743,8 +691,7 @@ compensating_work_started() const noexcept
 }
 
 void
-kqueue_scheduler::
-drain_thread_queue(op_queue& queue, std::int64_t count) const
+kqueue_scheduler::drain_thread_queue(op_queue& queue, std::int64_t count) const
 {
     // Flush private work count to global counter — private posts
     // only incremented the thread-local counter, not outstanding_work_
@@ -758,8 +705,7 @@ drain_thread_queue(op_queue& queue, std::int64_t count) const
 }
 
 void
-kqueue_scheduler::
-post_deferred_completions(op_queue& ops) const
+kqueue_scheduler::post_deferred_completions(op_queue& ops) const
 {
     if (ops.empty())
         return;
@@ -778,8 +724,7 @@ post_deferred_completions(op_queue& ops) const
 }
 
 void
-kqueue_scheduler::
-interrupt_reactor() const
+kqueue_scheduler::interrupt_reactor() const
 {
     // Only trigger if not already armed to avoid redundant triggers.
     // acq_rel: release makes the true store visible to the reactor;
@@ -787,8 +732,9 @@ interrupt_reactor() const
     // preventing a stale-true read that would silently drop the trigger.
     // On x86 (TSO) this compiles to the same LOCK CMPXCHG as before.
     bool expected = false;
-    if (user_event_armed_.compare_exchange_strong(expected, true,
-            std::memory_order_acq_rel, std::memory_order_acquire))
+    if (user_event_armed_.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel,
+            std::memory_order_acquire))
     {
         struct kevent ev;
         EV_SET(&ev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, nullptr);
@@ -797,16 +743,15 @@ interrupt_reactor() const
 }
 
 void
-kqueue_scheduler::
-signal_all(std::unique_lock<std::mutex>&) const
+kqueue_scheduler::signal_all(std::unique_lock<std::mutex>&) const
 {
     state_ |= signaled_bit;
     cond_.notify_all();
 }
 
 bool
-kqueue_scheduler::
-maybe_unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
+kqueue_scheduler::maybe_unlock_and_signal_one(
+    std::unique_lock<std::mutex>& lock) const
 {
     state_ |= signaled_bit;
     if (state_ > signaled_bit)
@@ -819,8 +764,8 @@ maybe_unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
 }
 
 void
-kqueue_scheduler::
-unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
+kqueue_scheduler::unlock_and_signal_one(
+    std::unique_lock<std::mutex>& lock) const
 {
     state_ |= signaled_bit;
     bool have_waiters = state_ > signaled_bit;
@@ -830,15 +775,13 @@ unlock_and_signal_one(std::unique_lock<std::mutex>& lock) const
 }
 
 void
-kqueue_scheduler::
-clear_signal() const
+kqueue_scheduler::clear_signal() const
 {
     state_ &= ~signaled_bit;
 }
 
 void
-kqueue_scheduler::
-wait_for_signal(std::unique_lock<std::mutex>& lock) const
+kqueue_scheduler::wait_for_signal(std::unique_lock<std::mutex>& lock) const
 {
     while ((state_ & signaled_bit) == 0)
     {
@@ -849,10 +792,8 @@ wait_for_signal(std::unique_lock<std::mutex>& lock) const
 }
 
 void
-kqueue_scheduler::
-wait_for_signal_for(
-    std::unique_lock<std::mutex>& lock,
-    long timeout_us) const
+kqueue_scheduler::wait_for_signal_for(
+    std::unique_lock<std::mutex>& lock, long timeout_us) const
 {
     if ((state_ & signaled_bit) == 0)
     {
@@ -863,8 +804,8 @@ wait_for_signal_for(
 }
 
 void
-kqueue_scheduler::
-wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
+kqueue_scheduler::wake_one_thread_and_unlock(
+    std::unique_lock<std::mutex>& lock) const
 {
     if (maybe_unlock_and_signal_one(lock))
         return;
@@ -882,8 +823,7 @@ wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
 }
 
 long
-kqueue_scheduler::
-calculate_timeout(long requested_timeout_us) const
+kqueue_scheduler::calculate_timeout(long requested_timeout_us) const
 {
     if (requested_timeout_us == 0)
         return 0;
@@ -896,8 +836,9 @@ calculate_timeout(long requested_timeout_us) const
     if (nearest <= now)
         return 0;
 
-    auto timer_timeout_us = std::chrono::duration_cast<
-        std::chrono::microseconds>(nearest - now).count();
+    auto timer_timeout_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(nearest - now)
+            .count();
 
     // Clamp to [0, LONG_MAX] to prevent truncation on 32-bit long platforms
     constexpr auto long_max =
@@ -925,7 +866,7 @@ calculate_timeout(long requested_timeout_us) const
 */
 struct work_cleanup
 {
-    kqueue_scheduler const* scheduler;
+    kqueue_scheduler* scheduler;
     std::unique_lock<std::mutex>* lock;
     scheduler_context* ctx;
 
@@ -935,7 +876,8 @@ struct work_cleanup
         {
             std::int64_t produced = ctx->private_outstanding_work;
             if (produced > 1)
-                scheduler->outstanding_work_.fetch_add(produced - 1, std::memory_order_relaxed);
+                scheduler->outstanding_work_.fetch_add(
+                    produced - 1, std::memory_order_relaxed);
             else if (produced < 1)
                 scheduler->work_finished();
             // produced == 1: net zero, handler consumed what it produced
@@ -978,8 +920,8 @@ struct task_cleanup
 };
 
 void
-kqueue_scheduler::
-run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
+kqueue_scheduler::run_task(
+    std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
 {
     long effective_timeout_us = task_interrupted_ ? 0 : calculate_timeout(-1);
 
@@ -1063,8 +1005,9 @@ run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
         // the store buffer). On x86 (TSO) these compile identically
         // to the weaker orderings.
         bool expected = false;
-        if (desc->is_enqueued_.compare_exchange_strong(expected, true,
-                std::memory_order_acq_rel, std::memory_order_acquire))
+        if (desc->is_enqueued_.compare_exchange_strong(
+                expected, true, std::memory_order_acq_rel,
+                std::memory_order_acquire))
         {
             local_ops.push(desc);
             ++completions_queued;
@@ -1104,8 +1047,8 @@ run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx)
 }
 
 std::size_t
-kqueue_scheduler::
-do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* ctx)
+kqueue_scheduler::do_one(
+    std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* ctx)
 {
     for (;;)
     {
@@ -1117,14 +1060,14 @@ do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* c
         // Handle reactor sentinel - time to poll for I/O
         if (op == &task_op_)
         {
-            bool more_handlers = !completed_ops_.empty() ||
-                (ctx && !ctx->private_queue.empty());
+            bool more_handlers =
+                !completed_ops_.empty() || (ctx && !ctx->private_queue.empty());
 
             // Nothing to run the reactor for: no pending work to wait on,
             // or caller requested a non-blocking poll
             if (!more_handlers &&
                 (outstanding_work_.load(std::memory_order_acquire) == 0 ||
-                    timeout_us == 0))
+                 timeout_us == 0))
             {
                 completed_ops_.push(&task_op_);
                 return 0;

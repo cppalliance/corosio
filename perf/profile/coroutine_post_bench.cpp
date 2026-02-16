@@ -35,7 +35,6 @@
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 
-//------------------------------------------------------------------------------
 
 // Empty coroutine - minimal work, maximizes framework overhead visibility
 capy::task<> empty_task(std::atomic<std::uint64_t>& counter)
@@ -55,7 +54,6 @@ capy::task<> capture_task(std::atomic<std::uint64_t>& counter)
     co_return;
 }
 
-//------------------------------------------------------------------------------
 
 // Run the profiler workload for the specified duration
 void run_workload(
@@ -135,7 +133,6 @@ void run_workload(
     std::cout << "  Avg rate:   " << perf::format_rate(avg_rate) << "\n";
 }
 
-//------------------------------------------------------------------------------
 
 void run_profiler_workload(
     perf::context_factory factory,
@@ -180,7 +177,6 @@ void run_profiler_workload(
     std::cout << "\nWorkload complete.\n";
 }
 
-//------------------------------------------------------------------------------
 
 void print_usage(const char* program_name)
 {

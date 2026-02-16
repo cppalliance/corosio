@@ -50,16 +50,14 @@ public:
 
         @return An executor associated with this context.
     */
-    executor_type
-    get_executor() const noexcept;
+    executor_type get_executor() const noexcept;
 
     /** Signal the context to stop processing.
 
         This causes `run()` to return as soon as possible. Any pending
         work items remain queued.
     */
-    void
-    stop()
+    void stop()
     {
         sched_->stop();
     }
@@ -69,8 +67,7 @@ public:
         @return `true` if `stop()` has been called and `restart()`
             has not been called since.
     */
-    bool
-    stopped() const noexcept
+    bool stopped() const noexcept
     {
         return sched_->stopped();
     }
@@ -80,8 +77,7 @@ public:
         This function must be called before `run()` can be called
         again after `stop()` has been called.
     */
-    void
-    restart()
+    void restart()
     {
         sched_->restart();
     }
@@ -97,8 +93,7 @@ public:
 
         @return The number of handlers executed.
     */
-    std::size_t
-    run()
+    std::size_t run()
     {
         return sched_->run();
     }
@@ -114,8 +109,7 @@ public:
 
         @return The number of handlers executed (0 or 1).
     */
-    std::size_t
-    run_one()
+    std::size_t run_one()
     {
         return sched_->run_one();
     }
@@ -134,8 +128,7 @@ public:
         @return The number of handlers executed.
     */
     template<class Rep, class Period>
-    std::size_t
-    run_for(std::chrono::duration<Rep, Period> const& rel_time)
+    std::size_t run_for(std::chrono::duration<Rep, Period> const& rel_time)
     {
         return run_until(std::chrono::steady_clock::now() + rel_time);
     }
@@ -178,8 +171,7 @@ public:
         @return The number of handlers executed (0 or 1).
     */
     template<class Rep, class Period>
-    std::size_t
-    run_one_for(std::chrono::duration<Rep, Period> const& rel_time)
+    std::size_t run_one_for(std::chrono::duration<Rep, Period> const& rel_time)
     {
         return run_one_until(std::chrono::steady_clock::now() + rel_time);
     }
@@ -209,8 +201,10 @@ public:
                 rel_time = std::chrono::seconds(1);
 
             std::size_t s = sched_->wait_one(
-                static_cast<long>(std::chrono::duration_cast<
-                    std::chrono::microseconds>(rel_time).count()));
+                static_cast<long>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        rel_time)
+                        .count()));
 
             if (s || stopped())
                 return s;
@@ -231,8 +225,7 @@ public:
 
         @return The number of handlers executed.
     */
-    std::size_t
-    poll()
+    std::size_t poll()
     {
         return sched_->poll();
     }
@@ -248,8 +241,7 @@ public:
 
         @return The number of handlers executed (0 or 1).
     */
-    std::size_t
-    poll_one()
+    std::size_t poll_one()
     {
         return sched_->poll_one();
     }
@@ -259,11 +251,7 @@ protected:
 
         Derived classes must set sched_ in their constructor body.
     */
-    basic_io_context()
-        : capy::execution_context(this)
-        , sched_(nullptr)
-    {
-    }
+    basic_io_context() : capy::execution_context(this), sched_(nullptr) {}
 
     detail::scheduler* sched_;
 };
@@ -297,18 +285,13 @@ public:
 
         @param ctx The context to associate with this executor.
     */
-    explicit
-    executor_type(basic_io_context& ctx) noexcept
-        : ctx_(&ctx)
-    {
-    }
+    explicit executor_type(basic_io_context& ctx) noexcept : ctx_(&ctx) {}
 
     /** Return a reference to the associated execution context.
 
         @return Reference to the context.
     */
-    basic_io_context&
-    context() const noexcept
+    basic_io_context& context() const noexcept
     {
         return *ctx_;
     }
@@ -317,8 +300,7 @@ public:
 
         @return `true` if `run()` is being called on this thread.
     */
-    bool
-    running_in_this_thread() const noexcept
+    bool running_in_this_thread() const noexcept
     {
         return ctx_->sched_->running_in_this_thread();
     }
@@ -327,10 +309,9 @@ public:
 
         Must be paired with `on_work_finished()`.
     */
-    void
-    on_work_started() const noexcept
+    void on_work_started() const noexcept
     {
-        ctx_->sched_->on_work_started();
+        ctx_->sched_->work_started();
     }
 
     /** Informs the executor that work has completed.
@@ -338,10 +319,9 @@ public:
         @par Preconditions
         A preceding call to `on_work_started()` on an equal executor.
     */
-    void
-    on_work_finished() const noexcept
+    void on_work_finished() const noexcept
     {
-        ctx_->sched_->on_work_finished();
+        ctx_->sched_->work_finished();
     }
 
     /** Dispatch a coroutine handle.
@@ -354,8 +334,7 @@ public:
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
     */
-    std::coroutine_handle<>
-    dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
     {
         if (running_in_this_thread())
             return h;
@@ -370,8 +349,7 @@ public:
 
         @param h The coroutine handle to post.
     */
-    void
-    post(std::coroutine_handle<> h) const
+    void post(std::coroutine_handle<> h) const
     {
         ctx_->sched_->post(h);
     }
@@ -380,8 +358,7 @@ public:
 
         @return `true` if both executors refer to the same context.
     */
-    bool
-    operator==(executor_type const& other) const noexcept
+    bool operator==(executor_type const& other) const noexcept
     {
         return ctx_ == other.ctx_;
     }
@@ -390,17 +367,14 @@ public:
 
         @return `true` if the executors refer to different contexts.
     */
-    bool
-    operator!=(executor_type const& other) const noexcept
+    bool operator!=(executor_type const& other) const noexcept
     {
         return ctx_ != other.ctx_;
     }
 };
 
-inline
-basic_io_context::executor_type
-basic_io_context::
-get_executor() const noexcept
+inline basic_io_context::executor_type
+basic_io_context::get_executor() const noexcept
 {
     return executor_type(const_cast<basic_io_context&>(*this));
 }

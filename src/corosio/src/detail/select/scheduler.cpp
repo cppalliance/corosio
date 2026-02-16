@@ -21,6 +21,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <limits>
 
@@ -81,8 +82,7 @@ struct thread_context_guard
 {
     scheduler_context frame_;
 
-    explicit thread_context_guard(
-        select_scheduler const* ctx) noexcept
+    explicit thread_context_guard(select_scheduler const* ctx) noexcept
         : frame_{ctx, context_stack.get()}
     {
         context_stack.set(&frame_);
@@ -96,10 +96,7 @@ struct thread_context_guard
 
 } // namespace
 
-select_scheduler::
-select_scheduler(
-    capy::execution_context& ctx,
-    int)
+select_scheduler::select_scheduler(capy::execution_context& ctx, int)
     : pipe_fds_{-1, -1}
     , outstanding_work_(0)
     , stopped_(false)
@@ -142,9 +139,9 @@ select_scheduler(
 
     timer_svc_ = &get_timer_service(ctx, *this);
     timer_svc_->set_on_earliest_changed(
-        timer_service::callback(
-            this,
-            [](void* p) { static_cast<select_scheduler*>(p)->interrupt_reactor(); }));
+        timer_service::callback(this, [](void* p) {
+            static_cast<select_scheduler*>(p)->interrupt_reactor();
+        }));
 
     // Initialize resolver service
     get_resolver_service(ctx, *this);
@@ -156,8 +153,7 @@ select_scheduler(
     completed_ops_.push(&task_op_);
 }
 
-select_scheduler::
-~select_scheduler()
+select_scheduler::~select_scheduler()
 {
     if (pipe_fds_[0] >= 0)
         ::close(pipe_fds_[0]);
@@ -166,8 +162,7 @@ select_scheduler::
 }
 
 void
-select_scheduler::
-shutdown()
+select_scheduler::shutdown()
 {
     {
         std::unique_lock lock(mutex_);
@@ -192,21 +187,15 @@ shutdown()
 }
 
 void
-select_scheduler::
-post(std::coroutine_handle<> h) const
+select_scheduler::post(std::coroutine_handle<> h) const
 {
-    struct post_handler final
-        : scheduler_op
+    struct post_handler final : scheduler_op
     {
         std::coroutine_handle<> h_;
 
-        explicit
-        post_handler(std::coroutine_handle<> h)
-            : h_(h)
-        {
-        }
+        explicit post_handler(std::coroutine_handle<> h) : h_(h) {}
 
-        ~post_handler() = default;
+        ~post_handler() override = default;
 
         void operator()() override
         {
@@ -230,8 +219,7 @@ post(std::coroutine_handle<> h) const
 }
 
 void
-select_scheduler::
-post(scheduler_op* h) const
+select_scheduler::post(scheduler_op* h) const
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 
@@ -240,24 +228,8 @@ post(scheduler_op* h) const
     wake_one_thread_and_unlock(lock);
 }
 
-void
-select_scheduler::
-on_work_started() noexcept
-{
-    outstanding_work_.fetch_add(1, std::memory_order_relaxed);
-}
-
-void
-select_scheduler::
-on_work_finished() noexcept
-{
-    if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
-        stop();
-}
-
 bool
-select_scheduler::
-running_in_this_thread() const noexcept
+select_scheduler::running_in_this_thread() const noexcept
 {
     for (auto* c = context_stack.get(); c != nullptr; c = c->next)
         if (c->key == this)
@@ -266,12 +238,12 @@ running_in_this_thread() const noexcept
 }
 
 void
-select_scheduler::
-stop()
+select_scheduler::stop()
 {
     bool expected = false;
-    if (stopped_.compare_exchange_strong(expected, true,
-            std::memory_order_release, std::memory_order_relaxed))
+    if (stopped_.compare_exchange_strong(
+            expected, true, std::memory_order_release,
+            std::memory_order_relaxed))
     {
         // Wake all threads so they notice stopped_ and exit
         {
@@ -283,22 +255,19 @@ stop()
 }
 
 bool
-select_scheduler::
-stopped() const noexcept
+select_scheduler::stopped() const noexcept
 {
     return stopped_.load(std::memory_order_acquire);
 }
 
 void
-select_scheduler::
-restart()
+select_scheduler::restart()
 {
     stopped_.store(false, std::memory_order_release);
 }
 
 std::size_t
-select_scheduler::
-run()
+select_scheduler::run()
 {
     if (stopped_.load(std::memory_order_acquire))
         return 0;
@@ -319,8 +288,7 @@ run()
 }
 
 std::size_t
-select_scheduler::
-run_one()
+select_scheduler::run_one()
 {
     if (stopped_.load(std::memory_order_acquire))
         return 0;
@@ -336,8 +304,7 @@ run_one()
 }
 
 std::size_t
-select_scheduler::
-wait_one(long usec)
+select_scheduler::wait_one(long usec)
 {
     if (stopped_.load(std::memory_order_acquire))
         return 0;
@@ -353,8 +320,7 @@ wait_one(long usec)
 }
 
 std::size_t
-select_scheduler::
-poll()
+select_scheduler::poll()
 {
     if (stopped_.load(std::memory_order_acquire))
         return 0;
@@ -375,8 +341,7 @@ poll()
 }
 
 std::size_t
-select_scheduler::
-poll_one()
+select_scheduler::poll_one()
 {
     if (stopped_.load(std::memory_order_acquire))
         return 0;
@@ -392,8 +357,7 @@ poll_one()
 }
 
 void
-select_scheduler::
-register_fd(int fd, select_op* op, int events) const
+select_scheduler::register_fd(int fd, select_op* op, int events) const
 {
     // Validate fd is within select() limits
     if (fd < 0 || fd >= FD_SETSIZE)
@@ -418,8 +382,7 @@ register_fd(int fd, select_op* op, int events) const
 }
 
 void
-select_scheduler::
-deregister_fd(int fd, int events) const
+select_scheduler::deregister_fd(int fd, int events) const
 {
     std::lock_guard lock(mutex_);
 
@@ -440,7 +403,7 @@ deregister_fd(int fd, int events) const
         // Recalculate max_fd_ if needed
         if (fd == max_fd_)
         {
-            max_fd_ = pipe_fds_[0];  // At minimum, the pipe read end
+            max_fd_ = pipe_fds_[0]; // At minimum, the pipe read end
             for (auto& [registered_fd, state] : registered_fds_)
             {
                 if (registered_fd > max_fd_)
@@ -451,41 +414,28 @@ deregister_fd(int fd, int events) const
 }
 
 void
-select_scheduler::
-work_started() const noexcept
+select_scheduler::work_started() noexcept
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void
-select_scheduler::
-work_finished() const noexcept
+select_scheduler::work_finished() noexcept
 {
     if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
-    {
-        // Last work item completed - wake all threads so they can exit.
-        std::unique_lock lock(mutex_);
-        wakeup_event_.notify_all();
-        if (reactor_running_ && !reactor_interrupted_)
-        {
-            reactor_interrupted_ = true;
-            lock.unlock();
-            interrupt_reactor();
-        }
-    }
+        stop();
 }
 
 void
-select_scheduler::
-interrupt_reactor() const
+select_scheduler::interrupt_reactor() const
 {
     char byte = 1;
     [[maybe_unused]] auto r = ::write(pipe_fds_[1], &byte, 1);
 }
 
 void
-select_scheduler::
-wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
+select_scheduler::wake_one_thread_and_unlock(
+    std::unique_lock<std::mutex>& lock) const
 {
     if (idle_thread_count_ > 0)
     {
@@ -509,13 +459,15 @@ wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const
 
 struct work_guard
 {
-    select_scheduler const* self;
-    ~work_guard() { self->work_finished(); }
+    select_scheduler* self;
+    ~work_guard()
+    {
+        self->work_finished();
+    }
 };
 
 long
-select_scheduler::
-calculate_timeout(long requested_timeout_us) const
+select_scheduler::calculate_timeout(long requested_timeout_us) const
 {
     if (requested_timeout_us == 0)
         return 0;
@@ -528,23 +480,33 @@ calculate_timeout(long requested_timeout_us) const
     if (nearest <= now)
         return 0;
 
-    auto timer_timeout_us = std::chrono::duration_cast<std::chrono::microseconds>(
-        nearest - now).count();
+    auto timer_timeout_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(nearest - now)
+            .count();
+
+    // Clamp to [0, LONG_MAX] to prevent truncation on 32-bit long platforms
+    constexpr auto long_max =
+        static_cast<long long>((std::numeric_limits<long>::max)());
+    auto capped_timer_us = (std::min)(
+        (std::max)(static_cast<long long>(timer_timeout_us),
+                   static_cast<long long>(0)),
+        long_max);
 
     if (requested_timeout_us < 0)
-        return static_cast<long>(timer_timeout_us);
+        return static_cast<long>(capped_timer_us);
 
+    // requested_timeout_us is already long, so min() result fits in long
     return static_cast<long>((std::min)(
         static_cast<long long>(requested_timeout_us),
-        static_cast<long long>(timer_timeout_us)));
+        capped_timer_us));
 }
 
 void
-select_scheduler::
-run_reactor(std::unique_lock<std::mutex>& lock)
+select_scheduler::run_reactor(std::unique_lock<std::mutex>& lock)
 {
     // Calculate timeout considering timers, use 0 if interrupted
-    long effective_timeout_us = reactor_interrupted_ ? 0 : calculate_timeout(-1);
+    long effective_timeout_us =
+        reactor_interrupted_ ? 0 : calculate_timeout(-1);
 
     // Build fd_sets from registered_fds_
     fd_set read_fds, write_fds, except_fds;
@@ -599,7 +561,9 @@ run_reactor(std::unique_lock<std::mutex>& lock)
     if (ready > 0 && FD_ISSET(pipe_fds_[0], &read_fds))
     {
         char buf[256];
-        while (::read(pipe_fds_[0], buf, sizeof(buf)) > 0) {}
+        while (::read(pipe_fds_[0], buf, sizeof(buf)) > 0)
+        {
+        }
     }
 
     // Process I/O completions
@@ -630,7 +594,8 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                 // Claim the op by exchanging to unregistered. Both registering and
                 // registered states mean the op is ours to complete.
                 auto prev = op->registered.exchange(
-                    select_registration_state::unregistered, std::memory_order_acq_rel);
+                    select_registration_state::unregistered,
+                    std::memory_order_acq_rel);
                 if (prev != select_registration_state::unregistered)
                 {
                     state.read_op = nullptr;
@@ -639,7 +604,8 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     {
                         int errn = 0;
                         socklen_t len = sizeof(errn);
-                        if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &errn, &len) < 0)
+                        if (::getsockopt(
+                                fd, SOL_SOCKET, SO_ERROR, &errn, &len) < 0)
                             errn = errno;
                         if (errn == 0)
                             errn = EIO;
@@ -662,7 +628,8 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                 // Claim the op by exchanging to unregistered. Both registering and
                 // registered states mean the op is ours to complete.
                 auto prev = op->registered.exchange(
-                    select_registration_state::unregistered, std::memory_order_acq_rel);
+                    select_registration_state::unregistered,
+                    std::memory_order_acq_rel);
                 if (prev != select_registration_state::unregistered)
                 {
                     state.write_op = nullptr;
@@ -671,7 +638,8 @@ run_reactor(std::unique_lock<std::mutex>& lock)
                     {
                         int errn = 0;
                         socklen_t len = sizeof(errn);
-                        if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &errn, &len) < 0)
+                        if (::getsockopt(
+                                fd, SOL_SOCKET, SO_ERROR, &errn, &len) < 0)
                             errn = errno;
                         if (errn == 0)
                             errn = EIO;
@@ -703,8 +671,7 @@ run_reactor(std::unique_lock<std::mutex>& lock)
 }
 
 std::size_t
-select_scheduler::
-do_one(long timeout_us)
+select_scheduler::do_one(long timeout_us)
 {
     std::unique_lock lock(mutex_);
 

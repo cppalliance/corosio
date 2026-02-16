@@ -72,45 +72,41 @@ namespace boost::corosio {
 struct cross_ssl_stream_test
 {
 #if defined(BOOST_COROSIO_HAS_OPENSSL) && defined(BOOST_COROSIO_HAS_WOLFSSL)
-    static auto
-    make_openssl( io_stream& s, tls_context ctx )
+    static auto make_openssl(io_stream& s, tls_context ctx)
     {
-        return openssl_stream( &s, ctx );
+        return openssl_stream(&s, ctx);
     }
 
-    static auto
-    make_wolfssl( io_stream& s, tls_context ctx )
+    static auto make_wolfssl(io_stream& s, tls_context ctx)
     {
-        return wolfssl_stream( &s, ctx );
+        return wolfssl_stream(&s, ctx);
     }
 
-    void
-    testCrossImplSuccess()
+    void testCrossImplSuccess()
     {
         using namespace test;
 
         // Skip anon mode for cross-impl: anonymous cipher syntax differs between
         // OpenSSL and WolfSSL, and WolfSSL may not have anon ciphers compiled in.
         // Certificate-based modes test the important interop scenarios.
-        for( auto mode : { context_mode::shared_cert,
-                           context_mode::separate_cert } )
+        for (auto mode :
+             {context_mode::shared_cert, context_mode::separate_cert})
         {
             io_context ioc;
-            auto [client_ctx, server_ctx] = make_contexts( mode );
+            auto [client_ctx, server_ctx] = make_contexts(mode);
 
             // OpenSSL client -> WolfSSL server
-            run_tls_test_no_shutdown( ioc, client_ctx, server_ctx,
-                make_openssl, make_wolfssl );
+            run_tls_test_no_shutdown(
+                ioc, client_ctx, server_ctx, make_openssl, make_wolfssl);
             ioc.restart();
 
             // WolfSSL client -> OpenSSL server
-            run_tls_test_no_shutdown( ioc, client_ctx, server_ctx,
-                make_wolfssl, make_openssl );
+            run_tls_test_no_shutdown(
+                ioc, client_ctx, server_ctx, make_wolfssl, make_openssl);
         }
     }
 
-    void
-    testCrossImplFailure()
+    void testCrossImplFailure()
     {
         using namespace test;
 
@@ -120,8 +116,8 @@ struct cross_ssl_stream_test
         {
             auto client_ctx = make_wrong_ca_context();
             auto server_ctx = make_server_context();
-            run_tls_test_fail( ioc, client_ctx, server_ctx,
-                make_openssl, make_wolfssl );
+            run_tls_test_fail(
+                ioc, client_ctx, server_ctx, make_openssl, make_wolfssl);
             ioc.restart();
         }
 
@@ -129,8 +125,8 @@ struct cross_ssl_stream_test
         {
             auto client_ctx = make_wrong_ca_context();
             auto server_ctx = make_server_context();
-            run_tls_test_fail( ioc, client_ctx, server_ctx,
-                make_wolfssl, make_openssl );
+            run_tls_test_fail(
+                ioc, client_ctx, server_ctx, make_wolfssl, make_openssl);
             ioc.restart();
         }
 
@@ -138,9 +134,9 @@ struct cross_ssl_stream_test
         {
             auto client_ctx = make_client_context();
             auto server_ctx = make_anon_context();
-            server_ctx.set_ciphersuites( "" );
-            run_tls_test_fail( ioc, client_ctx, server_ctx,
-                make_openssl, make_wolfssl );
+            server_ctx.set_ciphersuites("");
+            run_tls_test_fail(
+                ioc, client_ctx, server_ctx, make_openssl, make_wolfssl);
             ioc.restart();
         }
 
@@ -148,15 +144,14 @@ struct cross_ssl_stream_test
         {
             auto client_ctx = make_client_context();
             auto server_ctx = make_anon_context();
-            server_ctx.set_ciphersuites( "" );
-            run_tls_test_fail( ioc, client_ctx, server_ctx,
-                make_wolfssl, make_openssl );
+            server_ctx.set_ciphersuites("");
+            run_tls_test_fail(
+                ioc, client_ctx, server_ctx, make_wolfssl, make_openssl);
         }
     }
 #endif
 
-    void
-    run()
+    void run()
     {
 #if defined(BOOST_COROSIO_HAS_OPENSSL) && defined(BOOST_COROSIO_HAS_WOLFSSL)
         testCrossImplSuccess();
@@ -168,12 +163,12 @@ struct cross_ssl_stream_test
         // tests where this issue doesn't occur.
         // testCrossImplFailure();
 #else
-#  if !defined(BOOST_COROSIO_HAS_OPENSSL)
+#if !defined(BOOST_COROSIO_HAS_OPENSSL)
         std::cerr << "cross_ssl_stream tests SKIPPED: OpenSSL not found\n";
-#  endif
-#  if !defined(BOOST_COROSIO_HAS_WOLFSSL)
+#endif
+#if !defined(BOOST_COROSIO_HAS_WOLFSSL)
         std::cerr << "cross_ssl_stream tests SKIPPED: WolfSSL not found\n";
-#  endif
+#endif
 #endif
     }
 };

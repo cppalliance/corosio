@@ -37,7 +37,6 @@ namespace boost::corosio::detail {
 
 struct scheduler;
 
-//------------------------------------------------------------------------------
 
 /** Abstract signal service for POSIX backends.
 
@@ -50,11 +49,11 @@ class posix_signals
     , public io_object::io_service
 {
 public:
+
 protected:
     posix_signals() = default;
 };
 
-//------------------------------------------------------------------------------
 
 /** Get or create the signal service for the given context.
 

@@ -11,7 +11,6 @@
 #define BOOST_COROSIO_RESOLVER_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io_object.hpp>
 #include <boost/capy/io_result.hpp>
@@ -69,18 +68,15 @@ enum class resolve_flags : unsigned int
 };
 
 /** Combine two resolve_flags. */
-inline
-resolve_flags
+inline resolve_flags
 operator|(resolve_flags a, resolve_flags b) noexcept
 {
     return static_cast<resolve_flags>(
-        static_cast<unsigned int>(a) |
-        static_cast<unsigned int>(b));
+        static_cast<unsigned int>(a) | static_cast<unsigned int>(b));
 }
 
 /** Combine two resolve_flags. */
-inline
-resolve_flags&
+inline resolve_flags&
 operator|=(resolve_flags& a, resolve_flags b) noexcept
 {
     a = a | b;
@@ -88,25 +84,21 @@ operator|=(resolve_flags& a, resolve_flags b) noexcept
 }
 
 /** Intersect two resolve_flags. */
-inline
-resolve_flags
+inline resolve_flags
 operator&(resolve_flags a, resolve_flags b) noexcept
 {
     return static_cast<resolve_flags>(
-        static_cast<unsigned int>(a) &
-        static_cast<unsigned int>(b));
+        static_cast<unsigned int>(a) & static_cast<unsigned int>(b));
 }
 
 /** Intersect two resolve_flags. */
-inline
-resolve_flags&
+inline resolve_flags&
 operator&=(resolve_flags& a, resolve_flags b) noexcept
 {
     a = a & b;
     return a;
 }
 
-//------------------------------------------------------------------------------
 
 /** Bitmask flags for reverse resolver queries.
 
@@ -131,18 +123,15 @@ enum class reverse_flags : unsigned int
 };
 
 /** Combine two reverse_flags. */
-inline
-reverse_flags
+inline reverse_flags
 operator|(reverse_flags a, reverse_flags b) noexcept
 {
     return static_cast<reverse_flags>(
-        static_cast<unsigned int>(a) |
-        static_cast<unsigned int>(b));
+        static_cast<unsigned int>(a) | static_cast<unsigned int>(b));
 }
 
 /** Combine two reverse_flags. */
-inline
-reverse_flags&
+inline reverse_flags&
 operator|=(reverse_flags& a, reverse_flags b) noexcept
 {
     a = a | b;
@@ -150,25 +139,21 @@ operator|=(reverse_flags& a, reverse_flags b) noexcept
 }
 
 /** Intersect two reverse_flags. */
-inline
-reverse_flags
+inline reverse_flags
 operator&(reverse_flags a, reverse_flags b) noexcept
 {
     return static_cast<reverse_flags>(
-        static_cast<unsigned int>(a) &
-        static_cast<unsigned int>(b));
+        static_cast<unsigned int>(a) & static_cast<unsigned int>(b));
 }
 
 /** Intersect two reverse_flags. */
-inline
-reverse_flags&
+inline reverse_flags&
 operator&=(reverse_flags& a, reverse_flags b) noexcept
 {
     a = a & b;
     return a;
 }
 
-//------------------------------------------------------------------------------
 
 /** An asynchronous DNS resolver for coroutine I/O.
 
@@ -239,12 +224,13 @@ class BOOST_COROSIO_DECL resolver : public io_object
             return {ec_, std::move(results_)};
         }
 
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            capy::io_env const* env) -> std::coroutine_handle<>
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return r_.get().resolve(h, env->executor, host_, service_, flags_, token_, &ec_, &results_);
+            return r_.get().resolve(
+                h, env->executor, host_, service_, flags_, token_, &ec_,
+                &results_);
         }
     };
 
@@ -258,9 +244,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
         mutable reverse_resolver_result result_;
 
         reverse_resolve_awaitable(
-            resolver& r,
-            endpoint const& ep,
-            reverse_flags flags) noexcept
+            resolver& r, endpoint const& ep, reverse_flags flags) noexcept
             : r_(r)
             , ep_(ep)
             , flags_(flags)
@@ -279,12 +263,12 @@ class BOOST_COROSIO_DECL resolver : public io_object
             return {ec_, std::move(result_)};
         }
 
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            capy::io_env const* env) -> std::coroutine_handle<>
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return r_.get().reverse_resolve(h, env->executor, ep_, flags_, token_, &ec_, &result_);
+            return r_.get().reverse_resolve(
+                h, env->executor, ep_, flags_, token_, &ec_, &result_);
         }
     };
 
@@ -293,7 +277,7 @@ public:
 
         Cancels any pending operations.
     */
-    ~resolver();
+    ~resolver() override;
 
     /** Construct a resolver from an execution context.
 
@@ -308,10 +292,9 @@ public:
         @param ex The executor whose context will own the resolver.
     */
     template<class Ex>
-        requires (!std::same_as<std::remove_cvref_t<Ex>, resolver>) &&
-                 capy::Executor<Ex>
-    explicit resolver(Ex const& ex)
-        : resolver(ex.context())
+        requires(!std::same_as<std::remove_cvref_t<Ex>, resolver>) &&
+        capy::Executor<Ex>
+    explicit resolver(Ex const& ex) : resolver(ex.context())
     {
     }
 
@@ -321,10 +304,7 @@ public:
 
         @param other The resolver to move from.
     */
-    resolver(resolver&& other) noexcept
-        : io_object(std::move(other))
-    {
-    }
+    resolver(resolver&& other) noexcept : io_object(std::move(other)) {}
 
     /** Move assignment operator.
 
@@ -334,19 +314,11 @@ public:
         @param other The resolver to move from.
 
         @return Reference to this resolver.
-
-        @throws std::logic_error if the resolvers have different
-            execution contexts.
     */
-    resolver& operator=(resolver&& other)
+    resolver& operator=(resolver&& other) noexcept
     {
         if (this != &other)
-        {
-            if (&context() != &other.context())
-                detail::throw_logic_error(
-                    "cannot move resolver across execution contexts");
             h_ = std::move(other.h_);
-        }
         return *this;
     }
 
@@ -371,9 +343,7 @@ public:
         auto [ec, results] = co_await r.resolve("www.example.com", "https");
         @endcode
     */
-    auto resolve(
-        std::string_view host,
-        std::string_view service)
+    auto resolve(std::string_view host, std::string_view service)
     {
         return resolve_awaitable(*this, host, service, resolve_flags::none);
     }
@@ -391,9 +361,7 @@ public:
         @return An awaitable that completes with `io_result<resolver_results>`.
     */
     auto resolve(
-        std::string_view host,
-        std::string_view service,
-        resolve_flags flags)
+        std::string_view host, std::string_view service, resolve_flags flags)
     {
         return resolve_awaitable(*this, host, service, flags);
     }

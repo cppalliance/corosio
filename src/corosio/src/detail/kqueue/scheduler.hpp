@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -55,7 +56,7 @@ struct scheduler_context;
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class kqueue_scheduler
+class kqueue_scheduler final
     : public scheduler_impl
     , public capy::execution_context::service
 {
@@ -77,9 +78,7 @@ public:
             the EVFILT_USER event fails. The error code contains
             the errno from the failed syscall.
     */
-    kqueue_scheduler(
-        capy::execution_context& ctx,
-        int concurrency_hint = -1);
+    kqueue_scheduler(capy::execution_context& ctx, int concurrency_hint = -1);
 
     /** Destructor.
 
@@ -93,11 +92,6 @@ public:
     void shutdown() override;
     void post(std::coroutine_handle<> h) const override;
     void post(scheduler_op* h) const override;
-    // scheduler::on_work_started / on_work_finished — non-const, for executors.
-    // Tracks work that keeps run() alive; the scheduler stops when the
-    // count drops to zero.
-    void on_work_started() noexcept override;
-    void on_work_finished() noexcept override;
     bool running_in_this_thread() const noexcept override;
     void stop() override;
     bool stopped() const noexcept override;
@@ -115,7 +109,10 @@ public:
 
         @return The kqueue file descriptor.
     */
-    int kq_fd() const noexcept { return kq_fd_; }
+    int kq_fd() const noexcept
+    {
+        return kq_fd_;
+    }
 
     /** Reset the thread's inline completion budget.
 
@@ -164,11 +161,8 @@ public:
     */
     void deregister_descriptor(int fd) const;
 
-    // scheduler::work_started / work_finished — const, for I/O services.
-    // Adjusts outstanding_work_ and wakes blocked threads but does not
-    // stop the scheduler when the count reaches zero.
-    void work_started() const noexcept override;
-    void work_finished() const noexcept override;
+    void work_started() noexcept override;
+    void work_finished() noexcept override;
 
     /** Offset a forthcoming work_finished from work_cleanup.
 
@@ -204,7 +198,10 @@ private:
     friend struct work_cleanup;
     friend struct task_cleanup;
 
-    std::size_t do_one(std::unique_lock<std::mutex>& lock, long timeout_us, scheduler_context* ctx);
+    std::size_t do_one(
+        std::unique_lock<std::mutex>& lock,
+        long timeout_us,
+        scheduler_context* ctx);
     void run_task(std::unique_lock<std::mutex>& lock, scheduler_context* ctx);
     void wake_one_thread_and_unlock(std::unique_lock<std::mutex>& lock) const;
     void interrupt_reactor() const;
@@ -275,8 +272,7 @@ private:
         @param timeout_us Maximum time to wait in microseconds.
     */
     void wait_for_signal_for(
-        std::unique_lock<std::mutex>& lock,
-        long timeout_us) const;
+        std::unique_lock<std::mutex>& lock, long timeout_us) const;
 
     int kq_fd_;
     int max_inline_budget_ = 2;
@@ -298,7 +294,7 @@ private:
     mutable bool task_interrupted_ = false;
 
     // Signaling state: bit 0 = signaled, upper bits = waiter count
-    static constexpr std::size_t signaled_bit     = 1;
+    static constexpr std::size_t signaled_bit = 1;
     static constexpr std::size_t waiter_increment = 2;
     mutable std::size_t state_ = 0;
 

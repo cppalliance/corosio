@@ -46,8 +46,8 @@ public:
     virtual void update_timeout(time_point next_expiry) = 0;
 };
 
-std::unique_ptr<win_timers> make_win_timers(
-    void* iocp, long* dispatch_required);
+std::unique_ptr<win_timers>
+make_win_timers(void* iocp, long* dispatch_required);
 
 } // namespace boost::corosio::detail
 

@@ -68,8 +68,7 @@ using NtCreateWaitCompletionPacketFn = NTSTATUS(NTAPI*)(
     ULONG DesiredAccess,
     void* ObjectAttributes);
 
-win_timers_nt::
-win_timers_nt(
+win_timers_nt::win_timers_nt(
     void* iocp,
     long* dispatch_required,
     NtAssociateWaitCompletionPacketFn nt_assoc,
@@ -83,8 +82,7 @@ win_timers_nt(
 }
 
 std::unique_ptr<win_timers_nt>
-win_timers_nt::
-try_create(void* iocp, long* dispatch_required)
+win_timers_nt::try_create(void* iocp, long* dispatch_required)
 {
     HMODULE ntdll = ::GetModuleHandleW(L"ntdll.dll");
     if (!ntdll)
@@ -100,8 +98,8 @@ try_create(void* iocp, long* dispatch_required)
     if (!nt_create || !nt_assoc || !nt_cancel)
         return nullptr;
 
-    auto p = std::unique_ptr<win_timers_nt>(new win_timers_nt(
-        iocp, dispatch_required, nt_assoc, nt_cancel));
+    auto p = std::unique_ptr<win_timers_nt>(
+        new win_timers_nt(iocp, dispatch_required, nt_assoc, nt_cancel));
 
     if (!p->waitable_timer_)
         return nullptr;
@@ -114,8 +112,7 @@ try_create(void* iocp, long* dispatch_required)
     return p;
 }
 
-win_timers_nt::
-~win_timers_nt()
+win_timers_nt::~win_timers_nt()
 {
     if (wait_packet_)
         ::CloseHandle(wait_packet_);
@@ -124,22 +121,19 @@ win_timers_nt::
 }
 
 void
-win_timers_nt::
-start()
+win_timers_nt::start()
 {
     associate_timer();
 }
 
 void
-win_timers_nt::
-stop()
+win_timers_nt::stop()
 {
     nt_cancel_(wait_packet_, TRUE);
 }
 
 void
-win_timers_nt::
-update_timeout(time_point next_expiry)
+win_timers_nt::update_timeout(time_point next_expiry)
 {
     BOOST_COROSIO_ASSERT(waitable_timer_);
 
@@ -163,7 +157,8 @@ update_timeout(time_point next_expiry)
     {
         // Convert duration to 100ns units (negative = relative)
         auto duration = next_expiry - now;
-        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration)
+                      .count();
         due_time.QuadPart = -(ns / 100);
         if (due_time.QuadPart == 0)
             due_time.QuadPart = -1;
@@ -174,30 +169,21 @@ update_timeout(time_point next_expiry)
 }
 
 void
-win_timers_nt::
-associate_timer()
+win_timers_nt::associate_timer()
 {
     // Set dispatch flag before associating
     ::InterlockedExchange(dispatch_required_, 1);
 
     BOOLEAN already_signaled = FALSE;
     NTSTATUS status = nt_associate_(
-        wait_packet_,
-        iocp_,
-        waitable_timer_,
-        reinterpret_cast<void*>(key_wake_dispatch),
-        nullptr,
-        STATUS_SUCCESS,
-        0,
+        wait_packet_, iocp_, waitable_timer_,
+        reinterpret_cast<void*>(key_wake_dispatch), nullptr, STATUS_SUCCESS, 0,
         &already_signaled);
 
     if (status == STATUS_SUCCESS && already_signaled)
     {
         ::PostQueuedCompletionStatus(
-            static_cast<HANDLE>(iocp_),
-            0,
-            key_wake_dispatch,
-            nullptr);
+            static_cast<HANDLE>(iocp_), 0, key_wake_dispatch, nullptr);
     }
 }
 

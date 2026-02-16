@@ -139,12 +139,10 @@ flags_to_ni_flags(reverse_flags flags)
 // Convert addrinfo results to resolver_results
 resolver_results
 convert_results(
-    struct addrinfo* ai,
-    std::string_view host,
-    std::string_view service)
+    struct addrinfo* ai, std::string_view host, std::string_view service)
 {
     std::vector<resolver_entry> entries;
-    entries.reserve(4);  // Most lookups return 1-4 addresses
+    entries.reserve(4); // Most lookups return 1-4 addresses
 
     for (auto* p = ai; p != nullptr; p = p->ai_next)
     {
@@ -187,8 +185,7 @@ make_gai_error(int gai_err)
     case EAI_FAIL:
         // Non-recoverable failure
         return std::error_code(
-            static_cast<int>(std::errc::io_error),
-            std::generic_category());
+            static_cast<int>(std::errc::io_error), std::generic_category());
 
     case EAI_FAMILY:
         // Address family not supported
@@ -227,21 +224,17 @@ make_gai_error(int gai_err)
     default:
         // Unknown error
         return std::error_code(
-            static_cast<int>(std::errc::io_error),
-            std::generic_category());
+            static_cast<int>(std::errc::io_error), std::generic_category());
     }
 }
 
 } // anonymous namespace
 
-//------------------------------------------------------------------------------
 
 class posix_resolver_impl;
 class posix_resolver_service_impl;
 
-//------------------------------------------------------------------------------
 // posix_resolver_impl - per-resolver implementation
-//------------------------------------------------------------------------------
 
 /** Resolver implementation for POSIX backends.
 
@@ -282,7 +275,7 @@ class posix_resolver_service_impl;
     Distinct objects: Safe.
     Shared objects: Unsafe. See single-inflight contract above.
 */
-class posix_resolver_impl
+class posix_resolver_impl final
     : public resolver::implementation
     , public std::enable_shared_from_this<posix_resolver_impl>
     , public intrusive_list<posix_resolver_impl>::node
@@ -290,16 +283,17 @@ class posix_resolver_impl
     friend class posix_resolver_service_impl;
 
 public:
-    //--------------------------------------------------------------------------
     // resolve_op - operation state for a single DNS resolution
-    //--------------------------------------------------------------------------
 
     struct resolve_op : scheduler_op
     {
         struct canceller
         {
             resolve_op* op;
-            void operator()() const noexcept { op->request_cancel(); }
+            void operator()() const noexcept
+            {
+                op->request_cancel();
+            }
         };
 
         // Coroutine state
@@ -333,16 +327,17 @@ public:
         void start(std::stop_token token);
     };
 
-    //--------------------------------------------------------------------------
     // reverse_resolve_op - operation state for reverse DNS resolution
-    //--------------------------------------------------------------------------
 
     struct reverse_resolve_op : scheduler_op
     {
         struct canceller
         {
             reverse_resolve_op* op;
-            void operator()() const noexcept { op->request_cancel(); }
+            void operator()() const noexcept
+            {
+                op->request_cancel();
+            }
         };
 
         // Coroutine state
@@ -409,28 +404,23 @@ private:
     posix_resolver_service_impl& svc_;
 };
 
-//------------------------------------------------------------------------------
 // posix_resolver_service_impl - concrete service implementation
-//------------------------------------------------------------------------------
 
-class posix_resolver_service_impl : public posix_resolver_service
+class posix_resolver_service_impl final : public posix_resolver_service
 {
 public:
     using key_type = posix_resolver_service;
 
-    posix_resolver_service_impl(
-        capy::execution_context&,
-        scheduler& sched)
+    posix_resolver_service_impl(capy::execution_context&, scheduler& sched)
         : sched_(&sched)
     {
     }
 
-    ~posix_resolver_service_impl()
-    {
-    }
+    ~posix_resolver_service_impl() override {}
 
     posix_resolver_service_impl(posix_resolver_service_impl const&) = delete;
-    posix_resolver_service_impl& operator=(posix_resolver_service_impl const&) = delete;
+    posix_resolver_service_impl&
+    operator=(posix_resolver_service_impl const&) = delete;
 
     io_object::implementation* construct() override;
 
@@ -460,17 +450,16 @@ private:
     std::atomic<bool> shutting_down_{false};
     std::size_t active_threads_ = 0;
     intrusive_list<posix_resolver_impl> resolver_list_;
-    std::unordered_map<posix_resolver_impl*,
-        std::shared_ptr<posix_resolver_impl>> resolver_ptrs_;
+    std::unordered_map<
+        posix_resolver_impl*,
+        std::shared_ptr<posix_resolver_impl>>
+        resolver_ptrs_;
 };
 
-//------------------------------------------------------------------------------
 // posix_resolver_impl::resolve_op implementation
-//------------------------------------------------------------------------------
 
 void
-posix_resolver_impl::resolve_op::
-reset() noexcept
+posix_resolver_impl::resolve_op::reset() noexcept
 {
     host.clear();
     service.clear();
@@ -484,10 +473,9 @@ reset() noexcept
 }
 
 void
-posix_resolver_impl::resolve_op::
-operator()()
+posix_resolver_impl::resolve_op::operator()()
 {
-    stop_cb.reset();  // Disconnect stop callback
+    stop_cb.reset(); // Disconnect stop callback
 
     bool const was_cancelled = cancelled.load(std::memory_order_acquire);
 
@@ -498,7 +486,7 @@ operator()()
         else if (gai_error != 0)
             *ec_out = make_gai_error(gai_error);
         else
-            *ec_out = {};  // Clear on success
+            *ec_out = {}; // Clear on success
     }
 
     if (out && !was_cancelled && gai_error == 0)
@@ -509,22 +497,20 @@ operator()()
 }
 
 void
-posix_resolver_impl::resolve_op::
-destroy()
+posix_resolver_impl::resolve_op::destroy()
 {
     stop_cb.reset();
 }
 
 void
-posix_resolver_impl::resolve_op::
-request_cancel() noexcept
+posix_resolver_impl::resolve_op::request_cancel() noexcept
 {
     cancelled.store(true, std::memory_order_release);
 }
 
 void
-posix_resolver_impl::resolve_op::
-start(std::stop_token token)
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
+posix_resolver_impl::resolve_op::start(std::stop_token token)
 {
     cancelled.store(false, std::memory_order_release);
     stop_cb.reset();
@@ -533,13 +519,10 @@ start(std::stop_token token)
         stop_cb.emplace(token, canceller{this});
 }
 
-//------------------------------------------------------------------------------
 // posix_resolver_impl::reverse_resolve_op implementation
-//------------------------------------------------------------------------------
 
 void
-posix_resolver_impl::reverse_resolve_op::
-reset() noexcept
+posix_resolver_impl::reverse_resolve_op::reset() noexcept
 {
     ep = endpoint{};
     flags = reverse_flags::none;
@@ -553,10 +536,9 @@ reset() noexcept
 }
 
 void
-posix_resolver_impl::reverse_resolve_op::
-operator()()
+posix_resolver_impl::reverse_resolve_op::operator()()
 {
-    stop_cb.reset();  // Disconnect stop callback
+    stop_cb.reset(); // Disconnect stop callback
 
     bool const was_cancelled = cancelled.load(std::memory_order_acquire);
 
@@ -567,7 +549,7 @@ operator()()
         else if (gai_error != 0)
             *ec_out = make_gai_error(gai_error);
         else
-            *ec_out = {};  // Clear on success
+            *ec_out = {}; // Clear on success
     }
 
     if (result_out && !was_cancelled && gai_error == 0)
@@ -581,22 +563,20 @@ operator()()
 }
 
 void
-posix_resolver_impl::reverse_resolve_op::
-destroy()
+posix_resolver_impl::reverse_resolve_op::destroy()
 {
     stop_cb.reset();
 }
 
 void
-posix_resolver_impl::reverse_resolve_op::
-request_cancel() noexcept
+posix_resolver_impl::reverse_resolve_op::request_cancel() noexcept
 {
     cancelled.store(true, std::memory_order_release);
 }
 
 void
-posix_resolver_impl::reverse_resolve_op::
-start(std::stop_token token)
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
+posix_resolver_impl::reverse_resolve_op::start(std::stop_token token)
 {
     cancelled.store(false, std::memory_order_release);
     stop_cb.reset();
@@ -605,13 +585,10 @@ start(std::stop_token token)
         stop_cb.emplace(token, canceller{this});
 }
 
-//------------------------------------------------------------------------------
 // posix_resolver_impl implementation
-//------------------------------------------------------------------------------
 
 std::coroutine_handle<>
-posix_resolver_impl::
-resolve(
+posix_resolver_impl::resolve(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     std::string_view host,
@@ -652,14 +629,15 @@ resolve(
             struct addrinfo* ai = nullptr;
             int result = ::getaddrinfo(
                 op_.host.empty() ? nullptr : op_.host.c_str(),
-                op_.service.empty() ? nullptr : op_.service.c_str(),
-                &hints, &ai);
+                op_.service.empty() ? nullptr : op_.service.c_str(), &hints,
+                &ai);
 
             if (!op_.cancelled.load(std::memory_order_acquire))
             {
                 if (result == 0 && ai)
                 {
-                    op_.stored_results = convert_results(ai, op_.host, op_.service);
+                    op_.stored_results =
+                        convert_results(ai, op_.host, op_.service);
                     op_.gai_error = 0;
                 }
                 else
@@ -686,15 +664,14 @@ resolve(
         svc_.thread_finished();
 
         // Set error and post completion to avoid hanging the coroutine
-        op_.gai_error = EAI_MEMORY;  // Map to "not enough memory"
+        op_.gai_error = EAI_MEMORY; // Map to "not enough memory"
         svc_.post(&op_);
     }
     return std::noop_coroutine();
 }
 
 std::coroutine_handle<>
-posix_resolver_impl::
-reverse_resolve(
+posix_resolver_impl::reverse_resolve(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     endpoint const& ep,
@@ -746,10 +723,8 @@ reverse_resolve(
             char service[NI_MAXSERV];
 
             int result = ::getnameinfo(
-                reinterpret_cast<sockaddr*>(&ss), ss_len,
-                host, sizeof(host),
-                service, sizeof(service),
-                flags_to_ni_flags(reverse_op_.flags));
+                reinterpret_cast<sockaddr*>(&ss), ss_len, host, sizeof(host),
+                service, sizeof(service), flags_to_ni_flags(reverse_op_.flags));
 
             if (!reverse_op_.cancelled.load(std::memory_order_acquire))
             {
@@ -787,20 +762,16 @@ reverse_resolve(
 }
 
 void
-posix_resolver_impl::
-cancel() noexcept
+posix_resolver_impl::cancel() noexcept
 {
     op_.request_cancel();
     reverse_op_.request_cancel();
 }
 
-//------------------------------------------------------------------------------
 // posix_resolver_service_impl implementation
-//------------------------------------------------------------------------------
 
 void
-posix_resolver_service_impl::
-shutdown()
+posix_resolver_service_impl::shutdown()
 {
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -827,8 +798,7 @@ shutdown()
 }
 
 io_object::implementation*
-posix_resolver_service_impl::
-construct()
+posix_resolver_service_impl::construct()
 {
     auto ptr = std::make_shared<posix_resolver_impl>(*this);
     auto* impl = ptr.get();
@@ -843,8 +813,7 @@ construct()
 }
 
 void
-posix_resolver_service_impl::
-destroy_impl(posix_resolver_impl& impl)
+posix_resolver_service_impl::destroy_impl(posix_resolver_impl& impl)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     resolver_list_.remove(&impl);
@@ -852,37 +821,32 @@ destroy_impl(posix_resolver_impl& impl)
 }
 
 void
-posix_resolver_service_impl::
-post(scheduler_op* op)
+posix_resolver_service_impl::post(scheduler_op* op)
 {
     sched_->post(op);
 }
 
 void
-posix_resolver_service_impl::
-work_started() noexcept
+posix_resolver_service_impl::work_started() noexcept
 {
     sched_->work_started();
 }
 
 void
-posix_resolver_service_impl::
-work_finished() noexcept
+posix_resolver_service_impl::work_finished() noexcept
 {
     sched_->work_finished();
 }
 
 void
-posix_resolver_service_impl::
-thread_started() noexcept
+posix_resolver_service_impl::thread_started() noexcept
 {
     std::lock_guard<std::mutex> lock(mutex_);
     ++active_threads_;
 }
 
 void
-posix_resolver_service_impl::
-thread_finished() noexcept
+posix_resolver_service_impl::thread_finished() noexcept
 {
     std::lock_guard<std::mutex> lock(mutex_);
     --active_threads_;
@@ -890,15 +854,12 @@ thread_finished() noexcept
 }
 
 bool
-posix_resolver_service_impl::
-is_shutting_down() const noexcept
+posix_resolver_service_impl::is_shutting_down() const noexcept
 {
     return shutting_down_.load(std::memory_order_acquire);
 }
 
-//------------------------------------------------------------------------------
 // Free function to get/create the resolver service
-//------------------------------------------------------------------------------
 
 posix_resolver_service&
 get_resolver_service(capy::execution_context& ctx, scheduler& sched)

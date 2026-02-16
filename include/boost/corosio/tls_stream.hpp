@@ -111,8 +111,7 @@ public:
 
         @return An awaitable yielding `(error_code)`.
     */
-    virtual capy::io_task<>
-    handshake(handshake_type type) = 0;
+    virtual capy::io_task<> handshake(handshake_type type) = 0;
 
     /** Perform a graceful TLS shutdown asynchronously.
 
@@ -121,8 +120,7 @@ public:
 
         @return An awaitable yielding `(error_code)`.
     */
-    virtual capy::io_task<>
-    shutdown() = 0;
+    virtual capy::io_task<> shutdown() = 0;
 
     /** Reset TLS session state for reuse.
 
@@ -147,8 +145,7 @@ public:
             TLS data is discarded and the peer will observe a
             truncated stream.
     */
-    virtual void
-    reset() = 0;
+    virtual void reset() = 0;
 
     /** Returns a reference to the underlying stream.
 
@@ -162,15 +159,13 @@ public:
 
         @return Reference to the wrapped stream.
     */
-    virtual capy::any_stream&
-    next_layer() noexcept = 0;
+    virtual capy::any_stream& next_layer() noexcept = 0;
 
     /** Returns a const reference to the underlying stream.
 
         @return Const reference to the wrapped stream.
     */
-    virtual capy::any_stream const&
-    next_layer() const noexcept = 0;
+    virtual capy::any_stream const& next_layer() const noexcept = 0;
 
     /** Returns the name of the TLS backend.
 
@@ -191,8 +186,8 @@ protected:
 
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
-    virtual capy::io_task<std::size_t>
-    do_read_some(capy::mutable_buffer_array<capy::detail::max_iovec_> buffers) = 0;
+    virtual capy::io_task<std::size_t> do_read_some(
+        capy::mutable_buffer_array<capy::detail::max_iovec_> buffers) = 0;
 
     /** Virtual write implementation.
 
@@ -203,8 +198,8 @@ protected:
 
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
-    virtual capy::io_task<std::size_t>
-    do_write_some(capy::const_buffer_array<capy::detail::max_iovec_> buffers) = 0;
+    virtual capy::io_task<std::size_t> do_write_some(
+        capy::const_buffer_array<capy::detail::max_iovec_> buffers) = 0;
 };
 
 } // namespace boost::corosio

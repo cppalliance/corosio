@@ -15,7 +15,6 @@
 #include "src/detail/iocp/scheduler.hpp"
 #include "src/detail/dispatch_coro.hpp"
 
-#include <boost/corosio/detail/except.hpp>
 #include <boost/capy/error.hpp>
 
 #include <csignal>
@@ -67,7 +66,7 @@
 
     3. start_wait() checks for queued signals first:
        - If undelivered > 0, consume one and post immediate completion
-       - Otherwise, set waiting_ = true and call on_work_started() to keep context alive
+       - Otherwise, set waiting_ = true and call work_started() to keep context alive
 
     Locking Protocol
     ----------------
@@ -83,7 +82,7 @@
     -------------
 
     When waiting for a signal:
-       - start_wait() calls sched_.on_work_started() to keep io_context::run() alive
+       - start_wait() calls sched_.work_started() to keep io_context::run() alive
        - signal_op::svc is set to point to the service
        - signal_op::operator()() calls work_finished() after resuming the coroutine
 
@@ -103,11 +102,9 @@ namespace boost::corosio {
 
 namespace detail {
 
-//------------------------------------------------------------------------------
 //
 // Global signal state
 //
-//------------------------------------------------------------------------------
 
 namespace {
 
@@ -118,7 +115,8 @@ struct signal_state
     std::size_t registration_count[max_signal_number] = {};
 };
 
-signal_state* get_signal_state()
+signal_state*
+get_signal_state()
 {
     static signal_state state;
     return &state;
@@ -127,7 +125,8 @@ signal_state* get_signal_state()
 // C signal handler. Note: On POSIX this would need to be async-signal-safe,
 // but Windows signal handling is synchronous (runs on the faulting thread)
 // so we can safely acquire locks here.
-extern "C" void corosio_signal_handler(int signal_number)
+extern "C" void
+corosio_signal_handler(int signal_number)
 {
     win_signals::deliver_signal(signal_number);
 
@@ -138,16 +137,11 @@ extern "C" void corosio_signal_handler(int signal_number)
 
 } // namespace
 
-//------------------------------------------------------------------------------
 //
 // signal_op
 //
-//------------------------------------------------------------------------------
 
-signal_op::signal_op() noexcept
-    : scheduler_op(&do_complete)
-{
-}
+signal_op::signal_op() noexcept : scheduler_op(&do_complete) {}
 
 void
 signal_op::do_complete(
@@ -176,21 +170,14 @@ signal_op::do_complete(
         service->work_finished();
 }
 
-//------------------------------------------------------------------------------
 //
 // win_signal_impl
 //
-//------------------------------------------------------------------------------
 
-win_signal_impl::
-win_signal_impl(win_signals& svc) noexcept
-    : svc_(svc)
-{
-}
+win_signal_impl::win_signal_impl(win_signals& svc) noexcept : svc_(svc) {}
 
 std::coroutine_handle<>
-win_signal_impl::
-wait(
+win_signal_impl::wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
@@ -221,41 +208,34 @@ wait(
 }
 
 std::error_code
-win_signal_impl::
-add(int signal_number, signal_set::flags_t flags)
+win_signal_impl::add(int signal_number, signal_set::flags_t flags)
 {
     return svc_.add_signal(*this, signal_number, flags);
 }
 
 std::error_code
-win_signal_impl::
-remove(int signal_number)
+win_signal_impl::remove(int signal_number)
 {
     return svc_.remove_signal(*this, signal_number);
 }
 
 std::error_code
-win_signal_impl::
-clear()
+win_signal_impl::clear()
 {
     return svc_.clear_signals(*this);
 }
 
 void
-win_signal_impl::
-cancel()
+win_signal_impl::cancel()
 {
     svc_.cancel_wait(*this);
 }
 
-//------------------------------------------------------------------------------
 //
 // win_signals
 //
-//------------------------------------------------------------------------------
 
-win_signals::
-win_signals(capy::execution_context& ctx)
+win_signals::win_signals(capy::execution_context& ctx)
     : sched_(ctx.use_service<win_scheduler>())
 {
     for (int i = 0; i < max_signal_number; ++i)
@@ -264,15 +244,13 @@ win_signals(capy::execution_context& ctx)
     add_service(this);
 }
 
-win_signals::
-~win_signals()
+win_signals::~win_signals()
 {
     remove_service(this);
 }
 
 void
-win_signals::
-shutdown()
+win_signals::shutdown()
 {
     std::lock_guard<win_mutex> lock(mutex_);
 
@@ -290,8 +268,7 @@ shutdown()
 }
 
 io_object::implementation*
-win_signals::
-construct()
+win_signals::construct()
 {
     auto* impl = new win_signal_impl(*this);
 
@@ -304,8 +281,7 @@ construct()
 }
 
 void
-win_signals::
-destroy(io_object::implementation* p)
+win_signals::destroy(io_object::implementation* p)
 {
     auto& impl = static_cast<win_signal_impl&>(*p);
     impl.clear();
@@ -314,8 +290,7 @@ destroy(io_object::implementation* p)
 }
 
 void
-win_signals::
-destroy_impl(win_signal_impl& impl)
+win_signals::destroy_impl(win_signal_impl& impl)
 {
     {
         std::lock_guard<win_mutex> lock(mutex_);
@@ -326,11 +301,8 @@ destroy_impl(win_signal_impl& impl)
 }
 
 std::error_code
-win_signals::
-add_signal(
-    win_signal_impl& impl,
-    int signal_number,
-    signal_set::flags_t flags)
+win_signals::add_signal(
+    win_signal_impl& impl, int signal_number, signal_set::flags_t flags)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
         return make_error_code(std::errc::invalid_argument);
@@ -389,10 +361,7 @@ add_signal(
 }
 
 std::error_code
-win_signals::
-remove_signal(
-    win_signal_impl& impl,
-    int signal_number)
+win_signals::remove_signal(win_signal_impl& impl, int signal_number)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
         return make_error_code(std::errc::invalid_argument);
@@ -438,8 +407,7 @@ remove_signal(
 }
 
 std::error_code
-win_signals::
-clear_signals(win_signal_impl& impl)
+win_signals::clear_signals(win_signal_impl& impl)
 {
     signal_state* state = get_signal_state();
     std::lock_guard<std::mutex> state_lock(state->mutex);
@@ -480,8 +448,7 @@ clear_signals(win_signal_impl& impl)
 }
 
 void
-win_signals::
-cancel_wait(win_signal_impl& impl)
+win_signals::cancel_wait(win_signal_impl& impl)
 {
     bool was_waiting = false;
     signal_op* op = nullptr;
@@ -503,13 +470,12 @@ cancel_wait(win_signal_impl& impl)
         if (op->signal_out)
             *op->signal_out = 0;
         dispatch_coro(op->d, op->h).resume();
-        sched_.on_work_finished();
+        sched_.work_finished();
     }
 }
 
 void
-win_signals::
-start_wait(win_signal_impl& impl, signal_op* op)
+win_signals::start_wait(win_signal_impl& impl, signal_op* op)
 {
     {
         std::lock_guard<win_mutex> lock(mutex_);
@@ -522,7 +488,7 @@ start_wait(win_signal_impl& impl, signal_op* op)
             {
                 --reg->undelivered;
                 op->signal_number = reg->signal_number;
-                op->svc = nullptr;  // No extra work_finished needed
+                op->svc = nullptr; // No extra work_finished needed
                 // Post for immediate completion - post() handles work tracking
                 post(op);
                 return;
@@ -531,17 +497,16 @@ start_wait(win_signal_impl& impl, signal_op* op)
         }
 
         // No queued signals, wait for delivery
-        // We call on_work_started() to keep io_context alive while waiting.
+        // We call work_started() to keep io_context alive while waiting.
         // Set svc so signal_op::operator() will call work_finished().
         impl.waiting_ = true;
         op->svc = this;
-        sched_.on_work_started();
+        sched_.work_started();
     }
 }
 
 void
-win_signals::
-deliver_signal(int signal_number)
+win_signals::deliver_signal(int signal_number)
 {
     if (signal_number < 0 || signal_number >= max_signal_number)
         return;
@@ -585,29 +550,25 @@ deliver_signal(int signal_number)
 }
 
 void
-win_signals::
-work_started() noexcept
+win_signals::work_started() noexcept
 {
     sched_.work_started();
 }
 
 void
-win_signals::
-work_finished() noexcept
+win_signals::work_finished() noexcept
 {
     sched_.work_finished();
 }
 
 void
-win_signals::
-post(signal_op* op)
+win_signals::post(signal_op* op)
 {
     sched_.post(op);
 }
 
 void
-win_signals::
-add_service(win_signals* service)
+win_signals::add_service(win_signals* service)
 {
     signal_state* state = get_signal_state();
     std::lock_guard<std::mutex> lock(state->mutex);
@@ -620,8 +581,7 @@ add_service(win_signals* service)
 }
 
 void
-win_signals::
-remove_service(win_signals* service)
+win_signals::remove_service(win_signals* service)
 {
     signal_state* state = get_signal_state();
     std::lock_guard<std::mutex> lock(state->mutex);
@@ -639,66 +599,52 @@ remove_service(win_signals* service)
     }
 }
 
-//------------------------------------------------------------------------------
 //
 // signal_set implementation (from signal_set.hpp)
 //
-//------------------------------------------------------------------------------
 
 } // namespace detail
 
-signal_set::
-~signal_set() = default;
+signal_set::~signal_set() = default;
 
-signal_set::
-signal_set(capy::execution_context& ctx)
+signal_set::signal_set(capy::execution_context& ctx)
     : io_object(create_handle<detail::win_signals>(ctx))
 {
 }
 
-signal_set::
-signal_set(signal_set&& other) noexcept
+signal_set::signal_set(signal_set&& other) noexcept
     : io_object(std::move(other))
 {
 }
 
 signal_set&
-signal_set::
-operator=(signal_set&& other)
+signal_set::operator=(signal_set&& other) noexcept
 {
     if (this != &other)
-    {
-        if (&context() != &other.context())
-            detail::throw_logic_error("signal_set::operator=: context mismatch");
         h_ = std::move(other.h_);
-    }
     return *this;
 }
 
 std::error_code
-signal_set::
-add(int signal_number, flags_t flags)
+signal_set::add(int signal_number, flags_t flags)
 {
     return get().add(signal_number, flags);
 }
 
 std::error_code
-signal_set::
-remove(int signal_number)
+signal_set::remove(int signal_number)
 {
     return get().remove(signal_number);
 }
 
 std::error_code
-signal_set::
-clear()
+signal_set::clear()
 {
     return get().clear();
 }
 
 void
-signal_set::
-cancel()
+signal_set::cancel()
 {
     get().cancel();
 }

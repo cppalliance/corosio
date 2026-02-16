@@ -49,7 +49,6 @@ namespace boost::corosio::detail {
 
 struct scheduler;
 
-//------------------------------------------------------------------------------
 
 /** Abstract resolver service for POSIX backends.
 
@@ -62,11 +61,11 @@ class posix_resolver_service
     , public io_object::io_service
 {
 public:
+
 protected:
     posix_resolver_service() = default;
 };
 
-//------------------------------------------------------------------------------
 
 /** Get or create the resolver service for the given context.
 

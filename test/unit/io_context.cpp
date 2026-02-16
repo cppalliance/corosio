@@ -38,8 +38,14 @@ struct counter_coro
             return {std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
+        std::suspend_always initial_suspend() noexcept
+        {
+            return {};
+        }
+        std::suspend_never final_suspend() noexcept
+        {
+            return {};
+        }
 
         void return_void()
         {
@@ -47,15 +53,22 @@ struct counter_coro
                 ++(*counter_);
         }
 
-        void unhandled_exception() { std::terminate(); }
+        void unhandled_exception()
+        {
+            std::terminate();
+        }
     };
 
     std::coroutine_handle<promise_type> h;
 
-    operator std::coroutine_handle<>() const { return h; }
+    operator std::coroutine_handle<>() const
+    {
+        return h;
+    }
 };
 
-inline counter_coro make_coro(int& counter)
+inline counter_coro
+make_coro(int& counter)
 {
     auto c = []() -> counter_coro { co_return; }();
     c.h.promise().counter_ = &counter;
@@ -74,8 +87,14 @@ struct atomic_counter_coro
             return {std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
+        std::suspend_always initial_suspend() noexcept
+        {
+            return {};
+        }
+        std::suspend_never final_suspend() noexcept
+        {
+            return {};
+        }
 
         void return_void()
         {
@@ -83,15 +102,22 @@ struct atomic_counter_coro
                 counter_->fetch_add(1, std::memory_order_relaxed);
         }
 
-        void unhandled_exception() { std::terminate(); }
+        void unhandled_exception()
+        {
+            std::terminate();
+        }
     };
 
     std::coroutine_handle<promise_type> h;
 
-    operator std::coroutine_handle<>() const { return h; }
+    operator std::coroutine_handle<>() const
+    {
+        return h;
+    }
 };
 
-inline atomic_counter_coro make_atomic_coro(std::atomic<int>& counter)
+inline atomic_counter_coro
+make_atomic_coro(std::atomic<int>& counter)
 {
     auto c = []() -> atomic_counter_coro { co_return; }();
     c.h.promise().counter_ = &counter;
@@ -111,8 +137,14 @@ struct check_coro
             return {std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
+        std::suspend_always initial_suspend() noexcept
+        {
+            return {};
+        }
+        std::suspend_never final_suspend() noexcept
+        {
+            return {};
+        }
 
         void return_void()
         {
@@ -120,15 +152,22 @@ struct check_coro
                 *result_ = ex_->running_in_this_thread();
         }
 
-        void unhandled_exception() { std::terminate(); }
+        void unhandled_exception()
+        {
+            std::terminate();
+        }
     };
 
     std::coroutine_handle<promise_type> h;
 
-    operator std::coroutine_handle<>() const { return h; }
+    operator std::coroutine_handle<>() const
+    {
+        return h;
+    }
 };
 
-inline check_coro make_check_coro(bool& result, io_context::executor_type& ex)
+inline check_coro
+make_check_coro(bool& result, io_context::executor_type& ex)
 {
     auto c = []() -> check_coro { co_return; }();
     c.h.promise().result_ = &result;
@@ -138,8 +177,7 @@ inline check_coro make_check_coro(bool& result, io_context::executor_type& ex)
 
 struct io_context_test
 {
-    void
-    testConstruction()
+    void testConstruction()
     {
         // Default construction
         {
@@ -154,8 +192,7 @@ struct io_context_test
         }
     }
 
-    void
-    testGetExecutor()
+    void testGetExecutor()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
@@ -165,8 +202,7 @@ struct io_context_test
         BOOST_TEST(ex == ex2);
     }
 
-    void
-    testRun()
+    void testRun()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
@@ -183,8 +219,7 @@ struct io_context_test
         BOOST_TEST(counter == 3);
     }
 
-    void
-    testRunOne()
+    void testRunOne()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
@@ -206,8 +241,7 @@ struct io_context_test
         // No more work - would block, so use poll_one instead
     }
 
-    void
-    testPoll()
+    void testPoll()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
@@ -231,8 +265,7 @@ struct io_context_test
         BOOST_TEST(counter == 2);
     }
 
-    void
-    testPollOne()
+    void testPollOne()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
@@ -264,8 +297,7 @@ struct io_context_test
         BOOST_TEST(ioc.stopped());
     }
 
-    void
-    testStopAndRestart()
+    void testStopAndRestart()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
@@ -295,8 +327,7 @@ struct io_context_test
         BOOST_TEST(counter == 1);
     }
 
-    void
-    testRunOneFor()
+    void testRunOneFor()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
@@ -318,15 +349,15 @@ struct io_context_test
         BOOST_TEST(counter == 1);
     }
 
-    void
-    testRunOneUntil()
+    void testRunOneUntil()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
         int counter = 0;
 
         // run_one_until with no work - returns immediately and stops context
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+        auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
         std::size_t n = ioc.run_one_until(deadline);
         BOOST_TEST(n == 0);
         BOOST_TEST(ioc.stopped());
@@ -337,14 +368,14 @@ struct io_context_test
         // Post work and run_one_until
         ex.post(make_coro(counter));
 
-        deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+        deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
         n = ioc.run_one_until(deadline);
         BOOST_TEST(n == 1);
         BOOST_TEST(counter == 1);
     }
 
-    void
-    testRunFor()
+    void testRunFor()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
@@ -357,7 +388,8 @@ struct io_context_test
 
         BOOST_TEST(n == 0);
         BOOST_TEST(ioc.stopped());
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
+                      .count();
         BOOST_TEST(ms < 15); // Should return immediately when no work
 
         // Must restart before next use
@@ -370,8 +402,7 @@ struct io_context_test
         BOOST_TEST(counter == 1);
     }
 
-    void
-    testExecutorRunningInThisThread()
+    void testExecutorRunningInThisThread()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
@@ -387,8 +418,7 @@ struct io_context_test
         BOOST_TEST(during == true);
     }
 
-    void
-    testMultithreaded()
+    void testMultithreaded()
     {
         io_context ioc;
         auto ex = ioc.get_executor();
@@ -423,8 +453,7 @@ struct io_context_test
         BOOST_TEST(counter.load() == total_handlers);
     }
 
-    void
-    testMultithreadedStress()
+    void testMultithreadedStress()
     {
         // Stress test: multiple iterations of post-then-run with multiple threads
         constexpr int iterations = 10;
@@ -460,37 +489,31 @@ struct io_context_test
         }
     }
 
-    static capy::task<void>
-    set_event_task(capy::async_event& evt)
+    static capy::task<void> set_event_task(capy::async_event& evt)
     {
         evt.set();
         co_return;
     }
 
-    static capy::task<void>
-    when_all_set_event_main(bool& finished)
+    static capy::task<void> when_all_set_event_main(bool& finished)
     {
         capy::async_event evt;
-        co_await capy::when_all(
-            evt.wait(), set_event_task(evt));
+        co_await capy::when_all(evt.wait(), set_event_task(evt));
         finished = true;
     }
 
-    void
-    testWhenAllSetEvent()
+    void testWhenAllSetEvent()
     {
         io_context ctx;
         bool finished = false;
 
-        capy::run_async(ctx.get_executor())(
-            when_all_set_event_main(finished));
+        capy::run_async(ctx.get_executor())(when_all_set_event_main(finished));
         ctx.run();
 
         BOOST_TEST(finished);
     }
 
-    void
-    run()
+    void run()
     {
         testConstruction();
         testGetExecutor();

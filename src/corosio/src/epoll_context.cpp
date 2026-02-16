@@ -19,15 +19,12 @@
 
 namespace boost::corosio {
 
-epoll_context::
-epoll_context()
+epoll_context::epoll_context()
     : epoll_context(std::thread::hardware_concurrency())
 {
 }
 
-epoll_context::
-epoll_context(
-    unsigned concurrency_hint)
+epoll_context::epoll_context(unsigned concurrency_hint)
 {
     sched_ = &make_service<detail::epoll_scheduler>(
         static_cast<int>(concurrency_hint));
@@ -36,8 +33,7 @@ epoll_context(
     make_service<detail::epoll_acceptor_service>();
 }
 
-epoll_context::
-~epoll_context()
+epoll_context::~epoll_context()
 {
     shutdown();
     destroy();

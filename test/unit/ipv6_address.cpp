@@ -20,8 +20,7 @@ namespace boost::corosio {
 
 struct ipv6_address_test
 {
-    void
-    testConstruction()
+    void testConstruction()
     {
         // Default construction (unspecified)
         {
@@ -31,16 +30,15 @@ struct ipv6_address_test
 
         // Construct from bytes
         {
-            ipv6_address::bytes_type bytes{{
-                0, 1, 0, 2, 0, 3, 0, 4,
-                0, 5, 0, 6, 0, 7, 0, 8}};
+            ipv6_address::bytes_type bytes{
+                {0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8}};
             ipv6_address a(bytes);
             BOOST_TEST_EQ(a.to_string(), "1:2:3:4:5:6:7:8");
         }
 
         // Construct from IPv4 address (mapped)
         {
-            ipv4_address v4(0xC0A80101);  // 192.168.1.1
+            ipv4_address v4(0xC0A80101); // 192.168.1.1
             ipv6_address a(v4);
             BOOST_TEST(a.is_v4_mapped());
             BOOST_TEST_EQ(a.to_string(), "::ffff:192.168.1.1");
@@ -59,12 +57,10 @@ struct ipv6_address_test
         }
     }
 
-    void
-    testParse()
+    void testParse()
     {
         // Valid addresses
-        auto check_valid = [](std::string_view s)
-        {
+        auto check_valid = [](std::string_view s) {
             ipv6_address addr;
             auto ec = parse_ipv6_address(s, addr);
             if (ec)
@@ -101,8 +97,7 @@ struct ipv6_address_test
         check_valid("::1:192.168.1.1");
 
         // Invalid addresses
-        auto check_invalid = [](std::string_view s)
-        {
+        auto check_invalid = [](std::string_view s) {
             ipv6_address addr;
             auto ec = parse_ipv6_address(s, addr);
             BOOST_TEST(bool(ec));
@@ -114,16 +109,15 @@ struct ipv6_address_test
         check_invalid(":::1");
         check_invalid("1:::");
         check_invalid("1:::1");
-        check_invalid("1:2:3:4:5:6:7:8:9");    // too many groups
-        check_invalid("1:2:3:4:5:6:7");        // too few groups (no ::)
-        check_invalid("1::2::3");              // multiple ::
-        check_invalid("12345::");              // segment too large
-        check_invalid("g::");                  // invalid hex
+        check_invalid("1:2:3:4:5:6:7:8:9");       // too many groups
+        check_invalid("1:2:3:4:5:6:7");           // too few groups (no ::)
+        check_invalid("1::2::3");                 // multiple ::
+        check_invalid("12345::");                 // segment too large
+        check_invalid("g::");                     // invalid hex
         check_invalid("1:2:3:4:5:6:7:256.0.0.0"); // invalid IPv4
     }
 
-    void
-    testToString()
+    void testToString()
     {
         // Unspecified
         BOOST_TEST_EQ(ipv6_address().to_string(), "::");
@@ -133,9 +127,8 @@ struct ipv6_address_test
 
         // Full address
         {
-            ipv6_address::bytes_type bytes{{
-                0, 1, 0, 2, 0, 3, 0, 4,
-                0, 5, 0, 6, 0, 7, 0, 8}};
+            ipv6_address::bytes_type bytes{
+                {0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8}};
             ipv6_address a(bytes);
             BOOST_TEST_EQ(a.to_string(), "1:2:3:4:5:6:7:8");
         }
@@ -148,16 +141,14 @@ struct ipv6_address_test
         }
     }
 
-    void
-    testToBuffer()
+    void testToBuffer()
     {
         char buf[ipv6_address::max_str_len];
         auto sv = ipv6_address::loopback().to_buffer(buf, sizeof(buf));
         BOOST_TEST_EQ(sv, "::1");
     }
 
-    void
-    testPredicates()
+    void testPredicates()
     {
         // Unspecified
         BOOST_TEST(ipv6_address().is_unspecified());
@@ -177,8 +168,7 @@ struct ipv6_address_test
         BOOST_TEST(!ipv6_address::loopback().is_v4_mapped());
     }
 
-    void
-    testComparison()
+    void testComparison()
     {
         ipv6_address a1 = ipv6_address::loopback();
         ipv6_address a2 = ipv6_address::loopback();
@@ -190,16 +180,14 @@ struct ipv6_address_test
         BOOST_TEST(!(a1 == a3));
     }
 
-    void
-    testOstream()
+    void testOstream()
     {
         std::ostringstream oss;
         oss << ipv6_address::loopback();
         BOOST_TEST_EQ(oss.str(), "::1");
     }
 
-    void
-    run()
+    void run()
     {
         testConstruction();
         testParse();

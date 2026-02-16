@@ -21,8 +21,7 @@ namespace boost::corosio {
 struct io_buffer_param_test
 {
     // Helper to reduce repeated copy_to assertion pattern
-    static void
-    check_copy(
+    static void check_copy(
         io_buffer_param p,
         std::initializer_list<std::pair<void const*, std::size_t>> expected)
     {
@@ -30,7 +29,7 @@ struct io_buffer_param_test
         auto n = p.copy_to(dest, 8);
         BOOST_TEST_EQ(n, expected.size());
         std::size_t i = 0;
-        for(auto const& e : expected)
+        for (auto const& e : expected)
         {
             BOOST_TEST_EQ(dest[i].data(), e.first);
             BOOST_TEST_EQ(dest[i].size(), e.second);
@@ -39,101 +38,86 @@ struct io_buffer_param_test
     }
 
     // Helper for checking empty/zero-byte sequences
-    static void
-    check_empty(io_buffer_param p)
+    static void check_empty(io_buffer_param p)
     {
         capy::mutable_buffer dest[8];
         BOOST_TEST_EQ(p.copy_to(dest, 8), 0);
     }
 
-    void
-    testConstBuffer()
+    void testConstBuffer()
     {
         char const data[] = "Hello";
         capy::const_buffer cb(data, 5);
         check_copy(cb, {{data, 5}});
     }
 
-    void
-    testMutableBuffer()
+    void testMutableBuffer()
     {
         char data[] = "Hello";
         capy::mutable_buffer mb(data, 5);
         check_copy(mb, {{data, 5}});
     }
 
-    void
-    testConstBufferPair()
+    void testConstBufferPair()
     {
         char const data1[] = "Hello";
         char const data2[] = "World";
-        capy::const_buffer_pair cbp{{
-            capy::const_buffer(data1, 5),
-            capy::const_buffer(data2, 5) }};
+        capy::const_buffer_pair cbp{
+            {capy::const_buffer(data1, 5), capy::const_buffer(data2, 5)}};
         check_copy(cbp, {{data1, 5}, {data2, 5}});
     }
 
-    void
-    testMutableBufferPair()
+    void testMutableBufferPair()
     {
         char data1[] = "Hello";
         char data2[] = "World";
-        capy::mutable_buffer_pair mbp{{
-            capy::mutable_buffer(data1, 5),
-            capy::mutable_buffer(data2, 5) }};
+        capy::mutable_buffer_pair mbp{
+            {capy::mutable_buffer(data1, 5), capy::mutable_buffer(data2, 5)}};
         check_copy(mbp, {{data1, 5}, {data2, 5}});
     }
 
-    void
-    testSpan()
+    void testSpan()
     {
         char const data1[] = "One";
         char const data2[] = "Two";
         char const data3[] = "Three";
         capy::const_buffer arr[3] = {
-            capy::const_buffer(data1, 3),
-            capy::const_buffer(data2, 3),
-            capy::const_buffer(data3, 5) };
+            capy::const_buffer(data1, 3), capy::const_buffer(data2, 3),
+            capy::const_buffer(data3, 5)};
         std::span<capy::const_buffer const> s(arr, 3);
         check_copy(s, {{data1, 3}, {data2, 3}, {data3, 5}});
     }
 
-    void
-    testArray()
+    void testArray()
     {
         char const data1[] = "One";
         char const data2[] = "Two";
         char const data3[] = "Three";
-        std::array<capy::const_buffer, 3> arr{{
-            capy::const_buffer(data1, 3),
-            capy::const_buffer(data2, 3),
-            capy::const_buffer(data3, 5) }};
+        std::array<capy::const_buffer, 3> arr{
+            {capy::const_buffer(data1, 3), capy::const_buffer(data2, 3),
+             capy::const_buffer(data3, 5)}};
         check_copy(arr, {{data1, 3}, {data2, 3}, {data3, 5}});
     }
 
-    void
-    testCArray()
+    void testCArray()
     {
         char const data1[] = "One";
         char const data2[] = "Two";
         char const data3[] = "Three";
         capy::const_buffer arr[3] = {
-            capy::const_buffer(data1, 3),
-            capy::const_buffer(data2, 3),
-            capy::const_buffer(data3, 5) };
+            capy::const_buffer(data1, 3), capy::const_buffer(data2, 3),
+            capy::const_buffer(data3, 5)};
         check_copy(arr, {{data1, 3}, {data2, 3}, {data3, 5}});
     }
 
-    void
-    testLimitedCopy()
+    void testLimitedCopy()
     {
         char const data1[] = "One";
         char const data2[] = "Two";
         char const data3[] = "Three";
         capy::const_buffer arr[3] = {
-            capy::const_buffer(data1, 3),
-            capy::const_buffer(data2, 3),
-            capy::const_buffer(data3, 5) };
+            capy::const_buffer(data1, 3), capy::const_buffer(data2, 3),
+            capy::const_buffer(data3, 5)};
 
         io_buffer_param ref(arr);
 
@@ -147,16 +131,14 @@ struct io_buffer_param_test
         BOOST_TEST_EQ(dest[1].size(), 3);
     }
 
-    void
-    testEmptySequence()
+    void testEmptySequence()
     {
         // Zero total bytes returns 0, regardless of buffer count
         capy::const_buffer cb;
         check_empty(cb);
     }
 
-    void
-    testZeroByteConstBuffer()
+    void testZeroByteConstBuffer()
     {
         // Explicit zero-byte const buffer
         char const* data = "Hello";
@@ -164,60 +146,51 @@ struct io_buffer_param_test
         check_empty(cb);
     }
 
-    void
-    testZeroByteMultiple()
+    void testZeroByteMultiple()
     {
         // Multiple zero-byte buffers should still return 0
         char const data1[] = "Hello";
         char const data2[] = "World";
         capy::const_buffer arr[3] = {
-            capy::const_buffer(data1, 0),
-            capy::const_buffer(data2, 0),
-            capy::const_buffer(nullptr, 0) };
+            capy::const_buffer(data1, 0), capy::const_buffer(data2, 0),
+            capy::const_buffer(nullptr, 0)};
         check_empty(arr);
     }
 
-    void
-    testZeroByteBufferPair()
+    void testZeroByteBufferPair()
     {
         // Buffer pair with both zero-byte buffers
         char const data1[] = "Hello";
         char const data2[] = "World";
-        capy::const_buffer_pair cbp{{
-            capy::const_buffer(data1, 0),
-            capy::const_buffer(data2, 0) }};
+        capy::const_buffer_pair cbp{
+            {capy::const_buffer(data1, 0), capy::const_buffer(data2, 0)}};
         check_empty(cbp);
     }
 
-    void
-    testMixedZeroAndNonZero()
+    void testMixedZeroAndNonZero()
     {
         // Mix of zero-byte and non-zero buffers
         // Zero-size buffers are skipped, only non-zero returned
         char const data1[] = "Hello";
         char const data2[] = "World";
         capy::const_buffer arr[3] = {
-            capy::const_buffer(data1, 0),
-            capy::const_buffer(data2, 5),
-            capy::const_buffer(nullptr, 0) };
+            capy::const_buffer(data1, 0), capy::const_buffer(data2, 5),
+            capy::const_buffer(nullptr, 0)};
         check_copy(arr, {{data2, 5}});
     }
 
-    void
-    testOneZeroOneNonZero()
+    void testOneZeroOneNonZero()
     {
         // Buffer pair with one zero-byte, one non-zero
         // Zero-size buffer is skipped
         char const data1[] = "Hello";
         char const data2[] = "World";
-        capy::const_buffer_pair cbp{{
-            capy::const_buffer(data1, 0),
-            capy::const_buffer(data2, 5) }};
+        capy::const_buffer_pair cbp{
+            {capy::const_buffer(data1, 0), capy::const_buffer(data2, 5)}};
         check_copy(cbp, {{data2, 5}});
     }
 
-    void
-    testZeroByteMutableBuffer()
+    void testZeroByteMutableBuffer()
     {
         // Zero-byte mutable buffer
         char data[] = "Hello";
@@ -225,28 +198,24 @@ struct io_buffer_param_test
         check_empty(mb);
     }
 
-    void
-    testZeroByteMutableBufferPair()
+    void testZeroByteMutableBufferPair()
     {
         // Mutable buffer pair with zero-byte buffers
         char data1[] = "Hello";
         char data2[] = "World";
-        capy::mutable_buffer_pair mbp{{
-            capy::mutable_buffer(data1, 0),
-            capy::mutable_buffer(data2, 0) }};
+        capy::mutable_buffer_pair mbp{
+            {capy::mutable_buffer(data1, 0), capy::mutable_buffer(data2, 0)}};
         check_empty(mbp);
     }
 
-    void
-    testEmptySpan()
+    void testEmptySpan()
     {
         // Empty span (no buffers at all)
         std::span<capy::const_buffer const> s;
         check_empty(s);
     }
 
-    void
-    testEmptyArray()
+    void testEmptyArray()
     {
         // Empty std::array (zero-size)
         std::array<capy::const_buffer, 0> arr{};
@@ -254,23 +223,20 @@ struct io_buffer_param_test
     }
 
     // Helper function that accepts io_buffer_param by value
-    static std::size_t
-    acceptByValue(io_buffer_param p)
+    static std::size_t acceptByValue(io_buffer_param p)
     {
         capy::mutable_buffer dest[8];
         return p.copy_to(dest, 8);
     }
 
     // Helper function that accepts io_buffer_param by const reference
-    static std::size_t
-    acceptByConstRef(io_buffer_param const& p)
+    static std::size_t acceptByConstRef(io_buffer_param const& p)
     {
         capy::mutable_buffer dest[8];
         return p.copy_to(dest, 8);
     }
 
-    void
-    testPassByValue()
+    void testPassByValue()
     {
         // Test that io_buffer_param works when passed by value
         char const data[] = "Hello";
@@ -286,15 +252,13 @@ struct io_buffer_param_test
         BOOST_TEST_EQ(n, 1);
 
         // Pass buffer sequence directly
-        std::array<capy::const_buffer, 2> arr{{
-            capy::const_buffer(data, 2),
-            capy::const_buffer(data + 2, 3) }};
+        std::array<capy::const_buffer, 2> arr{
+            {capy::const_buffer(data, 2), capy::const_buffer(data + 2, 3)}};
         n = acceptByValue(arr);
         BOOST_TEST_EQ(n, 2);
     }
 
-    void
-    testPassByConstRef()
+    void testPassByConstRef()
     {
         // Test that io_buffer_param works when passed by const reference
         char const data[] = "Hello";
@@ -306,14 +270,14 @@ struct io_buffer_param_test
         BOOST_TEST_EQ(n, 1);
 
         // Pass buffer sequence directly (creates temporary io_buffer_param)
-        n = acceptByConstRef(std::array<capy::const_buffer, 2>{{
-            capy::const_buffer(data, 2),
-            capy::const_buffer(data + 2, 3) }});
+        n = acceptByConstRef(
+            std::array<capy::const_buffer, 2>{
+                {capy::const_buffer(data, 2),
+                 capy::const_buffer(data + 2, 3)}});
         BOOST_TEST_EQ(n, 2);
     }
 
-    void
-    run()
+    void run()
     {
         testConstBuffer();
         testMutableBuffer();
@@ -338,8 +302,6 @@ struct io_buffer_param_test
     }
 };
 
-TEST_SUITE(
-    io_buffer_param_test,
-    "boost.corosio.io_buffer_param");
+TEST_SUITE(io_buffer_param_test, "boost.corosio.io_buffer_param");
 
 } // namespace boost::corosio

@@ -11,7 +11,6 @@
 #define BOOST_COROSIO_SIGNAL_SET_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/error.hpp>
@@ -189,12 +188,12 @@ private:
             return {ec_, signal_number_};
         }
 
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            capy::io_env const* env) -> std::coroutine_handle<>
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return s_.get().wait(h, env->executor, token_, &ec_, &signal_number_);
+            return s_.get().wait(
+                h, env->executor, token_, &ec_, &signal_number_);
         }
     };
 
@@ -218,7 +217,7 @@ public:
 
         Cancels any pending operations and releases signal resources.
     */
-    ~signal_set();
+    ~signal_set() override;
 
     /** Construct an empty signal set.
 
@@ -235,14 +234,11 @@ public:
         @throws std::system_error Thrown on failure.
     */
     template<std::convertible_to<int>... Signals>
-    signal_set(
-        capy::execution_context& ctx,
-        int signal,
-        Signals... signals)
+    signal_set(capy::execution_context& ctx, int signal, Signals... signals)
         : signal_set(ctx)
     {
         auto check = [](std::error_code ec) {
-            if( ec )
+            if (ec)
                 throw std::system_error(ec);
         };
         check(add(signal));
@@ -260,16 +256,11 @@ public:
     /** Move assignment operator.
 
         Closes any existing signal set and transfers ownership.
-        The source and destination must share the same execution context.
-
         @param other The signal set to move from.
 
         @return Reference to this signal set.
-
-        @throws std::logic_error if the signal sets have different
-            execution contexts.
     */
-    signal_set& operator=(signal_set&& other);
+    signal_set& operator=(signal_set&& other) noexcept;
 
     signal_set(signal_set const&) = delete;
     signal_set& operator=(signal_set const&) = delete;

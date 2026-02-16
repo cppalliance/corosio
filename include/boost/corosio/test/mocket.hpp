@@ -61,14 +61,11 @@ class BOOST_COROSIO_DECL mocket
     std::size_t max_write_size_;
 
     template<class MutableBufferSequence>
-    std::size_t
-    consume_provide(MutableBufferSequence const& buffers) noexcept;
+    std::size_t consume_provide(MutableBufferSequence const& buffers) noexcept;
 
     template<class ConstBufferSequence>
-    bool
-    validate_expect(
-        ConstBufferSequence const& buffers,
-        std::size_t& bytes_written);
+    bool validate_expect(
+        ConstBufferSequence const& buffers, std::size_t& bytes_written);
 
 public:
     template<class MutableBufferSequence>
@@ -109,8 +106,7 @@ public:
 
         @return Reference to the execution context that owns this mocket.
     */
-    capy::execution_context&
-    context() const noexcept
+    capy::execution_context& context() const noexcept
     {
         return sock_.context();
     }
@@ -119,8 +115,7 @@ public:
 
         @return Reference to the underlying tcp_socket.
     */
-    tcp_socket&
-    socket() noexcept
+    tcp_socket& socket() noexcept
     {
         return sock_;
     }
@@ -135,7 +130,7 @@ public:
 
         @pre All coroutines using this mocket must be suspended.
     */
-    void provide(std::string s);
+    void provide(std::string const& s);
 
     /** Set expected data for writes.
 
@@ -148,7 +143,7 @@ public:
 
         @pre All coroutines using this mocket must be suspended.
     */
-    void expect(std::string s);
+    void expect(std::string const& s);
 
     /** Close the mocket and verify test expectations.
 
@@ -208,24 +203,21 @@ public:
     }
 };
 
-//------------------------------------------------------------------------------
 
 template<class MutableBufferSequence>
 std::size_t
-mocket::
-consume_provide(MutableBufferSequence const& buffers) noexcept
+mocket::consume_provide(MutableBufferSequence const& buffers) noexcept
 {
-    auto n = capy::buffer_copy(buffers, capy::make_buffer(provide_), max_read_size_);
+    auto n =
+        capy::buffer_copy(buffers, capy::make_buffer(provide_), max_read_size_);
     provide_.erase(0, n);
     return n;
 }
 
 template<class ConstBufferSequence>
 bool
-mocket::
-validate_expect(
-    ConstBufferSequence const& buffers,
-    std::size_t& bytes_written)
+mocket::validate_expect(
+    ConstBufferSequence const& buffers, std::size_t& bytes_written)
 {
     if (expect_.empty())
         return true;
@@ -253,28 +245,25 @@ validate_expect(
     return true;
 }
 
-//------------------------------------------------------------------------------
 
 template<class MutableBufferSequence>
 class mocket::read_some_awaitable
 {
-    using sock_awaitable =
-        decltype(std::declval<tcp_socket&>().read_some(
-            std::declval<MutableBufferSequence>()));
+    using sock_awaitable = decltype(std::declval<tcp_socket&>().read_some(
+        std::declval<MutableBufferSequence>()));
 
     mocket* m_;
     MutableBufferSequence buffers_;
     std::size_t n_ = 0;
-    union {
+    union
+    {
         char dummy_;
         sock_awaitable underlying_;
     };
     bool sync_ = true;
 
 public:
-    read_some_awaitable(
-        mocket& m,
-        MutableBufferSequence buffers) noexcept
+    read_some_awaitable(mocket& m, MutableBufferSequence buffers) noexcept
         : m_(&m)
         , buffers_(std::move(buffers))
     {
@@ -330,29 +319,26 @@ public:
     }
 };
 
-//------------------------------------------------------------------------------
 
 template<class ConstBufferSequence>
 class mocket::write_some_awaitable
 {
-    using sock_awaitable =
-        decltype(std::declval<tcp_socket&>().write_some(
-            std::declval<ConstBufferSequence>()));
+    using sock_awaitable = decltype(std::declval<tcp_socket&>().write_some(
+        std::declval<ConstBufferSequence>()));
 
     mocket* m_;
     ConstBufferSequence buffers_;
     std::size_t n_ = 0;
     std::error_code ec_;
-    union {
+    union
+    {
         char dummy_;
         sock_awaitable underlying_;
     };
     bool sync_ = true;
 
 public:
-    write_some_awaitable(
-        mocket& m,
-        ConstBufferSequence buffers) noexcept
+    write_some_awaitable(mocket& m, ConstBufferSequence buffers) noexcept
         : m_(&m)
         , buffers_(std::move(buffers))
     {
@@ -413,7 +399,6 @@ public:
     }
 };
 
-//------------------------------------------------------------------------------
 
 /** Create a mocket paired with a socket.
 
@@ -439,8 +424,7 @@ public:
         single-threaded, deterministic context.
 */
 BOOST_COROSIO_DECL
-std::pair<mocket, tcp_socket>
-make_mocket_pair(
+std::pair<mocket, tcp_socket> make_mocket_pair(
     capy::execution_context& ctx,
     capy::test::fuse f = {},
     std::size_t max_read_size = std::size_t(-1),

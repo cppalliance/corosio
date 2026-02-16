@@ -25,14 +25,14 @@ namespace boost::corosio {
 // Callable wrapper for passing to test helper templates
 struct wolfssl_stream_factory
 {
-    auto operator()( tcp_socket& s, tls_context ctx ) const
+    auto operator()(tcp_socket& s, tls_context ctx) const
     {
-        return wolfssl_stream( &s, ctx );
+        return wolfssl_stream(&s, ctx);
     }
 
-    auto operator()( corosio::test::mocket& s, tls_context ctx ) const
+    auto operator()(corosio::test::mocket& s, tls_context ctx) const
     {
-        return wolfssl_stream( &s, ctx );
+        return wolfssl_stream(&s, ctx);
     }
 };
 
@@ -42,9 +42,7 @@ struct wolfssl_stream_test
 
     // Context modes supported by WolfSSL (no anon ciphers)
     static constexpr std::array<test::context_mode, 2> cert_modes = {
-        test::context_mode::shared_cert,
-        test::context_mode::separate_cert
-    };
+        test::context_mode::shared_cert, test::context_mode::separate_cert};
 
     void testName()
     {
@@ -52,10 +50,10 @@ struct wolfssl_stream_test
 
         io_context ioc;
         auto ctx = make_client_context();
-        tcp_socket sock( ioc );
-        wolfssl_stream stream( &sock, ctx );
+        tcp_socket sock(ioc);
+        wolfssl_stream stream(&sock, ctx);
 
-        BOOST_TEST( stream.name() == "wolfssl" );
+        BOOST_TEST(stream.name() == "wolfssl");
     }
 
     /** Test certificate chain validation (WolfSSL-specific).
@@ -73,8 +71,7 @@ struct wolfssl_stream_test
             io_context ioc;
             auto client_ctx = make_chain_client_context();
             auto server_ctx = make_chain_server_context();
-            run_tls_test( ioc, client_ctx, server_ctx,
-                make_stream, make_stream );
+            run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
         }
 
         // Server sends only entity cert - client trusts only root (fails)
@@ -82,8 +79,8 @@ struct wolfssl_stream_test
             io_context ioc;
             auto client_ctx = make_rootonly_client_context();
             auto server_ctx = make_chain_server_context();
-            run_tls_test_fail( ioc, client_ctx, server_ctx,
-                make_stream, make_stream );
+            run_tls_test_fail(
+                ioc, client_ctx, server_ctx, make_stream, make_stream);
         }
 
         // Note: Fullchain test disabled for WolfSSL due to
@@ -93,32 +90,32 @@ struct wolfssl_stream_test
 
     void run()
     {
-        test::testHandshakeFuse( make_stream );
-        test::testReadWriteFuse( make_stream );
-        test::testShutdownFuse( make_stream );
+        test::testHandshakeFuse(make_stream);
+        test::testReadWriteFuse(make_stream);
+        test::testShutdownFuse(make_stream);
         // Skip anon mode: anonymous cipher string "aNULL:eNULL:@SECLEVEL=0"
         // is OpenSSL-specific and not supported by WolfSSL.
-        test::testSuccessCases( make_stream, cert_modes );
-        test::testFailureCases( make_stream );
-        test::testTlsShutdown( make_stream, cert_modes );
-        test::testStreamTruncated( make_stream, cert_modes );
-        test::testStopTokenCancellation( make_stream );
-        test::testSocketErrorPropagation( make_stream );
-        test::testCertificateValidation( make_stream );
-        test::testSni( make_stream );
-        test::testSniCallback( make_stream );
-        test::testMtls( make_stream );
+        test::testSuccessCases(make_stream, cert_modes);
+        test::testFailureCases(make_stream);
+        test::testTlsShutdown(make_stream, cert_modes);
+        test::testStreamTruncated(make_stream, cert_modes);
+        test::testStopTokenCancellation(make_stream);
+        test::testSocketErrorPropagation(make_stream);
+        test::testCertificateValidation(make_stream);
+        test::testSni(make_stream);
+        test::testSniCallback(make_stream);
+        test::testMtls(make_stream);
 
-        test::testReset( make_stream, cert_modes );
-        test::testResetViaHandshake( make_stream, cert_modes );
-        test::testResetFuse( make_stream );
+        test::testReset(make_stream, cert_modes);
+        test::testResetViaHandshake(make_stream, cert_modes);
+        test::testResetFuse(make_stream);
 
         testCertificateChain();
         testName();
     }
 };
 
-TEST_SUITE( wolfssl_stream_test, "boost.corosio.wolfssl_stream" );
+TEST_SUITE(wolfssl_stream_test, "boost.corosio.wolfssl_stream");
 
 } // namespace boost::corosio
 
