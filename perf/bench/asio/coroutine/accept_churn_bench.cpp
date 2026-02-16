@@ -33,6 +33,42 @@ using tcp      = asio::ip::tcp;
 namespace asio_bench {
 namespace {
 
+// Configures a socket for churn benchmarks: minimal kernel buffers
+// (this benchmark only exchanges 1 byte) and immediate RST on close
+// to avoid TIME_WAIT accumulation. Reducing SO_SNDBUF/SO_RCVBUF from
+// the macOS default of 128 KB each prevents ENOBUFS during rapid
+// socket creation in concurrent/burst workloads.
+static void configure_churn_socket( tcp_socket& s )
+{
+    s.set_option( asio::socket_base::send_buffer_size( 1024 ) );
+    s.set_option( asio::socket_base::receive_buffer_size( 1024 ) );
+    s.set_option( asio::socket_base::linger( true, 0 ) );
+}
+
+// Creates a listening acceptor with retry. Under rapid socket churn the
+// kernel may temporarily lack buffer space (ENOBUFS); a short back-off
+// lets resources drain from the previous benchmark run.
+static tcp_acceptor make_churn_acceptor( asio::io_context& ioc )
+{
+    boost::system::error_code ec;
+    for( int attempt = 0; attempt < 20; ++attempt )
+    {
+        if( attempt > 0 )
+            std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
+        tcp_acceptor acc( ioc.get_executor() );
+        ec = acc.open( tcp::v4(), ec );
+        if( !ec )
+            ec = acc.set_option( tcp_acceptor::reuse_address( true ), ec );
+        if( !ec )
+            ec = acc.bind( tcp::endpoint( tcp::v4(), 0 ), ec );
+        if( !ec )
+            ec = acc.listen( asio::socket_base::max_listen_connections, ec );
+        if( !ec )
+            return acc;
+    }
+    throw boost::system::system_error( ec );
+}
+
 // Single connect/accept/1-byte-exchange/close loop. Measures the full
 // per-connection lifecycle cost — fd allocation, TCP handshake, and teardown.
 bench::benchmark_result
@@ -41,10 +77,8 @@ bench_sequential_churn(double duration_s)
     perf::print_header("Sequential Accept Churn (Asio Coroutines)");
 
     asio::io_context ioc;
-    tcp_acceptor acc(ioc.get_executor(), tcp::endpoint(tcp::v4(), 0));
-    acc.set_option(tcp_acceptor::reuse_address(true));
-    auto ep = tcp::endpoint(
-        asio::ip::address_v4::loopback(), acc.local_endpoint().port());
+    auto acc = make_churn_acceptor( ioc );
+    auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
 
     std::atomic<bool> running{true};
     int64_t cycles = 0;
@@ -57,10 +91,13 @@ bench_sequential_churn(double duration_s)
             {
                 perf::stopwatch sw;
 
-                auto client = std::make_unique<tcp_socket>(ioc);
-                auto server = std::make_unique<tcp_socket>(ioc);
-                client->open(tcp::v4());
-                client->set_option(asio::socket_base::linger(true, 0));
+                auto client = std::make_unique<tcp_socket>( ioc );
+                auto server = std::make_unique<tcp_socket>( ioc );
+                boost::system::error_code ec;
+                ec = client->open( tcp::v4(), ec );
+                if( ec )
+                    continue;
+                configure_churn_socket( *client );
 
                 // Spawn connect, await accept
                 asio::co_spawn(
@@ -140,21 +177,15 @@ bench_concurrent_churn(int num_loops, double duration_s)
     std::vector<int64_t> cycle_counts(num_loops, 0);
     std::vector<perf::statistics> stats(num_loops);
 
-    // Each loop gets its own acceptor
-    std::vector<std::unique_ptr<tcp_acceptor>> acceptors;
-    acceptors.reserve(num_loops);
-    for (int i = 0; i < num_loops; ++i)
-    {
-        acceptors.push_back(
-            std::make_unique<tcp_acceptor>(
-                ioc.get_executor(), tcp::endpoint(tcp::v4(), 0)));
-        acceptors.back()->set_option(tcp_acceptor::reuse_address(true));
-    }
+    std::vector<tcp_acceptor> acceptors;
+    acceptors.reserve( num_loops );
+    for( int i = 0; i < num_loops; ++i )
+        acceptors.push_back( make_churn_acceptor( ioc ) );
 
-    auto loop_task = [&](int idx) -> asio::awaitable<void, executor_type> {
-        auto& acc = *acceptors[idx];
-        auto ep   = tcp::endpoint(
-            asio::ip::address_v4::loopback(), acc.local_endpoint().port());
+    auto loop_task = [&]( int idx ) -> asio::awaitable<void, executor_type>
+    {
+        auto& acc = acceptors[idx];
+        auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
 
         try
         {
@@ -162,10 +193,13 @@ bench_concurrent_churn(int num_loops, double duration_s)
             {
                 perf::stopwatch sw;
 
-                auto client = std::make_unique<tcp_socket>(ioc);
-                auto server = std::make_unique<tcp_socket>(ioc);
-                client->open(tcp::v4());
-                client->set_option(asio::socket_base::linger(true, 0));
+                auto client = std::make_unique<tcp_socket>( ioc );
+                auto server = std::make_unique<tcp_socket>( ioc );
+                boost::system::error_code ec;
+                ec = client->open( tcp::v4(), ec );
+                if( ec )
+                    continue;
+                configure_churn_socket( *client );
 
                 asio::co_spawn(
                     ioc,
@@ -236,8 +270,8 @@ bench_concurrent_churn(int num_loops, double duration_s)
     std::cout << "    Avg p99 latency: "
               << perf::format_latency(total_p99 / num_loops) << "\n\n";
 
-    for (auto& a : acceptors)
-        a->close();
+    for( auto& a : acceptors )
+        a.close();
 
     return bench::benchmark_result("concurrent_" + std::to_string(num_loops))
         .add("num_loops", num_loops)
@@ -256,10 +290,8 @@ bench_burst_churn(int burst_size, double duration_s)
     std::cout << "  Burst size: " << burst_size << "\n";
 
     asio::io_context ioc;
-    tcp_acceptor acc(ioc.get_executor(), tcp::endpoint(tcp::v4(), 0));
-    acc.set_option(tcp_acceptor::reuse_address(true));
-    auto ep = tcp::endpoint(
-        asio::ip::address_v4::loopback(), acc.local_endpoint().port());
+    auto acc = make_churn_acceptor( ioc );
+    auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
 
     std::atomic<bool> running{true};
     int64_t total_accepted = 0;
@@ -277,20 +309,34 @@ bench_burst_churn(int burst_size, double duration_s)
                 clients.reserve(burst_size);
                 servers.reserve(burst_size);
 
-                // Spawn all connects
-                for (int i = 0; i < burst_size; ++i)
+                // Open all client sockets before spawning connects so a
+                // partial failure doesn't leave dangling coroutines.
+                bool open_ok = true;
+                for( int i = 0; i < burst_size; ++i )
                 {
-                    clients.push_back(std::make_unique<tcp_socket>(ioc));
-                    clients.back()->open(tcp::v4());
-                    clients.back()->set_option(
-                        asio::socket_base::linger(true, 0));
-                    asio::co_spawn(
-                        ioc,
-                        [](tcp_socket& c, tcp::endpoint ep)
-                            -> asio::awaitable<void, executor_type> {
-                            co_await c.async_connect(ep, asio::deferred);
-                        }(*clients.back(), ep),
-                        asio::detached);
+                    clients.push_back( std::make_unique<tcp_socket>( ioc ) );
+                    boost::system::error_code ec;
+                    ec = clients.back()->open( tcp::v4(), ec );
+                    if( ec )
+                    {
+                        clients.clear();
+                        open_ok = false;
+                        break;
+                    }
+                    configure_churn_socket( *clients.back() );
+                }
+                if( !open_ok )
+                    continue;
+
+                // Spawn all connects
+                for( int i = 0; i < burst_size; ++i )
+                {
+                    asio::co_spawn( ioc,
+                        [](tcp_socket& c, tcp::endpoint ep) -> asio::awaitable<void, executor_type>
+                        {
+                            co_await c.async_connect( ep, asio::deferred );
+                        }(*clients[i], ep),
+                        asio::detached );
                 }
 
                 // Accept all

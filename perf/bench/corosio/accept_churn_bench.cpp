@@ -34,6 +34,18 @@ namespace capy    = boost::capy;
 namespace corosio_bench {
 namespace {
 
+// Configures a socket for churn benchmarks: minimal kernel buffers
+// (this benchmark only exchanges 1 byte) and immediate RST on close
+// to avoid TIME_WAIT accumulation. Reducing SO_SNDBUF/SO_RCVBUF from
+// the macOS default of 128 KB each prevents ENOBUFS during rapid
+// socket creation in concurrent/burst workloads.
+static void configure_churn_socket( corosio::tcp_socket& s )
+{
+    s.set_send_buffer_size( 1024 );
+    s.set_receive_buffer_size( 1024 );
+    s.set_linger( true, 0 );
+}
+
 // Single connect/accept/1-byte-exchange/close loop. Measures the full
 // per-connection lifecycle cost — fd allocation, TCP handshake, and teardown.
 // Low throughput here indicates expensive socket setup or kernel overhead.
@@ -70,7 +82,7 @@ bench_sequential_churn(double duration_s)
             socket_type client(ioc);
             socket_type server(ioc);
             client.open();
-            client.set_linger(true, 0);
+            configure_churn_socket( client );
 
             // Spawn connect, await accept
             capy::run_async(ioc.get_executor())(
@@ -96,7 +108,6 @@ bench_sequential_churn(double duration_s)
             if (rec)
                 co_return;
 
-            server.set_linger(true, 0);
             client.close();
             server.close();
 
@@ -183,7 +194,7 @@ bench_concurrent_churn(int num_loops, double duration_s)
             socket_type client(ioc);
             socket_type server(ioc);
             client.open();
-            client.set_linger(true, 0);
+            configure_churn_socket( client );
 
             capy::run_async(ioc.get_executor())(
                 [](socket_type& c, corosio::endpoint ep) -> capy::task<> {
@@ -207,7 +218,6 @@ bench_concurrent_churn(int num_loops, double duration_s)
             if (rec)
                 co_return;
 
-            server.set_linger(true, 0);
             client.close();
             server.close();
 
@@ -310,7 +320,7 @@ bench_burst_churn(int burst_size, double duration_s)
             {
                 clients.emplace_back(ioc);
                 clients.back().open();
-                clients.back().set_linger(true, 0);
+                configure_churn_socket( clients.back() );
                 capy::run_async(ioc.get_executor())(
                     [](socket_type& c, corosio::endpoint ep) -> capy::task<> {
                         auto [ec] = co_await c.connect(ep);
@@ -332,10 +342,7 @@ bench_burst_churn(int burst_size, double duration_s)
             for (auto& c : clients)
                 c.close();
             for (auto& s : servers)
-            {
-                s.set_linger(true, 0);
                 s.close();
-            }
 
             burst_stats.add(sw.elapsed_us());
         }
