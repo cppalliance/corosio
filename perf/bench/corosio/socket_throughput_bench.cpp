@@ -87,6 +87,7 @@ bench_throughput(std::size_t chunk_size, double duration_s)
                 break;
             total_written += n;
         }
+        writer.shutdown( corosio::tcp_socket::shutdown_send );
         writer.close();
     };
 
@@ -163,7 +164,7 @@ bench_bidirectional_throughput(std::size_t chunk_size, double duration_s)
                 break;
             written1 += n;
         }
-        sock1.cancel();
+        sock1.shutdown( corosio::tcp_socket::shutdown_send );
     };
 
     auto read1_task = [&]() -> capy::task<> {
@@ -187,7 +188,7 @@ bench_bidirectional_throughput(std::size_t chunk_size, double duration_s)
                 break;
             written2 += n;
         }
-        sock2.cancel();
+        sock2.shutdown( corosio::tcp_socket::shutdown_send );
     };
 
     auto read2_task = [&]() -> capy::task<> {

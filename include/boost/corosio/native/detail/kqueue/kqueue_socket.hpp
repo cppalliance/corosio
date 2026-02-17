@@ -130,6 +130,7 @@ public:
 private:
     kqueue_socket_service& svc_;
     int fd_ = -1;
+    bool user_set_linger_ = false;
     endpoint local_endpoint_;
     endpoint remote_endpoint_;
 };

@@ -691,6 +691,7 @@ kqueue_socket::set_linger(bool enabled, int timeout) noexcept
     lg.l_linger = timeout;
     if (::setsockopt(fd_, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg)) != 0)
         return make_err(errno);
+    user_set_linger_ = true;
     return {};
 }
 
@@ -848,18 +849,13 @@ kqueue_socket::close_socket() noexcept
 
     if (fd_ >= 0)
     {
-        // Send FIN so the peer gets a reliable kqueue notification
-        // before we deregister and close the descriptor.
-        ::shutdown(fd_, SHUT_WR);
-
-        if (desc_state_.registered_events != 0)
-            svc_.scheduler().deregister_descriptor(fd_);
         ::close(fd_);
         fd_ = -1;
     }
 
     desc_state_.fd                = -1;
     desc_state_.registered_events = 0;
+    user_set_linger_              = false;
 
     local_endpoint_  = endpoint{};
     remote_endpoint_ = endpoint{};
@@ -881,7 +877,16 @@ kqueue_socket_service::shutdown()
     std::lock_guard lock(state_->mutex_);
 
     while (auto* impl = state_->socket_list_.pop_front())
+    {
+        if (impl->user_set_linger_ && impl->fd_ >= 0)
+        {
+            struct ::linger lg;
+            lg.l_onoff  = 0;
+            lg.l_linger = 0;
+            ::setsockopt(impl->fd_, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+        }
         impl->close_socket();
+    }
 
     // Don't clear socket_ptrs_ here. The scheduler shuts down after us and
     // drains completed_ops_, calling destroy() on each queued op. If we
@@ -911,6 +916,18 @@ inline void
 kqueue_socket_service::destroy(io_object::implementation* impl)
 {
     auto* kq_impl = static_cast<kqueue_socket*>(impl);
+
+    // Match asio: if the user set SO_LINGER, clear it before close so
+    // the destructor doesn't block and close() sends FIN instead of RST.
+    // RST doesn't reliably trigger EV_EOF on macOS kqueue.
+    if (kq_impl->user_set_linger_ && kq_impl->fd_ >= 0)
+    {
+        struct ::linger lg;
+        lg.l_onoff  = 0;
+        lg.l_linger = 0;
+        ::setsockopt(kq_impl->fd_, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+    }
+
     kq_impl->close_socket();
     std::lock_guard lock(state_->mutex_);
     state_->socket_list_.remove(kq_impl);
