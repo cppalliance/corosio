@@ -78,7 +78,6 @@ public:
     }
 };
 
-
 /** A range of entries produced by a resolver.
 
     This class holds the results of a DNS resolution query.
@@ -92,13 +91,13 @@ public:
 class resolver_results
 {
 public:
-    using value_type = resolver_entry;
+    using value_type      = resolver_entry;
     using const_reference = value_type const&;
-    using reference = const_reference;
-    using const_iterator = std::vector<resolver_entry>::const_iterator;
-    using iterator = const_iterator;
+    using reference       = const_reference;
+    using const_iterator  = std::vector<resolver_entry>::const_iterator;
+    using iterator        = const_iterator;
     using difference_type = std::ptrdiff_t;
-    using size_type = std::size_t;
+    using size_type       = std::size_t;
 
 private:
     std::shared_ptr<std::vector<resolver_entry>> entries_;
@@ -177,7 +176,6 @@ public:
         return !(a == b);
     }
 };
-
 
 /** The result of a reverse DNS resolution.
 

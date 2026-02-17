@@ -82,7 +82,7 @@ struct tls_session_cycle_stress_impl
             std::chrono::steady_clock::now() + std::chrono::seconds(duration);
 
         io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex                = ioc.get_executor();
         std::size_t iterations = 0;
 
         while (std::chrono::steady_clock::now() < stop_time)
@@ -100,12 +100,12 @@ struct tls_session_cycle_stress_impl
 
             auto hs_client = [&client, &cec]() -> capy::task<> {
                 auto [ec] = co_await client.handshake(tls_stream::client);
-                cec = ec;
+                cec       = ec;
             };
 
             auto hs_server = [&server, &sec]() -> capy::task<> {
                 auto [ec] = co_await server.handshake(tls_stream::server);
-                sec = ec;
+                sec       = ec;
             };
 
             capy::run_async(ex)(hs_client());
@@ -124,7 +124,7 @@ struct tls_session_cycle_stress_impl
 
             // Bidirectional data transfer
             auto xfer = [&client, &server]() -> capy::task<> {
-                char wbuf[] = "stress-test-data";
+                char wbuf[]    = "stress-test-data";
                 auto [ec1, n1] = co_await client.write_some(
                     capy::const_buffer(wbuf, sizeof(wbuf) - 1));
                 if (ec1)
@@ -194,11 +194,11 @@ struct tls_concurrent_io_stress_impl
             std::error_code cec, sec;
             auto hsc = [&client_a, &cec]() -> capy::task<> {
                 auto [ec] = co_await client_a.handshake(tls_stream::client);
-                cec = ec;
+                cec       = ec;
             };
             auto hss = [&server_a, &sec]() -> capy::task<> {
                 auto [ec] = co_await server_a.handshake(tls_stream::server);
-                sec = ec;
+                sec       = ec;
             };
             capy::run_async(ex)(hsc());
             capy::run_async(ex)(hss());
@@ -215,11 +215,11 @@ struct tls_concurrent_io_stress_impl
             std::error_code cec, sec;
             auto hsc = [&client_b, &cec]() -> capy::task<> {
                 auto [ec] = co_await client_b.handshake(tls_stream::client);
-                cec = ec;
+                cec       = ec;
             };
             auto hss = [&server_b, &sec]() -> capy::task<> {
                 auto [ec] = co_await server_b.handshake(tls_stream::server);
-                sec = ec;
+                sec       = ec;
             };
             capy::run_async(ex)(hsc());
             capy::run_async(ex)(hss());
@@ -324,8 +324,8 @@ struct tls_cancel_handshake_stress_impl
             std::chrono::steady_clock::now() + std::chrono::seconds(duration);
 
         io_context ioc;
-        auto ex = ioc.get_executor();
-        std::size_t iterations = 0;
+        auto ex                   = ioc.get_executor();
+        std::size_t iterations    = 0;
         std::size_t cancellations = 0;
 
         while (std::chrono::steady_clock::now() < stop_time)
@@ -340,7 +340,7 @@ struct tls_cancel_handshake_stress_impl
 
             std::stop_source stop_src;
             bool client_got_error = false;
-            bool done = false;
+            bool done             = false;
 
             // Failsafe to prevent hangs
             timer failsafe(ioc);
@@ -363,7 +363,7 @@ struct tls_cancel_handshake_stress_impl
                 stop_src.request_stop();
             };
 
-            bool failsafe_hit = false;
+            bool failsafe_hit  = false;
             auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
                                   &s2]() -> capy::task<> {
                 auto [ec] = co_await failsafe.wait();

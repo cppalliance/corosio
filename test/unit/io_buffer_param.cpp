@@ -78,9 +78,9 @@ struct io_buffer_param_test
 
     void testSpan()
     {
-        char const data1[] = "One";
-        char const data2[] = "Two";
-        char const data3[] = "Three";
+        char const data1[]        = "One";
+        char const data2[]        = "Two";
+        char const data3[]        = "Three";
         capy::const_buffer arr[3] = {
             capy::const_buffer(data1, 3), capy::const_buffer(data2, 3),
             capy::const_buffer(data3, 5)};
@@ -101,9 +101,9 @@ struct io_buffer_param_test
 
     void testCArray()
     {
-        char const data1[] = "One";
-        char const data2[] = "Two";
-        char const data3[] = "Three";
+        char const data1[]        = "One";
+        char const data2[]        = "Two";
+        char const data3[]        = "Three";
         capy::const_buffer arr[3] = {
             capy::const_buffer(data1, 3), capy::const_buffer(data2, 3),
             capy::const_buffer(data3, 5)};
@@ -112,9 +112,9 @@ struct io_buffer_param_test
 
     void testLimitedCopy()
     {
-        char const data1[] = "One";
-        char const data2[] = "Two";
-        char const data3[] = "Three";
+        char const data1[]        = "One";
+        char const data2[]        = "Two";
+        char const data3[]        = "Three";
         capy::const_buffer arr[3] = {
             capy::const_buffer(data1, 3), capy::const_buffer(data2, 3),
             capy::const_buffer(data3, 5)};
@@ -149,8 +149,8 @@ struct io_buffer_param_test
     void testZeroByteMultiple()
     {
         // Multiple zero-byte buffers should still return 0
-        char const data1[] = "Hello";
-        char const data2[] = "World";
+        char const data1[]        = "Hello";
+        char const data2[]        = "World";
         capy::const_buffer arr[3] = {
             capy::const_buffer(data1, 0), capy::const_buffer(data2, 0),
             capy::const_buffer(nullptr, 0)};
@@ -171,8 +171,8 @@ struct io_buffer_param_test
     {
         // Mix of zero-byte and non-zero buffers
         // Zero-size buffers are skipped, only non-zero returned
-        char const data1[] = "Hello";
-        char const data2[] = "World";
+        char const data1[]        = "Hello";
+        char const data2[]        = "World";
         capy::const_buffer arr[3] = {
             capy::const_buffer(data1, 0), capy::const_buffer(data2, 5),
             capy::const_buffer(nullptr, 0)};

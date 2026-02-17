@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -36,37 +37,38 @@
 #include "../common/perf.hpp"
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
-
+namespace capy    = boost::capy;
 
 // Empty coroutine - minimal work, maximizes framework overhead visibility
-capy::task<> empty_task(std::atomic<std::uint64_t>& counter)
+capy::task<>
+empty_task(std::atomic<std::uint64_t>& counter)
 {
     counter.fetch_add(1, std::memory_order_relaxed);
     co_return;
 }
 
-
 // Run the profiler workload for the specified duration
-void run_workload(
+void
+run_workload(
     perf::context_factory factory,
     int duration_seconds,
     int queue_depth,
     int num_threads)
 {
     auto ioc = factory();
-    auto ex = ioc->get_executor();
+    auto ex  = ioc->get_executor();
     std::atomic<std::uint64_t> counter{0};
 
-    auto start = std::chrono::steady_clock::now();
-    auto end_time = start + std::chrono::seconds(duration_seconds);
+    auto start       = std::chrono::steady_clock::now();
+    auto end_time    = start + std::chrono::seconds(duration_seconds);
     auto next_report = start + std::chrono::seconds(2);
 
     std::cout << "Running for " << duration_seconds << " seconds...\n";
-    std::cout << "Queue depth: " << queue_depth << ", Threads: " << num_threads << "\n\n";
+    std::cout << "Queue depth: " << queue_depth << ", Threads: " << num_threads
+              << "\n\n";
 
     std::uint64_t last_count = 0;
-    int iterations = 0;
+    int iterations           = 0;
 
     while (std::chrono::steady_clock::now() < end_time)
     {
@@ -100,19 +102,21 @@ void run_workload(
             std::uint64_t current = counter.load(std::memory_order_relaxed);
             double rate = static_cast<double>(current - last_count) / 2.0;
 
-            std::cout << "  [" << std::fixed << std::setprecision(0) << elapsed << "s] "
-                      << perf::format_rate(rate) << " (" << iterations << " iterations)\n";
+            std::cout << "  [" << std::fixed << std::setprecision(0) << elapsed
+                      << "s] " << perf::format_rate(rate) << " (" << iterations
+                      << " iterations)\n";
 
-            last_count = current;
+            last_count  = current;
             next_report = now + std::chrono::seconds(2);
         }
     }
 
     // Final stats
-    auto total_elapsed = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - start).count();
+    auto total_elapsed =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+            .count();
     std::uint64_t total = counter.load(std::memory_order_relaxed);
-    double avg_rate = static_cast<double>(total) / total_elapsed;
+    double avg_rate     = static_cast<double>(total) / total_elapsed;
 
     std::cout << "\n=== Results ===\n";
     std::cout << "  Duration:   " << std::fixed << std::setprecision(2)
@@ -122,8 +126,8 @@ void run_workload(
     std::cout << "  Avg rate:   " << perf::format_rate(avg_rate) << "\n";
 }
 
-
-void run_profiler_workload(
+void
+run_profiler_workload(
     perf::context_factory factory,
     const char* backend_name,
     int duration,
@@ -144,10 +148,11 @@ void run_profiler_workload(
     std::cout << "Warming up (1 second)...\n";
     {
         auto ioc = factory();
-        auto ex = ioc->get_executor();
+        auto ex  = ioc->get_executor();
         std::atomic<std::uint64_t> warmup_counter{0};
 
-        auto warmup_end = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        auto warmup_end =
+            std::chrono::steady_clock::now() + std::chrono::seconds(1);
         while (std::chrono::steady_clock::now() < warmup_end)
         {
             for (int i = 0; i < 1000; ++i)
@@ -165,15 +170,19 @@ void run_profiler_workload(
     std::cout << "\nWorkload complete.\n";
 }
 
-
-void print_usage(const char* program_name)
+void
+print_usage(const char* program_name)
 {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
-    std::cout << "Profiler workload for large pending queue dispatch analysis.\n\n";
+    std::cout
+        << "Profiler workload for large pending queue dispatch analysis.\n\n";
     std::cout << "Options:\n";
-    std::cout << "  --backend <name>     Select I/O backend (default: platform default)\n";
-    std::cout << "  --duration <secs>    Run duration in seconds (default: 10)\n";
-    std::cout << "  --depth <n>          Queue depth per iteration (default: 100000)\n";
+    std::cout << "  --backend <name>     Select I/O backend (default: platform "
+                 "default)\n";
+    std::cout
+        << "  --duration <secs>    Run duration in seconds (default: 10)\n";
+    std::cout << "  --depth <n>          Queue depth per iteration (default: "
+                 "100000)\n";
     std::cout << "  --threads <n>        Dispatch threads (default: 1)\n";
     std::cout << "  --list               List available backends\n";
     std::cout << "  --help               Show this help message\n";
@@ -184,12 +193,13 @@ void print_usage(const char* program_name)
     perf::print_available_backends();
 }
 
-int main(int argc, char* argv[])
+int
+main(int argc, char* argv[])
 {
     const char* backend = nullptr;
-    int duration = 10;
-    int queue_depth = 100000;
-    int num_threads = 1;
+    int duration        = 10;
+    int queue_depth     = 100000;
+    int num_threads     = 1;
 
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i)
@@ -239,7 +249,9 @@ int main(int argc, char* argv[])
             perf::print_available_backends();
             return 0;
         }
-        else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
+        else if (
+            std::strcmp(argv[i], "--help") == 0 ||
+            std::strcmp(argv[i], "-h") == 0)
         {
             print_usage(argv[0]);
             return 0;
@@ -269,9 +281,9 @@ int main(int argc, char* argv[])
         backend = perf::default_backend_name();
 
     // Dispatch to the selected backend
-    return perf::dispatch_backend(backend,
-        [=](perf::context_factory factory, const char* name)
-        {
-            run_profiler_workload(factory, name, duration, queue_depth, num_threads);
+    return perf::dispatch_backend(
+        backend, [=](perf::context_factory factory, auto, const char* name) {
+            run_profiler_workload(
+                factory, name, duration, queue_depth, num_threads);
         });
 }

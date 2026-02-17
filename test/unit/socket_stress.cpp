@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Vinnie Falco
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -56,15 +57,14 @@ get_stress_duration()
 // Create a connected tcp_socket pair for stress testing.
 // Uses ephemeral port (0) so the OS assigns an available port,
 // avoiding TIME_WAIT collisions on back-to-back runs.
-template<class Context>
 std::pair<tcp_socket, tcp_socket>
-make_stress_pair(Context& ctx)
+make_stress_pair(io_context& ctx)
 {
     auto ex = ctx.get_executor();
 
     std::error_code accept_ec;
     std::error_code connect_ec;
-    bool accept_done = false;
+    bool accept_done  = false;
     bool connect_done = false;
 
     tcp_acceptor acc(ctx);
@@ -80,16 +80,16 @@ make_stress_pair(Context& ctx)
         [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
            bool& done_out) -> capy::task<> {
             auto [ec] = co_await a.accept(s);
-            ec_out = ec;
-            done_out = true;
+            ec_out    = ec;
+            done_out  = true;
         }(acc, s1, accept_ec, accept_done));
 
     capy::run_async(ex)(
         [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
            bool& done_out) -> capy::task<> {
             auto [ec] = co_await s.connect(ep);
-            ec_out = ec;
-            done_out = true;
+            ec_out    = ec;
+            done_out  = true;
         }(s2, endpoint(ipv4_address::loopback(), port), connect_ec,
                            connect_done));
 
@@ -116,7 +116,7 @@ make_stress_pair(Context& ctx)
 // - After IOCP delivers completion but before operator() runs
 // - During operator() execution
 
-template<class Context>
+template<auto Backend>
 struct stop_token_stress_test
 {
     void run()
@@ -126,11 +126,11 @@ struct stop_token_stress_test
             stderr, "  stop_token_stress: running for %d seconds...\n",
             duration);
 
-        Context ioc;
+        io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
         // Pre-create tcp_socket pair BEFORE ioc.run()
-        auto [s1, s2] = make_stress_pair<Context>(ioc);
+        auto [s1, s2] = make_stress_pair(ioc);
 
         std::atomic<std::size_t> iterations{0};
         std::atomic<std::size_t> cancellations{0};
@@ -264,7 +264,7 @@ COROSIO_BACKEND_TESTS(
 // This test forces many synchronous completions to stress the
 // race between the initiating thread and completion handler thread.
 
-template<class Context>
+template<auto Backend>
 struct sync_completion_stress_test
 {
     void run()
@@ -274,11 +274,11 @@ struct sync_completion_stress_test
             stderr, "  sync_completion_stress: running for %d seconds...\n",
             duration);
 
-        Context ioc;
+        io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
         // Pre-create tcp_socket pair BEFORE ioc.run()
-        auto [s1, s2] = make_stress_pair<Context>(ioc);
+        auto [s1, s2] = make_stress_pair(ioc);
 
         std::atomic<std::size_t> iterations{0};
         std::atomic<bool> stop_flag{false};
@@ -354,7 +354,7 @@ COROSIO_BACKEND_TESTS(
 // This test rapidly cancels and closes sockets to stress the
 // cleanup paths and ensure no use-after-free or double-free.
 
-template<class Context>
+template<auto Backend>
 struct cancel_close_stress_test
 {
     void run()
@@ -364,11 +364,11 @@ struct cancel_close_stress_test
             stderr, "  cancel_close_stress: running for %d seconds...\n",
             duration);
 
-        Context ioc;
+        io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
         // Pre-create tcp_socket pair BEFORE ioc.run()
-        auto [s1, s2] = make_stress_pair<Context>(ioc);
+        auto [s1, s2] = make_stress_pair(ioc);
 
         std::atomic<std::size_t> iterations{0};
         std::atomic<std::size_t> cancels{0};
@@ -511,7 +511,7 @@ COROSIO_BACKEND_TESTS(
 // This test runs multiple concurrent tcp_socket operations to stress
 // thread safety and completion dispatch.
 
-template<class Context>
+template<auto Backend>
 struct concurrent_ops_stress_test
 {
     void run()
@@ -521,7 +521,7 @@ struct concurrent_ops_stress_test
             stderr, "  concurrent_ops_stress: running for %d seconds...\n",
             duration);
 
-        Context ioc;
+        io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
         std::atomic<std::size_t> total_bytes{0};
@@ -533,7 +533,7 @@ struct concurrent_ops_stress_test
         std::vector<std::pair<tcp_socket, tcp_socket>> pairs;
         for (int i = 0; i < num_pairs; ++i)
         {
-            pairs.push_back(make_stress_pair<Context>(ioc));
+            pairs.push_back(make_stress_pair(ioc));
         }
 
         // Writer tasks - use function parameters to pass index reliably
@@ -616,7 +616,7 @@ COROSIO_BACKEND_TESTS(
 // This test rapidly accepts and connects to stress the acceptor
 // code path and accept completion handling.
 
-template<class Context>
+template<auto Backend>
 struct accept_stress_test
 {
     void run()
@@ -625,7 +625,7 @@ struct accept_stress_test
         std::fprintf(
             stderr, "  accept_stress: running for %d seconds...\n", duration);
 
-        Context ioc;
+        io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
         std::atomic<std::size_t> connections{0};

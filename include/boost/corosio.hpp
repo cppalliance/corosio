@@ -10,14 +10,18 @@
 #ifndef BOOST_COROSIO_HPP
 #define BOOST_COROSIO_HPP
 
-#include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/backend.hpp>
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/io_buffer_param.hpp>
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/ipv4_address.hpp>
+#include <boost/corosio/ipv6_address.hpp>
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/resolver_results.hpp>
 #include <boost/corosio/signal_set.hpp>
-#include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_server.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/timer.hpp>
 
 #include <boost/corosio/tls_context.hpp>

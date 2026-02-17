@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -70,7 +71,6 @@ namespace boost::corosio::detail {
 template<class T>
 class thread_local_ptr;
 
-
 #if defined(BOOST_COROSIO_TLS_KEYWORD)
 
 // Use compiler-specific keyword (__declspec(thread) or __thread)
@@ -82,10 +82,10 @@ class thread_local_ptr
     static BOOST_COROSIO_TLS_KEYWORD T* ptr_;
 
 public:
-    thread_local_ptr() = default;
+    thread_local_ptr()  = default;
     ~thread_local_ptr() = default;
 
-    thread_local_ptr(thread_local_ptr const&) = delete;
+    thread_local_ptr(thread_local_ptr const&)            = delete;
     thread_local_ptr& operator=(thread_local_ptr const&) = delete;
 
     /** Return the pointer for this thread.
@@ -139,8 +139,8 @@ public:
 };
 
 template<class T>
-BOOST_COROSIO_TLS_KEYWORD T* thread_local_ptr<T>::ptr_ = nullptr;
-
+BOOST_COROSIO_SYMBOL_VISIBLE BOOST_COROSIO_TLS_KEYWORD T*
+    thread_local_ptr<T>::ptr_ = nullptr;
 
 #else
 
@@ -152,10 +152,10 @@ class thread_local_ptr
     static thread_local T* ptr_;
 
 public:
-    thread_local_ptr() = default;
+    thread_local_ptr()  = default;
     ~thread_local_ptr() = default;
 
-    thread_local_ptr(thread_local_ptr const&) = delete;
+    thread_local_ptr(thread_local_ptr const&)            = delete;
     thread_local_ptr& operator=(thread_local_ptr const&) = delete;
 
     T* get() const noexcept
@@ -188,7 +188,8 @@ public:
 };
 
 template<class T>
-thread_local T* thread_local_ptr<T>::ptr_ = nullptr;
+BOOST_COROSIO_SYMBOL_VISIBLE thread_local T* thread_local_ptr<T>::ptr_ =
+    nullptr;
 
 #endif
 

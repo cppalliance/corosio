@@ -28,11 +28,7 @@ struct metric
     std::string name;
     double value;
 
-    metric(std::string n, double v)
-        : name(std::move(n))
-        , value(v)
-    {
-    }
+    metric(std::string n, double v) : name(std::move(n)), value(v) {}
 };
 
 /** Result from a single benchmark run. */
@@ -41,10 +37,7 @@ struct benchmark_result
     std::string name;
     std::vector<metric> metrics;
 
-    explicit benchmark_result(std::string n)
-        : name(std::move(n))
-    {
-    }
+    explicit benchmark_result(std::string n) : name(std::move(n)) {}
 
     benchmark_result& add(std::string metric_name, double value)
     {
@@ -53,7 +46,8 @@ struct benchmark_result
     }
 
     /** Add all statistics from a statistics object with a prefix. */
-    benchmark_result& add_latency_stats(std::string prefix, perf::statistics const& stats)
+    benchmark_result&
+    add_latency_stats(std::string prefix, perf::statistics const& stats)
     {
         add(prefix + "_mean_us", stats.mean());
         add(prefix + "_p50_us", stats.p50());
@@ -81,14 +75,30 @@ class result_collector
         {
             switch (c)
             {
-            case '"':  oss << "\\\""; break;
-            case '\\': oss << "\\\\"; break;
-            case '\b': oss << "\\b";  break;
-            case '\f': oss << "\\f";  break;
-            case '\n': oss << "\\n";  break;
-            case '\r': oss << "\\r";  break;
-            case '\t': oss << "\\t";  break;
-            default:   oss << c;      break;
+            case '"':
+                oss << "\\\"";
+                break;
+            case '\\':
+                oss << "\\\\";
+                break;
+            case '\b':
+                oss << "\\b";
+                break;
+            case '\f':
+                oss << "\\f";
+                break;
+            case '\n':
+                oss << "\\n";
+                break;
+            case '\r':
+                oss << "\\r";
+                break;
+            case '\t':
+                oss << "\\t";
+                break;
+            default:
+                oss << c;
+                break;
             }
         }
         return oss.str();
@@ -96,7 +106,7 @@ class result_collector
 
     static std::string current_timestamp()
     {
-        auto now = std::chrono::system_clock::now();
+        auto now  = std::chrono::system_clock::now();
         auto time = std::chrono::system_clock::to_time_t(now);
         std::tm tm_buf;
 #ifdef _WIN32
@@ -116,10 +126,19 @@ public:
     {
     }
 
-    void set_backend(std::string backend) { backend_ = std::move(backend); }
-    void set_duration(double duration_s) { duration_s_ = duration_s; }
+    void set_backend(std::string backend)
+    {
+        backend_ = std::move(backend);
+    }
+    void set_duration(double duration_s)
+    {
+        duration_s_ = duration_s;
+    }
 
-    void add(benchmark_result result) { results_.push_back(std::move(result)); }
+    void add(benchmark_result result)
+    {
+        results_.push_back(std::move(result));
+    }
 
     /** Serialize all results to JSON. */
     std::string to_json() const
@@ -142,7 +161,8 @@ public:
             oss << "      \"name\": \"" << escape_json(r.name) << "\"";
 
             for (auto const& m : r.metrics)
-                oss << ",\n      \"" << escape_json(m.name) << "\": " << m.value;
+                oss << ",\n      \"" << escape_json(m.name)
+                    << "\": " << m.value;
 
             oss << "\n    }";
             if (i + 1 < results_.size())

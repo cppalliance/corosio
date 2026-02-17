@@ -22,9 +22,7 @@ namespace asio_bench {
     @param duration_s Duration in seconds for each benchmark.
 */
 void run_io_context_benchmarks(
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s );
+    bench::result_collector& collector, char const* filter, double duration_s);
 
 /** Run socket throughput benchmarks.
 
@@ -34,9 +32,7 @@ void run_io_context_benchmarks(
     @param duration_s Duration in seconds for each benchmark.
 */
 void run_socket_throughput_benchmarks(
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s );
+    bench::result_collector& collector, char const* filter, double duration_s);
 
 /** Run socket latency benchmarks.
 
@@ -46,9 +42,7 @@ void run_socket_throughput_benchmarks(
     @param duration_s Duration in seconds for each benchmark.
 */
 void run_socket_latency_benchmarks(
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s );
+    bench::result_collector& collector, char const* filter, double duration_s);
 
 /** Run HTTP server benchmarks.
 
@@ -58,9 +52,7 @@ void run_socket_latency_benchmarks(
     @param duration_s Duration in seconds for each benchmark.
 */
 void run_http_server_benchmarks(
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s );
+    bench::result_collector& collector, char const* filter, double duration_s);
 
 /** Run timer benchmarks.
 
@@ -70,9 +62,7 @@ void run_http_server_benchmarks(
     @param duration_s Duration in seconds for each benchmark.
 */
 void run_timer_benchmarks(
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s );
+    bench::result_collector& collector, char const* filter, double duration_s);
 
 /** Run accept churn benchmarks.
 
@@ -82,9 +72,7 @@ void run_timer_benchmarks(
     @param duration_s Duration in seconds for each benchmark.
 */
 void run_accept_churn_benchmarks(
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s );
+    bench::result_collector& collector, char const* filter, double duration_s);
 
 /** Run fan-out/fan-in benchmarks.
 
@@ -94,9 +82,7 @@ void run_accept_churn_benchmarks(
     @param duration_s Duration in seconds for each benchmark.
 */
 void run_fan_out_benchmarks(
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s );
+    bench::result_collector& collector, char const* filter, double duration_s);
 
 } // namespace asio_bench
 

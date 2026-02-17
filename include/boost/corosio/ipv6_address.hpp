@@ -293,7 +293,6 @@ private:
     std::size_t print_impl(char* dest) const noexcept;
 };
 
-
 /** Parse a string containing an IPv6 address.
 
     This function attempts to parse the string

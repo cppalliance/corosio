@@ -298,13 +298,12 @@ get_wolfssl_native_context(tls_context_data const& cd)
 
 } // namespace detail
 
-
 struct wolfssl_stream::impl
 {
     capy::any_stream& s_;
     tls_context ctx_;
     WOLFSSL* ssl_ = nullptr;
-    bool used_ = false;
+    bool used_    = false;
 
     // Buffers for read operations
     std::vector<char> read_in_buf_;
@@ -337,7 +336,6 @@ struct wolfssl_stream::impl
     // Renegotiation can cause both TLS read/write to access the socket
     capy::async_mutex io_cm_;
 
-
     impl(capy::any_stream& s, tls_context ctx) : s_(s), ctx_(std::move(ctx))
     {
         read_in_buf_.resize(default_buffer_size);
@@ -362,14 +360,14 @@ struct wolfssl_stream::impl
             wolfSSL_free(ssl_);
             ssl_ = nullptr;
         }
-        read_in_pos_ = 0;
-        read_in_len_ = 0;
-        read_out_len_ = 0;
-        write_in_pos_ = 0;
-        write_in_len_ = 0;
+        read_in_pos_   = 0;
+        read_in_len_   = 0;
+        read_out_len_  = 0;
+        write_in_pos_  = 0;
+        write_in_len_  = 0;
         write_out_len_ = 0;
-        current_op_ = nullptr;
-        used_ = false;
+        current_op_    = nullptr;
+        used_          = false;
     }
 
     // WolfSSL I/O Callbacks
@@ -382,7 +380,7 @@ struct wolfssl_stream::impl
     static int recv_callback(WOLFSSL*, char* buf, int sz, void* ctx)
     {
         auto* self = static_cast<impl*>(ctx);
-        auto* op = self->current_op_;
+        auto* op   = self->current_op_;
 
         // Check if we have data in the input buffer
         std::size_t available = *op->in_len - *op->in_pos;
@@ -417,7 +415,7 @@ struct wolfssl_stream::impl
     static int send_callback(WOLFSSL*, char* buf, int sz, void* ctx)
     {
         auto* self = static_cast<impl*>(ctx);
-        auto* op = self->current_op_;
+        auto* op   = self->current_op_;
 
         // Check if we have room in the output buffer
         std::size_t available = op->out_buf->size() - *op->out_len;
@@ -457,12 +455,12 @@ struct wolfssl_stream::impl
 
         for (auto& buf : buffers)
         {
-            char* dest = static_cast<char*>(buf.data());
+            char* dest    = static_cast<char*>(buf.data());
             int remaining = static_cast<int>(buf.size());
 
             while (remaining > 0)
             {
-                op.want_read = false;
+                op.want_read  = false;
                 op.want_write = false;
 
                 int ret = wolfSSL_read(ssl_, dest, remaining);
@@ -584,11 +582,11 @@ struct wolfssl_stream::impl
         for (auto const& buf : buffers)
         {
             char const* src = static_cast<char const*>(buf.data());
-            int remaining = static_cast<int>(buf.size());
+            int remaining   = static_cast<int>(buf.size());
 
             while (remaining > 0)
             {
-                op.want_read = false;
+                op.want_read  = false;
                 op.want_write = false;
 
                 int ret = wolfSSL_write(ssl_, src, remaining);
@@ -714,7 +712,7 @@ struct wolfssl_stream::impl
 
         while (true)
         {
-            op.want_read = false;
+            op.want_read  = false;
             op.want_write = false;
 
             // Call appropriate handshake function based on type
@@ -843,7 +841,7 @@ struct wolfssl_stream::impl
 
         while (true)
         {
-            op.want_read = false;
+            op.want_read  = false;
             op.want_write = false;
 
             int ret = wolfSSL_shutdown(ssl_);
@@ -945,7 +943,7 @@ struct wolfssl_stream::impl
             return {};
 
         // Get cached native contexts from tls_context
-        auto& cd = detail::get_tls_context_data(ctx_);
+        auto& cd     = detail::get_tls_context_data(ctx_);
         auto* native = detail::get_wolfssl_native_context(cd);
         if (!native)
         {
@@ -996,7 +994,6 @@ struct wolfssl_stream::impl
     }
 };
 
-
 wolfssl_stream::impl*
 wolfssl_stream::make_impl(capy::any_stream& stream, tls_context const& ctx)
 {
@@ -1022,8 +1019,8 @@ wolfssl_stream::operator=(wolfssl_stream&& other) noexcept
     if (this != &other)
     {
         delete impl_;
-        stream_ = std::move(other.stream_);
-        impl_ = other.impl_;
+        stream_     = std::move(other.stream_);
+        impl_       = other.impl_;
         other.impl_ = nullptr;
     }
     return *this;

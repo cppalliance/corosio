@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -40,12 +41,12 @@
 #include "../common/perf.hpp"
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
-
+namespace capy    = boost::capy;
 
 // Ping-pong coroutine: alternately write then read on a socket pair
 // Passed by IILE parameters to avoid capture use-after-free
-capy::task<> ping_pong(
+capy::task<>
+ping_pong(
     corosio::tcp_socket& sock_write,
     corosio::tcp_socket& sock_read,
     std::size_t buf_size,
@@ -73,9 +74,9 @@ capy::task<> ping_pong(
     }
 }
 
-
 // Run the profiler workload for the specified duration
-void run_workload(
+void
+run_workload(
     perf::context_factory factory,
     int duration_seconds,
     std::size_t buffer_size,
@@ -104,12 +105,13 @@ void run_workload(
             ping_pong(a, b, buffer_size, ops, stop));
     }
 
-    auto start = std::chrono::steady_clock::now();
-    auto end_time = start + std::chrono::seconds(duration_seconds);
+    auto start       = std::chrono::steady_clock::now();
+    auto end_time    = start + std::chrono::seconds(duration_seconds);
     auto next_report = start + std::chrono::seconds(2);
 
     std::cout << "Running for " << duration_seconds << " seconds...\n";
-    std::cout << "Buffer size: " << buffer_size << " bytes, Pairs: " << num_pairs << "\n\n";
+    std::cout << "Buffer size: " << buffer_size
+              << " bytes, Pairs: " << num_pairs << "\n\n";
 
     std::uint64_t last_count = 0;
 
@@ -127,10 +129,11 @@ void run_workload(
             std::uint64_t current = ops.load(std::memory_order_relaxed);
             double rate = static_cast<double>(current - last_count) / 2.0;
 
-            std::cout << "  [" << std::fixed << std::setprecision(0) << elapsed << "s] "
-                      << perf::format_rate(rate) << " (" << current << " total)\n";
+            std::cout << "  [" << std::fixed << std::setprecision(0) << elapsed
+                      << "s] " << perf::format_rate(rate) << " (" << current
+                      << " total)\n";
 
-            last_count = current;
+            last_count  = current;
             next_report = now + std::chrono::seconds(2);
         }
     }
@@ -149,10 +152,11 @@ void run_workload(
     ioc->run();
 
     // Final stats
-    auto total_elapsed = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - start).count();
+    auto total_elapsed =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+            .count();
     std::uint64_t total = ops.load(std::memory_order_relaxed);
-    double avg_rate = static_cast<double>(total) / total_elapsed;
+    double avg_rate     = static_cast<double>(total) / total_elapsed;
 
     std::cout << "\n=== Results ===\n";
     std::cout << "  Duration:   " << std::fixed << std::setprecision(2)
@@ -161,8 +165,8 @@ void run_workload(
     std::cout << "  Avg rate:   " << perf::format_rate(avg_rate) << "\n";
 }
 
-
-void run_profiler_workload(
+void
+run_profiler_workload(
     perf::context_factory factory,
     const char* backend_name,
     int duration,
@@ -182,7 +186,7 @@ void run_profiler_workload(
     // Warmup
     std::cout << "Warming up (1 second)...\n";
     {
-        auto ioc = factory();
+        auto ioc    = factory();
         auto [a, b] = corosio::test::make_socket_pair(*ioc);
         a.set_no_delay(true);
         b.set_no_delay(true);
@@ -193,7 +197,8 @@ void run_profiler_workload(
         capy::run_async(ioc->get_executor())(
             ping_pong(a, b, 64, warmup_ops, warmup_stop));
 
-        auto warmup_end = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        auto warmup_end =
+            std::chrono::steady_clock::now() + std::chrono::seconds(1);
         while (std::chrono::steady_clock::now() < warmup_end)
             ioc->run_for(std::chrono::milliseconds(100));
 
@@ -211,31 +216,36 @@ void run_profiler_workload(
     std::cout << "\nWorkload complete.\n";
 }
 
-
-void print_usage(const char* program_name)
+void
+print_usage(const char* program_name)
 {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
-    std::cout << "Profiler workload for small I/O operation overhead analysis.\n\n";
+    std::cout
+        << "Profiler workload for small I/O operation overhead analysis.\n\n";
     std::cout << "Options:\n";
-    std::cout << "  --backend <name>     Select I/O backend (default: platform default)\n";
-    std::cout << "  --duration <secs>    Run duration in seconds (default: 10)\n";
+    std::cout << "  --backend <name>     Select I/O backend (default: platform "
+                 "default)\n";
+    std::cout
+        << "  --duration <secs>    Run duration in seconds (default: 10)\n";
     std::cout << "  --buffer <bytes>     Buffer size in bytes (default: 64)\n";
     std::cout << "  --pairs <n>          Number of socket pairs (default: 1)\n";
     std::cout << "  --list               List available backends\n";
     std::cout << "  --help               Show this help message\n";
     std::cout << "\n";
     std::cout << "Example:\n";
-    std::cout << "  " << program_name << " --duration 10 --buffer 64 --pairs 4\n";
+    std::cout << "  " << program_name
+              << " --duration 10 --buffer 64 --pairs 4\n";
     std::cout << "\n";
     perf::print_available_backends();
 }
 
-int main(int argc, char* argv[])
+int
+main(int argc, char* argv[])
 {
-    const char* backend = nullptr;
-    int duration = 10;
+    const char* backend     = nullptr;
+    int duration            = 10;
     std::size_t buffer_size = 64;
-    int num_pairs = 1;
+    int num_pairs           = 1;
 
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i)
@@ -285,7 +295,9 @@ int main(int argc, char* argv[])
             perf::print_available_backends();
             return 0;
         }
-        else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
+        else if (
+            std::strcmp(argv[i], "--help") == 0 ||
+            std::strcmp(argv[i], "-h") == 0)
         {
             print_usage(argv[0]);
             return 0;
@@ -315,9 +327,9 @@ int main(int argc, char* argv[])
         backend = perf::default_backend_name();
 
     // Dispatch to the selected backend
-    return perf::dispatch_backend(backend,
-        [=](perf::context_factory factory, const char* name)
-        {
-            run_profiler_workload(factory, name, duration, buffer_size, num_pairs);
+    return perf::dispatch_backend(
+        backend, [=](perf::context_factory factory, auto, const char* name) {
+            run_profiler_workload(
+                factory, name, duration, buffer_size, num_pairs);
         });
 }

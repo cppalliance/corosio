@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -26,12 +27,12 @@ namespace boost::corosio {
 //
 // Tests are templated on the context type to run with all available backends.
 
-template<class Context>
+template<auto Backend>
 struct acceptor_test
 {
     void testConstruction()
     {
-        Context ioc;
+        io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
         // Acceptor should not be open initially
@@ -40,7 +41,7 @@ struct acceptor_test
 
     void testListen()
     {
-        Context ioc;
+        io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
         // Listen on a port
@@ -55,7 +56,7 @@ struct acceptor_test
 
     void testMoveConstruct()
     {
-        Context ioc;
+        io_context ioc(Backend);
         tcp_acceptor acc1(ioc);
         auto ec = acc1.listen(endpoint(0));
         BOOST_TEST(!ec);
@@ -71,7 +72,7 @@ struct acceptor_test
 
     void testMoveAssign()
     {
-        Context ioc;
+        io_context ioc(Backend);
         tcp_acceptor acc1(ioc);
         tcp_acceptor acc2(ioc);
         auto ec = acc1.listen(endpoint(0));
@@ -94,7 +95,7 @@ struct acceptor_test
         // Tests that cancel() properly cancels a pending accept operation.
         // This exercises the acceptor_ptr shared_ptr that keeps the
         // acceptor impl alive until IOCP delivers the cancellation.
-        Context ioc;
+        io_context ioc(Backend);
         tcp_acceptor acc(ioc);
         auto ec = acc.listen(endpoint(0));
         BOOST_TEST(!ec);
@@ -113,8 +114,8 @@ struct acceptor_test
             // Store lambda in variable to ensure it outlives the coroutine.
             auto nested_coro = [&acc, &peer, &accept_done,
                                 &accept_ec]() -> capy::task<> {
-                auto [ec] = co_await acc.accept(peer);
-                accept_ec = ec;
+                auto [ec]   = co_await acc.accept(peer);
+                accept_ec   = ec;
                 accept_done = true;
             };
             capy::run_async(ioc.get_executor())(nested_coro());
@@ -144,7 +145,7 @@ struct acceptor_test
         // when close() is called, CancelIoEx is invoked, the tcp_socket is closed,
         // but the impl must stay alive until IOCP delivers the cancellation.
         // The acceptor_ptr shared_ptr in accept_op ensures this.
-        Context ioc;
+        io_context ioc(Backend);
         tcp_acceptor acc(ioc);
         auto ec = acc.listen(endpoint(0));
         BOOST_TEST(!ec);
@@ -165,8 +166,8 @@ struct acceptor_test
             // must remain alive while the coroutine is suspended.
             auto nested_coro = [&acc, &peer, &accept_done,
                                 &accept_ec]() -> capy::task<> {
-                auto [ec] = co_await acc.accept(peer);
-                accept_ec = ec;
+                auto [ec]   = co_await acc.accept(peer);
+                accept_ec   = ec;
                 accept_done = true;
             };
             capy::run_async(ioc.get_executor())(nested_coro());

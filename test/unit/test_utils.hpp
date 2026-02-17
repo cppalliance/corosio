@@ -11,7 +11,7 @@
 #define BOOST_COROSIO_TEST_TLS_TEST_UTILS_HPP
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/io_stream.hpp>
+#include <boost/corosio/io/io_stream.hpp>
 #include <boost/corosio/timer.hpp>
 #include <boost/corosio/tls_context.hpp>
 #include <boost/corosio/tls_stream.hpp>
@@ -827,8 +827,8 @@ run_tls_test_fail(
 
     bool client_failed = false;
     bool server_failed = false;
-    bool client_done = false;
-    bool server_done = false;
+    bool client_done   = false;
+    bool server_done   = false;
 
     // Timer to unblock stuck handshakes (failsafe only)
     timer timeout(ioc);
@@ -986,7 +986,7 @@ run_tls_shutdown_test(
 
     auto client_shutdown = [&client, &done, &failsafe]() -> capy::task<> {
         auto [ec] = co_await client.shutdown();
-        done = true;
+        done      = true;
         failsafe.cancel();
         BOOST_TEST(
             !ec || ec == capy::cond::stream_truncated ||
@@ -1005,7 +1005,7 @@ run_tls_shutdown_test(
         s2.close();
     };
 
-    bool failsafe_hit = false;
+    bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe, &failsafe_hit, &done, &s1,
                           &s2]() -> capy::task<> {
         auto [ec] = co_await failsafe.wait();
@@ -1091,7 +1091,7 @@ run_tls_truncation_test(
     ioc.restart();
 
     // Truncation test with timeout protection
-    bool read_done = false;
+    bool read_done    = false;
     bool failsafe_hit = false;
 
     // Timeout to prevent deadlock
@@ -1431,7 +1431,7 @@ run_stop_token_handshake_test(
         stop_src.request_stop();
     };
 
-    bool failsafe_hit = false;
+    bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
                           &s2]() -> capy::task<> {
         auto [ec] = co_await failsafe.wait();
@@ -1531,7 +1531,7 @@ run_stop_token_read_test(
         co_return;
     };
 
-    bool failsafe_hit = false;
+    bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
                           &s2]() -> capy::task<> {
         auto [ec] = co_await failsafe.wait();
@@ -1643,7 +1643,7 @@ run_stop_token_write_test(
         stop_src.request_stop();
     };
 
-    bool failsafe_hit = false;
+    bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
                           &s2]() -> capy::task<> {
         auto [ec] = co_await failsafe.wait();
@@ -1727,7 +1727,7 @@ run_socket_cancel_test(
         s1.cancel();
     };
 
-    bool failsafe_hit = false;
+    bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
                           &s2]() -> capy::task<> {
         auto [ec] = co_await failsafe.wait();

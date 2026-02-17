@@ -55,15 +55,15 @@ tcp_server&
 tcp_server::operator=(tcp_server&& o) noexcept
 {
     delete impl_;
-    impl_ = std::exchange(o.impl_, nullptr);
-    ex_ = o.ex_;
-    waiters_ = std::exchange(o.waiters_, nullptr);
-    idle_head_ = std::exchange(o.idle_head_, nullptr);
-    active_head_ = std::exchange(o.active_head_, nullptr);
-    active_tail_ = std::exchange(o.active_tail_, nullptr);
+    impl_           = std::exchange(o.impl_, nullptr);
+    ex_             = o.ex_;
+    waiters_        = std::exchange(o.waiters_, nullptr);
+    idle_head_      = std::exchange(o.idle_head_, nullptr);
+    active_head_    = std::exchange(o.active_head_, nullptr);
+    active_tail_    = std::exchange(o.active_tail_, nullptr);
     active_accepts_ = std::exchange(o.active_accepts_, 0);
-    storage_ = std::move(o.storage_);
-    running_ = std::exchange(o.running_, false);
+    storage_        = std::move(o.storage_);
+    running_        = std::exchange(o.running_, false);
     return *this;
 }
 
@@ -77,7 +77,7 @@ tcp_server::do_accept(tcp_acceptor& acc)
     while (!env->stop_token.stop_requested())
     {
         // Wait for an idle worker before blocking on accept
-        auto& w = co_await pop();
+        auto& w   = co_await pop();
         auto [ec] = co_await acc.accept(w.socket());
         if (ec)
         {
@@ -113,7 +113,7 @@ tcp_server::start()
     running_ = true;
 
     impl_->stop = {}; // Fresh stop source
-    auto st = impl_->stop.get_token();
+    auto st     = impl_->stop.get_token();
 
     active_accepts_ = impl_->ports.size();
 

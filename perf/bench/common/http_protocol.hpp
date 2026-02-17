@@ -17,20 +17,18 @@
 namespace bench::http {
 
 /** Pre-formatted HTTP request. */
-constexpr char const small_request[] =
-    "GET /api/data HTTP/1.1\r\n"
-    "Host: localhost\r\n"
-    "Content-Length: 0\r\n"
-    "\r\n";
+constexpr char const small_request[] = "GET /api/data HTTP/1.1\r\n"
+                                       "Host: localhost\r\n"
+                                       "Content-Length: 0\r\n"
+                                       "\r\n";
 
 constexpr std::size_t small_request_size = sizeof(small_request) - 1;
 
 /** Pre-formatted HTTP response. */
-constexpr char const small_response[] =
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Length: 13\r\n"
-    "\r\n"
-    "Hello, World!";
+constexpr char const small_response[] = "HTTP/1.1 200 OK\r\n"
+                                        "Content-Length: 13\r\n"
+                                        "\r\n"
+                                        "Hello, World!";
 
 constexpr std::size_t small_response_size = sizeof(small_response) - 1;
 
@@ -43,24 +41,30 @@ constexpr std::size_t small_response_size = sizeof(small_response) - 1;
 class request_parser
 {
     std::size_t header_end_ = 0;
-    bool complete_ = false;
+    bool complete_          = false;
 
 public:
     /** Reset the parser for a new request. */
     void reset()
     {
         header_end_ = 0;
-        complete_ = false;
+        complete_   = false;
     }
 
     /** Return true if a complete request has been parsed. */
-    bool complete() const { return complete_; }
+    bool complete() const
+    {
+        return complete_;
+    }
 
     /** Return the number of bytes consumed by the complete request.
 
         Only valid when complete() returns true.
     */
-    std::size_t bytes_consumed() const { return header_end_; }
+    std::size_t bytes_consumed() const
+    {
+        return header_end_;
+    }
 
     /** Parse incoming data and return number of bytes consumed.
 
@@ -76,11 +80,11 @@ public:
         // Search for \r\n\r\n sequence
         for (std::size_t i = 0; i + 3 < size; ++i)
         {
-            if (data[i] == '\r' && data[i + 1] == '\n' &&
-                data[i + 2] == '\r' && data[i + 3] == '\n')
+            if (data[i] == '\r' && data[i + 1] == '\n' && data[i + 2] == '\r' &&
+                data[i + 3] == '\n')
             {
                 header_end_ = i + 4;
-                complete_ = true;
+                complete_   = true;
                 return header_end_;
             }
         }
@@ -95,29 +99,35 @@ public:
 */
 class response_parser
 {
-    std::size_t header_end_ = 0;
+    std::size_t header_end_     = 0;
     std::size_t content_length_ = 0;
-    std::size_t total_size_ = 0;
-    bool complete_ = false;
+    std::size_t total_size_     = 0;
+    bool complete_              = false;
 
 public:
     /** Reset the parser for a new response. */
     void reset()
     {
-        header_end_ = 0;
+        header_end_     = 0;
         content_length_ = 0;
-        total_size_ = 0;
-        complete_ = false;
+        total_size_     = 0;
+        complete_       = false;
     }
 
     /** Return true if a complete response has been parsed. */
-    bool complete() const { return complete_; }
+    bool complete() const
+    {
+        return complete_;
+    }
 
     /** Return the total size of the complete response.
 
         Only valid when complete() returns true.
     */
-    std::size_t total_size() const { return total_size_; }
+    std::size_t total_size() const
+    {
+        return total_size_;
+    }
 
     /** Parse incoming data and check for completion.
 
@@ -147,9 +157,11 @@ public:
                     {
                         pos += 16;
                         content_length_ = 0;
-                        while (pos < headers.size() && headers[pos] >= '0' && headers[pos] <= '9')
+                        while (pos < headers.size() && headers[pos] >= '0' &&
+                               headers[pos] <= '9')
                         {
-                            content_length_ = content_length_ * 10 + (headers[pos] - '0');
+                            content_length_ =
+                                content_length_ * 10 + (headers[pos] - '0');
                             ++pos;
                         }
                     }

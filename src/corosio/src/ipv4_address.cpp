@@ -120,7 +120,6 @@ ipv4_address::print_impl(char* dest) const noexcept
     return static_cast<std::size_t>(dest - start);
 }
 
-
 namespace {
 
 // Parse a decimal octet (0-255), no leading zeros except "0"
@@ -176,7 +175,7 @@ parse_dec_octet(char const*& it, char const* end, unsigned char& octet) noexcept
 std::error_code
 parse_ipv4_address(std::string_view s, ipv4_address& addr) noexcept
 {
-    auto it = s.data();
+    auto it        = s.data();
     auto const end = it + s.size();
 
     unsigned char octets[4];

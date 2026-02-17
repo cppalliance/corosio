@@ -13,9 +13,9 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
-#include "src/detail/iocp/sockets.hpp"
+#include <boost/corosio/native/detail/iocp/win_acceptor_service.hpp>
 #else
-#include "src/detail/socket_service.hpp"
+#include <boost/corosio/detail/socket_service.hpp>
 #endif
 
 namespace boost::corosio {
@@ -27,9 +27,9 @@ tcp_socket::~tcp_socket()
 
 tcp_socket::tcp_socket(capy::execution_context& ctx)
 #if BOOST_COROSIO_HAS_IOCP
-    : io_stream(create_handle<detail::win_sockets>(ctx))
+    : io_object(create_handle<detail::win_sockets>(ctx))
 #else
-    : io_stream(create_handle<detail::socket_service>(ctx))
+    : io_object(create_handle<detail::socket_service>(ctx))
 #endif
 {
 }
@@ -40,10 +40,10 @@ tcp_socket::open()
     if (is_open())
         return;
 #if BOOST_COROSIO_HAS_IOCP
-    auto& svc = static_cast<detail::win_sockets&>(h_.service());
-    auto& wrapper = static_cast<tcp_socket::implementation&>(*h_.get());
+    auto& svc          = static_cast<detail::win_sockets&>(h_.service());
+    auto& wrapper      = static_cast<tcp_socket::implementation&>(*h_.get());
     std::error_code ec = svc.open_socket(
-        *static_cast<detail::win_socket_impl&>(wrapper).get_internal());
+        *static_cast<detail::win_socket&>(wrapper).get_internal());
 #else
     auto& svc = static_cast<detail::socket_service&>(h_.service());
     std::error_code ec =

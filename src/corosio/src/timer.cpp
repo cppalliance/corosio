@@ -9,24 +9,14 @@
 //
 
 #include <boost/corosio/timer.hpp>
+#include <boost/corosio/detail/timer_service.hpp>
 
 namespace boost::corosio {
-
-namespace detail {
-
-// Defined in timer_service.cpp
-extern std::size_t timer_service_update_expiry(timer::implementation&);
-extern std::size_t timer_service_cancel(timer::implementation&) noexcept;
-extern std::size_t timer_service_cancel_one(timer::implementation&) noexcept;
-extern io_object::io_service&
-timer_service_direct(capy::execution_context&) noexcept;
-
-} // namespace detail
 
 timer::~timer() = default;
 
 timer::timer(capy::execution_context& ctx)
-    : io_object(handle(ctx, detail::timer_service_direct(ctx)))
+    : io_timer(handle(ctx, detail::timer_service_direct(ctx)))
 {
 }
 
@@ -35,7 +25,7 @@ timer::timer(capy::execution_context& ctx, time_point t) : timer(ctx)
     expires_at(t);
 }
 
-timer::timer(timer&& other) noexcept : io_object(std::move(other)) {}
+timer::timer(timer&& other) noexcept : io_timer(std::move(other)) {}
 
 timer&
 timer::operator=(timer&& other) noexcept

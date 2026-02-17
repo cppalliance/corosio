@@ -59,7 +59,7 @@ public:
     /** Destructor. */
     virtual ~tls_stream() = default;
 
-    tls_stream(tls_stream const&) = delete;
+    tls_stream(tls_stream const&)            = delete;
     tls_stream& operator=(tls_stream const&) = delete;
 
     /** Initiate an asynchronous read operation.

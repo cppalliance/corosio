@@ -168,11 +168,11 @@ private:
 
     impl* impl_;
     capy::any_executor ex_;
-    waiter* waiters_ = nullptr;
+    waiter* waiters_        = nullptr;
     worker_base* idle_head_ = nullptr; // Forward list: available workers
     worker_base* active_head_ =
         nullptr; // Doubly linked: workers handling connections
-    worker_base* active_tail_ = nullptr; // Tail for O(1) push_back
+    worker_base* active_tail_   = nullptr; // Tail for O(1) push_back
     std::size_t active_accepts_ = 0; // Number of active do_accept coroutines
     std::shared_ptr<void> storage_;  // Owns the worker container (type-erased)
     bool running_ = false;
@@ -180,7 +180,7 @@ private:
     // Idle list (forward/singly linked) - push front, pop front
     void idle_push(worker_base* w) noexcept
     {
-        w->next_ = idle_head_;
+        w->next_   = idle_head_;
         idle_head_ = w;
     }
 
@@ -321,9 +321,9 @@ private:
         {
         }
 
-        launch_wrapper(launch_wrapper const&) = delete;
+        launch_wrapper(launch_wrapper const&)            = delete;
         launch_wrapper& operator=(launch_wrapper const&) = delete;
-        launch_wrapper& operator=(launch_wrapper&&) = delete;
+        launch_wrapper& operator=(launch_wrapper&&)      = delete;
     };
 
     // Named functor to avoid incomplete lambda type in coroutine promise
@@ -374,9 +374,9 @@ private:
             self_.active_remove(&w_);
             if (self_.waiters_)
             {
-                auto* wait = self_.waiters_;
+                auto* wait     = self_.waiters_;
                 self_.waiters_ = wait->next;
-                wait->w = &w_;
+                wait->w        = &w_;
                 self_.ex_.post(wait->h);
             }
             else
@@ -403,9 +403,9 @@ private:
         await_suspend(std::coroutine_handle<> h, capy::io_env const*) noexcept
         {
             // Running on server executor (do_accept runs there)
-            wait_.h = h;
-            wait_.w = nullptr;
-            wait_.next = self_.waiters_;
+            wait_.h        = h;
+            wait_.w        = nullptr;
+            wait_.next     = self_.waiters_;
             self_.waiters_ = &wait_;
             return true;
         }
@@ -432,8 +432,8 @@ private:
         if (waiters_)
         {
             auto* wait = waiters_;
-            waiters_ = wait->next;
-            wait->w = &w;
+            waiters_   = wait->next;
+            wait->w    = &w;
             ex_.post(wait->h);
         }
         else
@@ -521,9 +521,9 @@ public:
             , w_(std::exchange(o.w_, nullptr))
         {
         }
-        launcher(launcher const&) = delete;
+        launcher(launcher const&)            = delete;
         launcher& operator=(launcher const&) = delete;
-        launcher& operator=(launcher&&) = delete;
+        launcher& operator=(launcher&&)      = delete;
 
         /** Launch the connection-handling coroutine.
 
@@ -561,7 +561,7 @@ public:
 
             // Reset worker's stop source for this connection
             w->stop_ = {};
-            auto st = w->stop_.get_token();
+            auto st  = w->stop_.get_token();
 
             auto wrapper =
                 launch_coro<Executor>{}(ex, st, srv_, std::move(task), w);
@@ -596,7 +596,7 @@ public:
 
 public:
     ~tcp_server();
-    tcp_server(tcp_server const&) = delete;
+    tcp_server(tcp_server const&)            = delete;
     tcp_server& operator=(tcp_server const&) = delete;
     tcp_server(tcp_server&& o) noexcept;
     tcp_server& operator=(tcp_server&& o) noexcept;
@@ -641,14 +641,14 @@ public:
     {
         // Clear existing state
         storage_.reset();
-        idle_head_ = nullptr;
+        idle_head_   = nullptr;
         active_head_ = nullptr;
         active_tail_ = nullptr;
 
         // Take ownership and populate idle list
         using StorageType = std::decay_t<Range>;
-        auto* p = new StorageType(std::forward<Range>(workers));
-        storage_ = std::shared_ptr<void>(
+        auto* p           = new StorageType(std::forward<Range>(workers));
+        storage_          = std::shared_ptr<void>(
             p, [](void* ptr) { delete static_cast<StorageType*>(ptr); });
         for (auto&& elem : *static_cast<StorageType*>(p))
             idle_push(std::to_address(elem));

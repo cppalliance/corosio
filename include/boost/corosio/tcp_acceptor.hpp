@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -12,7 +13,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
-#include <boost/corosio/io_object.hpp>
+#include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/tcp_socket.hpp>
@@ -156,7 +157,7 @@ public:
         return *this;
     }
 
-    tcp_acceptor(tcp_acceptor const&) = delete;
+    tcp_acceptor(tcp_acceptor const&)            = delete;
     tcp_acceptor& operator=(tcp_acceptor const&) = delete;
 
     /** Open, bind, and listen on an endpoint.
@@ -289,6 +290,17 @@ public:
         */
         virtual void cancel() noexcept = 0;
     };
+
+protected:
+    explicit tcp_acceptor(handle h) noexcept : io_object(std::move(h)) {}
+
+    /// Transfer accepted peer impl to the peer socket.
+    static void
+    reset_peer_impl(tcp_socket& peer, io_object::implementation* impl) noexcept
+    {
+        if (impl)
+            peer.h_.reset(impl);
+    }
 
 private:
     inline implementation& get() const noexcept
