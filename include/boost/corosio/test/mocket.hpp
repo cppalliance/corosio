@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -10,23 +11,25 @@
 #ifndef BOOST_COROSIO_TEST_MOCKET_HPP
 #define BOOST_COROSIO_TEST_MOCKET_HPP
 
-#include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/io_result.hpp>
+#include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
-#include <system_error>
 
 #include <cstddef>
-#include <new>
+#include <cstdio>
+#include <cstring>
+#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
-
-namespace boost::capy {
-class execution_context;
-} // namespace boost::capy
 
 namespace boost::corosio::test {
 
@@ -34,7 +37,7 @@ namespace boost::corosio::test {
 
     This class provides a testable socket-like interface where data
     can be staged for reading and expected data can be validated on
-    writes. A mocket is paired with a regular tcp_socket using
+    writes. A mocket is paired with a regular socket using
     @ref make_mocket_pair, allowing bidirectional communication testing.
 
     When reading, data comes from the `provide()` buffer first.
@@ -44,6 +47,8 @@ namespace boost::corosio::test {
 
     Satisfies the `capy::Stream` concept.
 
+    @tparam Socket The underlying socket type (default `tcp_socket`).
+
     @par Thread Safety
     Not thread-safe. All operations must occur on a single thread.
     All coroutines using the mocket must be suspended when calling
@@ -51,9 +56,10 @@ namespace boost::corosio::test {
 
     @see make_mocket_pair
 */
-class BOOST_COROSIO_DECL mocket
+template<class Socket = tcp_socket>
+class basic_mocket
 {
-    tcp_socket sock_;
+    Socket sock_;
     std::string provide_;
     std::string expect_;
     capy::test::fuse fuse_;
@@ -76,7 +82,7 @@ public:
 
     /** Destructor.
     */
-    ~mocket();
+    ~basic_mocket() = default;
 
     /** Construct a mocket.
 
@@ -85,22 +91,52 @@ public:
         @param max_read_size Maximum bytes per read operation.
         @param max_write_size Maximum bytes per write operation.
     */
-    mocket(
+    basic_mocket(
         capy::execution_context& ctx,
-        capy::test::fuse f = {},
-        std::size_t max_read_size = std::size_t(-1),
-        std::size_t max_write_size = std::size_t(-1));
+        capy::test::fuse f         = {},
+        std::size_t max_read_size  = std::size_t(-1),
+        std::size_t max_write_size = std::size_t(-1))
+        : sock_(ctx)
+        , fuse_(std::move(f))
+        , max_read_size_(max_read_size)
+        , max_write_size_(max_write_size)
+    {
+        if (max_read_size == 0)
+            detail::throw_logic_error("mocket: max_read_size cannot be 0");
+        if (max_write_size == 0)
+            detail::throw_logic_error("mocket: max_write_size cannot be 0");
+    }
 
     /** Move constructor.
     */
-    mocket(mocket&& other) noexcept;
+    basic_mocket(basic_mocket&& other) noexcept
+        : sock_(std::move(other.sock_))
+        , provide_(std::move(other.provide_))
+        , expect_(std::move(other.expect_))
+        , fuse_(std::move(other.fuse_))
+        , max_read_size_(other.max_read_size_)
+        , max_write_size_(other.max_write_size_)
+    {
+    }
 
     /** Move assignment.
     */
-    mocket& operator=(mocket&& other) noexcept;
+    basic_mocket& operator=(basic_mocket&& other) noexcept
+    {
+        if (this != &other)
+        {
+            sock_           = std::move(other.sock_);
+            provide_        = std::move(other.provide_);
+            expect_         = std::move(other.expect_);
+            fuse_           = other.fuse_;
+            max_read_size_  = other.max_read_size_;
+            max_write_size_ = other.max_write_size_;
+        }
+        return *this;
+    }
 
-    mocket(mocket const&) = delete;
-    mocket& operator=(mocket const&) = delete;
+    basic_mocket(basic_mocket const&)            = delete;
+    basic_mocket& operator=(basic_mocket const&) = delete;
 
     /** Return the execution context.
 
@@ -113,9 +149,9 @@ public:
 
     /** Return the underlying socket.
 
-        @return Reference to the underlying tcp_socket.
+        @return Reference to the underlying socket.
     */
-    tcp_socket& socket() noexcept
+    Socket& socket() noexcept
     {
         return sock_;
     }
@@ -130,7 +166,10 @@ public:
 
         @pre All coroutines using this mocket must be suspended.
     */
-    void provide(std::string const& s);
+    void provide(std::string const& s)
+    {
+        provide_.append(s);
+    }
 
     /** Set expected data for writes.
 
@@ -143,7 +182,10 @@ public:
 
         @pre All coroutines using this mocket must be suspended.
     */
-    void expect(std::string const& s);
+    void expect(std::string const& s)
+    {
+        expect_.append(s);
+    }
 
     /** Close the mocket and verify test expectations.
 
@@ -155,20 +197,46 @@ public:
         @return An error code indicating success or failure.
             Returns `error::test_failure` if buffers are not empty.
     */
-    std::error_code close();
+    std::error_code close()
+    {
+        if (!sock_.is_open())
+            return {};
+
+        if (!expect_.empty())
+        {
+            fuse_.fail();
+            sock_.close();
+            return capy::error::test_failure;
+        }
+        if (!provide_.empty())
+        {
+            fuse_.fail();
+            sock_.close();
+            return capy::error::test_failure;
+        }
+
+        sock_.close();
+        return {};
+    }
 
     /** Cancel pending I/O operations.
 
         Cancels any pending asynchronous operations on the underlying
         socket. Outstanding operations complete with `cond::canceled`.
     */
-    void cancel();
+    void cancel()
+    {
+        sock_.cancel();
+    }
 
     /** Check if the mocket is open.
 
         @return `true` if the mocket is open.
     */
-    bool is_open() const noexcept;
+    bool is_open() const noexcept
+    {
+        return sock_.is_open();
+    }
 
     /** Initiate an asynchronous read operation.
 
@@ -203,10 +271,14 @@ public:
     }
 };
 
+/// Default mocket type using `tcp_socket`.
+using mocket = basic_mocket<>;
 
+template<class Socket>
 template<class MutableBufferSequence>
 std::size_t
-mocket::consume_provide(MutableBufferSequence const& buffers) noexcept
+basic_mocket<Socket>::consume_provide(
+    MutableBufferSequence const& buffers) noexcept
 {
     auto n =
         capy::buffer_copy(buffers, capy::make_buffer(provide_), max_read_size_);
@@ -214,9 +286,10 @@ mocket::consume_provide(MutableBufferSequence const& buffers) noexcept
     return n;
 }
 
+template<class Socket>
 template<class ConstBufferSequence>
 bool
-mocket::validate_expect(
+basic_mocket<Socket>::validate_expect(
     ConstBufferSequence const& buffers, std::size_t& bytes_written)
 {
     if (expect_.empty())
@@ -245,14 +318,14 @@ mocket::validate_expect(
     return true;
 }
 
-
+template<class Socket>
 template<class MutableBufferSequence>
-class mocket::read_some_awaitable
+class basic_mocket<Socket>::read_some_awaitable
 {
-    using sock_awaitable = decltype(std::declval<tcp_socket&>().read_some(
+    using sock_awaitable = decltype(std::declval<Socket&>().read_some(
         std::declval<MutableBufferSequence>()));
 
-    mocket* m_;
+    basic_mocket* m_;
     MutableBufferSequence buffers_;
     std::size_t n_ = 0;
     union
@@ -263,7 +336,7 @@ class mocket::read_some_awaitable
     bool sync_ = true;
 
 public:
-    read_some_awaitable(mocket& m, MutableBufferSequence buffers) noexcept
+    read_some_awaitable(basic_mocket& m, MutableBufferSequence buffers) noexcept
         : m_(&m)
         , buffers_(std::move(buffers))
     {
@@ -289,9 +362,9 @@ public:
         }
     }
 
-    read_some_awaitable(read_some_awaitable const&) = delete;
+    read_some_awaitable(read_some_awaitable const&)            = delete;
     read_some_awaitable& operator=(read_some_awaitable const&) = delete;
-    read_some_awaitable& operator=(read_some_awaitable&&) = delete;
+    read_some_awaitable& operator=(read_some_awaitable&&)      = delete;
 
     bool await_ready()
     {
@@ -319,14 +392,14 @@ public:
     }
 };
 
-
+template<class Socket>
 template<class ConstBufferSequence>
-class mocket::write_some_awaitable
+class basic_mocket<Socket>::write_some_awaitable
 {
-    using sock_awaitable = decltype(std::declval<tcp_socket&>().write_some(
+    using sock_awaitable = decltype(std::declval<Socket&>().write_some(
         std::declval<ConstBufferSequence>()));
 
-    mocket* m_;
+    basic_mocket* m_;
     ConstBufferSequence buffers_;
     std::size_t n_ = 0;
     std::error_code ec_;
@@ -338,7 +411,7 @@ class mocket::write_some_awaitable
     bool sync_ = true;
 
 public:
-    write_some_awaitable(mocket& m, ConstBufferSequence buffers) noexcept
+    write_some_awaitable(basic_mocket& m, ConstBufferSequence buffers) noexcept
         : m_(&m)
         , buffers_(std::move(buffers))
     {
@@ -365,9 +438,9 @@ public:
         }
     }
 
-    write_some_awaitable(write_some_awaitable const&) = delete;
+    write_some_awaitable(write_some_awaitable const&)            = delete;
     write_some_awaitable& operator=(write_some_awaitable const&) = delete;
-    write_some_awaitable& operator=(write_some_awaitable&&) = delete;
+    write_some_awaitable& operator=(write_some_awaitable&&)      = delete;
 
     bool await_ready()
     {
@@ -376,7 +449,7 @@ public:
             if (!m_->validate_expect(buffers_, n_))
             {
                 ec_ = capy::error::test_failure;
-                n_ = 0;
+                n_  = 0;
             }
             return true;
         }
@@ -399,36 +472,107 @@ public:
     }
 };
 
-
 /** Create a mocket paired with a socket.
 
-    Creates a mocket and a tcp_socket connected via loopback.
+    Creates a mocket and a socket connected via loopback.
     Data written to one can be read from the other.
 
     The mocket has fuse checks enabled via `maybe_fail()` and
     supports provide/expect buffers for test instrumentation.
-    The tcp_socket is the "peer" end with no test instrumentation.
+    The socket is the "peer" end with no test instrumentation.
 
     Optional max_read_size and max_write_size parameters limit the
     number of bytes transferred per I/O operation on the mocket,
     simulating chunked network delivery for testing purposes.
 
-    @param ctx The execution context for the sockets.
+    @tparam Socket The socket type (default `tcp_socket`).
+    @tparam Acceptor The acceptor type (default `tcp_acceptor`).
+
+    @param ctx The I/O context for the sockets.
     @param f The fuse for error injection testing.
     @param max_read_size Maximum bytes per read operation (default unlimited).
     @param max_write_size Maximum bytes per write operation (default unlimited).
 
-    @return A pair of (mocket, tcp_socket).
+    @return A pair of (mocket, socket).
 
     @note Mockets are not thread-safe and must be used in a
         single-threaded, deterministic context.
 */
-BOOST_COROSIO_DECL
-std::pair<mocket, tcp_socket> make_mocket_pair(
-    capy::execution_context& ctx,
-    capy::test::fuse f = {},
-    std::size_t max_read_size = std::size_t(-1),
-    std::size_t max_write_size = std::size_t(-1));
+template<class Socket = tcp_socket, class Acceptor = tcp_acceptor>
+std::pair<basic_mocket<Socket>, Socket>
+make_mocket_pair(
+    io_context& ctx,
+    capy::test::fuse f         = {},
+    std::size_t max_read_size  = std::size_t(-1),
+    std::size_t max_write_size = std::size_t(-1))
+{
+    auto ex = ctx.get_executor();
+
+    basic_mocket<Socket> m(ctx, std::move(f), max_read_size, max_write_size);
+
+    Socket peer(ctx);
+
+    std::error_code accept_ec;
+    std::error_code connect_ec;
+    bool accept_done  = false;
+    bool connect_done = false;
+
+    Acceptor acc(ctx);
+    auto listen_ec = acc.listen(endpoint(ipv4_address::loopback(), 0));
+    if (listen_ec)
+        throw std::runtime_error(
+            "mocket listen failed: " + listen_ec.message());
+    auto port = acc.local_endpoint().port();
+
+    peer.open();
+
+    Socket accepted_socket(ctx);
+
+    capy::run_async(ex)(
+        [](Acceptor& a, Socket& s, std::error_code& ec_out,
+           bool& done_out) -> capy::task<> {
+            auto [ec] = co_await a.accept(s);
+            ec_out    = ec;
+            done_out  = true;
+        }(acc, accepted_socket, accept_ec, accept_done));
+
+    capy::run_async(ex)(
+        [](Socket& s, endpoint ep, std::error_code& ec_out,
+           bool& done_out) -> capy::task<> {
+            auto [ec] = co_await s.connect(ep);
+            ec_out    = ec;
+            done_out  = true;
+        }(peer, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
+
+    ctx.run();
+    ctx.restart();
+
+    if (!accept_done || accept_ec)
+    {
+        std::fprintf(
+            stderr, "make_mocket_pair: accept failed (done=%d, ec=%s)\n",
+            accept_done, accept_ec.message().c_str());
+        acc.close();
+        throw std::runtime_error("mocket accept failed");
+    }
+
+    if (!connect_done || connect_ec)
+    {
+        std::fprintf(
+            stderr, "make_mocket_pair: connect failed (done=%d, ec=%s)\n",
+            connect_done, connect_ec.message().c_str());
+        acc.close();
+        accepted_socket.close();
+        throw std::runtime_error("mocket connect failed");
+    }
+
+    m.socket() = std::move(accepted_socket);
+
+    acc.close();
+
+    return {std::move(m), std::move(peer)};
+}
 
 } // namespace boost::corosio::test
 

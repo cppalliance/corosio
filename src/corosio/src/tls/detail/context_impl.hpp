@@ -31,7 +31,7 @@ class native_context_base
 {
 public:
     native_context_base* next_ = nullptr;
-    void const* service_ = nullptr;
+    void const* service_       = nullptr;
 
     virtual ~native_context_base() = default;
 };
@@ -62,7 +62,7 @@ struct tls_context_data
     // Verification
 
     tls_verify_mode verification_mode = tls_verify_mode::none;
-    int verify_depth = 100;
+    int verify_depth                  = 100;
     std::string hostname;
     std::function<bool(bool, void*)> verify_callback;
 
@@ -74,7 +74,7 @@ struct tls_context_data
 
     std::vector<std::string> crls;
     std::string ocsp_staple;
-    bool require_ocsp_staple = false;
+    bool require_ocsp_staple         = false;
     tls_revocation_policy revocation = tls_revocation_policy::disabled;
 
     // Password
@@ -104,9 +104,9 @@ struct tls_context_data
                 return p;
 
         // Not found - create and prepend
-        auto* ctx = create();
-        ctx->service_ = service;
-        ctx->next_ = native_contexts_;
+        auto* ctx        = create();
+        ctx->service_    = service;
+        ctx->next_       = native_contexts_;
         native_contexts_ = ctx;
         return ctx;
     }
@@ -125,7 +125,6 @@ struct tls_context_data
 
 } // namespace detail
 
-
 /** Implementation of tls_context.
 
     Contains all portable TLS configuration data plus
@@ -133,7 +132,6 @@ struct tls_context_data
 */
 struct tls_context::impl : detail::tls_context_data
 {};
-
 
 namespace detail {
 

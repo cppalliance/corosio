@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -50,27 +51,27 @@
 #include "../common/perf.hpp"
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
-
+namespace capy    = boost::capy;
 
 enum class workload_mode
 {
-    balanced,   // Each thread posts and polls (default)
-    post_only,  // All threads post, one thread runs
-    run_only    // Pre-fill queue, all threads run
+    balanced,  // Each thread posts and polls (default)
+    post_only, // All threads post, one thread runs
+    run_only   // Pre-fill queue, all threads run
 };
 
 // Empty coroutine - minimal work, maximizes framework overhead visibility
-capy::task<> empty_task(std::atomic<std::uint64_t>& counter)
+capy::task<>
+empty_task(std::atomic<std::uint64_t>& counter)
 {
     counter.fetch_add(1, std::memory_order_relaxed);
     co_return;
 }
 
-
 // Worker thread for balanced mode - posts and polls
-void balanced_worker(
-    corosio::basic_io_context& ioc,
+void
+balanced_worker(
+    corosio::io_context& ioc,
     std::atomic<bool>& stop,
     std::atomic<std::uint64_t>& counter,
     int batch_size)
@@ -85,8 +86,9 @@ void balanced_worker(
 }
 
 // Worker thread for post-only mode - only posts, never runs
-void post_only_worker(
-    corosio::basic_io_context& ioc,
+void
+post_only_worker(
+    corosio::io_context& ioc,
     std::atomic<bool>& stop,
     std::atomic<std::uint64_t>& posted,
     int batch_size)
@@ -104,9 +106,8 @@ void post_only_worker(
 }
 
 // Runner thread for post-only mode - only runs, never posts
-void post_only_runner(
-    corosio::basic_io_context& ioc,
-    std::atomic<bool>& stop)
+void
+post_only_runner(corosio::io_context& ioc, std::atomic<bool>& stop)
 {
     while (!stop.load(std::memory_order_relaxed))
     {
@@ -119,9 +120,8 @@ void post_only_runner(
 }
 
 // Worker thread for run-only mode - only runs from pre-filled queue
-void run_only_worker(
-    corosio::basic_io_context& ioc,
-    std::atomic<bool>& stop)
+void
+run_only_worker(corosio::io_context& ioc, std::atomic<bool>& stop)
 {
     while (!stop.load(std::memory_order_relaxed))
     {
@@ -129,8 +129,8 @@ void run_only_worker(
     }
 }
 
-
-void run_balanced_workload(
+void
+run_balanced_workload(
     perf::context_factory factory,
     int duration_seconds,
     int num_threads,
@@ -140,12 +140,13 @@ void run_balanced_workload(
     std::atomic<std::uint64_t> counter{0};
     std::atomic<bool> stop{false};
 
-    auto start = std::chrono::steady_clock::now();
+    auto start    = std::chrono::steady_clock::now();
     auto end_time = start + std::chrono::seconds(duration_seconds);
     std::atomic<int> next_report_sec{2};
 
     std::cout << "Mode: balanced (each thread posts and polls)\n";
-    std::cout << "Threads: " << num_threads << " (including main), Batch size: " << batch_size << "\n\n";
+    std::cout << "Threads: " << num_threads
+              << " (including main), Batch size: " << batch_size << "\n\n";
 
     std::atomic<std::uint64_t> last_count{0};
 
@@ -154,13 +155,12 @@ void run_balanced_workload(
     workers.reserve(num_threads - 1);
     for (int t = 0; t < num_threads - 1; ++t)
     {
-        workers.emplace_back([&]() {
-            balanced_worker(*ioc, stop, counter, batch_size);
-        });
+        workers.emplace_back(
+            [&]() { balanced_worker(*ioc, stop, counter, batch_size); });
     }
 
     // Main thread works too - no sleeping!
-    auto ex = ioc->get_executor();
+    auto ex                     = ioc->get_executor();
     std::uint64_t local_batches = 0;
     while (!stop.load(std::memory_order_relaxed))
     {
@@ -182,16 +182,18 @@ void run_balanced_workload(
             // Progress report (only main thread prints)
             auto elapsed = std::chrono::duration<double>(now - start).count();
             int elapsed_int = static_cast<int>(elapsed);
-            int expected = next_report_sec.load(std::memory_order_relaxed);
+            int expected    = next_report_sec.load(std::memory_order_relaxed);
             if (elapsed_int >= expected &&
                 next_report_sec.compare_exchange_strong(expected, expected + 2))
             {
                 std::uint64_t current = counter.load(std::memory_order_relaxed);
-                std::uint64_t last = last_count.exchange(current, std::memory_order_relaxed);
+                std::uint64_t last =
+                    last_count.exchange(current, std::memory_order_relaxed);
                 double rate = static_cast<double>(current - last) / 2.0;
 
-                std::cout << "  [" << std::fixed << std::setprecision(0) << elapsed << "s] "
-                          << perf::format_rate(rate) << " (" << current << " total)\n";
+                std::cout << "  [" << std::fixed << std::setprecision(0)
+                          << elapsed << "s] " << perf::format_rate(rate) << " ("
+                          << current << " total)\n";
             }
         }
     }
@@ -201,10 +203,11 @@ void run_balanced_workload(
         w.join();
 
     // Final stats
-    auto total_elapsed = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - start).count();
+    auto total_elapsed =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+            .count();
     std::uint64_t total = counter.load(std::memory_order_relaxed);
-    double avg_rate = static_cast<double>(total) / total_elapsed;
+    double avg_rate     = static_cast<double>(total) / total_elapsed;
 
     std::cout << "\n=== Results ===\n";
     std::cout << "  Duration:   " << std::fixed << std::setprecision(2)
@@ -213,7 +216,8 @@ void run_balanced_workload(
     std::cout << "  Avg rate:   " << perf::format_rate(avg_rate) << "\n";
 }
 
-void run_post_only_workload(
+void
+run_post_only_workload(
     perf::context_factory factory,
     int duration_seconds,
     int num_threads,
@@ -223,18 +227,21 @@ void run_post_only_workload(
     std::atomic<std::uint64_t> counter{0};
     std::atomic<bool> stop{false};
 
-    auto start = std::chrono::steady_clock::now();
+    auto start    = std::chrono::steady_clock::now();
     auto end_time = start + std::chrono::seconds(duration_seconds);
     std::atomic<int> next_report_sec{2};
 
     // Split threads: main + half post, other half run
-    int num_posters = (num_threads + 1) / 2;  // Round up, main is also a poster
+    int num_posters = (num_threads + 1) / 2; // Round up, main is also a poster
     int num_runners = num_threads - num_posters;
-    if (num_runners < 1) num_runners = 1;
+    if (num_runners < 1)
+        num_runners = 1;
 
     std::cout << "Mode: post-only (profile posting path contention)\n";
-    std::cout << "Posters: " << num_posters << " (including main), Runners: " << num_runners
-              << ", Batch size: " << batch_size << "\n" << std::endl;
+    std::cout << "Posters: " << num_posters
+              << " (including main), Runners: " << num_runners
+              << ", Batch size: " << batch_size << "\n"
+              << std::endl;
 
     std::atomic<std::uint64_t> last_count{0};
 
@@ -243,9 +250,8 @@ void run_post_only_workload(
     posters.reserve(num_posters - 1);
     for (int t = 0; t < num_posters - 1; ++t)
     {
-        posters.emplace_back([&]() {
-            post_only_worker(*ioc, stop, counter, batch_size);
-        });
+        posters.emplace_back(
+            [&]() { post_only_worker(*ioc, stop, counter, batch_size); });
     }
 
     // Launch runner threads to consume work
@@ -256,12 +262,12 @@ void run_post_only_workload(
         runners.emplace_back([&]() {
             while (!stop.load(std::memory_order_relaxed))
                 ioc->poll();
-            ioc->poll();  // Drain
+            ioc->poll(); // Drain
         });
     }
 
     // Main thread posts - this is what we want to profile!
-    auto ex = ioc->get_executor();
+    auto ex                     = ioc->get_executor();
     std::uint64_t local_batches = 0;
     while (!stop.load(std::memory_order_relaxed))
     {
@@ -282,16 +288,18 @@ void run_post_only_workload(
             // Progress report
             auto elapsed = std::chrono::duration<double>(now - start).count();
             int elapsed_int = static_cast<int>(elapsed);
-            int expected = next_report_sec.load(std::memory_order_relaxed);
+            int expected    = next_report_sec.load(std::memory_order_relaxed);
             if (elapsed_int >= expected &&
                 next_report_sec.compare_exchange_strong(expected, expected + 2))
             {
                 std::uint64_t current = counter.load(std::memory_order_relaxed);
-                std::uint64_t last = last_count.exchange(current, std::memory_order_relaxed);
+                std::uint64_t last =
+                    last_count.exchange(current, std::memory_order_relaxed);
                 double rate = static_cast<double>(current - last) / 2.0;
 
-                std::cout << "  [" << std::fixed << std::setprecision(0) << elapsed << "s] "
-                          << perf::format_rate(rate) << " (" << current << " total)\n";
+                std::cout << "  [" << std::fixed << std::setprecision(0)
+                          << elapsed << "s] " << perf::format_rate(rate) << " ("
+                          << current << " total)\n";
             }
         }
     }
@@ -303,10 +311,11 @@ void run_post_only_workload(
         r.join();
 
     // Final stats
-    auto total_elapsed = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - start).count();
+    auto total_elapsed =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+            .count();
     std::uint64_t total = counter.load(std::memory_order_relaxed);
-    double avg_rate = static_cast<double>(total) / total_elapsed;
+    double avg_rate     = static_cast<double>(total) / total_elapsed;
 
     std::cout << "\n=== Results ===\n";
     std::cout << "  Duration:   " << std::fixed << std::setprecision(2)
@@ -315,7 +324,8 @@ void run_post_only_workload(
     std::cout << "  Avg rate:   " << perf::format_rate(avg_rate) << "\n";
 }
 
-void run_run_only_workload(
+void
+run_run_only_workload(
     perf::context_factory factory,
     int duration_seconds,
     int num_threads,
@@ -325,12 +335,13 @@ void run_run_only_workload(
     std::atomic<std::uint64_t> counter{0};
     std::atomic<bool> stop{false};
 
-    auto start = std::chrono::steady_clock::now();
+    auto start    = std::chrono::steady_clock::now();
     auto end_time = start + std::chrono::seconds(duration_seconds);
     std::atomic<int> next_report_sec{2};
 
     std::cout << "Mode: run-only (main posts, all threads dispatch)\n";
-    std::cout << "Runner threads: " << num_threads << ", Queue depth: " << queue_depth << "\n\n";
+    std::cout << "Runner threads: " << num_threads
+              << ", Queue depth: " << queue_depth << "\n\n";
 
     std::atomic<std::uint64_t> last_count{0};
     auto ex = ioc->get_executor();
@@ -345,9 +356,7 @@ void run_run_only_workload(
     runners.reserve(num_threads);
     for (int t = 0; t < num_threads; ++t)
     {
-        runners.emplace_back([&]() {
-            run_only_worker(*ioc, stop);
-        });
+        runners.emplace_back([&]() { run_only_worker(*ioc, stop); });
     }
 
     // Main thread continuously refills - no sleeping!
@@ -372,16 +381,18 @@ void run_run_only_workload(
             // Progress report
             auto elapsed = std::chrono::duration<double>(now - start).count();
             int elapsed_int = static_cast<int>(elapsed);
-            int expected = next_report_sec.load(std::memory_order_relaxed);
+            int expected    = next_report_sec.load(std::memory_order_relaxed);
             if (elapsed_int >= expected &&
                 next_report_sec.compare_exchange_strong(expected, expected + 2))
             {
                 std::uint64_t current = counter.load(std::memory_order_relaxed);
-                std::uint64_t last = last_count.exchange(current, std::memory_order_relaxed);
+                std::uint64_t last =
+                    last_count.exchange(current, std::memory_order_relaxed);
                 double rate = static_cast<double>(current - last) / 2.0;
 
-                std::cout << "  [" << std::fixed << std::setprecision(0) << elapsed << "s] "
-                          << perf::format_rate(rate) << " (" << current << " total)\n";
+                std::cout << "  [" << std::fixed << std::setprecision(0)
+                          << elapsed << "s] " << perf::format_rate(rate) << " ("
+                          << current << " total)\n";
             }
         }
     }
@@ -394,10 +405,11 @@ void run_run_only_workload(
     ioc->poll();
 
     // Final stats
-    auto total_elapsed = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - start).count();
+    auto total_elapsed =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+            .count();
     std::uint64_t total = counter.load(std::memory_order_relaxed);
-    double avg_rate = static_cast<double>(total) / total_elapsed;
+    double avg_rate     = static_cast<double>(total) / total_elapsed;
 
     std::cout << "\n=== Results ===\n";
     std::cout << "  Duration:   " << std::fixed << std::setprecision(2)
@@ -406,8 +418,8 @@ void run_run_only_workload(
     std::cout << "  Avg rate:   " << perf::format_rate(avg_rate) << "\n";
 }
 
-
-void run_profiler_workload(
+void
+run_profiler_workload(
     perf::context_factory factory,
     const char* backend_name,
     int duration,
@@ -432,18 +444,18 @@ void run_profiler_workload(
         std::atomic<std::uint64_t> warmup_counter{0};
         std::atomic<bool> stop{false};
 
-        auto warmup_end = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        auto warmup_end =
+            std::chrono::steady_clock::now() + std::chrono::seconds(1);
 
         std::vector<std::thread> warmup_threads;
         for (int t = 0; t < num_threads - 1; ++t)
         {
-            warmup_threads.emplace_back([&]() {
-                balanced_worker(*ioc, stop, warmup_counter, 100);
-            });
+            warmup_threads.emplace_back(
+                [&]() { balanced_worker(*ioc, stop, warmup_counter, 100); });
         }
 
         // Main thread works during warmup too
-        auto ex = ioc->get_executor();
+        auto ex                     = ioc->get_executor();
         std::uint64_t local_batches = 0;
         while (!stop.load(std::memory_order_relaxed))
         {
@@ -486,25 +498,34 @@ void run_profiler_workload(
     std::cout << "\nWorkload complete.\n";
 }
 
-
-void print_usage(const char* program_name)
+void
+print_usage(const char* program_name)
 {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
-    std::cout << "Profiler workload for multi-threaded scheduler contention analysis.\n\n";
+    std::cout << "Profiler workload for multi-threaded scheduler contention "
+                 "analysis.\n\n";
     std::cout << "Options:\n";
-    std::cout << "  --backend <name>     Select I/O backend (default: platform default)\n";
-    std::cout << "  --duration <secs>    Run duration in seconds (default: 10)\n";
-    std::cout << "  --threads <n>        Number of worker threads (default: 8)\n";
-    std::cout << "  --batch <n>          Coroutines per thread per cycle (default: 100)\n";
-    std::cout << "  --post-only          Profile posting path (half post, half run)\n";
-    std::cout << "  --run-only           Profile dispatch path (main posts, all run)\n";
+    std::cout << "  --backend <name>     Select I/O backend (default: platform "
+                 "default)\n";
+    std::cout
+        << "  --duration <secs>    Run duration in seconds (default: 10)\n";
+    std::cout
+        << "  --threads <n>        Number of worker threads (default: 8)\n";
+    std::cout << "  --batch <n>          Coroutines per thread per cycle "
+                 "(default: 100)\n";
+    std::cout << "  --post-only          Profile posting path (half post, half "
+                 "run)\n";
+    std::cout << "  --run-only           Profile dispatch path (main posts, "
+                 "all run)\n";
     std::cout << "  --list               List available backends\n";
     std::cout << "  --help               Show this help message\n";
     std::cout << "\n";
     std::cout << "Modes:\n";
-    std::cout << "  (default)   Each thread posts and polls - mixed contention\n";
+    std::cout
+        << "  (default)   Each thread posts and polls - mixed contention\n";
     std::cout << "  --post-only Half threads post (including main), half run\n";
-    std::cout << "  --run-only  Main posts, all threads run - dispatch contention\n";
+    std::cout
+        << "  --run-only  Main posts, all threads run - dispatch contention\n";
     std::cout << "\n";
     std::cout << "Example:\n";
     std::cout << "  " << program_name << " --threads 8 --duration 10\n";
@@ -513,13 +534,14 @@ void print_usage(const char* program_name)
     perf::print_available_backends();
 }
 
-int main(int argc, char* argv[])
+int
+main(int argc, char* argv[])
 {
     const char* backend = nullptr;
-    int duration = 10;
-    int num_threads = 8;
-    int batch_size = 100;
-    workload_mode mode = workload_mode::balanced;
+    int duration        = 10;
+    int num_threads     = 8;
+    int batch_size      = 100;
+    workload_mode mode  = workload_mode::balanced;
 
     // Parse command-line arguments
     for (int i = 1; i < argc; ++i)
@@ -577,7 +599,9 @@ int main(int argc, char* argv[])
             perf::print_available_backends();
             return 0;
         }
-        else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0)
+        else if (
+            std::strcmp(argv[i], "--help") == 0 ||
+            std::strcmp(argv[i], "-h") == 0)
         {
             print_usage(argv[0]);
             return 0;
@@ -602,9 +626,9 @@ int main(int argc, char* argv[])
         backend = perf::default_backend_name();
 
     // Dispatch to the selected backend
-    return perf::dispatch_backend(backend,
-        [=](perf::context_factory factory, const char* name)
-        {
-            run_profiler_workload(factory, name, duration, num_threads, batch_size, mode);
+    return perf::dispatch_backend(
+        backend, [=](perf::context_factory factory, auto, const char* name) {
+            run_profiler_workload(
+                factory, name, duration, num_threads, batch_size, mode);
         });
 }

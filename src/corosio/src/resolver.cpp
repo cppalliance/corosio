@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -11,11 +12,10 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
-#include "src/detail/iocp/resolver_service.hpp"
+#include <boost/corosio/native/detail/iocp/win_resolver_service.hpp>
 #elif BOOST_COROSIO_POSIX
-#include "src/detail/posix/resolver_service.hpp"
+#include <boost/corosio/native/detail/posix/posix_resolver_service.hpp>
 #endif
-
 
 /*
     Resolver Frontend

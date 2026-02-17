@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -11,18 +12,11 @@
 #define BOOST_COROSIO_SIGNAL_SET_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/io_object.hpp>
-#include <boost/capy/io_result.hpp>
-#include <boost/capy/error.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/corosio/io/io_signal_set.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <system_error>
 
 #include <concepts>
-#include <coroutine>
-#include <stop_token>
 #include <system_error>
 
 /*
@@ -46,7 +40,7 @@
        dont_care.
 
     3. Polymorphic implementation: implementation is an abstract base that
-       platform-specific implementations (posix_signal_impl, win_signal_impl)
+       platform-specific implementations (posix_signal, win_signal)
        derive from. This allows the public API to be platform-agnostic.
 
     4. The inline add(int) overload avoids a virtual call for the common case
@@ -90,7 +84,7 @@ namespace boost::corosio {
     }
     @endcode
 */
-class BOOST_COROSIO_DECL signal_set : public io_object
+class BOOST_COROSIO_DECL signal_set : public io_signal_set
 {
 public:
     /** Flags for signal registration.
@@ -166,51 +160,11 @@ public:
         return static_cast<flags_t>(~static_cast<unsigned>(a));
     }
 
-private:
-    struct wait_awaitable
+    struct implementation : io_signal_set::implementation
     {
-        signal_set& s_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable int signal_number_ = 0;
-
-        explicit wait_awaitable(signal_set& s) noexcept : s_(s) {}
-
-        bool await_ready() const noexcept
-        {
-            return token_.stop_requested();
-        }
-
-        capy::io_result<int> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {capy::error::canceled};
-            return {ec_, signal_number_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
-            return s_.get().wait(
-                h, env->executor, token_, &ec_, &signal_number_);
-        }
-    };
-
-public:
-    struct implementation : io_object::implementation
-    {
-        virtual std::coroutine_handle<> wait(
-            std::coroutine_handle<>,
-            capy::executor_ref,
-            std::stop_token,
-            std::error_code*,
-            int*) = 0;
-
         virtual std::error_code add(int signal_number, flags_t flags) = 0;
-        virtual std::error_code remove(int signal_number) = 0;
-        virtual std::error_code clear() = 0;
-        virtual void cancel() = 0;
+        virtual std::error_code remove(int signal_number)             = 0;
+        virtual std::error_code clear()                               = 0;
     };
 
     /** Destructor.
@@ -262,7 +216,7 @@ public:
     */
     signal_set& operator=(signal_set&& other) noexcept;
 
-    signal_set(signal_set const&) = delete;
+    signal_set(signal_set const&)            = delete;
     signal_set& operator=(signal_set const&) = delete;
 
     /** Add a signal to the signal set.
@@ -319,53 +273,12 @@ public:
     */
     std::error_code clear();
 
-    /** Cancel all operations associated with the signal set.
-
-        This function forces the completion of any pending asynchronous
-        wait operations against the signal set. The handler for each
-        cancelled operation will be invoked with an error code that
-        compares equal to `capy::cond::canceled`.
-
-        Cancellation does not alter the set of registered signals.
-    */
-    void cancel();
-
-    /** Wait for a signal to be delivered.
-
-        The operation supports cancellation via `std::stop_token` through
-        the affine awaitable protocol. If the associated stop token is
-        triggered, the operation completes immediately with an error
-        that compares equal to `capy::cond::canceled`.
-
-        @par Example
-        @code
-        signal_set signals(ctx, SIGINT);
-        auto [ec, signum] = co_await signals.wait();
-        if (ec == capy::cond::canceled)
-        {
-            // Cancelled via stop_token or cancel()
-            co_return;
-        }
-        if (ec)
-        {
-            // Handle other errors
-            co_return;
-        }
-        // Process signal
-        std::cout << "Received signal " << signum << std::endl;
-        @endcode
-
-        @return An awaitable that completes with `io_result<int>`.
-            Returns the signal number when a signal is delivered,
-            or an error code on failure. Compare against error conditions
-            (e.g., `ec == capy::cond::canceled`) rather than error codes.
-    */
-    auto wait()
-    {
-        return wait_awaitable(*this);
-    }
+protected:
+    explicit signal_set(handle h) noexcept : io_signal_set(std::move(h)) {}
 
 private:
+    void do_cancel() override;
+
     implementation& get() const noexcept
     {
         return *static_cast<implementation*>(h_.get());

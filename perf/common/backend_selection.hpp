@@ -11,8 +11,9 @@
 #ifndef BOOST_COROSIO_PERF_BACKEND_SELECTION_HPP
 #define BOOST_COROSIO_PERF_BACKEND_SELECTION_HPP
 
-#include <boost/corosio/io_context.hpp>
 #include <boost/corosio/detail/platform.hpp>
+#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/backend.hpp>
 
 #include <cstring>
 #include <iostream>
@@ -21,10 +22,11 @@
 namespace perf {
 
 /// Factory function pointer that creates a fresh io_context.
-using context_factory = std::unique_ptr<boost::corosio::basic_io_context>(*)();
+using context_factory = std::unique_ptr<boost::corosio::io_context> (*)();
 
 /** Return the default backend name for the current platform. */
-inline const char* default_backend_name()
+inline const char*
+default_backend_name()
 {
 #if BOOST_COROSIO_HAS_IOCP
     return "iocp";
@@ -40,7 +42,8 @@ inline const char* default_backend_name()
 }
 
 /** Print available backends for the current platform. */
-inline void print_available_backends()
+inline void
+print_available_backends()
 {
     std::cout << "Available backends on this platform:\n";
 #if BOOST_COROSIO_HAS_IOCP
@@ -61,23 +64,27 @@ inline void print_available_backends()
 /** Dispatch to a function based on backend name.
 
     Resolves the backend name to a context_factory and passes it
-    to the callback along with the canonical backend name.
+    to the callback along with the backend tag and canonical name.
 
     @param backend The backend name (epoll, select, iocp, etc.)
-    @param func A callable with signature void(context_factory, char const*)
+    @param func A callable with signature
+        `void(context_factory, Backend, char const*)`
     @return 0 on success, 1 if backend is not available
 */
 template<typename Func>
-int dispatch_backend(const char* backend, Func&& func)
+int
+dispatch_backend(const char* backend, Func&& func)
 {
     namespace corosio = boost::corosio;
 
 #if BOOST_COROSIO_HAS_EPOLL
     if (std::strcmp(backend, "epoll") == 0)
     {
-        func([]() -> std::unique_ptr<corosio::basic_io_context> {
-            return std::make_unique<corosio::epoll_context>();
-        }, "epoll");
+        func(
+            []() -> std::unique_ptr<corosio::io_context> {
+                return std::make_unique<corosio::io_context>(corosio::epoll);
+            },
+            corosio::epoll, "epoll");
         return 0;
     }
 #endif
@@ -85,9 +92,11 @@ int dispatch_backend(const char* backend, Func&& func)
 #if BOOST_COROSIO_HAS_KQUEUE
     if (std::strcmp(backend, "kqueue") == 0)
     {
-        func([]() -> std::unique_ptr<corosio::basic_io_context> {
-            return std::make_unique<corosio::kqueue_context>();
-        }, "kqueue");
+        func(
+            []() -> std::unique_ptr<corosio::io_context> {
+                return std::make_unique<corosio::io_context>(corosio::kqueue);
+            },
+            corosio::kqueue, "kqueue");
         return 0;
     }
 #endif
@@ -95,9 +104,11 @@ int dispatch_backend(const char* backend, Func&& func)
 #if BOOST_COROSIO_HAS_SELECT
     if (std::strcmp(backend, "select") == 0)
     {
-        func([]() -> std::unique_ptr<corosio::basic_io_context> {
-            return std::make_unique<corosio::select_context>();
-        }, "select");
+        func(
+            []() -> std::unique_ptr<corosio::io_context> {
+                return std::make_unique<corosio::io_context>(corosio::select);
+            },
+            corosio::select, "select");
         return 0;
     }
 #endif
@@ -105,14 +116,17 @@ int dispatch_backend(const char* backend, Func&& func)
 #if BOOST_COROSIO_HAS_IOCP
     if (std::strcmp(backend, "iocp") == 0)
     {
-        func([]() -> std::unique_ptr<corosio::basic_io_context> {
-            return std::make_unique<corosio::iocp_context>();
-        }, "iocp");
+        func(
+            []() -> std::unique_ptr<corosio::io_context> {
+                return std::make_unique<corosio::io_context>(corosio::iocp);
+            },
+            corosio::iocp, "iocp");
         return 0;
     }
 #endif
 
-    std::cerr << "Error: Backend '" << backend << "' is not available on this platform.\n\n";
+    std::cerr << "Error: Backend '" << backend
+              << "' is not available on this platform.\n\n";
     print_available_backends();
     return 1;
 }

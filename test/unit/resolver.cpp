@@ -92,9 +92,9 @@ struct resolver_test
                        resolver_results& results_out,
                        bool& done_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve("localhost", "80");
-            ec_out = ec;
-            results_out = std::move(res);
-            done_out = true;
+            ec_out         = ec;
+            results_out    = std::move(res);
+            done_out       = true;
         };
         capy::run_async(ioc.get_executor())(
             task(r, result_ec, results, completed));
@@ -148,9 +148,9 @@ struct resolver_test
             auto [ec, res] = co_await r_ref.resolve(
                 "127.0.0.1", "8080",
                 resolve_flags::numeric_host | resolve_flags::numeric_service);
-            ec_out = ec;
+            ec_out      = ec;
             results_out = std::move(res);
-            done_out = true;
+            done_out    = true;
         };
         capy::run_async(ioc.get_executor())(
             task(r, result_ec, results, completed));
@@ -163,7 +163,7 @@ struct resolver_test
         BOOST_TEST_EQ(results.size(), 1u);
 
         auto const& entry = *results.begin();
-        auto ep = entry.get_endpoint();
+        auto ep           = entry.get_endpoint();
         BOOST_TEST(ep.is_v4());
         BOOST_TEST_EQ(ep.port(), 8080);
         BOOST_TEST(ep.v4_address() == ipv4_address({127, 0, 0, 1}));
@@ -184,9 +184,9 @@ struct resolver_test
             auto [ec, res] = co_await r_ref.resolve(
                 "::1", "443",
                 resolve_flags::numeric_host | resolve_flags::numeric_service);
-            ec_out = ec;
+            ec_out      = ec;
             results_out = std::move(res);
-            done_out = true;
+            done_out    = true;
         };
         capy::run_async(ioc.get_executor())(
             task(r, result_ec, results, completed));
@@ -199,7 +199,7 @@ struct resolver_test
         BOOST_TEST_EQ(results.size(), 1u);
 
         auto const& entry = *results.begin();
-        auto ep = entry.get_endpoint();
+        auto ep           = entry.get_endpoint();
         BOOST_TEST(ep.is_v6());
         BOOST_TEST_EQ(ep.port(), 443);
         BOOST_TEST(ep.v6_address() == ipv6_address::loopback());
@@ -219,9 +219,9 @@ struct resolver_test
                        bool& done_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve(
                 "127.0.0.1", "http", resolve_flags::numeric_host);
-            ec_out = ec;
+            ec_out      = ec;
             results_out = std::move(res);
-            done_out = true;
+            done_out    = true;
         };
         capy::run_async(ioc.get_executor())(
             task(r, result_ec, results, completed));
@@ -234,7 +234,7 @@ struct resolver_test
 
         // "http" should resolve to port 80
         auto const& entry = *results.begin();
-        auto ep = entry.get_endpoint();
+        auto ep           = entry.get_endpoint();
         BOOST_TEST_EQ(ep.port(), 80);
     }
 
@@ -251,8 +251,8 @@ struct resolver_test
         auto task = [](resolver& r_ref, resolver_results& results_out,
                        bool& done_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve("localhost", "80");
-            results_out = std::move(res);
-            done_out = true;
+            results_out    = std::move(res);
+            done_out       = true;
         };
         capy::run_async(ioc.get_executor())(task(r, results, completed));
 
@@ -283,9 +283,9 @@ struct resolver_test
             // Use a definitely invalid hostname
             auto [ec, res] = co_await r_ref.resolve(
                 "this.hostname.definitely.does.not.exist.invalid", "80");
-            ec_out = ec;
+            ec_out      = ec;
             results_out = std::move(res);
-            done_out = true;
+            done_out    = true;
         };
         capy::run_async(ioc.get_executor())(
             task(r, result_ec, results, completed));
@@ -312,9 +312,9 @@ struct resolver_test
             // numeric_host flag with non-numeric hostname should fail
             auto [ec, res] = co_await r_ref.resolve(
                 "localhost", "80", resolve_flags::numeric_host);
-            ec_out = ec;
+            ec_out      = ec;
             results_out = std::move(res);
-            done_out = true;
+            done_out    = true;
         };
         capy::run_async(ioc.get_executor())(
             task(r, result_ec, results, completed));
@@ -341,8 +341,8 @@ struct resolver_test
         auto wait_task = [](resolver& r_ref, std::error_code& ec_out,
                             bool& done_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve("localhost", "80");
-            ec_out = ec;
-            done_out = true;
+            ec_out         = ec;
+            done_out       = true;
         };
         capy::run_async(ioc.get_executor())(wait_task(r, result_ec, completed));
 
@@ -444,7 +444,7 @@ struct resolver_test
             auto result = co_await r_ref.resolve(
                 "not-a-valid-ip", "80", resolve_flags::numeric_host);
             error_out = static_cast<bool>(result.ec);
-            ec_out = result.ec;
+            ec_out    = result.ec;
         };
         capy::run_async(ioc.get_executor())(task(r, got_error, result_ec));
 
@@ -467,7 +467,7 @@ struct resolver_test
             auto [ec, results] = co_await r_ref.resolve(
                 "127.0.0.1", "80",
                 resolve_flags::numeric_host | resolve_flags::numeric_service);
-            ec_out = ec;
+            ec_out   = ec;
             size_out = results.size();
         };
         capy::run_async(ioc.get_executor())(task(r, captured_ec, result_size));
@@ -522,7 +522,7 @@ struct resolver_test
         auto task = [](resolver& r_ref,
                        resolver_results& results_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve("localhost", "80");
-            results_out = std::move(res);
+            results_out    = std::move(res);
         };
         capy::run_async(ioc.get_executor())(task(r, results));
 
@@ -584,9 +584,9 @@ struct resolver_test
                        bool& done_out) -> capy::task<> {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
             auto [ec, res] = co_await r_ref.resolve(ep);
-            ec_out = ec;
-            result_out = std::move(res);
-            done_out = true;
+            ec_out         = ec;
+            result_out     = std::move(res);
+            done_out       = true;
         };
         capy::run_async(ioc.get_executor())(
             task(r, result_ec, result, completed));
@@ -613,9 +613,9 @@ struct resolver_test
                        bool& done_out) -> capy::task<> {
             endpoint ep(ipv6_address::loopback(), 443);
             auto [ec, res] = co_await r_ref.resolve(ep);
-            ec_out = ec;
-            result_out = std::move(res);
-            done_out = true;
+            ec_out         = ec;
+            result_out     = std::move(res);
+            done_out       = true;
         };
         capy::run_async(ioc.get_executor())(
             task(r, result_ec, result, completed));
@@ -643,9 +643,9 @@ struct resolver_test
             endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
             auto [ec, res] =
                 co_await r_ref.resolve(ep, reverse_flags::numeric_host);
-            ec_out = ec;
+            ec_out     = ec;
             result_out = std::move(res);
-            done_out = true;
+            done_out   = true;
         };
         capy::run_async(ioc.get_executor())(
             task(r, result_ec, result, completed));
@@ -673,9 +673,9 @@ struct resolver_test
             endpoint ep(ipv4_address({127, 0, 0, 1}), 8080);
             auto [ec, res] =
                 co_await r_ref.resolve(ep, reverse_flags::numeric_service);
-            ec_out = ec;
+            ec_out     = ec;
             result_out = std::move(res);
-            done_out = true;
+            done_out   = true;
         };
         capy::run_async(ioc.get_executor())(
             task(r, result_ec, result, completed));
@@ -703,7 +703,7 @@ struct resolver_test
             endpoint ep(ipv4_address({192, 0, 2, 1}), 80);
             auto [ec, res] =
                 co_await r_ref.resolve(ep, reverse_flags::name_required);
-            ec_out = ec;
+            ec_out   = ec;
             done_out = true;
         };
         capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
@@ -727,8 +727,8 @@ struct resolver_test
                        bool& done_out) -> capy::task<> {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
             auto [ec, res] = co_await r_ref.resolve(ep);
-            ec_out = ec;
-            done_out = true;
+            ec_out         = ec;
+            done_out       = true;
         };
         capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
 

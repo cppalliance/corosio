@@ -28,180 +28,185 @@
 #include "../../common/benchmark.hpp"
 
 namespace asio = boost::asio;
-using tcp = asio::ip::tcp;
+using tcp      = asio::ip::tcp;
 
 namespace asio_bench {
 namespace {
 
 // Single connect/accept/1-byte-exchange/close loop. Measures the full
 // per-connection lifecycle cost — fd allocation, TCP handshake, and teardown.
-bench::benchmark_result bench_sequential_churn( double duration_s )
+bench::benchmark_result
+bench_sequential_churn(double duration_s)
 {
-    perf::print_header( "Sequential Accept Churn (Asio Coroutines)" );
+    perf::print_header("Sequential Accept Churn (Asio Coroutines)");
 
     asio::io_context ioc;
-    tcp_acceptor acc( ioc.get_executor(), tcp::endpoint( tcp::v4(), 0 ) );
-    acc.set_option( tcp_acceptor::reuse_address( true ) );
-    auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
+    tcp_acceptor acc(ioc.get_executor(), tcp::endpoint(tcp::v4(), 0));
+    acc.set_option(tcp_acceptor::reuse_address(true));
+    auto ep = tcp::endpoint(
+        asio::ip::address_v4::loopback(), acc.local_endpoint().port());
 
-    std::atomic<bool> running{ true };
+    std::atomic<bool> running{true};
     int64_t cycles = 0;
     perf::statistics latency_stats;
 
-    auto task = [&]() -> asio::awaitable<void, executor_type>
-    {
+    auto task = [&]() -> asio::awaitable<void, executor_type> {
         try
         {
-            while( running.load( std::memory_order_relaxed ) )
+            while (running.load(std::memory_order_relaxed))
             {
                 perf::stopwatch sw;
 
-                auto client = std::make_unique<tcp_socket>( ioc );
-                auto server = std::make_unique<tcp_socket>( ioc );
-                client->open( tcp::v4() );
-                client->set_option( asio::socket_base::linger( true, 0 ) );
+                auto client = std::make_unique<tcp_socket>(ioc);
+                auto server = std::make_unique<tcp_socket>(ioc);
+                client->open(tcp::v4());
+                client->set_option(asio::socket_base::linger(true, 0));
 
                 // Spawn connect, await accept
-                asio::co_spawn( ioc,
-                    [](tcp_socket& c, tcp::endpoint ep) -> asio::awaitable<void, executor_type>
-                    {
-                        co_await c.async_connect( ep, asio::deferred );
+                asio::co_spawn(
+                    ioc,
+                    [](tcp_socket& c, tcp::endpoint ep)
+                        -> asio::awaitable<void, executor_type> {
+                        co_await c.async_connect(ep, asio::deferred);
                     }(*client, ep),
-                    asio::detached );
+                    asio::detached);
 
-                *server = co_await acc.async_accept( asio::deferred );
+                *server = co_await acc.async_accept(asio::deferred);
 
                 // Exchange 1 byte
                 char byte = 'X';
                 co_await asio::async_write(
-                    *client, asio::buffer( &byte, 1 ), asio::deferred );
+                    *client, asio::buffer(&byte, 1), asio::deferred);
 
                 char recv = 0;
                 co_await asio::async_read(
-                    *server, asio::buffer( &recv, 1 ), asio::deferred );
+                    *server, asio::buffer(&recv, 1), asio::deferred);
 
                 client->close();
                 server->close();
 
                 double latency_us = sw.elapsed_us();
-                latency_stats.add( latency_us );
+                latency_stats.add(latency_us);
                 ++cycles;
             }
         }
-        catch( std::exception const& ) {}
+        catch (std::exception const&)
+        {
+        }
     };
 
     perf::stopwatch total_sw;
 
-    asio::co_spawn( ioc, task(), asio::detached );
+    asio::co_spawn(ioc, task(), asio::detached);
 
-    std::thread timer( [&]()
-    {
-        std::this_thread::sleep_for(
-            std::chrono::duration<double>( duration_s ) );
-        running.store( false, std::memory_order_relaxed );
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(std::chrono::duration<double>(duration_s));
+        running.store(false, std::memory_order_relaxed);
         ioc.stop();
-    } );
+    });
 
     ioc.run();
     timer.join();
 
-    double elapsed = total_sw.elapsed_seconds();
-    double conns_per_sec = static_cast<double>( cycles ) / elapsed;
+    double elapsed       = total_sw.elapsed_seconds();
+    double conns_per_sec = static_cast<double>(cycles) / elapsed;
 
     std::cout << "  Cycles:      " << cycles << "\n";
-    std::cout << "  Elapsed:     " << std::fixed << std::setprecision( 3 )
+    std::cout << "  Elapsed:     " << std::fixed << std::setprecision(3)
               << elapsed << " s\n";
-    std::cout << "  Throughput:  " << perf::format_rate( conns_per_sec ) << "\n";
-    perf::print_latency_stats( latency_stats, "Cycle latency" );
+    std::cout << "  Throughput:  " << perf::format_rate(conns_per_sec) << "\n";
+    perf::print_latency_stats(latency_stats, "Cycle latency");
     std::cout << "\n";
 
     acc.close();
 
-    return bench::benchmark_result( "sequential" )
-        .add( "cycles", static_cast<double>( cycles ) )
-        .add( "elapsed_s", elapsed )
-        .add( "conns_per_sec", conns_per_sec )
-        .add_latency_stats( "cycle_latency", latency_stats );
+    return bench::benchmark_result("sequential")
+        .add("cycles", static_cast<double>(cycles))
+        .add("elapsed_s", elapsed)
+        .add("conns_per_sec", conns_per_sec)
+        .add_latency_stats("cycle_latency", latency_stats);
 }
 
 // N independent accept loops on separate listeners. Reveals whether
 // fd allocation or acceptor state scales linearly, and exposes any
 // scheduler contention when multiple accept paths compete.
-bench::benchmark_result bench_concurrent_churn( int num_loops, double duration_s )
+bench::benchmark_result
+bench_concurrent_churn(int num_loops, double duration_s)
 {
     std::cout << "  Concurrent loops: " << num_loops << "\n";
 
     asio::io_context ioc;
-    std::atomic<bool> running{ true };
-    std::vector<int64_t> cycle_counts( num_loops, 0 );
-    std::vector<perf::statistics> stats( num_loops );
+    std::atomic<bool> running{true};
+    std::vector<int64_t> cycle_counts(num_loops, 0);
+    std::vector<perf::statistics> stats(num_loops);
 
     // Each loop gets its own acceptor
     std::vector<std::unique_ptr<tcp_acceptor>> acceptors;
-    acceptors.reserve( num_loops );
-    for( int i = 0; i < num_loops; ++i )
+    acceptors.reserve(num_loops);
+    for (int i = 0; i < num_loops; ++i)
     {
-        acceptors.push_back( std::make_unique<tcp_acceptor>(
-            ioc.get_executor(), tcp::endpoint( tcp::v4(), 0 ) ) );
-        acceptors.back()->set_option( tcp_acceptor::reuse_address( true ) );
+        acceptors.push_back(
+            std::make_unique<tcp_acceptor>(
+                ioc.get_executor(), tcp::endpoint(tcp::v4(), 0)));
+        acceptors.back()->set_option(tcp_acceptor::reuse_address(true));
     }
 
-    auto loop_task = [&]( int idx ) -> asio::awaitable<void, executor_type>
-    {
+    auto loop_task = [&](int idx) -> asio::awaitable<void, executor_type> {
         auto& acc = *acceptors[idx];
-        auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
+        auto ep   = tcp::endpoint(
+            asio::ip::address_v4::loopback(), acc.local_endpoint().port());
 
         try
         {
-            while( running.load( std::memory_order_relaxed ) )
+            while (running.load(std::memory_order_relaxed))
             {
                 perf::stopwatch sw;
 
-                auto client = std::make_unique<tcp_socket>( ioc );
-                auto server = std::make_unique<tcp_socket>( ioc );
-                client->open( tcp::v4() );
-                client->set_option( asio::socket_base::linger( true, 0 ) );
+                auto client = std::make_unique<tcp_socket>(ioc);
+                auto server = std::make_unique<tcp_socket>(ioc);
+                client->open(tcp::v4());
+                client->set_option(asio::socket_base::linger(true, 0));
 
-                asio::co_spawn( ioc,
-                    [](tcp_socket& c, tcp::endpoint ep) -> asio::awaitable<void, executor_type>
-                    {
-                        co_await c.async_connect( ep, asio::deferred );
+                asio::co_spawn(
+                    ioc,
+                    [](tcp_socket& c, tcp::endpoint ep)
+                        -> asio::awaitable<void, executor_type> {
+                        co_await c.async_connect(ep, asio::deferred);
                     }(*client, ep),
-                    asio::detached );
+                    asio::detached);
 
-                *server = co_await acc.async_accept( asio::deferred );
+                *server = co_await acc.async_accept(asio::deferred);
 
                 char byte = 'X';
                 co_await asio::async_write(
-                    *client, asio::buffer( &byte, 1 ), asio::deferred );
+                    *client, asio::buffer(&byte, 1), asio::deferred);
 
                 char recv = 0;
                 co_await asio::async_read(
-                    *server, asio::buffer( &recv, 1 ), asio::deferred );
+                    *server, asio::buffer(&recv, 1), asio::deferred);
 
                 client->close();
                 server->close();
 
-                stats[idx].add( sw.elapsed_us() );
+                stats[idx].add(sw.elapsed_us());
                 ++cycle_counts[idx];
             }
         }
-        catch( std::exception const& ) {}
+        catch (std::exception const&)
+        {
+        }
     };
 
     perf::stopwatch total_sw;
 
-    for( int i = 0; i < num_loops; ++i )
-        asio::co_spawn( ioc, loop_task( i ), asio::detached );
+    for (int i = 0; i < num_loops; ++i)
+        asio::co_spawn(ioc, loop_task(i), asio::detached);
 
-    std::thread stopper( [&]()
-    {
-        std::this_thread::sleep_for(
-            std::chrono::duration<double>( duration_s ) );
-        running.store( false, std::memory_order_relaxed );
+    std::thread stopper([&]() {
+        std::this_thread::sleep_for(std::chrono::duration<double>(duration_s));
+        running.store(false, std::memory_order_relaxed);
         ioc.stop();
-    } );
+    });
 
     ioc.run();
     stopper.join();
@@ -209,161 +214,164 @@ bench::benchmark_result bench_concurrent_churn( int num_loops, double duration_s
     double elapsed = total_sw.elapsed_seconds();
 
     int64_t total_cycles = 0;
-    for( auto c : cycle_counts )
+    for (auto c : cycle_counts)
         total_cycles += c;
 
-    double conns_per_sec = static_cast<double>( total_cycles ) / elapsed;
+    double conns_per_sec = static_cast<double>(total_cycles) / elapsed;
 
     double total_mean = 0;
-    double total_p99 = 0;
-    for( auto& s : stats )
+    double total_p99  = 0;
+    for (auto& s : stats)
     {
         total_mean += s.mean();
         total_p99 += s.p99();
     }
 
     std::cout << "    Total cycles: " << total_cycles << "\n";
-    std::cout << "    Elapsed: " << std::fixed << std::setprecision( 3 )
+    std::cout << "    Elapsed: " << std::fixed << std::setprecision(3)
               << elapsed << " s\n";
-    std::cout << "    Throughput: " << perf::format_rate( conns_per_sec ) << "\n";
+    std::cout << "    Throughput: " << perf::format_rate(conns_per_sec) << "\n";
     std::cout << "    Avg mean latency: "
-              << perf::format_latency( total_mean / num_loops ) << "\n";
+              << perf::format_latency(total_mean / num_loops) << "\n";
     std::cout << "    Avg p99 latency: "
-              << perf::format_latency( total_p99 / num_loops ) << "\n\n";
+              << perf::format_latency(total_p99 / num_loops) << "\n\n";
 
-    for( auto& a : acceptors )
+    for (auto& a : acceptors)
         a->close();
 
-    return bench::benchmark_result( "concurrent_" + std::to_string( num_loops ) )
-        .add( "num_loops", num_loops )
-        .add( "total_cycles", static_cast<double>( total_cycles ) )
-        .add( "conns_per_sec", conns_per_sec )
-        .add( "avg_mean_latency_us", total_mean / num_loops )
-        .add( "avg_p99_latency_us", total_p99 / num_loops );
+    return bench::benchmark_result("concurrent_" + std::to_string(num_loops))
+        .add("num_loops", num_loops)
+        .add("total_cycles", static_cast<double>(total_cycles))
+        .add("conns_per_sec", conns_per_sec)
+        .add("avg_mean_latency_us", total_mean / num_loops)
+        .add("avg_p99_latency_us", total_p99 / num_loops);
 }
 
 // Burst N connects then accept all — stresses the listen backlog and
 // batched fd creation. Reveals whether the acceptor handles connection
 // storms gracefully or suffers from backlog overflow.
-bench::benchmark_result bench_burst_churn( int burst_size, double duration_s )
+bench::benchmark_result
+bench_burst_churn(int burst_size, double duration_s)
 {
     std::cout << "  Burst size: " << burst_size << "\n";
 
     asio::io_context ioc;
-    tcp_acceptor acc( ioc.get_executor(), tcp::endpoint( tcp::v4(), 0 ) );
-    acc.set_option( tcp_acceptor::reuse_address( true ) );
-    auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
+    tcp_acceptor acc(ioc.get_executor(), tcp::endpoint(tcp::v4(), 0));
+    acc.set_option(tcp_acceptor::reuse_address(true));
+    auto ep = tcp::endpoint(
+        asio::ip::address_v4::loopback(), acc.local_endpoint().port());
 
-    std::atomic<bool> running{ true };
+    std::atomic<bool> running{true};
     int64_t total_accepted = 0;
     perf::statistics burst_stats;
 
-    auto task = [&]() -> asio::awaitable<void, executor_type>
-    {
+    auto task = [&]() -> asio::awaitable<void, executor_type> {
         try
         {
-            while( running.load( std::memory_order_relaxed ) )
+            while (running.load(std::memory_order_relaxed))
             {
                 perf::stopwatch sw;
 
                 std::vector<std::unique_ptr<tcp_socket>> clients;
                 std::vector<tcp_socket> servers;
-                clients.reserve( burst_size );
-                servers.reserve( burst_size );
+                clients.reserve(burst_size);
+                servers.reserve(burst_size);
 
                 // Spawn all connects
-                for( int i = 0; i < burst_size; ++i )
+                for (int i = 0; i < burst_size; ++i)
                 {
-                    clients.push_back( std::make_unique<tcp_socket>( ioc ) );
-                    clients.back()->open( tcp::v4() );
+                    clients.push_back(std::make_unique<tcp_socket>(ioc));
+                    clients.back()->open(tcp::v4());
                     clients.back()->set_option(
-                        asio::socket_base::linger( true, 0 ) );
-                    asio::co_spawn( ioc,
-                        [](tcp_socket& c, tcp::endpoint ep) -> asio::awaitable<void, executor_type>
-                        {
-                            co_await c.async_connect( ep, asio::deferred );
+                        asio::socket_base::linger(true, 0));
+                    asio::co_spawn(
+                        ioc,
+                        [](tcp_socket& c, tcp::endpoint ep)
+                            -> asio::awaitable<void, executor_type> {
+                            co_await c.async_connect(ep, asio::deferred);
                         }(*clients.back(), ep),
-                        asio::detached );
+                        asio::detached);
                 }
 
                 // Accept all
-                for( int i = 0; i < burst_size; ++i )
+                for (int i = 0; i < burst_size; ++i)
                 {
-                    servers.push_back( co_await acc.async_accept( asio::deferred ) );
+                    servers.push_back(
+                        co_await acc.async_accept(asio::deferred));
                     ++total_accepted;
                 }
 
                 // Close all
-                for( auto& c : clients )
+                for (auto& c : clients)
                     c->close();
-                for( auto& s : servers )
+                for (auto& s : servers)
                     s.close();
 
-                burst_stats.add( sw.elapsed_us() );
+                burst_stats.add(sw.elapsed_us());
             }
         }
-        catch( std::exception const& ) {}
+        catch (std::exception const&)
+        {
+        }
     };
 
     perf::stopwatch total_sw;
 
-    asio::co_spawn( ioc, task(), asio::detached );
+    asio::co_spawn(ioc, task(), asio::detached);
 
-    std::thread stopper( [&]()
-    {
-        std::this_thread::sleep_for(
-            std::chrono::duration<double>( duration_s ) );
-        running.store( false, std::memory_order_relaxed );
+    std::thread stopper([&]() {
+        std::this_thread::sleep_for(std::chrono::duration<double>(duration_s));
+        running.store(false, std::memory_order_relaxed);
         ioc.stop();
-    } );
+    });
 
     ioc.run();
     stopper.join();
 
-    double elapsed = total_sw.elapsed_seconds();
-    double accepts_per_sec = static_cast<double>( total_accepted ) / elapsed;
+    double elapsed         = total_sw.elapsed_seconds();
+    double accepts_per_sec = static_cast<double>(total_accepted) / elapsed;
 
     std::cout << "    Total accepted: " << total_accepted << "\n";
-    std::cout << "    Elapsed: " << std::fixed << std::setprecision( 3 )
+    std::cout << "    Elapsed: " << std::fixed << std::setprecision(3)
               << elapsed << " s\n";
-    std::cout << "    Accept rate: " << perf::format_rate( accepts_per_sec ) << "\n";
-    perf::print_latency_stats( burst_stats, "Burst latency" );
+    std::cout << "    Accept rate: " << perf::format_rate(accepts_per_sec)
+              << "\n";
+    perf::print_latency_stats(burst_stats, "Burst latency");
     std::cout << "\n";
 
     acc.close();
 
-    return bench::benchmark_result( "burst_" + std::to_string( burst_size ) )
-        .add( "burst_size", burst_size )
-        .add( "total_accepted", static_cast<double>( total_accepted ) )
-        .add( "accepts_per_sec", accepts_per_sec )
-        .add_latency_stats( "burst_latency", burst_stats );
+    return bench::benchmark_result("burst_" + std::to_string(burst_size))
+        .add("burst_size", burst_size)
+        .add("total_accepted", static_cast<double>(total_accepted))
+        .add("accepts_per_sec", accepts_per_sec)
+        .add_latency_stats("burst_latency", burst_stats);
 }
 
 } // anonymous namespace
 
-void run_accept_churn_benchmarks(
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s )
+void
+run_accept_churn_benchmarks(
+    bench::result_collector& collector, char const* filter, double duration_s)
 {
-    bool run_all = !filter || std::strcmp( filter, "all" ) == 0;
+    bool run_all = !filter || std::strcmp(filter, "all") == 0;
 
-    if( run_all || std::strcmp( filter, "sequential" ) == 0 )
-        collector.add( bench_sequential_churn( duration_s ) );
+    if (run_all || std::strcmp(filter, "sequential") == 0)
+        collector.add(bench_sequential_churn(duration_s));
 
-    if( run_all || std::strcmp( filter, "concurrent" ) == 0 )
+    if (run_all || std::strcmp(filter, "concurrent") == 0)
     {
-        perf::print_header( "Concurrent Accept Churn (Asio Coroutines)" );
-        collector.add( bench_concurrent_churn( 1, duration_s ) );
-        collector.add( bench_concurrent_churn( 4, duration_s ) );
-        collector.add( bench_concurrent_churn( 16, duration_s ) );
+        perf::print_header("Concurrent Accept Churn (Asio Coroutines)");
+        collector.add(bench_concurrent_churn(1, duration_s));
+        collector.add(bench_concurrent_churn(4, duration_s));
+        collector.add(bench_concurrent_churn(16, duration_s));
     }
 
-    if( run_all || std::strcmp( filter, "burst" ) == 0 )
+    if (run_all || std::strcmp(filter, "burst") == 0)
     {
-        perf::print_header( "Burst Accept Churn (Asio Coroutines)" );
-        collector.add( bench_burst_churn( 10, duration_s ) );
-        collector.add( bench_burst_churn( 100, duration_s ) );
+        perf::print_header("Burst Accept Churn (Asio Coroutines)");
+        collector.add(bench_burst_churn(10, duration_s));
+        collector.add(bench_burst_churn(100, duration_s));
     }
 }
 

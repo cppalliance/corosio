@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -11,12 +12,15 @@
 #include <boost/corosio/test/mocket.hpp>
 
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/native/native_tcp_socket.hpp>
+#include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio::test {
@@ -151,5 +155,53 @@ struct mocket_test
 };
 
 TEST_SUITE(mocket_test, "boost.corosio.mocket");
+
+template<auto Backend>
+struct native_mocket_test
+{
+    void testNativeProvideExpect()
+    {
+        using socket_type   = native_tcp_socket<Backend>;
+        using acceptor_type = native_tcp_acceptor<Backend>;
+        using mocket_type   = basic_mocket<socket_type>;
+
+        io_context ioc(Backend);
+        capy::test::fuse f;
+
+        auto [m, peer] = make_mocket_pair<socket_type, acceptor_type>(ioc, f);
+        BOOST_TEST(m.is_open());
+        BOOST_TEST(peer.is_open());
+
+        m.provide("native_data");
+        m.expect("native_write");
+
+        auto task = [](mocket_type& m_ref) -> capy::task<> {
+            char buf[32] = {};
+
+            auto [ec1, n1] = co_await m_ref.read_some(capy::make_buffer(buf));
+            BOOST_TEST(!ec1);
+            BOOST_TEST_EQ(std::string_view(buf, n1), "native_data");
+
+            auto [ec2, n2] = co_await m_ref.write_some(
+                capy::const_buffer("native_write", 12));
+            BOOST_TEST(!ec2);
+            BOOST_TEST_EQ(n2, 12u);
+        };
+        capy::run_async(ioc.get_executor())(task(m));
+
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST(!m.close());
+        peer.close();
+    }
+
+    void run()
+    {
+        testNativeProvideExpect();
+    }
+};
+
+COROSIO_BACKEND_TESTS(native_mocket_test, "boost.corosio.mocket.native");
 
 } // namespace boost::corosio::test

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -26,6 +27,13 @@
 #else
 #define BOOST_COROSIO_SYMBOL_EXPORT
 #define BOOST_COROSIO_SYMBOL_IMPORT
+#endif
+
+// ELF visibility without dllexport (safe for TLS on MSVC)
+#if defined(__GNUC__) && __GNUC__ >= 4
+#define BOOST_COROSIO_SYMBOL_VISIBLE __attribute__((visibility("default")))
+#else
+#define BOOST_COROSIO_SYMBOL_VISIBLE
 #endif
 
 namespace boost::corosio {

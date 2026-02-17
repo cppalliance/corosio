@@ -70,7 +70,7 @@ struct counter_coro
 inline counter_coro
 make_coro(int& counter)
 {
-    auto c = []() -> counter_coro { co_return; }();
+    auto c                 = []() -> counter_coro { co_return; }();
     c.h.promise().counter_ = &counter;
     return c;
 }
@@ -119,7 +119,7 @@ struct atomic_counter_coro
 inline atomic_counter_coro
 make_atomic_coro(std::atomic<int>& counter)
 {
-    auto c = []() -> atomic_counter_coro { co_return; }();
+    auto c                 = []() -> atomic_counter_coro { co_return; }();
     c.h.promise().counter_ = &counter;
     return c;
 }
@@ -129,7 +129,7 @@ struct check_coro
 {
     struct promise_type
     {
-        bool* result_ = nullptr;
+        bool* result_                  = nullptr;
         io_context::executor_type* ex_ = nullptr;
 
         check_coro get_return_object()
@@ -169,9 +169,9 @@ struct check_coro
 inline check_coro
 make_check_coro(bool& result, io_context::executor_type& ex)
 {
-    auto c = []() -> check_coro { co_return; }();
+    auto c                = []() -> check_coro { co_return; }();
     c.h.promise().result_ = &result;
-    c.h.promise().ex_ = &ex;
+    c.h.promise().ex_     = &ex;
     return c;
 }
 
@@ -205,7 +205,7 @@ struct io_context_test
     void testRun()
     {
         io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         int counter = 0;
 
         // Post some work
@@ -222,7 +222,7 @@ struct io_context_test
     void testRunOne()
     {
         io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         int counter = 0;
 
         ex.post(make_coro(counter));
@@ -244,7 +244,7 @@ struct io_context_test
     void testPoll()
     {
         io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         int counter = 0;
 
         // Poll with no work should return 0 and stop the context
@@ -268,7 +268,7 @@ struct io_context_test
     void testPollOne()
     {
         io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         int counter = 0;
 
         // poll_one with no work should return 0 and stop the context
@@ -300,7 +300,7 @@ struct io_context_test
     void testStopAndRestart()
     {
         io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         int counter = 0;
 
         BOOST_TEST(!ioc.stopped());
@@ -330,7 +330,7 @@ struct io_context_test
     void testRunOneFor()
     {
         io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         int counter = 0;
 
         // run_one_for with no work - returns immediately and stops context
@@ -352,7 +352,7 @@ struct io_context_test
     void testRunOneUntil()
     {
         io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         int counter = 0;
 
         // run_one_until with no work - returns immediately and stops context
@@ -378,13 +378,13 @@ struct io_context_test
     void testRunFor()
     {
         io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         int counter = 0;
 
         // run_for with no work - returns immediately and stops context
-        auto start = std::chrono::steady_clock::now();
+        auto start    = std::chrono::steady_clock::now();
         std::size_t n = ioc.run_for(std::chrono::milliseconds(20));
-        auto elapsed = std::chrono::steady_clock::now() - start;
+        auto elapsed  = std::chrono::steady_clock::now() - start;
 
         BOOST_TEST(n == 0);
         BOOST_TEST(ioc.stopped());
@@ -423,9 +423,9 @@ struct io_context_test
         io_context ioc;
         auto ex = ioc.get_executor();
         std::atomic<int> counter{0};
-        constexpr int num_threads = 4;
+        constexpr int num_threads         = 4;
         constexpr int handlers_per_thread = 100;
-        constexpr int total_handlers = num_threads * handlers_per_thread;
+        constexpr int total_handlers      = num_threads * handlers_per_thread;
 
         // Post handlers from multiple threads concurrently
         std::vector<std::thread> posters;
@@ -456,8 +456,8 @@ struct io_context_test
     void testMultithreadedStress()
     {
         // Stress test: multiple iterations of post-then-run with multiple threads
-        constexpr int iterations = 10;
-        constexpr int num_threads = 4;
+        constexpr int iterations             = 10;
+        constexpr int num_threads            = 4;
         constexpr int handlers_per_iteration = 100;
 
         for (int iter = 0; iter < iterations; ++iter)

@@ -57,7 +57,7 @@ class endpoint
     ipv4_address v4_address_;
     ipv6_address v6_address_;
     std::uint16_t port_ = 0;
-    bool is_v4_ = true;
+    bool is_v4_         = true;
 
 public:
     /** Default constructor.
@@ -218,7 +218,6 @@ public:
         return !(a == b);
     }
 };
-
 
 /** Endpoint format detection result.
 

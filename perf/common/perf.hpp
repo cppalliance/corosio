@@ -28,14 +28,11 @@ namespace perf {
 class stopwatch
 {
 public:
-    using clock = std::chrono::steady_clock;
+    using clock      = std::chrono::steady_clock;
     using time_point = clock::time_point;
-    using duration = clock::duration;
+    using duration   = clock::duration;
 
-    stopwatch()
-        : start_(clock::now())
-    {
-    }
+    stopwatch() : start_(clock::now()) {}
 
     void reset()
     {
@@ -101,7 +98,7 @@ public:
     {
         if (samples_.size() < 2)
             return 0.0;
-        double m = mean();
+        double m      = mean();
         double sq_sum = 0.0;
         for (double v : samples_)
             sq_sum += (v - m) * (v - m);
@@ -113,14 +110,14 @@ public:
         return std::sqrt(variance());
     }
 
-    double (min)() const
+    double(min)() const
     {
         if (samples_.empty())
             return 0.0;
         return *(std::min_element)(samples_.begin(), samples_.end());
     }
 
-    double (max)() const
+    double(max)() const
     {
         if (samples_.empty())
             return 0.0;
@@ -136,7 +133,7 @@ public:
         std::vector<double> sorted = samples_;
         std::sort(sorted.begin(), sorted.end());
 
-        double index = p * static_cast<double>(sorted.size() - 1);
+        double index      = p * static_cast<double>(sorted.size() - 1);
         std::size_t lower = static_cast<std::size_t>(std::floor(index));
         std::size_t upper = static_cast<std::size_t>(std::ceil(index));
 
@@ -147,17 +144,30 @@ public:
         return sorted[lower] * (1.0 - frac) + sorted[upper] * frac;
     }
 
-    double p50() const { return percentile(0.50); }
-    double p90() const { return percentile(0.90); }
-    double p99() const { return percentile(0.99); }
-    double p999() const { return percentile(0.999); }
+    double p50() const
+    {
+        return percentile(0.50);
+    }
+    double p90() const
+    {
+        return percentile(0.90);
+    }
+    double p99() const
+    {
+        return percentile(0.99);
+    }
+    double p999() const
+    {
+        return percentile(0.999);
+    }
 
 private:
     std::vector<double> samples_;
 };
 
 // Format operations per second
-inline std::string format_rate(double ops_per_sec)
+inline std::string
+format_rate(double ops_per_sec)
 {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(2);
@@ -175,7 +185,8 @@ inline std::string format_rate(double ops_per_sec)
 }
 
 // Format bytes per second
-inline std::string format_throughput(double bytes_per_sec)
+inline std::string
+format_throughput(double bytes_per_sec)
 {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(2);
@@ -193,7 +204,8 @@ inline std::string format_throughput(double bytes_per_sec)
 }
 
 // Format latency in appropriate units
-inline std::string format_latency(double microseconds)
+inline std::string
+format_latency(double microseconds)
 {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(2);
@@ -211,21 +223,24 @@ inline std::string format_latency(double microseconds)
 }
 
 // Print a benchmark result header
-inline void print_header(char const* name)
+inline void
+print_header(char const* name)
 {
     std::cout << "\n=== " << name << " ===\n";
 }
 
 // Print a benchmark result
-inline void print_result(char const* label, double value, char const* unit)
+inline void
+print_result(char const* label, double value, char const* unit)
 {
-    std::cout << "  " << std::left << std::setw(30) << label
-              << std::right << std::setw(15) << std::fixed << std::setprecision(2)
-              << value << " " << unit << "\n";
+    std::cout << "  " << std::left << std::setw(30) << label << std::right
+              << std::setw(15) << std::fixed << std::setprecision(2) << value
+              << " " << unit << "\n";
 }
 
 // Print latency statistics
-inline void print_latency_stats(statistics const& stats, char const* label)
+inline void
+print_latency_stats(statistics const& stats, char const* label)
 {
     std::cout << "  " << label << ":\n";
     std::cout << "    mean:  " << format_latency(stats.mean()) << "\n";
@@ -247,38 +262,39 @@ inline void print_latency_stats(statistics const& stats, char const* label)
 
     No-op on non-Linux or when conntrack is not loaded.
 */
-inline void await_conntrack_drain()
+inline void
+await_conntrack_drain()
 {
 #ifdef __linux__
-    auto read_value = []( char const* path ) -> long
-    {
-        std::ifstream f( path );
+    auto read_value = [](char const* path) -> long {
+        std::ifstream f(path);
         long v = -1;
-        if( f.is_open() )
+        if (f.is_open())
             f >> v;
         return v;
     };
 
-    long ct_max = read_value( "/proc/sys/net/netfilter/nf_conntrack_max" );
-    if( ct_max <= 0 )
+    long ct_max = read_value("/proc/sys/net/netfilter/nf_conntrack_max");
+    if (ct_max <= 0)
         return;
 
     long threshold = ct_max * 3 / 4;
-    long count = read_value( "/proc/sys/net/netfilter/nf_conntrack_count" );
-    if( count < 0 || count <= threshold )
+    long count     = read_value("/proc/sys/net/netfilter/nf_conntrack_count");
+    if (count < 0 || count <= threshold)
         return;
 
     std::cout << "  [conntrack] table at " << count << "/" << ct_max
-              << " — waiting to drain below " << threshold << " ..." << std::flush;
+              << " — waiting to drain below " << threshold << " ..."
+              << std::flush;
 
-    using clock = std::chrono::steady_clock;
-    auto deadline = clock::now() + std::chrono::seconds( 30 );
+    using clock   = std::chrono::steady_clock;
+    auto deadline = clock::now() + std::chrono::seconds(30);
 
-    while( clock::now() < deadline )
+    while (clock::now() < deadline)
     {
-        std::this_thread::sleep_for( std::chrono::milliseconds( 200 ) );
-        count = read_value( "/proc/sys/net/netfilter/nf_conntrack_count" );
-        if( count < 0 || count <= threshold )
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        count = read_value("/proc/sys/net/netfilter/nf_conntrack_count");
+        if (count < 0 || count <= threshold)
             break;
     }
 

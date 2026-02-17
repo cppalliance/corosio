@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -12,7 +13,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/endpoint.hpp>
-#include <boost/corosio/io_object.hpp>
+#include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/resolver_results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -25,7 +26,6 @@
 #include <cassert>
 #include <concepts>
 #include <coroutine>
-#include <cstdint>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -99,7 +99,6 @@ operator&=(resolve_flags& a, resolve_flags b) noexcept
     return a;
 }
 
-
 /** Bitmask flags for reverse resolver queries.
 
     These flags correspond to the flags parameter of getnameinfo.
@@ -153,7 +152,6 @@ operator&=(reverse_flags& a, reverse_flags b) noexcept
     a = a & b;
     return a;
 }
-
 
 /** An asynchronous DNS resolver for coroutine I/O.
 
@@ -322,7 +320,7 @@ public:
         return *this;
     }
 
-    resolver(resolver const&) = delete;
+    resolver(resolver const&)            = delete;
     resolver& operator=(resolver const&) = delete;
 
     /** Initiate an asynchronous resolve operation.
@@ -437,6 +435,9 @@ public:
 
         virtual void cancel() noexcept = 0;
     };
+
+protected:
+    explicit resolver(handle h) noexcept : io_object(std::move(h)) {}
 
 private:
     inline implementation& get() const noexcept

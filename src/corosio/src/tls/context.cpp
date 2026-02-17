@@ -17,7 +17,6 @@
 
 namespace boost::corosio {
 
-
 tls_context::tls_context() : impl_(std::make_shared<impl>()) {}
 
 //
@@ -72,7 +71,7 @@ std::error_code
 tls_context::use_private_key(
     std::string_view private_key, tls_file_format format)
 {
-    impl_->private_key = std::string(private_key);
+    impl_->private_key        = std::string(private_key);
     impl_->private_key_format = format;
     return {};
 }
@@ -87,7 +86,7 @@ tls_context::use_private_key_file(
 
     std::ostringstream ss;
     ss << file.rdbuf();
-    impl_->private_key = ss.str();
+    impl_->private_key        = ss.str();
     impl_->private_key_format = format;
     return {};
 }

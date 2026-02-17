@@ -24,7 +24,7 @@ ipv6_address::ipv6_address(bytes_type const& bytes) noexcept
 ipv6_address::ipv6_address(ipv4_address const& addr) noexcept
 {
     auto const v = addr.to_bytes();
-    addr_ = {
+    addr_        = {
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, v[0], v[1], v[2], v[3]}};
 }
 
@@ -141,10 +141,10 @@ ipv6_address::print_impl(char* dest) const noexcept
     auto const dest0 = dest;
     // find longest run of zeroes
     std::size_t best_len = 0;
-    int best_pos = -1;
-    auto it = addr_.data();
-    auto const v4 = is_v4_mapped();
-    auto const end = v4 ? (it + addr_.size() - 4) : it + addr_.size();
+    int best_pos         = -1;
+    auto it              = addr_.data();
+    auto const v4        = is_v4_mapped();
+    auto const end       = v4 ? (it + addr_.size() - 4) : it + addr_.size();
 
     while (it != end)
     {
@@ -166,7 +166,7 @@ ipv6_address::print_impl(char* dest) const noexcept
     if (best_pos != 0)
     {
         unsigned short v = static_cast<unsigned short>(it[0] * 256U + it[1]);
-        dest = print_hex(dest, v);
+        dest             = print_hex(dest, v);
         it += 2;
     }
     else
@@ -188,7 +188,7 @@ ipv6_address::print_impl(char* dest) const noexcept
             continue;
         }
         unsigned short v = static_cast<unsigned short>(it[0] * 256U + it[1]);
-        dest = print_hex(dest, v);
+        dest             = print_hex(dest, v);
         it += 2;
     }
 
@@ -209,7 +209,6 @@ ipv6_address::print_impl(char* dest) const noexcept
 
     return static_cast<std::size_t>(dest - dest0);
 }
-
 
 namespace {
 
@@ -279,12 +278,12 @@ maybe_octet(unsigned char const* p) noexcept
 std::error_code
 parse_ipv6_address(std::string_view s, ipv6_address& addr) noexcept
 {
-    auto it = s.data();
+    auto it        = s.data();
     auto const end = it + s.size();
 
-    int n = 8;      // words needed
-    int b = -1;     // value of n when '::' seen
-    bool c = false; // need colon
+    int n     = 8;     // words needed
+    int b     = -1;    // value of n when '::' seen
+    bool c    = false; // need colon
     auto prev = it;
     ipv6_address::bytes_type bytes{};
     unsigned char hi, lo;
@@ -374,8 +373,8 @@ parse_ipv6_address(std::string_view s, ipv6_address& addr) noexcept
                 v4_check);
             if (ec)
                 return ec;
-            it = v4_it;
-            auto const b4 = v4_check.to_bytes();
+            it                     = v4_it;
+            auto const b4          = v4_check.to_bytes();
             bytes[2 * (7 - n) + 0] = b4[0];
             bytes[2 * (7 - n) + 1] = b4[1];
             bytes[2 * (7 - n) + 2] = b4[2];

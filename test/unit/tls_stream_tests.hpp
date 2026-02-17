@@ -501,8 +501,8 @@ testReset(StreamFactory make_stream, std::array<context_mode, N> const& modes)
         auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
 
         auto [client_ctx, server_ctx] = make_contexts(mode);
-        auto client = make_stream(m1, client_ctx);
-        auto server = make_stream(m2, server_ctx);
+        auto client                   = make_stream(m1, client_ctx);
+        auto server                   = make_stream(m2, server_ctx);
 
         auto do_round = [&](std::string const& msg) {
             std::error_code client_ec;
@@ -598,8 +598,8 @@ testResetViaHandshake(
         auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
 
         auto [client_ctx, server_ctx] = make_contexts(mode);
-        auto client = make_stream(m1, client_ctx);
-        auto server = make_stream(m2, server_ctx);
+        auto client                   = make_stream(m1, client_ctx);
+        auto server                   = make_stream(m2, server_ctx);
 
         auto do_round = [&](std::string const& msg) {
             std::error_code client_ec;
@@ -701,11 +701,11 @@ testResetFuse(StreamFactory make_stream)
                 std::error_code cec, sec;
                 auto hsc = [&]() -> capy::task<> {
                     auto [ec] = co_await client.handshake(tls_stream::client);
-                    cec = ec;
+                    cec       = ec;
                 };
                 auto hss = [&]() -> capy::task<> {
                     auto [ec] = co_await server.handshake(tls_stream::server);
-                    sec = ec;
+                    sec       = ec;
                 };
                 capy::run_async(ioc.get_executor())(hsc());
                 capy::run_async(ioc.get_executor())(hss());
@@ -741,11 +741,11 @@ testResetFuse(StreamFactory make_stream)
                 std::error_code cec, sec;
                 auto hsc = [&]() -> capy::task<> {
                     auto [ec] = co_await client.handshake(tls_stream::client);
-                    cec = ec;
+                    cec       = ec;
                 };
                 auto hss = [&]() -> capy::task<> {
                     auto [ec] = co_await server.handshake(tls_stream::server);
-                    sec = ec;
+                    sec       = ec;
                 };
                 capy::run_async(ioc.get_executor())(hsc());
                 capy::run_async(ioc.get_executor())(hss());

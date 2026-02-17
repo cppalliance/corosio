@@ -54,7 +54,7 @@ parse_port(std::string_view s, std::uint16_t& port) noexcept
         return false;
 
     unsigned long val = 0;
-    auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+    auto [ptr, ec]    = std::from_chars(s.data(), s.data() + s.size(), val);
     if (ec != std::errc{} || ptr != s.data() + s.size())
         return false;
     if (val > 65535)

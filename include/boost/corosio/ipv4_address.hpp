@@ -249,7 +249,6 @@ private:
     std::size_t print_impl(char* dest) const noexcept;
 };
 
-
 /** Return an IPv4 address from an IP address string in dotted decimal form.
 
     @param s The string to parse.

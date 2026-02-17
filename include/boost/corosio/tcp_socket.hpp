@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -13,7 +14,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/except.hpp>
-#include <boost/corosio/io_stream.hpp>
+#include <boost/corosio/io/io_stream.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/io_buffer_param.hpp>
 #include <boost/corosio/endpoint.hpp>
@@ -92,7 +93,7 @@ public:
     struct linger_options
     {
         bool enabled = false;
-        int timeout = 0; // seconds
+        int timeout  = 0; // seconds
     };
 
     struct implementation : io_stream::implementation
@@ -122,14 +123,14 @@ public:
         virtual std::error_code set_keep_alive(bool value) noexcept = 0;
         virtual bool keep_alive(std::error_code& ec) const noexcept = 0;
 
-        virtual std::error_code set_receive_buffer_size(int size) noexcept = 0;
+        virtual std::error_code set_receive_buffer_size(int size) noexcept  = 0;
         virtual int receive_buffer_size(std::error_code& ec) const noexcept = 0;
 
-        virtual std::error_code set_send_buffer_size(int size) noexcept = 0;
+        virtual std::error_code set_send_buffer_size(int size) noexcept  = 0;
         virtual int send_buffer_size(std::error_code& ec) const noexcept = 0;
 
         virtual std::error_code
-        set_linger(bool enabled, int timeout) noexcept = 0;
+        set_linger(bool enabled, int timeout) noexcept                    = 0;
         virtual linger_options linger(std::error_code& ec) const noexcept = 0;
 
         /// Returns the cached local endpoint.
@@ -204,7 +205,7 @@ public:
 
         @param other The socket to move from.
     */
-    tcp_socket(tcp_socket&& other) noexcept : io_stream(std::move(other)) {}
+    tcp_socket(tcp_socket&& other) noexcept : io_object(std::move(other)) {}
 
     /** Move assignment operator.
 
@@ -223,7 +224,7 @@ public:
         return *this;
     }
 
-    tcp_socket(tcp_socket const&) = delete;
+    tcp_socket(tcp_socket const&)            = delete;
     tcp_socket& operator=(tcp_socket const&) = delete;
 
     /** Open the socket.
@@ -497,6 +498,11 @@ public:
         connect(), accept(), or close().
     */
     endpoint remote_endpoint() const noexcept;
+
+protected:
+    tcp_socket() noexcept = default;
+
+    explicit tcp_socket(handle h) noexcept : io_object(std::move(h)) {}
 
 private:
     friend class tcp_acceptor;

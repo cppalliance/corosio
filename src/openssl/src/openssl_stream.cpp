@@ -142,7 +142,7 @@ sni_callback(SSL* ssl, int* /* alert */, void* /* arg */)
         return SSL_TLSEXT_ERR_NOACK;
 
     SSL_CTX* ctx = SSL_get_SSL_CTX(ssl);
-    auto* cd = static_cast<tls_context_data const*>(
+    auto* cd     = static_cast<tls_context_data const*>(
         SSL_CTX_get_ex_data(ctx, sni_ctx_data_index));
 
     if (cd && cd->servername_callback)
@@ -309,20 +309,18 @@ get_openssl_context(tls_context_data const& cd)
 
 } // namespace detail
 
-
 struct openssl_stream::impl
 {
     capy::any_stream& s_;
     tls_context ctx_;
-    SSL* ssl_ = nullptr;
+    SSL* ssl_     = nullptr;
     BIO* ext_bio_ = nullptr;
-    bool used_ = false;
+    bool used_    = false;
 
     std::vector<char> in_buf_;
     std::vector<char> out_buf_;
 
     capy::async_mutex io_cm_;
-
 
     impl(capy::any_stream& s, tls_context ctx) : s_(s), ctx_(std::move(ctx))
     {
@@ -357,7 +355,6 @@ struct openssl_stream::impl
 
         used_ = false;
     }
-
 
     capy::task<std::error_code> flush_output()
     {
@@ -408,7 +405,6 @@ struct openssl_stream::impl
         co_return std::error_code{};
     }
 
-
     capy::io_task<std::size_t>
     do_read_some(capy::mutable_buffer_array<capy::detail::max_iovec_> buffers)
     {
@@ -417,7 +413,7 @@ struct openssl_stream::impl
 
         for (auto& buf : buffers)
         {
-            char* dest = static_cast<char*>(buf.data());
+            char* dest    = static_cast<char*>(buf.data());
             int remaining = static_cast<int>(buf.size());
 
             while (remaining > 0)
@@ -484,7 +480,7 @@ struct openssl_stream::impl
                     else
                     {
                         unsigned long ssl_err = ERR_get_error();
-                        ec = std::error_code(
+                        ec                    = std::error_code(
                             static_cast<int>(ssl_err), std::system_category());
                         co_return {ec, total_read};
                     }
@@ -504,7 +500,7 @@ struct openssl_stream::impl
         for (auto const& buf : buffers)
         {
             char const* src = static_cast<char const*>(buf.data());
-            int remaining = static_cast<int>(buf.size());
+            int remaining   = static_cast<int>(buf.size());
 
             while (remaining > 0)
             {
@@ -546,7 +542,7 @@ struct openssl_stream::impl
                     else
                     {
                         unsigned long ssl_err = ERR_get_error();
-                        ec = std::error_code(
+                        ec                    = std::error_code(
                             static_cast<int>(ssl_err), std::system_category());
                         co_return {ec, total_written};
                     }
@@ -576,7 +572,7 @@ struct openssl_stream::impl
             if (ret == 1)
             {
                 used_ = true;
-                ec = co_await flush_output();
+                ec    = co_await flush_output();
                 co_return {ec};
             }
             else
@@ -602,7 +598,7 @@ struct openssl_stream::impl
                 else
                 {
                     unsigned long ssl_err = ERR_get_error();
-                    ec = std::error_code(
+                    ec                    = std::error_code(
                         static_cast<int>(ssl_err), std::system_category());
                     co_return {ec};
                 }
@@ -678,10 +674,9 @@ struct openssl_stream::impl
         }
     }
 
-
     std::error_code init_ssl()
     {
-        auto& cd = detail::get_tls_context_data(ctx_);
+        auto& cd            = detail::get_tls_context_data(ctx_);
         SSL_CTX* native_ctx = detail::get_openssl_context(cd);
         if (!native_ctx)
         {
@@ -716,7 +711,6 @@ struct openssl_stream::impl
     }
 };
 
-
 openssl_stream::impl*
 openssl_stream::make_impl(capy::any_stream& stream, tls_context const& ctx)
 {
@@ -750,8 +744,8 @@ openssl_stream::operator=(openssl_stream&& other) noexcept
     if (this != &other)
     {
         delete impl_;
-        stream_ = std::move(other.stream_);
-        impl_ = other.impl_;
+        stream_     = std::move(other.stream_);
+        impl_       = other.impl_;
         other.impl_ = nullptr;
     }
     return *this;

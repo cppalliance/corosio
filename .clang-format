@@ -41,7 +41,7 @@ BraceWrapping:
 
 # Alignment
 AlignAfterOpenBracket: AlwaysBreak
-AlignConsecutiveAssignments: false
+AlignConsecutiveAssignments: Consecutive
 AlignConsecutiveDeclarations: false
 AlignEscapedNewlines: Left
 AlignOperands: DontAlign

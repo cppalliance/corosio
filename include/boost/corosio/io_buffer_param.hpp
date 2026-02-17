@@ -334,8 +334,8 @@ private:
     static std::size_t
     copy_impl(void const* p, capy::mutable_buffer* dest, std::size_t n)
     {
-        auto const& bs = *static_cast<BS const*>(p);
-        auto it = capy::begin(bs);
+        auto const& bs    = *static_cast<BS const*>(p);
+        auto it           = capy::begin(bs);
         auto const end_it = capy::end(bs);
 
         std::size_t i = 0;
