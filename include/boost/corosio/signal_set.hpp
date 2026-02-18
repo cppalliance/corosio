@@ -204,13 +204,23 @@ public:
         Transfers ownership of the signal set resources.
 
         @param other The signal set to move from.
+
+        @pre No awaitables returned by @p other's methods exist.
+        @pre The execution context associated with @p other must
+            outlive this signal set.
     */
     signal_set(signal_set&& other) noexcept;
 
     /** Move assignment operator.
 
         Closes any existing signal set and transfers ownership.
+
         @param other The signal set to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            methods exist.
+        @pre The execution context associated with @p other must
+            outlive this signal set.
 
         @return Reference to this signal set.
     */

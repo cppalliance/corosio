@@ -100,6 +100,8 @@ public:
         triggered, the operation completes immediately with an error
         that compares equal to `capy::cond::canceled`.
 
+        This signal set must outlive the returned awaitable.
+
         @return An awaitable that completes with `io_result<int>`.
             Returns the signal number when a signal is delivered,
             or an error code on failure.

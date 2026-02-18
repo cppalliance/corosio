@@ -86,6 +86,10 @@ public:
         Transfers ownership of the timer resources.
 
         @param other The timer to move from.
+
+        @pre No awaitables returned by @p other's methods exist.
+        @pre The execution context associated with @p other must
+            outlive this timer.
     */
     timer(timer&& other) noexcept;
 
@@ -94,6 +98,11 @@ public:
         Closes any existing timer and transfers ownership.
 
         @param other The timer to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            methods exist.
+        @pre The execution context associated with @p other must
+            outlive this timer.
 
         @return Reference to this timer.
     */

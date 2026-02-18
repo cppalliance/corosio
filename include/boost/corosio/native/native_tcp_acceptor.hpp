@@ -123,10 +123,25 @@ public:
     {
     }
 
-    /// Move construct.
+    /** Move construct.
+
+        @param other The acceptor to move from.
+
+        @pre No awaitables returned by @p other's methods exist.
+        @pre The execution context associated with @p other must
+            outlive this acceptor.
+    */
     native_tcp_acceptor(native_tcp_acceptor&&) noexcept = default;
 
-    /// Move assign.
+    /** Move assign.
+
+        @param other The acceptor to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            methods exist.
+        @pre The execution context associated with @p other must
+            outlive this acceptor.
+    */
     native_tcp_acceptor& operator=(native_tcp_acceptor&&) noexcept = default;
 
     native_tcp_acceptor(native_tcp_acceptor const&)            = delete;
@@ -142,6 +157,9 @@ public:
         @return An awaitable yielding `io_result<>`.
 
         @throws std::logic_error if the acceptor is not listening.
+
+        Both this acceptor and @p peer must outlive the returned
+        awaitable.
     */
     auto accept(tcp_socket& peer)
     {

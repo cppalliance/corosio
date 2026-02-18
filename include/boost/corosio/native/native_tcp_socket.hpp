@@ -206,10 +206,29 @@ public:
     {
     }
 
-    /// Move construct.
+    /** Move construct.
+
+        @param other The socket to move from.
+
+        @pre No awaitables returned by @p other's methods exist.
+        @pre @p other is not referenced as a peer in any outstanding
+            accept awaitable.
+        @pre The execution context associated with @p other must
+            outlive this socket.
+    */
     native_tcp_socket(native_tcp_socket&&) noexcept = default;
 
-    /// Move assign.
+    /** Move assign.
+
+        @param other The socket to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            methods exist.
+        @pre Neither `*this` nor @p other is referenced as a peer in
+            any outstanding accept awaitable.
+        @pre The execution context associated with @p other must
+            outlive this socket.
+    */
     native_tcp_socket& operator=(native_tcp_socket&&) noexcept = default;
 
     native_tcp_socket(native_tcp_socket const&)            = delete;
@@ -223,6 +242,10 @@ public:
         @param buffers The buffer sequence to read into.
 
         @return An awaitable yielding `(error_code, std::size_t)`.
+
+        This socket must outlive the returned awaitable. The memory
+        referenced by @p buffers must remain valid until the operation
+        completes.
     */
     template<capy::MutableBufferSequence MB>
     auto read_some(MB const& buffers)
@@ -238,6 +261,10 @@ public:
         @param buffers The buffer sequence to write from.
 
         @return An awaitable yielding `(error_code, std::size_t)`.
+
+        This socket must outlive the returned awaitable. The memory
+        referenced by @p buffers must remain valid until the operation
+        completes.
     */
     template<capy::ConstBufferSequence CB>
     auto write_some(CB const& buffers)
@@ -255,6 +282,8 @@ public:
         @return An awaitable yielding `io_result<>`.
 
         @throws std::logic_error if the socket is not open.
+
+        This socket must outlive the returned awaitable.
     */
     auto connect(endpoint ep)
     {

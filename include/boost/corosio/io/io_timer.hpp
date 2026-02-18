@@ -141,6 +141,8 @@ public:
         compares equal to `capy::cond::canceled`; other waiters are
         unaffected.
 
+        This timer must outlive the returned awaitable.
+
         @return An awaitable that completes with `io_result<>`.
     */
     auto wait()

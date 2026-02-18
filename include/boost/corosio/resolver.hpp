@@ -298,18 +298,31 @@ public:
 
     /** Move constructor.
 
-        Transfers ownership of the resolver resources.
+        Transfers ownership of the resolver resources. After the move,
+        @p other is in a moved-from state and may only be destroyed or
+        assigned to.
 
         @param other The resolver to move from.
+
+        @pre No awaitables returned by @p other's `resolve` methods
+            exist.
+        @pre The execution context associated with @p other must
+            outlive this resolver.
     */
     resolver(resolver&& other) noexcept : io_object(std::move(other)) {}
 
     /** Move assignment operator.
 
-        Cancels any existing operations and transfers ownership.
-        The source and destination must share the same execution context.
+        Destroys the current implementation and transfers ownership
+        from @p other. After the move, @p other is in a moved-from
+        state and may only be destroyed or assigned to.
 
         @param other The resolver to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            `resolve` methods exist.
+        @pre The execution context associated with @p other must
+            outlive this resolver.
 
         @return Reference to this resolver.
     */
@@ -326,6 +339,8 @@ public:
     /** Initiate an asynchronous resolve operation.
 
         Resolves the host and service names into a list of endpoints.
+
+        This resolver must outlive the returned awaitable.
 
         @param host A string identifying a location. May be a descriptive
             name or a numeric address string.
@@ -350,6 +365,8 @@ public:
 
         Resolves the host and service names into a list of endpoints.
 
+        This resolver must outlive the returned awaitable.
+
         @param host A string identifying a location.
 
         @param service A string identifying the requested service.
@@ -368,6 +385,8 @@ public:
 
         Resolves an endpoint into a hostname and service name using
         reverse DNS lookup (PTR record query).
+
+        This resolver must outlive the returned awaitable.
 
         @param ep The endpoint to resolve.
 
@@ -391,6 +410,8 @@ public:
 
         Resolves an endpoint into a hostname and service name using
         reverse DNS lookup (PTR record query).
+
+        This resolver must outlive the returned awaitable.
 
         @param ep The endpoint to resolve.
 

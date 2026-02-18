@@ -112,6 +112,10 @@ public:
         write. The coroutine resumes when at least one byte is written,
         an error occurs, or the operation is cancelled.
 
+        This stream must outlive the returned awaitable. The memory
+        referenced by @p buffers must remain valid until the operation
+        completes.
+
         @param buffers The buffer sequence containing data to write.
 
         @return An awaitable yielding `(error_code, std::size_t)`.
