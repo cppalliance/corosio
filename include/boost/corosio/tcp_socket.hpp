@@ -204,13 +204,27 @@ public:
         Transfers ownership of the socket resources.
 
         @param other The socket to move from.
+
+        @pre No awaitables returned by @p other's methods exist.
+        @pre @p other is not referenced as a peer in any outstanding
+            accept awaitable.
+        @pre The execution context associated with @p other must
+            outlive this socket.
     */
     tcp_socket(tcp_socket&& other) noexcept : io_object(std::move(other)) {}
 
     /** Move assignment operator.
 
         Closes any existing socket and transfers ownership.
+
         @param other The socket to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            methods exist.
+        @pre Neither `*this` nor @p other is referenced as a peer in
+            any outstanding accept awaitable.
+        @pre The execution context associated with @p other must
+            outlive this socket.
 
         @return Reference to this socket.
     */
@@ -282,6 +296,8 @@ public:
 
         @par Preconditions
         The socket must be open (`is_open() == true`).
+
+        This socket must outlive the returned awaitable.
 
         @par Example
         @code

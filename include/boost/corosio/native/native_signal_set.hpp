@@ -112,10 +112,25 @@ public:
     {
     }
 
-    /// Move construct.
+    /** Move construct.
+
+        @param other The signal set to move from.
+
+        @pre No awaitables returned by @p other's methods exist.
+        @pre The execution context associated with @p other must
+            outlive this signal set.
+    */
     native_signal_set(native_signal_set&&) noexcept = default;
 
-    /// Move assign.
+    /** Move assign.
+
+        @param other The signal set to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            methods exist.
+        @pre The execution context associated with @p other must
+            outlive this signal set.
+    */
     native_signal_set& operator=(native_signal_set&&) noexcept = default;
 
     native_signal_set(native_signal_set const&)            = delete;
@@ -127,6 +142,8 @@ public:
         dispatch. Otherwise identical to @ref signal_set::wait.
 
         @return An awaitable yielding `io_result<int>`.
+
+        This signal set must outlive the returned awaitable.
     */
     auto wait()
     {

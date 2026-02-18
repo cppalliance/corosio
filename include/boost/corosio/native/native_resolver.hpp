@@ -157,10 +157,22 @@ public:
     {
     }
 
-    /// Move construct.
+    /** Move construct.
+
+        @pre No awaitables returned by @p other's `resolve` methods
+            exist.
+        @pre The execution context associated with @p other must
+            outlive this resolver.
+    */
     native_resolver(native_resolver&&) noexcept = default;
 
-    /// Move assign.
+    /** Move assign.
+
+        @pre No awaitables returned by either `*this` or the source's
+            `resolve` methods exist.
+        @pre The execution context associated with the source must
+            outlive this resolver.
+    */
     native_resolver& operator=(native_resolver&&) noexcept = default;
 
     native_resolver(native_resolver const&)            = delete;
@@ -170,6 +182,8 @@ public:
 
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref resolver::resolve.
+
+        This resolver must outlive the returned awaitable.
 
         @param host The host name or address string.
         @param service The service name or port string.
@@ -183,6 +197,8 @@ public:
     }
 
     /** Asynchronously resolve a host and service with flags.
+
+        This resolver must outlive the returned awaitable.
 
         @param host The host name or address string.
         @param service The service name or port string.
@@ -202,6 +218,8 @@ public:
         dispatch. Otherwise identical to the endpoint overload of
         @ref resolver::resolve.
 
+        This resolver must outlive the returned awaitable.
+
         @param ep The endpoint to resolve.
 
         @return An awaitable yielding
@@ -213,6 +231,8 @@ public:
     }
 
     /** Asynchronously reverse-resolve an endpoint with flags.
+
+        This resolver must outlive the returned awaitable.
 
         @param ep The endpoint to resolve.
         @param flags Flags controlling resolution behavior.

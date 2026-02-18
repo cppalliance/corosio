@@ -116,10 +116,25 @@ public:
     {
     }
 
-    /// Move construct.
+    /** Move construct.
+
+        @param other The timer to move from.
+
+        @pre No awaitables returned by @p other's methods exist.
+        @pre The execution context associated with @p other must
+            outlive this timer.
+    */
     native_timer(native_timer&&) noexcept = default;
 
-    /// Move assign.
+    /** Move assign.
+
+        @param other The timer to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            methods exist.
+        @pre The execution context associated with @p other must
+            outlive this timer.
+    */
     native_timer& operator=(native_timer&&) noexcept = default;
 
     native_timer(native_timer const&)            = delete;
@@ -131,6 +146,8 @@ public:
         dispatch. Otherwise identical to @ref timer::wait.
 
         @return An awaitable yielding `io_result<>`.
+
+        This timer must outlive the returned awaitable.
     */
     auto wait()
     {

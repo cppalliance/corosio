@@ -137,13 +137,23 @@ public:
         Transfers ownership of the acceptor resources.
 
         @param other The acceptor to move from.
+
+        @pre No awaitables returned by @p other's methods exist.
+        @pre The execution context associated with @p other must
+            outlive this acceptor.
     */
     tcp_acceptor(tcp_acceptor&& other) noexcept : io_object(std::move(other)) {}
 
     /** Move assignment operator.
 
         Closes any existing acceptor and transfers ownership.
+
         @param other The acceptor to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            methods exist.
+        @pre The execution context associated with @p other must
+            outlive this acceptor.
 
         @return Reference to this acceptor.
     */
@@ -227,6 +237,9 @@ public:
         @par Preconditions
         The acceptor must be listening (`is_open() == true`).
         The peer socket must be associated with the same execution context.
+
+        Both this acceptor and @p peer must outlive the returned
+        awaitable.
 
         @par Example
         @code

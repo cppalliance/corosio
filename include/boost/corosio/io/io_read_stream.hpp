@@ -112,6 +112,10 @@ public:
         read. The coroutine resumes when at least one byte is read,
         an error occurs, or the operation is cancelled.
 
+        This stream must outlive the returned awaitable. The memory
+        referenced by @p buffers must remain valid until the operation
+        completes.
+
         @param buffers The buffer sequence to read data into.
 
         @return An awaitable yielding `(error_code, std::size_t)`.
