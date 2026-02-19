@@ -16,6 +16,7 @@
 #include <cstring>
 
 #if BOOST_COROSIO_POSIX
+#include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #else

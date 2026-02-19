@@ -192,6 +192,7 @@ function(boost_corosio_setup_properties target)
     target_link_libraries(${target}
         PUBLIC
             ${BOOST_COROSIO_DEPENDENCIES}
+            Threads::Threads
             $<$<PLATFORM_ID:Windows>:ws2_32>)
     target_compile_definitions(${target}
         PUBLIC
