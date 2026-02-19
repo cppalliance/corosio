@@ -1037,28 +1037,44 @@ struct socket_test
         io_context ioc(Backend);
         auto [s1, s2] = make_socket_pair_t(ioc);
 
-        auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
-            // 128KB payload
-            constexpr std::size_t size = 128 * 1024;
-            std::vector<char> send_data(size);
-            for (std::size_t i = 0; i < size; ++i)
-                send_data[i] = static_cast<char>((i * 7 + 13) & 0xFF);
+        // 128KB payload
+        constexpr std::size_t size = 128 * 1024;
+        std::vector<char> send_data(size);
+        for (std::size_t i = 0; i < size; ++i)
+            send_data[i] = static_cast<char>((i * 7 + 13) & 0xFF);
 
-            auto [ec1, n1] = co_await capy::write(
-                a, capy::const_buffer(send_data.data(), send_data.size()));
-            BOOST_TEST(!ec1);
-            BOOST_TEST_EQ(n1, size);
+        std::vector<char> recv_data(size);
+        std::error_code write_ec, read_ec;
+        std::size_t write_n = 0, read_n = 0;
 
-            std::vector<char> recv_data(size);
-            auto [ec2, n2] = co_await capy::read(
-                b, capy::mutable_buffer(recv_data.data(), recv_data.size()));
-            BOOST_TEST(!ec2);
-            BOOST_TEST_EQ(n2, size);
-            BOOST_TEST(send_data == recv_data);
+        // Writer and reader must run concurrently to avoid deadlock
+        // when the payload exceeds the TCP send buffer.
+        auto writer = [&]() -> capy::task<> {
+            auto [ec, n] = co_await capy::write(
+                s1, capy::const_buffer(send_data.data(), send_data.size()));
+            write_ec = ec;
+            write_n  = n;
         };
-        capy::run_async(ioc.get_executor())(task(s1, s2));
+
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] = co_await capy::read(
+                s2,
+                capy::mutable_buffer(recv_data.data(), recv_data.size()));
+            read_ec = ec;
+            read_n  = n;
+        };
+
+        capy::run_async(ioc.get_executor())(writer());
+        capy::run_async(ioc.get_executor())(reader());
 
         ioc.run();
+
+        BOOST_TEST(!write_ec);
+        BOOST_TEST_EQ(write_n, size);
+        BOOST_TEST(!read_ec);
+        BOOST_TEST_EQ(read_n, size);
+        BOOST_TEST(send_data == recv_data);
+
         s1.close();
         s2.close();
     }
