@@ -60,6 +60,7 @@ struct overlapped_op
     /** Function pointer type for cancellation hook. */
     using cancel_func_type = void (*)(overlapped_op*) noexcept;
 
+    long ready_             = 0;
     std::coroutine_handle<> h;
     capy::executor_ref ex;
     std::error_code* ec_out = nullptr;
@@ -89,6 +90,7 @@ struct overlapped_op
     void reset() noexcept
     {
         reset_overlapped();
+        ready_            = 0;
         dwError           = 0;
         bytes_transferred = 0;
         empty_buffer      = false;

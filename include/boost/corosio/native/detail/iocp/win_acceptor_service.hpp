@@ -397,8 +397,10 @@ win_socket_internal::connect(
     op.h               = h;
     op.ex              = d;
     op.ec_out          = ec;
-    op.target_endpoint = ep; // Store target for endpoint caching
+    op.target_endpoint = ep;
     op.start(token);
+
+    svc_.work_started();
 
     sockaddr_in bind_addr{};
     bind_addr.sin_family      = AF_INET;
@@ -409,24 +411,18 @@ win_socket_internal::connect(
             socket_, reinterpret_cast<sockaddr*>(&bind_addr),
             sizeof(bind_addr)) == SOCKET_ERROR)
     {
-        op.dwError = ::WSAGetLastError();
-        svc_.post(&op);
-        // completion is always posted to scheduler queue, never inline.
+        svc_.on_completion(&op, ::WSAGetLastError(), 0);
         return std::noop_coroutine();
     }
 
     auto connect_ex = svc_.connect_ex();
     if (!connect_ex)
     {
-        op.dwError = WSAEOPNOTSUPP;
-        svc_.post(&op);
-        // completion is always posted to scheduler queue, never inline.
+        svc_.on_completion(&op, WSAEOPNOTSUPP, 0);
         return std::noop_coroutine();
     }
 
     sockaddr_in addr = detail::to_sockaddr_in(ep);
-
-    svc_.work_started();
 
     BOOL result = connect_ex(
         socket_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr), nullptr, 0,
@@ -437,15 +433,12 @@ win_socket_internal::connect(
         DWORD err = ::WSAGetLastError();
         if (err != ERROR_IO_PENDING)
         {
-            svc_.work_finished();
-            op.dwError = err;
-            svc_.post(&op);
-            // completion is always posted to scheduler queue, never inline.
+            svc_.on_completion(&op, err, 0);
             return std::noop_coroutine();
         }
     }
-    // Synchronous completion: IOCP will deliver the completion packet
-    // completion is always posted to scheduler queue, never inline.
+
+    svc_.on_pending(&op);
     return std::noop_coroutine();
 }
 
@@ -470,18 +463,18 @@ win_socket_internal::read_some(
     op.bytes_out = bytes_out;
     op.start(token);
 
-    // Prepare buffers (must happen before initiator runs)
+    svc_.work_started();
+
+    // Prepare buffers
     capy::mutable_buffer bufs[read_op::max_buffers];
     op.wsabuf_count =
         static_cast<DWORD>(param.copy_to(bufs, read_op::max_buffers));
 
-    // Handle empty buffer: complete with 0 bytes via post for consistency
+    // Handle empty buffer: complete with 0 bytes
     if (op.wsabuf_count == 0)
     {
-        op.bytes_transferred = 0;
-        op.dwError           = 0;
-        op.empty_buffer      = true;
-        svc_.post(&op);
+        op.empty_buffer = true;
+        svc_.on_completion(&op, 0, 0);
         return std::noop_coroutine();
     }
 
@@ -491,10 +484,7 @@ win_socket_internal::read_some(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    // Issue WSARecv directly — caller is already suspended
     op.flags = 0;
-
-    svc_.work_started();
 
     int result = ::WSARecv(
         socket_, op.wsabufs, op.wsabuf_count, nullptr, &op.flags, &op,
@@ -505,15 +495,14 @@ win_socket_internal::read_some(
         DWORD err = ::WSAGetLastError();
         if (err != WSA_IO_PENDING)
         {
-            svc_.work_finished();
-            op.dwError = err;
-            svc_.post(&op);
+            svc_.on_completion(&op, err, 0);
             return std::noop_coroutine();
         }
     }
-    // I/O is now pending. If stop was requested before WSARecv
-    // started, the CancelIoEx in the stop callback had nothing
-    // to cancel. Re-check and cancel the now-pending operation.
+
+    svc_.on_pending(&op);
+
+    // Re-check cancellation after I/O is pending
     if (op.cancelled.load(std::memory_order_acquire))
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
 
@@ -540,7 +529,9 @@ win_socket_internal::write_some(
     op.bytes_out = bytes_out;
     op.start(token);
 
-    // Prepare buffers (must happen before initiator runs)
+    svc_.work_started();
+
+    // Prepare buffers
     capy::mutable_buffer bufs[write_op::max_buffers];
     op.wsabuf_count =
         static_cast<DWORD>(param.copy_to(bufs, write_op::max_buffers));
@@ -548,9 +539,7 @@ win_socket_internal::write_some(
     // Handle empty buffer: complete immediately with 0 bytes
     if (op.wsabuf_count == 0)
     {
-        op.bytes_transferred = 0;
-        op.dwError           = 0;
-        svc_.post(&op);
+        svc_.on_completion(&op, 0, 0);
         return std::noop_coroutine();
     }
 
@@ -560,9 +549,6 @@ win_socket_internal::write_some(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    // Issue WSASend directly — caller is already suspended
-    svc_.work_started();
-
     int result = ::WSASend(
         socket_, op.wsabufs, op.wsabuf_count, nullptr, 0, &op, nullptr);
 
@@ -571,12 +557,13 @@ win_socket_internal::write_some(
         DWORD err = ::WSAGetLastError();
         if (err != WSA_IO_PENDING)
         {
-            svc_.work_finished();
-            op.dwError = err;
-            svc_.post(&op);
+            svc_.on_completion(&op, err, 0);
             return std::noop_coroutine();
         }
     }
+
+    svc_.on_pending(&op);
+
     // Re-check cancellation after I/O is pending
     if (op.cancelled.load(std::memory_order_acquire))
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
@@ -1006,6 +993,18 @@ win_sockets::post(overlapped_op* op)
 }
 
 inline void
+win_sockets::on_pending(overlapped_op* op) noexcept
+{
+    sched_.on_pending(op);
+}
+
+inline void
+win_sockets::on_completion(overlapped_op* op, DWORD error, DWORD bytes) noexcept
+{
+    sched_.on_completion(op, error, bytes);
+}
+
+inline void
 win_sockets::work_started() noexcept
 {
     sched_.work_started();
@@ -1179,6 +1178,8 @@ win_acceptor_internal::accept(
     op.impl_out = impl_out;
     op.start(token);
 
+    svc_.work_started();
+
     // Create wrapper for the peer socket (service owns it)
     auto& peer_wrapper = static_cast<win_socket&>(*svc_.construct());
 
@@ -1189,9 +1190,7 @@ win_acceptor_internal::accept(
     if (accepted == INVALID_SOCKET)
     {
         svc_.destroy(&peer_wrapper);
-        op.dwError = ::WSAGetLastError();
-        svc_.post(&op);
-        // completion is always posted to scheduler queue, never inline.
+        svc_.on_completion(&op, ::WSAGetLastError(), 0);
         return std::noop_coroutine();
     }
 
@@ -1203,9 +1202,7 @@ win_acceptor_internal::accept(
         DWORD err = ::GetLastError();
         ::closesocket(accepted);
         svc_.destroy(&peer_wrapper);
-        op.dwError = err;
-        svc_.post(&op);
-        // completion is always posted to scheduler queue, never inline.
+        svc_.on_completion(&op, err, 0);
         return std::noop_coroutine();
     }
 
@@ -1221,14 +1218,11 @@ win_acceptor_internal::accept(
         svc_.destroy(&peer_wrapper);
         op.peer_wrapper    = nullptr;
         op.accepted_socket = INVALID_SOCKET;
-        op.dwError         = WSAEOPNOTSUPP;
-        svc_.post(&op);
-        // completion is always posted to scheduler queue, never inline.
+        svc_.on_completion(&op, WSAEOPNOTSUPP, 0);
         return std::noop_coroutine();
     }
 
     DWORD bytes_received = 0;
-    svc_.work_started();
 
     BOOL ok = accept_ex(
         socket_, accepted, op.addr_buf, 0, sizeof(sockaddr_in) + 16,
@@ -1239,19 +1233,16 @@ win_acceptor_internal::accept(
         DWORD err = ::WSAGetLastError();
         if (err != ERROR_IO_PENDING)
         {
-            svc_.work_finished();
             ::closesocket(accepted);
             svc_.destroy(&peer_wrapper);
             op.peer_wrapper    = nullptr;
             op.accepted_socket = INVALID_SOCKET;
-            op.dwError         = err;
-            svc_.post(&op);
-            // completion is always posted to scheduler queue, never inline.
+            svc_.on_completion(&op, err, 0);
             return std::noop_coroutine();
         }
     }
-    // Synchronous completion: IOCP will deliver the completion packet
-    // completion is always posted to scheduler queue, never inline.
+
+    svc_.on_pending(&op);
     return std::noop_coroutine();
 }
 

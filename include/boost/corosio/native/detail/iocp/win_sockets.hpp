@@ -129,6 +129,12 @@ public:
     /** Post an overlapped operation for completion. */
     void post(overlapped_op* op);
 
+    /** Signal that an overlapped I/O is now pending (CAS protocol). */
+    void on_pending(overlapped_op* op) noexcept;
+
+    /** Post an immediate completion with pre-stored results. */
+    void on_completion(overlapped_op* op, DWORD error, DWORD bytes) noexcept;
+
     /** Notify scheduler of pending I/O work. */
     void work_started() noexcept;
 
