@@ -1,0 +1,92 @@
+#
+# Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio
+#
+
+import ac ;
+import config : requires ;
+
+constant c20-requires :
+    [ requires
+    cxx20_hdr_concepts
+    ]
+    ;
+
+project boost/corosio
+  : requirements
+    $(c20-requires)
+    <define>BOOST_COROSIO_SOURCE
+    <toolset>gcc:<cxxflags>-fcoroutines
+  : common-requirements
+    <link>shared:<define>BOOST_COROSIO_DYN_LINK
+    <link>static:<define>BOOST_COROSIO_STATIC_LINK
+  : usage-requirements
+    <define>BOOST_COROSIO_NO_LIB
+  : source-location ..
+  ;
+
+# System libraries
+lib ws2_32 ;
+lib crypt32 ;
+
+alias corosio_sources : [ glob-tree-ex src/corosio/src : *.cpp ] ;
+
+lib boost_corosio
+  : corosio_sources
+  : requirements
+    <library>/boost/capy//boost_capy
+    <target-os>windows:<library>ws2_32
+    <target-os>windows:<define>_WIN32_WINNT=0x0602
+    <include>../include
+    <include>../src/corosio
+  : usage-requirements
+    <library>/boost/capy//boost_capy
+    <target-os>windows:<library>ws2_32
+    <include>../include
+  ;
+
+# OpenSSL
+using openssl ;
+
+alias corosio_openssl_sources : [ glob-tree-ex src/openssl/src : *.cpp ] ;
+
+lib boost_corosio_openssl
+  : corosio_openssl_sources
+  : requirements
+    <library>/boost/corosio//boost_corosio
+    <include>../src/corosio
+    [ ac.check-library /openssl//ssl : <library>/openssl//ssl <library>/openssl//crypto : <build>no ]
+    <target-os>windows:<library>crypt32
+  : usage-requirements
+    <library>/boost/corosio//boost_corosio
+    <define>BOOST_COROSIO_HAS_OPENSSL
+    <target-os>windows:<library>crypt32
+  ;
+
+# WolfSSL
+using wolfssl ;
+
+alias corosio_wolfssl_sources : [ glob-tree-ex src/wolfssl/src : *.cpp ] ;
+
+lib boost_corosio_wolfssl
+  : corosio_wolfssl_sources
+  : requirements
+    <library>/boost/corosio//boost_corosio
+    <include>../src/corosio
+    [ ac.check-library /wolfssl//wolfssl : <library>/wolfssl//wolfssl : <build>no ]
+    <target-os>windows:<library>crypt32
+    <target-os>darwin:<linkflags>"-framework CoreFoundation"
+    <target-os>darwin:<linkflags>"-framework Security"
+  : usage-requirements
+    <library>/boost/corosio//boost_corosio
+    <define>BOOST_COROSIO_HAS_WOLFSSL
+    <target-os>windows:<library>crypt32
+    <target-os>darwin:<linkflags>"-framework CoreFoundation"
+    <target-os>darwin:<linkflags>"-framework Security"
+  ;
+
+boost-install boost_corosio boost_corosio_openssl boost_corosio_wolfssl ;

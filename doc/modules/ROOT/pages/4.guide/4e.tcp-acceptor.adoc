@@ -1,0 +1,331 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Acceptors
+
+The `tcp_acceptor` class listens for incoming TCP connections and accepts them
+into socket objects. It's the foundation for building TCP servers.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/endpoint.hpp>
+
+namespace corosio = boost::corosio;
+----
+
+== Overview
+
+An tcp_acceptor binds to a local endpoint and waits for clients to connect:
+
+[source,cpp]
+----
+corosio::tcp_acceptor acc(ioc);
+if (auto ec = acc.listen(corosio::endpoint(8080)))  // Listen on port 8080
+    return ec;
+
+corosio::tcp_socket peer(ioc);
+auto [ec] = co_await acc.accept(peer);
+
+if (!ec)
+{
+    // peer is now a connected socket
+}
+----
+
+== Construction
+
+Acceptors are constructed from an execution context or executor:
+
+[source,cpp]
+----
+// From io_context
+corosio::tcp_acceptor acc1(ioc);
+
+// From executor
+auto ex = ioc.get_executor();
+corosio::tcp_acceptor acc2(ex);
+----
+
+The tcp_acceptor doesn't own system resources until `listen()` is called.
+
+== Listening
+
+=== listen()
+
+The `listen()` method creates a socket, binds to an endpoint, and begins
+listening for connections:
+
+[source,cpp]
+----
+if (auto ec = acc.listen(corosio::endpoint(8080)))
+{
+    std::cerr << "Listen failed: " << ec.message() << "\n";
+    return ec;
+}
+----
+
+This performs three operations:
+
+1. Creates an IPv4 TCP socket
+2. Binds to the specified endpoint
+3. Marks the socket as passive (listening)
+
+Returns a `std::error_code` indicating success or failure. The return value
+is marked `[[nodiscard]]` to prevent accidentally ignoring errors.
+
+=== Parameters
+
+[source,cpp]
+----
+[[nodiscard]] std::error_code listen(endpoint ep, int backlog = 128);
+----
+
+The `backlog` parameter specifies the maximum queue length for pending
+connections. When the queue is full, new connection attempts receive
+`ECONNREFUSED`. The default of 128 works for most applications.
+
+=== Binding to All Interfaces
+
+To accept connections on any network interface:
+
+[source,cpp]
+----
+// Port only - binds to 0.0.0.0 (all IPv4 interfaces)
+if (auto ec = acc.listen(corosio::endpoint(8080)))
+    return ec;
+----
+
+=== Binding to a Specific Interface
+
+To accept connections only on a specific interface:
+
+[source,cpp]
+----
+// Localhost only
+if (auto ec = acc.listen(corosio::endpoint(
+    boost::urls::ipv4_address::loopback(), 8080)))
+    return ec;
+----
+
+== Accepting Connections
+
+=== accept()
+
+The `accept()` operation waits for and accepts an incoming connection:
+
+[source,cpp]
+----
+corosio::tcp_socket peer(ioc);
+auto [ec] = co_await acc.accept(peer);
+----
+
+On success, `peer` is initialized with the new connection. Any existing
+connection on `peer` is closed first.
+
+The operation is asynchronous—your coroutine suspends until a connection
+arrives or an error occurs.
+
+=== Errors
+
+Common accept errors:
+
+[cols="1,2"]
+|===
+| Error | Meaning
+
+| `operation_canceled`
+| Cancelled via `cancel()` or stop token
+
+| `bad_file_descriptor`
+| Acceptor not listening
+
+| Resource errors
+| System limit reached (file descriptors, memory)
+|===
+
+=== Preconditions
+
+* The tcp_acceptor must be listening (`is_open() == true`)
+* The peer socket must be associated with the same execution context
+
+== Cancellation
+
+=== cancel()
+
+Cancel pending accept operations:
+
+[source,cpp]
+----
+acc.cancel();
+----
+
+All outstanding `accept()` operations complete with `operation_canceled`.
+
+=== Stop Token Cancellation
+
+Accept operations support `std::stop_token` through the affine awaitable
+protocol:
+
+[source,cpp]
+----
+// Inside a cancellable task:
+auto [ec] = co_await acc.accept(peer);
+if (ec == make_error_code(system::errc::operation_canceled))
+    std::cout << "Accept cancelled\n";
+----
+
+== Closing
+
+=== close()
+
+Release tcp_acceptor resources:
+
+[source,cpp]
+----
+acc.close();
+----
+
+Pending accept operations complete with `operation_canceled`.
+
+=== is_open()
+
+Check if the tcp_acceptor is listening:
+
+[source,cpp]
+----
+if (acc.is_open())
+    // Ready to accept
+----
+
+== Move Semantics
+
+Acceptors are move-only:
+
+[source,cpp]
+----
+corosio::tcp_acceptor acc1(ioc);
+corosio::tcp_acceptor acc2 = std::move(acc1);  // OK
+
+corosio::tcp_acceptor acc3 = acc2;  // Error: deleted copy constructor
+----
+
+Move assignment closes any existing tcp_acceptor:
+
+[source,cpp]
+----
+acc1 = std::move(acc2);  // Closes acc1's socket if open, then moves acc2
+----
+
+IMPORTANT: Source and destination must share the same execution context.
+
+== Thread Safety
+
+[cols="1,2"]
+|===
+| Operation | Thread Safety
+
+| Distinct acceptors
+| Safe from different threads
+
+| Same tcp_acceptor
+| NOT safe for concurrent operations
+|===
+
+Don't start multiple `accept()` operations concurrently on the same tcp_acceptor.
+
+== Example: Accept Loop
+
+A typical server accept loop:
+
+[source,cpp]
+----
+capy::task<void> accept_loop(
+    corosio::io_context& ioc,
+    corosio::tcp_acceptor& acc)
+{
+    for (;;)
+    {
+        corosio::tcp_socket peer(ioc);
+        auto [ec] = co_await acc.accept(peer);
+
+        if (ec)
+        {
+            if (ec == make_error_code(system::errc::operation_canceled))
+                break;  // Shutdown requested
+
+            std::cerr << "Accept error: " << ec.message() << "\n";
+            continue;  // Try again
+        }
+
+        // Spawn a coroutine to handle this connection
+        capy::run_async(ioc.get_executor())(
+            handle_connection(std::move(peer)));
+    }
+}
+----
+
+Key points:
+
+* Create a fresh socket for each accept
+* Move the socket into the handler coroutine
+* Continue accepting after non-fatal errors
+* Check for cancellation to support graceful shutdown
+
+== Example: Graceful Shutdown
+
+Coordinate shutdown with signal handling:
+
+[source,cpp]
+----
+capy::task<void> run_server(corosio::io_context& ioc)
+{
+    corosio::tcp_acceptor acc(ioc);
+    if (auto ec = acc.listen(corosio::endpoint(8080)))
+    {
+        std::cerr << "Listen failed: " << ec.message() << "\n";
+        co_return;
+    }
+
+    corosio::signal_set signals(ioc, SIGINT, SIGTERM);
+
+    // Spawn accept loop
+    capy::run_async(ioc.get_executor())(accept_loop(ioc, acc));
+
+    // Wait for shutdown signal
+    auto [ec, signum] = co_await signals.wait();
+    if (!ec)
+    {
+        std::cout << "Received signal " << signum << ", shutting down\n";
+        acc.cancel();  // Stop accepting
+        // Existing connections continue until complete
+    }
+}
+----
+
+== Relationship to tcp_server
+
+For production servers, consider using xref:4k.tcp-server.adoc[tcp_server] which
+provides:
+
+* Worker pool management
+* Connection limiting
+* Multi-port support
+* Automatic coroutine lifecycle
+
+The `tcp_acceptor` class is the lower-level primitive that `tcp_server` builds
+upon.
+
+== Next Steps
+
+* xref:4d.sockets.adoc[Sockets] — Using accepted connections
+* xref:4k.tcp-server.adoc[TCP Server] — Higher-level server framework
+* xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Complete example

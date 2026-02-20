@@ -1,0 +1,131 @@
+# Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+#
+# Use, modification and distribution is subject to the Boost Software
+# License Version 1.0. (See accompanying file LICENSE.txt or
+# https://www.bfgroup.xyz/b2/LICENSE.txt)
+
+# Supports the wolfssl library
+#
+# After 'using wolfssl', the following targets are available:
+#
+# /wolfssl//wolfssl -- The wolfssl library
+
+import project ;
+import ac ;
+import errors ;
+import feature ;
+import "class" : new ;
+import targets ;
+import path ;
+import modules ;
+import indirect ;
+import property ;
+import property-set ;
+import args ;
+
+header = wolfssl/ssl.h ;
+wolfssl_names = wolfssl libwolfssl ;
+
+library-id = 0 ;
+
+.debug = [ args.get-arg debug-configuration ] ;
+
+# Initializes the wolfssl library.
+#
+# Options for configuring wolfssl:
+#
+#   <search>
+#       The directory containing the wolfssl binaries.
+#   <name>
+#       Overrides the default name of wolfssl library.
+#   <include>
+#       The directory containing the wolfssl headers.
+#   <dll-path>
+#       Extra directories to add to library search paths of consumers during
+#       runtime (multiple instances are allowed).
+#
+# If none of these options is specified, then the environmental
+# variables WOLFSSL_LIBRARY_PATH, WOLFSSL_NAME, and WOLFSSL_INCLUDE will
+# be used instead.
+#
+# Examples:
+#
+#   # Find wolfssl in the default system location
+#   using wolfssl ;
+#   # Find wolfssl in /usr/local
+#   using wolfssl : 5.6.0
+#     : <include>/usr/local/include <search>/usr/local/lib ;
+#
+rule init (
+    version ?
+    # (currently ignored)
+
+    : options *
+    # A list of the options to use
+
+    : requirements *
+    # The requirements for the target
+
+    : is-default ?
+    )
+{
+    local caller = [ project.current ] ;
+
+    if ! $(.initialized)
+    {
+        .initialized = true ;
+
+        project.initialize $(__name__) ;
+        .project = [ project.current ] ;
+        project wolfssl ;
+    }
+
+    local library-path = [ feature.get-values <search> : $(options) ] ;
+    local include-path = [ feature.get-values <include> : $(options) ] ;
+    local library-name = [ feature.get-values <name> : $(options) ] ;
+    local dll-paths = [ property.select <dll-path> : $(options) ] ;
+
+    if ! $(options)
+    {
+        is-default = true ;
+    }
+
+    condition = [ property-set.create $(requirements) ] ;
+    condition = [ property-set.create [ $(condition).base ] ] ;
+
+    if $(.configured.$(condition))
+    {
+        if $(is-default)
+        {
+            if $(.debug)
+            {
+                ECHO "notice: [wolfssl] wolfssl is already configured" ;
+            }
+        }
+        else
+        {
+            errors.user-error "wolfssl is already configured" ;
+        }
+        return ;
+    }
+    else
+    {
+        if $(.debug)
+        {
+            ECHO "notice: [wolfssl] Using pre-installed library" ;
+            if $(condition)
+            {
+                ECHO "notice: [wolfssl] Condition" [ $(condition).raw ] ;
+            }
+        }
+
+        local wolfssl = [ new ac-library wolfssl : $(.project) : $(condition) :
+            $(include-path) : $(library-path) : $(library-name) ] ;
+        $(wolfssl).set-header $(header) ;
+        $(wolfssl).set-default-names $(wolfssl_names) ;
+        $(wolfssl).add-usage-requirements $(dll-paths) ;
+
+        targets.main-target-alternative $(wolfssl) ;
+    }
+    .configured.$(condition) = true ;
+}

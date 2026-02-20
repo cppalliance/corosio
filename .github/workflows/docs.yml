@@ -1,0 +1,139 @@
+#
+# Copyright (c) 2026 Steve Gerbino
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio/
+#
+
+name: Documentation
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+    paths:
+      - 'doc/**'
+      - '*.adoc'
+      - 'README.adoc'
+  pull_request:
+    paths:
+      - 'doc/**'
+      - '*.adoc'
+      - 'README.adoc'
+
+jobs:
+  antora:
+    name: Antora Docs
+    runs-on: 'ubuntu-latest'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install packages
+        uses: alandefreitas/cpp-actions/package-install@v1.9.0
+        with:
+          apt-get: git cmake
+
+      - name: Clone Boost.Corosio
+        uses: actions/checkout@v4
+        with:
+          path: corosio-root
+
+      - name: Clone Capy
+        uses: actions/checkout@v4
+        with:
+          repository: cppalliance/capy
+          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          path: capy-root
+
+      - name: Clone Boost
+        uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
+        id: boost-clone
+        with:
+          branch: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          boost-dir: boost-source
+          modules-exclude-paths: ''
+          scan-modules-dir: corosio-root
+          scan-modules-ignore: corosio,capy
+
+      - name: Patch Boost
+        id: patch
+        shell: bash
+        run: |
+          set -xe
+          pwd
+          ls
+          ls -lah boost-source
+
+          # Identify boost module being tested
+          module=${GITHUB_REPOSITORY#*/}
+          echo "module=$module" >> $GITHUB_OUTPUT
+
+          # Identify GitHub workspace root
+          workspace_root=$(echo "$GITHUB_WORKSPACE" | sed 's/\\/\//g')
+          echo -E "workspace_root=$workspace_root" >> $GITHUB_OUTPUT
+
+          # Remove module from boost-source
+          rm -r "boost-source/libs/$module" || true
+          rm -r "boost-source/libs/capy" || true
+
+          # boost-clone uses sparse checkout which excludes CMakeLists.txt files
+          # Disable sparse checkout to get full source trees for add_subdirectory in cmake_test
+          cd boost-source
+          if git sparse-checkout list > /dev/null 2>&1; then
+            echo "Disabling sparse checkout..."
+            git sparse-checkout disable
+            echo "Fetching any missing objects..."
+            git fetch origin --no-tags
+            git checkout
+          fi
+          echo "Verifying libs/mp11/CMakeLists.txt exists..."
+          ls -la libs/mp11/CMakeLists.txt || echo "WARNING: libs/mp11/CMakeLists.txt not found!"
+          cd ..
+
+          # Copy cached boost-source to an isolated boost-root
+          cp -rL boost-source boost-root
+
+          # Set boost-root output
+          cd boost-root
+          boost_root="$(pwd)"
+          boost_root=$(echo "$boost_root" | sed 's/\\/\//g')
+          echo -E "boost_root=$boost_root" >> $GITHUB_OUTPUT
+
+          # Patch boost-root with workspace module
+          cp -r "$workspace_root"/corosio-root "libs/$module"
+
+          # Patch boost-root with capy dependency
+          cp -r "$workspace_root"/capy-root "libs/capy"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Build Antora Docs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global --add safe.directory "$(pwd)"
+
+          BOOST_SRC_DIR="$(pwd)/boost-root"
+          export BOOST_SRC_DIR
+          cd boost-root/libs/corosio
+
+          cd doc
+          bash ./build_antora.sh
+
+          # Antora returns zero even if it fails, so we check if the site directory exists
+          if [ ! -d "build/site" ]; then
+              echo "Antora build failed"
+              exit 1
+          fi
+
+      - name: Create Antora Docs Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: antora-docs
+          path: boost-root/libs/corosio/doc/build/site

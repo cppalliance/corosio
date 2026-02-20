@@ -1,0 +1,75 @@
+# https://docs.coderabbit.ai/reference/configuration
+
+language: en
+
+early_access: false
+
+chat:
+  auto_reply: true
+
+reviews:
+  auto_review:
+    enabled: true
+    ignore_title_keywords:
+      - "WIP"
+    drafts: false
+    base_branches:
+      - master
+      - develop
+
+  high_level_summary: true
+
+  # Generate sequence diagrams for complex code flows
+  sequence_diagrams: true
+
+  poem: true
+  review_status: true
+  collapse_walkthrough: true
+  changed_files_summary: true
+  request_changes_workflow: false
+
+  pre_merge_checks:
+    description:
+      mode: warning # Options: off, warning, error
+    docstrings:
+      mode: off # Disabled: cannot exclude detail namespaces from coverage
+
+  path_filters:
+    - "!**/bench/**"
+    - "!**/build/**"
+    - "!**/context/**"
+    - "!**/doc/**"
+    - "!**/meta/**"
+    - "!**/papers/**"
+    - "!**/test/**"
+
+  # Custom review instructions for specific file patterns
+  path_instructions:
+    - path: "**/*.{cpp,hpp}"
+      instructions: |
+        Documentation Best Practices
+        - Docstrings are required for all classes and functions in public
+          headers in non-detail namespaces. Docstrings should include a brief
+          description of purpose, document all parameters, return values, and
+          any preconditions, postconditions, or exceptions. For template
+          parameters, document constraints or concepts required. Warn if a
+          class or function is missing a docstring or if the docstring fails
+          to cover these elements.
+        - Avoid redundant documentation that merely restates the obvious from
+          the name and signature. Docstrings should add value beyond what the
+          declaration already communicates. Do not warn about terse
+          documentation for self-explanatory accessors or trivial type aliases.
+        - Document thread-safety guarantees and exception specifications where
+          applicable, particularly for classes intended for concurrent use or
+          functions that may throw.
+        - Files containing non-trivial implementation logic should include a
+          `/* */` block comment after the includes that provides a high-level
+          overview of how the implementation works. This should highlight
+          anything tricky or non-obvious that a maintainer might need to know
+          in order to reason effectively about the code. Warn if such files
+          lack this overview or if the overview appears stale relative to the
+          code.
+        - Single-line `//` comments within code should be used sparingly and
+          judiciously, explaining the why (not the what or how) when it is
+          non-obvious. Warn about comments that merely restate what the code
+          does or excessive commenting that adds noise rather than clarity.
