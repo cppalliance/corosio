@@ -1,0 +1,152 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Opening and Closing TCP Connections
+
+A TCP connection is not a physical wire. It is an agreement between two machines to track a shared conversation. That agreement begins with a handshake, ends with a teardown, and passes through a series of well-defined states in between. Knowing these states explains errors you will encounter in every networked application you write.
+
+== The Three-Way Handshake
+
+Before any data flows, TCP establishes the connection with three segments:
+
+. *SYN*: The client sends a segment with the SYN flag set, along with a randomly chosen initial sequence number (ISN). This says "I want to connect, and my byte numbering starts at this value."
+. *SYN-ACK*: The server responds with both the SYN and ACK flags set. It acknowledges the client's ISN (by setting the acknowledgment number to the client's ISN + 1) and provides its own ISN. This says "I accept, I acknowledge your starting number, and my byte numbering starts here."
+. *ACK*: The client sends a final acknowledgment of the server's ISN. At this point both sides have agreed on initial sequence numbers, and the connection is established.
+
+----
+Client                              Server
+  |                                    |
+  |--- SYN (seq=100) ----------------->|
+  |                                    |
+  |<-- SYN-ACK (seq=300, ack=101) -----|
+  |                                    |
+  |--- ACK (ack=301) ----------------->|
+  |                                    |
+  |      Connection established        |
+----
+
+Why three steps instead of two? Both sides need to agree on two things: the client's ISN and the server's ISN. A two-step handshake would let the server accept without the client confirming the server's ISN. The third step completes the exchange.
+
+The initial sequence numbers are chosen randomly (not starting from zero) to prevent segments from old, defunct connections from being mistaken for segments belonging to a new connection on the same port. If every connection started at sequence number zero, a delayed packet from a previous connection could be accepted as valid data in the current one.
+
+== Connection Timeout
+
+What happens when the server does not respond to the SYN? The client waits, retransmits the SYN after a short delay, and retransmits again with increasingly longer delays. After several retries spanning a total of roughly 30 to 75 seconds (depending on the operating system), the connection attempt gives up and your application receives a timeout error.
+
+This is the error you see when connecting to a host that is unreachable, firewalled, or simply not running a server on the target port. The long delay before the error appears is TCP being patient -- giving the network every chance to deliver the SYN.
+
+If the server is reachable but nothing is listening on the port, the response is faster: the server immediately sends a RST (reset) segment, and your application gets a "connection refused" error within milliseconds.
+
+== Graceful Teardown
+
+Closing a TCP connection takes four segments because each direction of the stream is shut down independently:
+
+. *FIN*: One side (say the client) sends a segment with the FIN flag set, indicating "I have no more data to send."
+. *ACK*: The other side acknowledges the FIN.
+. *FIN*: The other side sends its own FIN when it, too, has finished sending.
+. *ACK*: The first side acknowledges the second FIN.
+
+----
+Client                              Server
+  |                                    |
+  |--- FIN --------------------------->|
+  |<-- ACK ----------------------------|
+  |                                    |
+  |<-- FIN ----------------------------|
+  |--- ACK --------------------------->|
+  |                                    |
+  |      Connection closed             |
+----
+
+In practice, the server's ACK and FIN are often combined into a single segment, reducing the exchange to three segments. But logically, the four steps reflect two independent half-closes.
+
+== Half-Close
+
+Because each direction is closed separately, it is possible to shut down sending while still receiving. This is called a *half-close*.
+
+Consider an HTTP client that sends a request and then calls `shutdown(SHUT_WR)` on its socket. This sends a FIN to the server, signaling that the client is done writing. But the client's receive side remains open. The server sees the FIN, knows no more request data is coming, processes the request, sends the response, and then closes its end.
+
+Half-close is useful in protocols where the client needs to say "I am done sending, but keep your response coming." Without it, the server would have no way to distinguish "the client is done" from "the client is still thinking."
+
+== The State Machine
+
+A TCP connection passes through a series of states from creation to destruction. Understanding these states is the key to diagnosing connection issues:
+
+CLOSED:: No connection exists. This is the starting and ending state.
+
+LISTEN:: The server has called `listen()` on a socket and is waiting for incoming connections.
+
+SYN_SENT:: The client has sent a SYN and is waiting for the server's SYN-ACK.
+
+SYN_RECEIVED:: The server has received a SYN and sent a SYN-ACK, and is waiting for the client's final ACK.
+
+ESTABLISHED:: The handshake is complete. Both sides can send and receive data. This is where a connection spends most of its life.
+
+FIN_WAIT_1:: This side has sent a FIN and is waiting for an acknowledgment.
+
+FIN_WAIT_2:: The FIN has been acknowledged, but the other side has not yet sent its own FIN. This side is waiting for the remote FIN.
+
+CLOSE_WAIT:: This side has received a FIN from the remote end but has not yet sent its own FIN. If your server has many connections in CLOSE_WAIT, it means the application is not closing sockets promptly after the remote end has disconnected.
+
+LAST_ACK:: This side has sent its FIN (after receiving the remote FIN) and is waiting for the final ACK.
+
+TIME_WAIT:: The connection is fully closed, but the socket lingers for a period (typically 60 seconds to 2 minutes) before returning to CLOSED. This is the state that causes the most confusion.
+
+== TIME_WAIT
+
+After both sides have exchanged FINs and ACKs, you might expect the connection to disappear immediately. Instead, the side that initiated the close enters TIME_WAIT and holds the socket open for a period called 2MSL (twice the Maximum Segment Lifetime, typically 60 seconds).
+
+TIME_WAIT exists for two reasons:
+
+. *Reliable termination*: If the final ACK is lost, the remote side will retransmit its FIN. The TIME_WAIT state ensures that the local side is still around to re-acknowledge it.
+. *Preventing stale segments*: If a new connection is established on the same four-tuple immediately after closing, delayed segments from the old connection might arrive and be misinterpreted as belonging to the new one. TIME_WAIT ensures that enough time passes for any lingering segments to expire.
+
+The practical consequence is the dreaded "address already in use" error. If your server shuts down and immediately restarts, it cannot bind to the same port because the old connections are still in TIME_WAIT. The standard solution is to set the `SO_REUSEADDR` socket option before binding, which tells the OS to allow binding to a port that has connections in TIME_WAIT.
+
+== Reset Segments
+
+A RST (reset) segment is the emergency stop. It terminates the connection immediately, without the graceful FIN exchange. The receiving side sees an error on the socket -- typically "connection reset by peer."
+
+RST is sent in several situations:
+
+* A SYN arrives for a port where nothing is listening. The server responds with RST to tell the client "no one is here."
+* Data arrives on a connection that the receiving side considers closed. The receiver sends RST because it has no context for the segment.
+* An application decides to abort the connection instead of closing gracefully (by setting the `SO_LINGER` option with a timeout of zero).
+
+RST segments are not acknowledged. Once sent, the connection is destroyed. Any unsent or unacknowledged data is discarded.
+
+== Maximum Segment Size
+
+During the three-way handshake, each side advertises its Maximum Segment Size (MSS) -- the largest chunk of data it can receive in a single TCP segment. This is communicated as a TCP option in the SYN and SYN-ACK segments.
+
+The MSS is typically set to the local interface's MTU minus the IP and TCP header sizes. For an Ethernet link with a 1500-byte MTU, the MSS is usually 1460 bytes (1500 - 20 bytes IP header - 20 bytes TCP header).
+
+Negotiating the MSS helps TCP avoid IP fragmentation. If both sides know the largest segment the other can handle, TCP can size its segments to fit without requiring IP to split them.
+
+== Server Design
+
+A TCP server uses two kinds of sockets:
+
+The *listening socket* is bound to a well-known port and calls `accept()` in a loop. Each call to `accept()` blocks until a client connects, then returns a *connected socket* dedicated to that client.
+
+The listening socket is never used for data transfer. It exists solely to create connected sockets. The connected socket carries all the data for a single client conversation. When the conversation ends, the connected socket is closed, but the listening socket remains, ready for the next client.
+
+A server handling multiple clients simultaneously needs a strategy for managing many connected sockets. Options include spawning a thread per connection, using an event loop with non-blocking I/O, or -- as Corosio provides -- using coroutines that `co_await` on socket operations. The mechanism differs, but the pattern is the same: one listening socket, many connected sockets, each managed independently.
+
+== Why This Matters to You
+
+The TCP connection lifecycle is not academic trivia. It is the explanation behind errors you will see regularly:
+
+* "Connection refused" means RST came back immediately -- nothing is listening on the port.
+* "Connection timed out" means no response to the SYN -- the host is unreachable or firewalled.
+* "Address already in use" means TIME_WAIT is holding the port -- set `SO_REUSEADDR`.
+* "Connection reset by peer" means the other side sent RST -- it crashed, aborted, or your data arrived on a connection it considers closed.
+* Many connections in CLOSE_WAIT mean your application is not closing sockets after the remote end disconnects.
+
+The next section looks at what happens during the ESTABLISHED state -- how TCP actually moves your data across the connection efficiently.

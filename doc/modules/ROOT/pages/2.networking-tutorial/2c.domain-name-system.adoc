@@ -1,0 +1,86 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Turning Names into Addresses
+
+Nobody memorizes `93.184.215.14`. People remember `www.example.com`. But the network stack operates on IP addresses, not names. Something has to translate between the two, and that something is the Domain Name System -- a distributed database spread across thousands of servers worldwide, answering billions of queries a day.
+
+== The Problem DNS Solves
+
+IP addresses change. Companies move hosting providers. Servers get replaced. A name like `api.myservice.com` provides a stable identifier that can be pointed at whatever address is current. Your program connects to the name, DNS resolves it to an address behind the scenes, and the connection proceeds.
+
+Without DNS, every configuration file, bookmark, and link would contain raw IP addresses. Changing a server's address would break every client. DNS decouples the name from the address, and that indirection is what makes the internet manageable.
+
+== How Resolution Works
+
+DNS is organized as a tree. At the top is the root, represented by a dot you rarely see. Below the root are the top-level domains (TLDs): `com`, `org`, `net`, `uk`, `io`, and hundreds of others. Below each TLD are the domains registered by organizations: `example.com`, `mycompany.org`. Those domains can contain further subdomains: `api.mycompany.org`, `mail.mycompany.org`.
+
+When your program asks for the address of `api.mycompany.org`, the resolution proceeds through this tree:
+
+. Your machine contacts a *recursive resolver* -- usually provided by your ISP or a public service like `8.8.8.8`. This resolver does the heavy lifting on your behalf.
+. The resolver asks a *root server*: "Who handles `.org`?" The root server responds with the addresses of the `.org` TLD servers.
+. The resolver asks a `.org` TLD server: "Who handles `mycompany.org`?" The TLD server responds with the addresses of the *authoritative name servers* for `mycompany.org`.
+. The resolver asks `mycompany.org`'s authoritative server: "What is the address of `api.mycompany.org`?" The authoritative server answers with the IP address.
+. The resolver returns the answer to your machine.
+
+This looks like a lot of round trips, but in practice most of them are skipped thanks to caching. The resolver almost certainly already knows the `.org` TLD servers. It might already have the authoritative servers for `mycompany.org` cached from a previous query. A full walk from the root happens rarely.
+
+== Resource Records
+
+DNS does not just map names to addresses. A name can have several types of records associated with it, each serving a different purpose:
+
+A:: Maps a name to an IPv4 address. This is the most common record type. If you query the A record for `www.example.com`, you get back something like `93.184.215.14`.
+
+AAAA:: Maps a name to an IPv6 address. Same idea as an A record, but returns a 128-bit address instead of a 32-bit one.
+
+CNAME:: An alias. It says "this name is actually another name -- go look up that one instead." For example, `www.mycompany.org` might be a CNAME pointing to `lb.hosting-provider.net`, which in turn has an A record with the actual address.
+
+MX:: Identifies the mail servers responsible for a domain. When someone sends email to `user@mycompany.org`, the sending mail server queries the MX records for `mycompany.org` to find out where to deliver it.
+
+TXT:: A free-form text record. Often used for domain verification, email authentication (SPF, DKIM), and other administrative purposes.
+
+NS:: Identifies the authoritative name servers for a domain. These are the servers the resolver contacts in the final step of resolution.
+
+Your application code rarely deals with individual record types directly. When you resolve a hostname for a TCP connection, the system resolver queries A and AAAA records on your behalf and returns a list of addresses to try.
+
+== Caching and TTLs
+
+Every DNS response includes a *time-to-live* (TTL) value, measured in seconds. The TTL tells resolvers and clients how long they can cache the answer before asking again.
+
+A TTL of 3600 means the answer is good for one hour. A TTL of 60 means it expires in a minute. Domain operators set the TTL based on how frequently the address might change. A stable website might use a TTL of 86400 (one day). A service that needs rapid failover might use a TTL of 30 seconds.
+
+Caching is what makes DNS fast. Your first connection to `api.mycompany.org` triggers a real lookup, but subsequent connections within the TTL window use the cached result instantly. Your operating system maintains a local cache, your recursive resolver maintains a larger one, and intermediate resolvers along the chain do the same. By the time a popular domain's record expires from one cache, it has already been refreshed by some other query.
+
+The flip side is that changes do not take effect immediately. If a domain's address changes, clients with a cached copy of the old answer continue using it until the TTL expires. This is why DNS propagation "takes time" -- it is really just caches aging out.
+
+== DNS Transport
+
+Most DNS queries travel over UDP. A typical query and response fit within a single datagram, making UDP the natural fit: fast, no connection setup, minimal overhead. Port 53 is the standard port for DNS traffic.
+
+When a response is too large for a single UDP datagram -- which can happen with domains that have many records or with DNSSEC signatures -- the server sets a flag indicating truncation. The client then retries the query over TCP, which can handle arbitrarily large responses by streaming the data.
+
+The choice between UDP and TCP is handled automatically by the DNS resolver. Your application never needs to think about it.
+
+== Reverse Lookups
+
+Standard DNS maps a name to an address. A *reverse lookup* goes the other direction: given an IP address, it returns the associated hostname.
+
+Reverse lookups use a special domain called `in-addr.arpa` for IPv4 (and `ip6.arpa` for IPv6). The IP address is written in reverse order and appended to this domain. To look up the name for `192.0.2.10`, you query `10.2.0.192.in-addr.arpa` and ask for its PTR (pointer) record.
+
+Reverse lookups are not guaranteed to work. The owner of an IP address block has to set up PTR records deliberately, and many do not bother. They are mostly used for logging, diagnostics, and email server verification -- not for establishing connections.
+
+== Why This Matters to You
+
+When your program resolves a hostname, the operating system performs the DNS lookup and returns a list of IP addresses. If the name has both A and AAAA records, you may get IPv4 and IPv6 addresses back. A well-written client tries them in order until one succeeds.
+
+DNS failures are among the most common causes of connection errors. "Could not resolve host" means DNS returned nothing -- either the name does not exist, the authoritative server is down, or the network path to the resolver is broken. Understanding the resolution chain helps you diagnose where the failure occurred.
+
+DNS also explains behaviors that otherwise seem mysterious. A server migration that changes the IP address behind a name may take hours to propagate because caches hold onto the old answer until the TTL expires. A name that resolves fine from one machine but not another may be hitting different recursive resolvers with different cache states.
+
+The next section looks at URLs -- the format that combines a hostname, a port, and a resource path into a single string your program can act on.
