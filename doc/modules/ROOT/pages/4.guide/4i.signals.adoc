@@ -1,0 +1,430 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Signal Handling
+
+The `signal_set` class provides asynchronous signal handling. It allows
+coroutines to wait for operating system signals like SIGINT (Ctrl+C) or
+SIGTERM.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/signal_set.hpp>
+#include <csignal>
+
+namespace corosio = boost::corosio;
+----
+
+== Overview
+
+[source,cpp]
+----
+corosio::signal_set signals(ioc, SIGINT, SIGTERM);
+
+auto [ec, signum] = co_await signals.wait();
+if (!ec)
+    std::cout << "Received signal " << signum << "\n";
+----
+
+== Construction
+
+=== Empty Signal Set
+
+[source,cpp]
+----
+corosio::signal_set signals(ioc);
+signals.add(SIGINT);
+signals.add(SIGTERM);
+----
+
+=== With Initial Signals
+
+[source,cpp]
+----
+// One signal
+corosio::signal_set s1(ioc, SIGINT);
+
+// Two signals
+corosio::signal_set s2(ioc, SIGINT, SIGTERM);
+
+// Three signals
+corosio::signal_set s3(ioc, SIGINT, SIGTERM, SIGHUP);
+----
+
+== Supported Signals
+
+=== Windows
+
+On Windows, the following signals are supported:
+
+[cols="1,2"]
+|===
+| Signal | Description
+
+| `SIGINT`
+| Interrupt (Ctrl+C)
+
+| `SIGTERM`
+| Termination request
+
+| `SIGABRT`
+| Abnormal termination
+
+| `SIGFPE`
+| Floating-point exception
+
+| `SIGILL`
+| Illegal instruction
+
+| `SIGSEGV`
+| Segmentation violation
+|===
+
+=== POSIX
+
+On POSIX systems, all standard signals are supported.
+
+== Managing Signals
+
+=== add()
+
+Add a signal to the set:
+
+[source,cpp]
+----
+signals.add(SIGUSR1);
+----
+
+Adding a signal that's already in the set has no effect.
+
+==== Signal Flags (POSIX)
+
+On POSIX systems, you can specify signal flags when adding a signal:
+
+[source,cpp]
+----
+using flags = corosio::signal_set;
+
+// Restart interrupted system calls automatically
+signals.add(SIGCHLD, flags::restart);
+
+// Multiple flags can be combined
+signals.add(SIGCHLD, flags::restart | flags::no_child_stop);
+----
+
+Available flags:
+
+[cols="1,2"]
+|===
+| Flag | Description
+
+| `none`
+| No special flags (default)
+
+| `restart`
+| Automatically restart interrupted system calls (SA_RESTART)
+
+| `no_child_stop`
+| Don't generate SIGCHLD when children stop (SA_NOCLDSTOP)
+
+| `no_child_wait`
+| Don't create zombie processes on child termination (SA_NOCLDWAIT)
+
+| `no_defer`
+| Don't block the signal while its handler runs (SA_NODEFER)
+
+| `reset_handler`
+| Reset handler to SIG_DFL after one invocation (SA_RESETHAND)
+
+| `dont_care`
+| Accept existing flags if signal is already registered
+|===
+
+NOTE: On Windows, only `none` and `dont_care` flags are supported. On some POSIX
+systems, `no_child_wait` may not be available. Using unsupported flags returns
+`operation_not_supported`.
+
+==== Flag Compatibility
+
+When multiple `signal_set` objects register for the same signal, they must use
+compatible flags:
+
+[source,cpp]
+----
+corosio::signal_set s1(ioc);
+corosio::signal_set s2(ioc);
+
+s1.add(SIGINT, flags::restart);      // OK - first registration
+s2.add(SIGINT, flags::restart);      // OK - same flags
+s2.add(SIGINT, flags::no_defer);     // Error! - different flags
+
+// Use dont_care to accept existing flags
+s2.add(SIGINT, flags::dont_care);    // OK - accepts existing flags
+----
+
+=== remove()
+
+Remove a signal from the set:
+
+[source,cpp]
+----
+signals.remove(SIGINT);
+
+// With error code
+boost::system::error_code ec;
+signals.remove(SIGINT, ec);
+----
+
+Removing a signal that's not in the set has no effect.
+
+=== clear()
+
+Remove all signals from the set:
+
+[source,cpp]
+----
+signals.clear();
+
+// With error code
+boost::system::error_code ec;
+signals.clear(ec);
+----
+
+== Waiting for Signals
+
+The `wait()` operation waits for any signal in the set:
+
+[source,cpp]
+----
+auto [ec, signum] = co_await signals.wait();
+
+if (!ec)
+{
+    switch (signum)
+    {
+    case SIGINT:
+        std::cout << "Interrupt received\n";
+        break;
+    case SIGTERM:
+        std::cout << "Termination requested\n";
+        break;
+    }
+}
+----
+
+== Cancellation
+
+=== cancel()
+
+Cancel pending wait operations:
+
+[source,cpp]
+----
+signals.cancel();
+----
+
+The wait completes with `capy::error::canceled`:
+
+[source,cpp]
+----
+auto [ec, signum] = co_await signals.wait();
+if (ec == capy::error::canceled)
+    std::cout << "Wait was cancelled\n";
+----
+
+Cancellation does NOT remove signals from the set. The signal set remains
+configured and can be waited on again.
+
+=== Stop Token Cancellation
+
+Signal waits support stop token cancellation through the affine protocol.
+
+== Use Cases
+
+=== Graceful Shutdown
+
+[source,cpp]
+----
+capy::task<void> shutdown_handler(
+    corosio::io_context& ioc,
+    std::atomic<bool>& running)
+{
+    corosio::signal_set signals(ioc, SIGINT, SIGTERM);
+
+    auto [ec, signum] = co_await signals.wait();
+    if (!ec)
+    {
+        std::cout << "Shutdown signal received\n";
+        running = false;
+        ioc.stop();
+    }
+}
+----
+
+=== Multiple Signal Waits
+
+You can wait for signals multiple times:
+
+[source,cpp]
+----
+capy::task<void> signal_loop(corosio::io_context& ioc)
+{
+    corosio::signal_set signals(ioc, SIGUSR1);
+
+    for (;;)
+    {
+        auto [ec, signum] = co_await signals.wait();
+        if (ec)
+            break;
+
+        std::cout << "Received USR1, doing work...\n";
+        // Handle signal
+    }
+}
+----
+
+=== Reload Configuration
+
+[source,cpp]
+----
+capy::task<void> config_reloader(
+    corosio::io_context& ioc,
+    Config& config)
+{
+    corosio::signal_set signals(ioc, SIGHUP);
+
+    for (;;)
+    {
+        auto [ec, signum] = co_await signals.wait();
+        if (ec)
+            break;
+
+        std::cout << "Reloading configuration...\n";
+        config.reload();
+    }
+}
+----
+
+=== Child Process Management (POSIX)
+
+[source,cpp]
+----
+capy::task<void> child_reaper(corosio::io_context& ioc)
+{
+    using flags = corosio::signal_set;
+
+    corosio::signal_set signals(ioc);
+
+    // Only notify on child termination, not stop/continue
+    // Prevent zombie processes automatically
+    signals.add(SIGCHLD, flags::no_child_stop | flags::no_child_wait);
+
+    for (;;)
+    {
+        auto [ec, signum] = co_await signals.wait();
+        if (ec)
+            break;
+
+        // With no_child_wait, children are reaped automatically
+        std::cout << "Child process terminated\n";
+    }
+}
+----
+
+== Move Semantics
+
+Signal sets are move-only:
+
+[source,cpp]
+----
+corosio::signal_set s1(ioc, SIGINT);
+corosio::signal_set s2 = std::move(s1);  // OK
+
+corosio::signal_set s3 = s2;  // Error: deleted copy constructor
+----
+
+IMPORTANT: Source and destination must share the same execution context.
+
+== Thread Safety
+
+[cols="1,2"]
+|===
+| Operation | Thread Safety
+
+| Distinct signal_sets
+| Safe from different threads
+
+| Same signal_set
+| NOT safe for concurrent operations
+|===
+
+Don't call `wait()`, `add()`, `remove()`, `clear()`, or `cancel()`
+concurrently on the same signal_set.
+
+== Example: Server with Graceful Shutdown
+
+[source,cpp]
+----
+capy::task<void> run_server(corosio::io_context& ioc)
+{
+    std::atomic<bool> running{true};
+
+    // Start signal handler
+    capy::run_async(ioc.get_executor())(
+        [](corosio::io_context& ioc, std::atomic<bool>& running)
+            -> capy::task<void>
+        {
+            corosio::signal_set signals(ioc, SIGINT, SIGTERM);
+            co_await signals.wait();
+            running = false;
+            ioc.stop();
+        }(ioc, running));
+
+    // Accept loop
+    corosio::acceptor acc(ioc);
+    if (auto ec = acc.listen(corosio::endpoint(8080)))
+        co_return;
+
+    while (running)
+    {
+        corosio::tcp_socket peer(ioc);
+        auto [ec] = co_await acc.accept(peer);
+        if (ec)
+            break;
+
+        // Handle connection...
+    }
+}
+----
+
+== Platform Notes
+
+=== Windows
+
+Windows has limited signal support. The library uses `signal()` from the
+C runtime for compatibility. Only `none` and `dont_care` flags are supported;
+other flags return `operation_not_supported`.
+
+=== POSIX
+
+On POSIX systems, signals are handled using `sigaction()` which provides:
+
+* Reliable signal delivery (handler doesn't reset to SIG_DFL)
+* Support for signal flags (SA_RESTART, SA_NOCLDSTOP, etc.)
+* Proper signal masking during handler execution
+
+The `restart` flag is particularly useful—without it, blocking calls like
+`read()` can fail with `EINTR` when a signal arrives.
+
+== Next Steps
+
+* xref:4h.timers.adoc[Timers] — Timed operations
+* xref:4c.io-context.adoc[I/O Context] — The event loop
+* xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Server example

@@ -1,0 +1,276 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Glossary
+
+This glossary defines terms used throughout the Corosio documentation.
+
+== A
+
+Acceptor::
+An I/O object that listens for and accepts incoming TCP connections. See
+`corosio::tcp_acceptor` and xref:4.guide/4e.tcp-acceptor.adoc[Acceptors Guide].
+
+Affine Awaitable::
+An awaitable type that implements the affine protocol, receiving a dispatcher
+parameter in `await_suspend` to ensure correct executor affinity.
+
+Affinity::
+The binding of a coroutine to a specific executor. A coroutine with affinity
+to executor `ex` will have all its resumptions dispatched through `ex`.
+
+buffer_param::
+A type-erased buffer sequence parameter, allowing non-template code to
+work with any buffer type.
+
+any_dispatcher::
+A type-erased wrapper for dispatchers, enabling runtime polymorphism for
+executor types.
+
+Awaitable::
+A type that can be used with `co_await`. Must provide `await_ready()`,
+`await_suspend()`, and `await_resume()` methods.
+
+== B
+
+Buffer::
+A contiguous region of memory. See `capy::mutable_buffer` (writable) and
+`capy::const_buffer` (read-only).
+
+Buffer Sequence::
+A collection of buffers that can be iterated. Enables scatter/gather I/O
+with a single operation.
+
+== C
+
+Cancellation::
+The ability to abort an in-progress asynchronous operation. Operations
+complete with an error code indicating cancellation.
+
+Completion::
+The event when an asynchronous operation finishes, either successfully or
+with an error.
+
+Composed Operation::
+An operation built from multiple primitive operations. For example,
+`corosio::read()` repeatedly calls `read_some()` until the buffer is full.
+
+Concurrency Hint::
+A value passed to `io_context` indicating how many threads may call `run()`.
+Affects internal synchronization strategy.
+
+Continuation::
+The code that runs after an asynchronous operation completes. In coroutines,
+this is the code following `co_await`.
+
+Coroutine::
+A function that can suspend and resume execution. Uses `co_await`, `co_yield`,
+or `co_return` keywords.
+
+Coroutine Handle::
+A low-level handle to a suspended coroutine, represented by
+`std::coroutine_handle<>`.
+
+== D
+
+Dispatcher::
+An object that can dispatch coroutine handles for execution. Satisfies the
+`capy::dispatcher` concept.
+
+== E
+
+Endpoint::
+A combination of IP address and port number identifying a network destination.
+See `corosio::endpoint`.
+
+EOF (End of File/Stream)::
+A condition indicating no more data is available. Signaled by
+`capy::error::eof`.
+
+Error Category::
+A grouping of related error codes. Boost.System uses categories to
+distinguish different error sources.
+
+Error Code::
+A lightweight error indicator. See `boost::system::error_code`.
+
+Error Condition::
+A portable error classification. Enables comparing errors across categories.
+
+Execution Context::
+An environment where work runs. Provides service management and an executor.
+See `capy::execution_context`.
+
+Executor::
+An object that can dispatch work for execution. Satisfies the `capy::executor`
+concept.
+
+== H
+
+Handle::
+A reference to a system resource (socket, file, etc.) managed by the
+operating system.
+
+Handler::
+A callback function or coroutine handle that runs when an operation completes.
+
+== I
+
+I/O Context::
+The main event loop in Corosio. Processes asynchronous operations and
+dispatches completions. See `corosio::io_context`.
+
+I/O Object::
+A class representing an I/O resource (socket, timer, etc.). Base class is
+`corosio::io_object`.
+
+I/O Stream::
+An I/O object that supports reading and writing data. Base class is
+`corosio::io_stream`.
+
+io_result::
+The result type for Corosio operations, containing an error code and optional
+values. Supports structured bindings.
+
+IOCP (I/O Completion Ports)::
+Windows kernel mechanism for scalable asynchronous I/O. Used by Corosio on
+Windows.
+
+== L
+
+Lazy::
+A coroutine or operation that doesn't start until explicitly triggered.
+`capy::task` is lazy—it starts when awaited.
+
+== M
+
+Mocket::
+A mock socket for testing. See `corosio::test::mocket`.
+
+Move-Only::
+A type that can be moved but not copied. Sockets and other I/O objects are
+move-only.
+
+== O
+
+Operation::
+An asynchronous action that completes in the future. Returns an awaitable
+that can be `co_await`ed.
+
+Outstanding Work::
+Work tracked by an I/O context. The context's `run()` continues while
+outstanding work exists.
+
+== P
+
+Platform Backend::
+The operating system-specific implementation (IOCP, io_uring, kqueue).
+
+Poll::
+Processing ready work without blocking. See `io_context::poll()`.
+
+Post::
+Queuing work for later execution. See `executor_type::post()`.
+
+Primitive Operation::
+A basic I/O operation like `read_some()` or `write_some()` that may transfer
+any amount of data.
+
+== R
+
+Resolver::
+An I/O object that performs DNS lookups. See `corosio::resolver`.
+
+Resume::
+Continuing execution of a suspended coroutine.
+
+Run::
+Processing the event loop. See `io_context::run()`.
+
+== S
+
+Scatter/Gather I/O::
+Reading into or writing from multiple non-contiguous buffers in a single
+operation.
+
+Service::
+A polymorphic component owned by an execution context. Provides shared
+functionality.
+
+Signal Set::
+An I/O object that waits for operating system signals. See
+`corosio::signal_set`.
+
+Socket::
+An I/O object for TCP network communication. See `corosio::tcp_socket`.
+
+Stop Token::
+A mechanism for requesting cancellation. See `std::stop_token`.
+
+Strand::
+A serialization mechanism that ensures handlers don't run concurrently.
+Operations posted to a strand execute one at a time, eliminating data
+races without mutexes. See xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming].
+
+Stream::
+A sequence of bytes that can be read or written incrementally.
+
+Structured Bindings::
+C++17 feature for unpacking tuple-like types: `auto [a, b] = expr;`
+
+Suspend::
+Pausing execution of a coroutine, yielding control to the caller.
+
+Symmetric Transfer::
+A tail-call optimization where one coroutine directly resumes another without
+stack growth.
+
+== T
+
+Task::
+A lazy coroutine that produces a value. See `capy::task<T>`.
+
+TCP Server::
+A framework class for building TCP servers with worker pools. See
+`corosio::tcp_server` and xref:4.guide/4k.tcp-server.adoc[TCP Server Guide].
+
+Thread Safety::
+The ability to use an object safely from multiple threads. Individual I/O
+objects are generally not thread-safe.
+
+Timer::
+An I/O object for scheduling delays. See `corosio::timer`.
+
+TLS (Transport Layer Security)::
+Cryptographic protocol for secure communication. See `corosio::wolfssl_stream`.
+
+Type Erasure::
+Hiding concrete types behind an abstract interface. Enables runtime
+polymorphism without templates.
+
+== W
+
+Wait::
+An operation that suspends until a condition is met (timer expires, signal
+received, etc.).
+
+WolfSSL::
+A compact TLS library used by Corosio for secure streams.
+
+Work::
+Pending operations that keep an I/O context running.
+
+Worker Pool::
+A design pattern where a fixed number of worker objects are preallocated
+to handle connections. Provides bounded resource usage and avoids allocation
+during operation. See xref:4.guide/4k.tcp-server.adoc[TCP Server].
+
+== See Also
+
+* xref:reference:boost/corosio.adoc[Reference] — API reference documentation
