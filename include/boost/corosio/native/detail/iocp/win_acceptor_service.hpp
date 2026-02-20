@@ -449,64 +449,6 @@ win_socket_internal::connect(
     return std::noop_coroutine();
 }
 
-inline void
-win_socket_internal::do_read_io()
-{
-    auto& op = rd_;
-
-    op.flags = 0;
-
-    svc_.work_started();
-
-    int result = ::WSARecv(
-        socket_, op.wsabufs, op.wsabuf_count, nullptr, &op.flags, &op, nullptr);
-
-    if (result == SOCKET_ERROR)
-    {
-        DWORD err = ::WSAGetLastError();
-        if (err != WSA_IO_PENDING)
-        {
-            // Defer to avoid resuming on the initiator's stack.
-            svc_.work_finished();
-            op.dwError = err;
-            svc_.post(&op);
-            return;
-        }
-    }
-    // I/O is now pending. If stop was requested before WSARecv
-    // started, the CancelIoEx in the stop callback had nothing
-    // to cancel. Re-check and cancel the now-pending operation.
-    if (op.cancelled.load(std::memory_order_acquire))
-        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
-}
-
-inline void
-win_socket_internal::do_write_io()
-{
-    auto& op = wr_;
-
-    svc_.work_started();
-
-    int result = ::WSASend(
-        socket_, op.wsabufs, op.wsabuf_count, nullptr, 0, &op, nullptr);
-
-    if (result == SOCKET_ERROR)
-    {
-        DWORD err = ::WSAGetLastError();
-        if (err != WSA_IO_PENDING)
-        {
-            // Immediate error - must use post().
-            svc_.work_finished();
-            op.dwError = err;
-            svc_.post(&op);
-            return;
-        }
-    }
-    // Re-check cancellation after I/O is pending
-    if (op.cancelled.load(std::memory_order_acquire))
-        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
-}
-
 inline std::coroutine_handle<>
 win_socket_internal::read_some(
     std::coroutine_handle<> h,
@@ -549,8 +491,33 @@ win_socket_internal::read_some(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    // Symmetric transfer to initiator - I/O starts after caller is suspended
-    return read_initiator_.start<&win_socket_internal::do_read_io>(this);
+    // Issue WSARecv directly — caller is already suspended
+    op.flags = 0;
+
+    svc_.work_started();
+
+    int result = ::WSARecv(
+        socket_, op.wsabufs, op.wsabuf_count, nullptr, &op.flags, &op,
+        nullptr);
+
+    if (result == SOCKET_ERROR)
+    {
+        DWORD err = ::WSAGetLastError();
+        if (err != WSA_IO_PENDING)
+        {
+            svc_.work_finished();
+            op.dwError = err;
+            svc_.post(&op);
+            return std::noop_coroutine();
+        }
+    }
+    // I/O is now pending. If stop was requested before WSARecv
+    // started, the CancelIoEx in the stop callback had nothing
+    // to cancel. Re-check and cancel the now-pending operation.
+    if (op.cancelled.load(std::memory_order_acquire))
+        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
+    return std::noop_coroutine();
 }
 
 inline std::coroutine_handle<>
@@ -593,8 +560,28 @@ win_socket_internal::write_some(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    // Symmetric transfer to initiator - I/O starts after caller is suspended
-    return write_initiator_.start<&win_socket_internal::do_write_io>(this);
+    // Issue WSASend directly — caller is already suspended
+    svc_.work_started();
+
+    int result = ::WSASend(
+        socket_, op.wsabufs, op.wsabuf_count, nullptr, 0, &op, nullptr);
+
+    if (result == SOCKET_ERROR)
+    {
+        DWORD err = ::WSAGetLastError();
+        if (err != WSA_IO_PENDING)
+        {
+            svc_.work_finished();
+            op.dwError = err;
+            svc_.post(&op);
+            return std::noop_coroutine();
+        }
+    }
+    // Re-check cancellation after I/O is pending
+    if (op.cancelled.load(std::memory_order_acquire))
+        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
+    return std::noop_coroutine();
 }
 
 inline void

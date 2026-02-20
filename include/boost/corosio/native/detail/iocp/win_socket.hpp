@@ -19,7 +19,6 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
-#include <boost/corosio/detail/cached_initiator.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
@@ -113,9 +112,6 @@ class win_socket_internal
     write_op wr_;
     SOCKET socket_ = INVALID_SOCKET;
 
-    cached_initiator read_initiator_;
-    cached_initiator write_initiator_;
-
 public:
     explicit win_socket_internal(win_sockets& svc) noexcept;
     ~win_socket_internal();
@@ -151,12 +147,6 @@ public:
     void close_socket() noexcept;
     void set_socket(SOCKET s) noexcept;
     void set_endpoints(endpoint local, endpoint remote) noexcept;
-
-    /** Execute the read I/O operation (called by initiator coroutine). */
-    void do_read_io();
-
-    /** Execute the write I/O operation (called by initiator coroutine). */
-    void do_write_io();
 
 private:
     endpoint local_endpoint_;
