@@ -1,0 +1,116 @@
+#
+# Copyright (c) 2026 Sam Darwin
+# Copyright (c) 2026 Michael Vandeberg
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio/
+#
+
+# Instructions
+#
+# After running this workflow successfully, go to https://github.com/cppalliance/corosio/settings/pages
+# and enable github pages on the code-coverage branch.
+# The coverage will be hosted at https://cppalliance.org/corosio
+#
+
+name: Code Coverage
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+    paths:
+      - 'src/**'
+      - 'include/**'
+
+env:
+  GIT_FETCH_JOBS: 8
+  NET_RETRY_COUNT: 5
+
+jobs:
+  build:
+    defaults:
+      run:
+        shell: bash
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: "ubuntu-24.04"
+            name: Coverage
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Get Branch
+        run: |
+            set -xe
+            git config --global user.name cppalliance-bot
+            git config --global user.email cppalliance-bot@example.com
+            git fetch origin
+            if git branch -r | grep origin/code-coverage; then
+                echo "The code-coverage branch exists. Continuing."
+            else
+                echo "The code-coverage branch does not exist. Creating it."
+                git checkout -b code-coverage
+                git push origin code-coverage
+                git checkout $GITHUB_REF_NAME
+            fi
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install Python packages
+        run: pip install gcovr
+
+      - name: Checkout ci-automation
+        uses: actions/checkout@v6
+        with:
+          repository: cppalliance/ci-automation
+          path: ci-automation
+
+      - name: Run lcov/gcovr
+        run: |
+            set -xe
+            ls -al
+            export ORGANIZATION=${GITHUB_REPOSITORY_OWNER}
+            export REPONAME=$(basename ${GITHUB_REPOSITORY})
+            export B2_CXXSTD=20
+            export EXTRA_BOOST_LIBRARIES="cppalliance/capy"
+            ./ci-automation/scripts/lcov-jenkins-gcc-13.sh --only-gcovr
+
+      - name: Checkout target branch
+        uses: actions/checkout@v6
+        with:
+          ref: code-coverage
+          path: targetdir
+
+      - name: Copy gcovr results
+        run: |
+            set -xe
+            pwd
+            ls -al
+            touch targetdir/.nojekyll
+            mkdir -p targetdir/develop
+            mkdir -p targetdir/master
+            cp -rp gcovr targetdir/${GITHUB_REF_NAME}/
+            echo -e "<html>\n<head>\n</head>\n<body>\n<a href=develop/index.html>develop</a><br>\n<a href=master/index.html>master</a><br>\n</body>\n</html>\n" > targetdir/index.html
+            echo -e "<html>\n<head>\n</head>\n<body>\n<a href=gcovr/index.html>gcovr</a><br>\n</body>\n</html>\n" > targetdir/develop/index.html
+            echo -e "<html>\n<head>\n</head>\n<body>\n<a href=gcovr/index.html>gcovr</a><br>\n</body>\n</html>\n" > targetdir/master/index.html
+            cd targetdir
+            git config --global user.name cppalliance-bot
+            git config --global user.email cppalliance-bot@example.com
+            git add .
+            git commit --amend -m code-coverage
+            git push -f origin code-coverage

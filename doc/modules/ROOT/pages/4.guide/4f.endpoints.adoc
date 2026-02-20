@@ -1,0 +1,258 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Endpoints
+
+The `endpoint` class represents a network endpoint: an IP address (IPv4 or
+IPv6) combined with a port number. Endpoints are used for connecting sockets
+and binding acceptors.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/endpoint.hpp>
+#include <boost/url/ipv4_address.hpp>
+#include <boost/url/ipv6_address.hpp>
+
+namespace corosio = boost::corosio;
+----
+
+== Overview
+
+An endpoint combines an address and port:
+
+[source,cpp]
+----
+// IPv4 endpoint
+corosio::endpoint ep4(boost::urls::ipv4_address::loopback(), 8080);
+
+// IPv6 endpoint
+corosio::endpoint ep6(boost::urls::ipv6_address::loopback(), 8080);
+
+// Port only (binds to all interfaces)
+corosio::endpoint bind_ep(8080);
+----
+
+== Construction
+
+=== From IPv4 Address and Port
+
+[source,cpp]
+----
+auto addr = boost::urls::ipv4_address::loopback();  // 127.0.0.1
+corosio::endpoint ep(addr, 8080);
+----
+
+=== From IPv6 Address and Port
+
+[source,cpp]
+----
+auto addr = boost::urls::ipv6_address::loopback();  // ::1
+corosio::endpoint ep(addr, 8080);
+----
+
+=== From Port Only
+
+[source,cpp]
+----
+corosio::endpoint ep(8080);  // IPv4 any address (0.0.0.0)
+----
+
+This binds to all network interfaces, useful for servers.
+
+=== Default Construction
+
+[source,cpp]
+----
+corosio::endpoint ep;  // IPv4 any address, port 0
+----
+
+== Querying Address Type
+
+[source,cpp]
+----
+if (ep.is_v4())
+    std::cout << "IPv4 address\n";
+
+if (ep.is_v6())
+    std::cout << "IPv6 address\n";
+----
+
+== Accessing Components
+
+=== Port Number
+
+[source,cpp]
+----
+std::uint16_t port = ep.port();  // Host byte order
+----
+
+=== IPv4 Address
+
+[source,cpp]
+----
+if (ep.is_v4())
+{
+    boost::urls::ipv4_address addr = ep.v4_address();
+    std::cout << addr.to_string() << "\n";
+}
+----
+
+=== IPv6 Address
+
+[source,cpp]
+----
+if (ep.is_v6())
+{
+    boost::urls::ipv6_address addr = ep.v6_address();
+    std::cout << addr.to_string() << "\n";
+}
+----
+
+== Common Address Constants
+
+=== Loopback
+
+[source,cpp]
+----
+// IPv4 loopback: 127.0.0.1
+auto v4_loop = boost::urls::ipv4_address::loopback();
+
+// IPv6 loopback: ::1
+auto v6_loop = boost::urls::ipv6_address::loopback();
+----
+
+=== Any Address
+
+[source,cpp]
+----
+// IPv4 any: 0.0.0.0 (all interfaces)
+auto v4_any = boost::urls::ipv4_address::any();
+
+// IPv6 any: :: (all interfaces)
+auto v6_any = boost::urls::ipv6_address::any();
+----
+
+=== Broadcast
+
+[source,cpp]
+----
+// IPv4 broadcast: 255.255.255.255
+auto v4_bcast = boost::urls::ipv4_address::broadcast();
+----
+
+== Parsing Addresses
+
+Parse addresses from strings using Boost.URL:
+
+[source,cpp]
+----
+// IPv4
+auto result = boost::urls::parse_ipv4_address("192.168.1.1");
+if (result)
+{
+    corosio::endpoint ep(*result, 8080);
+}
+
+// IPv6
+auto result6 = boost::urls::parse_ipv6_address("2001:db8::1");
+if (result6)
+{
+    corosio::endpoint ep(*result6, 8080);
+}
+----
+
+== Comparison
+
+Endpoints support equality comparison:
+
+[source,cpp]
+----
+corosio::endpoint ep1(boost::urls::ipv4_address::loopback(), 8080);
+corosio::endpoint ep2(boost::urls::ipv4_address::loopback(), 8080);
+corosio::endpoint ep3(boost::urls::ipv4_address::loopback(), 9090);
+
+assert(ep1 == ep2);  // Same address and port
+assert(ep1 != ep3);  // Different port
+----
+
+== Usage with Sockets
+
+=== Connecting
+
+[source,cpp]
+----
+corosio::tcp_socket s(ioc);
+s.open();
+
+corosio::endpoint target(
+    boost::urls::ipv4_address::loopback(), 8080);
+
+auto [ec] = co_await s.connect(target);
+----
+
+=== Accepting
+
+[source,cpp]
+----
+corosio::tcp_acceptor acc(ioc);
+if (auto ec = acc.listen(corosio::endpoint(8080)))  // Bind to all interfaces
+    return ec;
+----
+
+== From Resolver Results
+
+The resolver returns endpoints:
+
+[source,cpp]
+----
+corosio::resolver r(ioc);
+auto [ec, results] = co_await r.resolve("www.example.com", "80");
+
+for (auto const& entry : results)
+{
+    corosio::endpoint ep = entry.get_endpoint();
+    // Try connecting to ep...
+}
+----
+
+Resolver entries implicitly convert to endpoints:
+
+[source,cpp]
+----
+for (corosio::endpoint ep : results)
+{
+    auto [ec] = co_await s.connect(ep);
+    if (!ec)
+        break;
+}
+----
+
+== Internal Representation
+
+The endpoint stores:
+
+* IPv4 address (always present, may be default)
+* IPv6 address (always present, may be default)
+* Port number (16-bit, host byte order)
+* Address type flag (is_v4)
+
+Both address types are stored to avoid needing a union or variant. The
+`is_v4` flag indicates which address is active.
+
+== Thread Safety
+
+Endpoints are value types with no shared state. They are safe to copy and
+use from any thread.
+
+== Next Steps
+
+* xref:4d.sockets.adoc[Sockets] — Connect to endpoints
+* xref:4j.resolver.adoc[Name Resolution] — Convert hostnames to endpoints
+* xref:../3.tutorials/3c.dns-lookup.adoc[DNS Lookup Tutorial] — Practical resolution
