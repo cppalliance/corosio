@@ -1,0 +1,171 @@
+---
+description: Documentation style guide for Corosio docs
+globs:
+  - "doc/**"
+  - "**/*.adoc"
+---
+
+# Style
+
+Technical documentation should be:
+
+- **Comprehensive and written for all experience levels**
+- **Technically detailed and correct**
+- **Practical, useful, and self-contained**
+- **Friendly but formal**
+
+## Comprehensive and Written for All Experience Levels
+
+Write clearly without assuming background knowledge. Provide explanations and context readers need to understand concepts, not just copy code.
+
+Avoid words like "simple," "straightforward," "easy," "simply," "obviously," and "just." These make assumptions about the reader's knowledge. A reader who hears something is "easy" may be frustrated when they encounter an issue.
+
+## Technically Detailed and Correct
+
+Don't provide blocks of code and ask readers to trust it works. Every command should have a detailed explanation. Every block of code should be followed by prose explaining what it does and why.
+
+When asking the reader to execute a command or modify code, first explain what it does and why. These details help readers grow their skills.
+
+## Practical and Self-Contained
+
+Readers should have something usable when finished. Link to prerequisites they should complete first. Link to other docs for additional information. Only send readers offsite if no existing doc covers it and the information can't be summarized.
+
+## Friendly but Formal
+
+No jargon, memes, excessive slang, emoji, or jokes. Aim for a tone that works across language and cultural boundaries.
+
+Use second person ("You will configure...") to keep focus on the reader. In some cases, use first person plural ("We will examine..."). Avoid first person singular ("I think...").
+
+Use motivational language focused on outcomes. Instead of "You will learn how to install Apache," try "In this tutorial, you will install Apache."
+
+## Technical Depth for Core Topics
+
+Certain foundational topics require deeper, more methodical treatment:
+
+- **Task/coroutine documentation**
+- **Buffer sequences**
+- **Streams**
+
+For these sections:
+
+- Use more technical and methodical exposition
+- Provide convincing explanations with thorough reasoning
+- Include extended background and context
+- Explain the "why" behind design decisions
+
+These topics build reader understanding from first principles, not just usage. Readers need to understand the reasoning to apply concepts correctly in their own code.
+
+# Build Workflow
+
+When documentation is built:
+
+- Obsolete pages are automatically removed
+- New pages are linked into the table of contents
+
+No manual cleanup of old files is needed.
+
+# Structure
+
+## Introduction
+
+Usually one to three paragraphs. Answer:
+
+- What is this about? What does each component do (briefly)?
+- Why should the reader learn this? What are the benefits?
+- What will the reader do or create? Be specific.
+- What will they have accomplished when done? What new skills?
+
+Keep focus on the reader and what they will accomplish. Instead of "we will learn how to," use "you will configure" or "you will build."
+
+## Prerequisites
+
+Spell out exactly what the reader should have or do before starting. Format as a checklist. Link to existing docs covering prerequisite content.
+
+Be specific. "Familiarity with JavaScript" without a link gives little context. Instead: "Familiarity with JavaScript. To build your skills, check out [resource]."
+
+## Steps
+
+Each step describes what the reader needs to do and why. Include commands, code listings, and explanations of both what to do and why.
+
+Step titles describe what readers will accomplish using gerunds (-ing words):
+
+> Step 1 — Creating User Accounts
+
+After the title, add an introductory sentence describing what the reader will do and how it contributes to the overall goal.
+
+### Commands
+
+All commands go on their own line in a code block. Precede with a description of what the command does. After the command, explain arguments and why they're used:
+
+> Execute the following command to display the contents of the directory, including hidden files:
+>
+> `ls -al /home/sammy`
+>
+> The `-a` switch shows all files including hidden ones, and `-l` shows a long listing with timestamps and sizes.
+
+Display command output in a separate block with text explaining what it shows.
+
+### Code Blocks
+
+Introduce code with a high-level explanation of what it does. Show the code. Then call out important details:
+
+> Add the following code, which prints a message to the screen:
+>
+> ```cpp
+> std::cout << "Hello world!\n";
+> ```
+>
+> The `std::cout` stream sends text to standard output.
+
+When changing something specific in existing code, show the relevant parts and highlight what should change. Explain what the change does and why it's necessary.
+
+### Transitions
+
+Frame each step with a brief intro sentence and a closing transition describing what the reader accomplished and where they're going next. Vary the language to avoid repetition:
+
+> You have now configured the server. Before proceeding, you need to verify the settings in the next step.
+
+## Conclusion
+
+Summarize what the reader accomplished. Instead of "we learned how to," use "you configured" or "you built."
+
+Describe what the reader can do next: use cases, features to explore, links to related docs.
+
+# Formatting
+
+## Line-level
+
+**Bold** for:
+- Visible GUI text
+- Hostnames and usernames
+- Term lists
+- Emphasis when changing context
+
+*Italics* only for introducing technical terms.
+
+`Inline code` for:
+- Command names
+- Package names
+- File names and paths
+- Example URLs
+- Ports
+- Key presses (ALL CAPS, use + for simultaneous: `CTRL+C`)
+
+## Code Blocks
+
+Use for:
+- Commands to execute
+- Files and scripts
+- Terminal output
+
+Use ellipses (`...`) to indicate excerpts and omissions.
+
+If most of a file can be left with defaults, show just the section that needs changing.
+
+## Variables
+
+Highlight items the reader must change: example URLs, version numbers, modified lines. Make clear what needs customization.
+
+## Notes and Warnings
+
+Use note and warning callouts for very important information.
