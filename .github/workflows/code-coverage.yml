@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2026 Sam Darwin
 # Copyright (c) 2026 Michael Vandeberg
+# Copyright (c) 2026 Alexander Grund
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -25,10 +26,20 @@ on:
     paths:
       - 'src/**'
       - 'include/**'
+      - '.github/workflows/code-coverage.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: code-coverage-pages
+  cancel-in-progress: false
 
 env:
   GIT_FETCH_JOBS: 8
   NET_RETRY_COUNT: 5
+  # Commit title of the automatically created commits
+  GCOVR_COMMIT_MSG: "Update coverage data"
+  # Should branch coverage be reported? Default to no.
+  BOOST_BRANCH_COVERAGE: 0
 
 jobs:
   build:
@@ -42,6 +53,8 @@ jobs:
         include:
           - runs-on: "ubuntu-24.04"
             name: Coverage
+            cxxstd: "20"
+            gcovr_script: './ci-automation/scripts/lcov-jenkins-gcc-13.sh --only-gcovr'
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runs-on }}
@@ -51,7 +64,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Get Branch
+      - name: Check for code-coverage Branch
         run: |
             set -xe
             git config --global user.name cppalliance-bot
@@ -61,7 +74,8 @@ jobs:
                 echo "The code-coverage branch exists. Continuing."
             else
                 echo "The code-coverage branch does not exist. Creating it."
-                git checkout -b code-coverage
+                git switch --orphan code-coverage
+                git commit --allow-empty -m "$GCOVR_COMMIT_MSG"
                 git push origin code-coverage
                 git checkout $GITHUB_REF_NAME
             fi
@@ -80,37 +94,36 @@ jobs:
           repository: cppalliance/ci-automation
           path: ci-automation
 
-      - name: Run lcov/gcovr
+      - name: Build and run tests & collect coverage data
         run: |
             set -xe
             ls -al
             export ORGANIZATION=${GITHUB_REPOSITORY_OWNER}
             export REPONAME=$(basename ${GITHUB_REPOSITORY})
-            export B2_CXXSTD=20
-            export EXTRA_BOOST_LIBRARIES="cppalliance/capy"
-            ./ci-automation/scripts/lcov-jenkins-gcc-13.sh --only-gcovr
+            export B2_CXXSTD=${{matrix.cxxstd}}
+            ${{matrix.gcovr_script}}
 
-      - name: Checkout target branch
+      - name: Checkout GitHub pages branch
         uses: actions/checkout@v6
         with:
           ref: code-coverage
-          path: targetdir
+          path: gh_pages_dir
 
       - name: Copy gcovr results
         run: |
             set -xe
             pwd
             ls -al
-            touch targetdir/.nojekyll
-            mkdir -p targetdir/develop
-            mkdir -p targetdir/master
-            cp -rp gcovr targetdir/${GITHUB_REF_NAME}/
-            echo -e "<html>\n<head>\n</head>\n<body>\n<a href=develop/index.html>develop</a><br>\n<a href=master/index.html>master</a><br>\n</body>\n</html>\n" > targetdir/index.html
-            echo -e "<html>\n<head>\n</head>\n<body>\n<a href=gcovr/index.html>gcovr</a><br>\n</body>\n</html>\n" > targetdir/develop/index.html
-            echo -e "<html>\n<head>\n</head>\n<body>\n<a href=gcovr/index.html>gcovr</a><br>\n</body>\n</html>\n" > targetdir/master/index.html
-            cd targetdir
-            git config --global user.name cppalliance-bot
-            git config --global user.email cppalliance-bot@example.com
+            touch gh_pages_dir/.nojekyll # Prevent GH pages from treating these files as Jekyll pages.
+            mkdir -p gh_pages_dir/develop
+            mkdir -p gh_pages_dir/master
+            rm -rf "gh_pages_dir/${GITHUB_REF_NAME}/gcovr"
+            cp -rp gcovr "gh_pages_dir/${GITHUB_REF_NAME}/"
+            echo -e "<html>\n<head>\n</head>\n<body>\n<a href=\"develop/index.html\">develop</a><br>\n<a href=\"master/index.html\">master</a><br>\n</body>\n</html>\n" > gh_pages_dir/index.html
+            # In the future: echo -e "<html>\n<head>\n</head>\n<body>\n<a href=gcovr/index.html>gcovr</a><br>\n</body>\n</html>\n" > gh_pages_dir/develop/index.html
+            echo -e "<html>\n<head>\n<meta http-equiv=\"refresh\" content=\"0; url=./gcovr/index.html\">\n</head>\n<body>\n</body>\n</html>\n" > gh_pages_dir/develop/index.html
+            cp gh_pages_dir/develop/index.html gh_pages_dir/master/index.html
+            cd gh_pages_dir
             git add .
-            git commit --amend -m code-coverage
+            git commit --amend -m "$GCOVR_COMMIT_MSG"
             git push -f origin code-coverage
