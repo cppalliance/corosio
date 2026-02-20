@@ -1,0 +1,298 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Buffer Sequences
+
+Corosio I/O operations work with buffer sequences from Boost.Capy. This page
+explains how to use buffers effectively.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/capy/buffers.hpp>
+namespace capy = boost::capy;
+----
+
+== Buffer Types
+
+=== mutable_buffer
+
+A writable region of memory:
+
+[source,cpp]
+----
+char data[1024];
+capy::mutable_buffer buf(data, sizeof(data));
+----
+
+=== const_buffer
+
+A read-only region of memory:
+
+[source,cpp]
+----
+std::string msg = "Hello";
+capy::const_buffer buf(msg.data(), msg.size());
+----
+
+== Creating Buffers
+
+=== From Raw Arrays
+
+[source,cpp]
+----
+char data[1024];
+capy::mutable_buffer mbuf(data, sizeof(data));
+
+const char* str = "Hello";
+capy::const_buffer cbuf(str, 5);
+----
+
+=== From std::string
+
+[source,cpp]
+----
+std::string s = "Hello, World!";
+
+// Writable (be careful with string invalidation)
+capy::mutable_buffer mbuf(s.data(), s.size());
+
+// Read-only
+capy::const_buffer cbuf(s.data(), s.size());
+----
+
+=== From std::vector
+
+[source,cpp]
+----
+std::vector<char> vec(1024);
+capy::mutable_buffer buf(vec.data(), vec.size());
+----
+
+== Buffer Sequences
+
+I/O operations accept sequences of buffers for scatter/gather I/O:
+
+=== Single Buffer
+
+A single buffer is a valid buffer sequence:
+
+[source,cpp]
+----
+capy::mutable_buffer buf(data, size);
+co_await sock.read_some(buf);  // Works directly
+----
+
+=== Multiple Buffers
+
+Use arrays or vectors of buffers:
+
+[source,cpp]
+----
+// Array of buffers
+std::array<capy::mutable_buffer, 2> bufs = {
+    capy::mutable_buffer(header, header_size),
+    capy::mutable_buffer(body, body_size)
+};
+co_await sock.read_some(bufs);
+
+// Vector of buffers
+std::vector<capy::const_buffer> send_bufs;
+send_bufs.push_back(capy::const_buffer(header.data(), header.size()));
+send_bufs.push_back(capy::const_buffer(body.data(), body.size()));
+co_await sock.write_some(send_bufs);
+----
+
+== Buffer Sequence Concepts
+
+Corosio uses concepts from Capy:
+
+[source,cpp]
+----
+// Readable buffers (for writing to sockets)
+template<capy::const_buffer_sequence ConstBufferSequence>
+auto write_some(ConstBufferSequence const& buffers);
+
+// Writable buffers (for reading from sockets)
+template<capy::mutable_buffer_sequence MutableBufferSequence>
+auto read_some(MutableBufferSequence const& buffers);
+----
+
+A type satisfies these concepts if it's iterable and yields buffer types.
+
+== Buffer Size
+
+Get the total size of a buffer sequence:
+
+[source,cpp]
+----
+std::array<capy::mutable_buffer, 2> bufs = {...};
+std::size_t total = capy::buffer_size(bufs);
+----
+
+== consuming_buffers
+
+The `consuming_buffers` wrapper tracks progress through a buffer sequence:
+
+[source,cpp]
+----
+#include <boost/capy/buffers/consuming_buffers.hpp>
+
+std::array<capy::mutable_buffer, 2> bufs = {
+    capy::mutable_buffer(header, 16),
+    capy::mutable_buffer(body, 1024)
+};
+
+capy::consuming_buffers<decltype(bufs)> consuming(bufs);
+
+// After reading 20 bytes:
+auto [ec, n] = co_await sock.read_some(consuming);
+consuming.consume(n);  // Advance by bytes read
+
+// Now consuming represents the remaining unread portion
+----
+
+This is used internally by `read()` and `write()` but can be used directly.
+
+== io_buffer_param
+
+The `io_buffer_param` class type-erases buffer sequences:
+
+[source,cpp]
+----
+#include <boost/corosio/io_buffer_param.hpp>
+
+void accept_any_buffer(corosio::io_buffer_param buffers)
+{
+    capy::mutable_buffer temp[8];
+    std::size_t n = buffers.copy_to(temp, 8);
+    // Use temp[0..n-1]
+}
+
+// Works with any buffer sequence (implicit conversion)
+std::array<capy::mutable_buffer, 2> bufs = {...};
+accept_any_buffer(bufs);
+----
+
+This enables non-templated code to work with any buffer type.
+
+== Memory Safety
+
+=== Lifetime
+
+Buffers don't own memory. The underlying storage must outlive the I/O
+operation:
+
+[source,cpp]
+----
+// WRONG: buffer outlives string
+capy::task<void> bad_example(corosio::tcp_socket& sock)
+{
+    capy::const_buffer buf;
+    {
+        std::string temp = "Hello";
+        buf = capy::const_buffer(temp.data(), temp.size());
+    }  // temp destroyed here!
+
+    co_await sock.write_some(buf);  // Undefined behavior
+}
+
+// CORRECT: keep storage alive
+capy::task<void> good_example(corosio::tcp_socket& sock)
+{
+    std::string msg = "Hello";
+    co_await sock.write_some(
+        capy::const_buffer(msg.data(), msg.size()));
+}
+----
+
+=== String Invalidation
+
+Be careful when using `std::string` as buffer storage:
+
+[source,cpp]
+----
+std::string s = "Hello";
+capy::mutable_buffer buf(s.data(), s.size());
+
+s += " World";  // May reallocate, invalidating buf!
+
+// Use buf here: UNDEFINED BEHAVIOR
+----
+
+Either:
+
+* Reserve sufficient capacity upfront
+* Don't modify the string while the buffer is in use
+* Create a new buffer after modification
+
+== Scatter/Gather I/O
+
+Multiple buffers can be used for efficient scatter/gather operations:
+
+=== Reading into Multiple Buffers (Scatter)
+
+[source,cpp]
+----
+struct message_header { ... };
+char body[1024];
+
+std::array<capy::mutable_buffer, 2> read_bufs = {
+    capy::mutable_buffer(&header, sizeof(header)),
+    capy::mutable_buffer(body, sizeof(body))
+};
+
+auto [ec, n] = co_await sock.read_some(read_bufs);
+// Data fills header first, then body
+----
+
+=== Writing from Multiple Buffers (Gather)
+
+[source,cpp]
+----
+std::string header = "HTTP/1.1 200 OK\r\n\r\n";
+std::string body = "Hello, World!";
+
+std::array<capy::const_buffer, 2> write_bufs = {
+    capy::const_buffer(header.data(), header.size()),
+    capy::const_buffer(body.data(), body.size())
+};
+
+auto [ec, n] = co_await sock.write_some(write_bufs);
+// Sends header followed by body in a single operation
+----
+
+== Example: Reading a Fixed-Size Header
+
+[source,cpp]
+----
+struct packet_header
+{
+    std::uint32_t magic;
+    std::uint32_t length;
+};
+
+capy::task<packet_header> read_header(corosio::io_stream& stream)
+{
+    packet_header header;
+    auto [ec, n] = co_await corosio::read(
+        stream, capy::mutable_buffer(&header, sizeof(header)));
+
+    if (ec)
+        throw boost::system::system_error(ec);
+
+    return header;
+}
+----
+
+== Next Steps
+
+* xref:4g.composed-operations.adoc[Composed Operations] — Using buffers with read/write
+* xref:4d.sockets.adoc[Sockets] — Socket I/O operations
+* xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Practical usage

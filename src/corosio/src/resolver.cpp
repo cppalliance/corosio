@@ -1,0 +1,62 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+#include <boost/corosio/resolver.hpp>
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
+#include <boost/corosio/native/detail/iocp/win_resolver_service.hpp>
+#elif BOOST_COROSIO_POSIX
+#include <boost/corosio/native/detail/posix/posix_resolver_service.hpp>
+#endif
+
+/*
+    Resolver Frontend
+    =================
+
+    This file implements the public resolver class, which delegates to
+    platform-specific services:
+    - Windows: win_resolver_service (uses GetAddrInfoExW)
+    - POSIX: posix_resolver_service (uses getaddrinfo + worker threads)
+
+    The resolver constructor uses find_service() to locate the resolver
+    service, which must have been previously created by the scheduler
+    during io_context construction. If not found, construction fails.
+
+    This separation allows the public API to be platform-agnostic while
+    the implementation details are hidden in the detail namespace.
+*/
+
+namespace boost::corosio {
+namespace {
+
+#if BOOST_COROSIO_HAS_IOCP
+using resolver_service = detail::win_resolver_service;
+#elif BOOST_COROSIO_POSIX
+using resolver_service = detail::posix_resolver_service;
+#endif
+
+} // namespace
+
+resolver::~resolver() = default;
+
+resolver::resolver(capy::execution_context& ctx)
+    : io_object(create_handle<resolver_service>(ctx))
+{
+}
+
+void
+resolver::cancel()
+{
+    if (h_)
+        get().cancel();
+}
+
+} // namespace boost::corosio

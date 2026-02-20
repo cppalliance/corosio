@@ -1,0 +1,118 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= TCP: Reliable Byte Streams
+
+TCP is the protocol that makes the internet useful for most applications. It takes the unreliable, unordered packet delivery that IP provides and builds something much more powerful on top: a reliable, ordered stream of bytes that flows in both directions between two machines. Your program writes bytes into one end, and they come out at the other end in exactly the same order, even if the underlying packets were lost, duplicated, reordered, or delayed.
+
+Nearly every protocol you interact with daily -- HTTP, database wire protocols, email, SSH, TLS -- runs over TCP. Understanding what it guarantees, how it works, and where its limits are is essential knowledge for networked programming.
+
+== What TCP Guarantees
+
+TCP provides four properties that IP and UDP do not:
+
+Reliable delivery:: Every byte you send eventually arrives at the destination, or you receive an error indicating the connection failed. TCP detects lost packets and retransmits them automatically. Your application never has to implement its own retry logic.
+
+Ordered delivery:: Bytes arrive at the receiver in the same order the sender transmitted them. If packets arrive out of order (which is common -- IP routes each packet independently), TCP buffers the early arrivals and delivers them to your application only when the sequence is complete.
+
+Flow control:: The receiver tells the sender how much data it can accept. If the receiver's buffers are filling up, it advertises a smaller window and the sender slows down. This prevents a fast producer from overwhelming a slow consumer.
+
+Congestion control:: TCP monitors the network for signs of congestion (dropped packets, increasing delays) and reduces its sending rate in response. This is not just polite -- it is essential. Without congestion control, every TCP connection would blast data as fast as possible, and the shared network infrastructure would collapse under the load.
+
+These guarantees come at a cost: connection setup takes time (a round trip before any data flows), per-connection state consumes kernel memory, and the reliability machinery adds latency when packets are lost. For most applications, that cost is negligible compared to the value of not having to build reliability yourself.
+
+== TCP Is a Byte Stream
+
+This is the single most important thing to understand about TCP, and the source of countless bugs in networking code.
+
+TCP is a *byte stream*, not a *message stream*. When you call `send` with 500 bytes, TCP does not guarantee that the receiver gets those 500 bytes in one `recv` call. The receiver might get 200 bytes in one call and 300 in the next. Or all 500 at once. Or 1 byte at a time. TCP makes no promises about how many bytes each read returns -- only that all the bytes arrive, in order.
+
+If your protocol has messages with defined boundaries -- a request followed by a response, for example -- you must frame them yourself. Common approaches include:
+
+* Prefixing each message with its length (a 4-byte integer followed by that many bytes of payload).
+* Using a delimiter like a newline character to mark the end of each message.
+* Using a fixed-size message format where every message is the same length.
+
+The protocol defines the framing. TCP delivers the bytes. Your code is responsible for reassembling them into meaningful units.
+
+== The TCP Header
+
+Every TCP segment carries a header with the information needed for reliable, ordered delivery. The key fields are:
+
+Source port (16 bits):: The sender's port number.
+
+Destination port (16 bits):: The receiver's port number. Together with the IP addresses, these form the four-tuple that identifies the connection.
+
+Sequence number (32 bits):: The byte offset of the first byte in this segment's payload, relative to the initial sequence number established during the handshake. If the initial sequence number was 1000 and this segment carries bytes 1000 through 1499, the sequence number is 1000.
+
+Acknowledgment number (32 bits):: The next byte the sender expects to receive from the other side. If the receiver has gotten bytes 0 through 499, the acknowledgment number is 500. This tells the other side "I have everything up to byte 499; send me byte 500 next."
+
+Flags:: Single-bit indicators that control the connection:
+* *SYN*: initiates a connection (used during the handshake).
+* *ACK*: indicates the acknowledgment number field is valid (set on nearly every segment after the handshake).
+* *FIN*: the sender is done transmitting data (used during teardown).
+* *RST*: abruptly resets the connection.
+* *PSH*: requests that the receiver deliver the data to the application immediately rather than buffering.
+
+Window size (16 bits):: The number of bytes the sender is willing to accept. This is the flow control mechanism: the receiver advertises how much buffer space it has, and the sender limits itself to that amount.
+
+Checksum (16 bits):: Covers the TCP header, the payload, and a pseudo-header derived from the IP addresses and protocol number. If the checksum fails, the segment is discarded silently.
+
+The sequence and acknowledgment numbers are the core of TCP's reliability. By tracking which bytes have been sent and which have been acknowledged, TCP can detect gaps (lost packets) and fill them with retransmissions.
+
+== TCP vs. UDP: Choosing
+
+The choice between TCP and UDP is usually obvious:
+
+[cols="1,1,1"]
+|===
+| Property | TCP | UDP
+
+| Reliability
+| Guaranteed delivery
+| Best effort
+
+| Ordering
+| Bytes arrive in order
+| Datagrams may arrive in any order
+
+| Connection
+| Yes (handshake required)
+| No
+
+| Message boundaries
+| Not preserved (byte stream)
+| Preserved (datagram)
+
+| Flow control
+| Yes (window-based)
+| No
+
+| Congestion control
+| Yes
+| No
+
+| Overhead
+| Higher (20+ byte header, per-connection state)
+| Lower (8-byte header, no state)
+|===
+
+Use TCP when data must arrive completely and in order: HTTP, database protocols, file transfers, email, remote shells. Use UDP when latency matters more than completeness: real-time audio/video, DNS lookups, game state updates, or when you need multicast.
+
+If you are unsure, start with TCP. Its guarantees eliminate an enormous class of bugs, and its overhead is negligible for most applications.
+
+== The Illusion of a Perfect Pipe
+
+The internet between your machine and the server is anything but reliable. Packets get dropped when router buffers overflow. They arrive out of order because different packets take different paths. They get corrupted by electrical interference. Links fail and recover. None of this is exceptional -- it is the normal operating condition of a global packet-switched network.
+
+TCP hides all of it. From your application's perspective, the connection is a clean, bidirectional pipe: bytes go in one end and come out the other, in order, exactly once. That illusion is constructed from sequence numbers, acknowledgments, retransmissions, timers, and window management -- machinery that runs entirely inside the operating system, transparent to your code.
+
+But it is an illusion, not magic. TCP cannot fix a dead link. It cannot deliver data faster than the network allows. It cannot prevent the other side from crashing. When the illusion breaks, your application sees an error on the socket -- and understanding the machinery behind the illusion helps you diagnose what went wrong.
+
+The next section examines how that illusion begins and ends: the TCP connection lifecycle.

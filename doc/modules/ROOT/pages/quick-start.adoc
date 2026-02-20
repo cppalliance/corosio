@@ -1,0 +1,208 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Quick Start
+
+This guide walks you through building your first network application with
+Corosio: a simple echo server that accepts connections and echoes back
+whatever clients send.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/tcp_server.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/buffers.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+
+== Step 1: Create the I/O Context
+
+Every Corosio program starts with an `io_context`. This is the event loop that
+processes all asynchronous operations:
+
+[source,cpp]
+----
+int main()
+{
+    corosio::io_context ioc;
+
+    // ... create and start server ...
+
+    ioc.run();  // Process events until all work completes
+}
+----
+
+The `run()` method blocks and processes events until there's no more work.
+
+== Step 2: Define the Server Class
+
+The `tcp_server` base class provides connection pooling and lifecycle management.
+Derive from it and define a worker class:
+
+[source,cpp]
+----
+class echo_server : public corosio::tcp_server
+{
+    class worker : public worker_base
+    {
+        corosio::io_context& ctx_;
+        corosio::tcp_socket sock_;
+        std::string buf_;
+
+    public:
+        worker(corosio::io_context& ctx)
+            : ctx_(ctx)
+            , sock_(ctx)
+        {
+            buf_.reserve(4096);
+        }
+
+        corosio::tcp_socket& socket() override { return sock_; }
+
+        void run(launcher launch) override
+        {
+            launch(ctx_.get_executor(), do_session());
+        }
+
+        capy::task<> do_session();
+    };
+
+public:
+    echo_server(corosio::io_context& ctx, int max_workers)
+        : tcp_server(ctx, ctx.get_executor())
+    {
+        wv_.reserve(max_workers);
+        for (int i = 0; i < max_workers; ++i)
+            wv_.emplace<worker>(ctx);
+    }
+};
+----
+
+Key points:
+
+* Workers derive from `worker_base` and implement `socket()` and `run()`
+* Each worker owns its socket and any per-connection state
+* The `launcher` starts the session coroutine and returns the worker to the pool when done
+
+== Step 3: Write the Echo Session
+
+The session coroutine reads data and echoes it back:
+
+[source,cpp]
+----
+capy::task<> echo_server::worker::do_session()
+{
+    for (;;)
+    {
+        buf_.resize(4096);
+
+        // Read some data
+        auto [ec, n] = co_await sock_.read_some(
+            capy::mutable_buffer(buf_.data(), buf_.size()));
+
+        if (ec || n == 0)
+            break;  // Connection closed or error
+
+        buf_.resize(n);
+
+        // Echo it back
+        auto [wec, wn] = co_await corosio::write(
+            sock_, capy::const_buffer(buf_.data(), buf_.size()));
+
+        if (wec)
+            break;  // Write error
+    }
+
+    sock_.close();
+}
+----
+
+Key points:
+
+* `read_some()` returns when _any_ data is available
+* `write()` (the free function) writes _all_ data or fails
+* Structured bindings extract the error code and byte count
+* When the coroutine ends, the worker automatically returns to the pool
+
+== Step 4: Put It Together
+
+[source,cpp]
+----
+int main()
+{
+    corosio::io_context ioc;
+
+    echo_server server(ioc, 100);
+
+    auto ec = server.bind(corosio::endpoint(8080));
+    if (ec)
+    {
+        std::cerr << "Bind failed: " << ec.message() << "\n";
+        return 1;
+    }
+
+    std::cout << "Echo server listening on port 8080\n";
+
+    server.start();
+    ioc.run();
+}
+----
+
+== Testing the Server
+
+Start the server, then use netcat or telnet to test:
+
+[source,bash]
+----
+$ telnet localhost 8080
+Trying 127.0.0.1...
+Connected to localhost.
+Hello, World!
+Hello, World!
+----
+
+== Error Handling Patterns
+
+Corosio supports two error handling patterns:
+
+=== Structured Bindings (Recommended for Most Code)
+
+[source,cpp]
+----
+auto [ec, n] = co_await sock.read_some(buf);
+if (ec)
+{
+    // Handle error
+}
+----
+
+=== Exceptions (Concise for Simple Cases)
+
+[source,cpp]
+----
+auto n = (co_await sock.read_some(buf)).value();
+// Throws system_error if read fails
+----
+
+The `.value()` method throws `boost::system::system_error` if the operation
+failed.
+
+== Next Steps
+
+Now that you have a working echo server:
+
+* xref:4.guide/4k.tcp-server.adoc[TCP Server Guide] — Deep dive into tcp_server
+* xref:4.guide/4a.tcp-networking.adoc[TCP/IP Networking] — Networking fundamentals
+* xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
+* xref:3.tutorials/3b.http-client.adoc[HTTP Client Tutorial] — Make HTTP requests
+* xref:4.guide/4c.io-context.adoc[I/O Context Guide] — Understand the event loop
+* xref:4.guide/4d.sockets.adoc[Sockets Guide] — Deep dive into socket operations

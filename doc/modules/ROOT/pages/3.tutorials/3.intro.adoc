@@ -1,0 +1,39 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Tutorials
+
+Networked applications come alive when you build them yourself. Reading
+about sockets, protocols, and concurrency only goes so far — the real
+understanding comes from writing code that opens connections, sends data,
+and handles the responses. These tutorials give you that hands-on experience
+with Corosio.
+
+Each tutorial produces a complete, runnable program. You start with source
+code, compile it, and interact with the result. Along the way you encounter
+the patterns that recur throughout real networking code: listening for
+incoming connections, connecting to remote services, formatting and parsing
+protocol messages, and layering encryption on top of a transport.
+
+The progression moves from straightforward client-server interactions toward
+more involved topics. Early tutorials focus on raw TCP communication — reading
+and writing bytes over a connection. From there you move into higher-level
+protocols where message framing and request-response semantics matter.
+Security appears naturally as you add TLS to protect data in transit, covering
+certificate management and encrypted streams.
+
+Throughout the tutorials you will see how Corosio's coroutine-based model
+keeps asynchronous code readable. Operations that would require callbacks
+or state machines in traditional networking code read as sequential steps
+in a coroutine body. Error handling follows consistent patterns whether
+you prefer structured bindings or exceptions.
+
+NOTE: These tutorials assume familiarity with Capy tasks and basic C++20
+coroutine concepts such as `co_await` and `co_return`. If you are new to
+coroutines, review the Capy documentation before proceeding.

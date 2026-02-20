@@ -1,0 +1,281 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Composed Operations
+
+Corosio provides composed operations that build on the primitive `read_some()`
+and `write_some()` functions to provide higher-level guarantees.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/read.hpp>
+#include <boost/corosio/write.hpp>
+#include <boost/capy/buffers.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+
+== The Problem with Primitives
+
+The primitive operations `read_some()` and `write_some()` provide no guarantees
+about how much data is transferred:
+
+[source,cpp]
+----
+char buf[1024];
+auto [ec, n] = co_await s.read_some(
+    capy::mutable_buffer(buf, sizeof(buf)));
+// n could be 1, 100, 500, or 1024 - no guarantee
+----
+
+For many use cases, you need to transfer a specific amount of data. Composed
+operations provide these guarantees.
+
+== corosio::read()
+
+The `read()` function reads until the buffer is full or an error occurs:
+
+[source,cpp]
+----
+char buf[1024];
+auto [ec, n] = co_await corosio::read(
+    stream, capy::mutable_buffer(buf, sizeof(buf)));
+
+// Either:
+// - n == 1024 and ec is default (success)
+// - ec is error::eof and n < 1024 (reached end of stream)
+// - ec is some other error
+----
+
+=== Signature
+
+[source,cpp]
+----
+template<capy::mutable_buffer_sequence MutableBufferSequence>
+capy::task<io_result<std::size_t>>
+read(io_stream& ios, MutableBufferSequence const& buffers);
+----
+
+=== Behavior
+
+1. Calls `read_some()` repeatedly until all buffers are filled
+2. If `read_some()` returns 0 bytes, returns `capy::error::eof`
+3. If an error occurs, returns immediately with bytes read so far
+4. On success, returns total bytes (equals `buffer_size(buffers)`)
+
+== corosio::read() into std::string
+
+A special overload reads until EOF, growing the string as needed:
+
+[source,cpp]
+----
+std::string content;
+auto [ec, n] = co_await corosio::read(stream, content);
+
+// Either:
+// - ec == capy::error::eof (normal termination)
+// - ec is some error
+// content contains all data read
+----
+
+=== Signature
+
+[source,cpp]
+----
+capy::task<io_result<std::size_t>>
+read(io_stream& ios, std::string& s);
+----
+
+=== Behavior
+
+1. Preserves existing string content
+2. Grows string as needed (starts with 2048 bytes, grows 1.5x)
+3. Reads until EOF or error
+4. Resizes string to actual data size before returning
+5. Returns `n` = new bytes read (not including original content)
+
+=== Growth Strategy
+
+The function uses an efficient growth strategy:
+
+* Initial capacity: existing size + 2048
+* Growth factor: 1.5x when buffer fills
+* Maximum: `string::max_size()`
+
+If the string reaches `max_size()` with more data available, returns
+`errc::value_too_large`.
+
+== corosio::write()
+
+The `write()` function writes all data or fails:
+
+[source,cpp]
+----
+std::string msg = "Hello, World!";
+auto [ec, n] = co_await corosio::write(
+    stream, capy::const_buffer(msg.data(), msg.size()));
+
+// Either:
+// - n == msg.size() and ec is default (all data written)
+// - ec is an error
+----
+
+=== Signature
+
+[source,cpp]
+----
+template<capy::const_buffer_sequence ConstBufferSequence>
+capy::task<io_result<std::size_t>>
+write(io_stream& ios, ConstBufferSequence const& buffers);
+----
+
+=== Behavior
+
+1. Calls `write_some()` repeatedly until all buffers are written
+2. If `write_some()` returns 0 bytes, returns `errc::broken_pipe`
+3. If an error occurs, returns immediately with bytes written so far
+4. On success, returns total bytes (equals `buffer_size(buffers)`)
+
+== consuming_buffers Helper
+
+Both `read()` and `write()` use `consuming_buffers` internally to track
+progress through a buffer sequence:
+
+[source,cpp]
+----
+#include <boost/capy/buffers/consuming_buffers.hpp>
+
+std::array<capy::mutable_buffer, 2> bufs = {
+    capy::mutable_buffer(header, 16),
+    capy::mutable_buffer(body, 1024)
+};
+
+capy::consuming_buffers<decltype(bufs)> consuming(bufs);
+
+// After reading 20 bytes:
+consuming.consume(20);
+// Now consuming represents: 4 bytes of header remaining + full body
+----
+
+=== Interface
+
+[source,cpp]
+----
+template<class BufferSequence>
+class consuming_buffers
+{
+public:
+    explicit consuming_buffers(BufferSequence const& bufs);
+
+    void consume(std::size_t n);
+
+    const_iterator begin() const;
+    const_iterator end() const;
+};
+----
+
+The iterator returns adjusted buffers accounting for consumed bytes.
+
+== Error Handling Patterns
+
+=== Structured Bindings with EOF Check
+
+[source,cpp]
+----
+auto [ec, n] = co_await corosio::read(stream, buf);
+if (ec)
+{
+    if (ec == capy::error::eof)
+        std::cout << "End of stream, read " << n << " bytes\n";
+    else
+        std::cerr << "Error: " << ec.message() << "\n";
+}
+----
+
+=== Exception Pattern
+
+[source,cpp]
+----
+// For write (EOF doesn't apply)
+auto n = (co_await corosio::write(stream, buf)).value();
+
+// For read (need to handle EOF)
+auto [ec, n] = co_await corosio::read(stream, buf);
+if (ec && ec != capy::error::eof)
+    throw boost::system::system_error(ec);
+----
+
+== Cancellation
+
+Composed operations support cancellation through the affine protocol. When
+cancelled, they return with `operation_canceled` and the partial byte count.
+
+[source,cpp]
+----
+auto [ec, n] = co_await corosio::read(stream, large_buffer);
+if (ec == make_error_code(system::errc::operation_canceled))
+    std::cout << "Cancelled after reading " << n << " bytes\n";
+----
+
+== Performance Considerations
+
+=== Single vs. Multiple Buffers
+
+For optimal performance with multiple buffers:
+
+[source,cpp]
+----
+// Efficient: single system call per read_some()
+std::array<capy::mutable_buffer, 2> bufs = {...};
+co_await corosio::read(stream, bufs);
+
+// Less efficient: may require more system calls
+co_await corosio::read(stream, buf1);
+co_await corosio::read(stream, buf2);
+----
+
+=== Buffer Sizing
+
+Choose buffer sizes that match your expected data:
+
+* Too small: More system calls
+* Too large: Memory waste
+
+For unknown-length data (like HTTP responses), use the string overload:
+
+[source,cpp]
+----
+std::string response;
+co_await corosio::read(stream, response);  // Grows as needed
+----
+
+== Example: HTTP Response Reading
+
+[source,cpp]
+----
+capy::task<std::string> read_http_response(corosio::io_stream& stream)
+{
+    std::string response;
+    auto [ec, n] = co_await corosio::read(stream, response);
+
+    // EOF is expected when server closes connection
+    if (ec && ec != capy::error::eof)
+        throw boost::system::system_error(ec);
+
+    co_return response;
+}
+----
+
+== Next Steps
+
+* xref:4d.sockets.adoc[Sockets] — The underlying stream interface
+* xref:4n.buffers.adoc[Buffer Sequences] — Working with buffers
+* xref:../3.tutorials/3b.http-client.adoc[HTTP Client Tutorial] — Practical example

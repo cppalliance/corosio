@@ -1,0 +1,124 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= When Packets Go Missing
+
+TCP promises reliable delivery, but the network underneath makes no such promise. Routers drop packets when their queues overflow. Links fail mid-transmission. Interference corrupts data. TCP's job is to detect these failures and recover from them -- transparently, without your application ever knowing a packet was lost.
+
+The strategy for doing this is more subtle than "notice it is missing and send it again." TCP has to decide *when* a packet is lost (as opposed to merely delayed), *how fast* to retransmit (too aggressive floods the network, too cautious wastes time), and *how to respond* to the underlying cause (is the network congested, or was it just a random bit flip?). Getting these decisions right is what separates a well-behaved TCP implementation from one that either stalls unnecessarily or makes congestion worse.
+
+== Measuring Round-Trip Time
+
+Before TCP can decide that a packet is lost, it needs to know how long a packet *should* take to be acknowledged. That requires measuring the round-trip time (RTT) -- the time between sending a segment and receiving its ACK.
+
+The RTT is not a fixed value. It fluctuates constantly as network conditions change: routing shifts, queues fill and drain, links become more or less loaded. TCP handles this by maintaining two running estimates:
+
+* A *smoothed RTT* (SRTT), which is a weighted average of recent measurements. New samples are blended into the average gradually, so a single outlier does not distort the estimate.
+* An *RTT variance* estimate, which tracks how much the measurements fluctuate. A high variance means the network is unpredictable.
+
+The retransmission timeout (RTO) is calculated from these two values. A common formula sets the RTO to the smoothed RTT plus four times the variance. This ensures the timeout is long enough to accommodate normal variation but not so long that TCP waits forever when a packet is genuinely lost.
+
+If the actual RTT is around 30 milliseconds with low variance, the RTO might be set to 50 milliseconds. If the RTT jumps around between 20 and 200 milliseconds, the RTO adjusts upward to avoid false retransmissions.
+
+== Retransmission Timeout
+
+When TCP sends a segment, it starts a timer. If the ACK for that segment does not arrive before the timer expires, TCP assumes the segment was lost and retransmits it.
+
+After a timeout-based retransmission, TCP does two things:
+
+. It *doubles the RTO* for the next attempt. This is called exponential backoff. If the network is congested, retransmitting at the same rate would make things worse. Backing off gives the network time to recover.
+. It drastically *reduces its sending rate* by resetting the congestion window to a single segment and re-entering slow start. This is the most aggressive response TCP has to packet loss.
+
+Timeout-based retransmission is the last resort. It works, but it is slow -- the sender sits idle for the entire timeout period before retransmitting. TCP has a faster mechanism for the common case, described next.
+
+== Fast Retransmit
+
+Most packet loss is not total. Typically, one segment is dropped while the segments that follow it arrive successfully. When the receiver gets a segment that is out of order -- say segment 5 arrives but segment 4 did not -- it cannot deliver anything new to the application (TCP requires in-order delivery). Instead, it re-sends an ACK for the last contiguous byte it has received. This is called a *duplicate ACK*.
+
+If segment 4 is lost and segments 5, 6, and 7 arrive, the receiver sends three duplicate ACKs, all acknowledging the same byte position (the last byte of segment 3).
+
+TCP treats the arrival of three duplicate ACKs as strong evidence that a specific segment was lost. Rather than waiting for the retransmission timeout, it immediately retransmits the missing segment. This is *fast retransmit*, and it recovers from loss in roughly one round trip instead of waiting for the full RTO.
+
+----
+Sender                              Receiver
+  |                                    |
+  |--- Segment 4 ------- (lost) ---X   |
+  |--- Segment 5 ----------------->|   |
+  |<-- Dup ACK (ack=4) ------------|   |
+  |--- Segment 6 ----------------->|   |
+  |<-- Dup ACK (ack=4) ------------|   |
+  |--- Segment 7 ----------------->|   |
+  |<-- Dup ACK (ack=4) ------------|   |
+  |                                    |
+  |  (3 dup ACKs: fast retransmit)     |
+  |--- Segment 4 (retransmit) ---->|   |
+  |<-- ACK (ack=8) ----------------|   |  <- acknowledges 4,5,6,7
+----
+
+The receiver's ACK after the retransmitted segment arrives acknowledges everything it has buffered -- not just segment 4, but also 5, 6, and 7 that it already held. The sender instantly knows all four segments were delivered.
+
+== Fast Recovery
+
+After a fast retransmit, TCP could reset the congestion window to one segment and re-enter slow start, just as it does after a timeout. But that would be overly conservative. The fact that duplicate ACKs are arriving means segments are still getting through -- the network is not completely broken, just slightly congested.
+
+Fast recovery takes a gentler approach. Instead of dropping the congestion window to one segment, TCP halves it. The sender continues transmitting at the reduced rate, and as ACKs for the retransmitted data arrive, the window gradually expands back toward its previous size.
+
+The combination of fast retransmit and fast recovery means TCP can handle occasional packet loss with minimal disruption to throughput. The sender detects the loss within a round trip, retransmits the missing segment, halves its speed briefly, and ramps back up. The connection barely stutters.
+
+== Congestion Avoidance
+
+Once TCP has exited slow start (either by reaching the receiver's window or by detecting loss), it enters *congestion avoidance* mode. The goal shifts from finding the network's capacity to staying just below it.
+
+In congestion avoidance, the congestion window grows linearly rather than exponentially: it increases by roughly one segment per round trip, instead of doubling. This cautious growth probes for additional capacity without overshooting.
+
+When loss is detected (via timeout or duplicate ACKs), TCP records half of the current congestion window as a *threshold*. If it re-enters slow start, exponential growth continues only until the window reaches this threshold, at which point it switches to linear growth. This prevents TCP from repeatedly overshooting the same capacity limit.
+
+The result is a sawtooth pattern: the congestion window grows linearly, hits a loss event, drops sharply, and grows linearly again. Over time, the window oscillates around the network's available capacity. This is not elegant, but it is remarkably effective at sharing bandwidth fairly among competing connections.
+
+== The Persist Timer
+
+Flow control, described in the previous section, allows the receiver to advertise a zero window: "I have no buffer space; stop sending." The sender obeys and stops transmitting.
+
+But what if the receiver frees up buffer space and sends an updated window advertisement, and that ACK is lost? The sender would wait forever, believing the window is still zero. The receiver would wait forever, believing it already told the sender to resume.
+
+The *persist timer* breaks this deadlock. When the sender sees a zero window, it starts a timer. When the timer fires, the sender transmits a tiny *window probe* -- a segment with one byte of data. If the receiver's window has opened, the ACK will contain the updated window size and the sender resumes. If the window is still zero, the receiver re-advertises zero and the sender sets the timer again.
+
+Persist probes use exponential backoff, starting at the RTO value and increasing up to a maximum (typically 60 seconds). The sender will probe indefinitely -- it never gives up on a zero-window connection.
+
+== Silly Window Syndrome
+
+A related pathology occurs when the receiver advertises a very small window -- say, 10 bytes -- and the sender dutifully transmits a 10-byte segment. The overhead of the IP and TCP headers (at least 40 bytes) dwarfs the payload. The connection becomes grossly inefficient, with more bandwidth consumed by headers than data.
+
+This is called *silly window syndrome*, and both sides participate in preventing it:
+
+* The *receiver* avoids advertising small window updates. It waits until it can advertise at least one full-sized segment (or half its buffer) before sending a window update.
+* The *sender* avoids sending tiny segments. The Nagle algorithm (described in the previous section) helps here by batching small writes.
+
+Together, these rules ensure that data flows in reasonably-sized chunks even when the receiver is slow.
+
+== Keepalive
+
+What happens when a TCP connection is idle -- no data flowing in either direction? The answer is: nothing. TCP sends no packets during idle periods. The connection can sit open for hours, days, or weeks with no traffic.
+
+This is usually fine, but it creates a problem: if the remote machine crashes, reboots, or loses network connectivity during an idle period, the local side has no way to discover it. The connection appears healthy, but the first attempt to send data will fail -- possibly after a long timeout.
+
+*Keepalive* probes address this. When enabled, TCP periodically sends a tiny probe on idle connections -- typically every two hours. If the remote side responds, the connection is healthy. If no response arrives after several probes, TCP declares the connection dead and reports an error to the application.
+
+Keepalive is not enabled by default on most systems. Applications that need it set the `SO_KEEPALIVE` socket option and often adjust the probe interval, count, and idle timeout to match their requirements. Two hours is too long for many use cases; a chat server or database client might want to detect dead connections within 30 seconds.
+
+== Why This Matters to You
+
+TCP's reliability mechanisms run inside the kernel, invisible to your application. But understanding them explains behaviors you will observe:
+
+* *Brief stalls during data transfer* are often fast retransmit and recovery in action. A single lost packet causes the sender to pause momentarily while it detects the loss and retransmits.
+* *Sudden throughput drops* happen when TCP detects congestion and halves its sending rate. The sawtooth pattern of congestion avoidance is normal, not a bug.
+* *Long pauses after severe loss* indicate timeout-based retransmission. The sender waited for the RTO to expire because duplicate ACKs did not arrive (perhaps multiple consecutive segments were lost).
+* *Connections that hang indefinitely* may be waiting on a peer that crashed during an idle period. Enable keepalive or implement application-level heartbeats.
+
+The reliability machinery is not "just retransmit on loss." It is a carefully tuned feedback loop between sender, receiver, and network. The next and final section looks at the extensions that push TCP's performance beyond what the original protocol could achieve.

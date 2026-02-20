@@ -1,0 +1,248 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= HTTP Client Tutorial
+
+This tutorial builds a simple HTTP client that connects to a server, sends
+a GET request, and reads the response. You'll learn socket connection,
+composed I/O operations, and the exception-based error handling pattern.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/buffers.hpp>
+#include <boost/capy/error.hpp>
+#include <boost/url/ipv4_address.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+
+== Overview
+
+Making an HTTP request involves:
+
+1. Creating and opening a socket
+2. Connecting to the server
+3. Sending the HTTP request
+4. Reading the response
+5. Handling connection close (EOF)
+
+We'll use the exception-based pattern with `.value()` for concise code.
+
+== Building the Request
+
+HTTP/1.1 requests have a simple text format:
+
+[source,cpp]
+----
+std::string build_request(std::string_view host)
+{
+    return "GET / HTTP/1.1\r\n"
+           "Host: " + std::string(host) + "\r\n"
+           "Connection: close\r\n"
+           "\r\n";
+}
+----
+
+The `Connection: close` header tells the server to close the connection
+after sending the response. This simplifies our code because we know EOF
+marks the end of the response.
+
+== The Request Coroutine
+
+[source,cpp]
+----
+capy::task<void> do_request(
+    corosio::io_stream& stream,
+    std::string_view host)
+{
+    // Build and send the request
+    std::string request = build_request(host);
+    (co_await corosio::write(
+        stream, capy::const_buffer(request.data(), request.size()))).value();
+
+    // Read the entire response
+    std::string response;
+    auto [ec, n] = co_await corosio::read(stream, response);
+
+    // EOF is expected when server closes connection
+    if (ec && ec != capy::error::eof)
+        throw boost::system::system_error(ec);
+
+    std::cout << response << std::endl;
+}
+----
+
+Key points:
+
+* `.value()` on the write throws if writing fails
+* `corosio::read(stream, string)` reads until EOF
+* We check for EOF explicitly because it's expected here
+
+== The Connection Coroutine
+
+[source,cpp]
+----
+capy::task<void> run_client(
+    corosio::io_context& ioc,
+    boost::urls::ipv4_address addr,
+    std::uint16_t port)
+{
+    corosio::tcp_socket s(ioc);
+    s.open();
+
+    // Connect (throws on error)
+    (co_await s.connect(corosio::endpoint(addr, port))).value();
+
+    co_await do_request(s, addr.to_string());
+}
+----
+
+The socket must be opened before connecting. We pass the socket as an
+`io_stream&` to `do_request`, enabling code reuse with TLS streams later.
+
+== Main Function
+
+[source,cpp]
+----
+int main(int argc, char* argv[])
+{
+    if (argc != 3)
+    {
+        std::cerr << "Usage: http_client <ip-address> <port>\n"
+                  << "Example: http_client 35.190.118.110 80\n";
+        return 1;
+    }
+
+    // Parse IP address
+    auto addr_result = boost::urls::parse_ipv4_address(argv[1]);
+    if (!addr_result)
+    {
+        std::cerr << "Invalid IP address: " << argv[1] << "\n";
+        return 1;
+    }
+
+    auto port = static_cast<std::uint16_t>(std::atoi(argv[2]));
+
+    corosio::io_context ioc;
+    capy::run_async(ioc.get_executor())(
+        run_client(ioc, *addr_result, port));
+    ioc.run();
+}
+----
+
+== Reading Until EOF
+
+The `corosio::read(io_stream&, std::string&)` overload reads until EOF:
+
+[source,cpp]
+----
+std::string response;
+auto [ec, n] = co_await corosio::read(stream, response);
+----
+
+This function:
+
+* Automatically grows the string as needed
+* Returns `capy::error::eof` when the connection closes
+* Returns the total bytes read in `n`
+
+== Error vs. Exception Patterns
+
+This example uses exceptions because:
+
+* Connection errors are fatal—we want to abort
+* The code is more linear without error checks
+
+Compare structured bindings:
+
+[source,cpp]
+----
+auto [ec] = co_await s.connect(ep);
+if (ec)
+{
+    std::cerr << "Connect failed: " << ec.message() << "\n";
+    co_return;
+}
+----
+
+With exceptions:
+
+[source,cpp]
+----
+(co_await s.connect(ep)).value();  // Throws on error
+----
+
+Both are valid. Use exceptions when errors are exceptional; use structured
+bindings when errors are expected (like EOF during reading).
+
+== Running the Client
+
+First, find an IP address for a website:
+
+[source,bash]
+----
+$ nslookup www.example.com
+...
+Address: 93.184.215.14
+----
+
+Then run the client:
+
+[source,bash]
+----
+$ ./http_client 93.184.215.14 80
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=UTF-8
+...
+<!doctype html>
+<html>
+...
+</html>
+----
+
+== Adding TLS Support
+
+To make HTTPS requests, wrap the socket in a `wolfssl_stream`:
+
+[source,cpp]
+----
+#include <boost/corosio/wolfssl_stream.hpp>
+
+capy::task<void> run_https_client(
+    corosio::io_context& ioc,
+    boost::urls::ipv4_address addr,
+    std::uint16_t port,
+    std::string_view hostname)
+{
+    corosio::tcp_socket s(ioc);
+    s.open();
+
+    (co_await s.connect(corosio::endpoint(addr, port))).value();
+
+    // Wrap in TLS
+    corosio::wolfssl_stream secure(s);
+    (co_await secure.handshake(corosio::wolfssl_stream::client)).value();
+
+    co_await do_request(secure, hostname);
+}
+----
+
+The `do_request` function works unchanged because both `socket` and
+`wolfssl_stream` inherit from `io_stream`.
+
+== Next Steps
+
+* xref:3c.dns-lookup.adoc[DNS Lookup] — Resolve hostnames to addresses
+* xref:../4.guide/4l.tls.adoc[TLS Guide] — WolfSSL integration details
+* xref:../4.guide/4g.composed-operations.adoc[Composed Operations] — How read/write work

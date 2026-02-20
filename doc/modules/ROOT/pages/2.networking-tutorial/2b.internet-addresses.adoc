@@ -1,0 +1,90 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Addressing Machines on the Internet
+
+Every packet traveling the internet carries two addresses: where it came from and where it is going. These addresses are not arbitrary labels. They have internal structure that routers use to make forwarding decisions, and understanding that structure explains why networks behave the way they do.
+
+== IPv4 Addresses
+
+An IPv4 address is a 32-bit number, written as four decimal values separated by dots. Each value represents one byte, so it ranges from 0 to 255:
+
+----
+192.168.1.42
+----
+
+That is the human-readable form. Under the hood it is just 32 bits: `11000000.10101000.00000001.00101010`. Four billion possible addresses sounds like a lot until you consider that every phone, laptop, thermostat, and security camera on the planet needs one. The world ran out of fresh IPv4 addresses years ago, and workarounds like network address translation (NAT) keep things functioning -- but the shortage is real.
+
+== Structure Inside the Address
+
+An IP address is not a flat identifier like a serial number. It is split into two parts: a *network* portion and a *host* portion. The network portion identifies which network the machine belongs to. The host portion identifies the specific machine within that network.
+
+Consider a company with the address range `10.4.0.0` through `10.4.255.255`. The first two bytes (`10.4`) identify the company's network. The last two bytes identify individual machines. A router does not need to know about every machine -- it only needs to know how to reach the `10.4` network, and then the local network handles the rest.
+
+This division is what makes routing scalable. The internet has billions of devices, but routers only need a few hundred thousand routing entries because they route to *networks*, not to individual machines.
+
+== Subnet Masks
+
+The *subnet mask* tells you where the network portion ends and the host portion begins. It is a 32-bit value where all the network bits are set to 1 and all the host bits are set to 0:
+
+----
+Address:     192.168.1.42
+Subnet mask: 255.255.255.0
+----
+
+In this example, the first 24 bits are the network (`192.168.1`) and the last 8 bits are the host (`42`). This is often written in shorthand as `192.168.1.42/24`, where `/24` means "the first 24 bits are the network."
+
+A `/16` mask (`255.255.0.0`) gives you a larger network with up to 65,534 usable host addresses. A `/28` mask (`255.255.255.240`) gives you a tiny network with just 14 usable hosts. Network administrators choose the mask based on how many machines they need to support.
+
+Subnet masks also let a single organization divide its address space into smaller pieces. A company allocated `172.20.0.0/16` might carve it into subnets: `172.20.1.0/24` for the engineering floor, `172.20.2.0/24` for the sales office, and so on. Each subnet functions as its own small network with its own router, reducing broadcast traffic and improving security.
+
+== Special Addresses
+
+Several address ranges have reserved meanings:
+
+`127.0.0.1` (loopback):: Traffic sent here never leaves the machine. It goes down through the protocol stack, turns around, and comes back up. This is how your program talks to a server running on the same computer. The entire `127.0.0.0/8` range is reserved for loopback, but `127.0.0.1` is the one you will see in practice.
+
+`0.0.0.0`:: When used as a source address, it means "this machine, but I don't know my address yet." When used to bind a socket, it means "listen on every available network interface."
+
+Private address ranges:: Three ranges are set aside for internal networks that do not route on the public internet:
+* `10.0.0.0/8` -- roughly 16 million addresses
+* `172.16.0.0/12` -- roughly 1 million addresses
+* `192.168.0.0/16` -- roughly 65,000 addresses
+
+If you have ever connected to a home Wi-Fi network and received an address like `192.168.0.105`, you were using a private address. Your router translates it to a public address using NAT before forwarding your traffic to the internet.
+
+Broadcast:: The address `255.255.255.255` sends a packet to every machine on the local network. Subnet-specific broadcasts exist too -- on the `192.168.1.0/24` network, the broadcast address is `192.168.1.255`.
+
+== IPv6
+
+IPv6 replaces the 32-bit address with a 128-bit one, written as eight groups of four hexadecimal digits separated by colons:
+
+----
+2001:0db8:85a3:0000:0000:8a2e:0370:7334
+----
+
+Leading zeros within a group can be dropped, and a single run of consecutive all-zero groups can be replaced with `::`:
+
+----
+2001:db8:85a3::8a2e:370:7334
+----
+
+128 bits gives roughly 3.4 x 10^38^ addresses -- enough to assign one to every atom on the surface of the earth and still have room left over. The exhaustion problem goes away entirely.
+
+The concepts carry over directly. IPv6 addresses still have network and host portions, determined by a prefix length (typically `/64` for a single subnet). Routers still forward based on the network prefix. Loopback is `::1`. The mechanics are the same; only the size changed.
+
+For the rest of this tutorial, examples use IPv4 notation for brevity. Everything discussed applies equally to IPv6 unless noted otherwise.
+
+== Why This Matters to You
+
+When your program connects to `192.168.1.42`, the operating system does not search the entire internet for that address. It examines the destination, compares it against the subnet masks of the local interfaces, and determines whether the target is on the local network or reachable through a gateway. That decision -- local or remote -- is the first routing choice, and it happens because addresses carry structural information.
+
+Understanding addresses also explains common errors. Connecting to `127.0.0.1` always reaches your own machine. Connecting to a `192.168.x` address from outside the local network fails because private addresses do not route publicly. Binding a server to `0.0.0.0` makes it reachable on all interfaces; binding to `127.0.0.1` restricts it to local connections only.
+
+The next section covers how you avoid typing IP addresses altogether, using the Domain Name System to turn human-readable names into the numbers that machines actually use.
