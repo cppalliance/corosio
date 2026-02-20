@@ -1,0 +1,304 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= I/O Context
+
+The `io_context` class is the heart of Corosio. It's an event loop that
+processes asynchronous I/O operations, manages timers, and coordinates
+coroutine execution.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/io_context.hpp>
+namespace corosio = boost::corosio;
+----
+
+== Overview
+
+Every Corosio program needs at least one `io_context`:
+
+[source,cpp]
+----
+corosio::io_context ioc;
+
+// ... create I/O objects and launch coroutines ...
+
+ioc.run();  // Process events until all work completes
+----
+
+The `io_context`:
+
+* Owns the platform-specific I/O backend (IOCP on Windows)
+* Maintains a queue of pending work items
+* Provides an executor for coroutine dispatch
+* Tracks outstanding work to know when to stop
+
+== Construction
+
+=== Default Construction
+
+[source,cpp]
+----
+corosio::io_context ioc;
+----
+
+Creates an `io_context` with a concurrency hint equal to
+`std::thread::hardware_concurrency()`. If more than one thread is available,
+thread-safe synchronization is enabled.
+
+=== With Concurrency Hint
+
+[source,cpp]
+----
+corosio::io_context ioc(1);  // Single-threaded, no synchronization
+corosio::io_context ioc(4);  // Up to 4 threads, thread-safe
+----
+
+The concurrency hint affects:
+
+* Internal synchronization strategy
+* IOCP thread pool size on Windows
+
+Use `1` for single-threaded programs to avoid synchronization overhead.
+
+== Running the Event Loop
+
+=== run()
+
+Processes all pending work until stopped:
+
+[source,cpp]
+----
+std::size_t n = ioc.run();
+std::cout << "Processed " << n << " handlers\n";
+----
+
+This function:
+
+* Blocks until all work completes or `stop()` is called
+* Returns the number of handlers executed
+* Automatically stops when no outstanding work remains
+
+=== run_one()
+
+Processes at most one work item:
+
+[source,cpp]
+----
+std::size_t n = ioc.run_one();  // Returns 0 or 1
+----
+
+Useful for manual event loop control or interleaving with other work.
+
+=== run_for() / run_until()
+
+Process work for a limited time:
+
+[source,cpp]
+----
+using namespace std::chrono_literals;
+
+auto n = ioc.run_for(100ms);   // Run for 100 milliseconds
+auto m = ioc.run_until(deadline);  // Run until time point
+----
+
+These return the number of handlers executed within the time limit.
+
+=== poll() / poll_one()
+
+Process ready work without blocking:
+
+[source,cpp]
+----
+std::size_t n = ioc.poll();      // All ready handlers
+std::size_t m = ioc.poll_one();  // At most one ready handler
+----
+
+These never block waiting for I/O. Useful for games or GUI applications
+that need to pump events between frames.
+
+== Stopping and Restarting
+
+=== stop()
+
+Signal the event loop to stop:
+
+[source,cpp]
+----
+ioc.stop();
+----
+
+This causes `run()` to return as soon as possible. Pending work remains
+queued but won't be processed.
+
+=== stopped()
+
+Check if the context has been stopped:
+
+[source,cpp]
+----
+if (ioc.stopped())
+    std::cout << "Event loop stopped\n";
+----
+
+=== restart()
+
+Reset the stopped state:
+
+[source,cpp]
+----
+ioc.stop();
+// ... do something ...
+ioc.restart();
+ioc.run();  // Can run again
+----
+
+You must call `restart()` before calling `run()` again after it returns.
+
+== The Executor
+
+The `io_context::executor_type` provides the interface for dispatching work:
+
+[source,cpp]
+----
+auto ex = ioc.get_executor();
+
+// Launch a coroutine
+capy::run_async(ex)(my_coroutine());
+
+// Access the context
+corosio::io_context& ctx = ex.context();
+
+// Check if running inside the event loop
+if (ex.running_in_this_thread())
+    std::cout << "Inside run()\n";
+----
+
+=== Executor Operations
+
+[source,cpp]
+----
+auto ex = ioc.get_executor();
+
+// Dispatch: symmetric transfer if inside run(), otherwise post
+ex(handle);
+
+// Post: always queue for later execution
+ex.post(handle);
+
+// Defer: same as post (conveys continuation intent)
+ex.defer(handle);
+----
+
+The dispatch operation `ex(handle)` enables symmetric transfer when already
+running inside `run()`. This is how child coroutines resume parents
+efficiently.
+
+=== Work Tracking
+
+[source,cpp]
+----
+ex.on_work_started();   // Increment work count
+ex.on_work_finished();  // Decrement work count
+----
+
+The event loop runs while the work count is non-zero. I/O objects and
+coroutines track work automatically.
+
+== Typical Usage Pattern
+
+[source,cpp]
+----
+int main()
+{
+    corosio::io_context ioc;
+
+    // Create I/O objects
+    corosio::tcp_socket sock(ioc);
+    corosio::timer timer(ioc);
+
+    // Launch initial coroutine
+    capy::run_async(ioc.get_executor())(main_coroutine(sock, timer));
+
+    // Run until all work completes
+    ioc.run();
+}
+----
+
+== Thread Safety
+
+The `io_context` can be used from multiple threads when constructed with
+a concurrency hint greater than 1:
+
+[source,cpp]
+----
+corosio::io_context ioc(4);
+
+std::vector<std::thread> threads;
+for (int i = 0; i < 4; ++i)
+    threads.emplace_back([&ioc] { ioc.run(); });
+
+for (auto& t : threads)
+    t.join();
+----
+
+Multiple threads can call `run()` concurrently. The `io_context` distributes
+work across threads.
+
+WARNING: Individual I/O objects (sockets, timers) are not thread-safe.
+Don't access the same socket from multiple threads without synchronization.
+
+== Inheritance from execution_context
+
+`io_context` inherits from `capy::execution_context`, providing service
+management:
+
+[source,cpp]
+----
+// Create or get a service
+my_service& svc = ioc.use_service<my_service>();
+
+// Check if service exists
+if (ioc.has_service<my_service>())
+    // ...
+----
+
+Services are destroyed when the `io_context` is destroyed.
+
+== Platform Details
+
+=== Windows (IOCP)
+
+On Windows, the `io_context` uses I/O Completion Ports:
+
+* Scalable to thousands of concurrent connections
+* Efficient thread pool utilization
+* Native async I/O with zero-copy potential
+
+=== Linux (io_uring) — Planned
+
+Future Linux support will use io_uring for:
+
+* Kernel-level async I/O
+* Reduced system calls
+* Support for more operation types
+
+=== macOS (kqueue) — Planned
+
+Future macOS support will use kqueue for:
+
+* Efficient event notification
+* File descriptor monitoring
+
+== Next Steps
+
+* xref:4d.sockets.adoc[Sockets] — I/O with TCP sockets
+* xref:4e.tcp-acceptor.adoc[Acceptors] — Accept incoming connections
+* xref:4h.timers.adoc[Timers] — Async delays and timeouts

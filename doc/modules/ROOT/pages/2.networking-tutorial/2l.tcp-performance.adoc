@@ -1,0 +1,88 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Making TCP Fast
+
+TCP was designed when networks ran at kilobits per second and the entire internet fit on a single backbone. The core protocol -- sequence numbers, acknowledgments, sliding windows -- scales remarkably well, but some of its original parameters do not. A 16-bit window field caps the amount of data in flight at 65,535 bytes. Sequence numbers wrap around on fast links. RTT measurements lose precision when segments fly faster than the clock ticks.
+
+Over the decades, a set of extensions has been added to TCP to remove these bottlenecks. They are negotiated during the handshake and are transparent to your application code, but understanding them tells you where TCP performance comes from and where the limits still lie.
+
+== Path MTU Discovery
+
+As described in the IP section, packets that exceed a link's MTU get fragmented. Fragmentation is bad for TCP: if any fragment is lost, the entire segment must be retransmitted. It also adds reassembly overhead on the receiver.
+
+Path MTU discovery lets TCP find the largest segment it can send without triggering fragmentation anywhere along the path. The mechanism works like this:
+
+. The sender sets the "Don't Fragment" (DF) flag on every IP packet.
+. If a router along the path cannot forward the packet because it exceeds the link's MTU, the router drops the packet and sends back an ICMP error message: "Fragmentation needed, but DF is set." The message includes the MTU of the link that rejected the packet.
+. The sender reduces its segment size to fit the reported MTU and retransmits.
+
+Over the first few segments, the sender discovers the path MTU and adjusts accordingly. From that point on, segments are sized to avoid fragmentation entirely. Most modern operating systems perform path MTU discovery by default.
+
+The result is measurable: segments are as large as the path allows, maximizing the ratio of payload to headers, and fragmentation-related losses disappear.
+
+== The Bandwidth-Delay Product
+
+The maximum throughput of a TCP connection is limited by how much data can be in flight at any given time. That amount is determined by the *bandwidth-delay product* (BDP): the link's bandwidth multiplied by the round-trip time.
+
+Consider a 100 Mbps link with a 50-millisecond RTT. The bandwidth-delay product is:
+
+----
+100,000,000 bits/sec × 0.050 sec = 5,000,000 bits = 625,000 bytes
+----
+
+To fully utilize this link, the sender must have 625,000 bytes of data in flight simultaneously. If the TCP window is smaller than the BDP, the sender will finish transmitting its window and then sit idle waiting for ACKs, leaving bandwidth unused.
+
+Networks with high bandwidth and high latency -- satellite links, transcontinental fiber, data center interconnects -- have large BDPs. These are sometimes called *long fat networks*, and they expose the original TCP window's 65,535-byte limit as a severe bottleneck.
+
+On a transoceanic link at 10 Gbps with a 100-millisecond RTT, the BDP is 125 megabytes. A 64 KB window would utilize less than 0.05% of the available bandwidth. Without the window scale extension, such a link would be essentially unusable for a single TCP connection.
+
+== Window Scaling
+
+The original TCP header allocates 16 bits for the window size, giving a maximum of 65,535 bytes. This was generous in 1981. It is completely inadequate for modern networks.
+
+The *window scale* option, negotiated during the three-way handshake, multiplies the window field by a power of two. Each side includes a window scale option in its SYN segment, specifying a shift count from 0 to 14. A shift count of 7 means the window field is multiplied by 128; a value of 4,096 in the header represents an actual window of 524,288 bytes.
+
+The maximum shift count of 14 allows a window of up to 1,073,725,440 bytes -- over one gigabyte. This is sufficient to fill even the fastest networks with the highest latencies.
+
+Window scaling is negotiated once during the handshake and applies for the lifetime of the connection. Both sides must support it; if either side's SYN does not include the option, window scaling is not used. In practice, every modern operating system enables it by default.
+
+== Timestamps
+
+TCP segments can carry a *timestamp option*: the sender includes its current clock value, and the receiver echoes it back in the ACK. This serves two purposes:
+
+Improved RTT measurement:: In the original protocol, TCP could only measure the RTT of one segment per window. With timestamps, every ACK carries an echo of the original send time, giving TCP a precise RTT sample for every segment. More samples mean a more accurate smoothed RTT and a tighter retransmission timeout.
+
+Protection against wrapped sequence numbers:: On fast links, the 32-bit sequence number space can wrap around quickly. A 10 Gbps link exhausts all four billion sequence numbers in about 3.4 seconds. If a delayed segment from a previous wrap-around arrives, its sequence number might match a valid position in the current stream. The timestamp detects this: the delayed segment carries an old timestamp, and TCP rejects it.
+
+This second use is called *PAWS* (Protection Against Wrapped Sequence Numbers). Without it, high-speed connections would be vulnerable to data corruption from stale segments. With it, the timestamp acts as an additional dimension of validation beyond the sequence number.
+
+Like window scaling, timestamps are negotiated during the handshake. Both sides must agree to use them. The overhead is 12 bytes per segment (10 bytes for the option plus 2 bytes of padding), which is negligible on modern networks.
+
+== Practical Performance Considerations
+
+The extensions described above operate transparently inside the kernel. Your application does not set window scale factors or insert timestamps. But there are application-level decisions that affect TCP performance significantly:
+
+Buffer sizing:: The operating system maintains send and receive buffers for each socket. If the receive buffer is too small, the receiver cannot advertise a large enough window to fill the pipe. If the send buffer is too small, the application may block on write calls before TCP has finished transmitting the previous batch. Most operating systems auto-tune these buffers, but high-throughput applications sometimes benefit from explicitly setting `SO_SNDBUF` and `SO_RCVBUF` to match the BDP.
+
+Avoiding small writes:: As discussed in the data flow section, many small write calls interact poorly with the Nagle algorithm and produce unnecessary overhead. Buffering application data and writing it in larger chunks -- or setting `TCP_NODELAY` -- avoids this.
+
+Connection reuse:: Slow start means a new TCP connection takes several round trips to ramp up to full throughput. For protocols like HTTP, reusing connections across multiple requests amortizes the slow start cost. HTTP/2 goes further by multiplexing many requests over a single connection.
+
+TLS overhead:: When TCP carries encrypted traffic (TLS), the handshake adds additional round trips before application data flows. TLS 1.3 reduces this to one round trip (or zero for resumed sessions), but the cost still matters for short-lived connections.
+
+Kernel tuning:: For specialized workloads -- high-frequency trading, large-scale file transfer, or high-connection-count servers -- kernel parameters like the maximum receive window, congestion control algorithm, and SYN backlog size can be tuned for better performance. These are operating-system-specific and should be adjusted based on measurement, not guesswork.
+
+== The Achievement
+
+TCP was designed for a network that measured bandwidth in kilobits and latency in single-digit milliseconds. The same protocol now saturates 100-gigabit links across continents, handles billions of concurrent connections, and underpins virtually every application on the internet.
+
+That longevity comes from two design choices: keeping the core protocol minimal and making it extensible. The original TCP header has room for options. The options mechanism enabled window scaling, timestamps, selective acknowledgments, and dozens of other enhancements -- all negotiated at connection time, all backward-compatible with implementations that do not support them.
+
+Your application benefits from all of this without doing anything special. You open a socket, write data, read data, and close the socket. The operating system handles the rest. But when performance matters -- when you are diagnosing a slow transfer, tuning a high-throughput server, or choosing between TCP and UDP -- understanding the machinery behind the socket is what lets you make informed decisions instead of guessing.

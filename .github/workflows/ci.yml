@@ -1,0 +1,971 @@
+#
+# Copyright (c) 2026 Steve Gerbino
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio/
+#
+
+name: CI
+
+on:
+  pull_request:
+    branches: [ master, develop ]
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - develop
+      - bugfix/**
+      - feature/**
+      - fix/**
+      - pr/**
+      - ci-fixes
+
+
+concurrency:
+  group: ${{format('{0}:{1}', github.repository, github.ref)}}
+  cancel-in-progress: true
+
+env:
+  GIT_FETCH_JOBS: 8
+  NET_RETRY_COUNT: 5
+  DEFAULT_BUILD_VARIANT: debug,release
+  UBSAN_OPTIONS: "print_stacktrace=1"
+  DEBIAN_FRONTEND: "noninteractive"
+  TZ: "Europe/London"
+
+jobs:
+  # Self-hosted runner selection is disabled to allow re-running individual
+  # failed jobs from the GitHub Actions UI. When using dynamic runner selection,
+  # the runs-on value depends on this job's output, which isn't available when
+  # re-running a subset of jobs.
+  #
+  # runner-selection:
+  #   name: Runner Selection
+  #   runs-on: ${{ github.repository_owner == 'boostorg' && fromJSON('[ "self-hosted", "linux", "x64", "ubuntu-latest-aws" ]') || 'ubuntu-latest' }}
+  #   outputs:
+  #     labelmatrix: ${{ steps.aws_hosted_runners.outputs.labelmatrix }}
+  #   steps:
+  #     - name: AWS Hosted Runners
+  #       id: aws_hosted_runners
+  #       uses: cppalliance/aws-hosted-runners@v1.0.0
+
+  build:
+    # needs: [ runner-selection ]
+    defaults:
+      run:
+        shell: bash
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows (3 configurations)
+
+          - compiler: "msvc"
+            version: "14.42"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            runs-on: "windows-2022"
+            b2-toolset: "msvc-14.4"
+            generator: "Visual Studio 17 2022"
+            is-latest: true
+            name: "MSVC 14.42: C++20"
+            windows: true
+            shared: false
+            build-type: "Release"
+            build-cmake: true
+
+          - compiler: "msvc"
+            version: "14.34"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            runs-on: "windows-2022"
+            b2-toolset: "msvc-14.3"
+            generator: "Visual Studio 17 2022"
+            name: "MSVC 14.34: C++20 (shared)"
+            windows: true
+            shared: true
+            build-type: "Release"
+
+          - compiler: "mingw"
+            version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++"
+            cc: "gcc"
+            runs-on: "windows-2022"
+            b2-toolset: "gcc"
+            generator: "MinGW Makefiles"
+            is-latest: true
+            is-earliest: true
+            name: "MinGW: C++20"
+            windows: true
+            shared: false
+            build-type: "Release"
+            build-cmake: true
+            vcpkg-triplet: "x64-mingw-static"
+
+          # macOS (3 configurations)
+          # Uses select backend (kqueue support planned for future)
+          # Requires -fexperimental-library for std::stop_token support in libc++
+
+          - compiler: "apple-clang"
+            version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++"
+            cc: "clang"
+            runs-on: "macos-26"
+            b2-toolset: "clang"
+            is-latest: true
+            name: "Apple-Clang (macOS 26, asan+ubsan): C++20"
+            macos: true
+            shared: true
+            build-type: "RelWithDebInfo"
+            asan: true
+            ubsan: true
+            cxxflags: "-fexperimental-library"
+
+          - compiler: "apple-clang"
+            version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++"
+            cc: "clang"
+            runs-on: "macos-15"
+            b2-toolset: "clang"
+            name: "Apple-Clang (macOS 15): C++20"
+            macos: true
+            shared: true
+            build-type: "Release"
+            build-cmake: true
+            cxxflags: "-fexperimental-library"
+
+          - compiler: "apple-clang"
+            version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++"
+            cc: "clang"
+            runs-on: "macos-14"
+            b2-toolset: "clang"
+            name: "Apple-Clang (macOS 14): C++20"
+            macos: true
+            shared: true
+            build-type: "Release"
+            cxxflags: "-fexperimental-library"
+
+          # Linux GCC (4 configurations)
+
+          - compiler: "gcc"
+            version: "15"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++-15"
+            cc: "gcc-15"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:25.04"
+            b2-toolset: "gcc"
+            is-latest: true
+            name: "GCC 15: C++20"
+            linux: true
+            shared: true
+            build-type: "Release"
+            build-cmake: true
+
+          - compiler: "gcc"
+            version: "15"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++-15"
+            cc: "gcc-15"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:25.04"
+            b2-toolset: "gcc"
+            is-latest: true
+            name: "GCC 15: C++20 (asan+ubsan)"
+            linux: true
+            shared: true
+            asan: true
+            ubsan: true
+            build-type: "RelWithDebInfo"
+
+          - compiler: "gcc"
+            version: "12"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++-12"
+            cc: "gcc-12"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:22.04"
+            b2-toolset: "gcc"
+            name: "GCC 12: C++20"
+            linux: true
+            shared: true
+            build-type: "Release"
+
+          - compiler: "gcc"
+            version: "13"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++-13"
+            cc: "gcc-13"
+            runs-on: "ubuntu-24.04"
+            b2-toolset: "gcc"
+            name: "GCC 13: C++20 (coverage)"
+            linux: true
+            shared: false
+            coverage: true
+            build-type: "Debug"
+            cxxflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
+            ccflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
+            install: "lcov wget unzip"
+
+          # Linux Clang (5 configurations)
+
+          - compiler: "clang"
+            version: "20"
+            cxxstd: "20,23"
+            latest-cxxstd: "23"
+            cxx: "clang++-20"
+            cc: "clang-20"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:24.04"
+            b2-toolset: "clang"
+            is-latest: true
+            name: "Clang 20: C++20-23 (clang-tidy)"
+            linux: true
+            shared: true
+            build-type: "Release"
+            build-cmake: true
+            install: "clang-tidy-20"
+            clang-tidy: true
+
+          - compiler: "clang"
+            version: "20"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++-20"
+            cc: "clang-20"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:24.04"
+            b2-toolset: "clang"
+            is-latest: true
+            name: "Clang 20: C++20 (asan+ubsan)"
+            linux: true
+            shared: false
+            asan: true
+            ubsan: true
+            build-type: "RelWithDebInfo"
+
+          - compiler: "clang"
+            version: "17"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++-17"
+            cc: "clang-17"
+            runs-on: "ubuntu-24.04"
+            b2-toolset: "clang"
+            name: "Clang 17: C++20"
+            linux: true
+            shared: false
+            build-type: "Release"
+
+          - compiler: "clang"
+            version: "20"
+            cxxstd: "20,23"
+            latest-cxxstd: "23"
+            cxx: "clang++-20"
+            cc: "clang-20"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:24.04"
+            b2-toolset: "clang"
+            is-latest: true
+            name: "Clang 20: C++20-23 (x86)"
+            linux: true
+            shared: false
+            x86: true
+            build-type: "Release"
+            install: "gcc-multilib g++-multilib"
+
+          # FreeBSD (2 configurations)
+          # Uses kqueue backend, system Clang (LLVM 19), built via b2 in a VM
+          # Requires -fexperimental-library for std::stop_token support in libc++ 19
+
+          - freebsd: "14.3"
+            runs-on: "ubuntu-latest"
+            name: "FreeBSD 14.3: System Clang, C++20"
+
+          - freebsd: "15.0"
+            runs-on: "ubuntu-latest"
+            name: "FreeBSD 15.0: System Clang, C++20"
+            build-cmake: true
+
+    name: ${{ matrix.name }}
+    # Skip self-hosted runner selection for now
+    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)[matrix.runs-on] }}
+    runs-on: ${{ matrix.runs-on }}
+    container:
+      image: ${{ matrix.container }}
+      options: --privileged
+
+    timeout-minutes: 120
+
+    steps:
+      - name: Clone Boost.Corosio
+        uses: actions/checkout@v4
+        with:
+          path: corosio-root
+
+      - name: Setup C++
+        if: ${{ !matrix.freebsd }}
+        uses: alandefreitas/cpp-actions/setup-cpp@v1.9.0
+        id: setup-cpp
+        with:
+          compiler: ${{ matrix.compiler }}
+          version: ${{ matrix.version }}
+          check-latest: true
+          trace-commands: true
+
+      - name: Install packages
+        if: ${{ !matrix.freebsd }}
+        uses: alandefreitas/cpp-actions/package-install@v1.9.0
+        id: package-install
+        with:
+          apt-get-add-architecture: ${{ matrix.x86 && 'i386' || '' }}
+          apt-get: >-
+            ${{ matrix.install }}
+            build-essential
+            libssl-dev
+            curl zip unzip tar pkg-config
+
+      - name: Clone Capy
+        uses: actions/checkout@v4
+        with:
+          repository: cppalliance/capy
+          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          path: capy-root
+
+      # Test dependency of corosio
+      - name: Clone Asio
+        uses: actions/checkout@v4
+        with:
+          repository: boostorg/asio
+          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          path: asio-root
+
+      - name: Clone Boost
+        uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
+        id: boost-clone
+        with:
+          branch: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          boost-dir: boost-source
+          modules-exclude-paths: ''
+          scan-modules-dir: corosio-root
+          scan-modules-ignore: corosio,capy
+
+      - name: ASLR Fix
+        if: ${{ matrix.linux }}
+        run: |
+          sysctl vm.mmap_rnd_bits=28
+
+      - name: Patch Boost
+        id: patch
+        shell: bash
+        run: |
+          set -xe
+
+          # Identify boost module being tested
+          module=${GITHUB_REPOSITORY#*/}
+          echo "module=$module" >> $GITHUB_OUTPUT
+
+          # Identify GitHub workspace root
+          workspace_root=$(echo "$GITHUB_WORKSPACE" | sed 's/\\/\//g')
+          echo -E "workspace_root=$workspace_root" >> $GITHUB_OUTPUT
+
+          # Remove module from boost-source
+          rm -r "boost-source/libs/$module" || true
+          rm -r "boost-source/libs/capy" || true
+
+          # boost-clone uses sparse checkout which excludes CMakeLists.txt files
+          # Disable sparse checkout to get full source trees for add_subdirectory in cmake_test
+          cd boost-source
+          if git sparse-checkout list > /dev/null 2>&1; then
+            echo "Disabling sparse checkout..."
+            git sparse-checkout disable
+            echo "Fetching any missing objects..."
+            git fetch origin --no-tags
+            git checkout
+          fi
+          cd ..
+
+          # Copy cached boost-source to an isolated boost-root
+          cp -rL boost-source boost-root
+
+          # Set boost-root output
+          cd boost-root
+          boost_root="$(pwd)"
+          boost_root=$(echo "$boost_root" | sed 's/\\/\//g')
+          echo -E "boost_root=$boost_root" >> $GITHUB_OUTPUT
+
+          # Patch boost-root with workspace module
+          cp -r "$workspace_root"/corosio-root "libs/$module"
+
+          # Patch boost-root with capy dependency
+          cp -r "$workspace_root"/capy-root "libs/capy"
+
+      # Use vcpkg for WolfSSL only (system wolfssl package lacks -fPIC on Linux).
+      # OpenSSL: system-installed on all platforms
+      #   - Windows MSVC: C:\Program Files\OpenSSL (pre-installed on runner)
+      #   - Windows MinGW: C:\msys64\mingw64 (installed via pacman)
+      #   - Linux: system libssl-dev
+      - name: Create vcpkg.json
+        if: ${{ !matrix.freebsd }}
+        shell: bash
+        run: |
+          cat > corosio-root/vcpkg.json << 'EOF'
+          {
+            "name": "boost-corosio-deps",
+            "version": "1.0.0",
+            "dependencies": [
+              { "name": "wolfssl", "default-features": false }
+            ]
+          }
+          EOF
+
+      # macOS: OpenSSL from Homebrew (pre-installed), WolfSSL from vcpkg
+      - name: Create vcpkg.json (macOS)
+        if: ${{ matrix.macos }}
+        shell: bash
+        run: |
+          cat > corosio-root/vcpkg.json << 'EOF'
+          {
+            "name": "boost-corosio-deps",
+            "version": "1.0.0",
+            "dependencies": ["wolfssl"]
+          }
+          EOF
+
+      - name: Set vcpkg triplet
+        if: matrix.vcpkg-triplet
+        shell: bash
+        run: |
+          echo "VCPKG_DEFAULT_TRIPLET=${{ matrix.vcpkg-triplet }}" >> $GITHUB_ENV
+
+      # Install OpenSSL for MinGW via MSYS2 (pre-built, fast)
+      # MSVC uses the pre-installed OpenSSL at C:\Program Files\OpenSSL
+      - name: Install OpenSSL (MinGW)
+        if: matrix.compiler == 'mingw'
+        shell: bash
+        run: |
+          C:/msys64/usr/bin/pacman.exe -S --noconfirm mingw-w64-x86_64-openssl
+          # Add MSYS2 bin to PATH so OpenSSL DLLs can be found
+          echo "C:/msys64/mingw64/bin" >> $GITHUB_PATH
+
+      - name: Setup vcpkg
+        if: ${{ !matrix.freebsd }}
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: ${{ github.workspace }}/vcpkg
+          vcpkgGitCommitId: bd52fac7114fdaa2208de8dd1227212a6683e562
+          vcpkgJsonGlob: '**/corosio-root/vcpkg.json'
+          runVcpkgInstall: true
+
+      - name: Set vcpkg paths (Windows)
+        if: ${{ matrix.windows }}
+        id: vcpkg-paths-windows
+        shell: bash
+        run: |
+          triplet="${{ matrix.vcpkg-triplet || 'x64-windows' }}"
+
+          if [ -n "${VCPKG_INSTALLED_DIR}" ] && [ -d "${VCPKG_INSTALLED_DIR}/${triplet}" ]; then
+            vcpkg_installed="${VCPKG_INSTALLED_DIR}/${triplet}"
+          else
+            vcpkg_installed="${{ github.workspace }}/corosio-root/vcpkg_installed/${triplet}"
+            if [ ! -d "${vcpkg_installed}" ]; then
+              vcpkg_installed=$(find "${{ github.workspace }}" -type d -path "*/vcpkg_installed/${triplet}" 2>/dev/null | head -1)
+            fi
+          fi
+
+          if [ -z "${vcpkg_installed}" ] || [ ! -d "${vcpkg_installed}" ]; then
+            echo "ERROR: Could not find vcpkg installed directory for triplet ${triplet}"
+            exit 1
+          fi
+
+          vcpkg_installed=$(echo "${vcpkg_installed}" | sed 's|\\|/|g')
+          echo "${vcpkg_installed}/bin" >> $GITHUB_PATH
+
+          # CMake toolchain for WolfSSL
+          echo "CMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $GITHUB_ENV
+          echo "VCPKG_INSTALLED_DIR=$(dirname "${vcpkg_installed}")" >> $GITHUB_ENV
+
+          # WolfSSL from vcpkg
+          echo "WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
+          echo "WOLFSSL_LIBRARY_PATH=${vcpkg_installed}/lib" >> $GITHUB_ENV
+
+          # OpenSSL from system (different paths for MSVC vs MinGW)
+          if [[ "${triplet}" == *"mingw"* ]]; then
+            openssl_root="C:/msys64/mingw64"
+            openssl_libpath="${openssl_root}/lib"
+          else
+            # MSVC: Probe known OpenSSL installation paths
+            openssl_root=""
+            for candidate in "C:/Program Files/OpenSSL-Win64" "C:/Program Files/OpenSSL"; do
+              if [ -d "${candidate}" ]; then
+                openssl_root="${candidate}"
+                break
+              fi
+            done
+
+            if [ -z "${openssl_root}" ]; then
+              echo "ERROR: OpenSSL not found. Checked:"
+              echo "  - C:/Program Files/OpenSSL-Win64"
+              echo "  - C:/Program Files/OpenSSL"
+              exit 1
+            fi
+
+            echo "Found OpenSSL at: ${openssl_root}"
+
+            # Win64 OpenSSL installer puts libs in lib/VC/x64/MD/
+            if [ -d "${openssl_root}/lib/VC/x64/MD" ]; then
+              openssl_libpath="${openssl_root}/lib/VC/x64/MD"
+            elif [ -d "${openssl_root}/lib" ]; then
+              openssl_libpath="${openssl_root}/lib"
+            else
+              echo "ERROR: OpenSSL lib directory not found in ${openssl_root}"
+              exit 1
+            fi
+          fi
+
+          # Outputs for B2
+          echo "openssl_root=${openssl_root}" >> $GITHUB_OUTPUT
+          echo "openssl_libpath=${openssl_libpath}" >> $GITHUB_OUTPUT
+
+          # CMake TLS configuration (used by all cmake-workflow steps)
+          echo "CMAKE_WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
+          if [[ "${triplet}" == *"mingw"* ]]; then
+            echo "CMAKE_WOLFSSL_LIBRARY=${vcpkg_installed}/lib/libwolfssl.a" >> $GITHUB_ENV
+          else
+            echo "CMAKE_WOLFSSL_LIBRARY=${vcpkg_installed}/lib/wolfssl.lib" >> $GITHUB_ENV
+          fi
+          echo "CMAKE_OPENSSL_ROOT=${openssl_root}" >> $GITHUB_ENV
+
+      - name: Set vcpkg paths (Linux)
+        if: ${{ matrix.linux }}
+        id: vcpkg-paths-linux
+        shell: bash
+        run: |
+          if [ -n "${VCPKG_INSTALLED_DIR}" ] && [ -d "${VCPKG_INSTALLED_DIR}/x64-linux" ]; then
+            vcpkg_installed="${VCPKG_INSTALLED_DIR}/x64-linux"
+          else
+            vcpkg_installed=$(find "${GITHUB_WORKSPACE}" -type d -path "*/vcpkg_installed/x64-linux" 2>/dev/null | head -1)
+            if [ -z "${vcpkg_installed}" ]; then
+              vcpkg_installed=$(find "/__w" -type d -path "*/vcpkg_installed/x64-linux" 2>/dev/null | head -1)
+            fi
+          fi
+
+          if [ -z "${vcpkg_installed}" ] || [ ! -d "${vcpkg_installed}" ]; then
+            echo "ERROR: Could not find vcpkg installed directory for x64-linux"
+            exit 1
+          fi
+
+          # For B2 - WolfSSL from vcpkg, OpenSSL from system libssl-dev
+          echo "WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
+          echo "WOLFSSL_LIBRARY_PATH=${vcpkg_installed}/lib" >> $GITHUB_ENV
+
+          # CMake TLS configuration (used by all cmake-workflow steps)
+          echo "CMAKE_WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
+          echo "CMAKE_WOLFSSL_LIBRARY=${vcpkg_installed}/lib/libwolfssl.a" >> $GITHUB_ENV
+          # Linux uses system OpenSSL via libssl-dev, no explicit path needed
+          echo "CMAKE_OPENSSL_ROOT=" >> $GITHUB_ENV
+
+      - name: Set vcpkg paths (macOS)
+        if: ${{ matrix.macos }}
+        id: vcpkg-paths-macos
+        shell: bash
+        run: |
+          # Determine triplet based on architecture
+          if [[ "$(uname -m)" == "arm64" ]]; then
+            triplet="arm64-osx"
+          else
+            triplet="x64-osx"
+          fi
+          echo "Using triplet: ${triplet}"
+
+          if [ -n "${VCPKG_INSTALLED_DIR}" ] && [ -d "${VCPKG_INSTALLED_DIR}/${triplet}" ]; then
+            vcpkg_installed="${VCPKG_INSTALLED_DIR}/${triplet}"
+          else
+            vcpkg_installed=$(find "${GITHUB_WORKSPACE}" -type d -path "*/vcpkg_installed/${triplet}" 2>/dev/null | head -1)
+          fi
+
+          if [ -z "${vcpkg_installed}" ] || [ ! -d "${vcpkg_installed}" ]; then
+            echo "ERROR: Could not find vcpkg installed directory for ${triplet}"
+            exit 1
+          fi
+
+          echo "Using vcpkg_installed: ${vcpkg_installed}"
+
+          # For B2 - WolfSSL from vcpkg, OpenSSL from Homebrew
+          echo "WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
+          echo "WOLFSSL_LIBRARY_PATH=${vcpkg_installed}/lib" >> $GITHUB_ENV
+
+          # CMake TLS configuration (used by all cmake-workflow steps)
+          echo "CMAKE_WOLFSSL_INCLUDE=${vcpkg_installed}/include" >> $GITHUB_ENV
+          echo "CMAKE_WOLFSSL_LIBRARY=${vcpkg_installed}/lib/libwolfssl.a" >> $GITHUB_ENV
+          # macOS uses Homebrew OpenSSL, CMake finds it automatically
+          echo "CMAKE_OPENSSL_ROOT=" >> $GITHUB_ENV
+
+      # OpenSSL user-config needed for Windows (system install) and macOS (Homebrew)
+      # WolfSSL reads WOLFSSL_INCLUDE and WOLFSSL_LIBRARY_PATH env vars automatically
+      # Linux uses system OpenSSL which B2 finds automatically
+      - name: Create B2 user-config for OpenSSL (Windows)
+        if: ${{ matrix.windows }}
+        shell: bash
+        run: |
+          openssl_root="${{ steps.vcpkg-paths-windows.outputs.openssl_root }}"
+          openssl_libpath="${{ steps.vcpkg-paths-windows.outputs.openssl_libpath }}"
+          triplet="${{ matrix.vcpkg-triplet }}"
+
+          echo "OpenSSL root: ${openssl_root}"
+          echo "OpenSSL lib path: ${openssl_libpath}"
+          echo "WolfSSL include (env): ${WOLFSSL_INCLUDE}"
+          echo "WolfSSL lib path (env): ${WOLFSSL_LIBRARY_PATH}"
+
+          {
+            echo "# OpenSSL configuration for B2 (system-installed)"
+            echo "# WolfSSL uses WOLFSSL_INCLUDE and WOLFSSL_LIBRARY_PATH env vars"
+            if [[ "${triplet}" == *"mingw"* ]]; then
+              # MinGW: OpenSSL from MSYS2, default lib names work
+              echo "using openssl : : <include>\"${openssl_root}/include\" <search>\"${openssl_libpath}\" ;"
+            else
+              # MSVC: OpenSSL from Win64 installer
+              echo "using openssl : : <include>\"${openssl_root}/include\" <search>\"${openssl_libpath}\" <ssl-name>libssl <crypto-name>libcrypto ;"
+            fi
+          } > boost-root/user-config.jam
+          echo "Created user-config.jam:"
+          cat boost-root/user-config.jam
+
+      - name: Create B2 user-config for OpenSSL (macOS)
+        if: ${{ matrix.macos }}
+        shell: bash
+        run: |
+          # Homebrew OpenSSL location depends on architecture
+          # Check openssl@3 paths first (explicit), then generic openssl symlink
+          if [[ "$(uname -m)" == "arm64" ]]; then
+            candidates=(
+              "/opt/homebrew/opt/openssl@3"
+              "/opt/homebrew/opt/openssl"
+            )
+          else
+            candidates=(
+              "/usr/local/opt/openssl@3"
+              "/usr/local/opt/openssl"
+            )
+          fi
+
+          openssl_root=""
+          for candidate in "${candidates[@]}"; do
+            if [ -d "${candidate}" ]; then
+              openssl_root="${candidate}"
+              break
+            fi
+          done
+
+          # Fallback: use brew --prefix if available
+          if [ -z "${openssl_root}" ] && command -v brew &> /dev/null; then
+            openssl_root=$(brew --prefix openssl 2>/dev/null || true)
+            if [ -n "${openssl_root}" ] && [ ! -d "${openssl_root}" ]; then
+              openssl_root=""
+            fi
+          fi
+
+          if [ -z "${openssl_root}" ]; then
+            echo "ERROR: OpenSSL not found. Checked:"
+            for candidate in "${candidates[@]}"; do
+              echo "  - ${candidate}"
+            done
+            echo "Also tried: brew --prefix openssl"
+            exit 1
+          fi
+
+          echo "Found OpenSSL at: ${openssl_root}"
+          echo "WolfSSL include (env): ${WOLFSSL_INCLUDE}"
+          echo "WolfSSL lib path (env): ${WOLFSSL_LIBRARY_PATH}"
+
+          {
+            echo "# OpenSSL configuration for B2 (Homebrew)"
+            echo "# WolfSSL uses WOLFSSL_INCLUDE and WOLFSSL_LIBRARY_PATH env vars"
+            echo "using openssl : : <include>\"${openssl_root}/include\" <search>\"${openssl_root}/lib\" ;"
+          } > boost-root/user-config.jam
+          echo "Created user-config.jam:"
+          cat boost-root/user-config.jam
+
+      - name: Boost B2 Workflow
+        uses: alandefreitas/cpp-actions/b2-workflow@v1.9.0
+        # note, use the following line to skip B2 on Windows
+        # if: ${{ !matrix.coverage && runner.os != 'Windows' }}
+        if: ${{ !matrix.coverage && !matrix.freebsd }}
+        env:
+          ASAN_OPTIONS: ${{ ((matrix.compiler == 'apple-clang' || matrix.compiler == 'clang') && 'detect_invalid_pointer_pairs=0:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1') || 'detect_invalid_pointer_pairs=2:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1' }}
+        with:
+          source-dir: boost-root
+          modules: corosio
+          toolset: ${{ matrix.b2-toolset }}
+          build-variant: ${{ (matrix.compiler == 'msvc' && 'debug,release') || matrix.build-type }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx || '' }}
+          cxxstd: ${{ matrix.cxxstd }}
+          address-model: ${{ (matrix.x86 && '32') || '64' }}
+          asan: ${{ matrix.asan }}
+          ubsan: ${{ matrix.ubsan }}
+          shared: ${{ matrix.shared }}
+          rtti: on
+          cxxflags: ${{ matrix.cxxflags }} ${{ (matrix.asan && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
+          stop-on-error: true
+          user-config: ${{ (matrix.windows || matrix.macos) && 'user-config.jam' || '' }}
+
+      - name: Boost B2 Workflow (FreeBSD)
+        if: ${{ matrix.freebsd }}
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ matrix.freebsd }}
+          usesh: true
+          run: |
+            set -xe
+            cd boost-root
+            ./bootstrap.sh
+            ./b2 libs/${{ steps.patch.outputs.module }}/test \
+              toolset=clang \
+              cxxstd=20 \
+              variant=release \
+              link=shared \
+              rtti=on \
+              cxxflags="-fexperimental-library" \
+              -q \
+              -j$(sysctl -n hw.ncpu)
+
+      - name: Boost CMake Workflow (FreeBSD)
+        if: ${{ matrix.freebsd && matrix.build-cmake }}
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ matrix.freebsd }}
+          usesh: true
+          prepare: |
+            pkg install -y cmake
+          run: |
+            set -xe
+            cd boost-root
+            cmake -S . -B build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_CXX_FLAGS="-fexperimental-library" \
+              -DBOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}" \
+              -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            cmake --build build --target tests -j$(sysctl -n hw.ncpu)
+            ctest --test-dir build --output-on-failure
+
+      - name: Boost CMake Workflow
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ !matrix.freebsd && (matrix.coverage || matrix.build-cmake || matrix.is-earliest) }}
+        with:
+          source-dir: boost-root
+          build-dir: __build_cmake_test__
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          build-target: tests
+          run-tests: true
+          install-prefix: .local
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc:  ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          ccflags: ${{ matrix.ccflags }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cxxflags: ${{ matrix.cxxflags }}
+          shared: ${{ matrix.shared }}
+          cmake-version: '>=3.20'
+          extra-args: |
+            -D Boost_VERBOSE=ON
+            -D BOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}"
+            -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
+            ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
+            ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
+            ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
+            ${{ env.CMAKE_OPENSSL_ROOT && format('-D OPENSSL_ROOT_DIR="{0}"', env.CMAKE_OPENSSL_ROOT) || '' }}
+            ${{ matrix.vcpkg-triplet && format('-D VCPKG_TARGET_TRIPLET={0}', matrix.vcpkg-triplet) || '' }}
+          # CMAKE_TOOLCHAIN_FILE and VCPKG_INSTALLED_DIR are set via environment variables
+          toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
+          package: false
+          package-artifact: false
+          ref-source-dir: boost-root/libs/corosio
+
+      - name: Run clang-tidy
+        if: ${{ matrix.clang-tidy }}
+        run: |
+          python3 -c "import json; [print(e['file']) for e in json.load(open('boost-root/__build_cmake_test__/compile_commands.json'))]" \
+            | grep '/libs/corosio/src/' \
+            | xargs -r clang-tidy-20 \
+                -p boost-root/__build_cmake_test__ \
+                --warnings-as-errors='*'
+
+      - name: Set Path
+        if: ${{ matrix.windows && matrix.shared }}
+        run: echo "$GITHUB_WORKSPACE/.local/bin" >> $GITHUB_PATH
+
+      - name: Set LD_LIBRARY_PATH
+        if: ${{ matrix.linux && matrix.shared }}
+        run: |
+          echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/.local/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+
+      - name: Find Package Integration Workflow
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ !matrix.freebsd && (matrix.build-cmake || matrix.is-earliest) }}
+        with:
+          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
+          build-dir: __build_cmake_install_test__
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          ccflags: ${{ matrix.ccflags }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cxxflags: ${{ matrix.cxxflags }}
+          shared: ${{ matrix.shared }}
+          install: false
+          cmake-version: '>=3.15'
+          extra-args: |
+            -D BOOST_CI_INSTALL_TEST=ON
+            -D CMAKE_PREFIX_PATH=${{ steps.patch.outputs.workspace_root }}/.local
+            ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
+            ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
+            ${{ env.CMAKE_OPENSSL_ROOT && format('-D OPENSSL_ROOT_DIR="{0}"', env.CMAKE_OPENSSL_ROOT) || '' }}
+            ${{ matrix.vcpkg-triplet && format('-D VCPKG_TARGET_TRIPLET={0}', matrix.vcpkg-triplet) || '' }}
+          toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
+          ref-source-dir: boost-root/libs/corosio
+          trace-commands: true
+
+      - name: Subdirectory Integration Workflow
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ !matrix.freebsd && (matrix.build-cmake || matrix.is-earliest) }}
+        with:
+          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
+          build-dir: __build_cmake_subdir_test__
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          ccflags: ${{ matrix.ccflags }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cxxflags: ${{ matrix.cxxflags }}
+          shared: ${{ matrix.shared }}
+          install: false
+          cmake-version: '>=3.15'
+          extra-args: |
+            -D BOOST_CI_INSTALL_TEST=OFF
+            ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
+            ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
+            ${{ env.CMAKE_OPENSSL_ROOT && format('-D OPENSSL_ROOT_DIR="{0}"', env.CMAKE_OPENSSL_ROOT) || '' }}
+            ${{ matrix.vcpkg-triplet && format('-D VCPKG_TARGET_TRIPLET={0}', matrix.vcpkg-triplet) || '' }}
+          toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
+          ref-source-dir: boost-root/libs/corosio/test/cmake_test
+
+      - name: Root Project CMake Workflow
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ !matrix.freebsd && (matrix.build-cmake || matrix.is-earliest) }}
+        with:
+          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}
+          build-dir: __build_root_test__
+          build-target: tests
+          run-tests: true
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          install: false
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          ccflags: ${{ matrix.ccflags }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cxxflags: ${{ matrix.cxxflags }}
+          shared: ${{ matrix.shared }}
+          cmake-version: '>=3.20'
+          extra-args: |
+            -D Boost_VERBOSE=ON
+            ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
+            ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
+            ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
+            ${{ env.CMAKE_OPENSSL_ROOT && format('-D OPENSSL_ROOT_DIR="{0}"', env.CMAKE_OPENSSL_ROOT) || '' }}
+            ${{ matrix.vcpkg-triplet && format('-D VCPKG_TARGET_TRIPLET={0}', matrix.vcpkg-triplet) || '' }}
+          toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
+          package: false
+          package-artifact: false
+          ref-source-dir: boost-root
+
+      - name: Generate Coverage Report
+        if: ${{ matrix.coverage }}
+        run: |
+          set -x
+
+          # Generate report
+          gcov_tool="gcov"
+          if command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}.${{ steps.setup-cpp.outputs.version-minor }}" &> /dev/null; then
+              gcov_tool="gcov"
+          elif command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}" &> /dev/null; then
+              gcov_tool="gcov-${{ steps.setup-cpp.outputs.version-major }}"
+          fi
+          lcov -c -q -o "boost-root/__build_cmake_test__/coverage.info" \
+            -d "boost-root/__build_cmake_test__" \
+            --include "*/boost-root/libs/${{steps.patch.outputs.module}}/include/*" \
+            --include "*/boost-root/libs/${{steps.patch.outputs.module}}/src/*" \
+            --gcov-tool "$gcov_tool"
+
+      - name: Upload to Codecov
+        if: ${{ matrix.coverage }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: boost-root/__build_cmake_test__/coverage.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          verbose: true
+          disable_search: true
+          plugins: noop
+
+      - name: Coverage Summary
+        if: ${{ matrix.coverage }}
+        run: |
+          echo "# Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[![codecov](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA/graphs/sunburst.svg)](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: [![codecov](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA/graph/badge.svg)](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Branch: [![codecov](https://codecov.io/github/$GITHUB_REPOSITORY/branch/$GITHUB_REF_NAME/graph/badge.svg)](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+  changelog:
+    # needs: [ runner-selection ]
+    defaults:
+      run:
+        shell: bash
+
+    name: Changelog Summary
+    # Skip self-hosted runner selection for now
+    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-22.04'] }}
+    runs-on: 'ubuntu-22.04'
+    timeout-minutes: 120
+
+    steps:
+      - name: Clone Boost.Corosio
+        uses: actions/checkout@v4
+        with:
+          # Avoid the common API rate limit exceeded error in boostorg by including 100 latest commits in any case
+          fetch-depth: 100
+
+      - name: Changelog
+        uses: alandefreitas/cpp-actions/create-changelog@v1.9.0
+        with:
+          thank-non-regular: ${{ startsWith(github.ref, 'refs/tags/') }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          limit: 200
+          tag-pattern: 'boost-.*\..*\..*'

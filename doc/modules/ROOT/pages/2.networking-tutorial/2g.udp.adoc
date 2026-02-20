@@ -1,0 +1,103 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= UDP: Fast, Simple, Unreliable
+
+UDP is the simplest transport protocol you will encounter. It takes your data, slaps on a small header with source and destination port numbers, and hands it to IP. No connection setup. No acknowledgment. No retransmission. No ordering guarantees. If you want any of those things, you build them yourself.
+
+That sounds like a limitation, and it is -- but it is also the point. UDP exists for situations where the overhead of reliability is worse than the occasional lost packet.
+
+== What UDP Provides
+
+UDP adds exactly two things to IP:
+
+Port numbers:: Just like TCP, UDP uses 16-bit source and destination port numbers to direct data to the correct application. A UDP socket bound to port `5353` only receives datagrams addressed to that port.
+
+Checksum:: A checksum covers the UDP header and payload. If the data was corrupted in transit, the operating system discards the datagram silently. (In IPv4 the checksum is optional, though universally used in practice. In IPv6 it is mandatory.)
+
+That is the full list. UDP does not establish a connection, does not track what has been sent, and does not guarantee that anything arrives. Each `send` call produces one datagram. Each `recv` call consumes one datagram. The datagrams are independent.
+
+== The UDP Header
+
+The UDP header is eight bytes:
+
+[cols="1,3"]
+|===
+| Field | Description
+
+| Source port (16 bits)
+| The sender's port number. Optional in theory; in practice, always present.
+
+| Destination port (16 bits)
+| The port on the receiving machine where the datagram should be delivered.
+
+| Length (16 bits)
+| Total length of the UDP header plus payload, in bytes. The minimum is 8 (header only, no data).
+
+| Checksum (16 bits)
+| Covers a pseudo-header (source and destination IP addresses, protocol, length), the UDP header, and the payload.
+|===
+
+Eight bytes. Compare that to TCP's minimum 20-byte header with sequence numbers, acknowledgment numbers, window sizes, and flags. UDP's overhead is minimal, which means more of every packet is your actual data.
+
+== Message Boundaries
+
+This is one of the most important differences between UDP and TCP, and it trips people up regularly.
+
+UDP preserves message boundaries. If you send a 200-byte datagram followed by a 300-byte datagram, the receiver gets two separate datagrams: one of 200 bytes and one of 300 bytes. They arrive as discrete units. A single `recv` call returns exactly one datagram.
+
+TCP, by contrast, is a byte stream. Send 200 bytes followed by 300 bytes, and the receiver might get 500 bytes in one read, or 100 and 400, or any other combination. TCP does not preserve the boundaries between your writes.
+
+For protocols where message framing matters -- where each datagram is a self-contained unit -- UDP's boundary preservation is a genuine advantage. DNS is a good example: each query is a single datagram, and each response is a single datagram. There is no need to figure out where one message ends and another begins.
+
+== Fragmentation and UDP
+
+A UDP datagram can theoretically be up to 65,535 bytes (the maximum IP packet size, minus the IP and UDP headers). In practice, sending anything close to this size is a bad idea.
+
+When a UDP datagram exceeds the path MTU, IP fragments it into smaller pieces. These fragments travel independently through the network. If every fragment arrives, the destination reassembles the original datagram and delivers it to your application. If *any* fragment is lost, the entire datagram is discarded. Your application receives nothing -- not even the fragments that did arrive.
+
+On a typical internet path with a 1500-byte MTU, the practical limit for a UDP datagram you can send without risking fragmentation is about 1472 bytes (1500 minus the 20-byte IP header and 8-byte UDP header). Many applications choose an even smaller limit to account for paths with lower MTUs or encapsulation overhead from VPNs and tunnels.
+
+The takeaway: keep UDP datagrams small. If your message does not fit in a single unfragmented packet, you either need to split it yourself or consider whether TCP is a better fit.
+
+== No Connection, No State
+
+A TCP server creates a dedicated socket for each connected client, maintaining per-connection state in the kernel: sequence numbers, window sizes, retransmission timers. A busy TCP server with ten thousand clients has ten thousand sockets, each tracking its own connection.
+
+A UDP server typically uses a single socket to serve all clients. Datagrams arrive from different source addresses and ports, and the server handles each one independently. There is no "connection" to accept, no state to maintain in the kernel, and no connection to tear down when the client goes away.
+
+This makes UDP servers simpler in some respects. A DNS server processes each query as an independent event: a datagram arrives, the server looks up the answer, and it sends a response datagram back to the source address. The server does not track which clients have connected or maintain session state between queries.
+
+The downside is that UDP gives you no help with reliability. If the response datagram is lost, the client has to notice (usually via a timeout) and resend the query. The server has no idea whether its response arrived.
+
+== When UDP Is the Right Choice
+
+UDP fits well in several categories:
+
+Request-response with retries:: Protocols like DNS send a small query and expect a small response. If no response arrives within a timeout, the client retries. The cost of an occasional lost packet is far less than the cost of establishing a TCP connection for every lookup.
+
+Real-time media:: Audio and video streams are time-sensitive. A packet that arrives late is useless -- you cannot rewind live audio to insert a delayed sample. Retransmitting lost packets would add latency without improving the experience. UDP lets the application skip missing data and keep playing.
+
+Broadcast and multicast:: UDP supports sending a single datagram to multiple recipients simultaneously. TCP, being connection-oriented, has no equivalent. Network discovery protocols, service announcements, and some gaming systems use UDP multicast.
+
+Application-managed reliability:: Some applications need reliability but with different trade-offs than TCP provides. They build their own retransmission and ordering logic on top of UDP. The QUIC protocol is a prominent example: it runs over UDP but provides its own reliability, congestion control, and stream multiplexing.
+
+== When UDP Is the Wrong Choice
+
+If your application needs every byte to arrive, in order, without duplicates, TCP is almost certainly the right choice. Reimplementing TCP's reliability on top of UDP is a substantial engineering effort, and the result is rarely better than what TCP already provides.
+
+File transfers, database queries, HTTP requests, and any protocol where data integrity matters should use TCP. The connection setup overhead is negligible compared to the cost of getting reliability wrong.
+
+== Why This Matters to You
+
+UDP is the faster, leaner transport protocol, and understanding it helps you make informed decisions about when to use it. But its simplicity is a double-edged sword: it gives you freedom and leaves you responsible for everything TCP would handle automatically.
+
+For most application developers, TCP is the default choice. UDP is the right tool for specific problems: latency-sensitive media, lightweight query-response protocols, and situations where the application knows better than TCP what "reliable" means.
+
+The next section introduces TCP -- the protocol that takes IP's unreliable packet delivery and turns it into a reliable byte stream.
