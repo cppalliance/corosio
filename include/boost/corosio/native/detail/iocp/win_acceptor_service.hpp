@@ -266,6 +266,11 @@ connect_op::do_complete(
         (op->dwError == 0 && !op->cancelled.load(std::memory_order_acquire));
     if (success && op->internal.is_open())
     {
+        // Required after ConnectEx to enable shutdown(), getsockname(), etc.
+        ::setsockopt(
+            op->internal.native_handle(), SOL_SOCKET,
+            SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
+
         endpoint local_ep;
         sockaddr_in local_addr{};
         int local_len = sizeof(local_addr);
@@ -461,11 +466,10 @@ win_socket_internal::do_read_io()
         DWORD err = ::WSAGetLastError();
         if (err != WSA_IO_PENDING)
         {
-            // Sync failure - release internal_ptr before resuming
+            // Defer to avoid resuming on the initiator's stack.
             svc_.work_finished();
-            op.dwError                         = err;
-            auto prevent_premature_destruction = std::move(op.internal_ptr);
-            op.invoke_handler();
+            op.dwError = err;
+            svc_.post(&op);
             return;
         }
     }
