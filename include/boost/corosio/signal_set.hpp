@@ -1,0 +1,300 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+#ifndef BOOST_COROSIO_SIGNAL_SET_HPP
+#define BOOST_COROSIO_SIGNAL_SET_HPP
+
+#include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/io/io_signal_set.hpp>
+#include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/concept/executor.hpp>
+
+#include <concepts>
+#include <system_error>
+
+/*
+    Signal Set Public API
+    =====================
+
+    This header provides the public interface for asynchronous signal handling.
+    The implementation is split across platform-specific files:
+      - posix/signals.cpp: Uses sigaction() for robust signal handling
+      - iocp/signals.cpp: Uses C runtime signal() (Windows lacks sigaction)
+
+    Key design decisions:
+
+    1. Abstract flag values: The flags_t enum uses arbitrary bit positions
+       (not SA_RESTART, etc.) to avoid including <signal.h> in public headers.
+       The POSIX implementation maps these to actual SA_* constants internally.
+
+    2. Flag conflict detection: When multiple signal_sets register for the
+       same signal, they must use compatible flags. The first registration
+       establishes the flags; subsequent registrations must match or use
+       dont_care.
+
+    3. Polymorphic implementation: implementation is an abstract base that
+       platform-specific implementations (posix_signal, win_signal)
+       derive from. This allows the public API to be platform-agnostic.
+
+    4. The inline add(int) overload avoids a virtual call for the common case
+       of adding signals without flags (delegates to add(int, none)).
+*/
+
+namespace boost::corosio {
+
+/** An asynchronous signal set for coroutine I/O.
+
+    This class provides the ability to perform an asynchronous wait
+    for one or more signals to occur. The signal set registers for
+    signals using sigaction() on POSIX systems or the C runtime
+    signal() function on Windows.
+
+    @par Thread Safety
+    Distinct objects: Safe.@n
+    Shared objects: Unsafe. A signal_set must not have concurrent
+    wait operations.
+
+    @par Semantics
+    Wraps platform signal handling (sigaction on POSIX, C runtime
+    signal() on Windows). Operations dispatch to OS signal APIs
+    via the io_context reactor.
+
+    @par Supported Signals
+    On Windows, the following signals are supported:
+    SIGINT, SIGTERM, SIGABRT, SIGFPE, SIGILL, SIGSEGV.
+
+    @par Example
+    @code
+    signal_set signals(ctx, SIGINT, SIGTERM);
+    auto [ec, signum] = co_await signals.wait();
+    if (ec == capy::cond::canceled)
+    {
+        // Operation was cancelled via stop_token or cancel()
+    }
+    else if (!ec)
+    {
+        std::cout << "Received signal " << signum << std::endl;
+    }
+    @endcode
+*/
+class BOOST_COROSIO_DECL signal_set : public io_signal_set
+{
+public:
+    /** Flags for signal registration.
+
+        These flags control the behavior of signal handling. Multiple
+        flags can be combined using the bitwise OR operator.
+
+        @note Flags only have effect on POSIX systems. On Windows,
+        only `none` and `dont_care` are supported; other flags return
+        `operation_not_supported`.
+    */
+    enum flags_t : unsigned
+    {
+        /// Use existing flags if signal is already registered.
+        /// When adding a signal that's already registered by another
+        /// signal_set, this flag indicates acceptance of whatever
+        /// flags were used for the existing registration.
+        dont_care = 1u << 16,
+
+        /// No special flags.
+        none = 0,
+
+        /// Restart interrupted system calls.
+        /// Equivalent to SA_RESTART on POSIX systems.
+        restart = 1u << 0,
+
+        /// Don't generate SIGCHLD when children stop.
+        /// Equivalent to SA_NOCLDSTOP on POSIX systems.
+        no_child_stop = 1u << 1,
+
+        /// Don't create zombie processes on child termination.
+        /// Equivalent to SA_NOCLDWAIT on POSIX systems.
+        no_child_wait = 1u << 2,
+
+        /// Don't block the signal while its handler runs.
+        /// Equivalent to SA_NODEFER on POSIX systems.
+        no_defer = 1u << 3,
+
+        /// Reset handler to SIG_DFL after one invocation.
+        /// Equivalent to SA_RESETHAND on POSIX systems.
+        reset_handler = 1u << 4
+    };
+
+    /// Combine two flag values.
+    friend constexpr flags_t operator|(flags_t a, flags_t b) noexcept
+    {
+        return static_cast<flags_t>(
+            static_cast<unsigned>(a) | static_cast<unsigned>(b));
+    }
+
+    /// Mask two flag values.
+    friend constexpr flags_t operator&(flags_t a, flags_t b) noexcept
+    {
+        return static_cast<flags_t>(
+            static_cast<unsigned>(a) & static_cast<unsigned>(b));
+    }
+
+    /// Compound assignment OR.
+    friend constexpr flags_t& operator|=(flags_t& a, flags_t b) noexcept
+    {
+        return a = a | b;
+    }
+
+    /// Compound assignment AND.
+    friend constexpr flags_t& operator&=(flags_t& a, flags_t b) noexcept
+    {
+        return a = a & b;
+    }
+
+    /// Bitwise NOT (complement).
+    friend constexpr flags_t operator~(flags_t a) noexcept
+    {
+        return static_cast<flags_t>(~static_cast<unsigned>(a));
+    }
+
+    struct implementation : io_signal_set::implementation
+    {
+        virtual std::error_code add(int signal_number, flags_t flags) = 0;
+        virtual std::error_code remove(int signal_number)             = 0;
+        virtual std::error_code clear()                               = 0;
+    };
+
+    /** Destructor.
+
+        Cancels any pending operations and releases signal resources.
+    */
+    ~signal_set() override;
+
+    /** Construct an empty signal set.
+
+        @param ctx The execution context that will own this signal set.
+    */
+    explicit signal_set(capy::execution_context& ctx);
+
+    /** Construct a signal set with initial signals.
+
+        @param ctx The execution context that will own this signal set.
+        @param signal First signal number to add.
+        @param signals Additional signal numbers to add.
+
+        @throws std::system_error Thrown on failure.
+    */
+    template<std::convertible_to<int>... Signals>
+    signal_set(capy::execution_context& ctx, int signal, Signals... signals)
+        : signal_set(ctx)
+    {
+        auto check = [](std::error_code ec) {
+            if (ec)
+                throw std::system_error(ec);
+        };
+        check(add(signal));
+        (check(add(signals)), ...);
+    }
+
+    /** Move constructor.
+
+        Transfers ownership of the signal set resources.
+
+        @param other The signal set to move from.
+
+        @pre No awaitables returned by @p other's methods exist.
+        @pre The execution context associated with @p other must
+            outlive this signal set.
+    */
+    signal_set(signal_set&& other) noexcept;
+
+    /** Move assignment operator.
+
+        Closes any existing signal set and transfers ownership.
+
+        @param other The signal set to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            methods exist.
+        @pre The execution context associated with @p other must
+            outlive this signal set.
+
+        @return Reference to this signal set.
+    */
+    signal_set& operator=(signal_set&& other) noexcept;
+
+    signal_set(signal_set const&)            = delete;
+    signal_set& operator=(signal_set const&) = delete;
+
+    /** Add a signal to the signal set.
+
+        This function adds the specified signal to the set with the
+        specified flags. It has no effect if the signal is already
+        in the set with the same flags.
+
+        If the signal is already registered globally (by another
+        signal_set) and the flags differ, an error is returned
+        unless one of them has the `dont_care` flag.
+
+        @param signal_number The signal to be added to the set.
+        @param flags The flags to apply when registering the signal.
+            On POSIX systems, these map to sigaction() flags.
+            On Windows, flags are accepted but ignored.
+
+        @return Success, or an error if the signal could not be added.
+            Returns `errc::invalid_argument` if the signal is already
+            registered with different flags.
+    */
+    std::error_code add(int signal_number, flags_t flags);
+
+    /** Add a signal to the signal set with default flags.
+
+        This is equivalent to calling `add(signal_number, none)`.
+
+        @param signal_number The signal to be added to the set.
+
+        @return Success, or an error if the signal could not be added.
+    */
+    std::error_code add(int signal_number)
+    {
+        return add(signal_number, none);
+    }
+
+    /** Remove a signal from the signal set.
+
+        This function removes the specified signal from the set. It has
+        no effect if the signal is not in the set.
+
+        @param signal_number The signal to be removed from the set.
+
+        @return Success, or an error if the signal could not be removed.
+    */
+    std::error_code remove(int signal_number);
+
+    /** Remove all signals from the signal set.
+
+        This function removes all signals from the set. It has no effect
+        if the set is already empty.
+
+        @return Success, or an error if resetting any signal handler fails.
+    */
+    std::error_code clear();
+
+protected:
+    explicit signal_set(handle h) noexcept : io_signal_set(std::move(h)) {}
+
+private:
+    void do_cancel() override;
+
+    implementation& get() const noexcept
+    {
+        return *static_cast<implementation*>(h_.get());
+    }
+};
+
+} // namespace boost::corosio
+
+#endif
