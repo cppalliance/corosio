@@ -80,6 +80,14 @@ public:
     void work_started() noexcept override;
     void work_finished() noexcept override;
 
+    /** Signal that an overlapped I/O operation is now pending.
+        Coordinates with do_one() via the ready_ CAS protocol. */
+    void on_pending(overlapped_op* op) const;
+
+    /** Post an immediate completion with pre-stored results.
+        Used for sync errors and noop paths. */
+    void on_completion(overlapped_op* op, DWORD error, DWORD bytes) const;
+
     // Timer service integration
     void set_timer_service(timer_service* svc);
     void update_timeout();
@@ -313,6 +321,42 @@ win_scheduler::work_finished() noexcept
 }
 
 inline void
+win_scheduler::on_pending(overlapped_op* op) const
+{
+    // CAS: try to set ready_ from 0 to 1.
+    // If the old value was 1, GQCS already grabbed this op and stored
+    // results — we need to re-post so do_one() can dispatch it.
+    if (::InterlockedCompareExchange(&op->ready_, 1, 0) == 1)
+    {
+        if (!::PostQueuedCompletionStatus(
+                iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
+        {
+            std::lock_guard<win_mutex> lock(dispatch_mutex_);
+            completed_ops_.push(op);
+            ::InterlockedExchange(&dispatch_required_, 1);
+        }
+    }
+}
+
+inline void
+win_scheduler::on_completion(
+    overlapped_op* op, DWORD error, DWORD bytes) const
+{
+    // Sync completion: pack results into op and post for dispatch.
+    op->ready_            = 1;
+    op->dwError           = error;
+    op->bytes_transferred = bytes;
+
+    if (!::PostQueuedCompletionStatus(
+            iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
+    {
+        std::lock_guard<win_mutex> lock(dispatch_mutex_);
+        completed_ops_.push(op);
+        ::InterlockedExchange(&dispatch_required_, 1);
+    }
+}
+
+inline void
 win_scheduler::stop()
 {
     if (::InterlockedExchange(&stopped_, 1) == 0)
@@ -493,28 +537,39 @@ win_scheduler::do_one(unsigned long timeout_ms)
             case key_io:
             case key_result_stored:
             {
-                // Actual I/O completion: overlapped is OVERLAPPED* (first base of overlapped_op)
                 auto* ov_op = overlapped_to_op(overlapped);
 
-                // If key_result_stored, results are pre-stored in overlapped fields
+                // If key_result_stored, results are pre-stored in op fields
                 if (key == key_result_stored)
                 {
                     bytes = ov_op->bytes_transferred;
                     err   = ov_op->dwError;
                 }
 
+                // Store GQCS results so on_pending() re-post has valid data
                 ov_op->store_result(bytes, err);
-                work_finished();
-                ov_op->complete(this, bytes, err);
-                return 1;
+
+                // CAS: try to set ready_ from 0 to 1.
+                // If old value was 1, the initiator already returned
+                // (on_pending/on_completion set it) — safe to dispatch.
+                // If old value was 0, the initiator hasn't returned yet —
+                // skip dispatch; on_pending() will re-post.
+                if (::InterlockedCompareExchange(
+                        &ov_op->ready_, 1, 0) == 1)
+                {
+                    ov_op->complete(this, bytes, err);
+                    work_finished();
+                    return 1;
+                }
+                continue;
             }
 
             case key_posted:
             {
                 // Posted scheduler_op*: overlapped is actually a scheduler_op*
                 auto* op = reinterpret_cast<scheduler_op*>(overlapped);
-                work_finished();
                 op->complete(this, bytes, err);
+                work_finished();
                 return 1;
             }
 
