@@ -1,0 +1,115 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= How TCP Moves Your Data
+
+A naive approach to reliable delivery would be: send one segment, wait for the acknowledgment, send the next. That works, but it is painfully slow. If the round trip between your machine and the server takes 50 milliseconds, you can only send 20 segments per second -- regardless of how much bandwidth the network has. Most of the time is spent waiting.
+
+TCP solves this with the *sliding window*: a mechanism that lets the sender have multiple segments in flight simultaneously, pipelining data so the network is kept busy even while acknowledgments are still traveling back. The sliding window is what makes TCP fast, and understanding it is the key to understanding TCP performance.
+
+== Sending and Acknowledging
+
+At its core, TCP data transfer is a loop:
+
+. The sender transmits a segment containing some bytes of data, labeled with a sequence number.
+. The receiver gets the segment, buffers the data, and sends an ACK back. The acknowledgment number in the ACK tells the sender "I have received everything up to this byte."
+. The sender, having received the ACK, knows those bytes were delivered and can discard them from its send buffer.
+
+If both sides are transferring data, ACKs often piggyback on data segments traveling in the opposite direction. A single segment can carry both a chunk of data and an acknowledgment for previously received data, reducing the number of packets on the wire.
+
+== The Sliding Window
+
+The sender does not wait for each segment to be acknowledged before sending the next. Instead, it maintains a *window* of bytes it is allowed to send without having received an ACK. The size of this window determines how much data can be in flight at any given time.
+
+Imagine the sender has 10,000 bytes to transmit and the window size is 4,000 bytes. The sequence looks like this:
+
+. The sender transmits bytes 0-999, 1000-1999, 2000-2999, and 3000-3999. Four segments, filling the 4,000-byte window.
+. The sender cannot send more until an ACK arrives. It has reached its window limit.
+. An ACK arrives acknowledging bytes 0-999. The window slides forward: the sender can now send bytes 4000-4999.
+. Another ACK arrives acknowledging bytes 1000-1999. The window slides again: bytes 5000-5999 become sendable.
+
+----
+Sent and ACKed  |  Sent, not ACKed  |  Sendable  |  Not yet sendable
+                 [     window     ]
+----
+
+The window "slides" to the right as ACKs arrive, always keeping a fixed amount of data in flight. The name comes directly from this behavior.
+
+The window size is not fixed for the lifetime of the connection. It changes dynamically based on two factors: how much buffer space the receiver has (flow control) and how congested the network appears to be (congestion control).
+
+== Flow Control: The Receiver's Window
+
+Every ACK the receiver sends includes a *window advertisement* -- a 16-bit field stating how many bytes the receiver is willing to accept right now. This value reflects the available space in the receiver's buffer.
+
+If the receiver's application is reading data quickly, the buffer stays mostly empty and the advertised window stays large. The sender keeps transmitting at full speed.
+
+If the receiver's application falls behind -- maybe it is busy processing a previous request -- the buffer fills up and the advertised window shrinks. The sender slows down in response. If the window reaches zero, the sender stops entirely and waits for the receiver to free up space.
+
+This feedback loop prevents a fast sender from flooding a slow receiver. It operates automatically, requiring no action from your application code. But it has a practical consequence: if your server reads from the socket slowly, the client's send calls will eventually stall. TCP is applying backpressure through the window mechanism.
+
+== Delayed Acknowledgments
+
+The receiver does not send an ACK for every single segment it receives. Instead, it often waits a short time -- typically 40 to 200 milliseconds -- hoping to piggyback the ACK on outgoing data. If no outgoing data appears within the delay, the receiver sends the ACK by itself.
+
+This optimization reduces the number of pure-ACK packets on the network, which carry no data and represent pure overhead. In a request-response protocol, the ACK for the request often rides along with the response, cutting the packet count almost in half.
+
+The downside is that delayed ACKs interact poorly with small writes, as described next.
+
+== The Nagle Algorithm
+
+When your application writes small chunks of data -- a few bytes at a time -- TCP faces a dilemma. Sending each tiny write as its own segment wastes bandwidth: a 1-byte payload in a segment with 40 bytes of headers (IP + TCP) is spectacularly inefficient.
+
+The Nagle algorithm addresses this by batching small writes. The rule is:
+
+* If there is no unacknowledged data in flight, send immediately, regardless of size.
+* If there is unacknowledged data in flight, buffer subsequent small writes and send them as a single segment when the outstanding ACK arrives.
+
+This batches multiple small writes into a single, reasonably-sized segment. For bulk data transfer, it makes no difference -- the writes are already large. For interactive applications that send many small messages, it reduces overhead significantly.
+
+The catch is the interaction with delayed ACKs. Suppose a client sends a small request and then wants to send another small piece of data. The Nagle algorithm buffers the second write, waiting for the ACK of the first. Meanwhile, the server delays its ACK, waiting to piggyback it on a response. If the server cannot produce a response until it has all the data, everyone waits: the client waits for an ACK, the server waits for more data, and the delayed-ACK timer eventually fires and breaks the deadlock. The result is a mysterious 200-millisecond pause.
+
+The standard fix is to disable the Nagle algorithm by setting the `TCP_NODELAY` socket option. This tells TCP to send every write immediately, regardless of size. Most latency-sensitive applications -- game servers, interactive terminals, financial trading systems -- set `TCP_NODELAY` by default.
+
+== The PUSH Flag
+
+TCP's PSH (push) flag tells the receiving side to deliver the data to the application immediately rather than waiting for the buffer to fill up. In practice, most TCP implementations set PSH automatically on the last segment of each write operation, and most receiving implementations deliver data as soon as it arrives regardless of PSH.
+
+You rarely interact with PSH directly. It exists in the protocol but is largely handled by the operating system. The main thing to know is that it does not create message boundaries -- even with PSH set, the byte stream semantics remain. The receiver might still combine data from multiple segments into a single read.
+
+== Slow Start
+
+When a new TCP connection is established, neither side knows the capacity of the network path between them. If the sender immediately blasts data at the full window size, it might overwhelm a bottleneck link and cause packet loss.
+
+Slow start addresses this by beginning cautiously. The sender starts with a small *congestion window* (typically 10 segments on modern systems) and increases it rapidly as ACKs arrive:
+
+. Send the initial window's worth of data.
+. For each ACK received, increase the congestion window by one segment.
+. This effectively doubles the congestion window every round trip.
+
+The growth is exponential: 10 segments, then 20, then 40, then 80. Within a few round trips, the sender is transmitting at a rate that matches the network's capacity.
+
+Slow start continues until one of two things happens:
+
+* The congestion window reaches the receiver's advertised window, at which point flow control takes over.
+* Packet loss is detected, which TCP interprets as a sign of congestion. At that point, TCP switches to a more conservative growth strategy (covered in the next section).
+
+The practical effect is that a new TCP connection takes a few round trips to ramp up to full speed. Short-lived connections -- like individual HTTP requests -- may complete before slow start finishes ramping up, which is one reason HTTP connection reuse and HTTP/2 multiplexing improve performance.
+
+== Why This Matters to You
+
+The sliding window is what makes TCP viable for high-throughput data transfer. Without it, every connection would be limited to one segment per round trip, and the internet as we know it would not exist.
+
+As an application developer, the mechanisms described here affect your code in concrete ways:
+
+* *Write in large chunks when possible.* Many small writes may trigger the Nagle algorithm and introduce latency. Buffering application data and writing it in a single call is generally better.
+* *Set `TCP_NODELAY` for latency-sensitive protocols.* If your application sends small messages and expects immediate responses, disable Nagle.
+* *Read promptly.* If your application does not read from the socket, the receiver's window shrinks and the sender stalls. TCP's backpressure mechanism is doing its job, but your application feels it as a throughput drop.
+* *Expect slow start on new connections.* The first few round trips on a fresh connection are slower than steady-state throughput. Connection reuse matters.
+
+The next section covers what happens when the network fails to deliver -- how TCP detects lost packets and responds to congestion.

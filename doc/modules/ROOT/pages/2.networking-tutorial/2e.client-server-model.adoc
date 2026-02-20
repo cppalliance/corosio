@@ -1,0 +1,106 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Clients, Servers, and Ports
+
+Every network conversation has two sides. One side initiates the connection -- that is the *client*. The other side waits for someone to connect -- that is the *server*. This asymmetry shapes how you write networked code, and port numbers are the mechanism that keeps it all organized.
+
+== Who Calls Whom
+
+A server picks a port number, binds to it, and starts listening. It sits there, waiting, ready to accept connections from anyone who knows its address and port. A client knows (or discovers) the server's address and port, then connects to it. The server accepts the connection, and the two sides begin exchanging data.
+
+This is the fundamental pattern. A web browser (client) connects to a web server. A mail client connects to a mail server. A game client connects to a game server. The client always initiates; the server always listens. Even in protocols where both sides send and receive data freely after the connection is established, the initial roles are fixed.
+
+A single server typically handles many clients at once. A web server might have ten thousand active connections. Each connection is independent -- the server reads from one, writes to another, and the operating system keeps them all separate.
+
+== Port Numbers
+
+A machine might run dozens of services simultaneously: a web server, a database, a mail server, an SSH daemon. All of them share the same IP address. Port numbers distinguish between them.
+
+A port is a 16-bit unsigned integer, giving a range of 0 to 65535. When a client connects to a server, it specifies both the IP address and the port number. The operating system delivers the connection to whichever program is listening on that port.
+
+Ports fall into three ranges:
+
+Well-known ports (0-1023):: Reserved for standard services. HTTP runs on port `80`. HTTPS runs on `443`. SSH uses `22`. DNS uses `53`. FTP uses `21`. On most operating systems, binding to a port in this range requires elevated privileges.
+
+Registered ports (1024-49151):: Available for applications, with some conventional assignments. MySQL commonly uses `3306`. PostgreSQL uses `5432`. These are conventions, not hard rules -- any program can bind to any available port.
+
+Ephemeral ports (49152-65535):: Assigned temporarily by the operating system. When your client program connects to a server, the OS picks an ephemeral port for your end of the connection. You do not choose it and usually do not need to know what it is.
+
+== The Four-Tuple
+
+A single TCP connection is uniquely identified by four values:
+
+----
+(source IP, source port, destination IP, destination port)
+----
+
+Consider a laptop at address `10.0.0.5` connecting to a web server at `203.0.113.80` on port `443`. The operating system assigns ephemeral port `51234` to the client side. The connection's four-tuple is:
+
+----
+(10.0.0.5, 51234, 203.0.113.80, 443)
+----
+
+If the same laptop opens a second connection to the same server, the OS assigns a different ephemeral port -- say `51235`. The second connection's four-tuple is:
+
+----
+(10.0.0.5, 51235, 203.0.113.80, 443)
+----
+
+Both connections reach the same server on the same port, but they are distinct because the source port differs. This is how a server handles thousands of clients simultaneously on a single port -- every connection has a unique four-tuple.
+
+It also means that two different client machines can connect to the same server port at the same time without conflict, because their source IP addresses differ.
+
+== Sockets
+
+The *socket* is the programming interface your application uses to interact with the network. A socket represents one end of a network connection (or, for UDP, a communication endpoint). You create a socket, configure it, and then either connect it to a remote address (client) or bind it to a local address and listen for connections (server).
+
+For a TCP client, the typical sequence is:
+
+. Create a socket.
+. Connect to the server's address and port.
+. Read and write data through the socket.
+. Close the socket when finished.
+
+For a TCP server:
+
+. Create a socket.
+. Bind it to a local address and port.
+. Start listening for incoming connections.
+. Accept each incoming connection, which produces a new socket dedicated to that client.
+. Read and write data on the accepted socket.
+. Close the accepted socket when the conversation ends.
+
+The listening socket and the accepted sockets are different objects. The listening socket remains open, waiting for more clients. Each accepted socket handles one client's conversation.
+
+== Binding to Addresses
+
+When a server binds to a port, it must also specify which local IP address to listen on. A machine with multiple network interfaces has multiple addresses. Binding to a specific address restricts the server to connections arriving on that interface.
+
+Binding to `0.0.0.0` (for IPv4) or `::` (for IPv6) means "accept connections on any interface." This is the common case for servers meant to be reachable from the network.
+
+Binding to `127.0.0.1` restricts the server to connections from the same machine -- useful for services that should not be network-accessible, like a local development database.
+
+== Common Patterns
+
+Request-response:: The client sends a request, the server sends a response, and the cycle repeats. HTTP follows this pattern. Each request is independent: the client asks for a page, the server returns it.
+
+Long-lived connections:: The client connects once and the connection stays open for an extended period. Database connections, WebSockets, and chat protocols work this way. Data flows in both directions as needed.
+
+One connection per request:: The client opens a connection, sends one request, reads one response, and closes. This was the original HTTP/1.0 model. It is inefficient because TCP connection setup has overhead, so modern protocols reuse connections.
+
+Fire and forget:: The client sends data without expecting a response. Some logging and metrics systems work this way, often over UDP rather than TCP.
+
+== Why This Matters to You
+
+The client-server model and port numbers are the foundation of every connection your program makes. When you see "connection refused," it means no process was listening on the target port. When you see "address already in use," it means another process (or a lingering socket in TIME_WAIT) is already bound to the port you requested.
+
+Understanding the four-tuple explains why a server can accept many connections on a single port, and why the OS assigns ephemeral ports automatically on the client side. Understanding the socket interface tells you what system calls your networking library wraps on your behalf.
+
+The next section descends into IP itself -- how packets actually travel from your machine to the server, one router hop at a time.

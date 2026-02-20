@@ -1,0 +1,105 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= URLs and Resource Identification
+
+A URL packs everything your program needs to reach a resource into a single string: which protocol to speak, which machine to contact, and what to ask for once connected. You see URLs constantly -- in browser address bars, configuration files, API documentation, and log messages. Understanding their structure turns an opaque string into a set of actionable instructions.
+
+== Anatomy of a URL
+
+Consider this URL:
+
+----
+https://api.weather.co:443/v2/forecast?city=tokyo&days=5#summary
+----
+
+It breaks down into six components:
+
+Scheme (`https`):: The protocol your program uses to communicate. `https` means HTTP over TLS (encrypted). `http` means HTTP without encryption. Other schemes exist -- `ftp`, `ssh`, `ws` (WebSocket) -- each implying a different protocol and set of rules.
+
+Host (`api.weather.co`):: The machine to connect to. This is a domain name that DNS resolves to an IP address. It could also be a raw IP address like `192.0.2.50`, but domain names are far more common.
+
+Port (`443`):: The port number on the destination machine. This identifies which process should handle the connection. When omitted, the port is inferred from the scheme: `80` for `http`, `443` for `https`. Most URLs omit the port because the defaults are correct.
+
+Path (`/v2/forecast`):: The specific resource being requested. The server interprets this however it chooses -- it might map to a file on disk, a database query, or a function call. The path is sent to the server as part of the request.
+
+Query (`city=tokyo&days=5`):: Parameters passed to the server, formatted as key-value pairs separated by `&`. The query string follows a `?` and provides additional input for the request. Not every URL has one.
+
+Fragment (`summary`):: A client-side marker. The fragment is *not* sent to the server. Browsers use it to scroll to a specific section of a page. In API contexts it is rarely used.
+
+== The Authority Section
+
+The host and optional port together form the *authority* of the URL. In the example above, the authority is `api.weather.co:443`. This is the part that determines which machine your program connects to.
+
+When the host is a domain name, your program resolves it through DNS (as described in the previous section) to obtain an IP address. When the host is a literal IPv6 address, it must be enclosed in square brackets to avoid ambiguity with the colons:
+
+----
+http://[2001:db8::1]:8080/status
+----
+
+The authority can also include user credentials in the form `user:password@host`, but this is deprecated for security reasons and you should not rely on it.
+
+== How a URL Drives a Connection
+
+A URL is a recipe, and following it produces a network connection. The steps are:
+
+. *Parse the scheme* to determine the protocol. `https` means you will need a TLS handshake after connecting.
+. *Resolve the host* through DNS. `api.weather.co` becomes an IP address, or possibly a list of addresses.
+. *Connect to the port*. If the URL specifies one, use it. Otherwise, use the default for the scheme.
+. *Send the request*. For HTTP, this means sending the method, path, query string, and headers. For other protocols, the format differs.
+
+Each step uses a piece of knowledge from the earlier sections: DNS resolution turns the host into an address, the port selects a process on the server, and the scheme determines how the conversation proceeds.
+
+== Percent-Encoding
+
+URLs can only contain a limited set of characters. Letters, digits, hyphens, dots, underscores, and tildes are safe. Everything else -- spaces, non-ASCII characters, reserved characters like `?`, `&`, `#`, `/` -- must be replaced with a percent sign followed by the character's hexadecimal byte value.
+
+A space becomes `%20`. A forward slash in a query parameter value (where it is not meant as a path separator) becomes `%2F`. The Japanese character for "east" (東) encoded in UTF-8 becomes `%E6%9D%B1`.
+
+Some examples:
+
+[cols="1,1"]
+|===
+| Raw value | Encoded form
+
+| `hello world`
+| `hello%20world`
+
+| `price=10&tax=2`
+| `price%3D10%26tax%3D2` (when embedded inside another query value)
+
+| `café`
+| `caf%C3%A9`
+|===
+
+URL parsing libraries handle encoding and decoding for you. The important thing is to recognize that `%XX` sequences are not garbage -- they are properly encoded characters.
+
+== URLs vs. URIs
+
+You will sometimes see the term URI (Uniform Resource Identifier) used alongside or instead of URL. The distinction is mostly academic: a URI is the broader category, and a URL is a URI that also tells you *how* to access the resource (via the scheme). A URN (Uniform Resource Name) is a URI that names a resource without providing a location, like an ISBN for a book.
+
+In practice, nearly every URI you encounter is a URL. The terms are used interchangeably in most documentation and APIs, and treating them as equivalent will not cause problems.
+
+== Relative URLs
+
+Not every URL contains all six components. A *relative URL* omits the scheme and authority and is interpreted relative to some base URL. If you are already connected to `https://api.weather.co`, the relative URL `/v2/forecast?city=london` resolves to:
+
+----
+https://api.weather.co/v2/forecast?city=london
+----
+
+Relative URLs are common in HTML (where links are relative to the page's URL) and in HTTP redirect responses. Your program resolves them by combining the relative path with the base URL's scheme, host, and port.
+
+== Why This Matters to You
+
+A URL is often the first thing your program receives when it needs to make a network request. Parsing it correctly gives you everything required to proceed: the protocol to speak, the host to resolve, the port to connect to, and the path to request.
+
+Misunderstanding URL structure leads to subtle bugs. Forgetting to percent-encode a query parameter produces malformed requests. Using the fragment in server-side logic fails silently because the fragment is never transmitted. Omitting the port when the server runs on a non-standard one results in a connection refused error.
+
+The next section covers the two roles in every network conversation -- the client that initiates and the server that listens -- and explains how port numbers keep their conversations separate.

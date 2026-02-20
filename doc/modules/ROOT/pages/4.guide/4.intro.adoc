@@ -1,0 +1,42 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Guide
+
+This guide provides a comprehensive reference for Corosio's components and the
+concepts behind them. By the time you finish, you will have a deep understanding
+of how each piece works, when to use it, and how the pieces fit together to
+build robust networked applications.
+
+The guide begins with the foundations of event-driven I/O. You will learn how
+operating systems handle asynchronous operations, how the event loop processes
+work, and how coroutines provide concurrency without the complexity of threads.
+These foundational topics establish the mental model you need to reason about
+asynchronous code confidently.
+
+From there, the guide moves into networking primitives. You will explore how TCP
+connections are established and managed, how addresses and ports identify
+communicating processes, and how data flows through sockets as byte streams.
+Each component is covered in detail so you understand not just the API, but the
+underlying mechanics that inform correct usage.
+
+More advanced topics build on these foundations. You will encounter patterns for
+building scalable servers, managing connection lifecycles, composing operations
+for reliable data transfer, and securing connections with encryption. The guide
+also covers practical concerns like error handling strategies, timer management,
+signal handling, and name resolution.
+
+Each topic builds naturally on previous concepts, but the sections are designed
+to be read independently. If you already understand a particular area, you can
+skip ahead to the topics that interest you most.
+
+The guide complements the tutorials with thorough API coverage and in-depth
+design explanations. Where the tutorials focus on building complete working
+programs, the guide provides the detailed understanding you need to adapt those
+patterns to your own applications and troubleshoot issues when they arise.

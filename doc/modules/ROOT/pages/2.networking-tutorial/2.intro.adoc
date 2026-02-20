@@ -1,0 +1,18 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Networking Tutorial
+
+Every network application starts with a conversation between two programs. One program asks a question, the other answers, and useful work happens across the wire. This section walks you through that conversation from the ground up, building your understanding of networked programming with Corosio one concept at a time.
+
+You will begin with the fundamentals: what happens when your program opens a connection, how bytes travel between machines, and how the operating system manages all of it on your behalf. From there you will progress to writing real I/O code -- sending data, receiving responses, and handling the inevitable errors that arise when communicating over an unreliable medium.
+
+As your confidence grows, the material advances into the patterns that distinguish production-quality network code from toy examples. You will see how asynchronous I/O lets a single thread juggle thousands of connections without blocking, how coroutines make that concurrency feel sequential and natural, and how the event loop ties it all together.
+
+By the end, you will have a practical understanding of TCP networking sufficient to build clients, servers, and everything in between -- using modern C++ and the coroutine-first abstractions that Corosio provides.
