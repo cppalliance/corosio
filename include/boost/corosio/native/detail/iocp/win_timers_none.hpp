@@ -1,0 +1,38 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TIMERS_NONE_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TIMERS_NONE_HPP
+
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_HAS_IOCP
+
+#include <boost/corosio/native/detail/iocp/win_timers.hpp>
+
+namespace boost::corosio::detail {
+
+// No-op timer wakeup for debugging/disabling timer support.
+// Not automatically selected by make_win_timers.
+class win_timers_none final : public win_timers
+{
+public:
+    win_timers_none() = default;
+
+    void start() override {}
+    void stop() override {}
+    void update_timeout(time_point) override {}
+};
+
+} // namespace boost::corosio::detail
+
+#endif // BOOST_COROSIO_HAS_IOCP
+
+#endif // BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TIMERS_NONE_HPP

@@ -1,0 +1,263 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+#include <boost/corosio/tls_context.hpp>
+#include "detail/context_impl.hpp"
+
+#include <cerrno>
+#include <fstream>
+#include <sstream>
+
+namespace boost::corosio {
+
+tls_context::tls_context() : impl_(std::make_shared<impl>()) {}
+
+//
+// Credential Loading
+//
+
+std::error_code
+tls_context::use_certificate(
+    std::string_view certificate, tls_file_format format)
+{
+    impl_->entity_certificate = std::string(certificate);
+    impl_->entity_cert_format = format;
+    return {};
+}
+
+std::error_code
+tls_context::use_certificate_file(
+    std::string_view filename, tls_file_format format)
+{
+    std::ifstream file(std::string(filename), std::ios::binary);
+    if (!file)
+        return std::error_code(ENOENT, std::generic_category());
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    impl_->entity_certificate = ss.str();
+    impl_->entity_cert_format = format;
+    return {};
+}
+
+std::error_code
+tls_context::use_certificate_chain(std::string_view chain)
+{
+    impl_->certificate_chain = std::string(chain);
+    return {};
+}
+
+std::error_code
+tls_context::use_certificate_chain_file(std::string_view filename)
+{
+    std::ifstream file(std::string(filename), std::ios::binary);
+    if (!file)
+        return std::error_code(ENOENT, std::generic_category());
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    impl_->certificate_chain = ss.str();
+    return {};
+}
+
+std::error_code
+tls_context::use_private_key(
+    std::string_view private_key, tls_file_format format)
+{
+    impl_->private_key        = std::string(private_key);
+    impl_->private_key_format = format;
+    return {};
+}
+
+std::error_code
+tls_context::use_private_key_file(
+    std::string_view filename, tls_file_format format)
+{
+    std::ifstream file(std::string(filename), std::ios::binary);
+    if (!file)
+        return std::error_code(ENOENT, std::generic_category());
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    impl_->private_key        = ss.str();
+    impl_->private_key_format = format;
+    return {};
+}
+
+std::error_code
+tls_context::use_pkcs12(
+    std::string_view /*data*/, std::string_view /*passphrase*/)
+{
+    // TODO: Implement PKCS#12 parsing
+    return std::make_error_code(std::errc::function_not_supported);
+}
+
+std::error_code
+tls_context::use_pkcs12_file(
+    std::string_view /*filename*/, std::string_view /*passphrase*/)
+{
+    // TODO: Implement PKCS#12 file loading
+    return std::make_error_code(std::errc::function_not_supported);
+}
+
+//
+// Trust Anchors
+//
+
+std::error_code
+tls_context::add_certificate_authority(std::string_view ca)
+{
+    impl_->ca_certificates.emplace_back(ca);
+    return {};
+}
+
+std::error_code
+tls_context::load_verify_file(std::string_view filename)
+{
+    std::ifstream file(std::string(filename), std::ios::binary);
+    if (!file)
+        return std::error_code(ENOENT, std::generic_category());
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    impl_->ca_certificates.push_back(ss.str());
+    return {};
+}
+
+std::error_code
+tls_context::add_verify_path(std::string_view path)
+{
+    impl_->verify_paths.emplace_back(path);
+    return {};
+}
+
+std::error_code
+tls_context::set_default_verify_paths()
+{
+    impl_->use_default_verify_paths = true;
+    return {};
+}
+
+//
+// Protocol Configuration
+//
+
+std::error_code
+tls_context::set_min_protocol_version(tls_version v)
+{
+    impl_->min_version = v;
+    return {};
+}
+
+std::error_code
+tls_context::set_max_protocol_version(tls_version v)
+{
+    impl_->max_version = v;
+    return {};
+}
+
+std::error_code
+tls_context::set_ciphersuites(std::string_view ciphers)
+{
+    impl_->ciphersuites = std::string(ciphers);
+    return {};
+}
+
+std::error_code
+tls_context::set_alpn(std::initializer_list<std::string_view> protocols)
+{
+    impl_->alpn_protocols.clear();
+    for (auto const& p : protocols)
+        impl_->alpn_protocols.emplace_back(p);
+    return {};
+}
+
+//
+// Certificate Verification
+//
+
+std::error_code
+tls_context::set_verify_mode(tls_verify_mode mode)
+{
+    impl_->verification_mode = mode;
+    return {};
+}
+
+std::error_code
+tls_context::set_verify_depth(int depth)
+{
+    impl_->verify_depth = depth;
+    return {};
+}
+
+void
+tls_context::set_hostname(std::string_view hostname)
+{
+    impl_->hostname = std::string(hostname);
+}
+
+void
+tls_context::set_servername_callback_impl(
+    std::function<bool(std::string_view)> callback)
+{
+    impl_->servername_callback = std::move(callback);
+}
+
+void
+tls_context::set_password_callback_impl(
+    std::function<std::string(std::size_t, tls_password_purpose)> callback)
+{
+    impl_->password_callback = std::move(callback);
+}
+
+//
+// Revocation Checking
+//
+
+std::error_code
+tls_context::add_crl(std::string_view crl)
+{
+    impl_->crls.emplace_back(crl);
+    return {};
+}
+
+std::error_code
+tls_context::add_crl_file(std::string_view filename)
+{
+    std::ifstream file(std::string(filename), std::ios::binary);
+    if (!file)
+        return std::error_code(ENOENT, std::generic_category());
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    impl_->crls.push_back(ss.str());
+    return {};
+}
+
+std::error_code
+tls_context::set_ocsp_staple(std::string_view response)
+{
+    impl_->ocsp_staple = std::string(response);
+    return {};
+}
+
+void
+tls_context::set_require_ocsp_staple(bool require)
+{
+    impl_->require_ocsp_staple = require;
+}
+
+void
+tls_context::set_revocation_policy(tls_revocation_policy policy)
+{
+    impl_->revocation = policy;
+}
+
+} // namespace boost::corosio

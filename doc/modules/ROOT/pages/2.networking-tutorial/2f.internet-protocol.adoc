@@ -1,0 +1,88 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= IP: Moving Packets Across Networks
+
+IP is the workhorse of the internet. Every piece of data your program sends -- whether over TCP or UDP -- travels inside an IP packet. IP's job is limited but essential: take a packet, figure out where it needs to go, and forward it one hop closer to its destination. It makes no promises about whether the packet arrives, whether it arrives once or twice, or whether it arrives before or after the packet sent before it. That deliberate minimalism is what makes the internet scalable.
+
+== What IP Does
+
+IP provides three things:
+
+Addressing:: Every packet carries a source IP address and a destination IP address, identifying who sent it and where it should go.
+
+Routing:: Routers examine the destination address and forward the packet toward the correct network. Each router makes an independent, local decision about the next hop.
+
+Fragmentation:: When a packet is too large for a link along the path, IP can split it into smaller pieces that are reassembled at the destination.
+
+That is the complete list. IP does not provide reliability, ordering, congestion control, or flow control. Those features exist in TCP, which sits above IP. IP is a delivery truck that drives a package from warehouse to warehouse without tracking whether it arrives.
+
+== The IP Header
+
+Every IP packet begins with a header that contains the information routers and the destination host need to process it. The most important fields are:
+
+Version:: Identifies whether this is IPv4 (value 4) or IPv6 (value 6). A router uses this to determine how to interpret the rest of the header.
+
+Total length:: The size of the entire packet -- header plus payload -- in bytes. The maximum for IPv4 is 65,535 bytes, though packets this large are rare in practice.
+
+Time to Live (TTL):: A counter, typically set to 64 or 128 by the sender, that decrements by one at every router. When it reaches zero, the router discards the packet and sends an error message back to the sender. TTL prevents misrouted packets from circling the network forever.
+
+Protocol:: A number identifying what sits inside the IP payload. The value `6` means TCP. The value `17` means UDP. The receiving host uses this field to hand the payload to the correct protocol handler.
+
+Source address:: The IP address of the machine that sent the packet.
+
+Destination address:: The IP address of the machine that should receive the packet.
+
+Header checksum:: (IPv4 only.) A checksum covering the header fields, verified at each hop. If the checksum fails, the packet is silently discarded. IPv6 drops this field entirely and relies on link-level and transport-level checksums instead.
+
+There are additional fields -- identification, flags, and fragment offset for fragmentation; options for special features; differentiated services for quality-of-service marking -- but the ones listed above are the ones that matter for understanding how packets move through the network.
+
+== How Routing Works
+
+Your program sends a packet destined for `203.0.113.80`. The packet does not travel directly from your machine to that address. Instead, it passes through a series of routers, each making a local forwarding decision.
+
+. Your machine consults its routing table. It determines that `203.0.113.80` is not on the local network, so it forwards the packet to the default gateway -- the router connecting your network to the broader internet.
+. The gateway examines the destination address and compares it against its own routing table, which has entries for many networks. It finds a match and forwards the packet to the next router.
+. This process repeats at each router along the path. Every router knows about the networks reachable through its various interfaces, picks the best match for the destination, and forwards the packet on.
+. Eventually, the packet reaches a router that knows the destination network directly. It delivers the packet to the destination machine.
+
+No single router knows the entire path. Each one knows only its immediate neighbors and which networks are reachable through each neighbor. This distributed, hop-by-hop design is what allows the internet to scale to billions of devices without a central authority coordinating every path.
+
+Routes can change in real time. If a link between two routers goes down, routing protocols detect the failure and recalculate paths within seconds. Your packet might take a different route than the one before it, and neither your program nor the destination will notice -- IP treats every packet independently.
+
+== MTU: Maximum Transmission Unit
+
+Every network link has a maximum frame size -- the largest chunk of data it can carry in a single transmission. This limit is called the Maximum Transmission Unit, or MTU.
+
+Ethernet, the most common link type, has a standard MTU of 1500 bytes. This means an Ethernet frame can carry an IP packet of up to 1500 bytes. Some network links have smaller MTUs (older technologies, certain VPN tunnels) and some support larger ones (jumbo frames at 9000 bytes, used in data centers).
+
+The *path MTU* is the smallest MTU of any link along the entire route from source to destination. If your machine sends a 1500-byte packet but one link along the way has an MTU of 1400, that link cannot carry your packet as-is.
+
+== Fragmentation
+
+When an IP packet exceeds the MTU of the next link, one of two things happens:
+
+In IPv4:: The router can *fragment* the packet -- splitting it into smaller pieces that each fit within the link's MTU. Each fragment carries enough information (an identification field and a fragment offset) for the destination to reassemble the original packet. Fragments travel independently and may arrive out of order. The destination waits until all fragments arrive, then reconstructs the original packet.
+
+In IPv6:: Routers do not fragment. If a packet is too large, the router drops it and sends an error back to the sender, telling it the maximum size the link can handle. The sender then reduces the packet size and tries again. This is called *path MTU discovery*, and it shifts the responsibility for sizing packets from routers to endpoints.
+
+Fragmentation has costs. If any single fragment is lost, the entire original packet must be retransmitted -- the destination cannot use a partially assembled packet. Reassembly also consumes memory and CPU on the receiving host. For these reasons, modern practice avoids fragmentation whenever possible. TCP negotiates a maximum segment size during connection setup to keep packets below the path MTU. UDP applications that care about performance should do the same.
+
+== Why This Matters to You
+
+As an application developer, you rarely interact with IP directly. TCP and UDP sit between your code and IP, and the operating system handles routing and fragmentation transparently. But IP's behavior explains several things you will encounter:
+
+* *Why packets can arrive out of order*: each IP packet is routed independently, and different packets may take different paths.
+* *Why packets can be lost*: routers discard packets when queues overflow, checksums fail, or TTL expires. There is no notification to the sender.
+* *Why there is a maximum useful size for a UDP datagram*: sending more than the path MTU triggers fragmentation, which increases the chance of total loss.
+* *Why TCP negotiates segment sizes*: to avoid fragmentation entirely.
+
+IP's minimalism is not a flaw. Keeping the core protocol lean allows it to run on everything from undersea cables to satellite links to wireless networks. The complexity lives in TCP and UDP, where it can be adapted to the needs of each application.
+
+The next section introduces UDP -- the thinner of the two transport protocols, and the one closest in spirit to IP itself.
