@@ -196,48 +196,49 @@ win_scheduler::shutdown()
 {
     ::InterlockedExchange(&shutdown_, 1);
 
-    // Stop timer wakeup mechanism
     if (timers_)
         timers_->stop();
 
-    // Drain all outstanding operations without invoking handlers
-    while (::InterlockedExchangeAdd(&outstanding_work_, 0) > 0)
+    for (;;)
     {
-        // First drain the fallback queue
         op_queue ops;
         {
             std::lock_guard<win_mutex> lock(dispatch_mutex_);
             ops.splice(completed_ops_);
         }
 
+        bool drained_any = false;
+
         while (auto* h = ops.pop())
         {
-            ::InterlockedDecrement(&outstanding_work_);
             h->destroy();
+            drained_any = true;
         }
 
-        // Then drain from IOCP with zero timeout (non-blocking)
         DWORD bytes;
         ULONG_PTR key;
         LPOVERLAPPED overlapped;
         ::GetQueuedCompletionStatus(iocp_, &bytes, &key, &overlapped, 0);
         if (overlapped)
         {
-            ::InterlockedDecrement(&outstanding_work_);
             if (key == key_posted)
             {
-                // Posted scheduler_op*
                 auto* op = reinterpret_cast<scheduler_op*>(overlapped);
                 op->destroy();
             }
             else
             {
-                // Actual I/O: convert OVERLAPPED* to overlapped_op*
                 auto* op = overlapped_to_op(overlapped);
                 op->destroy();
             }
+            drained_any = true;
         }
+
+        if (!drained_any)
+            break;
     }
+
+    ::InterlockedExchange(&outstanding_work_, 0);
 }
 
 inline void
@@ -253,9 +254,6 @@ win_scheduler::post(std::coroutine_handle<> h) const
             auto* self = static_cast<post_handler*>(base);
             if (!owner)
             {
-                // Destroy path: destroy the coroutine frame, then self
-                if (self->h_)
-                    self->h_.destroy();
                 delete self;
                 return;
             }

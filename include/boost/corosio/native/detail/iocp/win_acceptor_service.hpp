@@ -153,9 +153,6 @@ accept_op::do_complete(
 {
     auto* op = static_cast<accept_op*>(base);
 
-    // Destroy path (shutdown). Release resources owned by this
-    // op before destroying the coroutine frame, whose tcp_socket
-    // destructors will handle their own cleanup independently.
     if (!owner)
     {
         if (op->accepted_socket != INVALID_SOCKET)

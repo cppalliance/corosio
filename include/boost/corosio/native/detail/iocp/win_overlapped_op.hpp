@@ -147,17 +147,11 @@ struct overlapped_op
         dispatch_coro(ex, h).resume();
     }
 
-    /** Cleanup without invoking handler (for destroy/shutdown path).
-        Destroys the waiting coroutine frame to prevent leaks.
-    */
+    /** Disarm cancellation and abandon the coroutine handle. */
     void cleanup_only()
     {
         stop_cb.reset();
-        if (h)
-        {
-            h.destroy();
-            h = {};
-        }
+        h = {};
     }
 };
 
