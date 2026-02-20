@@ -1,0 +1,348 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Sockets
+
+The `tcp_socket` class provides asynchronous TCP networking. It supports
+connecting to servers, reading and writing data, and graceful connection
+management.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/endpoint.hpp>
+#include <boost/capy/buffers.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+
+== Overview
+
+A socket represents one end of a TCP connection:
+
+[source,cpp]
+----
+corosio::tcp_socket s(ioc);
+s.open();
+
+auto [ec] = co_await s.connect(
+    corosio::endpoint(boost::urls::ipv4_address::loopback(), 8080));
+
+char buf[1024];
+auto [read_ec, n] = co_await s.read_some(
+    capy::mutable_buffer(buf, sizeof(buf)));
+----
+
+== Construction
+
+Sockets are constructed from an execution context or executor:
+
+[source,cpp]
+----
+// From io_context
+corosio::tcp_socket s1(ioc);
+
+// From executor
+auto ex = ioc.get_executor();
+corosio::tcp_socket s2(ex);
+----
+
+The socket doesn't own system resources until `open()` is called.
+
+== Opening and Closing
+
+=== open()
+
+Creates the underlying TCP socket:
+
+[source,cpp]
+----
+s.open();  // Creates IPv4 TCP socket, associates with IOCP
+----
+
+This allocates a socket handle and registers it with the I/O backend.
+Throws `std::system_error` on failure.
+
+=== close()
+
+Releases socket resources:
+
+[source,cpp]
+----
+s.close();  // Cancels pending ops, closes socket
+----
+
+Any pending operations complete with `operation_canceled`.
+
+=== is_open()
+
+Check if the socket is open:
+
+[source,cpp]
+----
+if (s.is_open())
+    // Socket ready for I/O
+----
+
+== Connecting
+
+The `connect()` operation initiates a TCP connection:
+
+[source,cpp]
+----
+auto [ec] = co_await s.connect(endpoint);
+----
+
+This returns an `io_result<>` that you can unpack with structured bindings.
+
+=== Connection Errors
+
+Common error conditions:
+
+[cols="1,2"]
+|===
+| Error | Meaning
+
+| `connection_refused`
+| No server listening at the endpoint
+
+| `timed_out`
+| Connection attempt timed out
+
+| `network_unreachable`
+| No route to the host
+
+| `operation_canceled`
+| Cancelled via `cancel()` or stop token
+|===
+
+=== Exception Pattern
+
+For simpler code when errors are fatal:
+
+[source,cpp]
+----
+(co_await s.connect(endpoint)).value();  // Throws on error
+----
+
+== Reading Data
+
+=== read_some()
+
+Reads available data:
+
+[source,cpp]
+----
+char buf[1024];
+auto [ec, n] = co_await s.read_some(
+    capy::mutable_buffer(buf, sizeof(buf)));
+----
+
+This completes when _any_ data is available. The returned `n` may be less
+than the buffer size.
+
+=== End of Stream
+
+When the peer closes the connection:
+
+[source,cpp]
+----
+auto [ec, n] = co_await s.read_some(buf);
+
+if (ec == capy::error::eof)
+    // Connection closed normally
+
+if (n == 0 && !ec)
+    // Also indicates EOF in some cases
+----
+
+=== Reading Exact Amounts
+
+Use the `corosio::read()` free function to fill a buffer completely:
+
+[source,cpp]
+----
+auto [ec, n] = co_await corosio::read(s, buf);
+// n == buffer_size(buf) or error occurred
+----
+
+See xref:4g.composed-operations.adoc[Composed Operations] for details.
+
+== Writing Data
+
+=== write_some()
+
+Writes some data:
+
+[source,cpp]
+----
+std::string msg = "Hello";
+auto [ec, n] = co_await s.write_some(
+    capy::const_buffer(msg.data(), msg.size()));
+----
+
+This completes when _any_ data is written. The returned `n` may be less
+than the buffer size.
+
+=== Writing All Data
+
+Use the `corosio::write()` free function:
+
+[source,cpp]
+----
+auto [ec, n] = co_await corosio::write(s, buf);
+// n == buffer_size(buf) or error occurred
+----
+
+== Cancellation
+
+=== cancel()
+
+Cancel pending operations:
+
+[source,cpp]
+----
+s.cancel();
+----
+
+All outstanding operations complete with `operation_canceled`.
+
+=== Stop Token Cancellation
+
+Operations support `std::stop_token` through the affine protocol:
+
+[source,cpp]
+----
+// Inside a capy::jcancellable_task:
+auto [ec, n] = co_await s.read_some(buf);
+// Automatically cancelled if stop is requested
+----
+
+== Move Semantics
+
+Sockets are move-only:
+
+[source,cpp]
+----
+corosio::tcp_socket s1(ioc);
+corosio::tcp_socket s2 = std::move(s1);  // OK
+
+corosio::tcp_socket s3 = s2;  // Error: deleted copy constructor
+----
+
+Move assignment closes any existing socket:
+
+[source,cpp]
+----
+s1 = std::move(s2);  // Closes s1's socket if open, then moves s2
+----
+
+IMPORTANT: Source and destination must share the same execution context.
+
+== The io_stream Interface
+
+`socket` inherits from `io_stream`, which provides:
+
+[source,cpp]
+----
+class io_stream : public io_object
+{
+public:
+    template<class MutableBufferSequence>
+    auto read_some(MutableBufferSequence const& buffers);
+
+    template<class ConstBufferSequence>
+    auto write_some(ConstBufferSequence const& buffers);
+};
+----
+
+This enables polymorphic use:
+
+[source,cpp]
+----
+capy::task<void> send_data(corosio::io_stream& stream)
+{
+    co_await corosio::write(stream, some_buffer);
+}
+
+// Works with socket, wolfssl_stream, or any io_stream
+corosio::tcp_socket sock(ioc);
+co_await send_data(sock);
+----
+
+== Buffer Sequences
+
+Read and write operations accept buffer sequences:
+
+[source,cpp]
+----
+// Single buffer
+capy::mutable_buffer buf(data, size);
+co_await s.read_some(buf);
+
+// Multiple buffers (scatter/gather I/O)
+std::array<capy::mutable_buffer, 2> bufs = {
+    capy::mutable_buffer(header, header_size),
+    capy::mutable_buffer(body, body_size)
+};
+co_await s.read_some(bufs);
+----
+
+See xref:4n.buffers.adoc[Buffer Sequences] for details.
+
+== Thread Safety
+
+[cols="1,2"]
+|===
+| Operation | Thread Safety
+
+| Distinct sockets
+| Safe to use from different threads
+
+| Same socket
+| NOT safe for concurrent operations of the same type
+|===
+
+You can have one read and one write in flight simultaneously on the same
+socket. But don't start two reads or two writes concurrently.
+
+== Example: Echo Client
+
+[source,cpp]
+----
+capy::task<void> echo_client(corosio::io_context& ioc)
+{
+    corosio::tcp_socket s(ioc);
+    s.open();
+
+    (co_await s.connect(
+        corosio::endpoint(boost::urls::ipv4_address::loopback(), 8080))).value();
+
+    std::string msg = "Hello, server!";
+    (co_await corosio::write(
+        s, capy::const_buffer(msg.data(), msg.size()))).value();
+
+    char buf[1024];
+    auto [ec, n] = co_await s.read_some(
+        capy::mutable_buffer(buf, sizeof(buf)));
+
+    if (!ec)
+        std::cout << "Server replied: "
+                  << std::string_view(buf, n) << "\n";
+}
+----
+
+== Next Steps
+
+* xref:4e.tcp-acceptor.adoc[Acceptors] — Accept incoming connections
+* xref:4f.endpoints.adoc[Endpoints] — IP addresses and ports
+* xref:4g.composed-operations.adoc[Composed Operations] — read() and write()
+* xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Server example

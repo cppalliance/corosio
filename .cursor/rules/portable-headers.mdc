@@ -1,0 +1,116 @@
+---
+description: No non-portable header includes in public headers
+alwaysApply: false
+---
+# Portable Headers Rule
+
+**All headers in `include/boost/corosio/` (including all subdirectories) MUST NOT include platform-specific headers.**
+
+## Scope
+
+**Public headers**: ANY header file in `include/boost/corosio/` or any of its subdirectories.
+
+Examples:
+- `include/boost/corosio/endpoint.hpp`
+- `include/boost/corosio/detail/config.hpp`
+- `include/boost/corosio/concept/...`
+
+The entire `include/` tree is considered public API. This includes `detail/`, `concept/`, and any other subdirectories.
+
+## Prohibited Headers
+
+The following types of headers are **FORBIDDEN** in public headers:
+
+### Windows-specific
+- `<windows.h>`
+- `<WinSock2.h>`
+- `<Ws2tcpip.h>`
+- `<MSWSock.h>`
+- Any other Windows SDK headers
+
+### Unix/POSIX-specific
+- `<sys/socket.h>`
+- `<netinet/in.h>`
+- `<arpa/inet.h>`
+- `<unistd.h>`
+- `<sys/types.h>`
+- Any other POSIX/Unix-specific headers
+
+### Platform-specific macros and types
+- Any macros or types that require platform-specific headers
+- Platform-specific constants (e.g., `AF_INET`, `INADDR_ANY`)
+
+## Allowed Locations
+
+Platform-specific code is **ONLY** allowed in:
+
+- Implementation files in `src/`
+- Platform abstraction layers in `src/`
+
+## Rationale
+
+1. **Portability**: Public headers should compile on any platform without platform-specific dependencies
+2. **Maintainability**: Platform-specific code should be isolated in implementation files
+3. **User Experience**: Users should not be exposed to platform-specific types or headers
+4. **Clean API**: The public API should be platform-agnostic
+
+## Examples
+
+### ❌ Bad (in public header)
+```cpp
+// include/boost/corosio/endpoint.hpp
+#ifdef _WIN32
+#include <WinSock2.h>
+#else
+#include <netinet/in.h>
+#endif
+
+class endpoint {
+    sockaddr_in to_sockaddr_in() const;  // Platform-specific type
+};
+```
+
+### ✅ Good (in public header)
+```cpp
+// include/boost/corosio/endpoint.hpp
+#include <boost/url/ipv4_address.hpp>
+#include <cstdint>
+
+class endpoint {
+    urls::ipv4_address v4_address() const noexcept;
+    std::uint16_t port() const noexcept;
+};
+```
+
+### ✅ Good (in implementation file)
+```cpp
+// src/src/detail/endpoint_convert.hpp
+#ifdef _WIN32
+#include <WinSock2.h>
+#else
+#include <netinet/in.h>
+#endif
+
+#include <boost/corosio/endpoint.hpp>
+
+namespace boost {
+namespace corosio {
+namespace detail {
+
+sockaddr_in to_sockaddr_in(endpoint const& ep) {
+    // Platform-specific conversion logic
+}
+
+} // namespace detail
+} // namespace corosio
+} // namespace boost
+```
+
+## Enforcement
+
+When adding or modifying public headers:
+
+1. Check all `#include` directives
+2. Ensure no platform-specific headers are included
+3. Move any platform-specific code to `src/` implementation files
+4. Use platform abstraction utilities in `src/src/detail/` for conversions
