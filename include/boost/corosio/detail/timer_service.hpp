@@ -335,7 +335,7 @@ timer_service::shutdown()
         while (auto* w = impl->waiters_.pop_front())
         {
             w->stop_cb_.reset();
-            w->h_.destroy();
+            w->h_ = {};
             sched_->work_finished();
             delete w;
         }
