@@ -1,22 +1,22 @@
 # Copyright 2019 - 2021 Alexander Grund
 # Distributed under the Boost Software License, Version 1.0.
 # (See accompanying file LICENSE_1_0.txt or copy at http://boost.org/LICENSE_1_0.txt)
-#
-# Sample codecov configuration file. Edit as required
 
 codecov:
   max_report_age: off
   require_ci_to_pass: yes
   notify:
-    # Increase this if you have multiple coverage collection jobs
-    after_n_builds: 1
+    # Three coverage builds: Linux (GCC), macOS (Apple-Clang), Windows (MinGW)
+    after_n_builds: 3
     wait_for_ci: yes
 
 # Fix paths from CI build to match repository structure
-# Coverage paths look like: /home/runner/work/corosio/corosio/boost-root/libs/corosio/include/...
-# Strip everything up to and including boost-root/libs/corosio/
+# Linux (lcov) paths: /home/runner/.../boost-root/libs/corosio/include/...
+# macOS/Windows (gcovr -r boost-root) paths: libs/corosio/include/...
+# Codecov applies fixes in order, first match wins.
 fixes:
   - "boost-root/libs/corosio/::"
+  - "libs/corosio/::"
 
 # Make coverage checks informational (report but never fail CI)
 coverage:
@@ -31,6 +31,24 @@ coverage:
 # Change how pull request comments look
 comment:
   layout: "reach,diff,flags,files,footer"
+
+# Per-platform coverage flags
+flags:
+  linux:
+    paths:
+      - include/
+      - src/
+    carryforward: true
+  macos:
+    paths:
+      - include/
+      - src/
+    carryforward: true
+  windows:
+    paths:
+      - include/
+      - src/
+    carryforward: true
 
 # Ignore specific files or folders. Glob patterns are supported.
 # See https://docs.codecov.com/docs/ignoring-paths

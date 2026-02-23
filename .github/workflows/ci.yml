@@ -108,8 +108,27 @@ jobs:
             build-cmake: true
             vcpkg-triplet: "x64-mingw-static"
 
-          # macOS (3 configurations)
-          # Uses select backend (kqueue support planned for future)
+          - compiler: "mingw"
+            version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "g++"
+            cc: "gcc"
+            runs-on: "windows-2022"
+            b2-toolset: "gcc"
+            generator: "MinGW Makefiles"
+            name: "MinGW: C++20 (coverage)"
+            windows: true
+            shared: false
+            coverage: true
+            coverage-flag: "windows"
+            build-type: "Debug"
+            cxxflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
+            ccflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
+            vcpkg-triplet: "x64-mingw-static"
+
+          # macOS (4 configurations)
+          # kqueue is the default backend on macOS
           # Requires -fexperimental-library for std::stop_token support in libc++
 
           - compiler: "apple-clang"
@@ -158,7 +177,24 @@ jobs:
             build-type: "Release"
             cxxflags: "-fexperimental-library"
 
-          # Linux GCC (4 configurations)
+          - compiler: "apple-clang"
+            version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
+            cxx: "clang++"
+            cc: "clang"
+            runs-on: "macos-15"
+            b2-toolset: "clang"
+            name: "Apple-Clang (macOS 15, coverage): C++20"
+            macos: true
+            shared: false
+            coverage: true
+            coverage-flag: "macos"
+            build-type: "Debug"
+            cxxflags: "--coverage -fexperimental-library"
+            ccflags: "--coverage"
+
+          # Linux GCC (5 configurations)
 
           - compiler: "gcc"
             version: "15"
@@ -219,6 +255,7 @@ jobs:
             linux: true
             shared: false
             coverage: true
+            coverage-flag: "linux"
             build-type: "Debug"
             cxxflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
             ccflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
@@ -903,7 +940,7 @@ jobs:
           ref-source-dir: boost-root
 
       - name: Generate Coverage Report
-        if: ${{ matrix.coverage }}
+        if: ${{ matrix.coverage && matrix.linux }}
         run: |
           set -x
 
@@ -920,11 +957,35 @@ jobs:
             --include "*/boost-root/libs/${{steps.patch.outputs.module}}/src/*" \
             --gcov-tool "$gcov_tool"
 
+      - name: Generate Coverage Report (macOS)
+        if: ${{ matrix.coverage && matrix.macos }}
+        run: |
+          set -x
+          pip3 install --break-system-packages gcovr
+          gcovr \
+            --gcov-executable "xcrun llvm-cov gcov" \
+            -r boost-root \
+            --filter ".*/libs/${{steps.patch.outputs.module}}/include/.*" \
+            --filter ".*/libs/${{steps.patch.outputs.module}}/src/.*" \
+            --lcov -o "boost-root/__build_cmake_test__/coverage.info"
+
+      - name: Generate Coverage Report (Windows)
+        if: ${{ matrix.coverage && matrix.windows }}
+        run: |
+          set -x
+          pip3 install gcovr
+          gcovr \
+            -r boost-root \
+            --filter ".*/libs/${{steps.patch.outputs.module}}/include/.*" \
+            --filter ".*/libs/${{steps.patch.outputs.module}}/src/.*" \
+            --lcov -o "boost-root/__build_cmake_test__/coverage.info"
+
       - name: Upload to Codecov
         if: ${{ matrix.coverage }}
         uses: codecov/codecov-action@v5
         with:
           files: boost-root/__build_cmake_test__/coverage.info
+          flags: ${{ matrix.coverage-flag }}
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           verbose: true
