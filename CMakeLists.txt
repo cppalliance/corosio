@@ -8,11 +8,6 @@
 # Official repository: https://github.com/cppalliance/corosio
 #
 
-#-------------------------------------------------
-#
-# Project
-#
-#-------------------------------------------------
 cmake_minimum_required(VERSION 3.8...3.31)
 set(BOOST_COROSIO_VERSION 1)
 if (BOOST_SUPERPROJECT_VERSION)
@@ -23,155 +18,63 @@ set(BOOST_COROSIO_IS_ROOT OFF)
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(BOOST_COROSIO_IS_ROOT ON)
 endif ()
-set(__ignore__ ${CMAKE_C_COMPILER})
 
-#-------------------------------------------------
-#
-# Options
-#
-#-------------------------------------------------
-if (BOOST_COROSIO_IS_ROOT)
+if(BOOST_COROSIO_IS_ROOT)
     include(CTest)
-endif ()
+endif()
 option(BOOST_COROSIO_BUILD_TESTS "Build boost::corosio tests" ${BUILD_TESTING})
 option(BOOST_COROSIO_BUILD_PERF "Build boost::corosio performance tools" ${BOOST_COROSIO_IS_ROOT})
 option(BOOST_COROSIO_BUILD_EXAMPLES "Build boost::corosio examples" ${BOOST_COROSIO_IS_ROOT})
-option(BOOST_COROSIO_BUILD_DOCS "Build boost::corosio documentation" OFF)
 option(BOOST_COROSIO_MRDOCS_BUILD "Building for MrDocs documentation generation" OFF)
 
-# Check if environment variable BOOST_SRC_DIR is set
-if (NOT DEFINED BOOST_SRC_DIR AND DEFINED ENV{BOOST_SRC_DIR})
-    set(DEFAULT_BOOST_SRC_DIR "$ENV{BOOST_SRC_DIR}")
-else ()
-    set(DEFAULT_BOOST_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-endif ()
-set(BOOST_SRC_DIR ${DEFAULT_BOOST_SRC_DIR} CACHE STRING "Boost source dir to use when running CMake from this directory")
+if(NOT TARGET Boost::capy)
+    find_package(boost_capy QUIET)
+endif()
+if(NOT TARGET Boost::capy)
+    include(FetchContent)
 
-#-------------------------------------------------
-#
-# Boost modules
-#
-#-------------------------------------------------
-# corosio depends on capy
-set(BOOST_COROSIO_DEPENDENCIES
-    Boost::capy)
+    # Match capy branch to corosio's current branch when possible
+    if(NOT DEFINED CACHE{BOOST_COROSIO_CAPY_TAG})
+        execute_process(
+            COMMAND git rev-parse --abbrev-ref HEAD
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            OUTPUT_VARIABLE _corosio_branch
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+            RESULT_VARIABLE _git_result)
+        if(_git_result EQUAL 0 AND _corosio_branch)
+            execute_process(
+                COMMAND git ls-remote --heads
+                    https://github.com/cppalliance/capy.git
+                    ${_corosio_branch}
+                OUTPUT_VARIABLE _capy_has_branch
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET)
+            if(_capy_has_branch)
+                set(_default_capy_tag "${_corosio_branch}")
+            endif()
+        endif()
+        if(NOT DEFINED _default_capy_tag)
+            set(_default_capy_tag "develop")
+        endif()
+    endif()
+    set(BOOST_COROSIO_CAPY_TAG "${_default_capy_tag}" CACHE STRING
+        "Git tag/branch for capy when fetching via FetchContent")
 
-foreach (BOOST_COROSIO_DEPENDENCY ${BOOST_COROSIO_DEPENDENCIES})
-    if (BOOST_COROSIO_DEPENDENCY MATCHES "^[ ]*Boost::([A-Za-z0-9_]+)[ ]*$")
-        list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES ${CMAKE_MATCH_1})
-    endif ()
-endforeach ()
+    message(STATUS "Fetching capy...")
+    set(BOOST_CAPY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BOOST_CAPY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        capy
+        GIT_REPOSITORY https://github.com/cppalliance/capy.git
+        GIT_TAG ${BOOST_COROSIO_CAPY_TAG}
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(capy)
+endif()
 
-# Include asio which is needed by corosio's benchmarks
-if (BOOST_COROSIO_BUILD_TESTS)
-    list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio)
-endif ()
-
-# Include asio for benchmarks (comparison benchmarks)
-if (BOOST_COROSIO_BUILD_PERF)
-    list(APPEND BOOST_COROSIO_INCLUDE_LIBRARIES asio)
-endif ()
-
-# Complete dependency list
-set(BOOST_INCLUDE_LIBRARIES ${BOOST_COROSIO_INCLUDE_LIBRARIES})
-set(BOOST_EXCLUDE_LIBRARIES corosio)
-
-#-------------------------------------------------
-#
-# Add Boost Subdirectory
-#
-#-------------------------------------------------
-if (BOOST_COROSIO_IS_ROOT)
-    set(CMAKE_FOLDER Dependencies)
-    # Find absolute BOOST_SRC_DIR
-    if (NOT IS_ABSOLUTE ${BOOST_SRC_DIR})
-        set(BOOST_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${BOOST_SRC_DIR}")
-    endif ()
-
-    # Validate BOOST_SRC_DIR
-    set(BOOST_SRC_DIR_IS_VALID ON)
-    foreach (F "CMakeLists.txt" "Jamroot" "boost-build.jam" "bootstrap.sh" "libs")
-        if (NOT EXISTS "${BOOST_SRC_DIR}/${F}")
-            message(STATUS "${BOOST_SRC_DIR}/${F} does not exist. Fallback to find_package.")
-            set(BOOST_SRC_DIR_IS_VALID OFF)
-            break()
-        endif ()
-    endforeach ()
-
-    # Create Boost interface targets
-    if (BOOST_SRC_DIR_IS_VALID)
-        # From BOOST_SRC_DIR
-        if (BUILD_SHARED_LIBS)
-            set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-        endif ()
-        set(PREV_BUILD_TESTING ${BUILD_TESTING})
-        set(BUILD_TESTING OFF CACHE BOOL "Build the tests." FORCE)
-        add_subdirectory(${BOOST_SRC_DIR} Dependencies/boost EXCLUDE_FROM_ALL)
-        set(BUILD_TESTING ${PREV_BUILD_TESTING} CACHE BOOL "Build the tests." FORCE)
-        set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${BOOST_SRC_DIR}/tools/cmake/include")
-    else ()
-        # Try installed Boost package first
-        find_package(Boost QUIET)
-        if (Boost_FOUND)
-            message(STATUS "Using installed Boost package")
-            foreach (BOOST_INCLUDE_LIBRARY ${BOOST_COROSIO_INCLUDE_LIBRARIES})
-                if (NOT TARGET Boost::${BOOST_INCLUDE_LIBRARY})
-                    add_library(Boost::${BOOST_INCLUDE_LIBRARY} ALIAS Boost::headers)
-                endif ()
-            endforeach ()
-        else ()
-            # Fallback: FetchContent to download Boost and capy
-            message(STATUS "No local Boost found, using FetchContent to download dependencies")
-            include(FetchContent)
-
-            # capy is not in Boost repo - exclude it from BOOST_INCLUDE_LIBRARIES
-            # before fetching Boost, then fetch capy separately
-            list(REMOVE_ITEM BOOST_INCLUDE_LIBRARIES capy)
-
-            FetchContent_Declare(
-                boost
-                URL https://github.com/boostorg/boost/releases/download/boost-1.90.0/boost-1.90.0-cmake.tar.xz
-                DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-            )
-
-            FetchContent_Declare(
-                capy
-                GIT_REPOSITORY https://github.com/cppalliance/capy.git
-                GIT_TAG master
-                GIT_SHALLOW TRUE
-            )
-
-            # Fetch Boost first
-            message(STATUS "Fetching Boost (this may take a while on first run)...")
-            set(PREV_BUILD_TESTING ${BUILD_TESTING})
-            set(BUILD_TESTING OFF CACHE BOOL "Build the tests." FORCE)
-            FetchContent_MakeAvailable(boost)
-            set(BUILD_TESTING ${PREV_BUILD_TESTING} CACHE BOOL "Build the tests." FORCE)
-
-            # Fetch capy from cppalliance/capy (not part of Boost)
-            message(STATUS "Fetching capy...")
-            set(BOOST_CAPY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-            set(BOOST_CAPY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-            FetchContent_MakeAvailable(capy)
-
-            set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${boost_SOURCE_DIR}/tools/cmake/include")
-        endif ()
-    endif ()
-    unset(CMAKE_FOLDER)
-endif ()
-
-#-------------------------------------------------
-#
-# Threading support
-#
-#-------------------------------------------------
 find_package(Threads REQUIRED)
 
-#-------------------------------------------------
-#
-# corosio library
-#
-#-------------------------------------------------
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 file(GLOB_RECURSE BOOST_COROSIO_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio/*.hpp"
@@ -186,12 +89,13 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/corosio/src" PREFIX "src" FIL
 
 function(boost_corosio_setup_properties target)
     target_compile_features(${target} PUBLIC cxx_std_20)
-    target_include_directories(${target} PUBLIC "${PROJECT_SOURCE_DIR}/include")
+    target_include_directories(${target} PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
     target_include_directories(${target} PRIVATE
-        "${PROJECT_SOURCE_DIR}/src/corosio")
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/corosio>)
     target_link_libraries(${target}
         PUBLIC
-            ${BOOST_COROSIO_DEPENDENCIES}
+            Boost::capy
             Threads::Threads
             $<$<PLATFORM_ID:Windows>:ws2_32>)
     target_compile_definitions(${target}
@@ -209,11 +113,6 @@ function(boost_corosio_setup_properties target)
             $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
 endfunction()
 
-#-------------------------------------------------
-#
-# MrDocs Build (minimal for documentation)
-#
-#-------------------------------------------------
 if (BOOST_COROSIO_MRDOCS_BUILD)
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp"
         "#include <boost/corosio.hpp>\n")
@@ -227,12 +126,8 @@ endif()
 add_library(boost_corosio ${BOOST_COROSIO_HEADERS} ${BOOST_COROSIO_SOURCES})
 add_library(Boost::corosio ALIAS boost_corosio)
 boost_corosio_setup_properties(boost_corosio)
+set_target_properties(boost_corosio PROPERTIES EXPORT_NAME corosio)
 
-#-------------------------------------------------
-#
-# WolfSSL
-#
-#-------------------------------------------------
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(WolfSSL)
 # MinGW's linker is single-pass and order-sensitive; system libs must follow
@@ -253,6 +148,7 @@ if (WolfSSL_FOUND)
     add_library(boost_corosio_wolfssl ${BOOST_COROSIO_WOLFSSL_HEADERS} ${BOOST_COROSIO_WOLFSSL_SOURCES})
     add_library(Boost::corosio_wolfssl ALIAS boost_corosio_wolfssl)
     boost_corosio_setup_properties(boost_corosio_wolfssl)
+    set_target_properties(boost_corosio_wolfssl PROPERTIES EXPORT_NAME corosio_wolfssl)
     target_link_libraries(boost_corosio_wolfssl PUBLIC boost_corosio)
     # PUBLIC ensures WolfSSL is linked into final executables (static lib deps don't embed)
     target_link_libraries(boost_corosio_wolfssl PUBLIC WolfSSL::WolfSSL)
@@ -268,11 +164,6 @@ if (WolfSSL_FOUND)
     target_compile_definitions(boost_corosio_wolfssl PUBLIC BOOST_COROSIO_HAS_WOLFSSL)
 endif ()
 
-#-------------------------------------------------
-#
-# OpenSSL
-#
-#-------------------------------------------------
 find_package(OpenSSL)
 # MinGW's linker is single-pass and order-sensitive; system libs must follow
 # the static libraries that reference them. Add as interface dependencies so
@@ -292,6 +183,7 @@ if (OpenSSL_FOUND)
     add_library(boost_corosio_openssl ${BOOST_COROSIO_OPENSSL_HEADERS} ${BOOST_COROSIO_OPENSSL_SOURCES})
     add_library(Boost::corosio_openssl ALIAS boost_corosio_openssl)
     boost_corosio_setup_properties(boost_corosio_openssl)
+    set_target_properties(boost_corosio_openssl PROPERTIES EXPORT_NAME corosio_openssl)
     target_link_libraries(boost_corosio_openssl PUBLIC boost_corosio)
     # PUBLIC ensures OpenSSL is linked into final executables (static lib deps don't embed)
     target_link_libraries(boost_corosio_openssl PUBLIC OpenSSL::SSL OpenSSL::Crypto)
@@ -303,29 +195,72 @@ if (OpenSSL_FOUND)
     target_compile_definitions(boost_corosio_openssl PUBLIC BOOST_COROSIO_HAS_OPENSSL)
 endif ()
 
-#-------------------------------------------------
-#
-# Tests
-#
-#-------------------------------------------------
+# Install
+set(_corosio_install_targets boost_corosio)
+if(TARGET boost_corosio_openssl)
+    list(APPEND _corosio_install_targets boost_corosio_openssl)
+endif()
+if(TARGET boost_corosio_wolfssl)
+    list(APPEND _corosio_install_targets boost_corosio_wolfssl)
+endif()
+
+if(BOOST_SUPERPROJECT_VERSION AND NOT CMAKE_VERSION VERSION_LESS 3.13)
+    boost_install(
+        TARGETS ${_corosio_install_targets}
+        VERSION ${BOOST_SUPERPROJECT_VERSION}
+        HEADER_DIRECTORY include)
+elseif(boost_capy_FOUND)
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
+
+    # Set INSTALL_INTERFACE for standalone installs (boost_install handles
+    # this for superproject builds, including versioned-layout paths)
+    foreach(_t IN LISTS _corosio_install_targets)
+        target_include_directories(${_t} PUBLIC
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    endforeach()
+
+    set(BOOST_COROSIO_INSTALL_CMAKEDIR
+        ${CMAKE_INSTALL_LIBDIR}/cmake/boost_corosio)
+
+    install(TARGETS ${_corosio_install_targets}
+        EXPORT boost_corosio-targets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(DIRECTORY include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(EXPORT boost_corosio-targets
+        NAMESPACE Boost::
+        DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
+
+    configure_package_config_file(
+        cmake/boost_corosio-config.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config.cmake
+        INSTALL_DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config-version.cmake
+        COMPATIBILITY SameMajorVersion)
+
+    set(_corosio_config_files
+        ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config-version.cmake)
+    if(WolfSSL_FOUND)
+        list(APPEND _corosio_config_files
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindWolfSSL.cmake)
+    endif()
+    install(FILES ${_corosio_config_files}
+        DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
+endif()
+
 if (BOOST_COROSIO_BUILD_TESTS)
     add_subdirectory(test)
 endif ()
 
-#-------------------------------------------------
-#
-# Examples
-#
-#-------------------------------------------------
 if (BOOST_COROSIO_BUILD_EXAMPLES)
     add_subdirectory(example)
 endif ()
 
-#-------------------------------------------------
-#
-# Performance tools
-#
-#-------------------------------------------------
 if (BOOST_COROSIO_BUILD_PERF)
     add_subdirectory(perf)
 endif ()
