@@ -9,20 +9,34 @@ Boost.Corosio is a coroutine-only I/O library for C++20 that provides asynchrono
 
 ## Quick Start
 
-Clone and build with CMake (dependencies are fetched automatically):
+### Standalone build
 
 ```bash
 git clone https://github.com/cppalliance/corosio.git
 cd corosio
-cmake --preset standalone
-cmake --build --preset standalone
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 ```
 
-This downloads Boost 1.90 and Capy automatically. The library is built to `out/standalone/`.
+### Consume via CMake
+
+Use `FetchContent` or `add_subdirectory` to add corosio to your project,
+then link against `Boost::corosio`:
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(corosio
+    GIT_REPOSITORY https://github.com/cppalliance/corosio.git
+    GIT_TAG develop
+    GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(corosio)
+
+target_link_libraries(my_app Boost::corosio)
+```
 
 ## Requirements
 
-- CMake 3.25 or later
+- CMake 3.8 or later
 - C++20 compiler (GCC 12+, Clang 17+, MSVC 14.34+)
 - Ninja (recommended) or other CMake generator
 
