@@ -248,6 +248,8 @@ jobs:
             --merge-mode-functions separate \
             --sort uncovered-percent \
             --html-nested \
+            --html-template-dir=ci-automation/gcovr-templates/html \
+            --html-title "${module}" \
             --exclude-unreachable-branches \
             --exclude-throw-branches \
             --exclude '.*/extra/.*' \
@@ -439,6 +441,8 @@ jobs:
             --merge-mode-functions separate \
             --sort uncovered-percent \
             --html-nested \
+            --html-template-dir=ci-automation/gcovr-templates/html \
+            --html-title "${module}" \
             --exclude-unreachable-branches \
             --exclude-throw-branches \
             --exclude '.*/extra/.*' \
