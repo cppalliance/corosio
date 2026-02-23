@@ -431,6 +431,8 @@ jobs:
           path: ci-automation
 
       - name: Generate gcovr report
+        env:
+          PYTHONUTF8: 1
         run: |
           set -xe
           module=$(basename ${GITHUB_REPOSITORY})
