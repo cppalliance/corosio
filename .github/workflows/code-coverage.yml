@@ -27,6 +27,10 @@ on:
       - 'src/**'
       - 'include/**'
       - '.github/workflows/code-coverage.yml'
+  pull_request:
+    branches:
+      - master
+      - develop
   workflow_dispatch:
 
 concurrency:
@@ -242,23 +246,52 @@ jobs:
           module=$(basename ${GITHUB_REPOSITORY})
           mkdir -p gcovr
 
+          # First pass: collect raw coverage data into JSON
           gcovr \
             --root boost-root \
             --gcov-executable "xcrun llvm-cov gcov" \
             --merge-mode-functions separate \
             --sort uncovered-percent \
-            --html-nested \
-            --html-template-dir=ci-automation/gcovr-templates/html \
             --html-title "${module}" \
+            --merge-lines \
             --exclude-unreachable-branches \
             --exclude-throw-branches \
             --exclude '.*/extra/.*' \
             --exclude '.*/example/.*' \
             --exclude '.*/examples/.*' \
             --filter ".*/${module}/.*" \
-            --json-summary gcovr/summary.json \
             --html --output gcovr/index.html \
+            --json-summary-pretty --json-summary gcovr/summary.json \
+            --json gcovr/coverage-raw.json \
             boost-root/__build_cmake_test__
+
+          # Fix paths for repo-relative display
+          python3 ci-automation/scripts/fix_paths.py \
+            gcovr/coverage-raw.json \
+            gcovr/coverage-fixed.json \
+            --repo "${module}"
+
+          # Create symlinks so gcovr can find source files at repo-relative paths
+          ln -sfn "boost-root/libs/${module}/include" include 2>/dev/null || true
+          ln -sfn "boost-root/libs/${module}/src" src 2>/dev/null || true
+
+          # Second pass: generate nested HTML from fixed JSON with custom templates
+          gcovr \
+            -a gcovr/coverage-fixed.json \
+            --merge-mode-functions separate \
+            --sort uncovered-percent \
+            --html-nested \
+            --html-template-dir=ci-automation/gcovr-templates/html \
+            --html-title "${module}" \
+            --merge-lines \
+            --exclude-unreachable-branches \
+            --exclude-throw-branches \
+            --exclude '(^|.*/)test/.*' \
+            --exclude '.*/extra/.*' \
+            --exclude '.*/example/.*' \
+            --exclude '.*/examples/.*' \
+            --html --output gcovr/index.html \
+            --json-summary-pretty --json-summary gcovr/summary.json
 
       - name: Generate sidebar navigation
         run: python3 ci-automation/scripts/gcovr_build_tree.py gcovr
@@ -438,22 +471,51 @@ jobs:
           module=$(basename ${GITHUB_REPOSITORY})
           mkdir -p gcovr
 
+          # First pass: collect raw coverage data into JSON
           gcovr \
             --root boost-root \
             --merge-mode-functions separate \
             --sort uncovered-percent \
-            --html-nested \
-            --html-template-dir=ci-automation/gcovr-templates/html \
             --html-title "${module}" \
+            --merge-lines \
             --exclude-unreachable-branches \
             --exclude-throw-branches \
             --exclude '.*/extra/.*' \
             --exclude '.*/example/.*' \
             --exclude '.*/examples/.*' \
             --filter ".*/${module}/.*" \
-            --json-summary gcovr/summary.json \
             --html --output gcovr/index.html \
+            --json-summary-pretty --json-summary gcovr/summary.json \
+            --json gcovr/coverage-raw.json \
             boost-root/__build_cmake_test__
+
+          # Fix paths for repo-relative display
+          python3 ci-automation/scripts/fix_paths.py \
+            gcovr/coverage-raw.json \
+            gcovr/coverage-fixed.json \
+            --repo "${module}"
+
+          # Create symlinks so gcovr can find source files at repo-relative paths
+          ln -sfn "boost-root/libs/${module}/include" include 2>/dev/null || true
+          ln -sfn "boost-root/libs/${module}/src" src 2>/dev/null || true
+
+          # Second pass: generate nested HTML from fixed JSON with custom templates
+          gcovr \
+            -a gcovr/coverage-fixed.json \
+            --merge-mode-functions separate \
+            --sort uncovered-percent \
+            --html-nested \
+            --html-template-dir=ci-automation/gcovr-templates/html \
+            --html-title "${module}" \
+            --merge-lines \
+            --exclude-unreachable-branches \
+            --exclude-throw-branches \
+            --exclude '(^|.*/)test/.*' \
+            --exclude '.*/extra/.*' \
+            --exclude '.*/example/.*' \
+            --exclude '.*/examples/.*' \
+            --html --output gcovr/index.html \
+            --json-summary-pretty --json-summary gcovr/summary.json
 
       - name: Generate sidebar navigation
         run: python3 ci-automation/scripts/gcovr_build_tree.py gcovr
@@ -469,7 +531,7 @@ jobs:
 
   deploy:
     needs: [build-linux, build-macos, build-windows]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     defaults:
       run:
         shell: bash
