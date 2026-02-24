@@ -288,7 +288,6 @@ private:
     mutable op_queue completed_ops_;
     mutable std::atomic<long> outstanding_work_;
     bool stopped_;
-    bool shutdown_;
 
     // True while a thread is blocked in epoll_wait. Used by
     // wake_one_thread_and_unlock and work_finished to know when
@@ -612,7 +611,6 @@ inline epoll_scheduler::epoll_scheduler(capy::execution_context& ctx, int)
     , timer_fd_(-1)
     , outstanding_work_(0)
     , stopped_(false)
-    , shutdown_(false)
     , task_running_{false}
     , task_interrupted_(false)
     , state_(0)
@@ -696,7 +694,6 @@ epoll_scheduler::shutdown()
 {
     {
         std::unique_lock lock(mutex_);
-        shutdown_ = true;
 
         while (auto* h = completed_ops_.pop())
         {
@@ -709,8 +706,6 @@ epoll_scheduler::shutdown()
 
         signal_all(lock);
     }
-
-    outstanding_work_.store(0, std::memory_order_release);
 
     if (event_fd_ >= 0)
         interrupt_reactor();
@@ -736,7 +731,9 @@ epoll_scheduler::post(std::coroutine_handle<> h) const
 
         void destroy() override
         {
+            auto h = h_;
             delete this;
+            h.destroy();
         }
     };
 

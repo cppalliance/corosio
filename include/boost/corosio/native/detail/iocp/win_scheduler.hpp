@@ -100,7 +100,6 @@ private:
     void* iocp_;
     mutable long outstanding_work_;
     mutable long stopped_;
-    long shutdown_;
     long stop_event_posted_;
     mutable long dispatch_required_;
 
@@ -162,7 +161,6 @@ inline win_scheduler::win_scheduler(
     : iocp_(nullptr)
     , outstanding_work_(0)
     , stopped_(0)
-    , shutdown_(0)
     , stop_event_posted_(0)
     , dispatch_required_(0)
 {
@@ -194,12 +192,19 @@ inline win_scheduler::~win_scheduler()
 inline void
 win_scheduler::shutdown()
 {
-    ::InterlockedExchange(&shutdown_, 1);
-
     if (timers_)
         timers_->stop();
 
-    for (;;)
+    // Drain timer heap before the work-counting loop. The timer_service
+    // was registered after this scheduler (nested make_service from our
+    // constructor), so execution_context::shutdown() calls us first.
+    // Asio avoids this by owning timer queues directly inside the
+    // scheduler; we bridge the gap by shutting down the timer service
+    // early. The subsequent call from execution_context is a no-op.
+    if (timer_svc_)
+        timer_svc_->shutdown();
+
+    while (::InterlockedExchangeAdd(&outstanding_work_, 0) > 0)
     {
         op_queue ops;
         {
@@ -207,38 +212,39 @@ win_scheduler::shutdown()
             ops.splice(completed_ops_);
         }
 
-        bool drained_any = false;
-
-        while (auto* h = ops.pop())
+        if (!ops.empty())
         {
-            h->destroy();
-            drained_any = true;
+            while (auto* h = ops.pop())
+            {
+                ::InterlockedDecrement(&outstanding_work_);
+                h->destroy();
+            }
         }
-
-        DWORD bytes;
-        ULONG_PTR key;
-        LPOVERLAPPED overlapped;
-        ::GetQueuedCompletionStatus(iocp_, &bytes, &key, &overlapped, 0);
-        if (overlapped)
+        else
         {
-            if (key == key_posted)
+            DWORD bytes;
+            ULONG_PTR key;
+            LPOVERLAPPED overlapped;
+            ::GetQueuedCompletionStatus(
+                iocp_, &bytes, &key, &overlapped,
+                iocp::max_gqcs_timeout);
+            if (overlapped)
             {
-                auto* op = reinterpret_cast<scheduler_op*>(overlapped);
-                op->destroy();
+                ::InterlockedDecrement(&outstanding_work_);
+                if (key == key_posted)
+                {
+                    auto* op =
+                        reinterpret_cast<scheduler_op*>(overlapped);
+                    op->destroy();
+                }
+                else
+                {
+                    auto* op = overlapped_to_op(overlapped);
+                    op->destroy();
+                }
             }
-            else
-            {
-                auto* op = overlapped_to_op(overlapped);
-                op->destroy();
-            }
-            drained_any = true;
         }
-
-        if (!drained_any)
-            break;
     }
-
-    ::InterlockedExchange(&outstanding_work_, 0);
 }
 
 inline void
@@ -254,7 +260,28 @@ win_scheduler::post(std::coroutine_handle<> h) const
             auto* self = static_cast<post_handler*>(base);
             if (!owner)
             {
+                // Shutdown path: destroy the coroutine frame synchronously.
+                //
+                // Bounded destruction invariant: the chain triggered by
+                // coro.destroy() is at most two levels deep:
+                //   1. task frame destroyed → ~io_awaitable_promise_base()
+                //      destroys stored continuation (if != noop_coroutine)
+                //   2. continuation (trampoline) destroyed → final_suspend
+                //      returns suspend_never, no further continuation
+                //
+                // If a future refactor adds deeper continuation chains,
+                // this would reintroduce re-entrant stack overflow risk.
+#ifndef NDEBUG
+                static thread_local int destroy_depth = 0;
+                ++destroy_depth;
+                BOOST_COROSIO_ASSERT(destroy_depth <= 2);
+#endif
+                auto coro = self->h_;
                 delete self;
+                coro.destroy();
+#ifndef NDEBUG
+                --destroy_depth;
+#endif
                 return;
             }
             auto coro = self->h_;

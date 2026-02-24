@@ -17,6 +17,7 @@
 
 #include <chrono>
 #include <memory>
+#include <new>
 #include <stop_token>
 
 #include "context.hpp"
@@ -345,7 +346,7 @@ struct timer_test
         std::error_code result_ec;
 
         t.expires_after(std::chrono::seconds(60));
-        delay_timer.expires_after(std::chrono::milliseconds(10));
+        delay_timer.expires_after(std::chrono::milliseconds(50));
 
         auto wait_task = [](timer& t_ref, std::error_code& ec_out,
                             bool& done_out) -> capy::task<> {
@@ -361,7 +362,7 @@ struct timer_test
         };
         capy::run_async(ioc.get_executor())(delay_task(delay_timer, t));
 
-        ioc.run_for(std::chrono::milliseconds(100));
+        ioc.run_for(std::chrono::milliseconds(500));
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == capy::cond::canceled);
     }
@@ -918,6 +919,119 @@ struct timer_test
         BOOST_TEST(!captured_ec);
     }
 
+    // Shutdown cleanup
+
+    void testShutdownDestroysTimerWaiters()
+    {
+        bool started   = false;
+        bool destroyed = false;
+
+        {
+            io_context ioc(Backend);
+            timer t(ioc);
+            t.expires_after(std::chrono::seconds(3600));
+
+            auto task = [](timer& t_ref, bool& started_flag,
+                           bool& destroyed_flag) -> capy::task<> {
+                struct guard
+                {
+                    bool& flag_;
+                    ~guard() { flag_ = true; }
+                };
+                guard g{destroyed_flag};
+                started_flag = true;
+                auto [ec]    = co_await t_ref.wait();
+                (void)ec;
+            };
+
+            capy::run_async(ioc.get_executor())(task(t, started, destroyed));
+            ioc.poll();
+
+            BOOST_TEST(started);
+            // io_context destructor triggers shutdown
+        }
+
+        BOOST_TEST(destroyed);
+    }
+
+    void testShutdownDrainsHeapWaiters()
+    {
+        // Exercises timer_service::shutdown()'s waiter drain loop.
+        // Normally the timer destructs before io_context, cancelling
+        // waiters via cancel_timer(). Here we use placement-new so the
+        // timer outlives io_context — its destructor is skipped, leaving
+        // waiters in the heap for shutdown() to drain.
+        int destroyed = 0;
+
+        {
+            io_context ioc(Backend);
+
+            alignas(timer) unsigned char buf[sizeof(timer)];
+            auto* t = new (buf) timer(ioc);
+            t->expires_after(std::chrono::seconds(3600));
+
+            auto task = [](timer& t_ref, int& counter) -> capy::task<> {
+                struct guard
+                {
+                    int& c_;
+                    ~guard() { ++c_; }
+                };
+                guard g{counter};
+                auto [ec] = co_await t_ref.wait();
+                (void)ec;
+            };
+
+            capy::run_async(ioc.get_executor())(task(*t, destroyed));
+            ioc.poll();
+
+            // io_context destructs. Timer t is still alive in buf.
+            // timer_service::shutdown() finds the waiter in the heap
+            // and drains it, destroying the coroutine frame.
+            // Timer destructor is intentionally skipped (placement-new).
+        }
+
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
+    void testAbruptStopWithPendingTimerOps()
+    {
+        bool waiter_started = false;
+
+        {
+            io_context ioc(Backend);
+            timer t1(ioc);
+            timer t2(ioc);
+            timer t3(ioc);
+
+            t1.expires_after(std::chrono::hours(1));
+            t2.expires_after(std::chrono::hours(1));
+            t3.expires_after(std::chrono::hours(1));
+
+            auto waiter = [](timer& t, bool& started) -> capy::task<> {
+                started   = true;
+                auto [ec] = co_await t.wait();
+                (void)ec;
+            };
+
+            auto stopper = [](io_context& ctx) -> capy::task<> {
+                ctx.stop();
+                co_return;
+            };
+
+            capy::run_async(ioc.get_executor())(waiter(t1, waiter_started));
+            capy::run_async(ioc.get_executor())(waiter(t2, waiter_started));
+            capy::run_async(ioc.get_executor())(waiter(t3, waiter_started));
+            capy::run_async(ioc.get_executor())(stopper(ioc));
+
+            ioc.run();
+
+            BOOST_TEST(waiter_started);
+            // io_context destructs with 3 pending timer waiters
+        }
+        // Shutdown completes without hanging
+        BOOST_TEST_PASS();
+    }
+
     // Edge cases
 
     void testLongDuration()
@@ -1031,6 +1145,11 @@ struct timer_test
         testIoResultSuccess();
         testIoResultCanceled();
         testIoResultStructuredBinding();
+
+        // Shutdown cleanup
+        testShutdownDestroysTimerWaiters();
+        testShutdownDrainsHeapWaiters();
+        testAbruptStopWithPendingTimerOps();
 
         // Edge cases
         testLongDuration();

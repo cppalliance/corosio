@@ -156,7 +156,6 @@ private:
     mutable op_queue completed_ops_;
     mutable std::atomic<long> outstanding_work_;
     std::atomic<bool> stopped_;
-    bool shutdown_;
 
     // Per-fd state for tracking registered operations
     struct fd_state
@@ -259,7 +258,6 @@ inline select_scheduler::select_scheduler(capy::execution_context& ctx, int)
     : pipe_fds_{-1, -1}
     , outstanding_work_(0)
     , stopped_(false)
-    , shutdown_(false)
     , max_fd_(-1)
     , reactor_running_(false)
     , reactor_interrupted_(false)
@@ -325,7 +323,6 @@ select_scheduler::shutdown()
 {
     {
         std::unique_lock lock(mutex_);
-        shutdown_ = true;
 
         while (auto* h = completed_ops_.pop())
         {
@@ -336,8 +333,6 @@ select_scheduler::shutdown()
             lock.lock();
         }
     }
-
-    outstanding_work_.store(0, std::memory_order_release);
 
     if (pipe_fds_[1] >= 0)
         interrupt_reactor();
@@ -365,7 +360,9 @@ select_scheduler::post(std::coroutine_handle<> h) const
 
         void destroy() override
         {
+            auto h = h_;
             delete this;
+            h.destroy();
         }
     };
 
