@@ -13,6 +13,7 @@
 #include <boost/corosio/native/native_tcp_socket.hpp>
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
+#include <boost/corosio/native/native_socket_option.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -139,8 +140,8 @@ bench_single_connection(double duration_s)
     auto [client, server] = corosio::test::make_socket_pair<
         socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
 
-    client.set_no_delay(true);
-    server.set_no_delay(true);
+    client.set_option(corosio::native_socket_option::no_delay(true));
+    server.set_option(corosio::native_socket_option::no_delay(true));
 
     std::atomic<bool> running{true};
     int64_t completed_requests = 0;
@@ -206,8 +207,8 @@ bench_concurrent_connections(int num_connections, double duration_s)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_no_delay(true);
-        s.set_no_delay(true);
+        c.set_option(corosio::native_socket_option::no_delay(true));
+        s.set_option(corosio::native_socket_option::no_delay(true));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }
@@ -296,8 +297,8 @@ bench_multithread(int num_threads, int num_connections, double duration_s)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_no_delay(true);
-        s.set_no_delay(true);
+        c.set_option(corosio::native_socket_option::no_delay(true));
+        s.set_option(corosio::native_socket_option::no_delay(true));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }

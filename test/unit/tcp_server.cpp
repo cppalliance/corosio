@@ -11,6 +11,7 @@
 #include <boost/corosio/tcp_server.hpp>
 
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/timer.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -122,7 +123,10 @@ struct tcp_server_test
         for (int attempt = 0; attempt < 20; ++attempt)
         {
             port = static_cast<std::uint16_t>(49152 + (attempt * 7) % 16383);
-            if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
+            acc.open();
+            acc.set_option(socket_option::reuse_address(true));
+            if (!acc.bind(endpoint(ipv4_address::loopback(), port))
+                && !acc.listen())
                 break;
             acc.close();
             acc = tcp_acceptor(ioc);
@@ -254,7 +258,10 @@ struct tcp_server_test
         for (int attempt = 0; attempt < 20; ++attempt)
         {
             port = static_cast<std::uint16_t>(49152 + (attempt * 7) % 16383);
-            if (!acc.listen(endpoint(ipv4_address::loopback(), port)))
+            acc.open();
+            acc.set_option(socket_option::reuse_address(true));
+            if (!acc.bind(endpoint(ipv4_address::loopback(), port))
+                && !acc.listen())
                 break;
             acc.close();
             acc = tcp_acceptor(ioc);
@@ -395,7 +402,11 @@ struct tcp_server_test
 
         // Test success case
         tcp_acceptor acc1(ioc);
-        auto ec1 = acc1.listen(endpoint(ipv4_address::loopback(), 0));
+        acc1.open();
+        acc1.set_option(socket_option::reuse_address(true));
+        auto ec1 = acc1.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec1);
+        ec1 = acc1.listen();
         BOOST_TEST(!ec1);
         BOOST_TEST(acc1.is_open());
         auto port = acc1.local_endpoint().port();
@@ -403,7 +414,11 @@ struct tcp_server_test
 
         // Test with explicit backlog
         tcp_acceptor acc2(ioc);
-        auto ec2 = acc2.listen(endpoint(ipv4_address::loopback(), 0), 64);
+        acc2.open();
+        acc2.set_option(socket_option::reuse_address(true));
+        auto ec2 = acc2.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec2);
+        ec2 = acc2.listen(64);
         BOOST_TEST(!ec2);
         BOOST_TEST(acc2.is_open());
         BOOST_TEST(acc2.local_endpoint().port() != 0);
@@ -419,7 +434,7 @@ struct tcp_server_test
         BOOST_TEST(!ec);
     }
 
-    void testListenErrorNonLocalAddress()
+    void testBindErrorNonLocalAcceptor()
     {
         io_context ioc;
 
@@ -428,9 +443,10 @@ struct tcp_server_test
         // 192.0.2.1 is from TEST-NET-1 (RFC 5737), reserved for documentation
         // and never assigned to real interfaces.
         tcp_acceptor acc(ioc);
-        auto ec = acc.listen(endpoint(ipv4_address({192, 0, 2, 1}), 0));
+        acc.open();
+        auto ec = acc.bind(endpoint(ipv4_address({192, 0, 2, 1}), 0));
         BOOST_TEST(ec);
-        BOOST_TEST(!acc.is_open());
+        acc.close();
     }
 
     void testBindErrorNonLocalAddress()
@@ -443,18 +459,27 @@ struct tcp_server_test
         BOOST_TEST(ec);
     }
 
-    void testListenOnOpenAcceptor()
+    void testRelistenAfterClose()
     {
         io_context ioc;
         tcp_acceptor acc(ioc);
 
         // First listen
-        auto ec1 = acc.listen(endpoint(ipv4_address::loopback(), 0));
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec1 = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec1);
+        ec1 = acc.listen();
         BOOST_TEST(!ec1);
         BOOST_TEST(acc.is_open());
 
-        // Re-listen should close and reopen
-        auto ec2 = acc.listen(endpoint(ipv4_address::loopback(), 0));
+        // Close and re-listen
+        acc.close();
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec2 = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec2);
+        ec2 = acc.listen();
         BOOST_TEST(!ec2);
         BOOST_TEST(acc.is_open());
     }
@@ -470,9 +495,9 @@ struct tcp_server_test
         testStartWithoutJoinThrows();
         testListenErrorCode();
         testBindSuccess();
-        testListenErrorNonLocalAddress();
+        testBindErrorNonLocalAcceptor();
         testBindErrorNonLocalAddress();
-        testListenOnOpenAcceptor();
+        testRelistenAfterClose();
     }
 };
 

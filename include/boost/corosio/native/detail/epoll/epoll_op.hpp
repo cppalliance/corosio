@@ -355,24 +355,24 @@ struct epoll_accept_op final : epoll_op
 {
     int accepted_fd                      = -1;
     io_object::implementation** impl_out = nullptr;
-    sockaddr_in peer_addr{};
+    sockaddr_storage peer_storage{};
 
     void reset() noexcept
     {
         epoll_op::reset();
-        accepted_fd = -1;
-        impl_out    = nullptr;
-        peer_addr   = {};
+        accepted_fd  = -1;
+        impl_out     = nullptr;
+        peer_storage = {};
     }
 
     void perform_io() noexcept override
     {
-        socklen_t addrlen = sizeof(peer_addr);
+        socklen_t addrlen = sizeof(peer_storage);
         int new_fd;
         do
         {
             new_fd = ::accept4(
-                fd, reinterpret_cast<sockaddr*>(&peer_addr), &addrlen,
+                fd, reinterpret_cast<sockaddr*>(&peer_storage), &addrlen,
                 SOCK_NONBLOCK | SOCK_CLOEXEC);
         }
         while (new_fd < 0 && errno == EINTR);

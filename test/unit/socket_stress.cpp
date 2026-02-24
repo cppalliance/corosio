@@ -23,6 +23,7 @@
 
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/timer.hpp>
 
 #include <boost/capy/cond.hpp>
@@ -68,7 +69,11 @@ make_stress_pair(io_context& ctx)
     bool connect_done = false;
 
     tcp_acceptor acc(ctx);
-    if (auto ec = acc.listen(endpoint(ipv4_address::loopback(), 0)))
+    acc.open();
+    acc.set_option(socket_option::reuse_address(true));
+    if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
+        throw std::runtime_error("stress_pair bind failed: " + ec.message());
+    if (auto ec = acc.listen())
         throw std::runtime_error("stress_pair listen failed: " + ec.message());
     auto port = acc.local_endpoint().port();
 
@@ -632,7 +637,14 @@ struct accept_stress_test
         std::atomic<bool> stop_flag{false};
 
         tcp_acceptor acc(ioc);
-        if (auto ec = acc.listen(endpoint(ipv4_address::loopback(), 0)))
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
+        {
+            BOOST_ERROR("accept_stress: bind failed");
+            return;
+        }
+        if (auto ec = acc.listen())
         {
             BOOST_ERROR("accept_stress: listen failed");
             return;

@@ -90,6 +90,145 @@ from_sockaddr_in6(sockaddr_in6 const& sa) noexcept
     return endpoint(ipv6_address(bytes), ntohs(sa.sin6_port));
 }
 
+/** Convert an IPv4 endpoint to an IPv4-mapped IPv6 sockaddr_in6.
+
+    Produces a `sockaddr_in6` with the `::ffff:` prefix, suitable
+    for passing an IPv4 destination to a dual-stack IPv6 socket.
+
+    @param ep The endpoint to convert. Must be IPv4 (is_v4() == true).
+    @return A sockaddr_in6 with the IPv4-mapped address.
+*/
+inline sockaddr_in6
+to_v4_mapped_sockaddr_in6(endpoint const& ep) noexcept
+{
+    sockaddr_in6 sa{};
+    sa.sin6_family = AF_INET6;
+    sa.sin6_port   = htons(ep.port());
+    // ::ffff:0:0/96 prefix
+    sa.sin6_addr.s6_addr[10] = 0xff;
+    sa.sin6_addr.s6_addr[11] = 0xff;
+    auto bytes = ep.v4_address().to_bytes();
+    std::memcpy(&sa.sin6_addr.s6_addr[12], bytes.data(), 4);
+    return sa;
+}
+
+/** Convert endpoint to sockaddr_storage.
+
+    Dispatches to @ref to_sockaddr_in or @ref to_sockaddr_in6
+    based on the endpoint's address family.
+
+    @param ep The endpoint to convert.
+    @param storage Output parameter filled with the sockaddr.
+    @return The length of the filled sockaddr structure.
+*/
+inline socklen_t
+to_sockaddr( endpoint const& ep, sockaddr_storage& storage ) noexcept
+{
+    std::memset( &storage, 0, sizeof( storage ) );
+    if( ep.is_v4() )
+    {
+        auto sa = to_sockaddr_in( ep );
+        std::memcpy( &storage, &sa, sizeof( sa ) );
+        return sizeof( sa );
+    }
+    auto sa6 = to_sockaddr_in6( ep );
+    std::memcpy( &storage, &sa6, sizeof( sa6 ) );
+    return sizeof( sa6 );
+}
+
+/** Convert endpoint to sockaddr_storage for a specific socket family.
+
+    When the socket is AF_INET6 and the endpoint is IPv4, the address
+    is converted to an IPv4-mapped IPv6 address (`::ffff:x.x.x.x`) so
+    dual-stack sockets can connect to IPv4 destinations.
+
+    @param ep The endpoint to convert.
+    @param socket_family The address family of the socket (AF_INET or
+        AF_INET6).
+    @param storage Output parameter filled with the sockaddr.
+    @return The length of the filled sockaddr structure.
+*/
+inline socklen_t
+to_sockaddr(
+    endpoint const& ep,
+    int socket_family,
+    sockaddr_storage& storage) noexcept
+{
+    // IPv4 endpoint on IPv6 socket: use IPv4-mapped address
+    if (ep.is_v4() && socket_family == AF_INET6)
+    {
+        std::memset(&storage, 0, sizeof(storage));
+        auto sa6 = to_v4_mapped_sockaddr_in6(ep);
+        std::memcpy(&storage, &sa6, sizeof(sa6));
+        return sizeof(sa6);
+    }
+    return to_sockaddr(ep, storage);
+}
+
+/** Create endpoint from sockaddr_storage.
+
+    Dispatches on `ss_family` to reconstruct the appropriate
+    IPv4 or IPv6 endpoint.
+
+    @param storage The sockaddr_storage with fields in network byte order.
+    @return An endpoint with address and port extracted from storage.
+*/
+inline endpoint
+from_sockaddr( sockaddr_storage const& storage ) noexcept
+{
+    if( storage.ss_family == AF_INET )
+    {
+        sockaddr_in sa;
+        std::memcpy( &sa, &storage, sizeof( sa ) );
+        return from_sockaddr_in( sa );
+    }
+    if( storage.ss_family == AF_INET6 )
+    {
+        sockaddr_in6 sa6;
+        std::memcpy( &sa6, &storage, sizeof( sa6 ) );
+        return from_sockaddr_in6( sa6 );
+    }
+    return endpoint{};
+}
+
+/** Return the native address family for an endpoint.
+
+    @param ep The endpoint to query.
+    @return `AF_INET` for IPv4, `AF_INET6` for IPv6.
+*/
+inline int
+endpoint_family( endpoint const& ep ) noexcept
+{
+    return ep.is_v6() ? AF_INET6 : AF_INET;
+}
+
+/** Return the address family of a socket descriptor.
+
+    @param fd The socket file descriptor.
+    @return AF_INET, AF_INET6, or AF_UNSPEC on failure.
+*/
+inline int
+socket_family(
+#if BOOST_COROSIO_POSIX
+    int fd
+#else
+    std::uintptr_t fd
+#endif
+    ) noexcept
+{
+    sockaddr_storage storage{};
+    socklen_t len = sizeof(storage);
+    if (getsockname(
+#if BOOST_COROSIO_POSIX
+            fd,
+#else
+            static_cast<SOCKET>(fd),
+#endif
+            reinterpret_cast<sockaddr*>(&storage), &len) != 0)
+        return AF_UNSPEC;
+    return storage.ss_family;
+}
+
 } // namespace boost::corosio::detail
 
 #endif

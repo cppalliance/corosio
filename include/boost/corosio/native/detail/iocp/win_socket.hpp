@@ -111,6 +111,7 @@ class win_socket_internal
     read_op rd_;
     write_op wr_;
     SOCKET socket_ = INVALID_SOCKET;
+    int family_    = AF_UNSPEC;
 
 public:
     explicit win_socket_internal(win_sockets& svc) noexcept;
@@ -198,21 +199,12 @@ public:
 
     native_handle_type native_handle() const noexcept override;
 
-    std::error_code set_no_delay(bool value) noexcept override;
-    bool no_delay(std::error_code& ec) const noexcept override;
-
-    std::error_code set_keep_alive(bool value) noexcept override;
-    bool keep_alive(std::error_code& ec) const noexcept override;
-
-    std::error_code set_receive_buffer_size(int size) noexcept override;
-    int receive_buffer_size(std::error_code& ec) const noexcept override;
-
-    std::error_code set_send_buffer_size(int size) noexcept override;
-    int send_buffer_size(std::error_code& ec) const noexcept override;
-
-    std::error_code set_linger(bool enabled, int timeout) noexcept override;
-    tcp_socket::linger_options
-    linger(std::error_code& ec) const noexcept override;
+    std::error_code set_option(
+        int level, int optname,
+        void const* data, std::size_t size) noexcept override;
+    std::error_code get_option(
+        int level, int optname,
+        void* data, std::size_t* size) const noexcept override;
 
     endpoint local_endpoint() const noexcept override;
     endpoint remote_endpoint() const noexcept override;

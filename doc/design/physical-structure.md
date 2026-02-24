@@ -206,9 +206,13 @@ public:
         virtual native_handle_type native_handle() const noexcept = 0;
         virtual void cancel() noexcept = 0;
 
-        // Protocol-specific socket options
-        virtual std::error_code set_no_delay( bool ) noexcept = 0;
-        // ...
+        // Generic socket options (level/name passed through from option type)
+        virtual std::error_code set_option(
+            int level, int optname,
+            void const* data, std::size_t size ) noexcept = 0;
+        virtual std::error_code get_option(
+            int level, int optname,
+            void* data, std::size_t* size ) const noexcept = 0;
     };
 
 private:

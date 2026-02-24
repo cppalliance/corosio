@@ -58,6 +58,13 @@ public:
         return fd_ >= 0;
     }
     void cancel() noexcept override;
+
+    std::error_code set_option(
+        int level, int optname,
+        void const* data, std::size_t size) noexcept override;
+    std::error_code get_option(
+        int level, int optname,
+        void* data, std::size_t* size) const noexcept override;
     void cancel_single_op(select_op& op) noexcept;
     void close_socket() noexcept;
     void set_local_endpoint(endpoint ep) noexcept

@@ -339,12 +339,13 @@ struct select_accept_op final : select_op
 
     void perform_io() noexcept override
     {
-        sockaddr_in addr{};
-        socklen_t addrlen = sizeof(addr);
+        sockaddr_storage addr_storage{};
+        socklen_t addrlen = sizeof(addr_storage);
 
         // Note: select backend uses accept() + fcntl instead of accept4()
         // for broader POSIX compatibility
-        int new_fd = ::accept(fd, reinterpret_cast<sockaddr*>(&addr), &addrlen);
+        int new_fd =
+            ::accept(fd, reinterpret_cast<sockaddr*>(&addr_storage), &addrlen);
 
         if (new_fd >= 0)
         {

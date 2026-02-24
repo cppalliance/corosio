@@ -13,6 +13,7 @@
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
@@ -518,8 +519,12 @@ make_mocket_pair(
     bool connect_done = false;
 
     Acceptor acc(ctx);
-    auto listen_ec = acc.listen(endpoint(ipv4_address::loopback(), 0));
-    if (listen_ec)
+    acc.open();
+    acc.set_option(socket_option::reuse_address(true));
+    if (auto bind_ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
+        throw std::runtime_error(
+            "mocket bind failed: " + bind_ec.message());
+    if (auto listen_ec = acc.listen())
         throw std::runtime_error(
             "mocket listen failed: " + listen_ec.message());
     auto port = acc.local_endpoint().port();

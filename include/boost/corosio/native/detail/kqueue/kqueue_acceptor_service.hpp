@@ -77,8 +77,13 @@ public:
     io_object::implementation* construct() override;
     void destroy(io_object::implementation*) override;
     void close(io_object::handle&) override;
-    std::error_code open_acceptor(
-        tcp_acceptor::implementation& impl, endpoint ep, int backlog) override;
+    std::error_code open_acceptor_socket(
+        tcp_acceptor::implementation& impl,
+        int family, int type, int protocol) override;
+    std::error_code bind_acceptor(
+        tcp_acceptor::implementation& impl, endpoint ep) override;
+    std::error_code listen_acceptor(
+        tcp_acceptor::implementation& impl, int backlog) override;
 
     kqueue_scheduler& scheduler() const noexcept
     {
@@ -166,22 +171,22 @@ kqueue_accept_op::operator()()
                 }
                 else
                 {
-                    sockaddr_in local_addr{};
-                    socklen_t local_len = sizeof(local_addr);
-                    sockaddr_in remote_addr{};
-                    socklen_t remote_len = sizeof(remote_addr);
+                    sockaddr_storage local_storage{};
+                    socklen_t local_len = sizeof(local_storage);
+                    sockaddr_storage remote_storage{};
+                    socklen_t remote_len = sizeof(remote_storage);
 
                     endpoint local_ep, remote_ep;
                     if (::getsockname(
                             accepted_fd,
-                            reinterpret_cast<sockaddr*>(&local_addr),
+                            reinterpret_cast<sockaddr*>(&local_storage),
                             &local_len) == 0)
-                        local_ep = from_sockaddr_in(local_addr);
+                        local_ep = from_sockaddr(local_storage);
                     if (::getpeername(
                             accepted_fd,
-                            reinterpret_cast<sockaddr*>(&remote_addr),
+                            reinterpret_cast<sockaddr*>(&remote_storage),
                             &remote_len) == 0)
-                        remote_ep = from_sockaddr_in(remote_addr);
+                        remote_ep = from_sockaddr(remote_storage);
 
                     impl.set_endpoints(local_ep, remote_ep);
 
@@ -261,11 +266,12 @@ kqueue_acceptor::accept(
     op.fd       = fd_;
     op.start(token, this);
 
-    sockaddr_in addr{};
-    socklen_t addrlen = sizeof(addr);
+    sockaddr_storage peer_storage{};
+    socklen_t addrlen = sizeof(peer_storage);
 
     // FreeBSD: Can use accept4(fd_, addr, addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC)
-    int accepted = ::accept(fd_, reinterpret_cast<sockaddr*>(&addr), &addrlen);
+    int accepted =
+        ::accept(fd_, reinterpret_cast<sockaddr*>(&peer_storage), &addrlen);
 
     if (accepted >= 0)
     {
@@ -325,15 +331,16 @@ kqueue_acceptor::accept(
                 }
                 else
                 {
-                    sockaddr_in local_addr{};
-                    socklen_t local_len = sizeof(local_addr);
+                    sockaddr_storage local_storage{};
+                    socklen_t local_len = sizeof(local_storage);
                     endpoint local_ep;
                     if (::getsockname(
                             accepted,
-                            reinterpret_cast<sockaddr*>(&local_addr),
+                            reinterpret_cast<sockaddr*>(&local_storage),
                             &local_len) == 0)
-                        local_ep = from_sockaddr_in(local_addr);
-                    impl.set_endpoints(local_ep, from_sockaddr_in(addr));
+                        local_ep = from_sockaddr(local_storage);
+                    impl.set_endpoints(
+                        local_ep, from_sockaddr(peer_storage));
                     if (ec)
                         *ec = {};
                     if (impl_out)
@@ -560,16 +567,41 @@ kqueue_acceptor_service::close(io_object::handle& h)
 }
 
 inline std::error_code
-kqueue_acceptor_service::open_acceptor(
-    tcp_acceptor::implementation& impl, endpoint ep, int backlog)
+kqueue_acceptor::set_option(
+    int level, int optname,
+    void const* data, std::size_t size) noexcept
+{
+    if (::setsockopt(fd_, level, optname, data,
+            static_cast<socklen_t>(size)) != 0)
+        return make_err(errno);
+    return {};
+}
+
+inline std::error_code
+kqueue_acceptor::get_option(
+    int level, int optname,
+    void* data, std::size_t* size) const noexcept
+{
+    socklen_t len = static_cast<socklen_t>(*size);
+    if (::getsockopt(fd_, level, optname, data, &len) != 0)
+        return make_err(errno);
+    *size = static_cast<std::size_t>(len);
+    return {};
+}
+
+inline std::error_code
+kqueue_acceptor_service::open_acceptor_socket(
+    tcp_acceptor::implementation& impl,
+    int family, int type, int protocol)
 {
     auto* kq_impl = static_cast<kqueue_acceptor*>(&impl);
     kq_impl->close_socket();
 
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    int fd = ::socket(family, type, protocol);
     if (fd < 0)
         return make_err(errno);
 
+    // Set non-blocking and close-on-exec
     int flags = ::fcntl(fd, F_GETFL, 0);
     if (flags == -1)
     {
@@ -590,38 +622,63 @@ kqueue_acceptor_service::open_acceptor(
         return make_err(errn);
     }
 
-    int reuse = 1;
-    (void)::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-    sockaddr_in addr = detail::to_sockaddr_in(ep);
-    if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
+    if (family == AF_INET6)
     {
-        int errn = errno;
-        ::close(fd);
-        return make_err(errn);
+        int val = 0; // dual-stack default
+        ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val));
     }
 
-    if (::listen(fd, backlog) < 0)
-    {
-        int errn = errno;
-        ::close(fd);
-        return make_err(errn);
-    }
+    // SO_NOSIGPIPE on macOS (where MSG_NOSIGNAL doesn't exist)
+#ifdef SO_NOSIGPIPE
+    int nosig = 1;
+    ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &nosig, sizeof(nosig));
+#endif
 
     kq_impl->fd_ = fd;
 
+    // Set up descriptor state but do NOT register with kqueue yet
     kq_impl->desc_state_.fd = fd;
     {
         std::lock_guard lock(kq_impl->desc_state_.mutex);
         kq_impl->desc_state_.read_op = nullptr;
     }
-    scheduler().register_descriptor(fd, &kq_impl->desc_state_);
 
-    sockaddr_in local_addr{};
-    socklen_t local_len = sizeof(local_addr);
-    if (::getsockname(
-            fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
-        kq_impl->set_local_endpoint(detail::from_sockaddr_in(local_addr));
+    return {};
+}
+
+inline std::error_code
+kqueue_acceptor_service::bind_acceptor(
+    tcp_acceptor::implementation& impl, endpoint ep)
+{
+    auto* kq_impl = static_cast<kqueue_acceptor*>(&impl);
+    int fd = kq_impl->fd_;
+
+    sockaddr_storage storage{};
+    socklen_t addrlen = detail::to_sockaddr(ep, storage);
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&storage), addrlen) < 0)
+        return make_err(errno);
+
+    // Cache local endpoint (resolves ephemeral port)
+    sockaddr_storage local{};
+    socklen_t local_len = sizeof(local);
+    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+        kq_impl->set_local_endpoint(detail::from_sockaddr(local));
+
+    return {};
+}
+
+inline std::error_code
+kqueue_acceptor_service::listen_acceptor(
+    tcp_acceptor::implementation& impl, int backlog)
+{
+    auto* kq_impl = static_cast<kqueue_acceptor*>(&impl);
+    int fd = kq_impl->fd_;
+
+    if (::listen(fd, backlog) < 0)
+        return make_err(errno);
+
+    // Register fd with kqueue
+    scheduler().register_descriptor(fd, &kq_impl->desc_state_);
 
     return {};
 }

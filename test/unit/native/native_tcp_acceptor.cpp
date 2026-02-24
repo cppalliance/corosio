@@ -9,6 +9,7 @@
 
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
+#include <boost/corosio/native/native_socket_option.hpp>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -29,7 +30,11 @@ struct native_tcp_acceptor_test
     {
         io_context ctx(Backend);
         native_tcp_acceptor<Backend> a1(ctx);
-        auto ec = a1.listen(endpoint(ipv4_address::loopback(), 0));
+        a1.open();
+        a1.set_option(native_socket_option::reuse_address(true));
+        auto ec = a1.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = a1.listen();
         BOOST_TEST(!ec);
         BOOST_TEST(a1.is_open());
 
@@ -41,7 +46,11 @@ struct native_tcp_acceptor_test
     {
         io_context ctx(Backend);
         native_tcp_acceptor<Backend> na(ctx);
-        auto ec = na.listen(endpoint(ipv4_address::loopback(), 0));
+        na.open();
+        na.set_option(native_socket_option::reuse_address(true));
+        auto ec = na.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = na.listen();
         BOOST_TEST(!ec);
 
         tcp_acceptor& base = na;

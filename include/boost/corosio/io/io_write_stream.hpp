@@ -105,6 +105,11 @@ protected:
     /// Construct from a handle.
     explicit io_write_stream(handle h) noexcept : io_object(std::move(h)) {}
 
+    io_write_stream(io_write_stream&&) noexcept            = default;
+    io_write_stream& operator=(io_write_stream&&) noexcept = delete;
+    io_write_stream(io_write_stream const&)                = delete;
+    io_write_stream& operator=(io_write_stream const&)     = delete;
+
 public:
     /** Asynchronously write data to the stream.
 

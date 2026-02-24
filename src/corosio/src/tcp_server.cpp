@@ -91,11 +91,15 @@ tcp_server::do_accept(tcp_acceptor& acc)
 std::error_code
 tcp_server::bind(endpoint ep)
 {
-    impl_->ports.emplace_back(impl_->ctx);
-    auto ec = impl_->ports.back().listen(ep);
-    if (ec)
-        impl_->ports.pop_back();
-    return ec;
+    try
+    {
+        impl_->ports.emplace_back(impl_->ctx, ep);
+        return {};
+    }
+    catch (std::system_error const& e)
+    {
+        return e.code();
+    }
 }
 
 void

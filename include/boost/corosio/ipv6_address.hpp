@@ -261,6 +261,18 @@ public:
         return a1.addr_ != a2.addr_;
     }
 
+    /** Return an address object that represents the unspecified address.
+
+        The address 0:0:0:0:0:0:0:0 (::) may be used to bind a socket
+        to all available interfaces.
+
+        @return The unspecified address (::).
+    */
+    static ipv6_address any() noexcept
+    {
+        return ipv6_address();
+    }
+
     /** Return an address object that represents the loopback address.
 
         The unicast address 0:0:0:0:0:0:0:1 is called

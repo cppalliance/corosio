@@ -81,6 +81,13 @@ public:
     /** Cancel any pending accept operation. */
     void cancel() noexcept override;
 
+    std::error_code set_option(
+        int level, int optname,
+        void const* data, std::size_t size) noexcept override;
+    std::error_code get_option(
+        int level, int optname,
+        void* data, std::size_t* size) const noexcept override;
+
     /** Cancel a specific pending operation.
 
         @param op The operation to cancel.

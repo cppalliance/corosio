@@ -10,6 +10,7 @@
 #include <boost/corosio/native/native_tcp_socket.hpp>
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
+#include <boost/corosio/native/native_socket_option.hpp>
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -30,7 +31,11 @@ struct native_io_test
         auto ex = ctx.get_executor();
 
         native_tcp_acceptor<Backend> acc(ctx);
-        auto ec = acc.listen(endpoint(ipv4_address::loopback(), 0));
+        acc.open();
+        acc.set_option(native_socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
         BOOST_TEST(!ec);
         auto port = acc.local_endpoint().port();
 

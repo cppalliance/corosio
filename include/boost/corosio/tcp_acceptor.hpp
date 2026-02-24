@@ -16,6 +16,7 @@
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -53,17 +54,29 @@ namespace boost::corosio {
 
     @par Example
     @code
+    // Convenience constructor: open + SO_REUSEADDR + bind + listen
     io_context ioc;
-    tcp_acceptor acc(ioc);
-    if (auto ec = acc.listen(endpoint(8080)))  // Bind to port 8080
-        return ec;
+    tcp_acceptor acc( ioc, endpoint( 8080 ) );
 
-    tcp_socket peer(ioc);
-    auto [ec] = co_await acc.accept(peer);
-    if (!ec) {
+    tcp_socket peer( ioc );
+    auto [ec] = co_await acc.accept( peer );
+    if ( !ec ) {
         // peer is now a connected socket
-        auto [ec2, n] = co_await peer.read_some(buf);
+        auto [ec2, n] = co_await peer.read_some( buf );
     }
+    @endcode
+
+    @par Example
+    @code
+    // Fine-grained setup
+    tcp_acceptor acc( ioc );
+    acc.open( tcp::v6() );
+    acc.set_option( socket_option::reuse_address( true ) );
+    acc.set_option( socket_option::v6_only( true ) );
+    if ( auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ) )
+        return ec;
+    if ( auto ec = acc.listen() )
+        return ec;
     @endcode
 */
 class BOOST_COROSIO_DECL tcp_acceptor : public io_object
@@ -119,6 +132,20 @@ public:
     */
     explicit tcp_acceptor(capy::execution_context& ctx);
 
+    /** Convenience constructor: open + SO_REUSEADDR + bind + listen.
+
+        Creates a fully-bound listening acceptor in a single
+        expression. The address family is deduced from @p ep.
+
+        @param ctx The execution context that will own this acceptor.
+        @param ep The local endpoint to bind to.
+        @param backlog The maximum pending connection queue length.
+
+        @throws std::system_error on bind or listen failure.
+    */
+    tcp_acceptor(
+        capy::execution_context& ctx, endpoint ep, int backlog = 128 );
+
     /** Construct an acceptor from an executor.
 
         The acceptor is associated with the executor's context.
@@ -129,6 +156,21 @@ public:
         requires(!std::same_as<std::remove_cvref_t<Ex>, tcp_acceptor>) &&
         capy::Executor<Ex>
     explicit tcp_acceptor(Ex const& ex) : tcp_acceptor(ex.context())
+    {
+    }
+
+    /** Convenience constructor from an executor.
+
+        @param ex The executor whose context will own the acceptor.
+        @param ep The local endpoint to bind to.
+        @param backlog The maximum pending connection queue length.
+
+        @throws std::system_error on bind or listen failure.
+    */
+    template<class Ex>
+        requires capy::Executor<Ex>
+    tcp_acceptor(Ex const& ex, endpoint ep, int backlog = 128 )
+        : tcp_acceptor(ex.context(), ep, backlog)
     {
     }
 
@@ -170,20 +212,41 @@ public:
     tcp_acceptor(tcp_acceptor const&)            = delete;
     tcp_acceptor& operator=(tcp_acceptor const&) = delete;
 
-    /** Open, bind, and listen on an endpoint.
+    /** Create the acceptor socket without binding or listening.
 
-        Creates an IPv4 TCP socket, binds it to the specified endpoint,
-        and begins listening for incoming connections. This must be
-        called before initiating accept operations.
+        Creates a TCP socket with dual-stack enabled for IPv6.
+        Does not set SO_REUSEADDR — call `set_option` explicitly
+        if needed.
 
-        @param ep The local endpoint to bind to. Use `endpoint(port)` to
-            bind to all interfaces on a specific port.
+        If the acceptor is already open, this function is a no-op.
 
-        @param backlog The maximum length of the queue of pending
-            connections. Defaults to 128.
+        @param proto The protocol (IPv4 or IPv6). Defaults to
+            `tcp::v4()`.
 
-        @return An error code indicating success or the reason for failure.
-            A default-constructed error code indicates success.
+        @throws std::system_error on failure.
+
+        @par Example
+        @code
+        acc.open( tcp::v6() );
+        acc.set_option( socket_option::reuse_address( true ) );
+        acc.bind( endpoint( ipv6_address::any(), 8080 ) );
+        acc.listen();
+        @endcode
+
+        @see bind, listen
+    */
+    void open( tcp proto = tcp::v4() );
+
+    /** Bind to a local endpoint.
+
+        The acceptor must be open. Binds the socket to @p ep and
+        caches the resolved local endpoint (useful when port 0 is
+        used to request an ephemeral port).
+
+        @param ep The local endpoint to bind to.
+
+        @return An error code indicating success or the reason for
+            failure.
 
         @par Error Conditions
         @li `errc::address_in_use`: The endpoint is already in use.
@@ -191,12 +254,25 @@ public:
             on any local interface.
         @li `errc::permission_denied`: Insufficient privileges to bind
             to the endpoint (e.g., privileged port).
-        @li `errc::operation_not_supported`: The acceptor service is
-            unavailable in the context (POSIX only).
 
-        @throws Nothing.
+        @throws std::logic_error if the acceptor is not open.
     */
-    [[nodiscard]] std::error_code listen(endpoint ep, int backlog = 128);
+    [[nodiscard]] std::error_code bind( endpoint ep );
+
+    /** Start listening for incoming connections.
+
+        The acceptor must be open and bound. Registers the acceptor
+        with the platform reactor.
+
+        @param backlog The maximum length of the queue of pending
+            connections. Defaults to 128.
+
+        @return An error code indicating success or the reason for
+            failure.
+
+        @throws std::logic_error if the acceptor is not open.
+    */
+    [[nodiscard]] std::error_code listen( int backlog = 128 );
 
     /** Close the acceptor.
 
@@ -282,6 +358,70 @@ public:
     */
     endpoint local_endpoint() const noexcept;
 
+    /** Set a socket option on the acceptor.
+
+        Applies a type-safe socket option to the underlying listening
+        socket. The socket must be open (via `open()` or `listen()`).
+        This is useful for setting options between `open()` and
+        `listen()`, such as `socket_option::reuse_port`.
+
+        @par Example
+        @code
+        acc.open( tcp::v6() );
+        acc.set_option( socket_option::reuse_port( true ) );
+        acc.bind( endpoint( ipv6_address::any(), 8080 ) );
+        acc.listen();
+        @endcode
+
+        @param opt The option to set.
+
+        @throws std::logic_error if the acceptor is not open.
+        @throws std::system_error on failure.
+    */
+    template<class Option>
+    void set_option( Option const& opt )
+    {
+        if (!is_open())
+            detail::throw_logic_error(
+                "set_option: acceptor not open" );
+        std::error_code ec = get().set_option(
+            Option::level(), Option::name(), opt.data(), opt.size() );
+        if (ec)
+            detail::throw_system_error(
+                ec, "tcp_acceptor::set_option" );
+    }
+
+    /** Get a socket option from the acceptor.
+
+        Retrieves the current value of a type-safe socket option.
+
+        @par Example
+        @code
+        auto opt = acc.get_option<socket_option::reuse_address>();
+        @endcode
+
+        @return The current option value.
+
+        @throws std::logic_error if the acceptor is not open.
+        @throws std::system_error on failure.
+    */
+    template<class Option>
+    Option get_option() const
+    {
+        if (!is_open())
+            detail::throw_logic_error(
+                "get_option: acceptor not open" );
+        Option opt{};
+        std::size_t sz = opt.size();
+        std::error_code ec = get().get_option(
+            Option::level(), Option::name(), opt.data(), &sz );
+        if (ec)
+            detail::throw_system_error(
+                ec, "tcp_acceptor::get_option" );
+        opt.resize( sz );
+        return opt;
+    }
+
     struct implementation : io_object::implementation
     {
         virtual std::coroutine_handle<> accept(
@@ -302,6 +442,31 @@ public:
             All outstanding operations complete with operation_canceled error.
         */
         virtual void cancel() noexcept = 0;
+
+        /** Set a socket option.
+
+            @param level The protocol level.
+            @param optname The option name.
+            @param data Pointer to the option value.
+            @param size Size of the option value in bytes.
+            @return Error code on failure, empty on success.
+        */
+        virtual std::error_code set_option(
+            int level, int optname,
+            void const* data, std::size_t size) noexcept = 0;
+
+        /** Get a socket option.
+
+            @param level The protocol level.
+            @param optname The option name.
+            @param data Pointer to receive the option value.
+            @param size On entry, the size of the buffer. On exit,
+                the size of the option value.
+            @return Error code on failure, empty on success.
+        */
+        virtual std::error_code get_option(
+            int level, int optname,
+            void* data, std::size_t* size) const noexcept = 0;
     };
 
 protected:
