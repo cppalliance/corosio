@@ -13,6 +13,7 @@
 #include <boost/corosio/native/native_tcp_socket.hpp>
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
+#include <boost/corosio/native/native_socket_option.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/read.hpp>
@@ -92,8 +93,8 @@ bench_pingpong_latency(std::size_t message_size, double duration_s)
     auto [client, server] = corosio::test::make_socket_pair<
         socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
 
-    client.set_no_delay(true);
-    server.set_no_delay(true);
+    client.set_option(corosio::native_socket_option::no_delay(true));
+    server.set_option(corosio::native_socket_option::no_delay(true));
 
     std::atomic<bool> running{true};
     int64_t iterations = 0;
@@ -146,8 +147,8 @@ bench_concurrent_latency(
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_no_delay(true);
-        s.set_no_delay(true);
+        c.set_option(corosio::native_socket_option::no_delay(true));
+        s.set_option(corosio::native_socket_option::no_delay(true));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }

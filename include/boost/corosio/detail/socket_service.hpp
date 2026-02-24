@@ -35,12 +35,17 @@ public:
 
     /** Open a socket.
 
-        Creates an IPv4 TCP socket and associates it with the platform reactor.
+        Creates a socket and associates it with the platform reactor.
 
         @param impl The socket implementation to open.
+        @param family Address family (e.g. `AF_INET`, `AF_INET6`).
+        @param type Socket type (e.g. `SOCK_STREAM`).
+        @param protocol Protocol number (e.g. `IPPROTO_TCP`).
         @return Error code on failure, empty on success.
     */
-    virtual std::error_code open_socket(tcp_socket::implementation& impl) = 0;
+    virtual std::error_code
+    open_socket( tcp_socket::implementation& impl,
+                 int family, int type, int protocol ) = 0;
 
 protected:
     /// Construct the socket service.

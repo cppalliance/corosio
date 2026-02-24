@@ -11,6 +11,8 @@
 // Test that header file is self-contained.
 #include <boost/corosio/tcp_acceptor.hpp>
 
+#include <boost/corosio/socket_option.hpp>
+#include <boost/corosio/tcp.hpp>
 #include <boost/corosio/timer.hpp>
 
 #include <boost/capy/cond.hpp>
@@ -44,8 +46,11 @@ struct acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        // Listen on a port
-        auto ec = acc.listen(endpoint(0)); // Port 0 = ephemeral port
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
         BOOST_TEST(!ec);
         BOOST_TEST_EQ(acc.is_open(), true);
 
@@ -58,7 +63,11 @@ struct acceptor_test
     {
         io_context ioc(Backend);
         tcp_acceptor acc1(ioc);
-        auto ec = acc1.listen(endpoint(0));
+        acc1.open();
+        acc1.set_option(socket_option::reuse_address(true));
+        auto ec = acc1.bind(endpoint(0));
+        BOOST_TEST(!ec);
+        ec = acc1.listen();
         BOOST_TEST(!ec);
         BOOST_TEST_EQ(acc1.is_open(), true);
 
@@ -75,7 +84,11 @@ struct acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc1(ioc);
         tcp_acceptor acc2(ioc);
-        auto ec = acc1.listen(endpoint(0));
+        acc1.open();
+        acc1.set_option(socket_option::reuse_address(true));
+        auto ec = acc1.bind(endpoint(0));
+        BOOST_TEST(!ec);
+        ec = acc1.listen();
         BOOST_TEST(!ec);
         BOOST_TEST_EQ(acc1.is_open(), true);
         BOOST_TEST_EQ(acc2.is_open(), false);
@@ -97,7 +110,11 @@ struct acceptor_test
         // acceptor impl alive until IOCP delivers the cancellation.
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        auto ec = acc.listen(endpoint(0));
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
         BOOST_TEST(!ec);
 
         // These must outlive the coroutines
@@ -147,7 +164,11 @@ struct acceptor_test
         // The acceptor_ptr shared_ptr in accept_op ensures this.
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        auto ec = acc.listen(endpoint(0));
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
         BOOST_TEST(!ec);
 
         tcp_socket peer(ioc);
@@ -188,6 +209,368 @@ struct acceptor_test
         ioc.run();
     }
 
+    void testListenV6()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        acc.open(tcp::v6());
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        BOOST_TEST_EQ(acc.is_open(), true);
+        BOOST_TEST(acc.local_endpoint().is_v6());
+        BOOST_TEST(acc.local_endpoint().port() != 0);
+
+        acc.close();
+        BOOST_TEST_EQ(acc.is_open(), false);
+    }
+
+    void testAcceptV6()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+        acc.open(tcp::v6());
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto port = acc.local_endpoint().port();
+
+        tcp_socket peer(ioc);
+        tcp_socket client(ioc);
+
+        bool accept_done  = false;
+        bool connect_done = false;
+        std::error_code accept_ec, connect_ec;
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(
+            [](tcp_acceptor& a, tcp_socket& s,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                auto [ec] = co_await a.accept(s);
+                ec_out    = ec;
+                done      = true;
+            }(acc, peer, accept_ec, accept_done));
+
+        capy::run_async(ex)(
+            [](tcp_socket& s, endpoint ep,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                auto [ec] = co_await s.connect(ep);
+                ec_out    = ec;
+                done      = true;
+            }(client, endpoint(ipv6_address::loopback(), port),
+              connect_ec, connect_done));
+
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(!accept_ec);
+        BOOST_TEST(connect_done);
+        BOOST_TEST(!connect_ec);
+
+        // Both endpoints should be IPv6
+        BOOST_TEST(peer.local_endpoint().is_v6());
+        BOOST_TEST(peer.remote_endpoint().is_v6());
+
+        peer.close();
+        client.close();
+        acc.close();
+    }
+
+    void testDualStackAccept()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        // Default v6only=false gives dual-stack
+        acc.open(tcp::v6());
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv6_address::any(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto port = acc.local_endpoint().port();
+
+        tcp_socket peer(ioc);
+        tcp_socket client(ioc);
+
+        bool accept_done  = false;
+        bool connect_done = false;
+        std::error_code accept_ec, connect_ec;
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(
+            [](tcp_acceptor& a, tcp_socket& s,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                auto [ec] = co_await a.accept(s);
+                ec_out    = ec;
+                done      = true;
+            }(acc, peer, accept_ec, accept_done));
+
+        // Connect with IPv4 client to the dual-stack listener
+        capy::run_async(ex)(
+            [](tcp_socket& s, endpoint ep,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                auto [ec] = co_await s.connect(ep);
+                ec_out    = ec;
+                done      = true;
+            }(client, endpoint(ipv4_address::loopback(), port),
+              connect_ec, connect_done));
+
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(!accept_ec);
+        BOOST_TEST(connect_done);
+        BOOST_TEST(!connect_ec);
+
+        // Peer remote endpoint is IPv6 (IPv4-mapped)
+        BOOST_TEST(peer.remote_endpoint().is_v6());
+
+        peer.close();
+        client.close();
+        acc.close();
+    }
+
+    void testV6OnlyAccept()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        // Explicit v6only restricts to IPv6
+        acc.open(tcp::v6());
+        acc.set_option(socket_option::reuse_address(true));
+        acc.set_option(socket_option::v6_only(true));
+        auto ec = acc.bind(endpoint(ipv6_address::any(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto port = acc.local_endpoint().port();
+
+        tcp_socket peer(ioc);
+        tcp_socket client(ioc);
+
+        bool connect_done = false;
+        std::error_code connect_ec;
+
+        auto ex = ioc.get_executor();
+
+        // IPv4 connect should be refused
+        capy::run_async(ex)(
+            [](tcp_socket& s, endpoint ep,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                auto [ec] = co_await s.connect(ep);
+                ec_out    = ec;
+                done      = true;
+            }(client, endpoint(ipv4_address::loopback(), port),
+              connect_ec, connect_done));
+
+        // Cancel lingering accept after connect completes
+        auto cancel_task = [&]() -> capy::task<> {
+            timer t(ioc);
+            t.expires_after(std::chrono::milliseconds(200));
+            (void)co_await t.wait();
+            acc.cancel();
+        };
+        capy::run_async(ex)(cancel_task());
+
+        ioc.run();
+
+        BOOST_TEST(connect_done);
+        BOOST_TEST(connect_ec); // Should fail (connection refused)
+
+        acc.close();
+        client.close();
+    }
+
+    void testOpenThenListen()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        acc.open();
+        BOOST_TEST_EQ(acc.is_open(), true);
+
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        BOOST_TEST(acc.local_endpoint().port() != 0);
+
+        // Accept a connection to verify the acceptor works
+        tcp_socket peer(ioc);
+        tcp_socket client(ioc);
+
+        bool accept_done  = false;
+        bool connect_done = false;
+        std::error_code accept_ec, connect_ec;
+
+        auto port = acc.local_endpoint().port();
+        auto ex   = ioc.get_executor();
+        capy::run_async(ex)(
+            [](tcp_acceptor& a, tcp_socket& s,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                auto [ec] = co_await a.accept(s);
+                ec_out    = ec;
+                done      = true;
+            }(acc, peer, accept_ec, accept_done));
+
+        capy::run_async(ex)(
+            [](tcp_socket& s, endpoint ep,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                auto [ec] = co_await s.connect(ep);
+                ec_out    = ec;
+                done      = true;
+            }(client, endpoint(ipv4_address::loopback(), port),
+              connect_ec, connect_done));
+
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(!accept_ec);
+        BOOST_TEST(connect_done);
+        BOOST_TEST(!connect_ec);
+
+        peer.close();
+        client.close();
+        acc.close();
+    }
+
+#ifdef SO_REUSEPORT
+    void testReusePort()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        acc.set_option(socket_option::reuse_port(true));
+
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        BOOST_TEST(acc.local_endpoint().port() != 0);
+
+        // Verify the option took effect
+        auto opt = acc.get_option<socket_option::reuse_port>();
+        BOOST_TEST(opt.value());
+
+        acc.close();
+    }
+#endif
+
+    void testOpenIdempotent()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        acc.open();
+        BOOST_TEST_EQ(acc.is_open(), true);
+
+        // Second open should be a no-op
+        acc.open();
+        BOOST_TEST_EQ(acc.is_open(), true);
+
+        acc.close();
+    }
+
+    void testConvenienceConstructor()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc, endpoint(0));
+
+        BOOST_TEST_EQ(acc.is_open(), true);
+        BOOST_TEST(acc.local_endpoint().port() != 0);
+
+        acc.close();
+    }
+
+    void testConvenienceConstructorIPv6()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc, endpoint(ipv6_address::loopback(), 0));
+
+        BOOST_TEST_EQ(acc.is_open(), true);
+        BOOST_TEST(acc.local_endpoint().is_v6());
+        BOOST_TEST(acc.local_endpoint().port() != 0);
+
+        acc.close();
+    }
+
+    void testBindThenListen()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        auto port = acc.local_endpoint().port();
+        BOOST_TEST(port != 0);
+
+        // Verify by accepting a connection
+        tcp_socket peer(ioc);
+        tcp_socket client(ioc);
+
+        bool accept_done  = false;
+        bool connect_done = false;
+        std::error_code accept_ec, connect_ec;
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(
+            [](tcp_acceptor& a, tcp_socket& s,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                auto [ec] = co_await a.accept(s);
+                ec_out    = ec;
+                done      = true;
+            }(acc, peer, accept_ec, accept_done));
+
+        capy::run_async(ex)(
+            [](tcp_socket& s, endpoint ep,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                auto [ec] = co_await s.connect(ep);
+                ec_out    = ec;
+                done      = true;
+            }(client, endpoint(ipv4_address::loopback(), port),
+              connect_ec, connect_done));
+
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(!accept_ec);
+        BOOST_TEST(connect_done);
+        BOOST_TEST(!connect_ec);
+
+        peer.close();
+        client.close();
+        acc.close();
+    }
+
+    void testBindError()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        acc.open();
+
+        // Bind to an address not assigned to any local interface
+        auto ec = acc.bind(endpoint(
+            ipv4_address("1.2.3.4"), 0));
+        BOOST_TEST(ec);
+
+        acc.close();
+    }
+
     void run()
     {
         testConstruction();
@@ -198,6 +581,29 @@ struct acceptor_test
         // Cancellation
         testCancelAccept();
         testCloseWhilePendingAccept();
+
+        // IPv6
+        testListenV6();
+        testAcceptV6();
+
+        // Dual-stack
+        testDualStackAccept();
+        testV6OnlyAccept();
+
+        // Fine-grained setup
+        testOpenThenListen();
+#ifdef SO_REUSEPORT
+        testReusePort();
+#endif
+        testOpenIdempotent();
+
+        // Convenience constructors
+        testConvenienceConstructor();
+        testConvenienceConstructorIPv6();
+
+        // Explicit bind+listen flow
+        testBindThenListen();
+        testBindError();
     }
 };
 

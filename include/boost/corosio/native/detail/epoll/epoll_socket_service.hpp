@@ -124,7 +124,9 @@ public:
     io_object::implementation* construct() override;
     void destroy(io_object::implementation*) override;
     void close(io_object::handle&) override;
-    std::error_code open_socket(tcp_socket::implementation& impl) override;
+    std::error_code
+    open_socket(tcp_socket::implementation& impl,
+                int family, int type, int protocol) override;
 
     epoll_scheduler& scheduler() const noexcept
     {
@@ -257,14 +259,13 @@ epoll_connect_op::operator()()
     // Cache endpoints on successful connect
     if (success && socket_impl_)
     {
-        // Query local endpoint via getsockname (may fail, but remote is always known)
         endpoint local_ep;
-        sockaddr_in local_addr{};
-        socklen_t local_len = sizeof(local_addr);
+        sockaddr_storage local_storage{};
+        socklen_t local_len = sizeof(local_storage);
         if (::getsockname(
-                fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
-            local_ep = from_sockaddr_in(local_addr);
-        // Always cache remote endpoint; local may be default if getsockname failed
+                fd, reinterpret_cast<sockaddr*>(&local_storage),
+                &local_len) == 0)
+            local_ep = from_sockaddr(local_storage);
         static_cast<epoll_socket*>(socket_impl_)
             ->set_endpoints(local_ep, target_endpoint);
     }
@@ -300,17 +301,20 @@ epoll_socket::connect(
 {
     auto& op = conn_;
 
-    sockaddr_in addr = detail::to_sockaddr_in(ep);
+    sockaddr_storage storage{};
+    socklen_t addrlen =
+        detail::to_sockaddr(ep, detail::socket_family(fd_), storage);
     int result =
-        ::connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+        ::connect(fd_, reinterpret_cast<sockaddr*>(&storage), addrlen);
 
     if (result == 0)
     {
-        sockaddr_in local_addr{};
-        socklen_t local_len = sizeof(local_addr);
+        sockaddr_storage local_storage{};
+        socklen_t local_len = sizeof(local_storage);
         if (::getsockname(
-                fd_, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
-            local_endpoint_ = detail::from_sockaddr_in(local_addr);
+                fd_, reinterpret_cast<sockaddr*>(&local_storage),
+                &local_len) == 0)
+            local_endpoint_ = detail::from_sockaddr(local_storage);
         remote_endpoint_ = ep;
     }
 
@@ -545,120 +549,26 @@ epoll_socket::shutdown(tcp_socket::shutdown_type what) noexcept
 }
 
 inline std::error_code
-epoll_socket::set_no_delay(bool value) noexcept
+epoll_socket::set_option(
+    int level, int optname,
+    void const* data, std::size_t size) noexcept
 {
-    int flag = value ? 1 : 0;
-    if (::setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) != 0)
+    if (::setsockopt(fd_, level, optname, data,
+            static_cast<socklen_t>(size)) != 0)
         return make_err(errno);
     return {};
-}
-
-inline bool
-epoll_socket::no_delay(std::error_code& ec) const noexcept
-{
-    int flag      = 0;
-    socklen_t len = sizeof(flag);
-    if (::getsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, &len) != 0)
-    {
-        ec = make_err(errno);
-        return false;
-    }
-    ec = {};
-    return flag != 0;
 }
 
 inline std::error_code
-epoll_socket::set_keep_alive(bool value) noexcept
+epoll_socket::get_option(
+    int level, int optname,
+    void* data, std::size_t* size) const noexcept
 {
-    int flag = value ? 1 : 0;
-    if (::setsockopt(fd_, SOL_SOCKET, SO_KEEPALIVE, &flag, sizeof(flag)) != 0)
+    socklen_t len = static_cast<socklen_t>(*size);
+    if (::getsockopt(fd_, level, optname, data, &len) != 0)
         return make_err(errno);
+    *size = static_cast<std::size_t>(len);
     return {};
-}
-
-inline bool
-epoll_socket::keep_alive(std::error_code& ec) const noexcept
-{
-    int flag      = 0;
-    socklen_t len = sizeof(flag);
-    if (::getsockopt(fd_, SOL_SOCKET, SO_KEEPALIVE, &flag, &len) != 0)
-    {
-        ec = make_err(errno);
-        return false;
-    }
-    ec = {};
-    return flag != 0;
-}
-
-inline std::error_code
-epoll_socket::set_receive_buffer_size(int size) noexcept
-{
-    if (::setsockopt(fd_, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) != 0)
-        return make_err(errno);
-    return {};
-}
-
-inline int
-epoll_socket::receive_buffer_size(std::error_code& ec) const noexcept
-{
-    int size      = 0;
-    socklen_t len = sizeof(size);
-    if (::getsockopt(fd_, SOL_SOCKET, SO_RCVBUF, &size, &len) != 0)
-    {
-        ec = make_err(errno);
-        return 0;
-    }
-    ec = {};
-    return size;
-}
-
-inline std::error_code
-epoll_socket::set_send_buffer_size(int size) noexcept
-{
-    if (::setsockopt(fd_, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)) != 0)
-        return make_err(errno);
-    return {};
-}
-
-inline int
-epoll_socket::send_buffer_size(std::error_code& ec) const noexcept
-{
-    int size      = 0;
-    socklen_t len = sizeof(size);
-    if (::getsockopt(fd_, SOL_SOCKET, SO_SNDBUF, &size, &len) != 0)
-    {
-        ec = make_err(errno);
-        return 0;
-    }
-    ec = {};
-    return size;
-}
-
-inline std::error_code
-epoll_socket::set_linger(bool enabled, int timeout) noexcept
-{
-    if (timeout < 0)
-        return make_err(EINVAL);
-    struct ::linger lg;
-    lg.l_onoff  = enabled ? 1 : 0;
-    lg.l_linger = timeout;
-    if (::setsockopt(fd_, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg)) != 0)
-        return make_err(errno);
-    return {};
-}
-
-inline tcp_socket::linger_options
-epoll_socket::linger(std::error_code& ec) const noexcept
-{
-    struct ::linger lg{};
-    socklen_t len = sizeof(lg);
-    if (::getsockopt(fd_, SOL_SOCKET, SO_LINGER, &lg, &len) != 0)
-    {
-        ec = make_err(errno);
-        return {};
-    }
-    ec = {};
-    return {.enabled = lg.l_onoff != 0, .timeout = lg.l_linger};
 }
 
 inline void
@@ -866,14 +776,22 @@ epoll_socket_service::destroy(io_object::implementation* impl)
 }
 
 inline std::error_code
-epoll_socket_service::open_socket(tcp_socket::implementation& impl)
+epoll_socket_service::open_socket(
+    tcp_socket::implementation& impl,
+    int family, int type, int protocol)
 {
     auto* epoll_impl = static_cast<epoll_socket*>(&impl);
     epoll_impl->close_socket();
 
-    int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
     if (fd < 0)
         return make_err(errno);
+
+    if (family == AF_INET6)
+    {
+        int one = 1;
+        ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one));
+    }
 
     epoll_impl->fd_ = fd;
 

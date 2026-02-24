@@ -9,6 +9,7 @@
 //
 
 #include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -35,19 +36,62 @@ tcp_acceptor::tcp_acceptor(capy::execution_context& ctx)
 {
 }
 
-std::error_code
-tcp_acceptor::listen(endpoint ep, int backlog)
+tcp_acceptor::tcp_acceptor(
+    capy::execution_context& ctx, endpoint ep, int backlog)
+    : tcp_acceptor(ctx)
+{
+    open(ep.is_v6() ? tcp::v6() : tcp::v4());
+    set_option(socket_option::reuse_address(true));
+    if (auto ec = bind(ep))
+        detail::throw_system_error(ec, "tcp_acceptor");
+    if (auto ec = listen(backlog))
+        detail::throw_system_error(ec, "tcp_acceptor");
+}
+
+void
+tcp_acceptor::open(tcp proto)
 {
     if (is_open())
-        close();
+        return;
 
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc = static_cast<detail::win_acceptor_service&>(h_.service());
 #else
     auto& svc = static_cast<detail::acceptor_service&>(h_.service());
 #endif
-    return svc.open_acceptor(
-        *static_cast<tcp_acceptor::implementation*>(h_.get()), ep, backlog);
+    std::error_code ec = svc.open_acceptor_socket(
+        *static_cast<tcp_acceptor::implementation*>(h_.get()),
+        proto.family(), proto.type(), proto.protocol());
+    if (ec)
+        detail::throw_system_error(ec, "tcp_acceptor::open");
+}
+
+std::error_code
+tcp_acceptor::bind(endpoint ep)
+{
+    if (!is_open())
+        detail::throw_logic_error("bind: acceptor not open");
+#if BOOST_COROSIO_HAS_IOCP
+    auto& svc = static_cast<detail::win_acceptor_service&>(h_.service());
+#else
+    auto& svc = static_cast<detail::acceptor_service&>(h_.service());
+#endif
+    return svc.bind_acceptor(
+        *static_cast<tcp_acceptor::implementation*>(h_.get()), ep);
+}
+
+std::error_code
+tcp_acceptor::listen(int backlog)
+{
+    if (!is_open())
+        detail::throw_logic_error("listen: acceptor not open");
+#if BOOST_COROSIO_HAS_IOCP
+    auto& svc = static_cast<detail::win_acceptor_service&>(h_.service());
+#else
+    auto& svc = static_cast<detail::acceptor_service&>(h_.service());
+#endif
+    return svc.listen_acceptor(
+        *static_cast<tcp_acceptor::implementation*>(h_.get()), backlog);
 }
 
 void

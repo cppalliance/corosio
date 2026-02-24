@@ -12,6 +12,7 @@
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/corosio/native/native_tcp_socket.hpp>
+#include <boost/corosio/native/native_socket_option.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/read.hpp>
@@ -41,9 +42,9 @@ namespace {
 // socket creation in concurrent/burst workloads.
 static void configure_churn_socket( corosio::tcp_socket& s )
 {
-    s.set_send_buffer_size( 1024 );
-    s.set_receive_buffer_size( 1024 );
-    s.set_linger( true, 0 );
+    s.set_option(corosio::native_socket_option::send_buffer_size(1024));
+    s.set_option(corosio::native_socket_option::receive_buffer_size(1024));
+    s.set_option(corosio::native_socket_option::linger(true, 0));
 }
 
 // Single connect/accept/1-byte-exchange/close loop. Measures the full
@@ -60,10 +61,16 @@ bench_sequential_churn(double duration_s)
 
     corosio::native_io_context<Backend> ioc;
     acceptor_type acc(ioc);
+    acc.open();
+    acc.set_option(corosio::native_socket_option::reuse_address(true));
 
-    auto listen_ec =
-        acc.listen(corosio::endpoint(corosio::ipv4_address::loopback(), 0));
-    if (listen_ec)
+    if (auto listen_ec =
+            acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
+    {
+        std::cerr << "  Bind failed: " << listen_ec.message() << "\n";
+        return bench::benchmark_result("sequential").add("error", 1);
+    }
+    if (auto listen_ec = acc.listen())
     {
         std::cerr << "  Listen failed: " << listen_ec.message() << "\n";
         return bench::benchmark_result("sequential").add("error", 1);
@@ -172,9 +179,18 @@ bench_concurrent_churn(int num_loops, double duration_s)
     for (int i = 0; i < num_loops; ++i)
     {
         acceptors.emplace_back(ioc);
-        auto ec = acceptors.back().listen(
-            corosio::endpoint(corosio::ipv4_address::loopback(), 0));
-        if (ec)
+        auto& acc = acceptors.back();
+        acc.open();
+        acc.set_option(corosio::native_socket_option::reuse_address(true));
+        if (auto ec = acc.bind(
+                corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
+        {
+            std::cerr << "  Bind failed: " << ec.message() << "\n";
+            return bench::benchmark_result(
+                       "concurrent_" + std::to_string(num_loops))
+                .add("error", 1);
+        }
+        if (auto ec = acc.listen())
         {
             std::cerr << "  Listen failed: " << ec.message() << "\n";
             return bench::benchmark_result(
@@ -290,10 +306,17 @@ bench_burst_churn(int burst_size, double duration_s)
 
     corosio::native_io_context<Backend> ioc;
     acceptor_type acc(ioc);
+    acc.open();
+    acc.set_option(corosio::native_socket_option::reuse_address(true));
 
-    auto listen_ec =
-        acc.listen(corosio::endpoint(corosio::ipv4_address::loopback(), 0));
-    if (listen_ec)
+    if (auto listen_ec =
+            acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
+    {
+        std::cerr << "  Bind failed: " << listen_ec.message() << "\n";
+        return bench::benchmark_result("burst_" + std::to_string(burst_size))
+            .add("error", 1);
+    }
+    if (auto listen_ec = acc.listen())
     {
         std::cerr << "  Listen failed: " << listen_ec.message() << "\n";
         return bench::benchmark_result("burst_" + std::to_string(burst_size))

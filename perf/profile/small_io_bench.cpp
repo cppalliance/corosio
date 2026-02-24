@@ -25,6 +25,7 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/native/native_socket_option.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -93,8 +94,8 @@ run_workload(
     for (int i = 0; i < num_pairs; ++i)
     {
         auto [a, b] = corosio::test::make_socket_pair(*ioc);
-        a.set_no_delay(true);
-        b.set_no_delay(true);
+        a.set_option(corosio::native_socket_option::no_delay(true));
+        b.set_option(corosio::native_socket_option::no_delay(true));
         pairs.emplace_back(std::move(a), std::move(b));
     }
 
@@ -188,8 +189,8 @@ run_profiler_workload(
     {
         auto ioc    = factory();
         auto [a, b] = corosio::test::make_socket_pair(*ioc);
-        a.set_no_delay(true);
-        b.set_no_delay(true);
+        a.set_option(corosio::native_socket_option::no_delay(true));
+        b.set_option(corosio::native_socket_option::no_delay(true));
 
         std::atomic<std::uint64_t> warmup_ops{0};
         std::atomic<bool> warmup_stop{false};

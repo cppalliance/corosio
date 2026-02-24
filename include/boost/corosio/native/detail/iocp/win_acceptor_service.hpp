@@ -53,9 +53,18 @@ public:
 
     void close(io_object::handle& h) override;
 
-    /** Open, bind, and listen on an acceptor socket. */
-    std::error_code
-    open_acceptor(tcp_acceptor::implementation& impl, endpoint ep, int backlog);
+    /** Create the acceptor socket without binding or listening. */
+    std::error_code open_acceptor_socket(
+        tcp_acceptor::implementation& impl,
+        int family, int type, int protocol);
+
+    /** Bind an open acceptor to a local endpoint. */
+    std::error_code bind_acceptor(
+        tcp_acceptor::implementation& impl, endpoint ep);
+
+    /** Start listening for incoming connections. */
+    std::error_code listen_acceptor(
+        tcp_acceptor::implementation& impl, int backlog);
 
     void shutdown() override;
 
@@ -195,20 +204,22 @@ accept_op::do_complete(
 
         op->peer_wrapper->get_internal()->set_socket(op->accepted_socket);
 
-        sockaddr_in local_addr{};
-        int local_len = sizeof(local_addr);
-        sockaddr_in remote_addr{};
-        int remote_len = sizeof(remote_addr);
+        sockaddr_storage local_storage{};
+        int local_len = sizeof(local_storage);
+        sockaddr_storage remote_storage{};
+        int remote_len = sizeof(remote_storage);
 
         endpoint local_ep, remote_ep;
         if (::getsockname(
-                op->accepted_socket, reinterpret_cast<sockaddr*>(&local_addr),
+                op->accepted_socket,
+                reinterpret_cast<sockaddr*>(&local_storage),
                 &local_len) == 0)
-            local_ep = from_sockaddr_in(local_addr);
+            local_ep = from_sockaddr(local_storage);
         if (::getpeername(
-                op->accepted_socket, reinterpret_cast<sockaddr*>(&remote_addr),
+                op->accepted_socket,
+                reinterpret_cast<sockaddr*>(&remote_storage),
                 &remote_len) == 0)
-            remote_ep = from_sockaddr_in(remote_addr);
+            remote_ep = from_sockaddr(remote_storage);
 
         op->peer_wrapper->get_internal()->set_endpoints(local_ep, remote_ep);
         op->accepted_socket = INVALID_SOCKET;
@@ -269,12 +280,12 @@ connect_op::do_complete(
             SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
 
         endpoint local_ep;
-        sockaddr_in local_addr{};
-        int local_len = sizeof(local_addr);
+        sockaddr_storage local_storage{};
+        int local_len = sizeof(local_storage);
         if (::getsockname(
                 op->internal.native_handle(),
-                reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
-            local_ep = from_sockaddr_in(local_addr);
+                reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
+            local_ep = from_sockaddr(local_storage);
         op->internal.set_endpoints(local_ep, op->target_endpoint);
     }
 
@@ -399,14 +410,31 @@ win_socket_internal::connect(
 
     svc_.work_started();
 
-    sockaddr_in bind_addr{};
-    bind_addr.sin_family      = AF_INET;
-    bind_addr.sin_addr.s_addr = INADDR_ANY;
-    bind_addr.sin_port        = 0;
+    // Ephemeral bind — must match the socket's family, not the endpoint's
+    sockaddr_storage bind_storage{};
+    socklen_t bind_len;
+    if (family_ == AF_INET6)
+    {
+        sockaddr_in6 sa6{};
+        sa6.sin6_family = AF_INET6;
+        sa6.sin6_port   = 0;
+        sa6.sin6_addr   = in6addr_any;
+        std::memcpy(&bind_storage, &sa6, sizeof(sa6));
+        bind_len = sizeof(sa6);
+    }
+    else
+    {
+        sockaddr_in sa4{};
+        sa4.sin_family      = AF_INET;
+        sa4.sin_addr.s_addr = INADDR_ANY;
+        sa4.sin_port        = 0;
+        std::memcpy(&bind_storage, &sa4, sizeof(sa4));
+        bind_len = sizeof(sa4);
+    }
 
     if (::bind(
-            socket_, reinterpret_cast<sockaddr*>(&bind_addr),
-            sizeof(bind_addr)) == SOCKET_ERROR)
+            socket_, reinterpret_cast<sockaddr*>(&bind_storage),
+            bind_len) == SOCKET_ERROR)
     {
         svc_.on_completion(&op, ::WSAGetLastError(), 0);
         return std::noop_coroutine();
@@ -419,11 +447,12 @@ win_socket_internal::connect(
         return std::noop_coroutine();
     }
 
-    sockaddr_in addr = detail::to_sockaddr_in(ep);
+    sockaddr_storage storage{};
+    socklen_t addrlen = detail::to_sockaddr(ep, family_, storage);
 
     BOOL result = connect_ex(
-        socket_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr), nullptr, 0,
-        nullptr, &op);
+        socket_, reinterpret_cast<sockaddr*>(&storage),
+        static_cast<int>(addrlen), nullptr, 0, nullptr, &op);
 
     if (!result)
     {
@@ -591,6 +620,8 @@ win_socket_internal::close_socket() noexcept
         socket_ = INVALID_SOCKET;
     }
 
+    family_ = AF_UNSPEC;
+
     // Clear cached endpoints
     local_endpoint_  = endpoint{};
     remote_endpoint_ = endpoint{};
@@ -679,140 +710,28 @@ win_socket::native_handle() const noexcept
 }
 
 inline std::error_code
-win_socket::set_no_delay(bool value) noexcept
+win_socket::set_option(
+    int level, int optname,
+    void const* data, std::size_t size) noexcept
 {
-    BOOL flag = value ? TRUE : FALSE;
-    if (::setsockopt(
-            internal_->native_handle(), IPPROTO_TCP, TCP_NODELAY,
-            reinterpret_cast<char*>(&flag), sizeof(flag)) != 0)
+    if (::setsockopt(internal_->native_handle(), level, optname,
+            reinterpret_cast<char const*>(data),
+            static_cast<int>(size)) != 0)
         return make_err(WSAGetLastError());
     return {};
-}
-
-inline bool
-win_socket::no_delay(std::error_code& ec) const noexcept
-{
-    BOOL flag = FALSE;
-    int len   = sizeof(flag);
-    if (::getsockopt(
-            internal_->native_handle(), IPPROTO_TCP, TCP_NODELAY,
-            reinterpret_cast<char*>(&flag), &len) != 0)
-    {
-        ec = make_err(WSAGetLastError());
-        return false;
-    }
-    ec = {};
-    return flag != FALSE;
 }
 
 inline std::error_code
-win_socket::set_keep_alive(bool value) noexcept
+win_socket::get_option(
+    int level, int optname,
+    void* data, std::size_t* size) const noexcept
 {
-    BOOL flag = value ? TRUE : FALSE;
-    if (::setsockopt(
-            internal_->native_handle(), SOL_SOCKET, SO_KEEPALIVE,
-            reinterpret_cast<char*>(&flag), sizeof(flag)) != 0)
+    int len = static_cast<int>(*size);
+    if (::getsockopt(internal_->native_handle(), level, optname,
+            reinterpret_cast<char*>(data), &len) != 0)
         return make_err(WSAGetLastError());
+    *size = static_cast<std::size_t>(len);
     return {};
-}
-
-inline bool
-win_socket::keep_alive(std::error_code& ec) const noexcept
-{
-    BOOL flag = FALSE;
-    int len   = sizeof(flag);
-    if (::getsockopt(
-            internal_->native_handle(), SOL_SOCKET, SO_KEEPALIVE,
-            reinterpret_cast<char*>(&flag), &len) != 0)
-    {
-        ec = make_err(WSAGetLastError());
-        return false;
-    }
-    ec = {};
-    return flag != FALSE;
-}
-
-inline std::error_code
-win_socket::set_receive_buffer_size(int size) noexcept
-{
-    if (::setsockopt(
-            internal_->native_handle(), SOL_SOCKET, SO_RCVBUF,
-            reinterpret_cast<char*>(&size), sizeof(size)) != 0)
-        return make_err(WSAGetLastError());
-    return {};
-}
-
-inline int
-win_socket::receive_buffer_size(std::error_code& ec) const noexcept
-{
-    int size = 0;
-    int len  = sizeof(size);
-    if (::getsockopt(
-            internal_->native_handle(), SOL_SOCKET, SO_RCVBUF,
-            reinterpret_cast<char*>(&size), &len) != 0)
-    {
-        ec = make_err(WSAGetLastError());
-        return 0;
-    }
-    ec = {};
-    return size;
-}
-
-inline std::error_code
-win_socket::set_send_buffer_size(int size) noexcept
-{
-    if (::setsockopt(
-            internal_->native_handle(), SOL_SOCKET, SO_SNDBUF,
-            reinterpret_cast<char*>(&size), sizeof(size)) != 0)
-        return make_err(WSAGetLastError());
-    return {};
-}
-
-inline int
-win_socket::send_buffer_size(std::error_code& ec) const noexcept
-{
-    int size = 0;
-    int len  = sizeof(size);
-    if (::getsockopt(
-            internal_->native_handle(), SOL_SOCKET, SO_SNDBUF,
-            reinterpret_cast<char*>(&size), &len) != 0)
-    {
-        ec = make_err(WSAGetLastError());
-        return 0;
-    }
-    ec = {};
-    return size;
-}
-
-inline std::error_code
-win_socket::set_linger(bool enabled, int timeout) noexcept
-{
-    if (timeout < 0 || timeout > 65535)
-        return make_err(WSAEINVAL);
-    struct ::linger lg;
-    lg.l_onoff  = enabled ? 1 : 0;
-    lg.l_linger = static_cast<u_short>(timeout);
-    if (::setsockopt(
-            internal_->native_handle(), SOL_SOCKET, SO_LINGER,
-            reinterpret_cast<char*>(&lg), sizeof(lg)) != 0)
-        return make_err(WSAGetLastError());
-    return {};
-}
-
-inline tcp_socket::linger_options
-win_socket::linger(std::error_code& ec) const noexcept
-{
-    struct ::linger lg{};
-    int len = sizeof(lg);
-    if (::getsockopt(
-            internal_->native_handle(), SOL_SOCKET, SO_LINGER,
-            reinterpret_cast<char*>(&lg), &len) != 0)
-    {
-        ec = make_err(WSAGetLastError());
-        return {};
-    }
-    ec = {};
-    return {.enabled = lg.l_onoff != 0, .timeout = lg.l_linger};
 }
 
 inline endpoint
@@ -941,15 +860,25 @@ win_sockets::unregister_impl(win_socket_internal& impl)
 }
 
 inline std::error_code
-win_sockets::open_socket(win_socket_internal& impl)
+win_sockets::open_socket(
+    win_socket_internal& impl,
+    int family, int type, int protocol)
 {
     impl.close_socket();
 
     SOCKET sock = ::WSASocketW(
-        AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+        family, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
     if (sock == INVALID_SOCKET)
         return make_err(::WSAGetLastError());
+
+    if (family == AF_INET6)
+    {
+        DWORD one = 1;
+        ::setsockopt(
+            sock, IPPROTO_IPV6, IPV6_V6ONLY,
+            reinterpret_cast<char*>(&one), sizeof(one));
+    }
 
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
@@ -962,6 +891,7 @@ win_sockets::open_socket(win_socket_internal& impl)
     }
 
     impl.socket_ = sock;
+    impl.family_  = family;
     return {};
 }
 
@@ -1057,22 +987,25 @@ win_sockets::unregister_acceptor_impl(win_acceptor_internal& impl)
 }
 
 inline std::error_code
-win_sockets::open_acceptor(
-    win_acceptor_internal& impl, endpoint ep, int backlog)
+win_sockets::open_acceptor_socket(
+    win_acceptor_internal& impl,
+    int family, int type, int protocol)
 {
     impl.close_socket();
 
     SOCKET sock = ::WSASocketW(
-        AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+        family, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
     if (sock == INVALID_SOCKET)
         return make_err(::WSAGetLastError());
 
-    // Allow address reuse
-    int reuse = 1;
-    ::setsockopt(
-        sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&reuse),
-        sizeof(reuse));
+    if (family == AF_INET6)
+    {
+        DWORD val = 0; // dual-stack default
+        ::setsockopt(
+            sock, IPPROTO_IPV6, IPV6_V6ONLY,
+            reinterpret_cast<char*>(&val), sizeof(val));
+    }
 
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
@@ -1084,32 +1017,42 @@ win_sockets::open_acceptor(
         return make_err(dwError);
     }
 
-    // Bind to endpoint
-    sockaddr_in addr = detail::to_sockaddr_in(ep);
-    if (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) ==
-        SOCKET_ERROR)
-    {
-        DWORD dwError = ::WSAGetLastError();
-        ::closesocket(sock);
-        return make_err(dwError);
-    }
-
-    // Start listening
-    if (::listen(sock, backlog) == SOCKET_ERROR)
-    {
-        DWORD dwError = ::WSAGetLastError();
-        ::closesocket(sock);
-        return make_err(dwError);
-    }
-
     impl.socket_ = sock;
+    return {};
+}
 
-    // Cache the local endpoint (queries OS for ephemeral port if port was 0)
-    sockaddr_in local_addr{};
-    int local_len = sizeof(local_addr);
+inline std::error_code
+win_sockets::bind_acceptor(
+    win_acceptor_internal& impl, endpoint ep)
+{
+    SOCKET sock = impl.socket_;
+
+    sockaddr_storage storage{};
+    socklen_t addrlen = detail::to_sockaddr(ep, storage);
+    if (::bind(
+            sock, reinterpret_cast<sockaddr*>(&storage),
+            static_cast<int>(addrlen)) == SOCKET_ERROR)
+        return make_err(::WSAGetLastError());
+
+    // Cache local endpoint (resolves ephemeral port)
+    sockaddr_storage local_storage{};
+    int local_len = sizeof(local_storage);
     if (::getsockname(
-            sock, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
-        impl.set_local_endpoint(detail::from_sockaddr_in(local_addr));
+            sock, reinterpret_cast<sockaddr*>(&local_storage),
+            &local_len) == 0)
+        impl.set_local_endpoint(detail::from_sockaddr(local_storage));
+
+    return {};
+}
+
+inline std::error_code
+win_sockets::listen_acceptor(
+    win_acceptor_internal& impl, int backlog)
+{
+    SOCKET sock = impl.socket_;
+
+    if (::listen(sock, backlog) == SOCKET_ERROR)
+        return make_err(::WSAGetLastError());
 
     return {};
 }
@@ -1180,9 +1123,12 @@ win_acceptor_internal::accept(
     // Create wrapper for the peer socket (service owns it)
     auto& peer_wrapper = static_cast<win_socket&>(*svc_.construct());
 
-    // Create the accepted socket
+    // Derive AF from the listening socket's cached local endpoint
+    int af = local_endpoint_.is_v6() ? AF_INET6 : AF_INET;
+
+    // Create the accepted socket with matching address family
     SOCKET accepted = ::WSASocketW(
-        AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+        af, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
     if (accepted == INVALID_SOCKET)
     {
@@ -1219,11 +1165,15 @@ win_acceptor_internal::accept(
         return std::noop_coroutine();
     }
 
+    // AcceptEx address buffer sizes must match the socket's address family
+    DWORD addr_size =
+        static_cast<DWORD>(
+            (af == AF_INET6 ? sizeof(sockaddr_in6) : sizeof(sockaddr_in)) + 16);
     DWORD bytes_received = 0;
 
     BOOL ok = accept_ex(
-        socket_, accepted, op.addr_buf, 0, sizeof(sockaddr_in) + 16,
-        sizeof(sockaddr_in) + 16, &bytes_received, &op);
+        socket_, accepted, op.addr_buf, 0, addr_size,
+        addr_size, &bytes_received, &op);
 
     if (!ok)
     {
@@ -1315,6 +1265,31 @@ win_acceptor::cancel() noexcept
     internal_->cancel();
 }
 
+inline std::error_code
+win_acceptor::set_option(
+    int level, int optname,
+    void const* data, std::size_t size) noexcept
+{
+    if (::setsockopt(internal_->native_handle(), level, optname,
+            reinterpret_cast<char const*>(data),
+            static_cast<int>(size)) != 0)
+        return make_err(WSAGetLastError());
+    return {};
+}
+
+inline std::error_code
+win_acceptor::get_option(
+    int level, int optname,
+    void* data, std::size_t* size) const noexcept
+{
+    int len = static_cast<int>(*size);
+    if (::getsockopt(internal_->native_handle(), level, optname,
+            reinterpret_cast<char*>(data), &len) != 0)
+        return make_err(WSAGetLastError());
+    *size = static_cast<std::size_t>(len);
+    return {};
+}
+
 inline win_acceptor_internal*
 win_acceptor::get_internal() const noexcept
 {
@@ -1369,11 +1344,29 @@ win_acceptor_service::close(io_object::handle& h)
 }
 
 inline std::error_code
-win_acceptor_service::open_acceptor(
-    tcp_acceptor::implementation& impl, endpoint ep, int backlog)
+win_acceptor_service::open_acceptor_socket(
+    tcp_acceptor::implementation& impl,
+    int family, int type, int protocol)
 {
     auto& wrapper = static_cast<win_acceptor&>(impl);
-    return svc_.open_acceptor(*wrapper.get_internal(), ep, backlog);
+    return svc_.open_acceptor_socket(
+        *wrapper.get_internal(), family, type, protocol);
+}
+
+inline std::error_code
+win_acceptor_service::bind_acceptor(
+    tcp_acceptor::implementation& impl, endpoint ep)
+{
+    auto& wrapper = static_cast<win_acceptor&>(impl);
+    return svc_.bind_acceptor(*wrapper.get_internal(), ep);
+}
+
+inline std::error_code
+win_acceptor_service::listen_acceptor(
+    tcp_acceptor::implementation& impl, int backlog)
+{
+    auto& wrapper = static_cast<win_acceptor&>(impl);
+    return svc_.listen_acceptor(*wrapper.get_internal(), backlog);
 }
 
 inline void

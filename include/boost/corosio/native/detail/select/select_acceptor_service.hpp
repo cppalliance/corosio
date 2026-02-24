@@ -73,8 +73,13 @@ public:
     io_object::implementation* construct() override;
     void destroy(io_object::implementation*) override;
     void close(io_object::handle&) override;
-    std::error_code open_acceptor(
-        tcp_acceptor::implementation& impl, endpoint ep, int backlog) override;
+    std::error_code open_acceptor_socket(
+        tcp_acceptor::implementation& impl,
+        int family, int type, int protocol) override;
+    std::error_code bind_acceptor(
+        tcp_acceptor::implementation& impl, endpoint ep) override;
+    std::error_code listen_acceptor(
+        tcp_acceptor::implementation& impl, int backlog) override;
 
     select_scheduler& scheduler() const noexcept
     {
@@ -131,20 +136,22 @@ select_accept_op::operator()()
                     static_cast<select_socket&>(*socket_svc->construct());
                 impl.set_socket(accepted_fd);
 
-                sockaddr_in local_addr{};
-                socklen_t local_len = sizeof(local_addr);
-                sockaddr_in remote_addr{};
-                socklen_t remote_len = sizeof(remote_addr);
+                sockaddr_storage local_storage{};
+                socklen_t local_len = sizeof(local_storage);
+                sockaddr_storage remote_storage{};
+                socklen_t remote_len = sizeof(remote_storage);
 
                 endpoint local_ep, remote_ep;
                 if (::getsockname(
-                        accepted_fd, reinterpret_cast<sockaddr*>(&local_addr),
+                        accepted_fd,
+                        reinterpret_cast<sockaddr*>(&local_storage),
                         &local_len) == 0)
-                    local_ep = from_sockaddr_in(local_addr);
+                    local_ep = from_sockaddr(local_storage);
                 if (::getpeername(
-                        accepted_fd, reinterpret_cast<sockaddr*>(&remote_addr),
+                        accepted_fd,
+                        reinterpret_cast<sockaddr*>(&remote_storage),
                         &remote_len) == 0)
-                    remote_ep = from_sockaddr_in(remote_addr);
+                    remote_ep = from_sockaddr(remote_storage);
 
                 impl.set_endpoints(local_ep, remote_ep);
 
@@ -223,9 +230,10 @@ select_acceptor::accept(
     op.fd       = fd_;
     op.start(token, this);
 
-    sockaddr_in addr{};
-    socklen_t addrlen = sizeof(addr);
-    int accepted = ::accept(fd_, reinterpret_cast<sockaddr*>(&addr), &addrlen);
+    sockaddr_storage peer_storage{};
+    socklen_t addrlen = sizeof(peer_storage);
+    int accepted =
+        ::accept(fd_, reinterpret_cast<sockaddr*>(&peer_storage), &addrlen);
 
     if (accepted >= 0)
     {
@@ -454,13 +462,37 @@ select_acceptor_service::close(io_object::handle& h)
 }
 
 inline std::error_code
-select_acceptor_service::open_acceptor(
-    tcp_acceptor::implementation& impl, endpoint ep, int backlog)
+select_acceptor::set_option(
+    int level, int optname,
+    void const* data, std::size_t size) noexcept
+{
+    if (::setsockopt(fd_, level, optname, data,
+            static_cast<socklen_t>(size)) != 0)
+        return make_err(errno);
+    return {};
+}
+
+inline std::error_code
+select_acceptor::get_option(
+    int level, int optname,
+    void* data, std::size_t* size) const noexcept
+{
+    socklen_t len = static_cast<socklen_t>(*size);
+    if (::getsockopt(fd_, level, optname, data, &len) != 0)
+        return make_err(errno);
+    *size = static_cast<std::size_t>(len);
+    return {};
+}
+
+inline std::error_code
+select_acceptor_service::open_acceptor_socket(
+    tcp_acceptor::implementation& impl,
+    int family, int type, int protocol)
 {
     auto* select_impl = static_cast<select_acceptor*>(&impl);
     select_impl->close_socket();
 
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    int fd = ::socket(family, type, protocol);
     if (fd < 0)
         return make_err(errno);
 
@@ -485,39 +517,52 @@ select_acceptor_service::open_acceptor(
         return make_err(errn);
     }
 
-    // Check fd is within select() limits
     if (fd >= FD_SETSIZE)
     {
         ::close(fd);
         return make_err(EMFILE);
     }
 
-    int reuse = 1;
-    ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-    sockaddr_in addr = detail::to_sockaddr_in(ep);
-    if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
+    if (family == AF_INET6)
     {
-        int errn = errno;
-        ::close(fd);
-        return make_err(errn);
-    }
-
-    if (::listen(fd, backlog) < 0)
-    {
-        int errn = errno;
-        ::close(fd);
-        return make_err(errn);
+        int val = 0; // dual-stack default
+        ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val));
     }
 
     select_impl->fd_ = fd;
+    return {};
+}
 
-    // Cache the local endpoint (queries OS for ephemeral port if port was 0)
-    sockaddr_in local_addr{};
-    socklen_t local_len = sizeof(local_addr);
-    if (::getsockname(
-            fd, reinterpret_cast<sockaddr*>(&local_addr), &local_len) == 0)
-        select_impl->set_local_endpoint(detail::from_sockaddr_in(local_addr));
+inline std::error_code
+select_acceptor_service::bind_acceptor(
+    tcp_acceptor::implementation& impl, endpoint ep)
+{
+    auto* select_impl = static_cast<select_acceptor*>(&impl);
+    int fd = select_impl->fd_;
+
+    sockaddr_storage storage{};
+    socklen_t addrlen = detail::to_sockaddr(ep, storage);
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&storage), addrlen) < 0)
+        return make_err(errno);
+
+    // Cache local endpoint (resolves ephemeral port)
+    sockaddr_storage local{};
+    socklen_t local_len = sizeof(local);
+    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+        select_impl->set_local_endpoint(detail::from_sockaddr(local));
+
+    return {};
+}
+
+inline std::error_code
+select_acceptor_service::listen_acceptor(
+    tcp_acceptor::implementation& impl, int backlog)
+{
+    auto* select_impl = static_cast<select_acceptor*>(&impl);
+    int fd = select_impl->fd_;
+
+    if (::listen(fd, backlog) < 0)
+        return make_err(errno);
 
     return {};
 }

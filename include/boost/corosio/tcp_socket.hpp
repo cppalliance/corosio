@@ -18,6 +18,7 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/io_buffer_param.hpp>
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/tcp.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -89,13 +90,6 @@ public:
         shutdown_both
     };
 
-    /** Options for SO_LINGER socket option. */
-    struct linger_options
-    {
-        bool enabled = false;
-        int timeout  = 0; // seconds
-    };
-
     struct implementation : io_stream::implementation
     {
         virtual std::coroutine_handle<> connect(
@@ -116,22 +110,30 @@ public:
         */
         virtual void cancel() noexcept = 0;
 
-        // Socket options
-        virtual std::error_code set_no_delay(bool value) noexcept = 0;
-        virtual bool no_delay(std::error_code& ec) const noexcept = 0;
+        /** Set a socket option.
 
-        virtual std::error_code set_keep_alive(bool value) noexcept = 0;
-        virtual bool keep_alive(std::error_code& ec) const noexcept = 0;
+            @param level The protocol level (e.g. `SOL_SOCKET`).
+            @param optname The option name (e.g. `SO_KEEPALIVE`).
+            @param data Pointer to the option value.
+            @param size Size of the option value in bytes.
+            @return Error code on failure, empty on success.
+        */
+        virtual std::error_code set_option(
+            int level, int optname,
+            void const* data, std::size_t size) noexcept = 0;
 
-        virtual std::error_code set_receive_buffer_size(int size) noexcept  = 0;
-        virtual int receive_buffer_size(std::error_code& ec) const noexcept = 0;
+        /** Get a socket option.
 
-        virtual std::error_code set_send_buffer_size(int size) noexcept  = 0;
-        virtual int send_buffer_size(std::error_code& ec) const noexcept = 0;
-
-        virtual std::error_code
-        set_linger(bool enabled, int timeout) noexcept                    = 0;
-        virtual linger_options linger(std::error_code& ec) const noexcept = 0;
+            @param level The protocol level (e.g. `SOL_SOCKET`).
+            @param optname The option name (e.g. `SO_KEEPALIVE`).
+            @param data Pointer to receive the option value.
+            @param size On entry, the size of the buffer. On exit,
+                the size of the option value.
+            @return Error code on failure, empty on success.
+        */
+        virtual std::error_code get_option(
+            int level, int optname,
+            void* data, std::size_t* size) const noexcept = 0;
 
         /// Returns the cached local endpoint.
         virtual endpoint local_endpoint() const noexcept = 0;
@@ -243,13 +245,18 @@ public:
 
     /** Open the socket.
 
-        Creates an IPv4 TCP socket and associates it with the platform
-        reactor (IOCP on Windows). This must be called before initiating
-        I/O operations.
+        Creates a TCP socket and associates it with the platform
+        reactor (IOCP on Windows). Calling @ref connect on a closed
+        socket opens it automatically with the endpoint's address family,
+        so explicit `open()` is only needed when socket options must be
+        set before connecting.
+
+        @param proto The protocol (IPv4 or IPv6). Defaults to
+            `tcp::v4()`.
 
         @throws std::system_error on failure.
     */
-    void open();
+    void open( tcp proto = tcp::v4() );
 
     /** Close the socket.
 
@@ -273,8 +280,9 @@ public:
 
     /** Initiate an asynchronous connect operation.
 
-        Connects the socket to the specified remote endpoint. The socket
-        must be open before calling this function.
+        If the socket is not already open, it is opened automatically
+        using the address family of @p ep (IPv4 or IPv6). If the socket
+        is already open, the existing file descriptor is used as-is.
 
         The operation supports cancellation via `std::stop_token` through
         the affine awaitable protocol. If the associated stop token is
@@ -292,15 +300,15 @@ public:
             - operation_canceled: Cancelled via stop_token or cancel().
                 Check `ec == cond::canceled` for portable comparison.
 
-        @throws std::logic_error if the socket is not open.
+        @throws std::system_error if the socket needs to be opened
+            and the open fails.
 
         @par Preconditions
-        The socket must be open (`is_open() == true`).
-
         This socket must outlive the returned awaitable.
 
         @par Example
         @code
+        // Socket opened automatically with correct address family:
         auto [ec] = co_await s.connect(endpoint);
         if (ec) { ... }
         @endcode
@@ -308,7 +316,7 @@ public:
     auto connect(endpoint ep)
     {
         if (!is_open())
-            detail::throw_logic_error("connect: socket not open");
+            open(ep.is_v6() ? tcp::v6() : tcp::v4());
         return connect_awaitable(*this, ep);
     }
 
@@ -373,114 +381,63 @@ public:
     */
     void shutdown(shutdown_type what);
 
-    //
-    // Socket Options
-    //
+    /** Set a socket option.
 
-    /** Enable or disable TCP_NODELAY (disable Nagle's algorithm).
+        Applies a type-safe socket option to the underlying socket.
+        The option type encodes the protocol level and option name.
 
-        When enabled, segments are sent as soon as possible even if
-        there is only a small amount of data. This reduces latency
-        at the potential cost of increased network traffic.
+        @par Example
+        @code
+        sock.set_option( socket_option::no_delay( true ) );
+        sock.set_option( socket_option::receive_buffer_size( 65536 ) );
+        @endcode
 
-        @param value `true` to disable Nagle's algorithm (enable no-delay).
-
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
-    */
-    void set_no_delay(bool value);
-
-    /** Get the current TCP_NODELAY setting.
-
-        @return `true` if Nagle's algorithm is disabled.
+        @param opt The option to set.
 
         @throws std::logic_error if the socket is not open.
         @throws std::system_error on failure.
     */
-    bool no_delay() const;
+    template<class Option>
+    void set_option( Option const& opt )
+    {
+        if (!is_open())
+            detail::throw_logic_error( "set_option: socket not open" );
+        std::error_code ec = get().set_option(
+            Option::level(), Option::name(), opt.data(), opt.size() );
+        if (ec)
+            detail::throw_system_error( ec, "tcp_socket::set_option" );
+    }
 
-    /** Enable or disable SO_KEEPALIVE.
+    /** Get a socket option.
 
-        When enabled, the socket will periodically send keepalive probes
-        to detect if the peer is still reachable.
+        Retrieves the current value of a type-safe socket option.
 
-        @param value `true` to enable keepalive probes.
+        @par Example
+        @code
+        auto nd = sock.get_option<socket_option::no_delay>();
+        if ( nd.value() )
+            // Nagle's algorithm is disabled
+        @endcode
 
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
-    */
-    void set_keep_alive(bool value);
-
-    /** Get the current SO_KEEPALIVE setting.
-
-        @return `true` if keepalive is enabled.
-
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
-    */
-    bool keep_alive() const;
-
-    /** Set the receive buffer size (SO_RCVBUF).
-
-        @param size The desired receive buffer size in bytes.
-
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
-
-        @note The operating system may adjust the actual buffer size.
-    */
-    void set_receive_buffer_size(int size);
-
-    /** Get the receive buffer size (SO_RCVBUF).
-
-        @return The current receive buffer size in bytes.
+        @return The current option value.
 
         @throws std::logic_error if the socket is not open.
         @throws std::system_error on failure.
     */
-    int receive_buffer_size() const;
-
-    /** Set the send buffer size (SO_SNDBUF).
-
-        @param size The desired send buffer size in bytes.
-
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
-
-        @note The operating system may adjust the actual buffer size.
-    */
-    void set_send_buffer_size(int size);
-
-    /** Get the send buffer size (SO_SNDBUF).
-
-        @return The current send buffer size in bytes.
-
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
-    */
-    int send_buffer_size() const;
-
-    /** Set the SO_LINGER option.
-
-        Controls behavior when closing a socket with unsent data.
-
-        @param enabled If `true`, close() will block until data is sent
-            or the timeout expires. If `false`, close() returns immediately.
-        @param timeout The linger timeout in seconds (only used if enabled).
-
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
-    */
-    void set_linger(bool enabled, int timeout);
-
-    /** Get the current SO_LINGER setting.
-
-        @return The current linger options.
-
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
-    */
-    linger_options linger() const;
+    template<class Option>
+    Option get_option() const
+    {
+        if (!is_open())
+            detail::throw_logic_error( "get_option: socket not open" );
+        Option opt{};
+        std::size_t sz = opt.size();
+        std::error_code ec = get().get_option(
+            Option::level(), Option::name(), opt.data(), &sz );
+        if (ec)
+            detail::throw_system_error( ec, "tcp_socket::get_option" );
+        opt.resize( sz );
+        return opt;
+    }
 
     /** Get the local endpoint of the socket.
 
@@ -522,6 +479,9 @@ protected:
 
 private:
     friend class tcp_acceptor;
+
+    /// Open the socket for the given protocol triple.
+    void open_for_family(int family, int type, int protocol);
 
     inline implementation& get() const noexcept
     {

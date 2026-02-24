@@ -14,6 +14,7 @@
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/socket_option.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -48,7 +49,11 @@ make_socket_pair(io_context& ctx)
     bool connect_done = false;
 
     Acceptor acc(ctx);
-    if (auto ec = acc.listen(endpoint(ipv4_address::loopback(), 0)))
+    acc.open();
+    acc.set_option(socket_option::reuse_address(true));
+    if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
+        throw std::runtime_error("socket_pair bind failed: " + ec.message());
+    if (auto ec = acc.listen())
         throw std::runtime_error("socket_pair listen failed: " + ec.message());
     auto port = acc.local_endpoint().port();
 
@@ -97,8 +102,8 @@ make_socket_pair(io_context& ctx)
 
     acc.close();
 
-    s1.set_linger(true, 0);
-    s2.set_linger(true, 0);
+    s1.set_option(socket_option::linger(true, 0));
+    s2.set_option(socket_option::linger(true, 0));
 
     return {std::move(s1), std::move(s2)};
 }
