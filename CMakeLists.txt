@@ -115,7 +115,8 @@ endfunction()
 
 if (BOOST_COROSIO_MRDOCS_BUILD)
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp"
-        "#include <boost/corosio.hpp>\n")
+        "#include <boost/corosio.hpp>\n"
+        "#include <boost/corosio/native/native.hpp>\n")
     add_library(boost_corosio_mrdocs "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp")
     boost_corosio_setup_properties(boost_corosio_mrdocs)
     target_compile_definitions(boost_corosio_mrdocs PUBLIC BOOST_COROSIO_MRDOCS)
