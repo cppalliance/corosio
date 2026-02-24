@@ -22,6 +22,7 @@
 #include <thread>
 #include <vector>
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -120,6 +121,45 @@ inline atomic_counter_coro
 make_atomic_coro(std::atomic<int>& counter)
 {
     auto c                 = []() -> atomic_counter_coro { co_return; }();
+    c.h.promise().counter_ = &counter;
+    return c;
+}
+
+// Coroutine whose promise destructor increments a counter.
+// Both initial_suspend and final_suspend return suspend_always so the
+// frame is only freed by an explicit .destroy() call.
+struct destroy_counter_coro
+{
+    struct promise_type
+    {
+        int* counter_ = nullptr;
+
+        destroy_counter_coro get_return_object()
+        {
+            return {std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_always final_suspend() noexcept { return {}; }
+        void return_void() {}
+        void unhandled_exception() { std::terminate(); }
+
+        ~promise_type()
+        {
+            if (counter_)
+                ++(*counter_);
+        }
+    };
+
+    std::coroutine_handle<promise_type> h;
+
+    operator std::coroutine_handle<>() const { return h; }
+};
+
+inline destroy_counter_coro
+make_destroy_coro(int& counter)
+{
+    auto c                 = []() -> destroy_counter_coro { co_return; }();
     c.h.promise().counter_ = &counter;
     return c;
 }
@@ -513,6 +553,24 @@ struct io_context_test
         BOOST_TEST(finished);
     }
 
+    void testShutdownDestroysPostedCoroutineFrames()
+    {
+        int destroyed = 0;
+
+        {
+            io_context ioc;
+            auto ex = ioc.get_executor();
+
+            ex.post(make_destroy_coro(destroyed));
+            ex.post(make_destroy_coro(destroyed));
+            ex.post(make_destroy_coro(destroyed));
+
+            // io_context destructor triggers shutdown
+        }
+
+        BOOST_TEST_EQ(destroyed, 3);
+    }
+
     void run()
     {
         testConstruction();
@@ -529,9 +587,38 @@ struct io_context_test
         testMultithreaded();
         testMultithreadedStress();
         testWhenAllSetEvent();
+        testShutdownDestroysPostedCoroutineFrames();
     }
 };
 
 TEST_SUITE(io_context_test, "boost.corosio.io_context");
+
+// Backend-parameterized tests for shutdown paths that differ per backend
+template<auto Backend>
+struct io_context_shutdown_test
+{
+    void testShutdownDestroysPostedCoroutineFrames()
+    {
+        int destroyed = 0;
+
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+
+            ex.post(make_destroy_coro(destroyed));
+            ex.post(make_destroy_coro(destroyed));
+            ex.post(make_destroy_coro(destroyed));
+        }
+
+        BOOST_TEST_EQ(destroyed, 3);
+    }
+
+    void run()
+    {
+        testShutdownDestroysPostedCoroutineFrames();
+    }
+};
+
+COROSIO_BACKEND_TESTS(io_context_shutdown_test, "boost.corosio.io_context_shutdown")
 
 } // namespace boost::corosio

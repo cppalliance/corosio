@@ -30,6 +30,7 @@
 #include <mutex>
 #include <optional>
 #include <stop_token>
+#include <utility>
 #include <vector>
 
 namespace boost::corosio::detail {
@@ -198,8 +199,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
         completion_op() noexcept : scheduler_op(&do_complete) {}
 
         void operator()() override;
-        // No-op — lifetime owned by waiter_node, not the scheduler queue
-        void destroy() override {}
+        void destroy() override;
     };
 
     // Per-waiter stop_token cancellation
@@ -328,15 +328,22 @@ timer_service::shutdown()
 {
     timer_service_invalidate_cache();
 
-    // Cancel waiting timers still in the heap
+    // Cancel waiting timers still in the heap.
+    // Each waiter called work_started() in implementation::wait().
+    // On IOCP the scheduler shutdown loop exits when outstanding_work_
+    // reaches zero, so we must call work_finished() here to balance it.
+    // On other backends this is harmless (their drain loops exit when
+    // the queue is empty, not based on outstanding_work_).
     for (auto& entry : heap_)
     {
         auto* impl = entry.timer_;
         while (auto* w = impl->waiters_.pop_front())
         {
             w->stop_cb_.reset();
-            w->h_ = {};
+            auto h = std::exchange(w->h_, {});
             sched_->work_finished();
+            if (h)
+                h.destroy();
             delete w;
         }
         impl->heap_index_ = (std::numeric_limits<std::size_t>::max)();
@@ -722,10 +729,12 @@ waiter_node::canceller::operator()() const
 
 inline void
 waiter_node::completion_op::do_complete(
-    void* owner, scheduler_op* base, std::uint32_t, std::uint32_t)
+    [[maybe_unused]] void* owner, scheduler_op* base, std::uint32_t, std::uint32_t)
 {
-    if (!owner)
-        return;
+    // owner is always non-null here. The destroy path (owner == nullptr)
+    // is unreachable because completion_op overrides destroy() directly,
+    // bypassing scheduler_op::destroy() which would call func_(nullptr, ...).
+    BOOST_COROSIO_ASSERT(owner);
     static_cast<completion_op*>(base)->operator()();
 }
 
@@ -746,6 +755,30 @@ waiter_node::completion_op::operator()()
 
     d.post(h);
     sched.work_finished();
+}
+
+inline void
+waiter_node::completion_op::destroy()
+{
+    // Called during scheduler shutdown drain when this completion_op is
+    // in the scheduler's ready queue (posted by cancel_timer() or
+    // process_expired()). Balances the work_started() from
+    // implementation::wait(). The scheduler drain loop separately
+    // balances the work_started() from post(). On IOCP both decrements
+    // are required for outstanding_work_ to reach zero; on other
+    // backends this is harmless.
+    //
+    // This override also prevents scheduler_op::destroy() from calling
+    // do_complete(nullptr, ...). See also: timer_service::shutdown()
+    // which drains waiters still in the timer heap (the other path).
+    auto* w = waiter_;
+    w->stop_cb_.reset();
+    auto h = std::exchange(w->h_, {});
+    auto& sched = w->svc_->get_scheduler();
+    delete w;
+    sched.work_finished();
+    if (h)
+        h.destroy();
 }
 
 inline std::coroutine_handle<>
