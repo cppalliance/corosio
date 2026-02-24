@@ -37,3 +37,4 @@
 * xref:benchmark-report.adoc[Benchmarks]
 * xref:glossary.adoc[Glossary]
 * xref:quick-start.adoc[Quick Start]
+* xref:reference:boost/corosio.adoc[Reference]
