@@ -257,7 +257,7 @@ corosio::resolver r2 = std::move(r1);  // OK
 corosio::resolver r3 = r2;  // Error: deleted copy constructor
 ----
 
-IMPORTANT: Source and destination must share the same execution context.
+NOTE: After a move, the destination uses the source's execution context.
 
 == Thread Safety
 
