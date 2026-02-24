@@ -266,7 +266,7 @@ corosio::timer t3 = t2;  // Error: deleted copy constructor
 
 Move assignment cancels any pending wait on the destination timer.
 
-IMPORTANT: Source and destination must share the same execution context.
+NOTE: After a move, the destination uses the source's execution context.
 
 == Thread Safety
 

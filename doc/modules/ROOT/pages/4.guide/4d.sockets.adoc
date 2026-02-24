@@ -245,7 +245,7 @@ Move assignment closes any existing socket:
 s1 = std::move(s2);  // Closes s1's socket if open, then moves s2
 ----
 
-IMPORTANT: Source and destination must share the same execution context.
+NOTE: After a move, the destination uses the source's execution context.
 
 == The io_stream Interface
 

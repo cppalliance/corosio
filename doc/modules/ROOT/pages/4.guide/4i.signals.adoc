@@ -350,7 +350,7 @@ corosio::signal_set s2 = std::move(s1);  // OK
 corosio::signal_set s3 = s2;  // Error: deleted copy constructor
 ----
 
-IMPORTANT: Source and destination must share the same execution context.
+NOTE: After a move, the destination uses the source's execution context.
 
 == Thread Safety
 
