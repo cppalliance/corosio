@@ -15,43 +15,39 @@
 #include <boost/corosio/native/native_timer.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
 
-// Explicit template instantiation for each available backend.
-// All benchmark entry points share the same parameter signature.
-#define COROSIO_BENCH_PARAMS_ \
-    (perf::context_factory, bench::result_collector&, char const*, double)
-
+// Suite factory instantiation — returns benchmark_suite by value
 #if BOOST_COROSIO_HAS_EPOLL
-#define COROSIO_BENCH_INSTANTIATE_EPOLL(decl) \
-    template decl<boost::corosio::epoll> COROSIO_BENCH_PARAMS_;
+#define COROSIO_SUITE_INSTANTIATE_EPOLL(decl) \
+    template bench::benchmark_suite decl<boost::corosio::epoll>();
 #else
-#define COROSIO_BENCH_INSTANTIATE_EPOLL(decl)
+#define COROSIO_SUITE_INSTANTIATE_EPOLL(decl)
 #endif
 
 #if BOOST_COROSIO_HAS_KQUEUE
-#define COROSIO_BENCH_INSTANTIATE_KQUEUE(decl) \
-    template decl<boost::corosio::kqueue> COROSIO_BENCH_PARAMS_;
+#define COROSIO_SUITE_INSTANTIATE_KQUEUE(decl) \
+    template bench::benchmark_suite decl<boost::corosio::kqueue>();
 #else
-#define COROSIO_BENCH_INSTANTIATE_KQUEUE(decl)
+#define COROSIO_SUITE_INSTANTIATE_KQUEUE(decl)
 #endif
 
 #if BOOST_COROSIO_HAS_SELECT
-#define COROSIO_BENCH_INSTANTIATE_SELECT(decl) \
-    template decl<boost::corosio::select> COROSIO_BENCH_PARAMS_;
+#define COROSIO_SUITE_INSTANTIATE_SELECT(decl) \
+    template bench::benchmark_suite decl<boost::corosio::select>();
 #else
-#define COROSIO_BENCH_INSTANTIATE_SELECT(decl)
+#define COROSIO_SUITE_INSTANTIATE_SELECT(decl)
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP
-#define COROSIO_BENCH_INSTANTIATE_IOCP(decl) \
-    template decl<boost::corosio::iocp> COROSIO_BENCH_PARAMS_;
+#define COROSIO_SUITE_INSTANTIATE_IOCP(decl) \
+    template bench::benchmark_suite decl<boost::corosio::iocp>();
 #else
-#define COROSIO_BENCH_INSTANTIATE_IOCP(decl)
+#define COROSIO_SUITE_INSTANTIATE_IOCP(decl)
 #endif
 
-#define COROSIO_BENCH_INSTANTIATE(decl)    \
-    COROSIO_BENCH_INSTANTIATE_EPOLL(decl)  \
-    COROSIO_BENCH_INSTANTIATE_KQUEUE(decl) \
-    COROSIO_BENCH_INSTANTIATE_SELECT(decl) \
-    COROSIO_BENCH_INSTANTIATE_IOCP(decl)
+#define COROSIO_SUITE_INSTANTIATE(decl)    \
+    COROSIO_SUITE_INSTANTIATE_EPOLL(decl)  \
+    COROSIO_SUITE_INSTANTIATE_KQUEUE(decl) \
+    COROSIO_SUITE_INSTANTIATE_SELECT(decl) \
+    COROSIO_SUITE_INSTANTIATE_IOCP(decl)
 
 #endif // BOOST_COROSIO_PERF_NATIVE_INCLUDES_HPP

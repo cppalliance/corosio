@@ -10,122 +10,58 @@
 #ifndef COROSIO_BENCH_BENCHMARKS_HPP
 #define COROSIO_BENCH_BENCHMARKS_HPP
 
-#include "../../common/backend_selection.hpp"
-#include "../common/benchmark.hpp"
+#include "../common/suite.hpp"
 
 namespace corosio_bench {
 
-/** Run io_context benchmarks using the given context factory.
+/** Create the io_context benchmark suite.
 
     @tparam Backend A backend tag value (e.g., `epoll`).
-    @param factory Factory that creates a fresh io_context.
-    @param collector Results collector.
-    @param filter Optional filter: nullptr or "all" runs all, or a specific
-           benchmark name (single_threaded, multithreaded, interleaved, concurrent).
-    @param duration_s Duration in seconds for each benchmark.
 */
 template<auto Backend>
-void run_io_context_benchmarks(
-    perf::context_factory factory,
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s);
+bench::benchmark_suite make_io_context_suite();
 
-/** Run socket throughput benchmarks using the given context factory.
+/** Create the socket throughput benchmark suite.
 
     @tparam Backend A backend tag value (e.g., `epoll`).
-    @param factory Factory that creates a fresh io_context.
-    @param collector Results collector.
-    @param filter Optional filter: nullptr or "all" runs all, or a specific
-           benchmark name (unidirectional, bidirectional).
-    @param duration_s Duration in seconds for each benchmark.
 */
 template<auto Backend>
-void run_socket_throughput_benchmarks(
-    perf::context_factory factory,
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s);
+bench::benchmark_suite make_socket_throughput_suite();
 
-/** Run socket latency benchmarks using the given context factory.
+/** Create the socket latency benchmark suite.
 
     @tparam Backend A backend tag value (e.g., `epoll`).
-    @param factory Factory that creates a fresh io_context.
-    @param collector Results collector.
-    @param filter Optional filter: nullptr or "all" runs all, or a specific
-           benchmark name (pingpong, concurrent).
-    @param duration_s Duration in seconds for each benchmark.
 */
 template<auto Backend>
-void run_socket_latency_benchmarks(
-    perf::context_factory factory,
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s);
+bench::benchmark_suite make_socket_latency_suite();
 
-/** Run HTTP server benchmarks using the given context factory.
+/** Create the HTTP server benchmark suite.
 
     @tparam Backend A backend tag value (e.g., `epoll`).
-    @param factory Factory that creates a fresh io_context.
-    @param collector Results collector.
-    @param filter Optional filter: nullptr or "all" runs all, or a specific
-           benchmark name (single_conn, concurrent, multithread).
-    @param duration_s Duration in seconds for each benchmark.
 */
 template<auto Backend>
-void run_http_server_benchmarks(
-    perf::context_factory factory,
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s);
+bench::benchmark_suite make_http_server_suite();
 
-/** Run timer benchmarks using the given context factory.
+/** Create the timer benchmark suite.
 
     @tparam Backend A backend tag value (e.g., `epoll`).
-    @param factory Factory that creates a fresh io_context.
-    @param collector Results collector.
-    @param filter Optional filter: nullptr or "all" runs all, or a specific
-           benchmark name (schedule_cancel, fire_rate, concurrent).
-    @param duration_s Duration in seconds for each benchmark.
 */
 template<auto Backend>
-void run_timer_benchmarks(
-    perf::context_factory factory,
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s);
+bench::benchmark_suite make_timer_suite();
 
-/** Run accept churn benchmarks using the given context factory.
+/** Create the accept churn benchmark suite.
 
     @tparam Backend A backend tag value (e.g., `epoll`).
-    @param factory Factory that creates a fresh io_context.
-    @param collector Results collector.
-    @param filter Optional filter: nullptr or "all" runs all, or a specific
-           benchmark name (sequential, concurrent, burst).
-    @param duration_s Duration in seconds for each benchmark.
 */
 template<auto Backend>
-void run_accept_churn_benchmarks(
-    perf::context_factory factory,
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s);
+bench::benchmark_suite make_accept_churn_suite();
 
-/** Run fan-out/fan-in benchmarks using the given context factory.
+/** Create the fan-out/fan-in benchmark suite.
 
     @tparam Backend A backend tag value (e.g., `epoll`).
-    @param factory Factory that creates a fresh io_context.
-    @param collector Results collector.
-    @param filter Optional filter: nullptr or "all" runs all, or a specific
-           benchmark name (fork_join, nested, concurrent_parents).
-    @param duration_s Duration in seconds for each benchmark.
 */
 template<auto Backend>
-void run_fan_out_benchmarks(
-    perf::context_factory factory,
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s);
+bench::benchmark_suite make_fan_out_suite();
 
 } // namespace corosio_bench
 

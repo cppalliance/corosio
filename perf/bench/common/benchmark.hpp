@@ -34,10 +34,20 @@ struct metric
 /** Result from a single benchmark run. */
 struct benchmark_result
 {
+    std::string library;
+    std::string category;
     std::string name;
     std::vector<metric> metrics;
 
-    explicit benchmark_result(std::string n) : name(std::move(n)) {}
+    benchmark_result(
+        std::string lib,
+        std::string cat,
+        std::string n)
+        : library(std::move(lib))
+        , category(std::move(cat))
+        , name(std::move(n))
+    {
+    }
 
     benchmark_result& add(std::string metric_name, double value)
     {
@@ -49,13 +59,13 @@ struct benchmark_result
     benchmark_result&
     add_latency_stats(std::string prefix, perf::statistics const& stats)
     {
-        add(prefix + "_mean_us", stats.mean());
-        add(prefix + "_p50_us", stats.p50());
-        add(prefix + "_p90_us", stats.p90());
-        add(prefix + "_p99_us", stats.p99());
-        add(prefix + "_p999_us", stats.p999());
-        add(prefix + "_min_us", (stats.min)());
-        add(prefix + "_max_us", (stats.max)());
+        add(prefix + "_mean_ns", stats.mean());
+        add(prefix + "_p50_ns", stats.p50());
+        add(prefix + "_p90_ns", stats.p90());
+        add(prefix + "_p99_ns", stats.p99());
+        add(prefix + "_p999_ns", stats.p999());
+        add(prefix + "_min_ns", (stats.min)());
+        add(prefix + "_max_ns", (stats.max)());
         return *this;
     }
 };
@@ -158,6 +168,11 @@ public:
         {
             auto const& r = results_[i];
             oss << "    {\n";
+            if (!r.library.empty())
+                oss << "      \"library\": \""
+                    << escape_json(r.library) << "\",\n";
+            oss << "      \"category\": \""
+                << escape_json(r.category) << "\",\n";
             oss << "      \"name\": \"" << escape_json(r.name) << "\"";
 
             for (auto const& m : r.metrics)
