@@ -129,7 +129,7 @@ jobs:
 
           # macOS (4 configurations)
           # kqueue is the default backend on macOS
-          # Requires -fexperimental-library for std::stop_token support in libc++
+          # Global cxxflags needed until capy adds -fexperimental-library internally
 
           - compiler: "apple-clang"
             version: "*"
@@ -330,7 +330,6 @@ jobs:
 
           # FreeBSD (2 configurations)
           # Uses kqueue backend, system Clang (LLVM 19), built via b2 in a VM
-          # Requires -fexperimental-library for std::stop_token support in libc++ 19
 
           - freebsd: "14.3"
             runs-on: "ubuntu-latest"
