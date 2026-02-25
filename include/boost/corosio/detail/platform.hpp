@@ -13,6 +13,21 @@
 // Platform feature detection
 // Each macro is always defined to either 0 or 1
 
+#ifdef BOOST_COROSIO_MRDOCS
+
+// MrDocs documentation build: enable all backends so every
+// platform-specific tag and specialization appears in the
+// generated reference.  The native_* headers skip the real
+// implementation includes under this guard, so no platform
+// system headers are required.
+#define BOOST_COROSIO_HAS_IOCP   1
+#define BOOST_COROSIO_HAS_EPOLL  1
+#define BOOST_COROSIO_HAS_KQUEUE 1
+#define BOOST_COROSIO_HAS_SELECT 1
+#define BOOST_COROSIO_POSIX      1
+
+#else // !BOOST_COROSIO_MRDOCS
+
 // IOCP - Windows I/O completion ports
 #if defined(_WIN32)
 #define BOOST_COROSIO_HAS_IOCP 1
@@ -48,5 +63,7 @@
 #else
 #define BOOST_COROSIO_POSIX 0
 #endif
+
+#endif // BOOST_COROSIO_MRDOCS
 
 #endif // BOOST_COROSIO_DETAIL_PLATFORM_HPP

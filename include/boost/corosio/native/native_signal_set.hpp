@@ -13,6 +13,7 @@
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/backend.hpp>
 
+#ifndef BOOST_COROSIO_MRDOCS
 #if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_SELECT || \
     BOOST_COROSIO_HAS_KQUEUE
 #include <boost/corosio/native/detail/posix/posix_signal_service.hpp>
@@ -21,6 +22,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/native/detail/iocp/win_signals.hpp>
 #endif
+#endif // !BOOST_COROSIO_MRDOCS
 
 namespace boost::corosio {
 
