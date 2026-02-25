@@ -27,6 +27,11 @@ option(BOOST_COROSIO_BUILD_PERF "Build boost::corosio performance tools" ${BOOST
 option(BOOST_COROSIO_BUILD_EXAMPLES "Build boost::corosio examples" ${BOOST_COROSIO_IS_ROOT})
 option(BOOST_COROSIO_MRDOCS_BUILD "Building for MrDocs documentation generation" OFF)
 
+if(NOT TARGET Boost::capy AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../capy/CMakeLists.txt")
+    set(BOOST_CAPY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BOOST_CAPY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    add_subdirectory(../capy ${CMAKE_CURRENT_BINARY_DIR}/deps/capy)
+endif()
 if(NOT TARGET Boost::capy)
     find_package(boost_capy QUIET)
 endif()
