@@ -36,7 +36,7 @@ target_link_libraries(my_app Boost::corosio)
 
 ## Requirements
 
-- CMake 3.8 or later
+- CMake 3.14 or later
 - C++20 compiler (GCC 12+, Clang 17+, MSVC 14.34+)
 - Ninja (recommended) or other CMake generator
 

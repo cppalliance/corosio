@@ -7,10 +7,6 @@
 # Official repository: https://github.com/cppalliance/corosio
 #
 
-if(NOT TARGET boost_capy_test_suite)
-    add_subdirectory(../../../capy/extra/test_suite test_suite)
-endif()
-
 file(GLOB_RECURSE PFILES CONFIGURE_DEPENDS *.cpp *.hpp)
 list(APPEND PFILES
     CMakeLists.txt
@@ -21,7 +17,7 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES ${PFILES})
 add_executable(boost_corosio_tests ${PFILES})
 target_link_libraries(
     boost_corosio_tests PRIVATE
-    boost_capy_test_suite_main
+    Boost::capy_test_suite_main
     Boost::corosio)
 
 if (WolfSSL_FOUND)
