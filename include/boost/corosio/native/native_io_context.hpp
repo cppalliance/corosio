@@ -13,6 +13,7 @@
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/backend.hpp>
 
+#ifndef BOOST_COROSIO_MRDOCS
 #if BOOST_COROSIO_HAS_EPOLL
 #include <boost/corosio/native/detail/epoll/epoll_scheduler.hpp>
 #endif
@@ -28,6 +29,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #endif
+#endif // !BOOST_COROSIO_MRDOCS
 
 namespace boost::corosio {
 

@@ -35,7 +35,7 @@
 
 namespace boost::corosio {
 
-#if BOOST_COROSIO_HAS_IOCP
+#if BOOST_COROSIO_HAS_IOCP && !defined(BOOST_COROSIO_MRDOCS)
 using native_handle_type = std::uintptr_t; // SOCKET
 #else
 using native_handle_type = int;
@@ -271,7 +271,7 @@ public:
     */
     bool is_open() const noexcept
     {
-#if BOOST_COROSIO_HAS_IOCP
+#if BOOST_COROSIO_HAS_IOCP && !defined(BOOST_COROSIO_MRDOCS)
         return h_ && get().native_handle() != ~native_handle_type(0);
 #else
         return h_ && get().native_handle() >= 0;
