@@ -21,12 +21,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstring>
-#include <iostream>
 #include <thread>
 #include <vector>
-
-#include "../../common/benchmark.hpp"
 
 namespace asio = boost::asio;
 using tcp      = asio::ip::tcp;
@@ -73,13 +69,12 @@ sub_request(tcp_socket& client, std::atomic<int>& remaining)
     remaining.fetch_sub(1, std::memory_order_release);
 }
 
-// Parent spawns N sub-requests (write+read 64B on pre-connected sockets),
-// waits for all N to complete, then repeats. Measures coordination overhead
-// as fan-out scales — low throughput points to co_spawn cost or yield overhead.
-bench::benchmark_result
-bench_fork_join(int fan_out, double duration_s)
+// Parent spawns N sub-requests, waits for all N to complete, then repeats
+void
+bench_fork_join(bench::state& state)
 {
-    std::cout << "  Fan-out: " << fan_out << "\n";
+    int fan_out = static_cast<int>(state.range(0));
+    state.counters["fan_out"] = fan_out;
 
     asio::io_context ioc;
 
@@ -99,8 +94,6 @@ bench_fork_join(int fan_out, double duration_s)
         asio::co_spawn(ioc, echo_server(servers[i]), asio::detached);
 
     std::atomic<bool> running{true};
-    int64_t cycles = 0;
-    perf::statistics latency_stats;
 
     auto parent = [&]() -> asio::awaitable<void, executor_type> {
         timer_type t(ioc);
@@ -108,7 +101,7 @@ bench_fork_join(int fan_out, double duration_s)
         {
             while (running.load(std::memory_order_relaxed))
             {
-                perf::stopwatch sw;
+                auto lp = state.lap();
 
                 std::atomic<int> remaining{fan_out};
                 for (int i = 0; i < fan_out; ++i)
@@ -121,9 +114,6 @@ bench_fork_join(int fan_out, double duration_s)
                     t.expires_after(std::chrono::nanoseconds(0));
                     co_await t.async_wait(asio::deferred);
                 }
-
-                latency_stats.add(sw.elapsed_us());
-                ++cycles;
             }
         }
         catch (std::exception const&)
@@ -136,44 +126,32 @@ bench_fork_join(int fan_out, double duration_s)
             s.close();
     };
 
-    perf::stopwatch total_sw;
+    perf::stopwatch sw;
 
     asio::co_spawn(ioc, parent(), asio::detached);
 
     std::thread stopper([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(duration_s));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
     });
 
     ioc.run();
     stopper.join();
 
-    double elapsed = total_sw.elapsed_seconds();
-    double rate    = static_cast<double>(cycles) / elapsed;
-
-    std::cout << "    Cycles: " << cycles << "\n";
-    std::cout << "    Elapsed: " << std::fixed << std::setprecision(3)
-              << elapsed << " s\n";
-    std::cout << "    Throughput: " << perf::format_rate(rate) << "\n";
-    perf::print_latency_stats(latency_stats, "Fork-join latency");
-    std::cout << "\n";
-
-    return bench::benchmark_result("fork_join_" + std::to_string(fan_out))
-        .add("fan_out", fan_out)
-        .add("cycles", static_cast<double>(cycles))
-        .add("parent_requests_per_sec", rate)
-        .add_latency_stats("fork_join_latency", latency_stats);
+    state.set_elapsed(sw.elapsed_seconds());
 }
 
-// Two-level fan-out: parent spawns M groups, each group spawns N sub-requests.
-// Tests hierarchical coordination cost — the extra indirection layer adds
-// spawn and join overhead beyond flat fork-join.
-bench::benchmark_result
-bench_nested(int groups, int subs_per_group, double duration_s)
+// Two-level fan-out: parent spawns M groups, each group spawns N sub-requests
+void
+bench_nested(bench::state& state)
 {
-    int total_subs = groups * subs_per_group;
-    std::cout << "  Groups: " << groups << ", Subs/group: " << subs_per_group
-              << " (total " << total_subs << ")\n";
+    int groups         = static_cast<int>(state.range(0));
+    int subs_per_group = 4;
+    int total_subs     = groups * subs_per_group;
+
+    state.counters["groups"]         = groups;
+    state.counters["subs_per_group"] = subs_per_group;
 
     asio::io_context ioc;
 
@@ -193,8 +171,6 @@ bench_nested(int groups, int subs_per_group, double duration_s)
         asio::co_spawn(ioc, echo_server(servers[i]), asio::detached);
 
     std::atomic<bool> running{true};
-    int64_t cycles = 0;
-    perf::statistics latency_stats;
 
     auto group_task = [&](int base_idx, int n,
                           std::atomic<int>& groups_remaining)
@@ -227,7 +203,7 @@ bench_nested(int groups, int subs_per_group, double duration_s)
         {
             while (running.load(std::memory_order_relaxed))
             {
-                perf::stopwatch sw;
+                auto lp = state.lap();
 
                 std::atomic<int> groups_remaining{groups};
                 for (int g = 0; g < groups; ++g)
@@ -243,9 +219,6 @@ bench_nested(int groups, int subs_per_group, double duration_s)
                     t.expires_after(std::chrono::nanoseconds(0));
                     co_await t.async_wait(asio::deferred);
                 }
-
-                latency_stats.add(sw.elapsed_us());
-                ++cycles;
             }
         }
         catch (std::exception const&)
@@ -258,48 +231,33 @@ bench_nested(int groups, int subs_per_group, double duration_s)
             s.close();
     };
 
-    perf::stopwatch total_sw;
+    perf::stopwatch sw;
 
     asio::co_spawn(ioc, parent(), asio::detached);
 
     std::thread stopper([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(duration_s));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
     });
 
     ioc.run();
     stopper.join();
 
-    double elapsed = total_sw.elapsed_seconds();
-    double rate    = static_cast<double>(cycles) / elapsed;
-
-    std::cout << "    Cycles: " << cycles << "\n";
-    std::cout << "    Elapsed: " << std::fixed << std::setprecision(3)
-              << elapsed << " s\n";
-    std::cout << "    Throughput: " << perf::format_rate(rate) << "\n";
-    perf::print_latency_stats(latency_stats, "Nested fan-out latency");
-    std::cout << "\n";
-
-    return bench::benchmark_result(
-               "nested_" + std::to_string(groups) + "x" +
-               std::to_string(subs_per_group))
-        .add("groups", groups)
-        .add("subs_per_group", subs_per_group)
-        .add("cycles", static_cast<double>(cycles))
-        .add("parent_requests_per_sec", rate)
-        .add_latency_stats("nested_latency", latency_stats);
+    state.set_elapsed(sw.elapsed_seconds());
 }
 
-// P independent parents each fanning out to N sub-requests on their own
-// socket sets. Tests scheduler fairness under competing coordination trees
-// and reveals whether per-parent throughput degrades as P grows.
-bench::benchmark_result
-bench_concurrent_parents(int num_parents, int fan_out, double duration_s)
+// P independent parents each fanning out to N sub-requests
+void
+bench_concurrent_parents(bench::state& state)
 {
-    std::cout << "  Parents: " << num_parents << ", Fan-out: " << fan_out
-              << "\n";
+    int num_parents = static_cast<int>(state.range(0));
+    int fan_out     = 16;
+    int total_subs  = num_parents * fan_out;
 
-    int total_subs = num_parents * fan_out;
+    state.counters["num_parents"] = num_parents;
+    state.counters["fan_out"]     = fan_out;
+
     asio::io_context ioc;
 
     std::vector<tcp_socket> clients;
@@ -318,8 +276,6 @@ bench_concurrent_parents(int num_parents, int fan_out, double duration_s)
         asio::co_spawn(ioc, echo_server(servers[i]), asio::detached);
 
     std::atomic<bool> running{true};
-    std::vector<int64_t> cycle_counts(num_parents, 0);
-    std::vector<perf::statistics> stats(num_parents);
     std::atomic<int> parents_done{0};
 
     auto parent_task =
@@ -331,7 +287,7 @@ bench_concurrent_parents(int num_parents, int fan_out, double duration_s)
         {
             while (running.load(std::memory_order_relaxed))
             {
-                perf::stopwatch sw;
+                auto lp = state.lap();
 
                 std::atomic<int> remaining{fan_out};
                 for (int i = 0; i < fan_out; ++i)
@@ -344,9 +300,6 @@ bench_concurrent_parents(int num_parents, int fan_out, double duration_s)
                     t.expires_after(std::chrono::nanoseconds(0));
                     co_await t.async_wait(asio::deferred);
                 }
-
-                stats[parent_idx].add(sw.elapsed_us());
-                ++cycle_counts[parent_idx];
             }
         }
         catch (std::exception const&)
@@ -363,85 +316,36 @@ bench_concurrent_parents(int num_parents, int fan_out, double duration_s)
         }
     };
 
-    perf::stopwatch total_sw;
+    perf::stopwatch sw;
 
     for (int p = 0; p < num_parents; ++p)
         asio::co_spawn(ioc, parent_task(p), asio::detached);
 
     std::thread stopper([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(duration_s));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
     });
 
     ioc.run();
     stopper.join();
 
-    double elapsed = total_sw.elapsed_seconds();
-
-    int64_t total_cycles = 0;
-    for (auto c : cycle_counts)
-        total_cycles += c;
-
-    double rate = static_cast<double>(total_cycles) / elapsed;
-
-    double total_mean = 0;
-    double total_p99  = 0;
-    for (auto& s : stats)
-    {
-        total_mean += s.mean();
-        total_p99 += s.p99();
-    }
-
-    std::cout << "    Total cycles: " << total_cycles << "\n";
-    std::cout << "    Elapsed: " << std::fixed << std::setprecision(3)
-              << elapsed << " s\n";
-    std::cout << "    Throughput: " << perf::format_rate(rate) << "\n";
-    std::cout << "    Avg mean latency: "
-              << perf::format_latency(total_mean / num_parents) << "\n";
-    std::cout << "    Avg p99 latency: "
-              << perf::format_latency(total_p99 / num_parents) << "\n\n";
-
-    return bench::benchmark_result(
-               "concurrent_parents_" + std::to_string(num_parents))
-        .add("num_parents", num_parents)
-        .add("fan_out", fan_out)
-        .add("total_cycles", static_cast<double>(total_cycles))
-        .add("parent_requests_per_sec", rate)
-        .add("avg_mean_latency_us", total_mean / num_parents)
-        .add("avg_p99_latency_us", total_p99 / num_parents);
+    state.set_elapsed(sw.elapsed_seconds());
 }
 
 } // anonymous namespace
 
-void
-run_fan_out_benchmarks(
-    bench::result_collector& collector, char const* filter, double duration_s)
+bench::benchmark_suite
+make_fan_out_suite()
 {
-    bool run_all = !filter || std::strcmp(filter, "all") == 0;
-
-    if (run_all || std::strcmp(filter, "fork_join") == 0)
-    {
-        perf::print_header("Fork-Join Fan-Out (Asio Coroutines)");
-        collector.add(bench_fork_join(1, duration_s));
-        collector.add(bench_fork_join(4, duration_s));
-        collector.add(bench_fork_join(16, duration_s));
-        collector.add(bench_fork_join(64, duration_s));
-    }
-
-    if (run_all || std::strcmp(filter, "nested") == 0)
-    {
-        perf::print_header("Nested Fan-Out (Asio Coroutines)");
-        collector.add(bench_nested(4, 4, duration_s));
-        collector.add(bench_nested(4, 16, duration_s));
-    }
-
-    if (run_all || std::strcmp(filter, "concurrent_parents") == 0)
-    {
-        perf::print_header("Concurrent Parents Fan-Out (Asio Coroutines)");
-        collector.add(bench_concurrent_parents(1, 16, duration_s));
-        collector.add(bench_concurrent_parents(4, 16, duration_s));
-        collector.add(bench_concurrent_parents(16, 16, duration_s));
-    }
+    using F = bench::bench_flags;
+    return bench::benchmark_suite("fan_out", F::needs_conntrack_drain)
+        .add("fork_join", bench_fork_join)
+            .args({1, 4, 16, 64})
+        .add("nested", bench_nested)
+            .args({4, 16})
+        .add("concurrent_parents", bench_concurrent_parents)
+            .args({1, 4, 16});
 }
 
 } // namespace asio_bench

@@ -24,13 +24,10 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstring>
-#include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include "../common/benchmark.hpp"
 #include "../common/http_protocol.hpp"
 #include "../../common/native_includes.hpp"
 
@@ -42,8 +39,7 @@ namespace {
 
 template<auto Backend>
 capy::task<>
-server_task(
-    corosio::native_tcp_socket<Backend>& sock, int64_t& completed_requests)
+server_task(corosio::native_tcp_socket<Backend>& sock)
 {
     std::string buf;
 
@@ -61,7 +57,6 @@ server_task(
         if (wec)
             co_return;
 
-        ++completed_requests;
         buf.erase(0, n);
     }
 }
@@ -70,15 +65,13 @@ template<auto Backend>
 capy::task<>
 client_task(
     corosio::native_tcp_socket<Backend>& sock,
-    std::atomic<bool>& running,
-    int64_t& request_count,
-    perf::statistics& latency_stats)
+    bench::state& state)
 {
     std::string buf;
 
-    while (running.load(std::memory_order_relaxed))
+    while (state.running())
     {
-        perf::stopwatch sw;
+        auto lp = state.lap();
 
         auto [wec, wn] = co_await capy::write(
             sock,
@@ -118,10 +111,6 @@ client_task(
                 co_return;
         }
 
-        double latency_us = sw.elapsed_us();
-        latency_stats.add(latency_us);
-        ++request_count;
-
         buf.erase(0, total_size);
     }
 
@@ -129,12 +118,10 @@ client_task(
 }
 
 template<auto Backend>
-bench::benchmark_result
-bench_single_connection(double duration_s)
+void
+bench_single_connection(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
-
-    perf::print_header("Single Connection (Corosio)");
 
     corosio::native_io_context<Backend> ioc;
     auto [client, server] = corosio::test::make_socket_pair<
@@ -143,62 +130,37 @@ bench_single_connection(double duration_s)
     client.set_option(corosio::native_socket_option::no_delay(true));
     server.set_option(corosio::native_socket_option::no_delay(true));
 
-    std::atomic<bool> running{true};
-    int64_t completed_requests = 0;
-    int64_t request_count      = 0;
-    perf::statistics latency_stats;
-
-    perf::stopwatch total_sw;
-
-    capy::run_async(ioc.get_executor())(
-        server_task<Backend>(server, completed_requests));
-    capy::run_async(ioc.get_executor())(
-        client_task<Backend>(client, running, request_count, latency_stats));
+    capy::run_async(ioc.get_executor())(server_task<Backend>(server));
+    capy::run_async(ioc.get_executor())(client_task<Backend>(client, state));
 
     std::thread timer([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(duration_s));
-        running.store(false, std::memory_order_relaxed);
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        state.stop();
     });
 
+    perf::stopwatch sw;
     ioc.run();
     timer.join();
 
-    double elapsed          = total_sw.elapsed_seconds();
-    double requests_per_sec = static_cast<double>(request_count) / elapsed;
-
-    std::cout << "    Completed: " << request_count << " requests\n";
-    std::cout << "    Elapsed: " << std::fixed << std::setprecision(3)
-              << elapsed << " s\n";
-    std::cout << "    Throughput: " << perf::format_rate(requests_per_sec)
-              << "\n";
-    perf::print_latency_stats(latency_stats, "Request latency");
-    std::cout << "\n";
-
+    state.set_elapsed(sw.elapsed_seconds());
     client.close();
     server.close();
-
-    return bench::benchmark_result("single_conn")
-        .add("num_connections", 1)
-        .add("total_requests", static_cast<double>(request_count))
-        .add("requests_per_sec", requests_per_sec)
-        .add_latency_stats("request_latency", latency_stats);
 }
 
 template<auto Backend>
-bench::benchmark_result
-bench_concurrent_connections(int num_connections, double duration_s)
+void
+bench_concurrent_connections(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    std::cout << "  Connections: " << num_connections << "\n";
+    int num_connections = static_cast<int>(state.range(0));
+    state.counters["connections"] = num_connections;
 
     corosio::native_io_context<Backend> ioc;
 
     std::vector<socket_type> clients;
     std::vector<socket_type> servers;
-    std::vector<int64_t> server_completed(num_connections, 0);
-    std::vector<int64_t> client_counts(num_connections, 0);
-    std::vector<perf::statistics> stats(num_connections);
 
     clients.reserve(num_connections);
     servers.reserve(num_connections);
@@ -213,82 +175,48 @@ bench_concurrent_connections(int num_connections, double duration_s)
         servers.push_back(std::move(s));
     }
 
-    std::atomic<bool> running{true};
-
-    perf::stopwatch total_sw;
-
     for (int i = 0; i < num_connections; ++i)
     {
         capy::run_async(ioc.get_executor())(
-            server_task<Backend>(servers[i], server_completed[i]));
-        capy::run_async(ioc.get_executor())(client_task<Backend>(
-            clients[i], running, client_counts[i], stats[i]));
+            server_task<Backend>(servers[i]));
+        capy::run_async(ioc.get_executor())(
+            client_task<Backend>(clients[i], state));
     }
 
     std::thread timer([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(duration_s));
-        running.store(false, std::memory_order_relaxed);
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        state.stop();
     });
 
+    perf::stopwatch sw;
     ioc.run();
     timer.join();
 
-    double elapsed = total_sw.elapsed_seconds();
-
-    int64_t total_requests = 0;
-    for (auto c : client_counts)
-        total_requests += c;
-
-    double requests_per_sec = static_cast<double>(total_requests) / elapsed;
-
-    double total_mean = 0;
-    double total_p99  = 0;
-    for (auto& s : stats)
-    {
-        total_mean += s.mean();
-        total_p99 += s.p99();
-    }
-
-    std::cout << "    Completed: " << total_requests << " requests\n";
-    std::cout << "    Elapsed: " << std::fixed << std::setprecision(3)
-              << elapsed << " s\n";
-    std::cout << "    Throughput: " << perf::format_rate(requests_per_sec)
-              << "\n";
-    std::cout << "    Avg mean latency: "
-              << perf::format_latency(total_mean / num_connections) << "\n";
-    std::cout << "    Avg p99 latency: "
-              << perf::format_latency(total_p99 / num_connections) << "\n\n";
+    state.set_elapsed(sw.elapsed_seconds());
 
     for (auto& c : clients)
         c.close();
     for (auto& s : servers)
         s.close();
-
-    return bench::benchmark_result(
-               "concurrent_" + std::to_string(num_connections))
-        .add("num_connections", num_connections)
-        .add("total_requests", static_cast<double>(total_requests))
-        .add("requests_per_sec", requests_per_sec)
-        .add("avg_mean_latency_us", total_mean / num_connections)
-        .add("avg_p99_latency_us", total_p99 / num_connections);
 }
 
 template<auto Backend>
-bench::benchmark_result
-bench_multithread(int num_threads, int num_connections, double duration_s)
+void
+bench_multithread(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    std::cout << "  Threads: " << num_threads
-              << ", Connections: " << num_connections << "\n";
+    int num_threads     = static_cast<int>(state.range(0));
+    int num_connections = 32;
+
+    state.counters["threads"]     = num_threads;
+    state.counters["connections"] = num_connections;
 
     corosio::native_io_context<Backend> ioc;
 
     std::vector<socket_type> clients;
     std::vector<socket_type> servers;
-    std::vector<int64_t> server_completed(num_connections, 0);
-    std::vector<int64_t> client_counts(num_connections, 0);
-    std::vector<perf::statistics> stats(num_connections);
 
     clients.reserve(num_connections);
     servers.reserve(num_connections);
@@ -303,17 +231,15 @@ bench_multithread(int num_threads, int num_connections, double duration_s)
         servers.push_back(std::move(s));
     }
 
-    std::atomic<bool> running{true};
-
     for (int i = 0; i < num_connections; ++i)
     {
         capy::run_async(ioc.get_executor())(
-            server_task<Backend>(servers[i], server_completed[i]));
-        capy::run_async(ioc.get_executor())(client_task<Backend>(
-            clients[i], running, client_counts[i], stats[i]));
+            server_task<Backend>(servers[i]));
+        capy::run_async(ioc.get_executor())(
+            client_task<Backend>(clients[i], state));
     }
 
-    perf::stopwatch total_sw;
+    perf::stopwatch sw;
 
     std::vector<std::thread> threads;
     threads.reserve(num_threads - 1);
@@ -321,8 +247,9 @@ bench_multithread(int num_threads, int num_connections, double duration_s)
         threads.emplace_back([&ioc] { ioc.run(); });
 
     std::thread timer([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(duration_s));
-        running.store(false, std::memory_order_relaxed);
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        state.stop();
     });
 
     ioc.run();
@@ -331,117 +258,62 @@ bench_multithread(int num_threads, int num_connections, double duration_s)
     for (auto& t : threads)
         t.join();
 
-    double elapsed = total_sw.elapsed_seconds();
-
-    int64_t total_requests = 0;
-    for (auto c : client_counts)
-        total_requests += c;
-
-    double requests_per_sec = static_cast<double>(total_requests) / elapsed;
-
-    double total_mean = 0;
-    double total_p99  = 0;
-    for (auto& s : stats)
-    {
-        total_mean += s.mean();
-        total_p99 += s.p99();
-    }
-
-    std::cout << "    Completed: " << total_requests << " requests\n";
-    std::cout << "    Elapsed: " << std::fixed << std::setprecision(3)
-              << elapsed << " s\n";
-    std::cout << "    Throughput: " << perf::format_rate(requests_per_sec)
-              << "\n";
-    std::cout << "    Avg mean latency: "
-              << perf::format_latency(total_mean / num_connections) << "\n";
-    std::cout << "    Avg p99 latency: "
-              << perf::format_latency(total_p99 / num_connections) << "\n\n";
+    state.set_elapsed(sw.elapsed_seconds());
 
     for (auto& c : clients)
         c.close();
     for (auto& s : servers)
         s.close();
-
-    return bench::benchmark_result(
-               "multithread_" + std::to_string(num_threads) + "t")
-        .add("num_threads", num_threads)
-        .add("num_connections", num_connections)
-        .add("total_requests", static_cast<double>(total_requests))
-        .add("requests_per_sec", requests_per_sec)
-        .add("avg_mean_latency_us", total_mean / num_connections)
-        .add("avg_p99_latency_us", total_p99 / num_connections);
 }
 
 } // anonymous namespace
 
 template<auto Backend>
-void
-run_http_server_benchmarks(
-    perf::context_factory factory,
-    bench::result_collector& collector,
-    char const* filter,
-    double duration_s)
+bench::benchmark_suite
+make_http_server_suite()
 {
+    using F           = bench::bench_flags;
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    (void)factory;
-    bool run_all = !filter || std::strcmp(filter, "all") == 0;
-
-    // Warm up
-    {
-        corosio::native_io_context<Backend> ioc;
-        auto [c, s] = corosio::test::make_socket_pair<
-            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        char buf[256] = {};
-        auto task     = [&]() -> capy::task<> {
-            for (int i = 0; i < 10; ++i)
-            {
-                (void)co_await capy::write(
-                    c,
-                    capy::const_buffer(
-                        bench::http::small_request,
-                        bench::http::small_request_size));
-                (void)co_await s.read_some(
-                    capy::mutable_buffer(buf, bench::http::small_request_size));
-                (void)co_await capy::write(
-                    s,
-                    capy::const_buffer(
-                        bench::http::small_response,
-                        bench::http::small_response_size));
-                (void)co_await c.read_some(
-                    capy::mutable_buffer(
-                        buf, bench::http::small_response_size));
-            }
-        };
-        capy::run_async(ioc.get_executor())(task());
-        ioc.run();
-        c.close();
-        s.close();
-    }
-
-    if (run_all || std::strcmp(filter, "single_conn") == 0)
-        collector.add(bench_single_connection<Backend>(duration_s));
-
-    if (run_all || std::strcmp(filter, "concurrent") == 0)
-    {
-        perf::print_header("Concurrent Connections (Corosio)");
-        collector.add(bench_concurrent_connections<Backend>(1, duration_s));
-        collector.add(bench_concurrent_connections<Backend>(4, duration_s));
-        collector.add(bench_concurrent_connections<Backend>(16, duration_s));
-        collector.add(bench_concurrent_connections<Backend>(32, duration_s));
-    }
-
-    if (run_all || std::strcmp(filter, "multithread") == 0)
-    {
-        perf::print_header("Multi-threaded (Corosio)");
-        collector.add(bench_multithread<Backend>(1, 32, duration_s));
-        collector.add(bench_multithread<Backend>(2, 32, duration_s));
-        collector.add(bench_multithread<Backend>(4, 32, duration_s));
-        collector.add(bench_multithread<Backend>(8, 32, duration_s));
-        collector.add(bench_multithread<Backend>(16, 32, duration_s));
-    }
+    return bench::benchmark_suite("http_server", F::needs_conntrack_drain)
+        .set_warmup([]{
+            corosio::native_io_context<Backend> ioc;
+            auto [c, s] = corosio::test::make_socket_pair<
+                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+            char buf[256] = {};
+            auto task     = [&]() -> capy::task<> {
+                for (int i = 0; i < 10; ++i)
+                {
+                    (void)co_await capy::write(
+                        c,
+                        capy::const_buffer(
+                            bench::http::small_request,
+                            bench::http::small_request_size));
+                    (void)co_await s.read_some(
+                        capy::mutable_buffer(
+                            buf, bench::http::small_request_size));
+                    (void)co_await capy::write(
+                        s,
+                        capy::const_buffer(
+                            bench::http::small_response,
+                            bench::http::small_response_size));
+                    (void)co_await c.read_some(
+                        capy::mutable_buffer(
+                            buf, bench::http::small_response_size));
+                }
+            };
+            capy::run_async(ioc.get_executor())(task());
+            ioc.run();
+            c.close();
+            s.close();
+        })
+        .add("single_conn", bench_single_connection<Backend>)
+        .add("concurrent", bench_concurrent_connections<Backend>)
+            .args({1, 4, 16, 32})
+        .add("multithread", bench_multithread<Backend>)
+            .args({1, 2, 4, 8, 16});
 }
 
 } // namespace corosio_bench
 
-COROSIO_BENCH_INSTANTIATE(void corosio_bench::run_http_server_benchmarks)
+COROSIO_SUITE_INSTANTIATE(corosio_bench::make_http_server_suite)

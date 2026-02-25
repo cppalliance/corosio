@@ -64,6 +64,11 @@ public:
         return std::chrono::duration<double, std::micro>(elapsed()).count();
     }
 
+    double elapsed_ns() const
+    {
+        return std::chrono::duration<double, std::nano>(elapsed()).count();
+    }
+
 private:
     time_point start_;
 };
@@ -208,22 +213,12 @@ format_throughput(double bytes_per_sec)
     return oss.str();
 }
 
-// Format latency in appropriate units
+// Format latency in nanoseconds
 inline std::string
-format_latency(double microseconds)
+format_latency(double nanoseconds)
 {
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(2);
-
-    if (microseconds >= 1e6)
-        oss << (microseconds / 1e6) << " s";
-    else if (microseconds >= 1e3)
-        oss << (microseconds / 1e3) << " ms";
-    else if (microseconds >= 1.0)
-        oss << microseconds << " us";
-    else
-        oss << (microseconds * 1e3) << " ns";
-
+    oss << std::fixed << std::setprecision(2) << nanoseconds << " ns";
     return oss.str();
 }
 
