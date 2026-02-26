@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_HPP
 
 #include <boost/corosio/backend.hpp>
+#include <boost/corosio/cancel.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io_buffer_param.hpp>
 #include <boost/corosio/io_context.hpp>
@@ -19,6 +20,7 @@
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/resolver_results.hpp>
 #include <boost/corosio/signal_set.hpp>
+#include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/corosio/tcp_socket.hpp>

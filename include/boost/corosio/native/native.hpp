@@ -10,6 +10,7 @@
 #ifndef BOOST_COROSIO_NATIVE_NATIVE_HPP
 #define BOOST_COROSIO_NATIVE_NATIVE_HPP
 
+#include <boost/corosio/native/native_cancel.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/native/native_resolver.hpp>
 #include <boost/corosio/native/native_scheduler.hpp>
