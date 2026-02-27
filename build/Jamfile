@@ -20,7 +20,6 @@ project boost/corosio
   : requirements
     $(c20-requires)
     <define>BOOST_COROSIO_SOURCE
-    <toolset>gcc:<cxxflags>-fcoroutines
   : common-requirements
     <link>shared:<define>BOOST_COROSIO_DYN_LINK
     <link>static:<define>BOOST_COROSIO_STATIC_LINK

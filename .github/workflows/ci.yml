@@ -129,7 +129,6 @@ jobs:
 
           # macOS (4 configurations)
           # kqueue is the default backend on macOS
-          # Global cxxflags needed until capy adds -fexperimental-library internally
 
           - compiler: "apple-clang"
             version: "*"
@@ -146,7 +145,6 @@ jobs:
             build-type: "RelWithDebInfo"
             asan: true
             ubsan: true
-            cxxflags: "-fexperimental-library"
 
           - compiler: "apple-clang"
             version: "*"
@@ -161,7 +159,6 @@ jobs:
             shared: true
             build-type: "Release"
             build-cmake: true
-            cxxflags: "-fexperimental-library"
 
           - compiler: "apple-clang"
             version: "*"
@@ -175,7 +172,6 @@ jobs:
             macos: true
             shared: true
             build-type: "Release"
-            cxxflags: "-fexperimental-library"
 
           - compiler: "apple-clang"
             version: "*"
@@ -191,7 +187,7 @@ jobs:
             coverage: true
             coverage-flag: "macos"
             build-type: "Debug"
-            cxxflags: "--coverage -fexperimental-library"
+            cxxflags: "--coverage"
             ccflags: "--coverage"
 
           # Linux GCC (5 configurations)
@@ -778,7 +774,6 @@ jobs:
               variant=release \
               link=shared \
               rtti=on \
-              cxxflags="-fexperimental-library" \
               -q \
               -j$(sysctl -n hw.ncpu)
 
@@ -795,7 +790,6 @@ jobs:
             cd boost-root
             cmake -S . -B build \
               -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_CXX_FLAGS="-fexperimental-library" \
               -DBOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}" \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
             cmake --build build --target tests -j$(sysctl -n hw.ncpu)

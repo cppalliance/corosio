@@ -17,7 +17,6 @@ project boost/corosio/test/unit
       <include>../../../capy/extra/test_suite
       <include>.
       <include>../..
-      <toolset>gcc:<cxxflags>-fcoroutines
     ;
 
 # Non-TLS tests

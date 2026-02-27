@@ -67,9 +67,6 @@ target_compile_definitions(boost_corosio
         $<IF:$<BOOL:${BUILD_SHARED_LIBS}>,BOOST_COROSIO_DYN_LINK,BOOST_COROSIO_STATIC_LINK>
     PRIVATE
         BOOST_COROSIO_SOURCE)
-target_compile_options(boost_corosio
-    PRIVATE
-        $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
 set_target_properties(boost_corosio PROPERTIES EXPORT_NAME corosio)
 
 if (BOOST_COROSIO_MRDOCS_BUILD)
