@@ -208,7 +208,7 @@ jobs:
           cxxstd: '20'
           cc: ${{ steps.setup-cpp.outputs.cc || 'clang' }}
           cxx: ${{ steps.setup-cpp.outputs.cxx || 'clang++' }}
-          cxxflags: '--coverage -fexperimental-library'
+          cxxflags: '--coverage'
           ccflags: '--coverage'
           shared: false
           cmake-version: '>=3.20'

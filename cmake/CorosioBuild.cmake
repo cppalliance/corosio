@@ -165,9 +165,6 @@ function(corosio_add_tls_library name)
     target_include_directories(${_target} PRIVATE
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/corosio>)
     target_compile_definitions(${_target} PRIVATE BOOST_COROSIO_SOURCE)
-    target_compile_options(${_target}
-        PRIVATE
-            $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
 endfunction()
 
 # corosio_install()

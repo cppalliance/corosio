@@ -32,7 +32,6 @@ target_link_libraries(corosio_bench
         Threads::Threads)
 
 target_compile_options(corosio_bench PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>
     $<$<CXX_COMPILER_ID:MSVC>:/EHsc>)
 
 set_property(TARGET corosio_bench PROPERTY FOLDER "perf/benchmarks")
