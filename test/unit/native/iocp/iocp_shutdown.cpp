@@ -35,10 +35,7 @@ struct test_overlapped_op : detail::overlapped_op
     int* destroyed_;
 
     static void do_complete(
-        void* owner,
-        detail::scheduler_op* base,
-        std::uint32_t,
-        std::uint32_t)
+        void* owner, detail::scheduler_op* base, std::uint32_t, std::uint32_t)
     {
         auto* self = static_cast<test_overlapped_op*>(base);
         if (!owner)
@@ -100,9 +97,7 @@ struct iocp_shutdown_test
             ex.on_work_started();
 
             BOOL ok = ::PostQueuedCompletionStatus(
-                ioc,
-                0,
-                detail::key_result_stored,
+                ioc, 0, detail::key_result_stored,
                 static_cast<LPOVERLAPPED>(op));
             BOOST_TEST(ok != 0);
         }
@@ -126,15 +121,13 @@ struct iocp_shutdown_test
             ::PostQueuedCompletionStatus(
                 ioc, 0, detail::key_io, static_cast<LPOVERLAPPED>(io_op));
 
-            auto* stored_op              = new test_overlapped_op(stored_destroyed);
-            stored_op->ready_            = 1;
-            stored_op->dwError           = 0;
+            auto* stored_op    = new test_overlapped_op(stored_destroyed);
+            stored_op->ready_  = 1;
+            stored_op->dwError = 0;
             stored_op->bytes_transferred = 0;
             ex.on_work_started();
             ::PostQueuedCompletionStatus(
-                ioc,
-                0,
-                detail::key_result_stored,
+                ioc, 0, detail::key_result_stored,
                 static_cast<LPOVERLAPPED>(stored_op));
         }
 

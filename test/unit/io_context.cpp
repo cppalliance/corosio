@@ -10,7 +10,6 @@
 // Test that header file is self-contained.
 #include <boost/corosio/io_context.hpp>
 
-#include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -139,10 +138,19 @@ struct destroy_counter_coro
             return {std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_always final_suspend() noexcept { return {}; }
+        std::suspend_always initial_suspend() noexcept
+        {
+            return {};
+        }
+        std::suspend_always final_suspend() noexcept
+        {
+            return {};
+        }
         void return_void() {}
-        void unhandled_exception() { std::terminate(); }
+        void unhandled_exception()
+        {
+            std::terminate();
+        }
 
         ~promise_type()
         {
@@ -153,7 +161,10 @@ struct destroy_counter_coro
 
     std::coroutine_handle<promise_type> h;
 
-    operator std::coroutine_handle<>() const { return h; }
+    operator std::coroutine_handle<>() const
+    {
+        return h;
+    }
 };
 
 inline destroy_counter_coro
@@ -469,6 +480,7 @@ struct io_context_test
 
         // Post handlers from multiple threads concurrently
         std::vector<std::thread> posters;
+        posters.reserve(num_threads);
         for (int t = 0; t < num_threads; ++t)
         {
             posters.emplace_back([&ex, &counter]() {
@@ -483,6 +495,7 @@ struct io_context_test
 
         // Run with multiple threads
         std::vector<std::thread> runners;
+        runners.reserve(num_threads);
         for (int t = 0; t < num_threads; ++t)
             runners.emplace_back([&ioc]() { ioc.run(); });
 
@@ -512,6 +525,7 @@ struct io_context_test
 
             // Run with multiple threads
             std::vector<std::thread> runners;
+            runners.reserve(num_threads);
             for (int t = 0; t < num_threads; ++t)
                 runners.emplace_back([&ioc]() { ioc.run(); });
 
@@ -619,6 +633,7 @@ struct io_context_shutdown_test
     }
 };
 
-COROSIO_BACKEND_TESTS(io_context_shutdown_test, "boost.corosio.io_context_shutdown")
+COROSIO_BACKEND_TESTS(
+    io_context_shutdown_test, "boost.corosio.io_context_shutdown")
 
 } // namespace boost::corosio

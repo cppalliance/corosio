@@ -21,9 +21,9 @@
 #include <boost/corosio/native/detail/select/select_socket.hpp>
 #include <boost/corosio/native/detail/select/select_scheduler.hpp>
 
-#include <boost/corosio/detail/endpoint_convert.hpp>
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 
 #include <boost/corosio/detail/except.hpp>
 
@@ -115,9 +115,11 @@ public:
     io_object::implementation* construct() override;
     void destroy(io_object::implementation*) override;
     void close(io_object::handle&) override;
-    std::error_code
-    open_socket(tcp_socket::implementation& impl,
-                int family, int type, int protocol) override;
+    std::error_code open_socket(
+        tcp_socket::implementation& impl,
+        int family,
+        int type,
+        int protocol) override;
 
     select_scheduler& scheduler() const noexcept
     {
@@ -181,8 +183,8 @@ select_connect_op::operator()()
         sockaddr_storage local_storage{};
         socklen_t local_len = sizeof(local_storage);
         if (::getsockname(
-                fd, reinterpret_cast<sockaddr*>(&local_storage),
-                &local_len) == 0)
+                fd, reinterpret_cast<sockaddr*>(&local_storage), &local_len) ==
+            0)
             local_ep = from_sockaddr(local_storage);
         static_cast<select_socket*>(socket_impl_)
             ->set_endpoints(local_ep, target_endpoint);
@@ -233,8 +235,7 @@ select_socket::connect(
     sockaddr_storage storage{};
     socklen_t addrlen =
         detail::to_sockaddr(ep, detail::socket_family(fd_), storage);
-    int result =
-        ::connect(fd_, reinterpret_cast<sockaddr*>(&storage), addrlen);
+    int result = ::connect(fd_, reinterpret_cast<sockaddr*>(&storage), addrlen);
 
     if (result == 0)
     {
@@ -242,8 +243,8 @@ select_socket::connect(
         sockaddr_storage local_storage{};
         socklen_t local_len = sizeof(local_storage);
         if (::getsockname(
-                fd_, reinterpret_cast<sockaddr*>(&local_storage),
-                &local_len) == 0)
+                fd_, reinterpret_cast<sockaddr*>(&local_storage), &local_len) ==
+            0)
             local_endpoint_ = detail::from_sockaddr(local_storage);
         remote_endpoint_ = ep;
 
@@ -310,7 +311,7 @@ inline std::coroutine_handle<>
 select_socket::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
-    io_buffer_param param,
+    buffer_param param,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
@@ -413,7 +414,7 @@ inline std::coroutine_handle<>
 select_socket::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
-    io_buffer_param param,
+    buffer_param param,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
@@ -532,19 +533,17 @@ select_socket::shutdown(tcp_socket::shutdown_type what) noexcept
 
 inline std::error_code
 select_socket::set_option(
-    int level, int optname,
-    void const* data, std::size_t size) noexcept
+    int level, int optname, void const* data, std::size_t size) noexcept
 {
-    if (::setsockopt(fd_, level, optname, data,
-            static_cast<socklen_t>(size)) != 0)
+    if (::setsockopt(fd_, level, optname, data, static_cast<socklen_t>(size)) !=
+        0)
         return make_err(errno);
     return {};
 }
 
 inline std::error_code
 select_socket::get_option(
-    int level, int optname,
-    void* data, std::size_t* size) const noexcept
+    int level, int optname, void* data, std::size_t* size) const noexcept
 {
     socklen_t len = static_cast<socklen_t>(*size);
     if (::getsockopt(fd_, level, optname, data, &len) != 0)
@@ -695,8 +694,7 @@ select_socket_service::destroy(io_object::implementation* impl)
 
 inline std::error_code
 select_socket_service::open_socket(
-    tcp_socket::implementation& impl,
-    int family, int type, int protocol)
+    tcp_socket::implementation& impl, int family, int type, int protocol)
 {
     auto* select_impl = static_cast<select_socket*>(&impl);
     select_impl->close_socket();

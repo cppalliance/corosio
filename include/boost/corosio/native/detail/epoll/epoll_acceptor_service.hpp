@@ -22,9 +22,9 @@
 #include <boost/corosio/native/detail/epoll/epoll_socket_service.hpp>
 #include <boost/corosio/native/detail/epoll/epoll_scheduler.hpp>
 
-#include <boost/corosio/detail/endpoint_convert.hpp>
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 
 #include <memory>
 #include <mutex>
@@ -76,11 +76,13 @@ public:
     void close(io_object::handle&) override;
     std::error_code open_acceptor_socket(
         tcp_acceptor::implementation& impl,
-        int family, int type, int protocol) override;
-    std::error_code bind_acceptor(
-        tcp_acceptor::implementation& impl, endpoint ep) override;
-    std::error_code listen_acceptor(
-        tcp_acceptor::implementation& impl, int backlog) override;
+        int family,
+        int type,
+        int protocol) override;
+    std::error_code
+    bind_acceptor(tcp_acceptor::implementation& impl, endpoint ep) override;
+    std::error_code
+    listen_acceptor(tcp_acceptor::implementation& impl, int backlog) override;
 
     epoll_scheduler& scheduler() const noexcept
     {
@@ -263,8 +265,8 @@ epoll_acceptor::accept(
             return dispatch_coro(ex, h);
         }
 
-        op.accepted_fd   = accepted;
-        op.peer_storage  = peer_storage;
+        op.accepted_fd  = accepted;
+        op.peer_storage = peer_storage;
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
@@ -431,19 +433,17 @@ epoll_acceptor_service::close(io_object::handle& h)
 
 inline std::error_code
 epoll_acceptor::set_option(
-    int level, int optname,
-    void const* data, std::size_t size) noexcept
+    int level, int optname, void const* data, std::size_t size) noexcept
 {
-    if (::setsockopt(fd_, level, optname, data,
-            static_cast<socklen_t>(size)) != 0)
+    if (::setsockopt(fd_, level, optname, data, static_cast<socklen_t>(size)) !=
+        0)
         return make_err(errno);
     return {};
 }
 
 inline std::error_code
 epoll_acceptor::get_option(
-    int level, int optname,
-    void* data, std::size_t* size) const noexcept
+    int level, int optname, void* data, std::size_t* size) const noexcept
 {
     socklen_t len = static_cast<socklen_t>(*size);
     if (::getsockopt(fd_, level, optname, data, &len) != 0)
@@ -454,8 +454,7 @@ epoll_acceptor::get_option(
 
 inline std::error_code
 epoll_acceptor_service::open_acceptor_socket(
-    tcp_acceptor::implementation& impl,
-    int family, int type, int protocol)
+    tcp_acceptor::implementation& impl, int family, int type, int protocol)
 {
     auto* epoll_impl = static_cast<epoll_acceptor*>(&impl);
     epoll_impl->close_socket();
@@ -487,7 +486,7 @@ epoll_acceptor_service::bind_acceptor(
     tcp_acceptor::implementation& impl, endpoint ep)
 {
     auto* epoll_impl = static_cast<epoll_acceptor*>(&impl);
-    int fd = epoll_impl->fd_;
+    int fd           = epoll_impl->fd_;
 
     sockaddr_storage storage{};
     socklen_t addrlen = detail::to_sockaddr(ep, storage);
@@ -508,7 +507,7 @@ epoll_acceptor_service::listen_acceptor(
     tcp_acceptor::implementation& impl, int backlog)
 {
     auto* epoll_impl = static_cast<epoll_acceptor*>(&impl);
-    int fd = epoll_impl->fd_;
+    int fd           = epoll_impl->fd_;
 
     if (::listen(fd, backlog) < 0)
         return make_err(errno);

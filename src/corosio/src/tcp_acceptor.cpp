@@ -60,8 +60,8 @@ tcp_acceptor::open(tcp proto)
     auto& svc = static_cast<detail::acceptor_service&>(h_.service());
 #endif
     std::error_code ec = svc.open_acceptor_socket(
-        *static_cast<tcp_acceptor::implementation*>(h_.get()),
-        proto.family(), proto.type(), proto.protocol());
+        *static_cast<tcp_acceptor::implementation*>(h_.get()), proto.family(),
+        proto.type(), proto.protocol());
     if (ec)
         detail::throw_system_error(ec, "tcp_acceptor::open");
 }

@@ -23,7 +23,6 @@
 #include <boost/corosio/timer.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -419,7 +418,7 @@ namespace {
 
 struct openssl_stress_factory
 {
-    auto operator()(tcp_socket& s, tls_context ctx) const
+    auto operator()(tcp_socket& s, tls_context const& ctx) const
     {
         return openssl_stream(&s, ctx);
     }
@@ -458,7 +457,7 @@ namespace {
 
 struct wolfssl_stress_factory
 {
-    auto operator()(tcp_socket& s, tls_context ctx) const
+    auto operator()(tcp_socket& s, tls_context const& ctx) const
     {
         return wolfssl_stream(&s, ctx);
     }

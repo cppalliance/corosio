@@ -23,9 +23,9 @@
 #include <boost/corosio/native/detail/kqueue/kqueue_socket_service.hpp>
 #include <boost/corosio/native/detail/kqueue/kqueue_scheduler.hpp>
 
-#include <boost/corosio/detail/endpoint_convert.hpp>
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 
 #include <memory>
 #include <mutex>
@@ -79,11 +79,13 @@ public:
     void close(io_object::handle&) override;
     std::error_code open_acceptor_socket(
         tcp_acceptor::implementation& impl,
-        int family, int type, int protocol) override;
-    std::error_code bind_acceptor(
-        tcp_acceptor::implementation& impl, endpoint ep) override;
-    std::error_code listen_acceptor(
-        tcp_acceptor::implementation& impl, int backlog) override;
+        int family,
+        int type,
+        int protocol) override;
+    std::error_code
+    bind_acceptor(tcp_acceptor::implementation& impl, endpoint ep) override;
+    std::error_code
+    listen_acceptor(tcp_acceptor::implementation& impl, int backlog) override;
 
     kqueue_scheduler& scheduler() const noexcept
     {
@@ -306,21 +308,25 @@ kqueue_acceptor::accept(
             auto* socket_svc = svc_.socket_service();
             if (socket_svc)
             {
-                auto& impl = static_cast<kqueue_socket&>(*socket_svc->construct());
+                auto& impl =
+                    static_cast<kqueue_socket&>(*socket_svc->construct());
                 impl.set_socket(accepted);
 
                 impl.desc_state_.fd = accepted;
                 {
                     std::lock_guard lock(impl.desc_state_.mutex);
-                    impl.desc_state_.read_op = nullptr;
-                    impl.desc_state_.write_op = nullptr;
+                    impl.desc_state_.read_op    = nullptr;
+                    impl.desc_state_.write_op   = nullptr;
                     impl.desc_state_.connect_op = nullptr;
                 }
-                socket_svc->scheduler().register_descriptor(accepted, &impl.desc_state_);
+                socket_svc->scheduler().register_descriptor(
+                    accepted, &impl.desc_state_);
 
                 // Suppress SIGPIPE on the accepted socket; macOS lacks MSG_NOSIGNAL
                 int one = 1;
-                if (::setsockopt(accepted, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) == -1)
+                if (::setsockopt(
+                        accepted, SOL_SOCKET, SO_NOSIGPIPE, &one,
+                        sizeof(one)) == -1)
                 {
                     int saved_errno = errno;
                     socket_svc->destroy(&impl);
@@ -339,8 +345,7 @@ kqueue_acceptor::accept(
                             reinterpret_cast<sockaddr*>(&local_storage),
                             &local_len) == 0)
                         local_ep = from_sockaddr(local_storage);
-                    impl.set_endpoints(
-                        local_ep, from_sockaddr(peer_storage));
+                    impl.set_endpoints(local_ep, from_sockaddr(peer_storage));
                     if (ec)
                         *ec = {};
                     if (impl_out)
@@ -568,19 +573,17 @@ kqueue_acceptor_service::close(io_object::handle& h)
 
 inline std::error_code
 kqueue_acceptor::set_option(
-    int level, int optname,
-    void const* data, std::size_t size) noexcept
+    int level, int optname, void const* data, std::size_t size) noexcept
 {
-    if (::setsockopt(fd_, level, optname, data,
-            static_cast<socklen_t>(size)) != 0)
+    if (::setsockopt(fd_, level, optname, data, static_cast<socklen_t>(size)) !=
+        0)
         return make_err(errno);
     return {};
 }
 
 inline std::error_code
 kqueue_acceptor::get_option(
-    int level, int optname,
-    void* data, std::size_t* size) const noexcept
+    int level, int optname, void* data, std::size_t* size) const noexcept
 {
     socklen_t len = static_cast<socklen_t>(*size);
     if (::getsockopt(fd_, level, optname, data, &len) != 0)
@@ -591,8 +594,7 @@ kqueue_acceptor::get_option(
 
 inline std::error_code
 kqueue_acceptor_service::open_acceptor_socket(
-    tcp_acceptor::implementation& impl,
-    int family, int type, int protocol)
+    tcp_acceptor::implementation& impl, int family, int type, int protocol)
 {
     auto* kq_impl = static_cast<kqueue_acceptor*>(&impl);
     kq_impl->close_socket();
@@ -651,7 +653,7 @@ kqueue_acceptor_service::bind_acceptor(
     tcp_acceptor::implementation& impl, endpoint ep)
 {
     auto* kq_impl = static_cast<kqueue_acceptor*>(&impl);
-    int fd = kq_impl->fd_;
+    int fd        = kq_impl->fd_;
 
     sockaddr_storage storage{};
     socklen_t addrlen = detail::to_sockaddr(ep, storage);
@@ -672,7 +674,7 @@ kqueue_acceptor_service::listen_acceptor(
     tcp_acceptor::implementation& impl, int backlog)
 {
     auto* kq_impl = static_cast<kqueue_acceptor*>(&impl);
-    int fd = kq_impl->fd_;
+    int fd        = kq_impl->fd_;
 
     if (::listen(fd, backlog) < 0)
         return make_err(errno);

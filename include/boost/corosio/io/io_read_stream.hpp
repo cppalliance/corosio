@@ -12,7 +12,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io/io_object.hpp>
-#include <boost/corosio/io_buffer_param.hpp>
+#include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -95,7 +95,7 @@ protected:
     virtual std::coroutine_handle<> do_read_some(
         std::coroutine_handle<>,
         capy::executor_ref,
-        io_buffer_param,
+        buffer_param,
         std::stop_token,
         std::error_code*,
         std::size_t*) = 0;

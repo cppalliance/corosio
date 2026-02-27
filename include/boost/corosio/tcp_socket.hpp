@@ -16,7 +16,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/io/io_stream.hpp>
 #include <boost/capy/io_result.hpp>
-#include <boost/corosio/io_buffer_param.hpp>
+#include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/tcp.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -29,7 +29,6 @@
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
-#include <memory>
 #include <stop_token>
 #include <type_traits>
 
@@ -119,8 +118,10 @@ public:
             @return Error code on failure, empty on success.
         */
         virtual std::error_code set_option(
-            int level, int optname,
-            void const* data, std::size_t size) noexcept = 0;
+            int level,
+            int optname,
+            void const* data,
+            std::size_t size) noexcept = 0;
 
         /** Get a socket option.
 
@@ -131,9 +132,9 @@ public:
                 the size of the option value.
             @return Error code on failure, empty on success.
         */
-        virtual std::error_code get_option(
-            int level, int optname,
-            void* data, std::size_t* size) const noexcept = 0;
+        virtual std::error_code
+        get_option(int level, int optname, void* data, std::size_t* size)
+            const noexcept = 0;
 
         /// Returns the cached local endpoint.
         virtual endpoint local_endpoint() const noexcept = 0;
@@ -256,7 +257,7 @@ public:
 
         @throws std::system_error on failure.
     */
-    void open( tcp proto = tcp::v4() );
+    void open(tcp proto = tcp::v4());
 
     /** Close the socket.
 
@@ -398,14 +399,14 @@ public:
         @throws std::system_error on failure.
     */
     template<class Option>
-    void set_option( Option const& opt )
+    void set_option(Option const& opt)
     {
         if (!is_open())
-            detail::throw_logic_error( "set_option: socket not open" );
+            detail::throw_logic_error("set_option: socket not open");
         std::error_code ec = get().set_option(
-            Option::level(), Option::name(), opt.data(), opt.size() );
+            Option::level(), Option::name(), opt.data(), opt.size());
         if (ec)
-            detail::throw_system_error( ec, "tcp_socket::set_option" );
+            detail::throw_system_error(ec, "tcp_socket::set_option");
     }
 
     /** Get a socket option.
@@ -428,14 +429,14 @@ public:
     Option get_option() const
     {
         if (!is_open())
-            detail::throw_logic_error( "get_option: socket not open" );
+            detail::throw_logic_error("get_option: socket not open");
         Option opt{};
         std::size_t sz = opt.size();
-        std::error_code ec = get().get_option(
-            Option::level(), Option::name(), opt.data(), &sz );
+        std::error_code ec =
+            get().get_option(Option::level(), Option::name(), opt.data(), &sz);
         if (ec)
-            detail::throw_system_error( ec, "tcp_socket::get_option" );
-        opt.resize( sz );
+            detail::throw_system_error(ec, "tcp_socket::get_option");
+        opt.resize(sz);
         return opt;
     }
 

@@ -20,11 +20,11 @@
 // generated reference.  The native_* headers skip the real
 // implementation includes under this guard, so no platform
 // system headers are required.
-#define BOOST_COROSIO_HAS_IOCP   1
-#define BOOST_COROSIO_HAS_EPOLL  1
+#define BOOST_COROSIO_HAS_IOCP 1
+#define BOOST_COROSIO_HAS_EPOLL 1
 #define BOOST_COROSIO_HAS_KQUEUE 1
 #define BOOST_COROSIO_HAS_SELECT 1
-#define BOOST_COROSIO_POSIX      1
+#define BOOST_COROSIO_POSIX 1
 
 #else // !BOOST_COROSIO_MRDOCS
 

@@ -50,32 +50,50 @@ public:
 
         @param v `true` to enable the option, `false` to disable.
     */
-    explicit boolean_option( bool v ) noexcept : value_( v ? 1 : 0 ) {}
+    explicit boolean_option(bool v) noexcept : value_(v ? 1 : 0) {}
 
     /// Assign a new value.
-    boolean_option& operator=( bool v ) noexcept
+    boolean_option& operator=(bool v) noexcept
     {
         value_ = v ? 1 : 0;
         return *this;
     }
 
     /// Return the option value.
-    bool value() const noexcept { return value_ != 0; }
+    bool value() const noexcept
+    {
+        return value_ != 0;
+    }
 
     /// Return the option value.
-    explicit operator bool() const noexcept { return value_ != 0; }
+    explicit operator bool() const noexcept
+    {
+        return value_ != 0;
+    }
 
     /// Return the negated option value.
-    bool operator!() const noexcept { return value_ == 0; }
+    bool operator!() const noexcept
+    {
+        return value_ == 0;
+    }
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept { return &value_; }
+    void* data() noexcept
+    {
+        return &value_;
+    }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept { return &value_; }
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
 
     /// Return the size of the underlying storage.
-    std::size_t size() const noexcept { return sizeof( value_ ); }
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
 
     /** Normalize after `getsockopt` returns fewer bytes than expected.
 
@@ -83,10 +101,10 @@ public:
 
         @param s The number of bytes actually written by `getsockopt`.
     */
-    void resize( std::size_t s ) noexcept
+    void resize(std::size_t s) noexcept
     {
-        if ( s == sizeof( char ) )
-            value_ = *reinterpret_cast<unsigned char*>( &value_ ) ? 1 : 0;
+        if (s == sizeof(char))
+            value_ = *reinterpret_cast<unsigned char*>(&value_) ? 1 : 0;
     }
 };
 
@@ -107,36 +125,48 @@ public:
 
         @param v The option value.
     */
-    explicit integer_option( int v ) noexcept : value_( v ) {}
+    explicit integer_option(int v) noexcept : value_(v) {}
 
     /// Assign a new value.
-    integer_option& operator=( int v ) noexcept
+    integer_option& operator=(int v) noexcept
     {
         value_ = v;
         return *this;
     }
 
     /// Return the option value.
-    int value() const noexcept { return value_; }
+    int value() const noexcept
+    {
+        return value_;
+    }
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept { return &value_; }
+    void* data() noexcept
+    {
+        return &value_;
+    }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept { return &value_; }
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
 
     /// Return the size of the underlying storage.
-    std::size_t size() const noexcept { return sizeof( value_ ); }
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
 
     /** Normalize after `getsockopt` returns fewer bytes than expected.
 
         @param s The number of bytes actually written by `getsockopt`.
     */
-    void resize( std::size_t s ) noexcept
+    void resize(std::size_t s) noexcept
     {
-        if ( s == sizeof( char ) )
-            value_ = static_cast<int>(
-                *reinterpret_cast<unsigned char*>( &value_ ) );
+        if (s == sizeof(char))
+            value_ =
+                static_cast<int>(*reinterpret_cast<unsigned char*>(&value_));
     }
 };
 
@@ -315,7 +345,7 @@ class BOOST_COROSIO_DECL linger
     // POSIX: { int, int } = 8 bytes.
     // Windows: { u_short, u_short } = 4 bytes.
     static constexpr std::size_t max_storage_ = 8;
-    alignas( 4 ) unsigned char storage_[max_storage_]{};
+    alignas(4) unsigned char storage_[max_storage_]{};
 
 public:
     /// Construct with default values (disabled, zero timeout).
@@ -326,19 +356,19 @@ public:
         @param enabled `true` to enable linger behavior on close.
         @param timeout The linger timeout in seconds.
     */
-    linger( bool enabled, int timeout ) noexcept;
+    linger(bool enabled, int timeout) noexcept;
 
     /// Return whether linger is enabled.
     bool enabled() const noexcept;
 
     /// Set whether linger is enabled.
-    void enabled( bool v ) noexcept;
+    void enabled(bool v) noexcept;
 
     /// Return the linger timeout in seconds.
     int timeout() const noexcept;
 
     /// Set the linger timeout in seconds.
-    void timeout( int v ) noexcept;
+    void timeout(int v) noexcept;
 
     /// Return the protocol level.
     static int level() noexcept;
@@ -347,10 +377,16 @@ public:
     static int name() noexcept;
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept { return storage_; }
+    void* data() noexcept
+    {
+        return storage_;
+    }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept { return storage_; }
+    void const* data() const noexcept
+    {
+        return storage_;
+    }
 
     /// Return the size of the underlying storage.
     std::size_t size() const noexcept;
@@ -361,7 +397,7 @@ public:
 
         @param s The number of bytes actually written by `getsockopt`.
     */
-    void resize( std::size_t ) noexcept {}
+    void resize(std::size_t) noexcept {}
 };
 
 } // namespace boost::corosio::socket_option

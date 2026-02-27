@@ -936,7 +936,10 @@ struct timer_test
                 struct guard
                 {
                     bool& flag_;
-                    ~guard() { flag_ = true; }
+                    ~guard()
+                    {
+                        flag_ = true;
+                    }
                 };
                 guard g{destroyed_flag};
                 started_flag = true;
@@ -974,7 +977,10 @@ struct timer_test
                 struct guard
                 {
                     int& c_;
-                    ~guard() { ++c_; }
+                    ~guard()
+                    {
+                        ++c_;
+                    }
                 };
                 guard g{counter};
                 auto [ec] = co_await t_ref.wait();

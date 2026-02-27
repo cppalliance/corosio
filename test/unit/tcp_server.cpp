@@ -14,7 +14,6 @@
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/timer.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -125,8 +124,8 @@ struct tcp_server_test
             port = static_cast<std::uint16_t>(49152 + (attempt * 7) % 16383);
             acc.open();
             acc.set_option(socket_option::reuse_address(true));
-            if (!acc.bind(endpoint(ipv4_address::loopback(), port))
-                && !acc.listen())
+            if (!acc.bind(endpoint(ipv4_address::loopback(), port)) &&
+                !acc.listen())
                 break;
             acc.close();
             acc = tcp_acceptor(ioc);
@@ -260,8 +259,8 @@ struct tcp_server_test
             port = static_cast<std::uint16_t>(49152 + (attempt * 7) % 16383);
             acc.open();
             acc.set_option(socket_option::reuse_address(true));
-            if (!acc.bind(endpoint(ipv4_address::loopback(), port))
-                && !acc.listen())
+            if (!acc.bind(endpoint(ipv4_address::loopback(), port)) &&
+                !acc.listen())
                 break;
             acc.close();
             acc = tcp_acceptor(ioc);

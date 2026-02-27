@@ -69,10 +69,10 @@ struct cancel_at_awaitable
         }
     };
 
-    using time_point = std::chrono::steady_clock::time_point;
+    using time_point   = std::chrono::steady_clock::time_point;
     using stop_cb_type = std::stop_callback<stop_forwarder>;
-    using timer_storage = std::conditional_t<
-        Owning, std::optional<Timer>, Timer*>;
+    using timer_storage =
+        std::conditional_t<Owning, std::optional<Timer>, Timer*>;
 
     A inner_;
     timer_storage timer_;
@@ -83,11 +83,8 @@ struct cancel_at_awaitable
     bool cb_active_ = false;
 
     /// Construct with a caller-supplied timer reference.
-    cancel_at_awaitable(
-        A&& inner,
-        Timer& timer,
-        time_point deadline)
-        requires (!Owning)
+    cancel_at_awaitable(A&& inner, Timer& timer, time_point deadline)
+        requires(!Owning)
         : inner_(std::move(inner))
         , timer_(&timer)
         , deadline_(deadline)
@@ -95,9 +92,7 @@ struct cancel_at_awaitable
     }
 
     /// Construct without a timer (created in `await_suspend`).
-    cancel_at_awaitable(
-        A&& inner,
-        time_point deadline)
+    cancel_at_awaitable(A&& inner, time_point deadline)
         requires Owning
         : inner_(std::move(inner))
         , deadline_(deadline)
@@ -119,15 +114,16 @@ struct cancel_at_awaitable
     {
     }
 
-    cancel_at_awaitable(cancel_at_awaitable const&) = delete;
+    cancel_at_awaitable(cancel_at_awaitable const&)            = delete;
     cancel_at_awaitable& operator=(cancel_at_awaitable const&) = delete;
-    cancel_at_awaitable& operator=(cancel_at_awaitable&&) = delete;
+    cancel_at_awaitable& operator=(cancel_at_awaitable&&)      = delete;
 
-    bool await_ready() const noexcept { return false; }
+    bool await_ready() const noexcept
+    {
+        return false;
+    }
 
-    auto await_suspend(
-        std::coroutine_handle<> h,
-        capy::io_env const* env)
+    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
     {
         if constexpr (Owning)
             timer_.emplace(env->executor.context());
@@ -136,25 +132,20 @@ struct cancel_at_awaitable
 
         // Launch fire-and-forget timeout (starts suspended)
         auto timeout = make_timeout(*timer_, stop_src_);
-        timeout.h_.promise().set_env_owned({
-            env->executor,
-            stop_src_.get_token(),
-            env->frame_allocator});
+        timeout.h_.promise().set_env_owned(
+            {env->executor, stop_src_.get_token(), env->frame_allocator});
         // Runs synchronously until timer.wait() suspends
         timeout.h_.resume();
         // timeout goes out of scope; destructor is a no-op,
         // the coroutine self-destroys via suspend_never
 
         // Forward parent cancellation
-        new (cb_buf_) stop_cb_type(
-            env->stop_token, stop_forwarder{&stop_src_});
+        new (cb_buf_) stop_cb_type(env->stop_token, stop_forwarder{&stop_src_});
         cb_active_ = true;
 
         // Start the inner op with our interposed stop_token
         inner_env_ = {
-            env->executor,
-            stop_src_.get_token(),
-            env->frame_allocator};
+            env->executor, stop_src_.get_token(), env->frame_allocator};
         return inner_.await_suspend(h, &inner_env_);
     }
 
@@ -170,8 +161,8 @@ struct cancel_at_awaitable
     {
         if (cb_active_)
         {
-            std::launder(reinterpret_cast<stop_cb_type*>(
-                cb_buf_))->~stop_cb_type();
+            std::launder(reinterpret_cast<stop_cb_type*>(cb_buf_))
+                ->~stop_cb_type();
             cb_active_ = false;
         }
     }

@@ -55,17 +55,26 @@ namespace boost::corosio {
 class native_tcp
 {
     bool v6_;
-    explicit constexpr native_tcp( bool v6 ) noexcept : v6_( v6 ) {}
+    explicit constexpr native_tcp(bool v6) noexcept : v6_(v6) {}
 
 public:
     /// Construct an IPv4 TCP protocol.
-    static constexpr native_tcp v4() noexcept { return native_tcp( false ); }
+    static constexpr native_tcp v4() noexcept
+    {
+        return native_tcp(false);
+    }
 
     /// Construct an IPv6 TCP protocol.
-    static constexpr native_tcp v6() noexcept { return native_tcp( true ); }
+    static constexpr native_tcp v6() noexcept
+    {
+        return native_tcp(true);
+    }
 
     /// Return true if this is IPv6.
-    constexpr bool is_v6() const noexcept { return v6_; }
+    constexpr bool is_v6() const noexcept
+    {
+        return v6_;
+    }
 
     /// Return the address family (AF_INET or AF_INET6).
     int family() const noexcept
@@ -74,10 +83,16 @@ public:
     }
 
     /// Return the socket type (SOCK_STREAM).
-    static constexpr int type() noexcept { return SOCK_STREAM; }
+    static constexpr int type() noexcept
+    {
+        return SOCK_STREAM;
+    }
 
     /// Return the IP protocol (IPPROTO_TCP).
-    static constexpr int protocol() noexcept { return IPPROTO_TCP; }
+    static constexpr int protocol() noexcept
+    {
+        return IPPROTO_TCP;
+    }
 
     /// The associated socket type.
     using socket = tcp_socket;
@@ -85,12 +100,12 @@ public:
     /// The associated acceptor type.
     using acceptor = tcp_acceptor;
 
-    friend constexpr bool operator==( native_tcp a, native_tcp b ) noexcept
+    friend constexpr bool operator==(native_tcp a, native_tcp b) noexcept
     {
         return a.v6_ == b.v6_;
     }
 
-    friend constexpr bool operator!=( native_tcp a, native_tcp b ) noexcept
+    friend constexpr bool operator!=(native_tcp a, native_tcp b) noexcept
     {
         return a.v6_ != b.v6_;
     }

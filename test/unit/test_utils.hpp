@@ -569,8 +569,10 @@ inline tls_context
 make_anon_context()
 {
     tls_context ctx;
-    ctx.set_verify_mode(tls_verify_mode::none);
-    ctx.set_ciphersuites("aNULL:eNULL:@SECLEVEL=0");
+    ctx.set_verify_mode(
+        tls_verify_mode::none); // NOLINT(bugprone-unused-return-value)
+    ctx.set_ciphersuites(
+        "aNULL:eNULL:@SECLEVEL=0"); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -579,9 +581,14 @@ inline tls_context
 make_server_context()
 {
     tls_context ctx;
-    ctx.use_certificate(server_cert_pem, tls_file_format::pem);
-    ctx.use_private_key(server_key_pem, tls_file_format::pem);
-    ctx.set_verify_mode(tls_verify_mode::none);
+    ctx.use_certificate(
+        server_cert_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.use_private_key(
+        server_key_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::none); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -590,8 +597,10 @@ inline tls_context
 make_client_context()
 {
     tls_context ctx;
-    ctx.add_certificate_authority(ca_cert_pem);
-    ctx.set_verify_mode(tls_verify_mode::peer);
+    ctx.add_certificate_authority(
+        ca_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -600,8 +609,10 @@ inline tls_context
 make_wrong_ca_context()
 {
     tls_context ctx;
-    ctx.add_certificate_authority(wrong_ca_cert_pem);
-    ctx.set_verify_mode(tls_verify_mode::peer);
+    ctx.add_certificate_authority(
+        wrong_ca_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -610,7 +621,8 @@ inline tls_context
 make_verify_no_cert_context()
 {
     tls_context ctx;
-    ctx.set_verify_mode(tls_verify_mode::require_peer);
+    ctx.set_verify_mode(
+        tls_verify_mode::require_peer); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -636,7 +648,8 @@ make_contexts(context_mode mode)
     case context_mode::shared_cert:
     {
         auto ctx = make_server_context();
-        ctx.add_certificate_authority(ca_cert_pem);
+        ctx.add_certificate_authority(
+            ca_cert_pem); // NOLINT(bugprone-unused-return-value)
         return {ctx, ctx};
     }
     case context_mode::separate_cert:
@@ -1161,9 +1174,14 @@ inline tls_context
 make_chain_server_context()
 {
     tls_context ctx;
-    ctx.use_certificate(chain_server_cert_pem, tls_file_format::pem);
-    ctx.use_private_key(chain_server_key_pem, tls_file_format::pem);
-    ctx.set_verify_mode(tls_verify_mode::none);
+    ctx.use_certificate(
+        chain_server_cert_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.use_private_key(
+        chain_server_key_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::none); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1176,9 +1194,13 @@ make_fullchain_server_context()
 {
     tls_context ctx;
     // use_certificate_chain expects entity cert followed by intermediate(s)
-    ctx.use_certificate_chain(server_fullchain_pem);
-    ctx.use_private_key(chain_server_key_pem, tls_file_format::pem);
-    ctx.set_verify_mode(tls_verify_mode::none);
+    ctx.use_certificate_chain(
+        server_fullchain_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.use_private_key(
+        chain_server_key_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::none); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1188,8 +1210,10 @@ inline tls_context
 make_rootonly_client_context()
 {
     tls_context ctx;
-    ctx.add_certificate_authority(root_ca_cert_pem);
-    ctx.set_verify_mode(tls_verify_mode::peer);
+    ctx.add_certificate_authority(
+        root_ca_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1199,9 +1223,12 @@ make_chain_client_context()
 {
     tls_context ctx;
     // Trust both root and intermediate CA for chain verification
-    ctx.add_certificate_authority(root_ca_cert_pem);
-    ctx.add_certificate_authority(intermediate_cert_pem);
-    ctx.set_verify_mode(tls_verify_mode::peer);
+    ctx.add_certificate_authority(
+        root_ca_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.add_certificate_authority(
+        intermediate_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1211,8 +1238,12 @@ inline tls_context
 make_expired_server_context()
 {
     tls_context ctx;
-    ctx.use_certificate(expired_cert_pem, tls_file_format::pem);
-    ctx.use_private_key(expired_key_pem, tls_file_format::pem);
+    ctx.use_certificate(
+        expired_cert_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.use_private_key(
+        expired_key_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1223,8 +1254,10 @@ make_expired_client_context()
 {
     tls_context ctx;
     // Trust the expired cert as its own CA (self-signed)
-    ctx.add_certificate_authority(expired_cert_pem);
-    ctx.set_verify_mode(tls_verify_mode::peer);
+    ctx.add_certificate_authority(
+        expired_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1233,9 +1266,14 @@ inline tls_context
 make_wrong_host_server_context()
 {
     tls_context ctx;
-    ctx.use_certificate(wrong_host_cert_pem, tls_file_format::pem);
-    ctx.use_private_key(wrong_host_key_pem, tls_file_format::pem);
-    ctx.set_verify_mode(tls_verify_mode::none);
+    ctx.use_certificate(
+        wrong_host_cert_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.use_private_key(
+        wrong_host_key_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::none); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1244,12 +1282,19 @@ inline tls_context
 make_mtls_client_context()
 {
     tls_context ctx;
-    ctx.use_certificate(client_cert_pem, tls_file_format::pem);
-    ctx.use_private_key(client_key_pem, tls_file_format::pem);
+    ctx.use_certificate(
+        client_cert_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.use_private_key(
+        client_key_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
     // Trust both root and intermediate CA for chain verification
-    ctx.add_certificate_authority(root_ca_cert_pem);
-    ctx.add_certificate_authority(intermediate_cert_pem);
-    ctx.set_verify_mode(tls_verify_mode::peer);
+    ctx.add_certificate_authority(
+        root_ca_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.add_certificate_authority(
+        intermediate_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1258,12 +1303,19 @@ inline tls_context
 make_mtls_server_context()
 {
     tls_context ctx;
-    ctx.use_certificate(chain_server_cert_pem, tls_file_format::pem);
-    ctx.use_private_key(chain_server_key_pem, tls_file_format::pem);
+    ctx.use_certificate(
+        chain_server_cert_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.use_private_key(
+        chain_server_key_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
     // Trust both root and intermediate CA for chain verification
-    ctx.add_certificate_authority(root_ca_cert_pem);
-    ctx.add_certificate_authority(intermediate_cert_pem);
-    ctx.set_verify_mode(tls_verify_mode::require_peer);
+    ctx.add_certificate_authority(
+        root_ca_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.add_certificate_authority(
+        intermediate_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::require_peer); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1272,8 +1324,10 @@ inline tls_context
 make_untrusted_ca_client_context()
 {
     tls_context ctx;
-    ctx.add_certificate_authority(untrusted_ca_cert_pem);
-    ctx.set_verify_mode(tls_verify_mode::peer);
+    ctx.add_certificate_authority(
+        untrusted_ca_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1285,12 +1339,19 @@ make_invalid_mtls_client_context()
 {
     tls_context ctx;
     // Use the self-signed server cert as client cert - server won't trust it
-    ctx.use_certificate(server_cert_pem, tls_file_format::pem);
-    ctx.use_private_key(server_key_pem, tls_file_format::pem);
+    ctx.use_certificate(
+        server_cert_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.use_private_key(
+        server_key_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
     // Trust the chain CAs so we can verify server
-    ctx.add_certificate_authority(root_ca_cert_pem);
-    ctx.add_certificate_authority(intermediate_cert_pem);
-    ctx.set_verify_mode(tls_verify_mode::peer);
+    ctx.add_certificate_authority(
+        root_ca_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.add_certificate_authority(
+        intermediate_cert_pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
     return ctx;
 }
 
@@ -1611,7 +1672,7 @@ run_stop_token_write_test(
     bool write_got_error = false;
 
     // Large buffer to fill socket buffer and cause blocking
-    std::vector<char> large_buf(1024 * 1024, 'X');
+    std::vector<char> large_buf(std::size_t{1024} * 1024, 'X');
 
     // Failsafe timeout - 2000ms allows headroom for CI with coverage instrumentation
     timer failsafe(ioc);

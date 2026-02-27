@@ -95,9 +95,8 @@ public:
         @param impl The socket implementation internal to initialize.
         @return Error code, or success.
     */
-    std::error_code open_socket(
-        win_socket_internal& impl,
-        int family, int type, int protocol);
+    std::error_code
+    open_socket(win_socket_internal& impl, int family, int type, int protocol);
 
     /** Destroy an acceptor implementation wrapper.
         Removes from tracking list and deletes.
@@ -122,8 +121,7 @@ public:
         @return Error code, or success.
     */
     std::error_code open_acceptor_socket(
-        win_acceptor_internal& impl,
-        int family, int type, int protocol);
+        win_acceptor_internal& impl, int family, int type, int protocol);
 
     /** Bind an open acceptor to a local endpoint.
 
@@ -131,8 +129,7 @@ public:
         @param ep The local endpoint to bind to.
         @return Error code, or success.
     */
-    std::error_code bind_acceptor(
-        win_acceptor_internal& impl, endpoint ep);
+    std::error_code bind_acceptor(win_acceptor_internal& impl, endpoint ep);
 
     /** Start listening for incoming connections.
 
@@ -140,8 +137,7 @@ public:
         @param backlog The listen backlog.
         @return Error code, or success.
     */
-    std::error_code listen_acceptor(
-        win_acceptor_internal& impl, int backlog);
+    std::error_code listen_acceptor(win_acceptor_internal& impl, int backlog);
 
     /** Return the IOCP handle. */
     void* native_handle() const noexcept;

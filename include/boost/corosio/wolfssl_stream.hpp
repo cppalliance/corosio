@@ -84,8 +84,7 @@ public:
     */
     template<capy::Stream S>
         requires(!std::same_as<std::decay_t<S>, wolfssl_stream>)
-    // NOLINTNEXTLINE(performance-unnecessary-value-param)
-    wolfssl_stream(S stream, tls_context ctx)
+    wolfssl_stream(S stream, tls_context const& ctx)
         : stream_(std::move(stream))
         , impl_(make_impl(stream_, ctx))
     {
@@ -102,8 +101,7 @@ public:
         @param ctx The TLS context containing configuration.
     */
     template<capy::Stream S>
-    // NOLINTNEXTLINE(performance-unnecessary-value-param)
-    wolfssl_stream(S* stream, tls_context ctx)
+    wolfssl_stream(S* stream, tls_context const& ctx)
         : stream_(stream)
         , impl_(make_impl(stream_, ctx))
     {

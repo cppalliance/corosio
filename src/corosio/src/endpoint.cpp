@@ -9,7 +9,6 @@
 
 #include <boost/corosio/endpoint.hpp>
 
-#include <algorithm>
 #include <charconv>
 
 namespace boost::corosio {

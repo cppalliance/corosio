@@ -47,7 +47,7 @@ public:
     std::coroutine_handle<> read_some(
         std::coroutine_handle<>,
         capy::executor_ref,
-        io_buffer_param,
+        buffer_param,
         std::stop_token,
         std::error_code*,
         std::size_t*) override;
@@ -55,7 +55,7 @@ public:
     std::coroutine_handle<> write_some(
         std::coroutine_handle<>,
         capy::executor_ref,
-        io_buffer_param,
+        buffer_param,
         std::stop_token,
         std::error_code*,
         std::size_t*) override;
@@ -68,11 +68,13 @@ public:
     }
 
     std::error_code set_option(
-        int level, int optname,
-        void const* data, std::size_t size) noexcept override;
-    std::error_code get_option(
-        int level, int optname,
-        void* data, std::size_t* size) const noexcept override;
+        int level,
+        int optname,
+        void const* data,
+        std::size_t size) noexcept override;
+    std::error_code
+    get_option(int level, int optname, void* data, std::size_t* size)
+        const noexcept override;
 
     endpoint local_endpoint() const noexcept override
     {

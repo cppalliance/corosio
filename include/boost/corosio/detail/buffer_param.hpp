@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_IO_BUFFER_PARAM_HPP
-#define BOOST_COROSIO_IO_BUFFER_PARAM_HPP
+#ifndef BOOST_COROSIO_DETAIL_BUFFER_PARAM_HPP
+#define BOOST_COROSIO_DETAIL_BUFFER_PARAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
@@ -55,7 +55,7 @@ namespace boost::corosio {
 
     The referenced buffer sequence is valid ONLY while the calling
     coroutine remains suspended at the exact suspension point where
-    `io_buffer_param` was created. Once the coroutine resumes,
+    `buffer_param` was created. Once the coroutine resumes,
     returns, or is destroyed, all referenced data becomes invalid.
 
     @par Const Buffer Handling
@@ -75,7 +75,7 @@ namespace boost::corosio {
 
     @code
     // For write operations (const buffers):
-    void submit_write(io_buffer_param p)
+    void submit_write(buffer_param p)
     {
         capy::mutable_buffer bufs[8];
         auto n = p.copy_to(bufs, 8);
@@ -84,7 +84,7 @@ namespace boost::corosio {
     }
 
     // For read operations (mutable buffers):
-    void submit_read(io_buffer_param p)
+    void submit_read(buffer_param p)
     {
         capy::mutable_buffer bufs[8];
         auto n = p.copy_to(bufs, 8);
@@ -95,11 +95,11 @@ namespace boost::corosio {
 
     @par Correct Usage
 
-    The implementation receiving `io_buffer_param` MUST:
+    The implementation receiving `buffer_param` MUST:
 
     @li Call `copy_to` immediately upon receiving the parameter
     @li Use the unrolled buffer descriptors for the I/O operation
-    @li Never store the `io_buffer_param` object itself
+    @li Never store the `buffer_param` object itself
     @li Never store pointers obtained from `copy_to` beyond the
         immediate I/O operation
 
@@ -128,7 +128,7 @@ namespace boost::corosio {
 
     // Virtual implementation - unrolls immediately
     void stream_impl::async_write_some_impl(
-        io_buffer_param p,
+        buffer_param p,
         std::coroutine_handle<> h)
     {
         // CORRECT: Unroll immediately into platform structure
@@ -145,16 +145,16 @@ namespace boost::corosio {
     }
     @endcode
 
-    @par UNSAFE USAGE: Storing io_buffer_param
+    @par UNSAFE USAGE: Storing buffer_param
 
-    @warning Never store `io_buffer_param` for later use.
+    @warning Never store `buffer_param` for later use.
 
     @code
     class broken_stream
     {
-        io_buffer_param saved_param_;  // UNSAFE: member storage
+        buffer_param saved_param_;  // UNSAFE: member storage
 
-        void async_write_impl(io_buffer_param p, ...)
+        void async_write_impl(buffer_param p, ...)
         {
             saved_param_ = p;  // UNSAFE: storing for later
             schedule_write_later();
@@ -183,7 +183,7 @@ namespace boost::corosio {
         capy::mutable_buffer saved_bufs_[8];  // UNSAFE
         std::size_t saved_count_;
 
-        void async_write_impl(io_buffer_param p, ...)
+        void async_write_impl(buffer_param p, ...)
         {
             // This copies pointer/size pairs into saved_bufs_
             saved_count_ = p.copy_to(saved_bufs_, 8);
@@ -226,11 +226,11 @@ namespace boost::corosio {
 
     @par UNSAFE USAGE: Passing to Another Coroutine
 
-    @warning Do not pass `io_buffer_param` to a different coroutine
+    @warning Do not pass `buffer_param` to a different coroutine
     or spawn a new coroutine that captures it.
 
     @code
-    void broken_impl(io_buffer_param p, std::coroutine_handle<> h)
+    void broken_impl(buffer_param p, std::coroutine_handle<> h)
     {
         // UNSAFE: Spawning a new coroutine that captures 'p'.
         // The original coroutine may resume before this new
@@ -247,18 +247,18 @@ namespace boost::corosio {
     @par UNSAFE USAGE: Multiple Virtual Hops
 
     @warning Minimize indirection. Each virtual call that passes
-    `io_buffer_param` without immediately unrolling it increases
+    `buffer_param` without immediately unrolling it increases
     the risk of misuse.
 
     @code
     // Risky: multiple hops before unrolling
-    void layer1(io_buffer_param p) {
+    void layer1(buffer_param p) {
         layer2(p);  // Still haven't unrolled...
     }
-    void layer2(io_buffer_param p) {
+    void layer2(buffer_param p) {
         layer3(p);  // Still haven't unrolled...
     }
-    void layer3(io_buffer_param p) {
+    void layer3(buffer_param p) {
         // Finally unrolling, but the chain is fragile.
         // Any intermediate layer storing 'p' breaks everything.
     }
@@ -290,15 +290,15 @@ namespace boost::corosio {
 
     @code
     // Preferred: pass by value
-    void process(io_buffer_param buffers);
+    void process(buffer_param buffers);
 
     // Also acceptable: pass by const reference
-    void process(io_buffer_param const& buffers);
+    void process(buffer_param const& buffers);
     @endcode
 
     @see capy::ConstBufferSequence, capy::MutableBufferSequence
 */
-class io_buffer_param
+class buffer_param
 {
 public:
     /** Construct from a const buffer sequence.
@@ -306,8 +306,8 @@ public:
         @param bs The buffer sequence to adapt.
     */
     template<capy::ConstBufferSequence BS>
-    io_buffer_param(BS const& bs) noexcept : bs_(&bs)
-                                           , fn_(&copy_impl<BS>)
+    buffer_param(BS const& bs) noexcept : bs_(&bs)
+                                        , fn_(&copy_impl<BS>)
     {
     }
 

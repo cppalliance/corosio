@@ -22,7 +22,7 @@
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/native/detail/kqueue/kqueue_op.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/posix/posix_resolver_service.hpp>
 #include <boost/corosio/native/detail/posix/posix_signal_service.hpp>
 #include <boost/corosio/detail/except.hpp>
@@ -492,7 +492,7 @@ kqueue_scheduler::reset_inline_budget() const noexcept
         if (ctx->unassisted)
         {
             ctx->inline_budget_max = 4;
-            ctx->inline_budget = 4;
+            ctx->inline_budget     = 4;
             return;
         }
         // Ramp up when previous cycle fully consumed budget.
