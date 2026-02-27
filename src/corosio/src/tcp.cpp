@@ -15,7 +15,7 @@ namespace boost::corosio {
 int
 tcp::family() const noexcept
 {
-    return native_tcp( v6_ ? native_tcp::v6() : native_tcp::v4() ).family();
+    return native_tcp(v6_ ? native_tcp::v6() : native_tcp::v4()).family();
 }
 
 int

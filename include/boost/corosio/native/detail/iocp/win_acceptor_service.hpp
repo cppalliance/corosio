@@ -25,8 +25,8 @@
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
 
-#include <boost/corosio/detail/endpoint_convert.hpp>
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 
 #include <Ws2tcpip.h>
@@ -55,16 +55,15 @@ public:
 
     /** Create the acceptor socket without binding or listening. */
     std::error_code open_acceptor_socket(
-        tcp_acceptor::implementation& impl,
-        int family, int type, int protocol);
+        tcp_acceptor::implementation& impl, int family, int type, int protocol);
 
     /** Bind an open acceptor to a local endpoint. */
-    std::error_code bind_acceptor(
-        tcp_acceptor::implementation& impl, endpoint ep);
+    std::error_code
+    bind_acceptor(tcp_acceptor::implementation& impl, endpoint ep);
 
     /** Start listening for incoming connections. */
-    std::error_code listen_acceptor(
-        tcp_acceptor::implementation& impl, int backlog);
+    std::error_code
+    listen_acceptor(tcp_acceptor::implementation& impl, int backlog);
 
     void shutdown() override;
 
@@ -212,13 +211,11 @@ accept_op::do_complete(
         endpoint local_ep, remote_ep;
         if (::getsockname(
                 op->accepted_socket,
-                reinterpret_cast<sockaddr*>(&local_storage),
-                &local_len) == 0)
+                reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
             local_ep = from_sockaddr(local_storage);
         if (::getpeername(
                 op->accepted_socket,
-                reinterpret_cast<sockaddr*>(&remote_storage),
-                &remote_len) == 0)
+                reinterpret_cast<sockaddr*>(&remote_storage), &remote_len) == 0)
             remote_ep = from_sockaddr(remote_storage);
 
         op->peer_wrapper->get_internal()->set_endpoints(local_ep, remote_ep);
@@ -276,8 +273,8 @@ connect_op::do_complete(
     {
         // Required after ConnectEx to enable shutdown(), getsockname(), etc.
         ::setsockopt(
-            op->internal.native_handle(), SOL_SOCKET,
-            SO_UPDATE_CONNECT_CONTEXT, nullptr, 0);
+            op->internal.native_handle(), SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT,
+            nullptr, 0);
 
         endpoint local_ep;
         sockaddr_storage local_storage{};
@@ -432,9 +429,8 @@ win_socket_internal::connect(
         bind_len = sizeof(sa4);
     }
 
-    if (::bind(
-            socket_, reinterpret_cast<sockaddr*>(&bind_storage),
-            bind_len) == SOCKET_ERROR)
+    if (::bind(socket_, reinterpret_cast<sockaddr*>(&bind_storage), bind_len) ==
+        SOCKET_ERROR)
     {
         svc_.on_completion(&op, ::WSAGetLastError(), 0);
         return std::noop_coroutine();
@@ -472,7 +468,7 @@ inline std::coroutine_handle<>
 win_socket_internal::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
-    io_buffer_param param,
+    buffer_param param,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
@@ -513,8 +509,7 @@ win_socket_internal::read_some(
     op.flags = 0;
 
     int result = ::WSARecv(
-        socket_, op.wsabufs, op.wsabuf_count, nullptr, &op.flags, &op,
-        nullptr);
+        socket_, op.wsabufs, op.wsabuf_count, nullptr, &op.flags, &op, nullptr);
 
     if (result == SOCKET_ERROR)
     {
@@ -539,7 +534,7 @@ inline std::coroutine_handle<>
 win_socket_internal::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
-    io_buffer_param param,
+    buffer_param param,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
@@ -660,7 +655,7 @@ inline std::coroutine_handle<>
 win_socket::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
-    io_buffer_param buf,
+    buffer_param buf,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes)
@@ -672,7 +667,7 @@ inline std::coroutine_handle<>
 win_socket::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
-    io_buffer_param buf,
+    buffer_param buf,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes)
@@ -711,23 +706,22 @@ win_socket::native_handle() const noexcept
 
 inline std::error_code
 win_socket::set_option(
-    int level, int optname,
-    void const* data, std::size_t size) noexcept
+    int level, int optname, void const* data, std::size_t size) noexcept
 {
-    if (::setsockopt(internal_->native_handle(), level, optname,
-            reinterpret_cast<char const*>(data),
-            static_cast<int>(size)) != 0)
+    if (::setsockopt(
+            internal_->native_handle(), level, optname,
+            reinterpret_cast<char const*>(data), static_cast<int>(size)) != 0)
         return make_err(WSAGetLastError());
     return {};
 }
 
 inline std::error_code
 win_socket::get_option(
-    int level, int optname,
-    void* data, std::size_t* size) const noexcept
+    int level, int optname, void* data, std::size_t* size) const noexcept
 {
     int len = static_cast<int>(*size);
-    if (::getsockopt(internal_->native_handle(), level, optname,
+    if (::getsockopt(
+            internal_->native_handle(), level, optname,
             reinterpret_cast<char*>(data), &len) != 0)
         return make_err(WSAGetLastError());
     *size = static_cast<std::size_t>(len);
@@ -861,13 +855,12 @@ win_sockets::unregister_impl(win_socket_internal& impl)
 
 inline std::error_code
 win_sockets::open_socket(
-    win_socket_internal& impl,
-    int family, int type, int protocol)
+    win_socket_internal& impl, int family, int type, int protocol)
 {
     impl.close_socket();
 
-    SOCKET sock = ::WSASocketW(
-        family, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
+    SOCKET sock =
+        ::WSASocketW(family, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
     if (sock == INVALID_SOCKET)
         return make_err(::WSAGetLastError());
@@ -876,8 +869,8 @@ win_sockets::open_socket(
     {
         DWORD one = 1;
         ::setsockopt(
-            sock, IPPROTO_IPV6, IPV6_V6ONLY,
-            reinterpret_cast<char*>(&one), sizeof(one));
+            sock, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char*>(&one),
+            sizeof(one));
     }
 
     HANDLE result = ::CreateIoCompletionPort(
@@ -891,7 +884,7 @@ win_sockets::open_socket(
     }
 
     impl.socket_ = sock;
-    impl.family_  = family;
+    impl.family_ = family;
     return {};
 }
 
@@ -988,13 +981,12 @@ win_sockets::unregister_acceptor_impl(win_acceptor_internal& impl)
 
 inline std::error_code
 win_sockets::open_acceptor_socket(
-    win_acceptor_internal& impl,
-    int family, int type, int protocol)
+    win_acceptor_internal& impl, int family, int type, int protocol)
 {
     impl.close_socket();
 
-    SOCKET sock = ::WSASocketW(
-        family, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
+    SOCKET sock =
+        ::WSASocketW(family, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
     if (sock == INVALID_SOCKET)
         return make_err(::WSAGetLastError());
@@ -1003,8 +995,8 @@ win_sockets::open_acceptor_socket(
     {
         DWORD val = 0; // dual-stack default
         ::setsockopt(
-            sock, IPPROTO_IPV6, IPV6_V6ONLY,
-            reinterpret_cast<char*>(&val), sizeof(val));
+            sock, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char*>(&val),
+            sizeof(val));
     }
 
     HANDLE result = ::CreateIoCompletionPort(
@@ -1022,8 +1014,7 @@ win_sockets::open_acceptor_socket(
 }
 
 inline std::error_code
-win_sockets::bind_acceptor(
-    win_acceptor_internal& impl, endpoint ep)
+win_sockets::bind_acceptor(win_acceptor_internal& impl, endpoint ep)
 {
     SOCKET sock = impl.socket_;
 
@@ -1038,16 +1029,14 @@ win_sockets::bind_acceptor(
     sockaddr_storage local_storage{};
     int local_len = sizeof(local_storage);
     if (::getsockname(
-            sock, reinterpret_cast<sockaddr*>(&local_storage),
-            &local_len) == 0)
+            sock, reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
         impl.set_local_endpoint(detail::from_sockaddr(local_storage));
 
     return {};
 }
 
 inline std::error_code
-win_sockets::listen_acceptor(
-    win_acceptor_internal& impl, int backlog)
+win_sockets::listen_acceptor(win_acceptor_internal& impl, int backlog)
 {
     SOCKET sock = impl.socket_;
 
@@ -1166,14 +1155,13 @@ win_acceptor_internal::accept(
     }
 
     // AcceptEx address buffer sizes must match the socket's address family
-    DWORD addr_size =
-        static_cast<DWORD>(
-            (af == AF_INET6 ? sizeof(sockaddr_in6) : sizeof(sockaddr_in)) + 16);
+    DWORD addr_size = static_cast<DWORD>(
+        (af == AF_INET6 ? sizeof(sockaddr_in6) : sizeof(sockaddr_in)) + 16);
     DWORD bytes_received = 0;
 
     BOOL ok = accept_ex(
-        socket_, accepted, op.addr_buf, 0, addr_size,
-        addr_size, &bytes_received, &op);
+        socket_, accepted, op.addr_buf, 0, addr_size, addr_size,
+        &bytes_received, &op);
 
     if (!ok)
     {
@@ -1267,23 +1255,22 @@ win_acceptor::cancel() noexcept
 
 inline std::error_code
 win_acceptor::set_option(
-    int level, int optname,
-    void const* data, std::size_t size) noexcept
+    int level, int optname, void const* data, std::size_t size) noexcept
 {
-    if (::setsockopt(internal_->native_handle(), level, optname,
-            reinterpret_cast<char const*>(data),
-            static_cast<int>(size)) != 0)
+    if (::setsockopt(
+            internal_->native_handle(), level, optname,
+            reinterpret_cast<char const*>(data), static_cast<int>(size)) != 0)
         return make_err(WSAGetLastError());
     return {};
 }
 
 inline std::error_code
 win_acceptor::get_option(
-    int level, int optname,
-    void* data, std::size_t* size) const noexcept
+    int level, int optname, void* data, std::size_t* size) const noexcept
 {
     int len = static_cast<int>(*size);
-    if (::getsockopt(internal_->native_handle(), level, optname,
+    if (::getsockopt(
+            internal_->native_handle(), level, optname,
             reinterpret_cast<char*>(data), &len) != 0)
         return make_err(WSAGetLastError());
     *size = static_cast<std::size_t>(len);
@@ -1345,8 +1332,7 @@ win_acceptor_service::close(io_object::handle& h)
 
 inline std::error_code
 win_acceptor_service::open_acceptor_socket(
-    tcp_acceptor::implementation& impl,
-    int family, int type, int protocol)
+    tcp_acceptor::implementation& impl, int family, int type, int protocol)
 {
     auto& wrapper = static_cast<win_acceptor&>(impl);
     return svc_.open_acceptor_socket(

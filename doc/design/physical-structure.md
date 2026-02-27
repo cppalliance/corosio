@@ -106,7 +106,7 @@ public:
         virtual std::coroutine_handle<> read_some(
             std::coroutine_handle<>,
             capy::executor_ref,
-            io_buffer_param,
+            buffer_param,
             std::stop_token,
             std::error_code*,
             std::size_t* ) = 0;

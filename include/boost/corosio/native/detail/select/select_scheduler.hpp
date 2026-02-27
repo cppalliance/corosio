@@ -22,7 +22,7 @@
 
 #include <boost/corosio/native/detail/select/select_op.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/posix/posix_resolver_service.hpp>
 #include <boost/corosio/native/detail/posix/posix_signal_service.hpp>
 

@@ -249,21 +249,21 @@ struct acceptor_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await a.accept(s);
                 ec_out    = ec;
                 done      = true;
             }(acc, peer, accept_ec, accept_done));
 
         capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(client, endpoint(ipv6_address::loopback(), port),
-              connect_ec, connect_done));
+            }(client, endpoint(ipv6_address::loopback(), port), connect_ec,
+                           connect_done));
 
         ioc.run();
 
@@ -304,8 +304,8 @@ struct acceptor_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await a.accept(s);
                 ec_out    = ec;
                 done      = true;
@@ -313,13 +313,13 @@ struct acceptor_test
 
         // Connect with IPv4 client to the dual-stack listener
         capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(client, endpoint(ipv4_address::loopback(), port),
-              connect_ec, connect_done));
+            }(client, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
         ioc.run();
 
@@ -361,13 +361,13 @@ struct acceptor_test
 
         // IPv4 connect should be refused
         capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(client, endpoint(ipv4_address::loopback(), port),
-              connect_ec, connect_done));
+            }(client, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
         // Cancel lingering accept after connect completes
         auto cancel_task = [&]() -> capy::task<> {
@@ -413,21 +413,21 @@ struct acceptor_test
         auto port = acc.local_endpoint().port();
         auto ex   = ioc.get_executor();
         capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await a.accept(s);
                 ec_out    = ec;
                 done      = true;
             }(acc, peer, accept_ec, accept_done));
 
         capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(client, endpoint(ipv4_address::loopback(), port),
-              connect_ec, connect_done));
+            }(client, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
         ioc.run();
 
@@ -528,21 +528,21 @@ struct acceptor_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await a.accept(s);
                 ec_out    = ec;
                 done      = true;
             }(acc, peer, accept_ec, accept_done));
 
         capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(client, endpoint(ipv4_address::loopback(), port),
-              connect_ec, connect_done));
+            }(client, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
         ioc.run();
 
@@ -564,8 +564,7 @@ struct acceptor_test
         acc.open();
 
         // Bind to an address not assigned to any local interface
-        auto ec = acc.bind(endpoint(
-            ipv4_address("1.2.3.4"), 0));
+        auto ec = acc.bind(endpoint(ipv4_address("1.2.3.4"), 0));
         BOOST_TEST(ec);
 
         acc.close();

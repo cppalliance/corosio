@@ -20,7 +20,7 @@
 #include <boost/capy/error.hpp>
 #include <system_error>
 
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 
@@ -60,7 +60,7 @@ struct overlapped_op
     /** Function pointer type for cancellation hook. */
     using cancel_func_type = void (*)(overlapped_op*) noexcept;
 
-    long ready_             = 0;
+    long ready_ = 0;
     std::coroutine_handle<> h;
     capy::executor_ref ex;
     std::error_code* ec_out = nullptr;

@@ -12,7 +12,6 @@
 #include <boost/corosio/ipv4_address.hpp>
 
 #include <sstream>
-#include <string>
 
 #include "test_suite.hpp"
 

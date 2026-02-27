@@ -277,8 +277,7 @@ posix_resolver::resolve_op::request_cancel() noexcept
 }
 
 inline void
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
-posix_resolver::resolve_op::start(std::stop_token token)
+posix_resolver::resolve_op::start(std::stop_token const& token)
 {
     cancelled.store(false, std::memory_order_release);
     stop_cb.reset();
@@ -343,8 +342,7 @@ posix_resolver::reverse_resolve_op::request_cancel() noexcept
 }
 
 inline void
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
-posix_resolver::reverse_resolve_op::start(std::stop_token token)
+posix_resolver::reverse_resolve_op::start(std::stop_token const& token)
 {
     cancelled.store(false, std::memory_order_release);
     stop_cb.reset();

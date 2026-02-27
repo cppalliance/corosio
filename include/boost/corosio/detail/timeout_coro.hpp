@@ -46,8 +46,7 @@ namespace boost::corosio::detail {
 */
 struct timeout_coro
 {
-    struct promise_type
-        : capy::io_awaitable_promise_base<promise_type>
+    struct promise_type : capy::io_awaitable_promise_base<promise_type>
     {
         capy::io_env env_storage_;
 
@@ -66,12 +65,17 @@ struct timeout_coro
         timeout_coro get_return_object() noexcept
         {
             return timeout_coro{
-                std::coroutine_handle<promise_type>::from_promise(
-                    *this)};
+                std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
+        std::suspend_always initial_suspend() noexcept
+        {
+            return {};
+        }
+        std::suspend_never final_suspend() noexcept
+        {
+            return {};
+        }
         void return_void() noexcept {}
         void unhandled_exception() noexcept {}
 
@@ -94,19 +98,14 @@ struct timeout_coro
             }
 
             template<class Promise>
-            auto await_suspend(
-                std::coroutine_handle<Promise> h) noexcept
+            auto await_suspend(std::coroutine_handle<Promise> h) noexcept
             {
 #ifdef _MSC_VER
-                using R = decltype(
-                    a_.await_suspend(h, p_->environment()));
-                if constexpr (std::is_same_v<
-                                  R, std::coroutine_handle<>>)
-                    a_.await_suspend(h, p_->environment())
-                        .resume();
+                using R = decltype(a_.await_suspend(h, p_->environment()));
+                if constexpr (std::is_same_v<R, std::coroutine_handle<>>)
+                    a_.await_suspend(h, p_->environment()).resume();
                 else
-                    return a_.await_suspend(
-                        h, p_->environment());
+                    return a_.await_suspend(h, p_->environment());
 #else
                 return a_.await_suspend(h, p_->environment());
 #endif
@@ -124,8 +123,7 @@ struct timeout_coro
             }
             else
             {
-                static_assert(
-                    sizeof(A) == 0, "requires IoAwaitable");
+                static_assert(sizeof(A) == 0, "requires IoAwaitable");
             }
         }
     };
@@ -134,8 +132,7 @@ struct timeout_coro
 
     timeout_coro() noexcept : h_(nullptr) {}
 
-    explicit timeout_coro(
-        std::coroutine_handle<promise_type> h) noexcept
+    explicit timeout_coro(std::coroutine_handle<promise_type> h) noexcept
         : h_(h)
     {
     }
@@ -143,11 +140,10 @@ struct timeout_coro
     // Self-destroying via suspend_never at final_suspend
     ~timeout_coro() = default;
 
-    timeout_coro(timeout_coro const&) = delete;
+    timeout_coro(timeout_coro const&)            = delete;
     timeout_coro& operator=(timeout_coro const&) = delete;
 
-    timeout_coro(timeout_coro&& o) noexcept
-        : h_(o.h_)
+    timeout_coro(timeout_coro&& o) noexcept : h_(o.h_)
     {
         o.h_ = nullptr;
     }
@@ -171,7 +167,8 @@ struct timeout_coro
     @param src Stop source to signal on timeout.
 */
 template<typename Timer>
-timeout_coro make_timeout(Timer& t, std::stop_source src)
+timeout_coro
+make_timeout(Timer& t, std::stop_source src)
 {
     auto [ec] = co_await t.wait();
     if (!ec)

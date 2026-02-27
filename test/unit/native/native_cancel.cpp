@@ -37,8 +37,7 @@ struct native_cancel_test
 
         auto task = [&]() -> capy::task<> {
             auto [ec] = co_await cancel_after<Backend>(
-                inner_timer.wait(),
-                std::chrono::milliseconds(10));
+                inner_timer.wait(), std::chrono::milliseconds(10));
             result_ec = ec;
             completed = true;
         };
@@ -61,8 +60,7 @@ struct native_cancel_test
 
         auto task = [&]() -> capy::task<> {
             auto [ec] = co_await cancel_after<Backend>(
-                inner_timer.wait(),
-                std::chrono::seconds(1));
+                inner_timer.wait(), std::chrono::seconds(1));
             result_ec = ec;
             completed = true;
         };
@@ -86,8 +84,8 @@ struct native_cancel_test
             timer::clock_type::now() + std::chrono::milliseconds(10);
 
         auto task = [&]() -> capy::task<> {
-            auto [ec] = co_await cancel_at<Backend>(
-                inner_timer.wait(), deadline);
+            auto [ec] =
+                co_await cancel_at<Backend>(inner_timer.wait(), deadline);
             result_ec = ec;
             completed = true;
         };

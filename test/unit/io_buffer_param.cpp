@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/corosio/io_buffer_param.hpp>
+#include <boost/corosio/detail/buffer_param.hpp>
 
 #include <boost/capy/buffers/buffer_pair.hpp>
 #include <span>
@@ -18,11 +18,11 @@
 
 namespace boost::corosio {
 
-struct io_buffer_param_test
+struct buffer_param_test
 {
     // Helper to reduce repeated copy_to assertion pattern
     static void check_copy(
-        io_buffer_param p,
+        buffer_param p,
         std::initializer_list<std::pair<void const*, std::size_t>> expected)
     {
         capy::mutable_buffer dest[8];
@@ -38,7 +38,7 @@ struct io_buffer_param_test
     }
 
     // Helper for checking empty/zero-byte sequences
-    static void check_empty(io_buffer_param p)
+    static void check_empty(buffer_param p)
     {
         capy::mutable_buffer dest[8];
         BOOST_TEST_EQ(p.copy_to(dest, 8), 0);
@@ -119,7 +119,7 @@ struct io_buffer_param_test
             capy::const_buffer(data1, 3), capy::const_buffer(data2, 3),
             capy::const_buffer(data3, 5)};
 
-        io_buffer_param ref(arr);
+        buffer_param ref(arr);
 
         // copy only 2 buffers
         capy::mutable_buffer dest[2];
@@ -222,15 +222,15 @@ struct io_buffer_param_test
         check_empty(arr);
     }
 
-    // Helper function that accepts io_buffer_param by value
-    static std::size_t acceptByValue(io_buffer_param p)
+    // Helper function that accepts buffer_param by value
+    static std::size_t acceptByValue(buffer_param p)
     {
         capy::mutable_buffer dest[8];
         return p.copy_to(dest, 8);
     }
 
-    // Helper function that accepts io_buffer_param by const reference
-    static std::size_t acceptByConstRef(io_buffer_param const& p)
+    // Helper function that accepts buffer_param by const reference
+    static std::size_t acceptByConstRef(buffer_param const& p)
     {
         capy::mutable_buffer dest[8];
         return p.copy_to(dest, 8);
@@ -238,7 +238,7 @@ struct io_buffer_param_test
 
     void testPassByValue()
     {
-        // Test that io_buffer_param works when passed by value
+        // Test that buffer_param works when passed by value
         char const data[] = "Hello";
         capy::const_buffer cb(data, 5);
 
@@ -246,8 +246,8 @@ struct io_buffer_param_test
         auto n = acceptByValue(cb);
         BOOST_TEST_EQ(n, 1);
 
-        // Pass io_buffer_param object
-        io_buffer_param p(cb);
+        // Pass buffer_param object
+        buffer_param p(cb);
         n = acceptByValue(p);
         BOOST_TEST_EQ(n, 1);
 
@@ -260,16 +260,16 @@ struct io_buffer_param_test
 
     void testPassByConstRef()
     {
-        // Test that io_buffer_param works when passed by const reference
+        // Test that buffer_param works when passed by const reference
         char const data[] = "Hello";
         capy::const_buffer cb(data, 5);
 
-        // Pass io_buffer_param object by const ref
-        io_buffer_param p(cb);
+        // Pass buffer_param object by const ref
+        buffer_param p(cb);
         auto n = acceptByConstRef(p);
         BOOST_TEST_EQ(n, 1);
 
-        // Pass buffer sequence directly (creates temporary io_buffer_param)
+        // Pass buffer sequence directly (creates temporary buffer_param)
         n = acceptByConstRef(
             std::array<capy::const_buffer, 2>{
                 {capy::const_buffer(data, 2),
@@ -302,6 +302,6 @@ struct io_buffer_param_test
     }
 };
 
-TEST_SUITE(io_buffer_param_test, "boost.corosio.io_buffer_param");
+TEST_SUITE(buffer_param_test, "boost.corosio.buffer_param");
 
 } // namespace boost::corosio

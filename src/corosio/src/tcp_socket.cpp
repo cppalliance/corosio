@@ -49,13 +49,13 @@ tcp_socket::open_for_family(int family, int type, int protocol)
     auto& svc          = static_cast<detail::win_sockets&>(h_.service());
     auto& wrapper      = static_cast<tcp_socket::implementation&>(*h_.get());
     std::error_code ec = svc.open_socket(
-        *static_cast<detail::win_socket&>(wrapper).get_internal(),
-        family, type, protocol);
+        *static_cast<detail::win_socket&>(wrapper).get_internal(), family, type,
+        protocol);
 #else
-    auto& svc = static_cast<detail::socket_service&>(h_.service());
+    auto& svc          = static_cast<detail::socket_service&>(h_.service());
     std::error_code ec = svc.open_socket(
-        static_cast<tcp_socket::implementation&>(*h_.get()),
-        family, type, protocol);
+        static_cast<tcp_socket::implementation&>(*h_.get()), family, type,
+        protocol);
 #endif
     if (ec)
         detail::throw_system_error(ec, "tcp_socket::open");

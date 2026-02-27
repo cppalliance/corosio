@@ -16,7 +16,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/except.hpp>
 
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>

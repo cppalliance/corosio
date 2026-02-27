@@ -19,12 +19,12 @@ namespace boost::corosio {
 // Callable wrapper for passing to test helper templates
 struct openssl_stream_factory
 {
-    auto operator()(tcp_socket& s, tls_context ctx) const
+    auto operator()(tcp_socket& s, tls_context const& ctx) const
     {
         return openssl_stream(&s, ctx);
     }
 
-    auto operator()(corosio::test::mocket& s, tls_context ctx) const
+    auto operator()(corosio::test::mocket& s, tls_context const& ctx) const
     {
         return openssl_stream(&s, ctx);
     }

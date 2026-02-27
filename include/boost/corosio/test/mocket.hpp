@@ -522,8 +522,7 @@ make_mocket_pair(
     acc.open();
     acc.set_option(socket_option::reuse_address(true));
     if (auto bind_ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
-        throw std::runtime_error(
-            "mocket bind failed: " + bind_ec.message());
+        throw std::runtime_error("mocket bind failed: " + bind_ec.message());
     if (auto listen_ec = acc.listen())
         throw std::runtime_error(
             "mocket listen failed: " + listen_ec.message());

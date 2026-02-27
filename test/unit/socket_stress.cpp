@@ -29,7 +29,6 @@
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
-#include <boost/capy/error.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -536,6 +535,7 @@ struct concurrent_ops_stress_test
 
         // Create multiple tcp_socket pairs
         std::vector<std::pair<tcp_socket, tcp_socket>> pairs;
+        pairs.reserve(num_pairs);
         for (int i = 0; i < num_pairs; ++i)
         {
             pairs.push_back(make_stress_pair(ioc));

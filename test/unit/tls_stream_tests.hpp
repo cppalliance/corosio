@@ -77,8 +77,8 @@ testHandshakeFuse(StreamFactory make_stream)
             BOOST_TEST(!client_ec);
             BOOST_TEST(!server_ec);
 
-            m1.close();
-            m2.close();
+            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close(); // NOLINT(bugprone-unused-return-value)
             co_return;
         });
     }
@@ -154,8 +154,8 @@ testReadWriteFuse(StreamFactory make_stream)
             capy::run_async(ioc.get_executor())(server_task());
             ioc.run();
 
-            m1.close();
-            m2.close();
+            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close(); // NOLINT(bugprone-unused-return-value)
             co_return;
         });
     }
@@ -216,7 +216,7 @@ testShutdownFuse(StreamFactory make_stream)
             capy::run_async(ioc.get_executor())(server_task());
             ioc.run();
 
-            m1.close();
+            m1.close(); // NOLINT(bugprone-unused-return-value)
             co_return;
         });
     }
@@ -260,7 +260,7 @@ testFailureCases(StreamFactory make_stream)
     {
         auto client_ctx = make_client_context();
         auto server_ctx = make_anon_context();
-        server_ctx.set_ciphersuites("");
+        server_ctx.set_ciphersuites(""); // NOLINT(bugprone-unused-return-value)
         run_tls_test_fail(
             ioc, client_ctx, server_ctx, make_stream, make_stream);
         ioc.restart();
@@ -577,8 +577,8 @@ testReset(StreamFactory make_stream, std::array<context_mode, N> const& modes)
         // Round 2
         do_round("hello2");
 
-        m1.close();
-        m2.close();
+        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close(); // NOLINT(bugprone-unused-return-value)
     }
 }
 
@@ -666,8 +666,8 @@ testResetViaHandshake(
         // Round 2
         do_round("round2");
 
-        m1.close();
-        m2.close();
+        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close(); // NOLINT(bugprone-unused-return-value)
     }
 }
 
@@ -755,8 +755,8 @@ testResetFuse(StreamFactory make_stream)
                 BOOST_TEST(!sec);
             }
 
-            m1.close();
-            m2.close();
+            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close(); // NOLINT(bugprone-unused-return-value)
         });
     }
 }

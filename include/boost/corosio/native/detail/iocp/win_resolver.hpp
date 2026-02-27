@@ -35,8 +35,8 @@
 #include <boost/corosio/native/detail/iocp/win_mutex.hpp>
 #include <boost/corosio/native/detail/iocp/win_wsa_init.hpp>
 
-#include <boost/corosio/detail/endpoint_convert.hpp>
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 
 #include <WS2tcpip.h>

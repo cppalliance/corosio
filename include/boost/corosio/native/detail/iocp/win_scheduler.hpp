@@ -29,7 +29,7 @@
 #include <boost/corosio/native/detail/iocp/win_timers.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_resolver_service.hpp>
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
 
@@ -226,15 +226,13 @@ win_scheduler::shutdown()
             ULONG_PTR key;
             LPOVERLAPPED overlapped;
             ::GetQueuedCompletionStatus(
-                iocp_, &bytes, &key, &overlapped,
-                iocp::max_gqcs_timeout);
+                iocp_, &bytes, &key, &overlapped, iocp::max_gqcs_timeout);
             if (overlapped)
             {
                 ::InterlockedDecrement(&outstanding_work_);
                 if (key == key_posted)
                 {
-                    auto* op =
-                        reinterpret_cast<scheduler_op*>(overlapped);
+                    auto* op = reinterpret_cast<scheduler_op*>(overlapped);
                     op->destroy();
                 }
                 else
@@ -364,8 +362,7 @@ win_scheduler::on_pending(overlapped_op* op) const
 }
 
 inline void
-win_scheduler::on_completion(
-    overlapped_op* op, DWORD error, DWORD bytes) const
+win_scheduler::on_completion(overlapped_op* op, DWORD error, DWORD bytes) const
 {
     // Sync completion: pack results into op and post for dispatch.
     op->ready_            = 1;
@@ -579,8 +576,7 @@ win_scheduler::do_one(unsigned long timeout_ms)
                 // (on_pending/on_completion set it) — safe to dispatch.
                 // If old value was 0, the initiator hasn't returned yet —
                 // skip dispatch; on_pending() will re-post.
-                if (::InterlockedCompareExchange(
-                        &ov_op->ready_, 1, 0) == 1)
+                if (::InterlockedCompareExchange(&ov_op->ready_, 1, 0) == 1)
                 {
                     ov_op->complete(this, bytes, err);
                     work_finished();

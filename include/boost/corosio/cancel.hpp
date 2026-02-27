@@ -63,13 +63,10 @@ namespace boost::corosio {
 
     @see cancel_after
 */
-auto cancel_at(
-    capy::IoAwaitable auto&& op,
-    timer& t,
-    timer::time_point deadline)
+auto
+cancel_at(capy::IoAwaitable auto&& op, timer& t, timer::time_point deadline)
 {
-    return detail::cancel_at_awaitable<
-        std::decay_t<decltype(op)>, timer>(
+    return detail::cancel_at_awaitable<std::decay_t<decltype(op)>, timer>(
         std::forward<decltype(op)>(op), t, deadline);
 }
 
@@ -110,14 +107,11 @@ auto cancel_at(
 
     @see cancel_at
 */
-auto cancel_after(
-    capy::IoAwaitable auto&& op,
-    timer& t,
-    timer::duration timeout)
+auto
+cancel_after(capy::IoAwaitable auto&& op, timer& t, timer::duration timeout)
 {
     return cancel_at(
-        std::forward<decltype(op)>(op), t,
-        timer::clock_type::now() + timeout);
+        std::forward<decltype(op)>(op), t, timer::clock_type::now() + timeout);
 }
 
 /** Cancel an operation if it does not complete by a deadline.
@@ -155,12 +149,10 @@ auto cancel_after(
 
     @see cancel_after
 */
-auto cancel_at(
-    capy::IoAwaitable auto&& op,
-    timer::time_point deadline)
+auto
+cancel_at(capy::IoAwaitable auto&& op, timer::time_point deadline)
 {
-    return detail::cancel_at_awaitable<
-        std::decay_t<decltype(op)>, timer, true>(
+    return detail::cancel_at_awaitable<std::decay_t<decltype(op)>, timer, true>(
         std::forward<decltype(op)>(op), deadline);
 }
 
@@ -198,13 +190,11 @@ auto cancel_at(
 
     @see cancel_at
 */
-auto cancel_after(
-    capy::IoAwaitable auto&& op,
-    timer::duration timeout)
+auto
+cancel_after(capy::IoAwaitable auto&& op, timer::duration timeout)
 {
     return cancel_at(
-        std::forward<decltype(op)>(op),
-        timer::clock_type::now() + timeout);
+        std::forward<decltype(op)>(op), timer::clock_type::now() + timeout);
 }
 
 } // namespace boost::corosio

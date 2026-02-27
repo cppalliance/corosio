@@ -28,7 +28,6 @@
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
-#include <memory>
 #include <stop_token>
 #include <type_traits>
 
@@ -143,8 +142,7 @@ public:
 
         @throws std::system_error on bind or listen failure.
     */
-    tcp_acceptor(
-        capy::execution_context& ctx, endpoint ep, int backlog = 128 );
+    tcp_acceptor(capy::execution_context& ctx, endpoint ep, int backlog = 128);
 
     /** Construct an acceptor from an executor.
 
@@ -169,7 +167,7 @@ public:
     */
     template<class Ex>
         requires capy::Executor<Ex>
-    tcp_acceptor(Ex const& ex, endpoint ep, int backlog = 128 )
+    tcp_acceptor(Ex const& ex, endpoint ep, int backlog = 128)
         : tcp_acceptor(ex.context(), ep, backlog)
     {
     }
@@ -235,7 +233,7 @@ public:
 
         @see bind, listen
     */
-    void open( tcp proto = tcp::v4() );
+    void open(tcp proto = tcp::v4());
 
     /** Bind to a local endpoint.
 
@@ -257,7 +255,7 @@ public:
 
         @throws std::logic_error if the acceptor is not open.
     */
-    [[nodiscard]] std::error_code bind( endpoint ep );
+    [[nodiscard]] std::error_code bind(endpoint ep);
 
     /** Start listening for incoming connections.
 
@@ -272,7 +270,7 @@ public:
 
         @throws std::logic_error if the acceptor is not open.
     */
-    [[nodiscard]] std::error_code listen( int backlog = 128 );
+    [[nodiscard]] std::error_code listen(int backlog = 128);
 
     /** Close the acceptor.
 
@@ -379,16 +377,14 @@ public:
         @throws std::system_error on failure.
     */
     template<class Option>
-    void set_option( Option const& opt )
+    void set_option(Option const& opt)
     {
         if (!is_open())
-            detail::throw_logic_error(
-                "set_option: acceptor not open" );
+            detail::throw_logic_error("set_option: acceptor not open");
         std::error_code ec = get().set_option(
-            Option::level(), Option::name(), opt.data(), opt.size() );
+            Option::level(), Option::name(), opt.data(), opt.size());
         if (ec)
-            detail::throw_system_error(
-                ec, "tcp_acceptor::set_option" );
+            detail::throw_system_error(ec, "tcp_acceptor::set_option");
     }
 
     /** Get a socket option from the acceptor.
@@ -409,16 +405,14 @@ public:
     Option get_option() const
     {
         if (!is_open())
-            detail::throw_logic_error(
-                "get_option: acceptor not open" );
+            detail::throw_logic_error("get_option: acceptor not open");
         Option opt{};
         std::size_t sz = opt.size();
-        std::error_code ec = get().get_option(
-            Option::level(), Option::name(), opt.data(), &sz );
+        std::error_code ec =
+            get().get_option(Option::level(), Option::name(), opt.data(), &sz);
         if (ec)
-            detail::throw_system_error(
-                ec, "tcp_acceptor::get_option" );
-        opt.resize( sz );
+            detail::throw_system_error(ec, "tcp_acceptor::get_option");
+        opt.resize(sz);
         return opt;
     }
 
@@ -452,8 +446,10 @@ public:
             @return Error code on failure, empty on success.
         */
         virtual std::error_code set_option(
-            int level, int optname,
-            void const* data, std::size_t size) noexcept = 0;
+            int level,
+            int optname,
+            void const* data,
+            std::size_t size) noexcept = 0;
 
         /** Get a socket option.
 
@@ -464,9 +460,9 @@ public:
                 the size of the option value.
             @return Error code on failure, empty on success.
         */
-        virtual std::error_code get_option(
-            int level, int optname,
-            void* data, std::size_t* size) const noexcept = 0;
+        virtual std::error_code
+        get_option(int level, int optname, void* data, std::size_t* size)
+            const noexcept = 0;
     };
 
 protected:

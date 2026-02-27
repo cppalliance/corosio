@@ -729,7 +729,10 @@ waiter_node::canceller::operator()() const
 
 inline void
 waiter_node::completion_op::do_complete(
-    [[maybe_unused]] void* owner, scheduler_op* base, std::uint32_t, std::uint32_t)
+    [[maybe_unused]] void* owner,
+    scheduler_op* base,
+    std::uint32_t,
+    std::uint32_t)
 {
     // owner is always non-null here. The destroy path (owner == nullptr)
     // is unreachable because completion_op overrides destroy() directly,
@@ -773,7 +776,7 @@ waiter_node::completion_op::destroy()
     // which drains waiters still in the timer heap (the other path).
     auto* w = waiter_;
     w->stop_cb_.reset();
-    auto h = std::exchange(w->h_, {});
+    auto h      = std::exchange(w->h_, {});
     auto& sched = w->svc_->get_scheduler();
     delete w;
     sched.work_finished();

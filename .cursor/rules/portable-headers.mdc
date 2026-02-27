@@ -1,116 +1,81 @@
 ---
-description: No non-portable header includes in public headers
+description: No non-portable header includes in type-erased public headers
 alwaysApply: false
 ---
 # Portable Headers Rule
 
-**All headers in `include/boost/corosio/` (including all subdirectories) MUST NOT include platform-specific headers.**
+**Headers in `include/boost/corosio/` and `include/boost/corosio/detail/` MUST NOT include platform-specific headers.**
+
+The `native/` subtree (`include/boost/corosio/native/`) is exempt — it is the direct/native API that deliberately exposes platform types.
 
 ## Scope
 
-**Public headers**: ANY header file in `include/boost/corosio/` or any of its subdirectories.
+**Type-erased headers** (platform includes FORBIDDEN):
+- `include/boost/corosio/*.hpp`
+- `include/boost/corosio/detail/*.hpp`
+- `include/boost/corosio/concept/*.hpp`
 
-Examples:
-- `include/boost/corosio/endpoint.hpp`
-- `include/boost/corosio/detail/config.hpp`
-- `include/boost/corosio/concept/...`
+**Native/direct headers** (platform includes ALLOWED):
+- `include/boost/corosio/native/*.hpp`
+- `include/boost/corosio/native/detail/**/*.hpp`
 
-The entire `include/` tree is considered public API. This includes `detail/`, `concept/`, and any other subdirectories.
-
-## Prohibited Headers
-
-The following types of headers are **FORBIDDEN** in public headers:
+## Prohibited Headers (in type-erased scope)
 
 ### Windows-specific
-- `<windows.h>`
-- `<WinSock2.h>`
-- `<Ws2tcpip.h>`
-- `<MSWSock.h>`
+- `<windows.h>`, `<WinSock2.h>`, `<Ws2tcpip.h>`, `<MSWSock.h>`
 - Any other Windows SDK headers
 
 ### Unix/POSIX-specific
-- `<sys/socket.h>`
-- `<netinet/in.h>`
-- `<arpa/inet.h>`
-- `<unistd.h>`
-- `<sys/types.h>`
+- `<sys/socket.h>`, `<netinet/in.h>`, `<arpa/inet.h>`, `<unistd.h>`, `<sys/types.h>`
+- `<errno.h>` when used for platform-specific constants (e.g., `ECANCELED`)
 - Any other POSIX/Unix-specific headers
 
 ### Platform-specific macros and types
-- Any macros or types that require platform-specific headers
-- Platform-specific constants (e.g., `AF_INET`, `INADDR_ANY`)
+- Constants like `AF_INET`, `INADDR_ANY`, `ECANCELED`, `ERROR_OPERATION_ABORTED`
+- Types like `sockaddr_in`, `sockaddr_in6`, `sockaddr_storage`, `SOCKET`
 
-## Allowed Locations
+## Allowed Locations for Platform-Specific Code
 
-Platform-specific code is **ONLY** allowed in:
-
-- Implementation files in `src/`
-- Platform abstraction layers in `src/`
+- `include/boost/corosio/native/` and `include/boost/corosio/native/detail/` (direct API)
+- Implementation files in `src/` (compilation firewall)
 
 ## Rationale
 
-1. **Portability**: Public headers should compile on any platform without platform-specific dependencies
-2. **Maintainability**: Platform-specific code should be isolated in implementation files
-3. **User Experience**: Users should not be exposed to platform-specific types or headers
-4. **Clean API**: The public API should be platform-agnostic
+The library has two API layers:
+1. **Type-erased** (`corosio/` and `corosio/detail/`): portable, no platform headers leak to users
+2. **Native/direct** (`corosio/native/`): opt-in, exposes platform types for zero-overhead access
 
 ## Examples
 
-### ❌ Bad (in public header)
+### Bad (platform header in type-erased scope)
 ```cpp
-// include/boost/corosio/endpoint.hpp
-#ifdef _WIN32
-#include <WinSock2.h>
-#else
+// include/boost/corosio/detail/endpoint_convert.hpp  ← WRONG location
+#include <sys/socket.h>
 #include <netinet/in.h>
-#endif
-
-class endpoint {
-    sockaddr_in to_sockaddr_in() const;  // Platform-specific type
-};
 ```
 
-### ✅ Good (in public header)
+### Good (platform header in native scope)
+```cpp
+// include/boost/corosio/native/detail/endpoint_convert.hpp  ← correct
+#include <sys/socket.h>
+#include <netinet/in.h>
+```
+
+### Good (type-erased public header)
 ```cpp
 // include/boost/corosio/endpoint.hpp
-#include <boost/url/ipv4_address.hpp>
 #include <cstdint>
 
 class endpoint {
-    urls::ipv4_address v4_address() const noexcept;
+    ipv4_address v4_address() const noexcept;
     std::uint16_t port() const noexcept;
 };
 ```
 
-### ✅ Good (in implementation file)
-```cpp
-// src/src/detail/endpoint_convert.hpp
-#ifdef _WIN32
-#include <WinSock2.h>
-#else
-#include <netinet/in.h>
-#endif
-
-#include <boost/corosio/endpoint.hpp>
-
-namespace boost {
-namespace corosio {
-namespace detail {
-
-sockaddr_in to_sockaddr_in(endpoint const& ep) {
-    // Platform-specific conversion logic
-}
-
-} // namespace detail
-} // namespace corosio
-} // namespace boost
-```
-
 ## Enforcement
 
-When adding or modifying public headers:
+When adding or modifying headers in the type-erased scope:
 
-1. Check all `#include` directives
-2. Ensure no platform-specific headers are included
-3. Move any platform-specific code to `src/` implementation files
-4. Use platform abstraction utilities in `src/src/detail/` for conversions
+1. Check all `#include` directives for platform-specific headers
+2. If platform types are needed, the header belongs in `native/detail/`
+3. Type-erased code reaches platform APIs only through `src/` compiled translation units

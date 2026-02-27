@@ -67,7 +67,8 @@ namespace boost::corosio {
     @see cancel_after, native_timer
 */
 template<auto Backend>
-auto cancel_at(
+auto
+cancel_at(
     capy::IoAwaitable auto&& op,
     native_timer<Backend>& t,
     timer::time_point deadline)
@@ -118,14 +119,14 @@ auto cancel_at(
     @see cancel_at, native_timer
 */
 template<auto Backend>
-auto cancel_after(
+auto
+cancel_after(
     capy::IoAwaitable auto&& op,
     native_timer<Backend>& t,
     timer::duration timeout)
 {
     return cancel_at(
-        std::forward<decltype(op)>(op), t,
-        timer::clock_type::now() + timeout);
+        std::forward<decltype(op)>(op), t, timer::clock_type::now() + timeout);
 }
 
 /** Cancel an operation if it does not complete by a deadline.
@@ -167,9 +168,8 @@ auto cancel_after(
     @see cancel_after, native_timer
 */
 template<auto Backend>
-auto cancel_at(
-    capy::IoAwaitable auto&& op,
-    timer::time_point deadline)
+auto
+cancel_at(capy::IoAwaitable auto&& op, timer::time_point deadline)
 {
     return detail::cancel_at_awaitable<
         std::decay_t<decltype(op)>, native_timer<Backend>, true>(
@@ -213,13 +213,11 @@ auto cancel_at(
     @see cancel_at, native_timer
 */
 template<auto Backend>
-auto cancel_after(
-    capy::IoAwaitable auto&& op,
-    timer::duration timeout)
+auto
+cancel_after(capy::IoAwaitable auto&& op, timer::duration timeout)
 {
     return cancel_at<Backend>(
-        std::forward<decltype(op)>(op),
-        timer::clock_type::now() + timeout);
+        std::forward<decltype(op)>(op), timer::clock_type::now() + timeout);
 }
 
 } // namespace boost::corosio

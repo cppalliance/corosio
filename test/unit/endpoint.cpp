@@ -10,7 +10,6 @@
 // Test that header file is self-contained.
 #include <boost/corosio/endpoint.hpp>
 
-#include <string>
 #include <system_error>
 
 #include "test_suite.hpp"

@@ -13,7 +13,6 @@
 #include <boost/corosio/detail/config.hpp>
 
 #include <array>
-#include <cstdint>
 #include <iosfwd>
 #include <string>
 #include <string_view>

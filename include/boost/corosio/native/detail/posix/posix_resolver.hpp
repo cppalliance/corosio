@@ -18,7 +18,7 @@
 #include <boost/corosio/resolver.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
-#include <boost/corosio/detail/endpoint_convert.hpp>
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
@@ -221,7 +221,7 @@ public:
         void operator()() override;
         void destroy() override;
         void request_cancel() noexcept;
-        void start(std::stop_token token);
+        void start(std::stop_token const& token);
     };
 
     // reverse_resolve_op - operation state for reverse DNS resolution
@@ -265,7 +265,7 @@ public:
         void operator()() override;
         void destroy() override;
         void request_cancel() noexcept;
-        void start(std::stop_token token);
+        void start(std::stop_token const& token);
     };
 
     explicit posix_resolver(posix_resolver_service& svc) noexcept;

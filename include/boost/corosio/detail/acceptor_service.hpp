@@ -47,7 +47,9 @@ public:
     */
     virtual std::error_code open_acceptor_socket(
         tcp_acceptor::implementation& impl,
-        int family, int type, int protocol) = 0;
+        int family,
+        int type,
+        int protocol) = 0;
 
     /** Bind an open acceptor to a local endpoint.
 
@@ -55,8 +57,8 @@ public:
         @param ep The local endpoint to bind to.
         @return Error code on failure, empty on success.
     */
-    virtual std::error_code bind_acceptor(
-        tcp_acceptor::implementation& impl, endpoint ep) = 0;
+    virtual std::error_code
+    bind_acceptor(tcp_acceptor::implementation& impl, endpoint ep) = 0;
 
     /** Start listening for incoming connections.
 
@@ -67,8 +69,8 @@ public:
         @param backlog The maximum length of the pending connection queue.
         @return Error code on failure, empty on success.
     */
-    virtual std::error_code listen_acceptor(
-        tcp_acceptor::implementation& impl, int backlog) = 0;
+    virtual std::error_code
+    listen_acceptor(tcp_acceptor::implementation& impl, int backlog) = 0;
 
 protected:
     /// Construct the acceptor service.

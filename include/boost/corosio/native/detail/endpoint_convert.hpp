@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_ENDPOINT_CONVERT_HPP
-#define BOOST_COROSIO_DETAIL_ENDPOINT_CONVERT_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_ENDPOINT_CONVERT_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_ENDPOINT_CONVERT_HPP
 
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/detail/platform.hpp>
@@ -107,7 +107,7 @@ to_v4_mapped_sockaddr_in6(endpoint const& ep) noexcept
     // ::ffff:0:0/96 prefix
     sa.sin6_addr.s6_addr[10] = 0xff;
     sa.sin6_addr.s6_addr[11] = 0xff;
-    auto bytes = ep.v4_address().to_bytes();
+    auto bytes               = ep.v4_address().to_bytes();
     std::memcpy(&sa.sin6_addr.s6_addr[12], bytes.data(), 4);
     return sa;
 }
@@ -122,18 +122,18 @@ to_v4_mapped_sockaddr_in6(endpoint const& ep) noexcept
     @return The length of the filled sockaddr structure.
 */
 inline socklen_t
-to_sockaddr( endpoint const& ep, sockaddr_storage& storage ) noexcept
+to_sockaddr(endpoint const& ep, sockaddr_storage& storage) noexcept
 {
-    std::memset( &storage, 0, sizeof( storage ) );
-    if( ep.is_v4() )
+    std::memset(&storage, 0, sizeof(storage));
+    if (ep.is_v4())
     {
-        auto sa = to_sockaddr_in( ep );
-        std::memcpy( &storage, &sa, sizeof( sa ) );
-        return sizeof( sa );
+        auto sa = to_sockaddr_in(ep);
+        std::memcpy(&storage, &sa, sizeof(sa));
+        return sizeof(sa);
     }
-    auto sa6 = to_sockaddr_in6( ep );
-    std::memcpy( &storage, &sa6, sizeof( sa6 ) );
-    return sizeof( sa6 );
+    auto sa6 = to_sockaddr_in6(ep);
+    std::memcpy(&storage, &sa6, sizeof(sa6));
+    return sizeof(sa6);
 }
 
 /** Convert endpoint to sockaddr_storage for a specific socket family.
@@ -150,9 +150,7 @@ to_sockaddr( endpoint const& ep, sockaddr_storage& storage ) noexcept
 */
 inline socklen_t
 to_sockaddr(
-    endpoint const& ep,
-    int socket_family,
-    sockaddr_storage& storage) noexcept
+    endpoint const& ep, int socket_family, sockaddr_storage& storage) noexcept
 {
     // IPv4 endpoint on IPv6 socket: use IPv4-mapped address
     if (ep.is_v4() && socket_family == AF_INET6)
@@ -174,19 +172,19 @@ to_sockaddr(
     @return An endpoint with address and port extracted from storage.
 */
 inline endpoint
-from_sockaddr( sockaddr_storage const& storage ) noexcept
+from_sockaddr(sockaddr_storage const& storage) noexcept
 {
-    if( storage.ss_family == AF_INET )
+    if (storage.ss_family == AF_INET)
     {
         sockaddr_in sa;
-        std::memcpy( &sa, &storage, sizeof( sa ) );
-        return from_sockaddr_in( sa );
+        std::memcpy(&sa, &storage, sizeof(sa));
+        return from_sockaddr_in(sa);
     }
-    if( storage.ss_family == AF_INET6 )
+    if (storage.ss_family == AF_INET6)
     {
         sockaddr_in6 sa6;
-        std::memcpy( &sa6, &storage, sizeof( sa6 ) );
-        return from_sockaddr_in6( sa6 );
+        std::memcpy(&sa6, &storage, sizeof(sa6));
+        return from_sockaddr_in6(sa6);
     }
     return endpoint{};
 }
@@ -197,7 +195,7 @@ from_sockaddr( sockaddr_storage const& storage ) noexcept
     @return `AF_INET` for IPv4, `AF_INET6` for IPv6.
 */
 inline int
-endpoint_family( endpoint const& ep ) noexcept
+endpoint_family(endpoint const& ep) noexcept
 {
     return ep.is_v6() ? AF_INET6 : AF_INET;
 }

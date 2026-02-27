@@ -14,7 +14,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io/io_read_stream.hpp>
 #include <boost/corosio/io/io_write_stream.hpp>
-#include <boost/corosio/io_buffer_param.hpp>
+#include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <coroutine>
@@ -88,7 +88,7 @@ public:
         virtual std::coroutine_handle<> read_some(
             std::coroutine_handle<>,
             capy::executor_ref,
-            io_buffer_param,
+            buffer_param,
             std::stop_token,
             std::error_code*,
             std::size_t*) = 0;
@@ -97,7 +97,7 @@ public:
         virtual std::coroutine_handle<> write_some(
             std::coroutine_handle<>,
             capy::executor_ref,
-            io_buffer_param,
+            buffer_param,
             std::stop_token,
             std::error_code*,
             std::size_t*) = 0;
@@ -113,7 +113,7 @@ protected:
     std::coroutine_handle<> do_read_some(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
-        io_buffer_param buffers,
+        buffer_param buffers,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override
@@ -125,7 +125,7 @@ protected:
     std::coroutine_handle<> do_write_some(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
-        io_buffer_param buffers,
+        buffer_param buffers,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override

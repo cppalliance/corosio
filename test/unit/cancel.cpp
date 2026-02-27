@@ -64,8 +64,7 @@ struct cancel_test
 
         auto task = [&]() -> capy::task<> {
             auto [ec] = co_await cancel_after(
-                inner_timer.wait(), timeout_timer,
-                std::chrono::seconds(1));
+                inner_timer.wait(), timeout_timer, std::chrono::seconds(1));
             result_ec = ec;
             completed = true;
         };
@@ -116,8 +115,7 @@ struct cancel_test
 
         auto task = [&]() -> capy::task<> {
             auto [ec] = co_await cancel_after(
-                inner_timer.wait(), timeout_timer,
-                std::chrono::seconds(60));
+                inner_timer.wait(), timeout_timer, std::chrono::seconds(60));
             result_ec = ec;
             completed = true;
         };
@@ -128,8 +126,7 @@ struct cancel_test
             stop_src.request_stop();
         };
 
-        capy::run_async(ioc.get_executor(), stop_src.get_token())(
-            task());
+        capy::run_async(ioc.get_executor(), stop_src.get_token())(task());
         capy::run_async(ioc.get_executor())(canceller());
 
         ioc.run();
@@ -176,8 +173,8 @@ struct cancel_test
             timer::clock_type::now() + std::chrono::milliseconds(10);
 
         auto task = [&]() -> capy::task<> {
-            auto [ec] = co_await cancel_at(
-                inner_timer.wait(), timeout_timer, deadline);
+            auto [ec] =
+                co_await cancel_at(inner_timer.wait(), timeout_timer, deadline);
             result_ec = ec;
             completed = true;
         };
@@ -200,8 +197,7 @@ struct cancel_test
             // First: inner completes before timeout
             inner_timer.expires_after(std::chrono::milliseconds(10));
             auto [ec1] = co_await cancel_after(
-                inner_timer.wait(), timeout_timer,
-                std::chrono::seconds(1));
+                inner_timer.wait(), timeout_timer, std::chrono::seconds(1));
             BOOST_TEST(!ec1);
             ++completed;
 
@@ -216,8 +212,7 @@ struct cancel_test
             // Third: inner completes again
             inner_timer.expires_after(std::chrono::milliseconds(10));
             auto [ec3] = co_await cancel_after(
-                inner_timer.wait(), timeout_timer,
-                std::chrono::seconds(1));
+                inner_timer.wait(), timeout_timer, std::chrono::seconds(1));
             BOOST_TEST(!ec3);
             ++completed;
         };
@@ -241,8 +236,7 @@ struct cancel_test
 
         auto task = [&]() -> capy::task<> {
             auto [ec] = co_await cancel_after(
-                inner_timer.wait(),
-                std::chrono::milliseconds(10));
+                inner_timer.wait(), std::chrono::milliseconds(10));
             result_ec = ec;
             completed = true;
         };
@@ -265,8 +259,7 @@ struct cancel_test
 
         auto task = [&]() -> capy::task<> {
             auto [ec] = co_await cancel_after(
-                inner_timer.wait(),
-                std::chrono::seconds(1));
+                inner_timer.wait(), std::chrono::seconds(1));
             result_ec = ec;
             completed = true;
         };
@@ -290,8 +283,7 @@ struct cancel_test
             timer::clock_type::now() + std::chrono::milliseconds(10);
 
         auto task = [&]() -> capy::task<> {
-            auto [ec] = co_await cancel_at(
-                inner_timer.wait(), deadline);
+            auto [ec] = co_await cancel_at(inner_timer.wait(), deadline);
             result_ec = ec;
             completed = true;
         };

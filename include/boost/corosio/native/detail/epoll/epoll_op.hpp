@@ -22,10 +22,10 @@
 #include <boost/capy/error.hpp>
 #include <system_error>
 
-#include <boost/corosio/detail/make_err.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
-#include <boost/corosio/detail/endpoint_convert.hpp>
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
 
 #include <unistd.h>
 #include <errno.h>
@@ -222,8 +222,7 @@ struct epoll_op : scheduler_op
         cancelled.store(true, std::memory_order_release);
     }
 
-    // NOLINTNEXTLINE(performance-unnecessary-value-param)
-    void start(std::stop_token token, epoll_socket* impl)
+    void start(std::stop_token const& token, epoll_socket* impl)
     {
         cancelled.store(false, std::memory_order_release);
         stop_cb.reset();
@@ -234,8 +233,7 @@ struct epoll_op : scheduler_op
             stop_cb.emplace(token, canceller{this});
     }
 
-    // NOLINTNEXTLINE(performance-unnecessary-value-param)
-    void start(std::stop_token token, epoll_acceptor* impl)
+    void start(std::stop_token const& token, epoll_acceptor* impl)
     {
         cancelled.store(false, std::memory_order_release);
         stop_cb.reset();

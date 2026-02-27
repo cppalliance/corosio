@@ -43,9 +43,11 @@ public:
         @param protocol Protocol number (e.g. `IPPROTO_TCP`).
         @return Error code on failure, empty on success.
     */
-    virtual std::error_code
-    open_socket( tcp_socket::implementation& impl,
-                 int family, int type, int protocol ) = 0;
+    virtual std::error_code open_socket(
+        tcp_socket::implementation& impl,
+        int family,
+        int type,
+        int protocol) = 0;
 
 protected:
     /// Construct the socket service.

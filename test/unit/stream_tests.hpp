@@ -54,6 +54,7 @@ test_echo(S1& a, S2& b, std::string_view test_data = "hello")
         if (ec2)
             co_return;
         BOOST_TEST_EQ(n2, test_data.size());
+        // NOLINTNEXTLINE(bugprone-not-null-terminated-result,bugprone-suspicious-stringview-data-usage)
         BOOST_TEST(std::memcmp(buf.data(), test_data.data(), n2) == 0);
     }
 
@@ -72,6 +73,7 @@ test_echo(S1& a, S2& b, std::string_view test_data = "hello")
         if (ec4)
             co_return;
         BOOST_TEST_EQ(n4, test_data.size());
+        // NOLINTNEXTLINE(bugprone-not-null-terminated-result,bugprone-suspicious-stringview-data-usage)
         BOOST_TEST(std::memcmp(buf.data(), test_data.data(), n4) == 0);
     }
 }

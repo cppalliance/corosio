@@ -18,7 +18,6 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/timer.hpp>
-#include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 

@@ -64,7 +64,8 @@ make_socket_pair_t(io_context& ctx)
     acc.open();
     acc.set_option(socket_option::reuse_address(true));
     auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
-    if (!ec) ec = acc.listen();
+    if (!ec)
+        ec = acc.listen();
     if (ec)
         throw std::runtime_error("socket_pair: listen failed");
     auto port = acc.local_endpoint().port();
@@ -410,7 +411,7 @@ struct socket_test
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // 64KB data - larger than typical TCP segment
-            constexpr std::size_t size = 64 * 1024;
+            constexpr std::size_t size = std::size_t{64} * 1024;
             std::vector<char> send_data(size);
             for (std::size_t i = 0; i < size; ++i)
                 send_data[i] = static_cast<char>(i & 0xFF);
@@ -894,16 +895,14 @@ struct socket_test
         sock.open();
 
         sock.set_option(socket_option::no_delay(true));
-        BOOST_TEST_EQ(
-            sock.get_option<socket_option::no_delay>().value(), true);
+        BOOST_TEST_EQ(sock.get_option<socket_option::no_delay>().value(), true);
 
         sock.set_option(socket_option::no_delay(false));
         BOOST_TEST_EQ(
             sock.get_option<socket_option::no_delay>().value(), false);
 
         sock.set_option(socket_option::no_delay(true));
-        BOOST_TEST_EQ(
-            sock.get_option<socket_option::no_delay>().value(), true);
+        BOOST_TEST_EQ(sock.get_option<socket_option::no_delay>().value(), true);
 
         sock.close();
     }
@@ -1002,16 +1001,13 @@ struct socket_test
         auto [s1, s2] = make_socket_pair_t(ioc);
 
         s1.set_option(socket_option::no_delay(true));
-        BOOST_TEST_EQ(
-            s1.get_option<socket_option::no_delay>().value(), true);
+        BOOST_TEST_EQ(s1.get_option<socket_option::no_delay>().value(), true);
 
         s2.set_option(socket_option::no_delay(true));
-        BOOST_TEST_EQ(
-            s2.get_option<socket_option::no_delay>().value(), true);
+        BOOST_TEST_EQ(s2.get_option<socket_option::no_delay>().value(), true);
 
         s1.set_option(socket_option::keep_alive(true));
-        BOOST_TEST_EQ(
-            s1.get_option<socket_option::keep_alive>().value(), true);
+        BOOST_TEST_EQ(s1.get_option<socket_option::keep_alive>().value(), true);
 
         int recv_size =
             s1.get_option<socket_option::receive_buffer_size>().value();
@@ -1032,12 +1028,10 @@ struct socket_test
         sock.open();
 
         sock.set_option(socket_option::no_delay(true));
-        BOOST_TEST(
-            sock.get_option<socket_option::no_delay>().value());
+        BOOST_TEST(sock.get_option<socket_option::no_delay>().value());
 
         sock.set_option(socket_option::no_delay(false));
-        BOOST_TEST(
-            !sock.get_option<socket_option::no_delay>().value());
+        BOOST_TEST(!sock.get_option<socket_option::no_delay>().value());
 
         sock.close();
     }
@@ -1049,8 +1043,7 @@ struct socket_test
         sock.open();
 
         sock.set_option(socket_option::receive_buffer_size(32768));
-        int sz =
-            sock.get_option<socket_option::receive_buffer_size>().value();
+        int sz = sock.get_option<socket_option::receive_buffer_size>().value();
         BOOST_TEST(sz >= 32768);
 
         sock.close();
@@ -1082,14 +1075,12 @@ struct socket_test
         nd = true;
         BOOST_TEST(nd.value());
         sock.set_option(nd);
-        BOOST_TEST(
-            sock.get_option<socket_option::no_delay>().value());
+        BOOST_TEST(sock.get_option<socket_option::no_delay>().value());
 
         nd = false;
         BOOST_TEST(!nd);
         sock.set_option(nd);
-        BOOST_TEST(
-            !sock.get_option<socket_option::no_delay>().value());
+        BOOST_TEST(!sock.get_option<socket_option::no_delay>().value());
 
         // integer assignment
         socket_option::receive_buffer_size rbs(0);
@@ -1097,8 +1088,8 @@ struct socket_test
         BOOST_TEST_EQ(rbs.value(), 32768);
         sock.set_option(rbs);
         BOOST_TEST(
-            sock.get_option<socket_option::receive_buffer_size>()
-                .value() >= 32768);
+            sock.get_option<socket_option::receive_buffer_size>().value() >=
+            32768);
 
         // linger setters
         socket_option::linger lg;
@@ -1124,7 +1115,7 @@ struct socket_test
         auto [s1, s2] = make_socket_pair_t(ioc);
 
         // 128KB payload
-        constexpr std::size_t size = 128 * 1024;
+        constexpr std::size_t size = std::size_t{128} * 1024;
         std::vector<char> send_data(size);
         for (std::size_t i = 0; i < size; ++i)
             send_data[i] = static_cast<char>((i * 7 + 13) & 0xFF);
@@ -1144,8 +1135,7 @@ struct socket_test
 
         auto reader = [&]() -> capy::task<> {
             auto [ec, n] = co_await capy::read(
-                s2,
-                capy::mutable_buffer(recv_data.data(), recv_data.size()));
+                s2, capy::mutable_buffer(recv_data.data(), recv_data.size()));
             read_ec = ec;
             read_n  = n;
         };
@@ -1207,7 +1197,8 @@ struct socket_test
         acc.open();
         acc.set_option(socket_option::reuse_address(true));
         auto listen_ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
-        if (!listen_ec) listen_ec = acc.listen();
+        if (!listen_ec)
+            listen_ec = acc.listen();
         BOOST_TEST(!listen_ec);
 
         // Acceptor's local endpoint should have a non-zero OS-assigned port
@@ -1278,7 +1269,8 @@ struct socket_test
         {
             acc.open();
             acc.set_option(socket_option::reuse_address(true));
-            if (!acc.bind(endpoint(ipv4_address::loopback(), test_port)) && !acc.listen())
+            if (!acc.bind(endpoint(ipv4_address::loopback(), test_port)) &&
+                !acc.listen())
             {
                 found = true;
                 break;
@@ -1577,7 +1569,8 @@ struct socket_test
         acc.open(tcp::v6());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
-        if (!ec) ec = acc.listen();
+        if (!ec)
+            ec = acc.listen();
         BOOST_TEST(!ec);
         BOOST_TEST(acc.local_endpoint().is_v6());
 
@@ -1592,21 +1585,21 @@ struct socket_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await a.accept(s);
                 ec_out    = ec;
                 done      = true;
             }(acc, s1, accept_ec, accept_done));
 
         capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(s2, endpoint(ipv6_address::loopback(), port),
-              connect_ec, connect_done));
+            }(s2, endpoint(ipv6_address::loopback(), port), connect_ec,
+                           connect_done));
 
         ioc.run();
 
@@ -1634,7 +1627,8 @@ struct socket_test
         acc.open();
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
-        if (!ec) ec = acc.listen();
+        if (!ec)
+            ec = acc.listen();
         BOOST_TEST(!ec);
         auto port = acc.local_endpoint().port();
 
@@ -1648,21 +1642,21 @@ struct socket_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await a.accept(s);
                 ec_out    = ec;
                 done      = true;
             }(acc, s1, accept_ec, accept_done));
 
         capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(s2, endpoint(ipv4_address::loopback(), port),
-              connect_ec, connect_done));
+            }(s2, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
         ioc.run();
 
@@ -1687,7 +1681,8 @@ struct socket_test
         acc.open();
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
-        if (!ec) ec = acc.listen();
+        if (!ec)
+            ec = acc.listen();
         BOOST_TEST(!ec);
         auto port = acc.local_endpoint().port();
 
@@ -1703,21 +1698,21 @@ struct socket_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await a.accept(s);
                 ec_out    = ec;
                 done      = true;
             }(acc, s1, accept_ec, accept_done));
 
         capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(s2, endpoint(ipv4_address::loopback(), port),
-              connect_ec, connect_done));
+            }(s2, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
         ioc.run();
 
@@ -1742,7 +1737,8 @@ struct socket_test
         acc.open(tcp::v6());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
-        if (!ec) ec = acc.listen();
+        if (!ec)
+            ec = acc.listen();
         BOOST_TEST(!ec);
         auto port = acc.local_endpoint().port();
 
@@ -1755,21 +1751,21 @@ struct socket_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await a.accept(s);
                 ec_out    = ec;
                 done      = true;
             }(acc, s1, accept_ec, accept_done));
 
         capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(s2, endpoint(ipv6_address::loopback(), port),
-              connect_ec, connect_done));
+            }(s2, endpoint(ipv6_address::loopback(), port), connect_ec,
+                           connect_done));
 
         ioc.run();
         ioc.restart();
@@ -1781,8 +1777,8 @@ struct socket_test
 
         // Round-trip data over IPv6
         std::string const msg = "hello IPv6";
-        bool write_done = false;
-        bool read_done  = false;
+        bool write_done       = false;
+        bool read_done        = false;
         std::error_code write_ec, read_ec;
         std::size_t write_n = 0, read_n = 0;
         char buf[64]{};
@@ -1791,8 +1787,8 @@ struct socket_test
             [](tcp_socket& s, char const* data, std::size_t len,
                std::error_code& ec_out, std::size_t& n_out,
                bool& done) -> capy::task<> {
-                auto [ec, n] = co_await s.write_some(
-                    capy::const_buffer(data, len));
+                auto [ec, n] =
+                    co_await s.write_some(capy::const_buffer(data, len));
                 ec_out = ec;
                 n_out  = n;
                 done   = true;
@@ -1802,8 +1798,8 @@ struct socket_test
             [](tcp_socket& s, char* data, std::size_t len,
                std::error_code& ec_out, std::size_t& n_out,
                bool& done) -> capy::task<> {
-                auto [ec, n] = co_await s.read_some(
-                    capy::mutable_buffer(data, len));
+                auto [ec, n] =
+                    co_await s.read_some(capy::mutable_buffer(data, len));
                 ec_out = ec;
                 n_out  = n;
                 done   = true;
@@ -1817,8 +1813,7 @@ struct socket_test
         BOOST_TEST(read_done);
         BOOST_TEST(!read_ec);
         BOOST_TEST_EQ(read_n, msg.size());
-        BOOST_TEST_EQ(
-            std::string_view(buf, read_n), std::string_view(msg));
+        BOOST_TEST_EQ(std::string_view(buf, read_n), std::string_view(msg));
 
         s1.close();
         s2.close();
@@ -1832,16 +1827,13 @@ struct socket_test
         sock.open(tcp::v6()); // IPv6
 
         // Default is v6only=true (kernel default after open_socket sets it)
-        BOOST_TEST_EQ(
-            sock.get_option<socket_option::v6_only>().value(), true);
+        BOOST_TEST_EQ(sock.get_option<socket_option::v6_only>().value(), true);
 
         sock.set_option(socket_option::v6_only(false));
-        BOOST_TEST_EQ(
-            sock.get_option<socket_option::v6_only>().value(), false);
+        BOOST_TEST_EQ(sock.get_option<socket_option::v6_only>().value(), false);
 
         sock.set_option(socket_option::v6_only(true));
-        BOOST_TEST_EQ(
-            sock.get_option<socket_option::v6_only>().value(), true);
+        BOOST_TEST_EQ(sock.get_option<socket_option::v6_only>().value(), true);
 
         sock.close();
     }
@@ -1855,7 +1847,8 @@ struct socket_test
         acc.open(tcp::v6());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::any(), 0));
-        if (!ec) ec = acc.listen();
+        if (!ec)
+            ec = acc.listen();
         BOOST_TEST(!ec);
         auto port = acc.local_endpoint().port();
 
@@ -1870,8 +1863,8 @@ struct socket_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await a.accept(s);
                 ec_out    = ec;
                 done      = true;
@@ -1880,13 +1873,13 @@ struct socket_test
         // IPv6 dual-stack socket connects to IPv4 loopback —
         // connect maps to ::ffff:127.0.0.1 automatically
         capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(s2, endpoint(ipv4_address::loopback(), port),
-              connect_ec, connect_done));
+            }(s2, endpoint(ipv4_address::loopback(), port), connect_ec,
+                           connect_done));
 
         ioc.run();
 

@@ -8,8 +8,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_DETAIL_MAKE_ERR_HPP
-#define BOOST_COROSIO_DETAIL_MAKE_ERR_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_MAKE_ERR_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_MAKE_ERR_HPP
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
