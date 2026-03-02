@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2026 Steve Gerbino
+# Copyright (c) 2026 Michael Vandeberg
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -37,308 +38,29 @@ env:
   TZ: "Europe/London"
 
 jobs:
-  # Self-hosted runner selection is disabled to allow re-running individual
-  # failed jobs from the GitHub Actions UI. When using dynamic runner selection,
-  # the runs-on value depends on this job's output, which isn't available when
-  # re-running a subset of jobs.
-  #
-  # runner-selection:
-  #   name: Runner Selection
-  #   runs-on: ${{ github.repository_owner == 'boostorg' && fromJSON('[ "self-hosted", "linux", "x64", "ubuntu-latest-aws" ]') || 'ubuntu-latest' }}
-  #   outputs:
-  #     labelmatrix: ${{ steps.aws_hosted_runners.outputs.labelmatrix }}
-  #   steps:
-  #     - name: AWS Hosted Runners
-  #       id: aws_hosted_runners
-  #       uses: cppalliance/aws-hosted-runners@v1.0.0
+  generate-matrix:
+    name: Generate Matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: generate
+        run: |
+          matrix=$(python3 .github/generate-matrix.py)
+          echo "matrix={\"include\":$matrix}" >> "$GITHUB_OUTPUT"
 
   build:
-    # needs: [ runner-selection ]
+    needs: [generate-matrix]
     defaults:
       run:
         shell: bash
 
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # Windows (3 configurations)
-
-          - compiler: "msvc"
-            version: "14.42"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            runs-on: "windows-2022"
-            b2-toolset: "msvc-14.4"
-            generator: "Visual Studio 17 2022"
-            is-latest: true
-            name: "MSVC 14.42: C++20"
-            windows: true
-            shared: false
-            build-type: "Release"
-            build-cmake: true
-
-          - compiler: "msvc"
-            version: "14.34"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            runs-on: "windows-2022"
-            b2-toolset: "msvc-14.3"
-            generator: "Visual Studio 17 2022"
-            name: "MSVC 14.34: C++20 (shared)"
-            windows: true
-            shared: true
-            build-type: "Release"
-
-          - compiler: "mingw"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++"
-            cc: "gcc"
-            runs-on: "windows-2022"
-            b2-toolset: "gcc"
-            generator: "MinGW Makefiles"
-            is-latest: true
-            is-earliest: true
-            name: "MinGW: C++20"
-            windows: true
-            shared: false
-            build-type: "Release"
-            build-cmake: true
-            vcpkg-triplet: "x64-mingw-static"
-
-          - compiler: "mingw"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++"
-            cc: "gcc"
-            runs-on: "windows-2022"
-            b2-toolset: "gcc"
-            generator: "MinGW Makefiles"
-            name: "MinGW: C++20 (coverage)"
-            windows: true
-            shared: false
-            coverage: true
-            coverage-flag: "windows"
-            build-type: "Debug"
-            cxxflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
-            ccflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
-            vcpkg-triplet: "x64-mingw-static"
-
-          # macOS (4 configurations)
-          # kqueue is the default backend on macOS
-
-          - compiler: "apple-clang"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++"
-            cc: "clang"
-            runs-on: "macos-26"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Apple-Clang (macOS 26, asan+ubsan): C++20"
-            macos: true
-            shared: true
-            build-type: "RelWithDebInfo"
-            asan: true
-            ubsan: true
-
-          - compiler: "apple-clang"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++"
-            cc: "clang"
-            runs-on: "macos-15"
-            b2-toolset: "clang"
-            name: "Apple-Clang (macOS 15): C++20"
-            macos: true
-            shared: true
-            build-type: "Release"
-            build-cmake: true
-
-          - compiler: "apple-clang"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++"
-            cc: "clang"
-            runs-on: "macos-14"
-            b2-toolset: "clang"
-            name: "Apple-Clang (macOS 14): C++20"
-            macos: true
-            shared: true
-            build-type: "Release"
-
-          - compiler: "apple-clang"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++"
-            cc: "clang"
-            runs-on: "macos-15"
-            b2-toolset: "clang"
-            name: "Apple-Clang (macOS 15, coverage): C++20"
-            macos: true
-            shared: false
-            coverage: true
-            coverage-flag: "macos"
-            build-type: "Debug"
-            cxxflags: "--coverage"
-            ccflags: "--coverage"
-
-          # Linux GCC (5 configurations)
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20"
-            linux: true
-            shared: true
-            build-type: "Release"
-            build-cmake: true
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20 (asan+ubsan)"
-            linux: true
-            shared: true
-            asan: true
-            ubsan: true
-            build-type: "RelWithDebInfo"
-
-          - compiler: "gcc"
-            version: "12"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-12"
-            cc: "gcc-12"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:22.04"
-            b2-toolset: "gcc"
-            name: "GCC 12: C++20"
-            linux: true
-            shared: true
-            build-type: "Release"
-
-          - compiler: "gcc"
-            version: "13"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-13"
-            cc: "gcc-13"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "gcc"
-            name: "GCC 13: C++20 (coverage)"
-            linux: true
-            shared: false
-            coverage: true
-            coverage-flag: "linux"
-            build-type: "Debug"
-            cxxflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
-            ccflags: "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
-            install: "lcov wget unzip"
-
-          # Linux Clang (5 configurations)
-
-          - compiler: "clang"
-            version: "20"
-            cxxstd: "20,23"
-            latest-cxxstd: "23"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20-23 (clang-tidy)"
-            linux: true
-            shared: true
-            build-type: "Release"
-            build-cmake: true
-            install: "clang-tidy-20"
-            clang-tidy: true
-
-          - compiler: "clang"
-            version: "20"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20 (asan+ubsan)"
-            linux: true
-            shared: false
-            asan: true
-            ubsan: true
-            build-type: "RelWithDebInfo"
-
-          - compiler: "clang"
-            version: "17"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-17"
-            cc: "clang-17"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "clang"
-            name: "Clang 17: C++20"
-            linux: true
-            shared: false
-            build-type: "Release"
-
-          - compiler: "clang"
-            version: "20"
-            cxxstd: "20,23"
-            latest-cxxstd: "23"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20-23 (x86)"
-            linux: true
-            shared: false
-            x86: true
-            build-type: "Release"
-            install: "gcc-multilib g++-multilib"
-
-          # FreeBSD (2 configurations)
-          # Uses kqueue backend, system Clang (LLVM 19), built via b2 in a VM
-
-          - freebsd: "14.3"
-            runs-on: "ubuntu-latest"
-            name: "FreeBSD 14.3: System Clang, C++20"
-
-          - freebsd: "15.0"
-            runs-on: "ubuntu-latest"
-            name: "FreeBSD 15.0: System Clang, C++20"
-            build-cmake: true
+      matrix: ${{ fromJSON(needs.generate-matrix.outputs.matrix) }}
 
     name: ${{ matrix.name }}
-    # Skip self-hosted runner selection for now
-    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)[matrix.runs-on] }}
     runs-on: ${{ matrix.runs-on }}
     container:
       image: ${{ matrix.container }}
@@ -353,7 +75,6 @@ jobs:
           path: corosio-root
 
       - name: Setup C++
-        if: ${{ !matrix.freebsd }}
         uses: alandefreitas/cpp-actions/setup-cpp@v1.9.0
         id: setup-cpp
         with:
@@ -363,7 +84,6 @@ jobs:
           trace-commands: true
 
       - name: Install packages
-        if: ${{ !matrix.freebsd }}
         uses: alandefreitas/cpp-actions/package-install@v1.9.0
         id: package-install
         with:
@@ -400,7 +120,7 @@ jobs:
           scan-modules-ignore: corosio,capy
 
       - name: ASLR Fix
-        if: ${{ matrix.linux }}
+        if: ${{ startsWith(matrix.runs-on, 'ubuntu') }}
         run: |
           sysctl vm.mmap_rnd_bits=28
 
@@ -454,8 +174,9 @@ jobs:
       #   - Windows MSVC: C:\Program Files\OpenSSL (pre-installed on runner)
       #   - Windows MinGW: C:\msys64\mingw64 (installed via pacman)
       #   - Linux: system libssl-dev
+      # ARM builds skip vcpkg/WolfSSL (no container support, system libssl-dev still available)
       - name: Create vcpkg.json
-        if: ${{ !matrix.freebsd }}
+        if: ${{ !contains(matrix.runs-on, 'arm') }}
         shell: bash
         run: |
           cat > corosio-root/vcpkg.json << 'EOF'
@@ -498,7 +219,7 @@ jobs:
           echo "C:/msys64/mingw64/bin" >> $GITHUB_PATH
 
       - name: Setup vcpkg
-        if: ${{ !matrix.freebsd }}
+        if: ${{ !contains(matrix.runs-on, 'arm') }}
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgDirectory: ${{ github.workspace }}/vcpkg
@@ -586,7 +307,7 @@ jobs:
           echo "CMAKE_OPENSSL_ROOT=${openssl_root}" >> $GITHUB_ENV
 
       - name: Set vcpkg paths (Linux)
-        if: ${{ matrix.linux }}
+        if: ${{ matrix.linux && !contains(matrix.runs-on, 'arm') }}
         id: vcpkg-paths-linux
         shell: bash
         run: |
@@ -737,9 +458,7 @@ jobs:
 
       - name: Boost B2 Workflow
         uses: alandefreitas/cpp-actions/b2-workflow@v1.9.0
-        # note, use the following line to skip B2 on Windows
-        # if: ${{ !matrix.coverage && runner.os != 'Windows' }}
-        if: ${{ !matrix.coverage && !matrix.freebsd }}
+        if: ${{ !matrix.coverage }}
         env:
           ASAN_OPTIONS: ${{ ((matrix.compiler == 'apple-clang' || matrix.compiler == 'clang') && 'detect_invalid_pointer_pairs=0:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1') || 'detect_invalid_pointer_pairs=2:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1' }}
         with:
@@ -754,50 +473,13 @@ jobs:
           ubsan: ${{ matrix.ubsan }}
           shared: ${{ matrix.shared }}
           rtti: on
-          cxxflags: ${{ matrix.cxxflags }} ${{ (matrix.asan && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
+          cxxflags: ${{ matrix.cxxflags }} ${{ (matrix.asan && matrix.compiler != 'msvc' && matrix.compiler != 'clang-cl' && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
           stop-on-error: true
           user-config: ${{ (matrix.windows || matrix.macos) && 'user-config.jam' || '' }}
 
-      - name: Boost B2 Workflow (FreeBSD)
-        if: ${{ matrix.freebsd }}
-        uses: vmactions/freebsd-vm@v1
-        with:
-          release: ${{ matrix.freebsd }}
-          usesh: true
-          run: |
-            set -xe
-            cd boost-root
-            ./bootstrap.sh
-            ./b2 libs/${{ steps.patch.outputs.module }}/test \
-              toolset=clang \
-              cxxstd=20 \
-              variant=release \
-              link=shared \
-              rtti=on \
-              -q \
-              -j$(sysctl -n hw.ncpu)
-
-      - name: Boost CMake Workflow (FreeBSD)
-        if: ${{ matrix.freebsd && matrix.build-cmake }}
-        uses: vmactions/freebsd-vm@v1
-        with:
-          release: ${{ matrix.freebsd }}
-          usesh: true
-          prepare: |
-            pkg install -y cmake
-          run: |
-            set -xe
-            cd boost-root
-            cmake -S . -B build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DBOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}" \
-              -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-            cmake --build build --target tests -j$(sysctl -n hw.ncpu)
-            ctest --test-dir build --output-on-failure
-
       - name: Boost CMake Workflow
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ !matrix.freebsd && (matrix.coverage || matrix.build-cmake || matrix.is-earliest) }}
+        if: ${{ matrix.coverage || matrix.build-cmake || matrix.is-earliest }}
         with:
           source-dir: boost-root
           build-dir: __build_cmake_test__
@@ -819,6 +501,7 @@ jobs:
             -D BOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}"
             -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
             ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
+            ${{ contains(matrix.generator || '', 'Visual Studio') && format('-D CMAKE_CONFIGURATION_TYPES={0}', matrix.build-type) || '' }}
             ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
             ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
             ${{ env.CMAKE_OPENSSL_ROOT && format('-D OPENSSL_ROOT_DIR="{0}"', env.CMAKE_OPENSSL_ROOT) || '' }}
@@ -849,7 +532,7 @@ jobs:
 
       - name: Find Package Integration Workflow
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ !matrix.freebsd && (matrix.build-cmake || matrix.is-earliest) }}
+        if: ${{ (matrix.is-latest || matrix.is-earliest) && matrix.build-cmake != false }}
         with:
           source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
           build-dir: __build_cmake_install_test__
@@ -867,6 +550,7 @@ jobs:
           extra-args: |
             -D BOOST_CI_INSTALL_TEST=ON
             -D CMAKE_PREFIX_PATH=${{ steps.patch.outputs.workspace_root }}/.local
+            ${{ contains(matrix.generator || '', 'Visual Studio') && format('-D CMAKE_CONFIGURATION_TYPES={0}', matrix.build-type) || '' }}
             ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
             ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
             ${{ env.CMAKE_OPENSSL_ROOT && format('-D OPENSSL_ROOT_DIR="{0}"', env.CMAKE_OPENSSL_ROOT) || '' }}
@@ -877,7 +561,7 @@ jobs:
 
       - name: Subdirectory Integration Workflow
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ !matrix.freebsd && (matrix.build-cmake || matrix.is-earliest) }}
+        if: ${{ (matrix.is-latest || matrix.is-earliest) && matrix.build-cmake != false }}
         with:
           source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
           build-dir: __build_cmake_subdir_test__
@@ -894,6 +578,7 @@ jobs:
           cmake-version: '>=3.15'
           extra-args: |
             -D BOOST_CI_INSTALL_TEST=OFF
+            ${{ contains(matrix.generator || '', 'Visual Studio') && format('-D CMAKE_CONFIGURATION_TYPES={0}', matrix.build-type) || '' }}
             ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
             ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
             ${{ env.CMAKE_OPENSSL_ROOT && format('-D OPENSSL_ROOT_DIR="{0}"', env.CMAKE_OPENSSL_ROOT) || '' }}
@@ -903,7 +588,7 @@ jobs:
 
       - name: Root Project CMake Workflow
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ !matrix.freebsd && (matrix.build-cmake || matrix.is-earliest) }}
+        if: ${{ (matrix.is-latest || matrix.is-earliest) && matrix.build-cmake != false }}
         with:
           source-dir: boost-root/libs/${{ steps.patch.outputs.module }}
           build-dir: __build_root_test__
@@ -923,6 +608,7 @@ jobs:
           extra-args: |
             -D Boost_VERBOSE=ON
             ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
+            ${{ contains(matrix.generator || '', 'Visual Studio') && format('-D CMAKE_CONFIGURATION_TYPES={0}', matrix.build-type) || '' }}
             ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
             ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
             ${{ env.CMAKE_OPENSSL_ROOT && format('-D OPENSSL_ROOT_DIR="{0}"', env.CMAKE_OPENSSL_ROOT) || '' }}
@@ -997,15 +683,111 @@ jobs:
           echo "Branch: [![codecov](https://codecov.io/github/$GITHUB_REPOSITORY/branch/$GITHUB_REF_NAME/graph/badge.svg)](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
+  freebsd:
+    defaults:
+      run:
+        shell: bash
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "14.3"
+            name: "FreeBSD 14.3 (Clang): C++20"
+          - version: "15.0"
+            name: "FreeBSD 15.0 (Clang): C++20"
+            build-cmake: true
+
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Clone Boost.Corosio
+        uses: actions/checkout@v4
+        with:
+          path: corosio-root
+
+      - name: Clone Capy
+        uses: actions/checkout@v4
+        with:
+          repository: cppalliance/capy
+          ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          path: capy-root
+
+      - name: Clone Boost
+        uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
+        id: boost-clone
+        with:
+          branch: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          boost-dir: boost-source
+          modules-exclude-paths: ''
+          scan-modules-dir: corosio-root
+          scan-modules-ignore: corosio,capy
+
+      - name: Patch Boost
+        id: patch
+        run: |
+          set -xe
+          module=${GITHUB_REPOSITORY#*/}
+          echo "module=$module" >> $GITHUB_OUTPUT
+
+          workspace_root=$(echo "$GITHUB_WORKSPACE" | sed 's/\\/\//g')
+
+          rm -r "boost-source/libs/$module" || true
+          rm -r "boost-source/libs/capy" || true
+
+          cp -rL boost-source boost-root
+
+          cd boost-root
+          boost_root="$(pwd)"
+          echo -E "boost_root=$boost_root" >> $GITHUB_OUTPUT
+
+          cp -r "$workspace_root"/corosio-root "libs/$module"
+          cp -r "$workspace_root"/capy-root "libs/capy"
+
+      - name: Boost B2 Workflow (FreeBSD)
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ matrix.version }}
+          usesh: true
+          run: |
+            set -xe
+            cd boost-root
+            ./bootstrap.sh
+            ./b2 libs/${{ steps.patch.outputs.module }}/test \
+              toolset=clang \
+              cxxstd=20 \
+              variant=release \
+              link=shared \
+              rtti=on \
+              -q \
+              -j$(sysctl -n hw.ncpu)
+
+      - name: Boost CMake Workflow (FreeBSD)
+        if: ${{ matrix.build-cmake }}
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ matrix.version }}
+          usesh: true
+          prepare: |
+            pkg install -y cmake
+          run: |
+            set -xe
+            cd boost-root
+            cmake -S . -B build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}" \
+              -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            cmake --build build --target tests -j$(sysctl -n hw.ncpu)
+            ctest --test-dir build --output-on-failure
+
   changelog:
-    # needs: [ runner-selection ]
     defaults:
       run:
         shell: bash
 
     name: Changelog Summary
-    # Skip self-hosted runner selection for now
-    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-22.04'] }}
     runs-on: 'ubuntu-22.04'
     timeout-minutes: 120
 

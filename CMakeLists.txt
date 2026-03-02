@@ -25,6 +25,10 @@ else()
     set(BOOST_COROSIO_IS_ROOT OFF)
 endif()
 
+if(BOOST_COROSIO_IS_ROOT AND BUILD_SHARED_LIBS)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+endif()
+
 option(BOOST_COROSIO_BUILD_TESTS "Build boost::corosio tests" ${BUILD_TESTING})
 option(BOOST_COROSIO_BUILD_PERF "Build boost::corosio performance tools" ${BOOST_COROSIO_IS_ROOT})
 option(BOOST_COROSIO_BUILD_EXAMPLES "Build boost::corosio examples" ${BOOST_COROSIO_IS_ROOT})

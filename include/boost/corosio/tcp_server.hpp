@@ -468,8 +468,11 @@ public:
         friend class tcp_server;
 
     public:
+        /// Construct a worker.
+        worker_base();
+
         /// Destroy the worker.
-        virtual ~worker_base() = default;
+        virtual ~worker_base();
 
         /** Handle an accepted connection.
 
