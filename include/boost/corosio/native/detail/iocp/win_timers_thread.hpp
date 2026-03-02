@@ -84,7 +84,18 @@ win_timers_thread::stop()
     }
 
     if (thread_.joinable())
-        thread_.join();
+    {
+        try
+        {
+            thread_.join();
+        }
+        catch (...)
+        {
+            // Swallow join failures — called from destructors and
+            // noexcept shutdown paths. The thread has been signalled
+            // to exit; if join fails the OS will reclaim it.
+        }
+    }
 }
 
 inline void

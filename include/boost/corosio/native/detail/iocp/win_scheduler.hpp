@@ -387,8 +387,10 @@ win_scheduler::stop()
         {
             if (!::PostQueuedCompletionStatus(iocp_, 0, key_shutdown, nullptr))
             {
-                DWORD dwError = ::GetLastError();
-                detail::throw_system_error(make_err(dwError));
+                // PQCS failure is non-fatal: stopped_ is already set.
+                // The run() loop will notice via the GQCS timeout
+                // (max_gqcs_timeout = 500ms) and exit.
+                ::InterlockedExchange(&dispatch_required_, 1);
             }
         }
     }
@@ -631,6 +633,12 @@ win_scheduler::do_one(unsigned long timeout_ms)
         if (dwError != WAIT_TIMEOUT)
             detail::throw_system_error(make_err(dwError));
         if (timeout_ms != INFINITE)
+            return 0;
+        // PQCS-failure fallback: stop() sets stopped_ and
+        // dispatch_required_ but if the key_shutdown post failed,
+        // no completion is ever dequeued.  Catch it here on the
+        // periodic 500 ms GQCS timeout so run()/run_one() can exit.
+        if (stopped())
             return 0;
     }
 }

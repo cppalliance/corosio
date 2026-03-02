@@ -1,0 +1,173 @@
+{
+  "gcc": [
+    {
+      "version": "12",
+      "cxxstd": "20",
+      "latest_cxxstd": "20",
+      "runs_on": "ubuntu-24.04",
+      "container": "ubuntu:22.04",
+      "cxx": "g++-12",
+      "cc": "gcc-12",
+      "b2_toolset": "gcc"
+    },
+    {
+      "version": "13",
+      "cxxstd": "20,23",
+      "latest_cxxstd": "23",
+      "runs_on": "ubuntu-24.04",
+      "cxx": "g++-13",
+      "cc": "gcc-13",
+      "b2_toolset": "gcc",
+      "arm": true
+    },
+    {
+      "version": "14",
+      "cxxstd": "20,23",
+      "latest_cxxstd": "23",
+      "runs_on": "ubuntu-24.04",
+      "cxx": "g++-14",
+      "cc": "gcc-14",
+      "b2_toolset": "gcc",
+      "arm": true
+    },
+    {
+      "version": "15",
+      "cxxstd": "20,23",
+      "latest_cxxstd": "23",
+      "runs_on": "ubuntu-24.04",
+      "container": "ubuntu:25.04",
+      "cxx": "g++-15",
+      "cc": "gcc-15",
+      "b2_toolset": "gcc",
+      "is_latest": true,
+      "coverage": true
+    }
+  ],
+  "clang": [
+    {
+      "version": "17",
+      "cxxstd": "20",
+      "latest_cxxstd": "20",
+      "runs_on": "ubuntu-24.04",
+      "cxx": "clang++-17",
+      "cc": "clang-17",
+      "b2_toolset": "clang",
+      "arm": true
+    },
+    {
+      "version": "18",
+      "cxxstd": "20,23",
+      "latest_cxxstd": "23",
+      "runs_on": "ubuntu-24.04",
+      "cxx": "clang++-18",
+      "cc": "clang-18",
+      "b2_toolset": "clang",
+      "arm": true
+    },
+    {
+      "version": "19",
+      "cxxstd": "20,23",
+      "latest_cxxstd": "23",
+      "runs_on": "ubuntu-24.04",
+      "cxx": "clang++-19",
+      "cc": "clang-19",
+      "b2_toolset": "clang",
+      "arm": true
+    },
+    {
+      "version": "20",
+      "cxxstd": "20,23",
+      "latest_cxxstd": "23",
+      "runs_on": "ubuntu-24.04",
+      "container": "ubuntu:24.04",
+      "cxx": "clang++-20",
+      "cc": "clang-20",
+      "b2_toolset": "clang",
+      "arm": true,
+      "is_latest": true,
+      "clang_tidy": true
+    }
+  ],
+  "msvc": [
+    {
+      "version": "14.34",
+      "cxxstd": "20",
+      "latest_cxxstd": "20",
+      "runs_on": "windows-2022",
+      "b2_toolset": "msvc-14.3",
+      "generator": "Visual Studio 17 2022"
+    },
+    {
+      "version": "14.42",
+      "cxxstd": "20",
+      "latest_cxxstd": "20",
+      "runs_on": "windows-2025",
+      "b2_toolset": "msvc-14.4",
+      "generator": "Visual Studio 17 2022",
+      "is_latest": true
+    }
+  ],
+  "clang-cl": [
+    {
+      "version": "*",
+      "cxxstd": "20",
+      "latest_cxxstd": "20",
+      "runs_on": "windows-2022",
+      "cxx": "clang++-cl",
+      "cc": "clang-cl",
+      "b2_toolset": "clang-win",
+      "generator": "Visual Studio 17 2022",
+      "generator_toolset": "ClangCL",
+      "build_cmake": false,
+      "is_latest": true
+    }
+  ],
+  "apple-clang": [
+    {
+      "version": "*",
+      "cxxstd": "20,23",
+      "latest_cxxstd": "23",
+      "runs_on": "macos-14",
+      "cxx": "clang++",
+      "cc": "clang",
+      "b2_toolset": "clang"
+    },
+    {
+      "version": "*",
+      "cxxstd": "20,23",
+      "latest_cxxstd": "23",
+      "runs_on": "macos-15",
+      "cxx": "clang++",
+      "cc": "clang",
+      "b2_toolset": "clang"
+    },
+    {
+      "version": "*",
+      "cxxstd": "20,23",
+      "latest_cxxstd": "23",
+      "runs_on": "macos-26",
+      "cxx": "clang++",
+      "cc": "clang",
+      "b2_toolset": "clang",
+      "is_latest": true,
+      "coverage": true
+    }
+  ],
+  "mingw": [
+    {
+      "version": "*",
+      "cxxstd": "20",
+      "latest_cxxstd": "20",
+      "cxx": "g++",
+      "cc": "gcc",
+      "runs_on": "windows-2022",
+      "b2_toolset": "gcc",
+      "generator": "MinGW Makefiles",
+      "shared": false,
+      "is_latest": true,
+      "is_earliest": true,
+      "coverage": true,
+      "vcpkg_triplet": "x64-mingw-static"
+    }
+  ]
+}
