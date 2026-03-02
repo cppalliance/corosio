@@ -113,7 +113,7 @@ function(corosio_find_tls_provider name)
         "PACKAGE;MINGW_TARGET"
         "LINK_TARGETS;MINGW_LIBS;WIN32_LIBS;FRAMEWORKS" ${ARGN})
 
-    find_package(${_ARGS_PACKAGE})
+    find_package(${_ARGS_PACKAGE} QUIET)
 
     # MinGW's linker is single-pass and order-sensitive; system libs must
     # follow the static libraries that reference them
@@ -123,6 +123,7 @@ function(corosio_find_tls_provider name)
     endif()
 
     if(${_ARGS_PACKAGE}_FOUND)
+        message(STATUS "Building with ${_ARGS_PACKAGE} support")
         corosio_add_tls_library(${name})
         target_link_libraries(boost_corosio_${name} PUBLIC ${_ARGS_LINK_TARGETS})
         if(WIN32 AND NOT MINGW AND _ARGS_WIN32_LIBS)
