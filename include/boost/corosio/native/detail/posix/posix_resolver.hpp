@@ -22,6 +22,7 @@
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
+#include <boost/corosio/detail/thread_pool.hpp>
 
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/resolver_results.hpp>
@@ -34,32 +35,18 @@
 #include <sys/socket.h>
 
 #include <atomic>
-#include <cassert>
-#include <condition_variable>
-#include <cstring>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <stop_token>
 #include <string>
-#include <thread>
-#include <unordered_map>
-#include <vector>
 
 /*
     POSIX Resolver Service
     ======================
 
     POSIX getaddrinfo() is a blocking call that cannot be monitored with
-    epoll/kqueue/io_uring. We use a worker thread approach: each resolution
-    spawns a dedicated thread that runs the blocking call and posts completion
-    back to the scheduler.
-
-    Thread-per-resolution Design
-    ----------------------------
-    Simple, no thread pool complexity. DNS lookups are infrequent enough that
-    thread creation overhead is acceptable. Detached threads self-manage;
-    shared_ptr capture keeps impl alive until completion.
+    epoll/kqueue/io_uring. Blocking calls are dispatched to a shared
+    resolver_thread_pool service which reuses threads across operations.
 
     Cancellation
     ------------
@@ -80,19 +67,13 @@
     - reverse_resolve_op (reverse resolution state)
         - Uses getnameinfo() to resolve endpoint to host/service
 
-    Worker Thread Lifetime
-    ----------------------
-    Each resolve() spawns a detached thread. The thread captures a shared_ptr
-    to posix_resolver, ensuring the impl (and its embedded op_) stays
-    alive until the thread completes, even if the resolver is destroyed.
-
     Completion Flow
     ---------------
     Forward resolution:
-    1. resolve() sets up op_, spawns worker thread
-    2. Worker runs getaddrinfo() (blocking)
-    3. Worker stores results in op_.stored_results
-    4. Worker calls svc_.post(&op_) to queue completion
+    1. resolve() sets up op_, posts work to the thread pool
+    2. Pool thread runs getaddrinfo() (blocking)
+    3. Pool thread stores results in op_.stored_results
+    4. Pool thread calls svc_.post(&op_) to queue completion
     5. Scheduler invokes op_() which resumes the coroutine
 
     Reverse resolution follows the same pattern using getnameinfo().
@@ -103,11 +84,11 @@
     reverse resolution. Concurrent operations of the same type on the same
     resolver would corrupt state. Users must serialize operations per-resolver.
 
-    Shutdown Synchronization
-    ------------------------
-    The service tracks active worker threads via thread_started()/thread_finished().
-    During shutdown(), the service sets shutting_down_ flag and waits for all
-    threads to complete before destroying resources.
+    Shutdown
+    --------
+    The resolver service cancels all resolvers and clears the impl map.
+    The thread pool service shuts down separately via execution_context
+    service ordering, joining all worker threads.
 */
 
 namespace boost::corosio::detail {
@@ -268,6 +249,16 @@ public:
         void start(std::stop_token const& token);
     };
 
+    /// Embedded pool work item for thread pool dispatch.
+    struct pool_op : pool_work_item
+    {
+        /// Resolver that owns this work item.
+        posix_resolver* resolver_ = nullptr;
+
+        /// Prevent impl destruction while work is in flight.
+        std::shared_ptr<posix_resolver> ref_;
+    };
+
     explicit posix_resolver(posix_resolver_service& svc) noexcept;
 
     std::coroutine_handle<> resolve(
@@ -293,6 +284,18 @@ public:
 
     resolve_op op_;
     reverse_resolve_op reverse_op_;
+
+    /// Pool work item for forward resolution.
+    pool_op resolve_pool_op_;
+
+    /// Pool work item for reverse resolution.
+    pool_op reverse_pool_op_;
+
+    /// Execute blocking `getaddrinfo()` on a pool thread.
+    static void do_resolve_work(pool_work_item*) noexcept;
+
+    /// Execute blocking `getnameinfo()` on a pool thread.
+    static void do_reverse_resolve_work(pool_work_item*) noexcept;
 
 private:
     posix_resolver_service& svc_;
