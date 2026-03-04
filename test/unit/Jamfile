@@ -20,7 +20,7 @@ project boost/corosio/test/unit
     ;
 
 # Non-TLS tests
-for local f in [ glob *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp ] [ glob test/*.cpp ]
+for local f in [ glob *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp ] [ glob test/*.cpp ]
 {
     run $(f) ;
 }
@@ -50,3 +50,17 @@ run cross_ssl_stream.cpp
 
 # TLS stream base tests (no specific TLS backend required)
 run tls_stream.cpp ;
+
+# TLS stress tests - separate targets so each builds when its backend is found
+# (linking both would cause <build>no propagation to skip if either is missing)
+run tls_stream_stress.cpp
+    : : :
+    <library>/boost/corosio//boost_corosio_openssl
+    : tls_stream_stress_openssl
+    ;
+
+run tls_stream_stress.cpp
+    : : :
+    <library>/boost/corosio//boost_corosio_wolfssl
+    : tls_stream_stress_wolfssl
+    ;

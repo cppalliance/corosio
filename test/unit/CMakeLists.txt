@@ -8,6 +8,11 @@
 #
 
 file(GLOB_RECURSE PFILES CONFIGURE_DEPENDS *.cpp *.hpp)
+
+if (NOT OpenSSL_FOUND AND NOT WolfSSL_FOUND)
+    list(FILTER PFILES EXCLUDE REGEX "tls_stream_stress\\.cpp$")
+endif()
+
 list(APPEND PFILES
     CMakeLists.txt
     Jamfile)

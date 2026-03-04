@@ -12,8 +12,7 @@
 # Resolve all build dependencies: sibling Boost libraries when inside a
 # boost tree, Capy via find_package / FetchContent, and Threads.
 #
-# Must be a macro so find_package results (e.g. boost_capy_FOUND) propagate
-# to the caller's scope for install logic.
+# Must be a macro so find_package results propagate to the caller's scope.
 macro(corosio_resolve_deps)
     # Sibling Boost libraries when building standalone inside a boost tree.
     # The Boost::asio reference must stay out of CMakeLists.txt because the
@@ -187,9 +186,8 @@ function(corosio_install)
             TARGETS ${_corosio_install_targets}
             VERSION ${BOOST_SUPERPROJECT_VERSION}
             HEADER_DIRECTORY include)
-    elseif(boost_capy_FOUND)
+    elseif(BOOST_COROSIO_IS_ROOT)
         include(GNUInstallDirs)
-        include(CMakePackageConfigHelpers)
 
         # Set INSTALL_INTERFACE for standalone installs (boost_install handles
         # this for superproject builds, including versioned-layout paths)
@@ -198,36 +196,52 @@ function(corosio_install)
                 $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
         endforeach()
 
-        set(BOOST_COROSIO_INSTALL_CMAKEDIR
-            ${CMAKE_INSTALL_LIBDIR}/cmake/boost_corosio)
+        if(boost_capy_FOUND)
+            # Capy from find_package (imported target): full install with
+            # CMake package config and export sets.
+            include(CMakePackageConfigHelpers)
 
-        install(TARGETS ${_corosio_install_targets}
-            EXPORT boost_corosio-targets
-            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-        install(DIRECTORY include/
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-        install(EXPORT boost_corosio-targets
-            NAMESPACE Boost::
-            DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
+            set(BOOST_COROSIO_INSTALL_CMAKEDIR
+                ${CMAKE_INSTALL_LIBDIR}/cmake/boost_corosio)
 
-        configure_package_config_file(
-            cmake/boost_corosio-config.cmake.in
-            ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config.cmake
-            INSTALL_DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
-        write_basic_package_version_file(
-            ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config-version.cmake
-            COMPATIBILITY SameMajorVersion)
+            install(TARGETS ${_corosio_install_targets}
+                EXPORT boost_corosio-targets
+                ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+            install(DIRECTORY include/
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+            install(EXPORT boost_corosio-targets
+                NAMESPACE Boost::
+                DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
 
-        set(_corosio_config_files
-            ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config.cmake
-            ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config-version.cmake)
-        if(WolfSSL_FOUND)
-            list(APPEND _corosio_config_files
-                ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindWolfSSL.cmake)
+            configure_package_config_file(
+                cmake/boost_corosio-config.cmake.in
+                ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config.cmake
+                INSTALL_DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
+            write_basic_package_version_file(
+                ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config-version.cmake
+                COMPATIBILITY SameMajorVersion)
+
+            set(_corosio_config_files
+                ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config.cmake
+                ${CMAKE_CURRENT_BINARY_DIR}/boost_corosio-config-version.cmake)
+            if(WolfSSL_FOUND)
+                list(APPEND _corosio_config_files
+                    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindWolfSSL.cmake)
+            endif()
+            install(FILES ${_corosio_config_files}
+                DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
+        else()
+            # Capy from source tree (boost root or FetchContent): export sets
+            # can't work because capy isn't an imported target. Install the
+            # library and headers only.
+            install(TARGETS ${_corosio_install_targets}
+                ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+            install(DIRECTORY include/
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
         endif()
-        install(FILES ${_corosio_config_files}
-            DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
     endif()
 endfunction()

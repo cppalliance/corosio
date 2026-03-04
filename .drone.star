@@ -29,6 +29,7 @@ def main(ctx):
         ],
         '>=20',
         docs=False,
+        coverage=False,
         cache_dir='cache')
 
     # macOS: generate() skips apple-clang when cxx_range='>=20' because
