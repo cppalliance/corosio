@@ -23,6 +23,7 @@
 #endif
 
 #include <boost/corosio/detail/scheduler.hpp>
+#include <boost/corosio/detail/thread_pool.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/resolver_results.hpp>
@@ -42,12 +43,9 @@
 #include <WS2tcpip.h>
 
 #include <atomic>
-#include <condition_variable>
 #include <cstring>
 #include <memory>
 #include <string>
-#include <thread>
-#include <unordered_map>
 
 // MinGW may not have GetAddrInfoExCancel declared
 #if defined(__MINGW32__) || defined(__MINGW64__)
@@ -72,15 +70,14 @@ extern "C"
     Reverse Resolution (GetNameInfoW)
     ---------------------------------
     Unlike GetAddrInfoExW, GetNameInfoW has no async variant. Reverse
-    resolution spawns a detached worker thread that calls GetNameInfoW
-    and posts the result to the scheduler upon completion.
+    resolution dispatches the blocking call to the shared
+    resolver_thread_pool service.
 
     Class Hierarchy
     ---------------
     - win_resolver_service (execution_context::service)
         - Owns all win_resolver instances via shared_ptr
         - Coordinates with win_scheduler for work tracking
-        - Tracks active worker threads for safe shutdown
     - win_resolver (one per resolver object)
         - Contains embedded resolve_op and reverse_resolve_op
         - Inherits from enable_shared_from_this for thread safety
@@ -88,14 +85,13 @@ extern "C"
         - OVERLAPPED base enables IOCP integration
         - Static completion() callback invoked by Windows
     - reverse_resolve_op (overlapped_op subclass)
-        - Used by worker thread for reverse resolution
+        - Used by pool thread for reverse resolution
 
-    Shutdown Synchronization
-    ------------------------
-    The service uses condition_variable_any and win_mutex to track active
-    worker threads. During shutdown(), the service waits for all threads
-    to complete before destroying resources. Worker threads always post
-    their completions so the scheduler can properly drain them via destroy().
+    Shutdown
+    --------
+    The resolver service cancels all resolvers and clears the impl map.
+    The thread pool service shuts down separately via execution_context
+    service ordering, joining all worker threads.
 
     Cancellation
     ------------
@@ -128,16 +124,13 @@ extern "C"
 
     Reverse Resolution (GetNameInfoW)
     ---------------------------------
-    Unlike GetAddrInfoExW, GetNameInfoW has no async variant. We use a worker
-    thread approach similar to POSIX:
-    1. reverse_resolve() spawns a detached worker thread
-    2. Worker calls GetNameInfoW() (blocking)
-    3. Worker converts wide results to UTF-8 via WideCharToMultiByte
-    4. Worker posts completion to scheduler
+    Unlike GetAddrInfoExW, GetNameInfoW has no async variant. The blocking
+    call is dispatched to the shared resolver_thread_pool:
+    1. reverse_resolve() posts work to the thread pool
+    2. Pool thread calls GetNameInfoW() (blocking)
+    3. Pool thread converts wide results to UTF-8 via WideCharToMultiByte
+    4. Pool thread posts completion to scheduler
     5. op_() resumes the coroutine with results
-
-    Thread tracking (thread_started/thread_finished) ensures safe shutdown
-    by waiting for all worker threads before destroying the service.
 
     String Conversion
     -----------------
@@ -250,6 +243,16 @@ class win_resolver final
     friend struct resolve_op;
 
 public:
+    /// Embedded pool work item for thread pool dispatch.
+    struct pool_op : pool_work_item
+    {
+        /// Resolver that owns this work item.
+        win_resolver* resolver_ = nullptr;
+
+        /// Prevent impl destruction while work is in flight.
+        std::shared_ptr<win_resolver> ref_;
+    };
+
     explicit win_resolver(win_resolver_service& svc) noexcept;
 
     std::coroutine_handle<> resolve(
@@ -275,6 +278,12 @@ public:
 
     resolve_op op_;
     reverse_resolve_op reverse_op_;
+
+    /// Pool work item for reverse resolution.
+    pool_op reverse_pool_op_;
+
+    /// Execute blocking `GetNameInfoW()` on a pool thread.
+    static void do_reverse_resolve_work(pool_work_item*) noexcept;
 
 private:
     win_resolver_service& svc_;

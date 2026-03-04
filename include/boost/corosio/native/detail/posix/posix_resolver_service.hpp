@@ -15,13 +15,16 @@
 #if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/native/detail/posix/posix_resolver.hpp>
+#include <boost/corosio/detail/thread_pool.hpp>
+
+#include <unordered_map>
 
 namespace boost::corosio::detail {
 
 /** Resolver service for POSIX backends.
 
-    Owns all posix_resolver instances and tracks active worker
-    threads for safe shutdown synchronization.
+    Owns all posix_resolver instances. Thread lifecycle is managed
+    by the thread_pool service.
 */
 class BOOST_COROSIO_DECL posix_resolver_service final
     : public capy::execution_context::service
@@ -30,8 +33,9 @@ class BOOST_COROSIO_DECL posix_resolver_service final
 public:
     using key_type = posix_resolver_service;
 
-    posix_resolver_service(capy::execution_context&, scheduler& sched)
+    posix_resolver_service(capy::execution_context& ctx, scheduler& sched)
         : sched_(&sched)
+        , pool_(ctx.make_service<thread_pool>())
     {
     }
 
@@ -56,16 +60,13 @@ public:
     void work_started() noexcept;
     void work_finished() noexcept;
 
-    void thread_started() noexcept;
-    void thread_finished() noexcept;
-    bool is_shutting_down() const noexcept;
+    /** Return the resolver thread pool. */
+    thread_pool& pool() noexcept { return pool_; }
 
 private:
     scheduler* sched_;
+    thread_pool& pool_;
     std::mutex mutex_;
-    std::condition_variable cv_;
-    std::atomic<bool> shutting_down_{false};
-    std::size_t active_threads_ = 0;
     intrusive_list<posix_resolver> resolver_list_;
     std::unordered_map<posix_resolver*, std::shared_ptr<posix_resolver>>
         resolver_ptrs_;
@@ -379,58 +380,15 @@ posix_resolver::resolve(
     // Keep io_context alive while resolution is pending
     op.ex.on_work_started();
 
-    // Track thread for safe shutdown
-    svc_.thread_started();
-
-    try
+    // Prevent impl destruction while work is in flight
+    resolve_pool_op_.resolver_ = this;
+    resolve_pool_op_.ref_      = this->shared_from_this();
+    resolve_pool_op_.func_     = &posix_resolver::do_resolve_work;
+    if (!svc_.pool().post(&resolve_pool_op_))
     {
-        // Prevent impl destruction while worker thread is running
-        auto self = this->shared_from_this();
-        std::thread worker([this, self = std::move(self)]() {
-            struct addrinfo hints{};
-            hints.ai_family   = AF_UNSPEC;
-            hints.ai_socktype = SOCK_STREAM;
-            hints.ai_flags = posix_resolver_detail::flags_to_hints(op_.flags);
-
-            struct addrinfo* ai = nullptr;
-            int result          = ::getaddrinfo(
-                op_.host.empty() ? nullptr : op_.host.c_str(),
-                op_.service.empty() ? nullptr : op_.service.c_str(), &hints,
-                &ai);
-
-            if (!op_.cancelled.load(std::memory_order_acquire))
-            {
-                if (result == 0 && ai)
-                {
-                    op_.stored_results = posix_resolver_detail::convert_results(
-                        ai, op_.host, op_.service);
-                    op_.gai_error = 0;
-                }
-                else
-                {
-                    op_.gai_error = result;
-                }
-            }
-
-            if (ai)
-                ::freeaddrinfo(ai);
-
-            // Always post so the scheduler can properly drain the op
-            // during shutdown via destroy().
-            svc_.post(&op_);
-
-            // Signal thread completion for shutdown synchronization
-            svc_.thread_finished();
-        });
-        worker.detach();
-    }
-    catch (std::system_error const&)
-    {
-        // Thread creation failed - no thread was started
-        svc_.thread_finished();
-
-        // Set error and post completion to avoid hanging the coroutine
-        op_.gai_error = EAI_MEMORY; // Map to "not enough memory"
+        // Pool shut down — complete with cancellation
+        resolve_pool_op_.ref_.reset();
+        op.cancelled.store(true, std::memory_order_release);
         svc_.post(&op_);
     }
     return std::noop_coroutine();
@@ -460,69 +418,15 @@ posix_resolver::reverse_resolve(
     // Keep io_context alive while resolution is pending
     op.ex.on_work_started();
 
-    // Track thread for safe shutdown
-    svc_.thread_started();
-
-    try
+    // Prevent impl destruction while work is in flight
+    reverse_pool_op_.resolver_ = this;
+    reverse_pool_op_.ref_      = this->shared_from_this();
+    reverse_pool_op_.func_ = &posix_resolver::do_reverse_resolve_work;
+    if (!svc_.pool().post(&reverse_pool_op_))
     {
-        // Prevent impl destruction while worker thread is running
-        auto self = this->shared_from_this();
-        std::thread worker([this, self = std::move(self)]() {
-            // Build sockaddr from endpoint
-            sockaddr_storage ss{};
-            socklen_t ss_len;
-
-            if (reverse_op_.ep.is_v4())
-            {
-                auto sa = to_sockaddr_in(reverse_op_.ep);
-                std::memcpy(&ss, &sa, sizeof(sa));
-                ss_len = sizeof(sockaddr_in);
-            }
-            else
-            {
-                auto sa = to_sockaddr_in6(reverse_op_.ep);
-                std::memcpy(&ss, &sa, sizeof(sa));
-                ss_len = sizeof(sockaddr_in6);
-            }
-
-            char host[NI_MAXHOST];
-            char service[NI_MAXSERV];
-
-            int result = ::getnameinfo(
-                reinterpret_cast<sockaddr*>(&ss), ss_len, host, sizeof(host),
-                service, sizeof(service),
-                posix_resolver_detail::flags_to_ni_flags(reverse_op_.flags));
-
-            if (!reverse_op_.cancelled.load(std::memory_order_acquire))
-            {
-                if (result == 0)
-                {
-                    reverse_op_.stored_host    = host;
-                    reverse_op_.stored_service = service;
-                    reverse_op_.gai_error      = 0;
-                }
-                else
-                {
-                    reverse_op_.gai_error = result;
-                }
-            }
-
-            // Always post so the scheduler can properly drain the op
-            // during shutdown via destroy().
-            svc_.post(&reverse_op_);
-
-            // Signal thread completion for shutdown synchronization
-            svc_.thread_finished();
-        });
-        worker.detach();
-    }
-    catch (std::system_error const&)
-    {
-        // Thread creation failed - no thread was started
-        svc_.thread_finished();
-
-        // Set error and post completion to avoid hanging the coroutine
-        reverse_op_.gai_error = EAI_MEMORY;
+        // Pool shut down — complete with cancellation
+        reverse_pool_op_.ref_.reset();
+        op.cancelled.store(true, std::memory_order_release);
         svc_.post(&reverse_op_);
     }
     return std::noop_coroutine();
@@ -535,33 +439,115 @@ posix_resolver::cancel() noexcept
     reverse_op_.request_cancel();
 }
 
+inline void
+posix_resolver::do_resolve_work(pool_work_item* w) noexcept
+{
+    auto* pw   = static_cast<pool_op*>(w);
+    auto* self = pw->resolver_;
+
+    struct addrinfo hints{};
+    hints.ai_family   = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = posix_resolver_detail::flags_to_hints(self->op_.flags);
+
+    struct addrinfo* ai = nullptr;
+    int result          = ::getaddrinfo(
+        self->op_.host.empty() ? nullptr : self->op_.host.c_str(),
+        self->op_.service.empty() ? nullptr : self->op_.service.c_str(),
+        &hints, &ai);
+
+    if (!self->op_.cancelled.load(std::memory_order_acquire))
+    {
+        if (result == 0 && ai)
+        {
+            self->op_.stored_results =
+                posix_resolver_detail::convert_results(
+                    ai, self->op_.host, self->op_.service);
+            self->op_.gai_error = 0;
+        }
+        else
+        {
+            self->op_.gai_error = result;
+        }
+    }
+
+    if (ai)
+        ::freeaddrinfo(ai);
+
+    // Move ref to stack before post — post may trigger destroy_impl
+    // which erases the last shared_ptr, destroying *self (and *pw)
+    auto ref = std::move(pw->ref_);
+    self->svc_.post(&self->op_);
+}
+
+inline void
+posix_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
+{
+    auto* pw   = static_cast<pool_op*>(w);
+    auto* self = pw->resolver_;
+
+    sockaddr_storage ss{};
+    socklen_t ss_len;
+
+    if (self->reverse_op_.ep.is_v4())
+    {
+        auto sa = to_sockaddr_in(self->reverse_op_.ep);
+        std::memcpy(&ss, &sa, sizeof(sa));
+        ss_len = sizeof(sockaddr_in);
+    }
+    else
+    {
+        auto sa = to_sockaddr_in6(self->reverse_op_.ep);
+        std::memcpy(&ss, &sa, sizeof(sa));
+        ss_len = sizeof(sockaddr_in6);
+    }
+
+    char host[NI_MAXHOST];
+    char service[NI_MAXSERV];
+
+    int result = ::getnameinfo(
+        reinterpret_cast<sockaddr*>(&ss), ss_len, host, sizeof(host),
+        service, sizeof(service),
+        posix_resolver_detail::flags_to_ni_flags(self->reverse_op_.flags));
+
+    if (!self->reverse_op_.cancelled.load(std::memory_order_acquire))
+    {
+        if (result == 0)
+        {
+            self->reverse_op_.stored_host    = host;
+            self->reverse_op_.stored_service = service;
+            self->reverse_op_.gai_error      = 0;
+        }
+        else
+        {
+            self->reverse_op_.gai_error = result;
+        }
+    }
+
+    // Move ref to stack before post — post may trigger destroy_impl
+    // which erases the last shared_ptr, destroying *self (and *pw)
+    auto ref = std::move(pw->ref_);
+    self->svc_.post(&self->reverse_op_);
+}
+
 // posix_resolver_service implementation
 
 inline void
 posix_resolver_service::shutdown()
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Cancel all resolvers (sets cancelled flag checked by pool threads)
+    for (auto* impl = resolver_list_.pop_front(); impl != nullptr;
+         impl       = resolver_list_.pop_front())
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        // Signal threads to not access service after getaddrinfo returns
-        shutting_down_.store(true, std::memory_order_release);
-
-        // Cancel all resolvers (sets cancelled flag checked by threads)
-        for (auto* impl = resolver_list_.pop_front(); impl != nullptr;
-             impl       = resolver_list_.pop_front())
-        {
-            impl->cancel();
-        }
-
-        // Clear the map which releases shared_ptrs
-        resolver_ptrs_.clear();
+        impl->cancel();
     }
 
-    // Wait for all worker threads to finish before service is destroyed
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return active_threads_ == 0; });
-    }
+    // Clear the map which releases shared_ptrs.
+    // The thread pool service shuts down separately via
+    // execution_context service ordering.
+    resolver_ptrs_.clear();
 }
 
 inline io_object::implementation*
@@ -603,27 +589,6 @@ inline void
 posix_resolver_service::work_finished() noexcept
 {
     sched_->work_finished();
-}
-
-inline void
-posix_resolver_service::thread_started() noexcept
-{
-    std::lock_guard<std::mutex> lock(mutex_);
-    ++active_threads_;
-}
-
-inline void
-posix_resolver_service::thread_finished() noexcept
-{
-    std::lock_guard<std::mutex> lock(mutex_);
-    --active_threads_;
-    cv_.notify_one();
-}
-
-inline bool
-posix_resolver_service::is_shutting_down() const noexcept
-{
-    return shutting_down_.load(std::memory_order_acquire);
 }
 
 // Free function to get/create the resolver service
