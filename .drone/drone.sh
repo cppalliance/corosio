@@ -34,6 +34,14 @@ common_install () {
   export BOOST_CI_SRC_FOLDER=$(pwd)
 
   . ./ci/common_install.sh
+
+  # Clone the capy dependency into the superproject.
+  CAPY_BRANCH=develop
+  CAPY_TARGET="${DRONE_TARGET_BRANCH:-$TRAVIS_BRANCH}"
+  if [ "$CAPY_TARGET" = "master" ]; then
+    CAPY_BRANCH=master
+  fi
+  git clone -b "$CAPY_BRANCH" https://github.com/cppalliance/capy.git "$BOOST_ROOT/libs/capy" --depth 1
 }
 
 if [[ $(uname) == "Linux" && "$B2_ASAN" == "1" ]]; then

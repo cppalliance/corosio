@@ -28,6 +28,14 @@
 #include <type_traits>
 #include <vector>
 
+// Valgrind slows execution ~10-20x; scale failsafe timeouts to avoid
+// false failures when BOOST_NO_STRESS_TEST is defined.
+#ifdef BOOST_NO_STRESS_TEST
+inline constexpr int failsafe_scale = 20;
+#else
+inline constexpr int failsafe_scale = 1;
+#endif
+
 namespace boost::corosio::test {
 
 //
@@ -845,7 +853,7 @@ run_tls_test_fail(
 
     // Timer to unblock stuck handshakes (failsafe only)
     timer timeout(ioc);
-    timeout.expires_after(std::chrono::milliseconds(200));
+    timeout.expires_after(std::chrono::milliseconds(200 * failsafe_scale));
 
     // Store lambdas in named variables before invoking - anonymous lambda + immediate
     // invocation pattern [...](){}() can cause capture corruption with run_async
@@ -995,7 +1003,7 @@ run_tls_shutdown_test(
 
     // Failsafe timer in case of bugs
     timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::milliseconds(200));
+    failsafe.expires_after(std::chrono::milliseconds(200 * failsafe_scale));
 
     auto client_shutdown = [&client, &done, &failsafe]() -> capy::task<> {
         auto [ec] = co_await client.shutdown();
@@ -1110,7 +1118,7 @@ run_tls_truncation_test(
     // Timeout to prevent deadlock
     timer timeout(ioc);
     // IOCP peer-close propagation can be bursty under TLS backends.
-    timeout.expires_after(std::chrono::milliseconds(750));
+    timeout.expires_after(std::chrono::milliseconds(750 * failsafe_scale));
 
     auto client_close = [&s1, &s2]() -> capy::task<> {
         // Cancel and close underlying socket without TLS shutdown (IOCP needs cancel)
@@ -1388,7 +1396,7 @@ run_connection_reset_test(
 
     // Timeout protection
     timer timeout(ioc);
-    timeout.expires_after(std::chrono::milliseconds(200));
+    timeout.expires_after(std::chrono::milliseconds(200 * failsafe_scale));
 
     auto client_task = [&client, &client_failed, &timeout]() -> capy::task<> {
         auto [ec] = co_await client.handshake(
@@ -1471,7 +1479,7 @@ run_stop_token_handshake_test(
     // Failsafe timeout to prevent infinite hang if cancellation doesn't work
     // 2000ms allows headroom for CI with coverage instrumentation
     timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::milliseconds(2000));
+    failsafe.expires_after(std::chrono::milliseconds(2000 * failsafe_scale));
 
     // Client handshake - will be cancelled while waiting for ServerHello
     auto client_task = [&client, &client_got_error,
@@ -1573,7 +1581,7 @@ run_stop_token_read_test(
 
     // Failsafe timeout - 2000ms allows headroom for CI with coverage instrumentation
     timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::milliseconds(2000));
+    failsafe.expires_after(std::chrono::milliseconds(2000 * failsafe_scale));
 
     auto client_read = [&client, &read_got_error, &failsafe]() -> capy::task<> {
         char buf[32];
@@ -1676,7 +1684,7 @@ run_stop_token_write_test(
 
     // Failsafe timeout - 2000ms allows headroom for CI with coverage instrumentation
     timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::milliseconds(2000));
+    failsafe.expires_after(std::chrono::milliseconds(2000 * failsafe_scale));
 
     auto client_write = [&client, &large_buf, &write_got_error,
                          &failsafe]() -> capy::task<> {
@@ -1767,7 +1775,7 @@ run_socket_cancel_test(
 
     // Failsafe timeout - 2000ms allows headroom for CI with coverage instrumentation
     timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::milliseconds(2000));
+    failsafe.expires_after(std::chrono::milliseconds(2000 * failsafe_scale));
 
     // Client starts handshake - will be cancelled
     auto client_task = [&client, &client_got_error,

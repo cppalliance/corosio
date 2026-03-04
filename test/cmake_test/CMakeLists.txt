@@ -15,36 +15,8 @@ if(BOOST_CI_INSTALL_TEST)
   find_package(Boost CONFIG REQUIRED COMPONENTS corosio)
 else()
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-
-  set(deps
-    # Low-level dependencies (order matters - these must come first)
-    assert
-    config
-    core
-    mp11
-    predef
-    static_assert
-    throw_exception
-    type_traits
-    winapi
-
-    # Mid-level dependencies
-    align
-    compat
-    optional
-    variant2
-
-    # Primary dependencies (corosio)
-    system
-    capy
-  )
-
-  foreach(dep IN LISTS deps)
-    add_subdirectory(../../../${dep} boostorg/${dep} EXCLUDE_FROM_ALL)
-  endforeach()
-
-  # Add corosio last, after all its dependencies
-  add_subdirectory(../.. boostorg/corosio)
+  set(BOOST_INCLUDE_LIBRARIES corosio)
+  add_subdirectory(../../../.. deps/boost EXCLUDE_FROM_ALL)
 endif()
 
 add_executable(main main.cpp)

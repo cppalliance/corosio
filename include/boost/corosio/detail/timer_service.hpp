@@ -760,6 +760,12 @@ waiter_node::completion_op::operator()()
     sched.work_finished();
 }
 
+// GCC 14 false-positive: inlining ~optional<stop_callback> through
+// delete loses track that stop_cb_ was already .reset() above.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 inline void
 waiter_node::completion_op::destroy()
 {
@@ -783,6 +789,9 @@ waiter_node::completion_op::destroy()
     if (h)
         h.destroy();
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 inline std::coroutine_handle<>
 timer_service::implementation::wait(
