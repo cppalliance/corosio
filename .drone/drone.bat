@@ -34,6 +34,13 @@ if "%BOOST_BRANCH%" == "" (
 
 call ci\common_install.bat
 
+REM Clone the capy dependency into the superproject.
+SET CAPY_BRANCH=develop
+SET CAPY_TARGET=!BOOST_CI_TARGET_BRANCH!
+if NOT "!DRONE_TARGET_BRANCH!" == "" SET CAPY_TARGET=!DRONE_TARGET_BRANCH!
+if "!CAPY_TARGET!" == "master" SET CAPY_BRANCH=master
+git clone -b !CAPY_BRANCH! https://github.com/cppalliance/capy.git !BOOST_ROOT!\libs\capy --depth 1
+
 echo '==================================> COMPILE'
 
 set B2_TARGETS=libs/!SELF!/test
@@ -54,6 +61,13 @@ SET BOOST_CI_TARGET_BRANCH=!TRAVIS_BRANCH!
 SET BOOST_CI_SRC_FOLDER=%cd%
 
 call ci\common_install.bat
+
+REM Clone the capy dependency into the superproject.
+SET CAPY_BRANCH=develop
+SET CAPY_TARGET=!BOOST_CI_TARGET_BRANCH!
+if NOT "!DRONE_TARGET_BRANCH!" == "" SET CAPY_TARGET=!DRONE_TARGET_BRANCH!
+if "!CAPY_TARGET!" == "master" SET CAPY_BRANCH=master
+git clone -b !CAPY_BRANCH! https://github.com/cppalliance/capy.git !BOOST_ROOT!\libs\capy --depth 1
 
 echo '==================================> COMPILE'
 
@@ -124,6 +138,13 @@ SET BOOST_CI_SRC_FOLDER=%cd%
 
 call ci\common_install.bat
 
+REM Clone the capy dependency into the superproject.
+SET CAPY_BRANCH=develop
+SET CAPY_TARGET=!BOOST_CI_TARGET_BRANCH!
+if NOT "!DRONE_TARGET_BRANCH!" == "" SET CAPY_TARGET=!DRONE_TARGET_BRANCH!
+if "!CAPY_TARGET!" == "master" SET CAPY_BRANCH=master
+git clone -b !CAPY_BRANCH! https://github.com/cppalliance/capy.git !BOOST_ROOT!\libs\capy --depth 1
+
 echo '==================================> COMPILE'
 
 if "!CMAKE_NO_TESTS!" == "" (
@@ -159,6 +180,13 @@ SET BOOST_CI_TARGET_BRANCH=!TRAVIS_BRANCH!
 SET BOOST_CI_SRC_FOLDER=%cd%
 
 call ci\common_install.bat
+
+REM Clone the capy dependency into the superproject.
+SET CAPY_BRANCH=develop
+SET CAPY_TARGET=!BOOST_CI_TARGET_BRANCH!
+if NOT "!DRONE_TARGET_BRANCH!" == "" SET CAPY_TARGET=!DRONE_TARGET_BRANCH!
+if "!CAPY_TARGET!" == "master" SET CAPY_BRANCH=master
+git clone -b !CAPY_BRANCH! https://github.com/cppalliance/capy.git !BOOST_ROOT!\libs\capy --depth 1
 
 echo '==================================> COMPILE'
 
