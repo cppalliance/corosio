@@ -114,25 +114,76 @@ public:
     */
     ~openssl_stream() override;
 
-    openssl_stream(openssl_stream&&) noexcept;
-    openssl_stream& operator=(openssl_stream&&) noexcept;
+    /** Move construct from another OpenSSL stream.
 
+        @param other The source stream. After the move,
+            @p other is in a valid but unspecified state.
+    */
+    openssl_stream(openssl_stream&& other) noexcept;
+
+    /** Move assign from another OpenSSL stream.
+
+        @param other The source stream. After the move,
+            @p other is in a valid but unspecified state.
+
+        @return `*this`.
+    */
+    openssl_stream& operator=(openssl_stream&& other) noexcept;
+
+    /** Perform the TLS handshake asynchronously.
+
+        Suspends the calling coroutine until the handshake
+        completes, an error occurs, or the operation is
+        cancelled via stop token.
+
+        @par Preconditions
+        The underlying stream must be connected. No other
+        TLS operation may be in progress on this stream.
+
+        @param type The handshake role (client or server).
+
+        @return An awaitable yielding `(error_code)`.
+    */
     capy::io_task<> handshake(handshake_type type) override;
 
+    /** Shut down the TLS session asynchronously.
+
+        Sends a close_notify alert and waits for the peer's
+        close_notify response. Supports cancellation via
+        stop token.
+
+        @par Preconditions
+        A handshake must have completed successfully. No
+        other TLS operation may be in progress on this stream.
+
+        @return An awaitable yielding `(error_code)`.
+    */
     capy::io_task<> shutdown() override;
 
+    /** Reset TLS session state for reuse.
+
+        Clears internal buffers and session data so the stream
+        can perform a new handshake on the same underlying
+        connection.
+
+        @par Preconditions
+        No TLS operation may be in progress on this stream.
+    */
     void reset() override;
 
+    /// Return the underlying stream.
     capy::any_stream& next_layer() noexcept override
     {
         return stream_;
     }
 
+    /// Return the underlying stream.
     capy::any_stream const& next_layer() const noexcept override
     {
         return stream_;
     }
 
+    /// Return the TLS backend name ("openssl").
     std::string_view name() const noexcept override;
 
 protected:

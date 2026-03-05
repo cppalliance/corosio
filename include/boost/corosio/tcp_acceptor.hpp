@@ -416,8 +416,15 @@ public:
         return opt;
     }
 
+    /** Define backend hooks for TCP acceptor operations.
+
+        Platform backends derive from this to implement
+        accept, endpoint query, open-state checks, cancellation,
+        and socket-option management.
+    */
     struct implementation : io_object::implementation
     {
+        /// Initiate an asynchronous accept operation.
         virtual std::coroutine_handle<> accept(
             std::coroutine_handle<>,
             capy::executor_ref,

@@ -78,11 +78,13 @@ public:
     /// The associated acceptor type.
     using acceptor = tcp_acceptor;
 
+    /// Test for equality.
     friend constexpr bool operator==(tcp a, tcp b) noexcept
     {
         return a.v6_ == b.v6_;
     }
 
+    /// Test for inequality.
     friend constexpr bool operator!=(tcp a, tcp b) noexcept
     {
         return a.v6_ != b.v6_;

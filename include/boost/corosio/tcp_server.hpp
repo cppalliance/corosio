@@ -598,10 +598,26 @@ public:
     }
 
 public:
+    /// Destroy the server, stopping all accept loops.
     ~tcp_server();
+
     tcp_server(tcp_server const&)            = delete;
     tcp_server& operator=(tcp_server const&) = delete;
+
+    /** Move construct from another server.
+
+        @param o The source server. After the move, @p o is
+            in a valid but unspecified state.
+    */
     tcp_server(tcp_server&& o) noexcept;
+
+    /** Move assign from another server.
+
+        @param o The source server. After the move, @p o is
+            in a valid but unspecified state.
+
+        @return `*this`.
+    */
     tcp_server& operator=(tcp_server&& o) noexcept;
 
     /** Bind to a local endpoint.

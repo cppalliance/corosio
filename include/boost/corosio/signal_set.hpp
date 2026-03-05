@@ -160,11 +160,36 @@ public:
         return static_cast<flags_t>(~static_cast<unsigned>(a));
     }
 
+    /** Define backend hooks for signal set operations.
+
+        Platform backends derive from this to provide signal
+        registration via sigaction (POSIX) or the C runtime
+        signal() function (Windows).
+    */
     struct implementation : io_signal_set::implementation
     {
+        /** Register a signal with the given flags.
+
+            @param signal_number The signal to register.
+            @param flags Platform-specific signal handling flags.
+
+            @return Error code on failure, empty on success.
+        */
         virtual std::error_code add(int signal_number, flags_t flags) = 0;
-        virtual std::error_code remove(int signal_number)             = 0;
-        virtual std::error_code clear()                               = 0;
+
+        /** Unregister a signal.
+
+            @param signal_number The signal to remove.
+
+            @return Error code on failure, empty on success.
+        */
+        virtual std::error_code remove(int signal_number) = 0;
+
+        /** Unregister all signals.
+
+            @return Error code on failure, empty on success.
+        */
+        virtual std::error_code clear() = 0;
     };
 
     /** Destructor.

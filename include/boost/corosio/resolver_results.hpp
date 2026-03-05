@@ -37,7 +37,7 @@ class resolver_entry
     std::string service_name_;
 
 public:
-    /** Default constructor. */
+    /// Construct a default empty entry.
     resolver_entry() = default;
 
     /** Construct with endpoint, host name, and service name.
@@ -53,25 +53,25 @@ public:
     {
     }
 
-    /** Get the endpoint. */
+    /// Return the resolved endpoint.
     endpoint get_endpoint() const noexcept
     {
         return ep_;
     }
 
-    /** Implicit conversion to endpoint. */
+    /// Convert to endpoint.
     operator endpoint() const noexcept
     {
         return ep_;
     }
 
-    /** Get the host name from the query. */
+    /// Return the host name from the query.
     std::string const& host_name() const noexcept
     {
         return host_name_;
     }
 
-    /** Get the service name from the query. */
+    /// Return the service name from the query.
     std::string const& service_name() const noexcept
     {
         return service_name_;
@@ -91,19 +91,32 @@ public:
 class resolver_results
 {
 public:
-    using value_type      = resolver_entry;
+    /// The entry type.
+    using value_type = resolver_entry;
+
+    /// Const reference to an entry.
     using const_reference = value_type const&;
-    using reference       = const_reference;
-    using const_iterator  = std::vector<resolver_entry>::const_iterator;
-    using iterator        = const_iterator;
+
+    /// Reference to an entry (always const).
+    using reference = const_reference;
+
+    /// Const iterator over entries.
+    using const_iterator = std::vector<resolver_entry>::const_iterator;
+
+    /// Iterator over entries (always const).
+    using iterator = const_iterator;
+
+    /// Signed difference type.
     using difference_type = std::ptrdiff_t;
-    using size_type       = std::size_t;
+
+    /// Unsigned size type.
+    using size_type = std::size_t;
 
 private:
     std::shared_ptr<std::vector<resolver_entry>> entries_;
 
 public:
-    /** Default constructor creates an empty range. */
+    /// Construct an empty results range.
     resolver_results() = default;
 
     /** Construct from a vector of entries.
@@ -116,19 +129,19 @@ public:
     {
     }
 
-    /** Get the number of entries. */
+    /// Return the number of entries.
     size_type size() const noexcept
     {
         return entries_ ? entries_->size() : 0;
     }
 
-    /** Check if the results are empty. */
+    /// Check if the results are empty.
     bool empty() const noexcept
     {
         return !entries_ || entries_->empty();
     }
 
-    /** Get an iterator to the first entry. */
+    /// Return an iterator to the first entry.
     const_iterator begin() const noexcept
     {
         if (entries_)
@@ -136,7 +149,7 @@ public:
         return std::vector<resolver_entry>::const_iterator();
     }
 
-    /** Get an iterator past the last entry. */
+    /// Return an iterator past the last entry.
     const_iterator end() const noexcept
     {
         if (entries_)
@@ -144,32 +157,32 @@ public:
         return std::vector<resolver_entry>::const_iterator();
     }
 
-    /** Get an iterator to the first entry. */
+    /// Return an iterator to the first entry.
     const_iterator cbegin() const noexcept
     {
         return begin();
     }
 
-    /** Get an iterator past the last entry. */
+    /// Return an iterator past the last entry.
     const_iterator cend() const noexcept
     {
         return end();
     }
 
-    /** Swap with another results object. */
+    /// Swap with another results object.
     void swap(resolver_results& other) noexcept
     {
         entries_.swap(other.entries_);
     }
 
-    /** Test for equality. */
+    /// Test for equality.
     friend bool
     operator==(resolver_results const& a, resolver_results const& b) noexcept
     {
         return a.entries_ == b.entries_;
     }
 
-    /** Test for inequality. */
+    /// Test for inequality.
     friend bool
     operator!=(resolver_results const& a, resolver_results const& b) noexcept
     {
@@ -193,7 +206,7 @@ class reverse_resolver_result
     std::string service_;
 
 public:
-    /** Default constructor. */
+    /// Construct a default empty result.
     reverse_resolver_result() = default;
 
     /** Construct with endpoint, host name, and service name.
@@ -210,19 +223,19 @@ public:
     {
     }
 
-    /** Get the endpoint that was resolved. */
+    /// Return the endpoint that was resolved.
     corosio::endpoint endpoint() const noexcept
     {
         return ep_;
     }
 
-    /** Get the resolved host name. */
+    /// Return the resolved host name.
     std::string const& host_name() const noexcept
     {
         return host_;
     }
 
-    /** Get the resolved service name. */
+    /// Return the resolved service name.
     std::string const& service_name() const noexcept
     {
         return service_;

@@ -83,15 +83,28 @@ class BOOST_COROSIO_DECL io_timer : public io_object
     };
 
 public:
+    /** Backend interface for timer wait operations.
+
+        Holds per-timer state (expiry, heap position) and provides
+        the virtual `wait` entry point that concrete timer services
+        override.
+    */
     struct implementation : io_object::implementation
     {
+        /// Sentinel value indicating the timer is not in the heap.
         static constexpr std::size_t npos =
             (std::numeric_limits<std::size_t>::max)();
 
+        /// The absolute expiry time point.
         std::chrono::steady_clock::time_point expiry_{};
-        std::size_t heap_index_        = npos;
+
+        /// Index in the timer service's min-heap, or `npos`.
+        std::size_t heap_index_ = npos;
+
+        /// True if `wait()` has been called since last cancel.
         bool might_have_pending_waits_ = false;
 
+        /// Initiate an asynchronous wait for the timer to expire.
         virtual std::coroutine_handle<> wait(
             std::coroutine_handle<>,
             capy::executor_ref,

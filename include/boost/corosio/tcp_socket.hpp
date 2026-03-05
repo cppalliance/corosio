@@ -34,8 +34,9 @@
 
 namespace boost::corosio {
 
+/// Represent a platform-specific socket descriptor (`int` on POSIX, `SOCKET` on Windows).
 #if BOOST_COROSIO_HAS_IOCP && !defined(BOOST_COROSIO_MRDOCS)
-using native_handle_type = std::uintptr_t; // SOCKET
+using native_handle_type = std::uintptr_t;
 #else
 using native_handle_type = int;
 #endif
@@ -89,17 +90,39 @@ public:
         shutdown_both
     };
 
+    /** Define backend hooks for TCP socket operations.
+
+        Platform backends (epoll, IOCP, kqueue, select) derive from
+        this to implement socket I/O, connection, and option management.
+    */
     struct implementation : io_stream::implementation
     {
+        /** Initiate an asynchronous connect to the given endpoint.
+
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param ep The remote endpoint to connect to.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+
+            @return Coroutine handle to resume immediately.
+        */
         virtual std::coroutine_handle<> connect(
-            std::coroutine_handle<>,
-            capy::executor_ref,
-            endpoint,
-            std::stop_token,
-            std::error_code*) = 0;
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
+            endpoint ep,
+            std::stop_token token,
+            std::error_code* ec) = 0;
 
-        virtual std::error_code shutdown(shutdown_type) noexcept = 0;
+        /** Shut down the socket for the given direction(s).
 
+            @param what The shutdown direction.
+
+            @return Error code on failure, empty on success.
+        */
+        virtual std::error_code shutdown(shutdown_type what) noexcept = 0;
+
+        /// Return the platform socket descriptor.
         virtual native_handle_type native_handle() const noexcept = 0;
 
         /** Request cancellation of pending asynchronous operations.
@@ -136,13 +159,14 @@ public:
         get_option(int level, int optname, void* data, std::size_t* size)
             const noexcept = 0;
 
-        /// Returns the cached local endpoint.
+        /// Return the cached local endpoint.
         virtual endpoint local_endpoint() const noexcept = 0;
 
-        /// Returns the cached remote endpoint.
+        /// Return the cached remote endpoint.
         virtual endpoint remote_endpoint() const noexcept = 0;
     };
 
+    /// Represent the awaitable returned by @ref connect.
     struct connect_awaitable
     {
         tcp_socket& s_;
