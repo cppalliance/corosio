@@ -16,10 +16,17 @@ namespace boost::corosio::detail {
 
 class timer_service;
 
-// Intermediary between public scheduler and concrete backends,
-// holds cached service pointers behind the compilation firewall
+/** Cache service pointers for native backend schedulers.
+
+    Sits between @ref scheduler and the concrete backend schedulers,
+    storing service pointers that would otherwise require a virtual
+    call or service lookup on every timer operation.
+
+    @see scheduler
+*/
 struct native_scheduler : scheduler
 {
+    /// Store the timer service pointer, set during construction.
     timer_service* timer_svc_ = nullptr;
 };
 

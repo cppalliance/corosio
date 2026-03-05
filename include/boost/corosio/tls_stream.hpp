@@ -46,17 +46,14 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL tls_stream
 {
 public:
-    /** Different handshake types. */
+    /// Identify the TLS handshake role.
     enum handshake_type
     {
-        /** Perform handshaking as a client. */
-        client,
-
-        /** Perform handshaking as a server. */
-        server
+        client, ///< Perform handshaking as a client.
+        server  ///< Perform handshaking as a server.
     };
 
-    /** Destructor. */
+    /// Destroy the TLS stream.
     virtual ~tls_stream() = default;
 
     tls_stream(tls_stream const&)            = delete;

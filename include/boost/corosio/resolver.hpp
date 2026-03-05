@@ -433,8 +433,14 @@ public:
     void cancel();
 
 public:
+    /** Backend interface for DNS resolution operations.
+
+        Platform backends derive from this to implement forward and
+        reverse DNS resolution via getaddrinfo/getnameinfo.
+    */
     struct implementation : io_object::implementation
     {
+        /// Initiate an asynchronous forward DNS resolution.
         virtual std::coroutine_handle<> resolve(
             std::coroutine_handle<>,
             capy::executor_ref,
@@ -445,6 +451,7 @@ public:
             std::error_code*,
             resolver_results*) = 0;
 
+        /// Initiate an asynchronous reverse DNS resolution.
         virtual std::coroutine_handle<> reverse_resolve(
             std::coroutine_handle<>,
             capy::executor_ref,
@@ -454,6 +461,7 @@ public:
             std::error_code*,
             reverse_resolver_result*) = 0;
 
+        /// Cancel pending resolve operations.
         virtual void cancel() noexcept = 0;
     };
 

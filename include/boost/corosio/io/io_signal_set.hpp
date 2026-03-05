@@ -68,15 +68,35 @@ class BOOST_COROSIO_DECL io_signal_set : public io_object
     };
 
 public:
+    /** Define backend hooks for signal set wait and cancel.
+
+        Platform backends derive from this to implement
+        signal delivery notification.
+    */
     struct implementation : io_object::implementation
     {
-        virtual std::coroutine_handle<> wait(
-            std::coroutine_handle<>,
-            capy::executor_ref,
-            std::stop_token,
-            std::error_code*,
-            int*) = 0;
+        /** Initiate an asynchronous wait for a signal.
 
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+            @param signo Output signal number.
+
+            @return Coroutine handle to resume immediately.
+        */
+        virtual std::coroutine_handle<> wait(
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
+            std::stop_token token,
+            std::error_code* ec,
+            int* signo) = 0;
+
+        /** Cancel all pending wait operations.
+
+            Cancelled waiters complete with an error that
+            compares equal to `capy::cond::canceled`.
+        */
         virtual void cancel() = 0;
     };
 

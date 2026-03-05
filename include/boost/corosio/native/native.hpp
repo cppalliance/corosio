@@ -7,6 +7,13 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+/** @file native.hpp
+
+    Include all native (devirtualized) public headers:
+    I/O context, sockets, acceptor, resolver, signal set,
+    timer, and cancellation helpers.
+*/
+
 #ifndef BOOST_COROSIO_NATIVE_NATIVE_HPP
 #define BOOST_COROSIO_NATIVE_NATIVE_HPP
 

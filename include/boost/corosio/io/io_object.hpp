@@ -223,6 +223,7 @@ protected:
     io_object(io_object const&)            = delete;
     io_object& operator=(io_object const&) = delete;
 
+    /// The platform I/O handle owned by this object.
     handle h_;
 };
 

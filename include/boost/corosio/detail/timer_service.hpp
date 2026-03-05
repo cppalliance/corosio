@@ -86,19 +86,26 @@ public:
     using clock_type = std::chrono::steady_clock;
     using time_point = clock_type::time_point;
 
+    /// Type-erased callback for earliest-expiry-changed notifications.
     class callback
     {
         void* ctx_         = nullptr;
         void (*fn_)(void*) = nullptr;
 
     public:
+        /// Construct an empty callback.
         callback() = default;
+
+        /// Construct a callback with the given context and function.
         callback(void* ctx, void (*fn)(void*)) noexcept : ctx_(ctx), fn_(fn) {}
 
+        /// Return true if the callback is non-empty.
         explicit operator bool() const noexcept
         {
             return fn_ != nullptr;
         }
+
+        /// Invoke the callback.
         void operator()() const
         {
             if (fn_)
@@ -126,49 +133,78 @@ private:
         (std::numeric_limits<std::int64_t>::max)()};
 
 public:
+    /// Construct the timer service bound to a scheduler.
     inline timer_service(capy::execution_context&, scheduler& sched)
         : sched_(&sched)
     {
     }
 
+    /// Return the associated scheduler.
     inline scheduler& get_scheduler() noexcept
     {
         return *sched_;
     }
 
+    /// Destroy the timer service.
     ~timer_service() override = default;
 
     timer_service(timer_service const&)            = delete;
     timer_service& operator=(timer_service const&) = delete;
 
+    /// Register a callback invoked when the earliest expiry changes.
     inline void set_on_earliest_changed(callback cb)
     {
         on_earliest_changed_ = cb;
     }
 
+    /// Return true if no timers are in the heap.
     inline bool empty() const noexcept
     {
         return cached_nearest_ns_.load(std::memory_order_acquire) ==
             (std::numeric_limits<std::int64_t>::max)();
     }
 
+    /// Return the nearest timer expiry without acquiring the mutex.
     inline time_point nearest_expiry() const noexcept
     {
         auto ns = cached_nearest_ns_.load(std::memory_order_acquire);
         return time_point(time_point::duration(ns));
     }
 
+    /// Cancel all pending timers and free cached resources.
     inline void shutdown() override;
+
+    /// Construct a new timer implementation.
     inline io_object::implementation* construct() override;
+
+    /// Destroy a timer implementation, cancelling pending waiters.
     inline void destroy(io_object::implementation* p) override;
+
+    /// Cancel and recycle a timer implementation.
     inline void destroy_impl(implementation& impl);
+
+    /// Create or recycle a waiter node.
     inline waiter_node* create_waiter();
+
+    /// Return a waiter node to the cache or free list.
     inline void destroy_waiter(waiter_node* w);
+
+    /// Update the timer expiry, cancelling existing waiters.
     inline std::size_t update_timer(implementation& impl, time_point new_time);
+
+    /// Insert a waiter into the timer's waiter list and the heap.
     inline void insert_waiter(implementation& impl, waiter_node* w);
+
+    /// Cancel all waiters on a timer.
     inline std::size_t cancel_timer(implementation& impl);
+
+    /// Cancel a single waiter ( stop_token callback path ).
     inline void cancel_waiter(waiter_node* w);
+
+    /// Cancel one waiter on a timer.
     inline std::size_t cancel_one_waiter(implementation& impl);
+
+    /// Complete all waiters whose timers have expired.
     inline std::size_t process_expired();
 
 private:
