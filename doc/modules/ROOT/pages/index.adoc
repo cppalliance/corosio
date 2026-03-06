@@ -75,15 +75,20 @@ and xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] for back
 
 === Tested Compilers
 
-* GCC 11+
-* Clang 14+
-* MSVC 19.29+ (Visual Studio 2019 16.10+)
+* GCC 12+
+* Clang 17+
+* Apple Clang (latest Xcode on macOS 14, 15, 26)
+* MSVC 14.34+ (Visual Studio 2022 17.4+)
+* Clang-CL (Visual Studio 2022)
+* MinGW (latest)
 
 === Platform Support
 
-* Windows (IOCP)
-* Linux (planned: io_uring)
-* macOS (planned: kqueue)
+* Linux — epoll backend (x86_64, ARM64); io_uring planned
+* Windows — IOCP backend
+* macOS — kqueue backend (ARM64)
+* FreeBSD — kqueue backend
+* Linux, macOS, and FreeBSD also support the select backend
 
 == Code Convention
 
