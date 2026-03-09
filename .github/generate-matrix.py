@@ -126,7 +126,9 @@ def generate_name(compiler_family, entry):
         macos_ver = runner.replace("macos-", "macOS ")
         modifiers.append(macos_ver)
 
-    if entry.get("asan") and entry.get("ubsan"):
+    if entry.get("tsan"):
+        modifiers.append("tsan")
+    elif entry.get("asan") and entry.get("ubsan"):
         modifiers.append("asan+ubsan")
     elif entry.get("asan"):
         modifiers.append("asan")
@@ -162,6 +164,20 @@ def generate_sanitizer_variant(compiler_family, spec):
 
     if compiler_family not in ("msvc", "clang-cl"):
         overrides["ubsan"] = True
+
+    if compiler_family == "clang":
+        overrides["shared"] = False
+
+    return make_entry(compiler_family, spec, **overrides)
+
+
+def generate_tsan_variant(compiler_family, spec):
+    """Generate TSan variant for the latest compiler in a family (Linux only)."""
+    overrides = {
+        "tsan": True,
+        "build-type": "RelWithDebInfo",
+        "shared": True,
+    }
 
     if compiler_family == "clang":
         overrides["shared"] = False
@@ -244,6 +260,10 @@ def main():
                 # MinGW has limited ASAN support; skip sanitizer variant
                 if family != "mingw":
                     matrix.append(generate_sanitizer_variant(family, spec))
+
+                # TSan is incompatible with ASan; separate variant for Linux
+                if family in ("gcc", "clang"):
+                    matrix.append(generate_tsan_variant(family, spec))
 
                 if family == "clang":
                     matrix.append(generate_x86_variant(family, spec))
