@@ -105,6 +105,14 @@ tcp_server::bind(endpoint ep)
     }
 }
 
+endpoint
+tcp_server::local_endpoint(std::size_t index) const noexcept
+{
+    if (index >= impl_->ports.size())
+        return endpoint{};
+    return impl_->ports[index].local_endpoint();
+}
+
 void
 tcp_server::start()
 {

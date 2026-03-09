@@ -712,6 +712,15 @@ public:
     */
     void start();
 
+    /** Return the local endpoint for the i-th bound port.
+
+        @param index Zero-based index into the list of bound ports.
+
+        @return The local endpoint, or a default-constructed endpoint
+            if @p index is out of range or the acceptor is not open.
+    */
+    endpoint local_endpoint(std::size_t index = 0) const noexcept;
+
     /** Stop accepting connections.
 
         Signals all listening ports to stop accepting new connections

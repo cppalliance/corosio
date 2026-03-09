@@ -116,26 +116,10 @@ struct tcp_server_test
     {
         io_context ioc;
 
-        // Find an available port
-        tcp_acceptor acc(ioc);
-        std::uint16_t port = 0;
-        for (int attempt = 0; attempt < 20; ++attempt)
-        {
-            port = static_cast<std::uint16_t>(49152 + (attempt * 7) % 16383);
-            acc.open();
-            acc.set_option(socket_option::reuse_address(true));
-            if (!acc.bind(endpoint(ipv4_address::loopback(), port)) &&
-                !acc.listen())
-                break;
-            acc.close();
-            acc = tcp_acceptor(ioc);
-        }
-        acc.close();
-
-        // Create server and bind to found port
         test_server srv(ioc);
-        auto ec = srv.bind(endpoint(ipv4_address::loopback(), port));
+        auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
+        auto port = srv.local_endpoint().port();
 
         std::atomic<bool> connection_handled{false};
         std::atomic<bool> stop_requested{false};
@@ -251,25 +235,10 @@ struct tcp_server_test
 
         io_context ioc;
 
-        // Find an available port
-        tcp_acceptor acc(ioc);
-        std::uint16_t port = 0;
-        for (int attempt = 0; attempt < 20; ++attempt)
-        {
-            port = static_cast<std::uint16_t>(49152 + (attempt * 7) % 16383);
-            acc.open();
-            acc.set_option(socket_option::reuse_address(true));
-            if (!acc.bind(endpoint(ipv4_address::loopback(), port)) &&
-                !acc.listen())
-                break;
-            acc.close();
-            acc = tcp_acceptor(ioc);
-        }
-        acc.close();
-
         test_server srv(ioc);
-        auto ec = srv.bind(endpoint(ipv4_address::loopback(), port));
+        auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
+        auto port = srv.local_endpoint().port();
 
         int connections_handled = 0;
 
