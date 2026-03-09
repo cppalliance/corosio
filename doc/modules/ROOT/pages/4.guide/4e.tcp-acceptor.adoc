@@ -24,7 +24,7 @@ namespace corosio = boost::corosio;
 
 == Overview
 
-An tcp_acceptor binds to a local endpoint and waits for clients to connect:
+A tcp_acceptor binds to a local endpoint and waits for clients to connect:
 
 [source,cpp]
 ----

@@ -282,17 +282,25 @@ On Windows, the `io_context` uses I/O Completion Ports:
 * Efficient thread pool utilization
 * Native async I/O with zero-copy potential
 
-=== Linux (io_uring) — Planned
+=== Linux (epoll)
 
-Future Linux support will use io_uring for:
+On Linux, the `io_context` uses epoll:
+
+* Scalable to large numbers of file descriptors
+* Edge-triggered notifications
+* Efficient for long-lived connections
+
+==== io_uring — Planned
+
+Future Linux support will add io_uring for:
 
 * Kernel-level async I/O
 * Reduced system calls
 * Support for more operation types
 
-=== macOS (kqueue) — Planned
+=== macOS / FreeBSD (kqueue)
 
-Future macOS support will use kqueue for:
+On macOS and FreeBSD, the `io_context` uses kqueue:
 
 * Efficient event notification
 * File descriptor monitoring
