@@ -32,7 +32,7 @@ def load_compilers(path=None):
 
 
 def platform_for_family(compiler_family):
-    """Return the platform boolean name for a compiler family."""
+    """Return the platform name for a compiler family."""
     if compiler_family in ("msvc", "clang-cl", "mingw"):
         return "windows"
     elif compiler_family == "apple-clang":
@@ -51,11 +51,8 @@ def make_entry(compiler_family, spec, **overrides):
         "b2-toolset": spec["b2_toolset"],
         "shared": True,
         "build-type": "Release",
-        "build-cmake": True,
+        platform_for_family(compiler_family): True,
     }
-
-    # Platform boolean
-    entry[platform_for_family(compiler_family)] = True
 
     if spec.get("container"):
         entry["container"] = spec["container"]
@@ -71,30 +68,23 @@ def make_entry(compiler_family, spec, **overrides):
         entry["is-latest"] = True
     if spec.get("is_earliest"):
         entry["is-earliest"] = True
-    if spec.get("build_cmake") is False:
-        entry["build-cmake"] = False
-    if spec.get("cmake_cxxstd"):
-        entry["cmake-cxxstd"] = spec["cmake_cxxstd"]
-    if spec.get("cxxflags"):
-        entry["cxxflags"] = spec["cxxflags"]
     if "shared" in spec:
         entry["shared"] = spec["shared"]
     if spec.get("vcpkg_triplet"):
         entry["vcpkg-triplet"] = spec["vcpkg_triplet"]
 
+    # CMake builds only on earliest/latest compilers, unless explicitly disabled
+    if spec.get("build_cmake") is False:
+        entry["build-cmake"] = False
+    elif spec.get("is_latest") or spec.get("is_earliest"):
+        entry["build-cmake"] = True
+    if spec.get("cmake_cxxstd"):
+        entry["cmake-cxxstd"] = spec["cmake_cxxstd"]
+    if spec.get("cxxflags"):
+        entry["cxxflags"] = spec["cxxflags"]
+
     entry.update(overrides)
     entry["name"] = generate_name(compiler_family, entry)
-    return entry
-
-
-def apply_clang_tidy(entry, spec):
-    """Add clang-tidy flag and install package to an entry (base entries only)."""
-    entry["clang-tidy"] = True
-    version = spec["version"]
-    existing_install = entry.get("install", "")
-    tidy_pkg = f"clang-tidy-{version}"
-    entry["install"] = f"{existing_install} {tidy_pkg}".strip()
-    entry["name"] = generate_name(entry["compiler"], entry)
     return entry
 
 
@@ -104,7 +94,7 @@ def generate_name(compiler_family, entry):
         "gcc": "GCC",
         "clang": "Clang",
         "msvc": "MSVC",
-        "mingw": "MinGW",
+        "mingw": "MinGW Clang",
         "clang-cl": "Clang-CL",
         "apple-clang": "Apple-Clang",
     }
@@ -123,6 +113,7 @@ def generate_name(compiler_family, entry):
     if "arm" in runner:
         modifiers.append("arm64")
     elif compiler_family == "apple-clang":
+        # Extract macOS version from runner name
         macos_ver = runner.replace("macos-", "macOS ")
         modifiers.append(macos_ver)
 
@@ -138,11 +129,17 @@ def generate_name(compiler_family, entry):
     if entry.get("coverage"):
         modifiers.append("coverage")
 
+    if entry.get("x86"):
+        modifiers.append("x86")
+
     if entry.get("clang-tidy"):
         modifiers.append("clang-tidy")
 
-    if entry.get("x86"):
-        modifiers.append("x86")
+    if entry.get("time-trace"):
+        modifiers.append("time-trace")
+
+    if entry.get("superproject-cmake"):
+        modifiers.append("superproject CMake")
 
     if entry.get("shared") is False:
         modifiers.append("static")
@@ -154,7 +151,7 @@ def generate_name(compiler_family, entry):
 def generate_sanitizer_variant(compiler_family, spec):
     """Generate ASAN+UBSAN variant for the latest compiler in a family.
 
-    MSVC and Clang-CL only support ASAN, not UBSAN.
+    MSVC does not support UBSAN; only ASAN is enabled for MSVC.
     """
     overrides = {
         "asan": True,
@@ -163,6 +160,7 @@ def generate_sanitizer_variant(compiler_family, spec):
         "build-cmake": False,
     }
 
+    # MSVC and Clang-CL only support ASAN, not UBSAN
     if compiler_family not in ("msvc", "clang-cl"):
         overrides["ubsan"] = True
 
@@ -188,39 +186,35 @@ def generate_tsan_variant(compiler_family, spec):
 
 
 def generate_coverage_variant(compiler_family, spec):
-    """Generate coverage variant.
+    """Generate coverage variant with platform-specific flags.
 
-    Corosio has three coverage builds:
-      - Linux (GCC): lcov with full profiling flags
-      - macOS (Apple-Clang): --coverage only, gcovr with llvm-cov
-      - Windows (MinGW): gcovr with full profiling flags
+    Linux/Windows: full gcov flags with atomic profile updates.
+    macOS: --coverage only (Apple-Clang uses llvm-cov).
     """
     platform = platform_for_family(compiler_family)
 
     if platform == "macos":
-        flags = "--coverage"
+        cov_flags = "--coverage"
     else:
-        flags = "--coverage -fprofile-arcs -ftest-coverage -fprofile-update=atomic"
+        cov_flags = ("--coverage -fprofile-arcs -ftest-coverage"
+                     " -fprofile-update=atomic")
 
     overrides = {
         "coverage": True,
         "coverage-flag": platform,
         "shared": False,
         "build-type": "Debug",
-        "cxxflags": flags,
-        "ccflags": flags,
+        "build-cmake": False,
+        "cxxflags": cov_flags,
+        "ccflags": cov_flags,
     }
 
     if platform == "linux":
         overrides["install"] = "lcov wget unzip"
 
     entry = make_entry(compiler_family, spec, **overrides)
-    # Coverage variants should not trigger integration tests; they get CMake
-    # through the matrix.coverage condition in ci.yml
     entry.pop("is-latest", None)
     entry.pop("is-earliest", None)
-    entry["build-cmake"] = False
-    entry["name"] = generate_name(compiler_family, entry)
     return entry
 
 
@@ -235,10 +229,42 @@ def generate_x86_variant(compiler_family, spec):
 def generate_arm_entry(compiler_family, spec):
     """Generate ARM64 variant for a compiler spec."""
     arm_runner = spec["runs_on"].replace("ubuntu-24.04", "ubuntu-24.04-arm")
-    # ARM runners don't support containers
+    # ARM runners don't support containers — build a spec copy without container
     arm_spec = {k: v for k, v in spec.items() if k != "container"}
     arm_spec["runs_on"] = arm_runner
     return make_entry(compiler_family, arm_spec)
+
+
+def generate_time_trace_variant(compiler_family, spec):
+    """Generate time-trace variant for compile-time profiling (Clang only)."""
+    return make_entry(compiler_family, spec, **{
+        "time-trace": True,
+        "build-cmake": True,
+        "cxxflags": "-ftime-trace",
+    })
+
+
+def generate_superproject_cmake_variant(compiler_family, spec):
+    """Generate a single superproject CMake build to verify integration."""
+    entry = make_entry(compiler_family, spec, **{
+        "superproject-cmake": True,
+        "build-cmake": False,
+    })
+    entry.pop("is-latest", None)
+    entry.pop("is-earliest", None)
+    return entry
+
+
+def apply_clang_tidy(entry, spec):
+    """Add clang-tidy flag and install package to an entry."""
+    entry["clang-tidy"] = True
+    entry["build-cmake"] = False
+    version = spec["version"]
+    existing_install = entry.get("install", "")
+    tidy_pkg = f"clang-tidy-{version}"
+    entry["install"] = f"{existing_install} {tidy_pkg}".strip()
+    entry["name"] = generate_name(entry["compiler"], entry)
+    return entry
 
 
 def main():
@@ -259,20 +285,23 @@ def main():
 
             # Variants for the latest compiler in each family
             if spec.get("is_latest"):
-                # MinGW has limited ASAN support; skip sanitizer variant
                 if family != "mingw":
                     matrix.append(generate_sanitizer_variant(family, spec))
 
-                # TSan is incompatible with ASan; separate variant for GCC, Clang, and Apple-Clang
+                # TSan is incompatible with ASan; separate variant for Linux
                 if family in ("gcc", "clang", "apple-clang"):
                     matrix.append(generate_tsan_variant(family, spec))
 
+                # GCC always gets coverage; other families opt in via spec flag
+                if family == "gcc" or spec.get("coverage"):
+                    matrix.append(generate_coverage_variant(family, spec))
+
+                if family == "gcc":
+                    matrix.append(generate_superproject_cmake_variant(family, spec))
+
                 if family == "clang":
                     matrix.append(generate_x86_variant(family, spec))
-
-            # Coverage variant (driven by spec flag, not is_latest)
-            if spec.get("coverage"):
-                matrix.append(generate_coverage_variant(family, spec))
+                    matrix.append(generate_time_trace_variant(family, spec))
 
     json.dump(matrix, sys.stdout)
 

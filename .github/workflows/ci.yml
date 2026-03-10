@@ -109,6 +109,13 @@ jobs:
           ref: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
           path: asio-root
 
+      - name: Setup MSYS2 (MinGW Clang)
+        if: matrix.compiler == 'mingw'
+        shell: bash
+        run: |
+          /c/msys64/usr/bin/pacman.exe -S --noconfirm mingw-w64-clang-x86_64-clang
+          echo "C:/msys64/clang64/bin" >> "$GITHUB_PATH"
+
       - name: Clone Boost
         uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
         id: boost-clone
@@ -117,7 +124,7 @@ jobs:
           boost-dir: boost-source
           modules-exclude-paths: ''
           scan-modules-dir: corosio-root
-          scan-modules-ignore: corosio,capy
+          scan-modules-ignore: corosio, capy
 
       - name: ASLR Fix
         if: ${{ startsWith(matrix.runs-on, 'ubuntu') }}
@@ -142,17 +149,17 @@ jobs:
           rm -r "boost-source/libs/$module" || true
           rm -r "boost-source/libs/capy" || true
 
-          # boost-clone uses sparse checkout which excludes CMakeLists.txt files
-          # Disable sparse checkout to get full source trees for add_subdirectory in cmake_test
-          cd boost-source
-          if git sparse-checkout list > /dev/null 2>&1; then
-            echo "Disabling sparse checkout..."
-            git sparse-checkout disable
-            echo "Fetching any missing objects..."
-            git fetch origin --no-tags
-            git checkout
+          # Disable sparse checkout for superproject CMake builds
+          # (needed so CMakeLists.txt files in sibling boost libraries are available)
+          if [ "${{ matrix.superproject-cmake }}" = "true" ]; then
+            cd boost-source
+            if git sparse-checkout list > /dev/null 2>&1; then
+                git sparse-checkout disable
+                git fetch origin --no-tags
+                git checkout
+            fi
+            cd ..
           fi
-          cd ..
 
           # Copy cached boost-source to an isolated boost-root
           cp -rL boost-source boost-root
@@ -458,16 +465,16 @@ jobs:
 
       - name: Boost B2 Workflow
         uses: alandefreitas/cpp-actions/b2-workflow@v1.9.0
-        if: ${{ !matrix.coverage }}
+        if: ${{ !matrix.coverage && !matrix.time-trace && !matrix.superproject-cmake && !matrix.clang-tidy }}
         env:
-          ASAN_OPTIONS: ${{ ((matrix.compiler == 'apple-clang' || matrix.compiler == 'clang') && 'detect_invalid_pointer_pairs=0:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1') || 'detect_invalid_pointer_pairs=2:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1' }}
+          ASAN_OPTIONS: ${{ ((matrix.compiler == 'apple-clang' || matrix.compiler == 'clang' || matrix.compiler == 'mingw') && 'detect_invalid_pointer_pairs=0:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1') || 'detect_invalid_pointer_pairs=2:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1' }}
           TSAN_OPTIONS: ${{ matrix.tsan && 'halt_on_error=1:second_deadlock_stack=1' || '' }}
         with:
           source-dir: boost-root
           modules: corosio
           toolset: ${{ matrix.b2-toolset }}
           build-variant: ${{ (matrix.compiler == 'msvc' && 'debug,release') || matrix.build-type }}
-          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx || '' }}
+          cxx: ${{ matrix.cxx || steps.setup-cpp.outputs.cxx || '' }}
           cxxstd: ${{ matrix.cxxstd }}
           address-model: ${{ (matrix.x86 && '32') || '64' }}
           asan: ${{ matrix.asan }}
@@ -475,33 +482,33 @@ jobs:
           tsan: ${{ matrix.tsan }}
           shared: ${{ matrix.shared }}
           rtti: on
-          cxxflags: ${{ matrix.cxxflags }} ${{ (matrix.asan && matrix.compiler != 'msvc' && matrix.compiler != 'clang-cl' && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
+          cxxflags: ${{ (matrix.asan && matrix.compiler != 'msvc' && matrix.compiler != 'clang-cl' && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
           stop-on-error: true
-          user-config: ${{ (matrix.windows || matrix.macos) && 'user-config.jam' || '' }}
+          extra-args: ${{ (matrix.valgrind && 'testing.launcher=valgrind' || '' )}}
 
       - name: Boost CMake Workflow
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ matrix.coverage || matrix.build-cmake || matrix.is-earliest }}
+        if: ${{ matrix.superproject-cmake }}
         with:
           source-dir: boost-root
           build-dir: __build_cmake_test__
           generator: ${{ matrix.generator }}
           generator-toolset: ${{ matrix.generator-toolset }}
           build-type: ${{ matrix.build-type }}
-          build-target: tests
+          build-target: boost_corosio_tests
           run-tests: true
-          install-prefix: .local
-          cxxstd: ${{ matrix.latest-cxxstd }}
+          cxxstd: ${{ matrix.cmake-cxxstd || matrix.cxxstd }}
           cc:  ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
           ccflags: ${{ matrix.ccflags }}
           cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
           cxxflags: ${{ matrix.cxxflags }}
           shared: ${{ matrix.shared }}
           cmake-version: '>=3.20'
+          install: true
+          install-prefix: ${{ steps.patch.outputs.workspace_root }}/.local
           extra-args: |
             -D Boost_VERBOSE=ON
             -D BOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}"
-            -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
             ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
             ${{ contains(matrix.generator || '', 'Visual Studio') && format('-D CMAKE_CONFIGURATION_TYPES={0}', matrix.build-type) || '' }}
             ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
@@ -514,27 +521,18 @@ jobs:
           package-artifact: false
           ref-source-dir: boost-root/libs/corosio
 
-      - name: Run clang-tidy
-        if: ${{ matrix.clang-tidy }}
-        run: |
-          python3 -c "import json; [print(e['file']) for e in json.load(open('boost-root/__build_cmake_test__/compile_commands.json'))]" \
-            | grep '/libs/corosio/src/' \
-            | xargs -r clang-tidy-20 \
-                -p boost-root/__build_cmake_test__ \
-                --warnings-as-errors='*'
-
-      - name: Set Path
+      - name: Set Path (Windows Shared)
         if: ${{ matrix.windows && matrix.shared }}
         run: echo "$GITHUB_WORKSPACE/.local/bin" >> $GITHUB_PATH
 
-      - name: Set LD_LIBRARY_PATH
+      - name: Set LD_LIBRARY_PATH (Linux Shared)
         if: ${{ matrix.linux && matrix.shared }}
         run: |
           echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/.local/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
 
-      - name: Find Package Integration Workflow
+      - name: Find Package Integration Test
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ (matrix.is-latest || matrix.is-earliest) && matrix.build-cmake != false }}
+        if: ${{ matrix.superproject-cmake }}
         with:
           source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
           build-dir: __build_cmake_install_test__
@@ -548,7 +546,7 @@ jobs:
           cxxflags: ${{ matrix.cxxflags }}
           shared: ${{ matrix.shared }}
           install: false
-          cmake-version: '>=3.15'
+          cmake-version: '>=3.20'
           extra-args: |
             -D BOOST_CI_INSTALL_TEST=ON
             -D CMAKE_PREFIX_PATH=${{ steps.patch.outputs.workspace_root }}/.local
@@ -561,9 +559,9 @@ jobs:
           ref-source-dir: boost-root/libs/corosio
           trace-commands: true
 
-      - name: Subdirectory Integration Workflow
+      - name: Subdirectory Integration Test
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ (matrix.is-latest || matrix.is-earliest) && matrix.build-cmake != false }}
+        if: ${{ matrix.superproject-cmake }}
         with:
           source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
           build-dir: __build_cmake_subdir_test__
@@ -590,15 +588,14 @@ jobs:
 
       - name: Root Project CMake Workflow
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ (matrix.is-latest || matrix.is-earliest) && matrix.build-cmake != false }}
+        if: ${{ matrix.build-cmake || matrix.coverage }}
         with:
-          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}
-          build-dir: __build_root_test__
-          build-target: tests
-          run-tests: true
+          source-dir: corosio-root
+          build-dir: __build__
           generator: ${{ matrix.generator }}
           generator-toolset: ${{ matrix.generator-toolset }}
           build-type: ${{ matrix.build-type }}
+          run-tests: true
           install: false
           cxxstd: ${{ matrix.latest-cxxstd }}
           cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
@@ -620,52 +617,84 @@ jobs:
           package-artifact: false
           ref-source-dir: boost-root
 
+      - name: Configure for clang-tidy
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ matrix.clang-tidy }}
+        with:
+          source-dir: corosio-root
+          build-dir: __build__
+          generator: ${{ matrix.generator }}
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cmake-version: '>=3.20'
+          extra-args: |
+            -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
+            ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
+            ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
+            ${{ env.CMAKE_OPENSSL_ROOT && format('-D OPENSSL_ROOT_DIR="{0}"', env.CMAKE_OPENSSL_ROOT) || '' }}
+          toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
+          build: false
+          run-tests: false
+          install: false
+          ref-source-dir: corosio-root
+
+      - name: Run clang-tidy
+        if: ${{ matrix.clang-tidy }}
+        run: |
+          python3 -c "import json; [print(e['file']) for e in json.load(open('corosio-root/__build__/compile_commands.json'))]" \
+            | grep '/corosio-root/\(src\|include\)/' \
+            | xargs -r clang-tidy-${{ matrix.version }} \
+                -p corosio-root/__build__ \
+                --warnings-as-errors='*'
+
+      - name: FlameGraph
+        uses: alandefreitas/cpp-actions/flamegraph@v1.9.0
+        if: matrix.time-trace
+        with:
+          source-dir: corosio-root
+          build-dir: corosio-root/__build__
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Generate Coverage Report
         if: ${{ matrix.coverage && matrix.linux }}
         run: |
           set -x
-
-          # Generate report
           gcov_tool="gcov"
-          if command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}.${{ steps.setup-cpp.outputs.version-minor }}" &> /dev/null; then
-              gcov_tool="gcov"
-          elif command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}" &> /dev/null; then
+          if command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}" &> /dev/null; then
               gcov_tool="gcov-${{ steps.setup-cpp.outputs.version-major }}"
           fi
-          lcov -c -q -o "boost-root/__build_cmake_test__/coverage.info" \
-            -d "boost-root/__build_cmake_test__" \
-            --include "*/boost-root/libs/${{steps.patch.outputs.module}}/include/*" \
-            --include "*/boost-root/libs/${{steps.patch.outputs.module}}/src/*" \
+          lcov -c -q -o "corosio-root/__build__/coverage.info" -d "corosio-root/__build__" \
+            --include "$(pwd)/corosio-root/include/*" \
+            --include "$(pwd)/corosio-root/src/*" \
             --gcov-tool "$gcov_tool"
 
       - name: Generate Coverage Report (macOS)
         if: ${{ matrix.coverage && matrix.macos }}
         run: |
-          set -x
           pip3 install --break-system-packages gcovr
           gcovr \
             --gcov-executable "xcrun llvm-cov gcov" \
-            -r boost-root \
-            --filter ".*/libs/${{steps.patch.outputs.module}}/include/.*" \
-            --filter ".*/libs/${{steps.patch.outputs.module}}/src/.*" \
-            --lcov -o "boost-root/__build_cmake_test__/coverage.info"
+            -r corosio-root \
+            --filter ".*/corosio-root/include/.*" \
+            --filter ".*/corosio-root/src/.*" \
+            --lcov -o "corosio-root/__build__/coverage.info"
 
       - name: Generate Coverage Report (Windows)
         if: ${{ matrix.coverage && matrix.windows }}
         run: |
-          set -x
           pip3 install gcovr
           gcovr \
-            -r boost-root \
-            --filter ".*/libs/${{steps.patch.outputs.module}}/include/.*" \
-            --filter ".*/libs/${{steps.patch.outputs.module}}/src/.*" \
-            --lcov -o "boost-root/__build_cmake_test__/coverage.info"
+            -r corosio-root \
+            --filter ".*/corosio-root/include/.*" \
+            --filter ".*/corosio-root/src/.*" \
+            --lcov -o "corosio-root/__build__/coverage.info"
 
       - name: Upload to Codecov
         if: ${{ matrix.coverage }}
         uses: codecov/codecov-action@v5
         with:
-          files: boost-root/__build_cmake_test__/coverage.info
+          files: corosio-root/__build__/coverage.info
           flags: ${{ matrix.coverage-flag }}
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
