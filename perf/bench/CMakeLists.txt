@@ -8,9 +8,14 @@
 #
 
 # Check LTO support for benchmarks
+# MinGW GCC LTO mishandles virtual thunks from multiple inheritance,
+# discarding COMDAT sections that contain needed thunk relocations.
 include(CheckIPOSupported)
 check_ipo_supported(RESULT COROSIO_BENCH_LTO_SUPPORTED OUTPUT COROSIO_BENCH_LTO_ERROR LANGUAGES CXX)
-if (COROSIO_BENCH_LTO_SUPPORTED)
+if (MINGW)
+    set(COROSIO_BENCH_LTO_SUPPORTED FALSE)
+    message(STATUS "LTO disabled for benchmarks: MinGW virtual thunk bug")
+elseif (COROSIO_BENCH_LTO_SUPPORTED)
     message(STATUS "LTO enabled for benchmarks")
 else ()
     message(STATUS "LTO not available for benchmarks: ${COROSIO_BENCH_LTO_ERROR}")
