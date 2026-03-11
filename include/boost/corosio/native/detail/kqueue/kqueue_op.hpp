@@ -282,6 +282,21 @@ struct kqueue_connect_op final : kqueue_op
         socklen_t len = sizeof(err);
         if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
             err = errno;
+        // Guard against stale EVFILT_WRITE events from socket creation.
+        // kqueue registers EVFILT_WRITE at open() time; a freshly created
+        // socket is "writable" so the filter fires immediately. If the
+        // reactor processes this event after connect() returns EINPROGRESS
+        // but before the kernel delivers the connect result (e.g. RST for
+        // ECONNREFUSED), SO_ERROR is still 0. Use getpeername() to verify
+        // the connection is actually established.
+        if (err == 0)
+        {
+            sockaddr_storage peer{};
+            socklen_t peer_len = sizeof(peer);
+            if (::getpeername(
+                    fd, reinterpret_cast<sockaddr*>(&peer), &peer_len) < 0)
+                err = (errno == ENOTCONN) ? EAGAIN : errno;
+        }
         complete(err, 0);
     }
 

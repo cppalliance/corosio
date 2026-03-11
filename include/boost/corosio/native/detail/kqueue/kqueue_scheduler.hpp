@@ -604,8 +604,16 @@ descriptor_state::operator()()
             cn->complete(err, 0);
         else
             cn->perform_io();
-        local_ops.push(cn);
-        cn = nullptr;
+
+        if (cn->errn == EAGAIN || cn->errn == EWOULDBLOCK)
+        {
+            cn->errn = 0;
+        }
+        else
+        {
+            local_ops.push(cn);
+            cn = nullptr;
+        }
     }
 
     if (wr)
@@ -630,7 +638,7 @@ descriptor_state::operator()()
     // have set read_ready/write_ready while we held the op (no read_op
     // was registered, so it cached the edge event). Check the flags
     // under the same lock as re-registration so no edge is lost.
-    while (rd || wr)
+    while (rd || wr || cn)
     {
         bool retry = false;
         {
@@ -661,6 +669,19 @@ descriptor_state::operator()()
                     wr       = nullptr;
                 }
             }
+            if (cn)
+            {
+                if (write_ready)
+                {
+                    write_ready = false;
+                    retry       = true;
+                }
+                else
+                {
+                    connect_op = cn;
+                    cn         = nullptr;
+                }
+            }
         }
 
         if (!retry)
@@ -686,6 +707,17 @@ descriptor_state::operator()()
             {
                 local_ops.push(wr);
                 wr = nullptr;
+            }
+        }
+        if (cn)
+        {
+            cn->perform_io();
+            if (cn->errn == EAGAIN || cn->errn == EWOULDBLOCK)
+                cn->errn = 0;
+            else
+            {
+                local_ops.push(cn);
+                cn = nullptr;
             }
         }
     }
