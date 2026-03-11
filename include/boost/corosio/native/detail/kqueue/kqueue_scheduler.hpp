@@ -196,9 +196,12 @@ public:
 
     /** Register a descriptor for persistent monitoring.
 
-        Adds EVFILT_READ and EVFILT_WRITE (both EV_CLEAR) for @a fd
-        and stores @a desc in the kevent udata field so that the
-        reactor can dispatch events to the correct descriptor_state.
+        Adds EVFILT_READ (EV_CLEAR) for @a fd and stores @a desc in
+        the kevent udata field so that the reactor can dispatch events
+        to the correct descriptor_state. EVFILT_WRITE is deferred
+        until the first write or connect operation needs it (see
+        @ref ensure_write_filter) to avoid spurious write-ready events
+        on freshly opened sockets.
 
         The caller retains ownership of @a desc. It must remain valid
         until deregister_descriptor() is called and all pending
@@ -212,6 +215,17 @@ public:
         @throws std::system_error if kevent(EV_ADD) fails.
     */
     void register_descriptor(int fd, descriptor_state* desc) const;
+
+    /** Ensure EVFILT_WRITE is registered for a descriptor.
+
+        No-op if the write filter is already registered. Called lazily
+        before the first write or connect operation that needs async
+        notification.
+
+        @param fd The file descriptor.
+        @param desc The descriptor_state that owns the fd.
+    */
+    void ensure_write_filter(int fd, descriptor_state* desc) const;
 
     /** Deregister a persistently registered descriptor.
 
@@ -604,8 +618,16 @@ descriptor_state::operator()()
             cn->complete(err, 0);
         else
             cn->perform_io();
-        local_ops.push(cn);
-        cn = nullptr;
+
+        if (cn->errn == EAGAIN || cn->errn == EWOULDBLOCK)
+        {
+            cn->errn = 0;
+        }
+        else
+        {
+            local_ops.push(cn);
+            cn = nullptr;
+        }
     }
 
     if (wr)
@@ -630,7 +652,7 @@ descriptor_state::operator()()
     // have set read_ready/write_ready while we held the op (no read_op
     // was registered, so it cached the edge event). Check the flags
     // under the same lock as re-registration so no edge is lost.
-    while (rd || wr)
+    while (rd || wr || cn)
     {
         bool retry = false;
         {
@@ -661,6 +683,19 @@ descriptor_state::operator()()
                     wr       = nullptr;
                 }
             }
+            if (cn)
+            {
+                if (write_ready)
+                {
+                    write_ready = false;
+                    retry       = true;
+                }
+                else
+                {
+                    connect_op = cn;
+                    cn         = nullptr;
+                }
+            }
         }
 
         if (!retry)
@@ -675,6 +710,17 @@ descriptor_state::operator()()
             {
                 local_ops.push(rd);
                 rd = nullptr;
+            }
+        }
+        if (cn)
+        {
+            cn->perform_io();
+            if (cn->errn == EAGAIN || cn->errn == EWOULDBLOCK)
+                cn->errn = 0;
+            else
+            {
+                local_ops.push(cn);
+                cn = nullptr;
             }
         }
         if (wr)
@@ -977,24 +1023,39 @@ kqueue_scheduler::poll_one()
 inline void
 kqueue_scheduler::register_descriptor(int fd, descriptor_state* desc) const
 {
-    struct kevent changes[2];
+    // Only register EVFILT_READ upfront. EVFILT_WRITE is deferred
+    // until the first write/connect op to avoid a spurious write-ready
+    // event on freshly opened (always-writable) sockets.
+    struct kevent change;
     EV_SET(
-        &changes[0], static_cast<uintptr_t>(fd), EVFILT_READ, EV_ADD | EV_CLEAR,
+        &change, static_cast<uintptr_t>(fd), EVFILT_READ, EV_ADD | EV_CLEAR,
         0, 0, desc);
-    EV_SET(
-        &changes[1], static_cast<uintptr_t>(fd), EVFILT_WRITE,
-        EV_ADD | EV_CLEAR, 0, 0, desc);
 
-    if (::kevent(kq_fd_, changes, 2, nullptr, 0, nullptr) < 0)
+    if (::kevent(kq_fd_, &change, 1, nullptr, 0, nullptr) < 0)
         detail::throw_system_error(make_err(errno), "kevent (register)");
 
-    desc->registered_events = kqueue_event_read | kqueue_event_write;
+    desc->registered_events = kqueue_event_read;
     desc->fd                = fd;
     desc->scheduler_        = this;
 
     std::lock_guard lock(desc->mutex);
     desc->read_ready  = false;
     desc->write_ready = false;
+}
+
+inline void
+kqueue_scheduler::ensure_write_filter(int fd, descriptor_state* desc) const
+{
+    std::lock_guard lock(desc->mutex);
+    if (desc->registered_events & kqueue_event_write)
+        return;
+
+    struct kevent change;
+    EV_SET(
+        &change, static_cast<uintptr_t>(fd), EVFILT_WRITE, EV_ADD | EV_CLEAR,
+        0, 0, desc);
+    if (::kevent(kq_fd_, &change, 1, nullptr, 0, nullptr) == 0)
+        desc->registered_events |= kqueue_event_write;
 }
 
 inline void

@@ -38,6 +38,7 @@
 #include <stop_token>
 
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 
@@ -129,7 +130,7 @@ struct descriptor_state final : scheduler_op
     bool write_cancel_pending   = false;
     bool connect_cancel_pending = false;
 
-    // Set during registration only (no mutex needed)
+    // Protected by mutex (written by register_descriptor and ensure_write_events)
     std::uint32_t registered_events = 0;
     int fd                          = -1;
 
@@ -265,7 +266,17 @@ struct epoll_connect_op final : epoll_op
 
     void perform_io() noexcept override
     {
-        // connect() completion status is retrieved via SO_ERROR, not return value
+        // Guard against spurious write-ready events: a zero-timeout
+        // poll confirms the fd is actually writable (connect finished).
+        pollfd pfd{};
+        pfd.fd     = fd;
+        pfd.events = POLLOUT;
+        if (::poll(&pfd, 1, 0) == 0)
+        {
+            complete(EAGAIN, 0);
+            return;
+        }
+
         int err       = 0;
         socklen_t len = sizeof(err);
         if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)

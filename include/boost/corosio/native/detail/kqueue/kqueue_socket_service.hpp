@@ -342,6 +342,8 @@ kqueue_socket::connect(
     }
 
     // EINPROGRESS — async path
+    svc_.scheduler().ensure_write_filter(fd_, &desc_state_);
+
     op.reset();
     op.h               = h;
     op.ex              = ex;
@@ -559,6 +561,8 @@ kqueue_socket::write_some(
     }
 
     // EAGAIN — register with reactor
+    svc_.scheduler().ensure_write_filter(fd_, &desc_state_);
+
     op.h         = h;
     op.ex        = ex;
     op.ec_out    = ec;

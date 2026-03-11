@@ -145,6 +145,18 @@ public:
     */
     void register_descriptor(int fd, descriptor_state* desc) const;
 
+    /** Ensure EPOLLOUT is registered for a descriptor.
+
+        No-op if the write interest is already registered. Called lazily
+        before the first write or connect operation that needs async
+        notification. Uses EPOLL_CTL_MOD to add EPOLLOUT to the
+        existing registration.
+
+        @param fd The file descriptor.
+        @param desc The descriptor_state that owns the fd.
+    */
+    void ensure_write_events(int fd, descriptor_state* desc) const;
+
     /** Deregister a persistently registered descriptor.
 
         @param fd The file descriptor to deregister.
@@ -547,8 +559,16 @@ descriptor_state::operator()()
                     cn->complete(err, 0);
                 else
                     cn->perform_io();
-                connect_op = nullptr;
-                local_ops.push(cn);
+
+                if (cn->errn == EAGAIN || cn->errn == EWOULDBLOCK)
+                {
+                    cn->errn = 0;
+                }
+                else
+                {
+                    connect_op = nullptr;
+                    local_ops.push(cn);
+                }
             }
             if (write_op)
             {
@@ -906,8 +926,11 @@ epoll_scheduler::poll_one()
 inline void
 epoll_scheduler::register_descriptor(int fd, descriptor_state* desc) const
 {
+    // Only register read interest upfront. EPOLLOUT is deferred until
+    // the first write/connect op to avoid a spurious write-ready event
+    // on freshly opened (always-writable) sockets.
     epoll_event ev{};
-    ev.events   = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLERR | EPOLLHUP;
+    ev.events   = EPOLLIN | EPOLLET | EPOLLERR | EPOLLHUP;
     ev.data.ptr = desc;
 
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0)
@@ -920,6 +943,20 @@ epoll_scheduler::register_descriptor(int fd, descriptor_state* desc) const
     std::lock_guard lock(desc->mutex);
     desc->read_ready  = false;
     desc->write_ready = false;
+}
+
+inline void
+epoll_scheduler::ensure_write_events(int fd, descriptor_state* desc) const
+{
+    std::lock_guard lock(desc->mutex);
+    if (desc->registered_events & EPOLLOUT)
+        return;
+
+    epoll_event ev{};
+    ev.events   = desc->registered_events | EPOLLOUT;
+    ev.data.ptr = desc;
+    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev) == 0)
+        desc->registered_events = ev.events;
 }
 
 inline void

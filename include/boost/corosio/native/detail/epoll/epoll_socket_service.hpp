@@ -341,6 +341,8 @@ epoll_socket::connect(
     }
 
     // EINPROGRESS — register with reactor
+    svc_.scheduler().ensure_write_events(fd_, &desc_state_);
+
     op.reset();
     op.h               = h;
     op.ex              = ex;
@@ -512,6 +514,8 @@ epoll_socket::write_some(
     }
 
     // EAGAIN — register with reactor
+    svc_.scheduler().ensure_write_events(fd_, &desc_state_);
+
     op.h         = h;
     op.ex        = ex;
     op.ec_out    = ec;
