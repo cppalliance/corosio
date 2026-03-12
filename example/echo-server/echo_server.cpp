@@ -14,7 +14,6 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <string>
 
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
@@ -23,14 +22,13 @@ class echo_worker : public corosio::tcp_server::worker_base
 {
     corosio::io_context& ctx_;
     corosio::tcp_socket sock_;
-    std::string buf_;
+    char buf_[4096];
 
 public:
     explicit echo_worker(corosio::io_context& ctx)
         : ctx_(ctx)
         , sock_(ctx)
     {
-        buf_.reserve(4096);
     }
 
     corosio::tcp_socket& socket() override
@@ -47,22 +45,13 @@ public:
     {
         for (;;)
         {
-            buf_.resize(4096);
-
-            // Read some data
             auto [ec, n] = co_await sock_.read_some(
-                capy::mutable_buffer(buf_.data(), buf_.size()));
+                capy::mutable_buffer(buf_, sizeof buf_));
 
-            if (ec)
-                break;
-
-            buf_.resize(n);
-
-            // Echo it back
             auto [wec, wn] = co_await capy::write(
-                sock_, capy::const_buffer(buf_.data(), buf_.size()));
+                sock_, capy::const_buffer(buf_, n));
 
-            if (wec)
+            if (wec || ec)
                 break;
         }
 

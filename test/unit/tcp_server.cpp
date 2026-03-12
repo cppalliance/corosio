@@ -45,8 +45,7 @@ public:
                 char buf[64];
                 auto [ec, n] = co_await sock->read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
-                if (!ec)
-                    (void)co_await sock->write_some(capy::const_buffer(buf, n));
+                (void)co_await sock->write_some(capy::const_buffer(buf, n));
                 sock->close();
             }(&sock_));
     }
