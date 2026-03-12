@@ -12,7 +12,9 @@
 Corosio provides composed operations that build on the primitive `read_some()`
 and `write_some()` functions to provide higher-level guarantees.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/read.hpp>
@@ -22,6 +24,7 @@ NOTE: Code snippets assume:
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 ----
+====
 
 == The Problem with Primitives
 

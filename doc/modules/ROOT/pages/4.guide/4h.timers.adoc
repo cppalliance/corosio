@@ -14,13 +14,16 @@ The `timer` class provides asynchronous delays and timeouts. It integrates
 with the I/O context to schedule operations at specific times or after
 durations.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/timer.hpp>
 namespace corosio = boost::corosio;
 using namespace std::chrono_literals;
 ----
+====
 
 == Overview
 

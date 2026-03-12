@@ -12,12 +12,15 @@
 Corosio I/O operations work with buffer sequences from Boost.Capy. This page
 explains how to use buffers effectively.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/capy/buffers.hpp>
 namespace capy = boost::capy;
 ----
+====
 
 == Buffer Types
 
