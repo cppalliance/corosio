@@ -13,7 +13,9 @@ The `tcp_socket` class provides asynchronous TCP networking. It supports
 connecting to servers, reading and writing data, and graceful connection
 management.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/tcp_socket.hpp>
@@ -23,6 +25,7 @@ NOTE: Code snippets assume:
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 ----
+====
 
 == Overview
 

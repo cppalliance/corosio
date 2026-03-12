@@ -13,12 +13,15 @@ The `io_context` class is the heart of Corosio. It's an event loop that
 processes asynchronous I/O operations, manages timers, and coordinates
 coroutine execution.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/io_context.hpp>
 namespace corosio = boost::corosio;
 ----
+====
 
 == Overview
 

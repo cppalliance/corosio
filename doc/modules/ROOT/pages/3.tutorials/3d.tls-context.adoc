@@ -13,13 +13,16 @@ This tutorial covers how to configure TLS contexts for secure connections.
 A `tls_context` stores certificates, keys, and settings that define how
 TLS connections are established and verified.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/tls_context.hpp>
 
 namespace tls = boost::corosio::tls;
 ----
+====
 
 == Introduction
 

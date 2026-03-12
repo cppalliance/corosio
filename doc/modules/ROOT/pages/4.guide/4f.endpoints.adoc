@@ -13,7 +13,9 @@ The `endpoint` class represents a network endpoint: an IP address (IPv4 or
 IPv6) combined with a port number. Endpoints are used for connecting sockets
 and binding acceptors.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/endpoint.hpp>
@@ -22,6 +24,7 @@ NOTE: Code snippets assume:
 
 namespace corosio = boost::corosio;
 ----
+====
 
 == Overview
 

@@ -13,12 +13,15 @@ The `resolver` class performs asynchronous DNS lookups, converting hostnames
 to IP addresses. It wraps the system's `getaddrinfo()` function with an
 asynchronous interface.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/resolver.hpp>
 namespace corosio = boost::corosio;
 ----
+====
 
 == Overview
 

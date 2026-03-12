@@ -13,7 +13,9 @@ The `signal_set` class provides asynchronous signal handling. It allows
 coroutines to wait for operating system signals like SIGINT (Ctrl+C) or
 SIGTERM.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/signal_set.hpp>
@@ -21,6 +23,7 @@ NOTE: Code snippets assume:
 
 namespace corosio = boost::corosio;
 ----
+====
 
 == Overview
 

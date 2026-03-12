@@ -12,7 +12,9 @@
 The `tcp_acceptor` class listens for incoming TCP connections and accepts them
 into socket objects. It's the foundation for building TCP servers.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/tcp_acceptor.hpp>
@@ -21,6 +23,7 @@ NOTE: Code snippets assume:
 
 namespace corosio = boost::corosio;
 ----
+====
 
 == Overview
 

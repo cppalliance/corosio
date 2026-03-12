@@ -13,7 +13,9 @@ This guide walks you through building your first network application with
 Corosio: a simple echo server that accepts connections and echoes back
 whatever clients send.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/tcp_server.hpp>
@@ -23,6 +25,7 @@ NOTE: Code snippets assume:
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 ----
+====
 
 == Step 1: Create the I/O Context
 

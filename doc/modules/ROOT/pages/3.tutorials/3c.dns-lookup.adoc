@@ -13,7 +13,9 @@ This tutorial builds a command-line DNS lookup tool similar to `nslookup`.
 You'll learn to use the asynchronous resolver to convert hostnames to IP
 addresses.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio.hpp>
@@ -23,6 +25,7 @@ NOTE: Code snippets assume:
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 ----
+====
 
 == Overview
 

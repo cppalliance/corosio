@@ -13,7 +13,9 @@ Corosio provides TLS encryption through the `tls_context` configuration class
 and stream wrappers that add encryption to existing connections. This chapter
 covers context configuration, stream usage, and common TLS patterns.
 
-NOTE: Code snippets assume:
+[NOTE]
+====
+Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/tls_context.hpp>
@@ -23,6 +25,7 @@ NOTE: Code snippets assume:
 namespace corosio = boost::corosio;
 namespace tls = corosio::tls;
 ----
+====
 
 == Overview
 
