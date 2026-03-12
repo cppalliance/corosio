@@ -57,14 +57,13 @@ class echo_server : public corosio::tcp_server
     {
         corosio::io_context& ctx_;
         corosio::tcp_socket sock_;
-        std::string buf_;
+        char buf_[4096];
 
     public:
         explicit worker(corosio::io_context& ctx)
             : ctx_(ctx)
             , sock_(ctx)
         {
-            buf_.reserve(4096);
         }
 
         corosio::tcp_socket& socket() override
@@ -98,22 +97,13 @@ capy::task<> echo_server::worker::do_session()
 {
     for (;;)
     {
-        buf_.resize(4096);
-
-        // Read some data
         auto [ec, n] = co_await sock_.read_some(
-            capy::mutable_buffer(buf_.data(), buf_.size()));
+            capy::mutable_buffer(buf_, sizeof buf_));
 
-        if (ec || n == 0)
-            break;
-
-        buf_.resize(n);
-
-        // Echo it back
         auto [wec, wn] = co_await corosio::write(
-            sock_, capy::const_buffer(buf_.data(), buf_.size()));
+            sock_, capy::const_buffer(buf_, n));
 
-        if (wec)
+        if (wec || ec)
             break;
     }
 
@@ -124,7 +114,8 @@ capy::task<> echo_server::worker::do_session()
 Notice:
 
 * We reuse the worker's buffer across reads
-* `read_some()` returns when _any_ data arrives
+* `read_some()` returns when _any_ data arrives — it may deliver bytes alongside an error
+* We always write before checking the error (advance-then-check); writing zero bytes is a no-op
 * `corosio::write()` writes _all_ data (it's a composed operation)
 * When the coroutine ends, the launcher returns the worker to the pool
 
@@ -215,12 +206,14 @@ For echo servers, we want complete message delivery.
 
 === Why Not Use Exceptions?
 
-The session loop needs to handle EOF gracefully. Using structured bindings:
+The session loop needs to handle EOF gracefully. Using structured bindings
+with advance-then-check, we always act on `n` before inspecting `ec`:
 
 [source,cpp]
 ----
 auto [ec, n] = co_await sock.read_some(buf);
-if (ec || n == 0)
+auto [wec, wn] = co_await corosio::write(sock, const_buffer(buf.data(), n));
+if (wec || ec)
     break;  // Normal termination path
 ----
 
