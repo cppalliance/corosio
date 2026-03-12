@@ -1,0 +1,276 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Hash Server Tutorial
+
+This tutorial builds a TCP server that reads data from clients, computes a
+hash on a thread pool, and sends the result back. You'll learn how to combine
+an `io_context` for network I/O with a `thread_pool` for CPU-bound work,
+switching between them mid-coroutine with `capy::run()`.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/tcp_socket.hpp>
+#include <boost/capy/buffers.hpp>
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/run.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/write.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+
+== Overview
+
+Most servers spend their time waiting on the network. When the work between
+reads and writes is cheap, a single-threaded `io_context` handles thousands
+of connections without breaking a sweat. But some operations — cryptographic
+hashes, compression, image processing — consume real CPU time. Running those
+inline blocks the event loop and starves every other connection.
+
+The solution is to keep I/O on the `io_context` and offload heavy computation
+to a `thread_pool`. Capy's `run()` function makes this seamless: a single
+`co_await` switches the coroutine to the pool, runs the work, and resumes
+back on the original executor when it finishes.
+
+This tutorial demonstrates:
+
+* Accepting connections with `tcp_acceptor`
+* Spawning independent session coroutines with `run_async`
+* Switching executors with `capy::run()` for CPU-bound work
+* The dispatch trampoline that returns the coroutine to its home executor
+
+== The Hash Function
+
+We use FNV-1a as a stand-in for any CPU-intensive operation. In production
+you would substitute a cryptographic hash, a compression pass, or whatever
+work justifies leaving the event loop.
+
+[source,cpp]
+----
+capy::task<std::uint64_t>
+compute_fnv1a( char const* data, std::size_t len )
+{
+    constexpr std::uint64_t basis = 14695981039346656037ULL;
+    constexpr std::uint64_t prime = 1099511628211ULL;
+
+    std::uint64_t h = basis;
+    for (std::size_t i = 0; i < len; ++i)
+    {
+        h ^= static_cast<unsigned char>( data[i] );
+        h *= prime;
+    }
+    co_return h;
+}
+----
+
+This is a `capy::task` — a lazy coroutine that doesn't start until someone
+awaits it. That matters because `run()` needs to control which executor the
+task runs on.
+
+== Session Coroutine
+
+Each client connection is handled by a single coroutine:
+
+[source,cpp]
+----
+capy::task<>
+do_session(
+    corosio::tcp_socket sock,
+    capy::thread_pool& pool )
+{
+    char buf[4096];
+
+    // 1. Read data from client (on io_context)
+    auto [ec, n] = co_await sock.read_some(
+        capy::mutable_buffer( buf, sizeof( buf ) ) );
+
+    if (ec)
+    {
+        sock.close();
+        co_return;
+    }
+
+    // 2. Switch to thread pool for CPU-bound hash computation,
+    //    then automatically resume on io_context when done
+    auto hash = co_await capy::run( pool.get_executor() )(
+        compute_fnv1a( buf, n ) );
+
+    // 3. Send hex result back to client (on io_context)
+    auto result = to_hex( hash ) + "\n";
+    auto [wec, wn] = co_await capy::write(
+        sock,
+        capy::const_buffer( result.data(), result.size() ) );
+    (void)wec;
+    (void)wn;
+
+    sock.close();
+}
+----
+
+Three things happen in sequence, but on two different executors:
+
+1. **Read** — runs on the `io_context` thread. The socket awaitable suspends
+   the coroutine until data arrives from the kernel.
+2. **Hash** — `capy::run( pool.get_executor() )` posts `compute_fnv1a` to the
+   thread pool. The coroutine suspends on the `io_context` and resumes on a
+   pool thread. When the task completes, a dispatch trampoline posts the
+   coroutine back to the `io_context`.
+3. **Write** — back on the `io_context` thread, the hex result is sent to the
+   client.
+
+The executor switch is invisible at the call site — it reads like straight-line
+code.
+
+== How `run()` Switches Executors
+
+When you write:
+
+[source,cpp]
+----
+auto hash = co_await capy::run( pool.get_executor() )(
+    compute_fnv1a( buf, n ) );
+----
+
+Behind the scenes:
+
+1. `run()` creates an awaitable that stores the pool executor.
+2. On `co_await`, the awaitable's `await_suspend` dispatches the inner task
+   through `pool_executor.dispatch(task_handle)`. For a thread pool, dispatch
+   always posts — the task is queued for a worker thread.
+3. The calling coroutine suspends (the `io_context` is free to process other
+   connections).
+4. A pool thread picks up the task and runs it to completion.
+5. The task's `final_suspend` resumes a dispatch trampoline, which calls
+   `io_context_executor.dispatch(caller_handle)` to post the caller back
+   to the `io_context`.
+6. The caller resumes on the `io_context` thread with the hash result.
+
+The key insight: the caller's executor is captured before the switch and
+restored automatically after. You never need to manually post back.
+
+== Accept Loop
+
+The accept loop creates a socket per connection and spawns a session:
+
+[source,cpp]
+----
+capy::task<>
+do_accept(
+    corosio::io_context& ioc,
+    corosio::tcp_acceptor& acc,
+    capy::thread_pool& pool )
+{
+    for (;;)
+    {
+        corosio::tcp_socket peer( ioc );
+        auto [ec] = co_await acc.accept( peer );
+        if (ec)
+            break;
+
+        capy::run_async( ioc.get_executor() )(
+            do_session( std::move( peer ), pool ) );
+    }
+}
+----
+
+`run_async` is fire-and-forget — each session runs independently on the
+`io_context`. The accept loop immediately continues waiting for the next
+connection.
+
+== Main Function
+
+[source,cpp]
+----
+int main( int argc, char* argv[] )
+{
+    if (argc != 2)
+    {
+        std::cerr << "Usage: hash_server <port>\n";
+        return 1;
+    }
+
+    auto port = static_cast<std::uint16_t>( std::atoi( argv[1] ) );
+
+    corosio::io_context ioc;
+    capy::thread_pool pool( 4 );
+
+    corosio::tcp_acceptor acc( ioc, corosio::endpoint( port ) );
+
+    std::cout << "Hash server listening on port " << port << "\n";
+
+    capy::run_async( ioc.get_executor() )(
+        do_accept( ioc, acc, pool ) );
+
+    ioc.run();
+    pool.join();
+}
+----
+
+The `io_context` drives all network I/O on the main thread. The thread pool
+runs four worker threads for hash computation. `pool.join()` waits for any
+in-flight pool work after the event loop exits.
+
+== `run_async` vs `run`
+
+These two functions serve different purposes:
+
+[cols="1,1,2"]
+|===
+| Function | Context | Purpose
+
+| `run_async( ex )( task )`
+| Called from _outside_ a coroutine (e.g., `main`)
+| Fire-and-forget: dispatches the task onto the executor
+
+| `co_await run( ex )( task )`
+| Called from _inside_ a coroutine
+| Switches executors: runs the task on `ex`, then resumes the
+  caller on its original executor
+|===
+
+In this example, `run_async` launches the accept loop from `main`, and
+`run` switches individual hash computations to the thread pool from within
+a session coroutine.
+
+== Testing
+
+Start the server:
+
+[source,bash]
+----
+$ ./hash_server 8080
+Hash server listening on port 8080
+----
+
+Send data with netcat:
+
+[source,bash]
+----
+$ echo "hello world" | nc -q1 localhost 8080
+782e1488cd5a68b7
+
+$ echo "test data 123" | nc -q1 localhost 8080
+daf63590896c6e23
+----
+
+Each request reads one chunk, hashes it on the thread pool, and returns the
+16-character hex digest.
+
+== Next Steps
+
+* xref:../4.guide/4c.io-context.adoc[I/O Context Guide] — Deep dive into event loop mechanics
+* xref:../4.guide/4e.tcp-acceptor.adoc[Acceptors Guide] — Acceptor options and multi-port binding
+* xref:../4.guide/4d.sockets.adoc[Sockets Guide] — Socket operations in detail
+* xref:../4.guide/4g.composed-operations.adoc[Composed Operations] — Understanding `write()`
