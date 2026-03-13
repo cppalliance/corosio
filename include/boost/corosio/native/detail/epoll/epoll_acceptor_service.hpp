@@ -21,14 +21,12 @@
 #include <boost/corosio/native/detail/epoll/epoll_acceptor.hpp>
 #include <boost/corosio/native/detail/epoll/epoll_socket_service.hpp>
 #include <boost/corosio/native/detail/epoll/epoll_scheduler.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_service_state.hpp>
 
-#include <boost/corosio/native/detail/endpoint_convert.hpp>
-#include <boost/corosio/detail/dispatch_coro.hpp>
-#include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_op_complete.hpp>
 
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <utility>
 
 #include <errno.h>
@@ -39,21 +37,9 @@
 
 namespace boost::corosio::detail {
 
-/** State for epoll acceptor service. */
-class epoll_acceptor_state
-{
-public:
-    explicit epoll_acceptor_state(epoll_scheduler& sched) noexcept
-        : sched_(sched)
-    {
-    }
-
-    epoll_scheduler& sched_;
-    std::mutex mutex_;
-    intrusive_list<epoll_acceptor> acceptor_list_;
-    std::unordered_map<epoll_acceptor*, std::shared_ptr<epoll_acceptor>>
-        acceptor_ptrs_;
-};
+/// State for epoll acceptor service.
+using epoll_acceptor_state =
+    reactor_service_state<epoll_scheduler, epoll_acceptor>;
 
 /** epoll acceptor service implementation.
 
@@ -88,7 +74,7 @@ public:
     {
         return state_->sched_;
     }
-    void post(epoll_op* op);
+    void post(scheduler_op* op);
     void work_started() noexcept;
     void work_finished() noexcept;
 
@@ -99,12 +85,6 @@ private:
     capy::execution_context& ctx_;
     std::unique_ptr<epoll_acceptor_state> state_;
 };
-
-//--------------------------------------------------------------------------
-//
-// Implementation
-//
-//--------------------------------------------------------------------------
 
 inline void
 epoll_accept_op::cancel() noexcept
@@ -118,79 +98,11 @@ epoll_accept_op::cancel() noexcept
 inline void
 epoll_accept_op::operator()()
 {
-    stop_cb.reset();
-
-    static_cast<epoll_acceptor*>(acceptor_impl_)
-        ->service()
-        .scheduler()
-        .reset_inline_budget();
-
-    bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
-
-    if (cancelled.load(std::memory_order_acquire))
-        *ec_out = capy::error::canceled;
-    else if (errn != 0)
-        *ec_out = make_err(errn);
-    else
-        *ec_out = {};
-
-    // Set up the peer socket on success
-    if (success && accepted_fd >= 0 && acceptor_impl_)
-    {
-        auto* socket_svc = static_cast<epoll_acceptor*>(acceptor_impl_)
-                               ->service()
-                               .socket_service();
-        if (socket_svc)
-        {
-            auto& impl = static_cast<epoll_socket&>(*socket_svc->construct());
-            impl.set_socket(accepted_fd);
-
-            impl.desc_state_.fd = accepted_fd;
-            {
-                std::lock_guard lock(impl.desc_state_.mutex);
-                impl.desc_state_.read_op    = nullptr;
-                impl.desc_state_.write_op   = nullptr;
-                impl.desc_state_.connect_op = nullptr;
-            }
-            socket_svc->scheduler().register_descriptor(
-                accepted_fd, &impl.desc_state_);
-
-            impl.set_endpoints(
-                static_cast<epoll_acceptor*>(acceptor_impl_)->local_endpoint(),
-                from_sockaddr(peer_storage));
-
-            if (impl_out)
-                *impl_out = &impl;
-            accepted_fd = -1;
-        }
-        else
-        {
-            // No socket service — treat as error
-            *ec_out = make_err(ENOENT);
-            success = false;
-        }
-    }
-
-    if (!success || !acceptor_impl_)
-    {
-        if (accepted_fd >= 0)
-        {
-            ::close(accepted_fd);
-            accepted_fd = -1;
-        }
-        if (impl_out)
-            *impl_out = nullptr;
-    }
-
-    // Move to stack before resuming. See epoll_op::operator()() for rationale.
-    capy::executor_ref saved_ex(ex);
-    std::coroutine_handle<> saved_h(h);
-    auto prevent_premature_destruction = std::move(impl_ptr);
-    dispatch_coro(saved_ex, saved_h).resume();
+    complete_accept_op<epoll_socket>(*this);
 }
 
 inline epoll_acceptor::epoll_acceptor(epoll_acceptor_service& svc) noexcept
-    : svc_(svc)
+    : reactor_acceptor(svc)
 {
 }
 
@@ -311,71 +223,13 @@ epoll_acceptor::accept(
 inline void
 epoll_acceptor::cancel() noexcept
 {
-    cancel_single_op(acc_);
-}
-
-inline void
-epoll_acceptor::cancel_single_op(epoll_op& op) noexcept
-{
-    auto self = weak_from_this().lock();
-    if (!self)
-        return;
-
-    op.request_cancel();
-
-    epoll_op* claimed = nullptr;
-    {
-        std::lock_guard lock(desc_state_.mutex);
-        if (desc_state_.read_op == &op)
-            claimed = std::exchange(desc_state_.read_op, nullptr);
-    }
-    if (claimed)
-    {
-        op.impl_ptr = self;
-        svc_.post(&op);
-        svc_.work_finished();
-    }
+    do_cancel();
 }
 
 inline void
 epoll_acceptor::close_socket() noexcept
 {
-    auto self = weak_from_this().lock();
-    if (self)
-    {
-        acc_.request_cancel();
-
-        epoll_op* claimed = nullptr;
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            claimed = std::exchange(desc_state_.read_op, nullptr);
-            desc_state_.read_ready  = false;
-            desc_state_.write_ready = false;
-        }
-
-        if (claimed)
-        {
-            acc_.impl_ptr = self;
-            svc_.post(&acc_);
-            svc_.work_finished();
-        }
-
-        if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
-            desc_state_.impl_ref_ = self;
-    }
-
-    if (fd_ >= 0)
-    {
-        if (desc_state_.registered_events != 0)
-            svc_.scheduler().deregister_descriptor(fd_);
-        ::close(fd_);
-        fd_ = -1;
-    }
-
-    desc_state_.fd                = -1;
-    desc_state_.registered_events = 0;
-
-    local_endpoint_ = endpoint{};
+    do_close_socket();
 }
 
 inline epoll_acceptor_service::epoll_acceptor_service(
@@ -394,10 +248,10 @@ epoll_acceptor_service::shutdown()
 {
     std::lock_guard lock(state_->mutex_);
 
-    while (auto* impl = state_->acceptor_list_.pop_front())
+    while (auto* impl = state_->impl_list_.pop_front())
         impl->close_socket();
 
-    // Don't clear acceptor_ptrs_ here — same rationale as
+    // Don't clear impl_ptrs_ here — same rationale as
     // epoll_socket_service::shutdown(). Let ~state_ release ptrs
     // after scheduler shutdown has drained all queued ops.
 }
@@ -409,8 +263,8 @@ epoll_acceptor_service::construct()
     auto* raw = impl.get();
 
     std::lock_guard lock(state_->mutex_);
-    state_->acceptor_list_.push_back(raw);
-    state_->acceptor_ptrs_.emplace(raw, std::move(impl));
+    state_->impl_ptrs_.emplace(raw, std::move(impl));
+    state_->impl_list_.push_back(raw);
 
     return raw;
 }
@@ -421,35 +275,14 @@ epoll_acceptor_service::destroy(io_object::implementation* impl)
     auto* epoll_impl = static_cast<epoll_acceptor*>(impl);
     epoll_impl->close_socket();
     std::lock_guard lock(state_->mutex_);
-    state_->acceptor_list_.remove(epoll_impl);
-    state_->acceptor_ptrs_.erase(epoll_impl);
+    state_->impl_list_.remove(epoll_impl);
+    state_->impl_ptrs_.erase(epoll_impl);
 }
 
 inline void
 epoll_acceptor_service::close(io_object::handle& h)
 {
     static_cast<epoll_acceptor*>(h.get())->close_socket();
-}
-
-inline std::error_code
-epoll_acceptor::set_option(
-    int level, int optname, void const* data, std::size_t size) noexcept
-{
-    if (::setsockopt(fd_, level, optname, data, static_cast<socklen_t>(size)) !=
-        0)
-        return make_err(errno);
-    return {};
-}
-
-inline std::error_code
-epoll_acceptor::get_option(
-    int level, int optname, void* data, std::size_t* size) const noexcept
-{
-    socklen_t len = static_cast<socklen_t>(*size);
-    if (::getsockopt(fd_, level, optname, data, &len) != 0)
-        return make_err(errno);
-    *size = static_cast<std::size_t>(len);
-    return {};
 }
 
 inline std::error_code
@@ -485,41 +318,18 @@ inline std::error_code
 epoll_acceptor_service::bind_acceptor(
     tcp_acceptor::implementation& impl, endpoint ep)
 {
-    auto* epoll_impl = static_cast<epoll_acceptor*>(&impl);
-    int fd           = epoll_impl->fd_;
-
-    sockaddr_storage storage{};
-    socklen_t addrlen = detail::to_sockaddr(ep, storage);
-    if (::bind(fd, reinterpret_cast<sockaddr*>(&storage), addrlen) < 0)
-        return make_err(errno);
-
-    // Cache local endpoint (resolves ephemeral port)
-    sockaddr_storage local{};
-    socklen_t local_len = sizeof(local);
-    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
-        epoll_impl->set_local_endpoint(detail::from_sockaddr(local));
-
-    return {};
+    return static_cast<epoll_acceptor*>(&impl)->do_bind(ep);
 }
 
 inline std::error_code
 epoll_acceptor_service::listen_acceptor(
     tcp_acceptor::implementation& impl, int backlog)
 {
-    auto* epoll_impl = static_cast<epoll_acceptor*>(&impl);
-    int fd           = epoll_impl->fd_;
-
-    if (::listen(fd, backlog) < 0)
-        return make_err(errno);
-
-    // Register fd with epoll (edge-triggered mode)
-    scheduler().register_descriptor(fd, &epoll_impl->desc_state_);
-
-    return {};
+    return static_cast<epoll_acceptor*>(&impl)->do_listen(backlog);
 }
 
 inline void
-epoll_acceptor_service::post(epoll_op* op)
+epoll_acceptor_service::post(scheduler_op* op)
 {
     state_->sched_.post(op);
 }

@@ -14,24 +14,22 @@
 
 #if BOOST_COROSIO_HAS_SELECT
 
-#include <boost/corosio/tcp_acceptor.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
-#include <boost/corosio/detail/intrusive.hpp>
-
+#include <boost/corosio/native/detail/reactor/reactor_acceptor.hpp>
 #include <boost/corosio/native/detail/select/select_op.hpp>
-
-#include <memory>
+#include <boost/capy/ex/executor_ref.hpp>
 
 namespace boost::corosio::detail {
 
 class select_acceptor_service;
-class select_socket_service;
 
 /// Acceptor implementation for select backend.
 class select_acceptor final
-    : public tcp_acceptor::implementation
-    , public std::enable_shared_from_this<select_acceptor>
-    , public intrusive_list<select_acceptor>::node
+    : public reactor_acceptor<
+          select_acceptor,
+          select_acceptor_service,
+          select_op,
+          select_accept_op,
+          select_descriptor_state>
 {
     friend class select_acceptor_service;
 
@@ -45,46 +43,8 @@ public:
         std::error_code*,
         io_object::implementation**) override;
 
-    int native_handle() const noexcept
-    {
-        return fd_;
-    }
-    endpoint local_endpoint() const noexcept override
-    {
-        return local_endpoint_;
-    }
-    bool is_open() const noexcept override
-    {
-        return fd_ >= 0;
-    }
     void cancel() noexcept override;
-
-    std::error_code set_option(
-        int level,
-        int optname,
-        void const* data,
-        std::size_t size) noexcept override;
-    std::error_code
-    get_option(int level, int optname, void* data, std::size_t* size)
-        const noexcept override;
-    void cancel_single_op(select_op& op) noexcept;
     void close_socket() noexcept;
-    void set_local_endpoint(endpoint ep) noexcept
-    {
-        local_endpoint_ = ep;
-    }
-
-    select_acceptor_service& service() noexcept
-    {
-        return svc_;
-    }
-
-    select_accept_op acc_;
-
-private:
-    select_acceptor_service& svc_;
-    int fd_ = -1;
-    endpoint local_endpoint_;
 };
 
 } // namespace boost::corosio::detail

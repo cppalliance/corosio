@@ -22,14 +22,12 @@
 #include <boost/corosio/native/detail/kqueue/kqueue_acceptor.hpp>
 #include <boost/corosio/native/detail/kqueue/kqueue_socket_service.hpp>
 #include <boost/corosio/native/detail/kqueue/kqueue_scheduler.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_service_state.hpp>
 
-#include <boost/corosio/native/detail/endpoint_convert.hpp>
-#include <boost/corosio/detail/dispatch_coro.hpp>
-#include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_op_complete.hpp>
 
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <utility>
 
 #include <errno.h>
@@ -40,24 +38,9 @@
 
 namespace boost::corosio::detail {
 
-/** State for kqueue acceptor service. */
-class kqueue_acceptor_state
-{
-    friend class kqueue_acceptor_service;
-
-public:
-    explicit kqueue_acceptor_state(kqueue_scheduler& sched) noexcept
-        : sched_(sched)
-    {
-    }
-
-private:
-    kqueue_scheduler& sched_;
-    std::mutex mutex_;
-    intrusive_list<kqueue_acceptor> acceptor_list_;
-    std::unordered_map<kqueue_acceptor*, std::shared_ptr<kqueue_acceptor>>
-        acceptor_ptrs_;
-};
+/// State for kqueue acceptor service.
+using kqueue_acceptor_state =
+    reactor_service_state<kqueue_scheduler, kqueue_acceptor>;
 
 /** kqueue acceptor service implementation.
 
@@ -91,7 +74,7 @@ public:
     {
         return state_->sched_;
     }
-    void post(kqueue_op* op);
+    void post(scheduler_op* op);
     void work_started() noexcept;
     void work_finished() noexcept;
 
@@ -115,139 +98,11 @@ kqueue_accept_op::cancel() noexcept
 inline void
 kqueue_accept_op::operator()()
 {
-    stop_cb.reset();
-
-    static_cast<kqueue_acceptor*>(acceptor_impl_)
-        ->service()
-        .scheduler()
-        .reset_inline_budget();
-
-    bool success = (errn == 0 && !cancelled.load(std::memory_order_acquire));
-
-    if (ec_out)
-    {
-        if (cancelled.load(std::memory_order_acquire))
-            *ec_out = capy::error::canceled;
-        else if (errn != 0)
-            *ec_out = make_err(errn);
-        else
-            *ec_out = {};
-    }
-
-    if (success && accepted_fd >= 0)
-    {
-        if (acceptor_impl_)
-        {
-            auto* socket_svc = static_cast<kqueue_acceptor*>(acceptor_impl_)
-                                   ->service()
-                                   .socket_service();
-            if (socket_svc)
-            {
-                auto& impl =
-                    static_cast<kqueue_socket&>(*socket_svc->construct());
-                impl.set_socket(accepted_fd);
-
-                // Register accepted socket with kqueue (edge-triggered via EV_CLEAR)
-                impl.desc_state_.fd = accepted_fd;
-                {
-                    std::lock_guard lock(impl.desc_state_.mutex);
-                    impl.desc_state_.read_op    = nullptr;
-                    impl.desc_state_.write_op   = nullptr;
-                    impl.desc_state_.connect_op = nullptr;
-                }
-                socket_svc->scheduler().register_descriptor(
-                    accepted_fd, &impl.desc_state_);
-
-                // Suppress SIGPIPE on the accepted socket; macOS lacks MSG_NOSIGNAL
-                int one = 1;
-                if (::setsockopt(
-                        accepted_fd, SOL_SOCKET, SO_NOSIGPIPE, &one,
-                        sizeof(one)) == -1)
-                {
-                    if (ec_out)
-                        *ec_out = make_err(errno);
-                    socket_svc->destroy(&impl);
-                    accepted_fd = -1;
-                    if (impl_out)
-                        *impl_out = nullptr;
-                }
-                else
-                {
-                    sockaddr_storage local_storage{};
-                    socklen_t local_len = sizeof(local_storage);
-                    sockaddr_storage remote_storage{};
-                    socklen_t remote_len = sizeof(remote_storage);
-
-                    endpoint local_ep, remote_ep;
-                    if (::getsockname(
-                            accepted_fd,
-                            reinterpret_cast<sockaddr*>(&local_storage),
-                            &local_len) == 0)
-                        local_ep = from_sockaddr(local_storage);
-                    if (::getpeername(
-                            accepted_fd,
-                            reinterpret_cast<sockaddr*>(&remote_storage),
-                            &remote_len) == 0)
-                        remote_ep = from_sockaddr(remote_storage);
-
-                    impl.set_endpoints(local_ep, remote_ep);
-
-                    if (impl_out)
-                        *impl_out = &impl;
-
-                    accepted_fd = -1;
-                }
-            }
-            else
-            {
-                if (ec_out && !*ec_out)
-                    *ec_out = make_err(ENOENT);
-                ::close(accepted_fd);
-                accepted_fd = -1;
-                if (impl_out)
-                    *impl_out = nullptr;
-            }
-        }
-        else
-        {
-            ::close(accepted_fd);
-            accepted_fd = -1;
-            if (impl_out)
-                *impl_out = nullptr;
-        }
-    }
-    else
-    {
-        if (accepted_fd >= 0)
-        {
-            ::close(accepted_fd);
-            accepted_fd = -1;
-        }
-
-        if (peer_impl)
-        {
-            auto* socket_svc_cleanup =
-                static_cast<kqueue_acceptor*>(acceptor_impl_)
-                    ->service()
-                    .socket_service();
-            if (socket_svc_cleanup)
-                socket_svc_cleanup->destroy(peer_impl);
-            peer_impl = nullptr;
-        }
-
-        if (impl_out)
-            *impl_out = nullptr;
-    }
-
-    // Move to stack before resuming. See kqueue_op::operator()() for rationale.
-    capy::executor_ref saved_ex(std::move(ex));
-    std::coroutine_handle<> saved_h(std::move(h));
-    auto prevent_premature_destruction = std::move(impl_ptr);
-    dispatch_coro(saved_ex, saved_h).resume();
+    complete_accept_op<kqueue_socket>(*this);
 }
 
 inline kqueue_acceptor::kqueue_acceptor(kqueue_acceptor_service& svc) noexcept
-    : svc_(svc)
+    : reactor_acceptor(svc)
 {
 }
 
@@ -298,6 +153,21 @@ kqueue_acceptor::accept(
             return std::noop_coroutine();
         }
 
+        // SO_NOSIGPIPE before budget check so both inline and
+        // queued paths have it applied (macOS lacks MSG_NOSIGNAL)
+        int one = 1;
+        if (::setsockopt(
+                accepted, SOL_SOCKET, SO_NOSIGPIPE, &one,
+                sizeof(one)) == -1)
+        {
+            int errn = errno;
+            ::close(accepted);
+            op.complete(errn, 0);
+            op.impl_ptr = shared_from_this();
+            svc_.post(&op);
+            return std::noop_coroutine();
+        }
+
         {
             std::lock_guard lock(desc_state_.mutex);
             desc_state_.read_ready = false;
@@ -322,49 +192,25 @@ kqueue_acceptor::accept(
                 socket_svc->scheduler().register_descriptor(
                     accepted, &impl.desc_state_);
 
-                // Suppress SIGPIPE on the accepted socket; macOS lacks MSG_NOSIGNAL
-                int one = 1;
-                if (::setsockopt(
-                        accepted, SOL_SOCKET, SO_NOSIGPIPE, &one,
-                        sizeof(one)) == -1)
-                {
-                    int saved_errno = errno;
-                    socket_svc->destroy(&impl);
-                    if (ec)
-                        *ec = make_err(saved_errno);
-                    if (impl_out)
-                        *impl_out = nullptr;
-                }
-                else
-                {
-                    sockaddr_storage local_storage{};
-                    socklen_t local_len = sizeof(local_storage);
-                    endpoint local_ep;
-                    if (::getsockname(
-                            accepted,
-                            reinterpret_cast<sockaddr*>(&local_storage),
-                            &local_len) == 0)
-                        local_ep = from_sockaddr(local_storage);
-                    impl.set_endpoints(local_ep, from_sockaddr(peer_storage));
-                    if (ec)
-                        *ec = {};
-                    if (impl_out)
-                        *impl_out = &impl;
-                }
-                return dispatch_coro(ex, h);
+                impl.set_endpoints(
+                    local_endpoint_, from_sockaddr(peer_storage));
+
+                *ec = {};
+                if (impl_out)
+                    *impl_out = &impl;
             }
             else
             {
                 ::close(accepted);
-                if (ec)
-                    *ec = make_err(ENOENT);
+                *ec = make_err(ENOENT);
                 if (impl_out)
                     *impl_out = nullptr;
-                return dispatch_coro(ex, h);
             }
+            return dispatch_coro(ex, h);
         }
 
-        op.accepted_fd = accepted;
+        op.accepted_fd  = accepted;
+        op.peer_storage = peer_storage;
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
@@ -373,60 +219,28 @@ kqueue_acceptor::accept(
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
-        svc_.work_started();
         op.impl_ptr = shared_from_this();
+        svc_.work_started();
 
-        bool perform_now = false;
+        std::lock_guard lock(desc_state_.mutex);
+        bool io_done = false;
+        if (desc_state_.read_ready)
         {
-            std::lock_guard lock(desc_state_.mutex);
-            if (desc_state_.read_ready)
-            {
-                desc_state_.read_ready = false;
-                perform_now            = true;
-            }
-            else
-            {
-                desc_state_.read_op = &op;
-            }
-        }
-
-        if (perform_now)
-        {
-            for (;;)
-            {
-                op.perform_io();
-                if (op.errn != EAGAIN && op.errn != EWOULDBLOCK)
-                {
-                    svc_.post(&op);
-                    svc_.work_finished();
-                    break;
-                }
+            desc_state_.read_ready = false;
+            op.perform_io();
+            io_done = (op.errn != EAGAIN && op.errn != EWOULDBLOCK);
+            if (!io_done)
                 op.errn = 0;
-                std::lock_guard lock(desc_state_.mutex);
-                if (desc_state_.read_ready)
-                {
-                    desc_state_.read_ready = false;
-                    continue;
-                }
-                desc_state_.read_op = &op;
-                break;
-            }
-            return std::noop_coroutine();
         }
 
-        if (op.cancelled.load(std::memory_order_acquire))
+        if (io_done || op.cancelled.load(std::memory_order_acquire))
         {
-            kqueue_op* claimed = nullptr;
-            {
-                std::lock_guard lock(desc_state_.mutex);
-                if (desc_state_.read_op == &op)
-                    claimed = std::exchange(desc_state_.read_op, nullptr);
-            }
-            if (claimed)
-            {
-                svc_.post(claimed);
-                svc_.work_finished();
-            }
+            svc_.post(&op);
+            svc_.work_finished();
+        }
+        else
+        {
+            desc_state_.read_op = &op;
         }
         return std::noop_coroutine();
     }
@@ -440,86 +254,13 @@ kqueue_acceptor::accept(
 inline void
 kqueue_acceptor::cancel() noexcept
 {
-    auto self = weak_from_this().lock();
-    if (!self)
-        return;
-
-    acc_.request_cancel();
-
-    kqueue_op* claimed = nullptr;
-    {
-        std::lock_guard lock(desc_state_.mutex);
-        if (desc_state_.read_op == &acc_)
-            claimed = std::exchange(desc_state_.read_op, nullptr);
-    }
-    if (claimed)
-    {
-        acc_.impl_ptr = self;
-        svc_.post(&acc_);
-        svc_.work_finished();
-    }
-}
-
-inline void
-kqueue_acceptor::cancel_single_op(kqueue_op& op) noexcept
-{
-    auto self = weak_from_this().lock();
-    if (!self)
-        return;
-
-    op.request_cancel();
-
-    kqueue_op* claimed = nullptr;
-    {
-        std::lock_guard lock(desc_state_.mutex);
-        if (desc_state_.read_op == &op)
-            claimed = std::exchange(desc_state_.read_op, nullptr);
-    }
-    if (claimed)
-    {
-        op.impl_ptr = self;
-        svc_.post(&op);
-        svc_.work_finished();
-    }
+    do_cancel();
 }
 
 inline void
 kqueue_acceptor::close_socket() noexcept
 {
-    auto self = weak_from_this().lock();
-    if (self)
-    {
-        acc_.request_cancel();
-
-        kqueue_op* claimed = nullptr;
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            claimed = std::exchange(desc_state_.read_op, nullptr);
-            desc_state_.read_ready  = false;
-            desc_state_.write_ready = false;
-        }
-
-        if (claimed)
-        {
-            acc_.impl_ptr = self;
-            svc_.post(&acc_);
-            svc_.work_finished();
-        }
-
-        if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
-            desc_state_.impl_ref_ = self;
-    }
-
-    if (fd_ >= 0)
-    {
-        ::close(fd_);
-        fd_ = -1;
-    }
-
-    desc_state_.fd                = -1;
-    desc_state_.registered_events = 0;
-
-    local_endpoint_ = endpoint{};
+    do_close_socket();
 }
 
 inline kqueue_acceptor_service::kqueue_acceptor_service(
@@ -538,7 +279,7 @@ kqueue_acceptor_service::shutdown()
 {
     std::lock_guard lock(state_->mutex_);
 
-    while (auto* impl = state_->acceptor_list_.pop_front())
+    while (auto* impl = state_->impl_list_.pop_front())
         impl->close_socket();
 }
 
@@ -549,8 +290,8 @@ kqueue_acceptor_service::construct()
     auto* raw = impl.get();
 
     std::lock_guard lock(state_->mutex_);
-    state_->acceptor_list_.push_back(raw);
-    state_->acceptor_ptrs_.emplace(raw, std::move(impl));
+    state_->impl_ptrs_.emplace(raw, std::move(impl));
+    state_->impl_list_.push_back(raw);
 
     return raw;
 }
@@ -561,35 +302,14 @@ kqueue_acceptor_service::destroy(io_object::implementation* impl)
     auto* kq_impl = static_cast<kqueue_acceptor*>(impl);
     kq_impl->close_socket();
     std::lock_guard lock(state_->mutex_);
-    state_->acceptor_list_.remove(kq_impl);
-    state_->acceptor_ptrs_.erase(kq_impl);
+    state_->impl_list_.remove(kq_impl);
+    state_->impl_ptrs_.erase(kq_impl);
 }
 
 inline void
 kqueue_acceptor_service::close(io_object::handle& h)
 {
     static_cast<kqueue_acceptor*>(h.get())->close_socket();
-}
-
-inline std::error_code
-kqueue_acceptor::set_option(
-    int level, int optname, void const* data, std::size_t size) noexcept
-{
-    if (::setsockopt(fd_, level, optname, data, static_cast<socklen_t>(size)) !=
-        0)
-        return make_err(errno);
-    return {};
-}
-
-inline std::error_code
-kqueue_acceptor::get_option(
-    int level, int optname, void* data, std::size_t* size) const noexcept
-{
-    socklen_t len = static_cast<socklen_t>(*size);
-    if (::getsockopt(fd_, level, optname, data, &len) != 0)
-        return make_err(errno);
-    *size = static_cast<std::size_t>(len);
-    return {};
 }
 
 inline std::error_code
@@ -652,41 +372,18 @@ inline std::error_code
 kqueue_acceptor_service::bind_acceptor(
     tcp_acceptor::implementation& impl, endpoint ep)
 {
-    auto* kq_impl = static_cast<kqueue_acceptor*>(&impl);
-    int fd        = kq_impl->fd_;
-
-    sockaddr_storage storage{};
-    socklen_t addrlen = detail::to_sockaddr(ep, storage);
-    if (::bind(fd, reinterpret_cast<sockaddr*>(&storage), addrlen) < 0)
-        return make_err(errno);
-
-    // Cache local endpoint (resolves ephemeral port)
-    sockaddr_storage local{};
-    socklen_t local_len = sizeof(local);
-    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
-        kq_impl->set_local_endpoint(detail::from_sockaddr(local));
-
-    return {};
+    return static_cast<kqueue_acceptor*>(&impl)->do_bind(ep);
 }
 
 inline std::error_code
 kqueue_acceptor_service::listen_acceptor(
     tcp_acceptor::implementation& impl, int backlog)
 {
-    auto* kq_impl = static_cast<kqueue_acceptor*>(&impl);
-    int fd        = kq_impl->fd_;
-
-    if (::listen(fd, backlog) < 0)
-        return make_err(errno);
-
-    // Register fd with kqueue
-    scheduler().register_descriptor(fd, &kq_impl->desc_state_);
-
-    return {};
+    return static_cast<kqueue_acceptor*>(&impl)->do_listen(backlog);
 }
 
 inline void
-kqueue_acceptor_service::post(kqueue_op* op)
+kqueue_acceptor_service::post(scheduler_op* op)
 {
     state_->sched_.post(op);
 }

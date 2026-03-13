@@ -15,13 +15,9 @@
 
 #if BOOST_COROSIO_HAS_KQUEUE
 
-#include <boost/corosio/tcp_acceptor.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
-#include <boost/corosio/detail/intrusive.hpp>
-
+#include <boost/corosio/native/detail/reactor/reactor_acceptor.hpp>
 #include <boost/corosio/native/detail/kqueue/kqueue_op.hpp>
-
-#include <memory>
+#include <boost/capy/ex/executor_ref.hpp>
 
 namespace boost::corosio::detail {
 
@@ -29,9 +25,12 @@ class kqueue_acceptor_service;
 
 /// Acceptor implementation for kqueue backend.
 class kqueue_acceptor final
-    : public tcp_acceptor::implementation
-    , public std::enable_shared_from_this<kqueue_acceptor>
-    , public intrusive_list<kqueue_acceptor>::node
+    : public reactor_acceptor<
+        kqueue_acceptor,
+        kqueue_acceptor_service,
+        kqueue_op,
+        kqueue_accept_op,
+        descriptor_state>
 {
     friend class kqueue_acceptor_service;
 
@@ -65,55 +64,8 @@ public:
         std::error_code* ec,
         io_object::implementation** out_impl) override;
 
-    int native_handle() const noexcept
-    {
-        return fd_;
-    }
-    endpoint local_endpoint() const noexcept override
-    {
-        return local_endpoint_;
-    }
-    bool is_open() const noexcept override
-    {
-        return fd_ >= 0;
-    }
-
-    /** Cancel any pending accept operation. */
     void cancel() noexcept override;
-
-    std::error_code set_option(
-        int level,
-        int optname,
-        void const* data,
-        std::size_t size) noexcept override;
-    std::error_code
-    get_option(int level, int optname, void* data, std::size_t* size)
-        const noexcept override;
-
-    /** Cancel a specific pending operation.
-
-        @param op The operation to cancel.
-    */
-    void cancel_single_op(kqueue_op& op) noexcept;
-
-    /** Close the listening socket and cancel pending operations. */
     void close_socket() noexcept;
-    void set_local_endpoint(endpoint ep) noexcept
-    {
-        local_endpoint_ = ep;
-    }
-
-    kqueue_acceptor_service& service() noexcept
-    {
-        return svc_;
-    }
-
-private:
-    kqueue_acceptor_service& svc_;
-    kqueue_accept_op acc_;
-    descriptor_state desc_state_;
-    int fd_ = -1;
-    endpoint local_endpoint_;
 };
 
 } // namespace boost::corosio::detail

@@ -14,385 +14,171 @@
 
 #if BOOST_COROSIO_HAS_SELECT
 
-#include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/io/io_object.hpp>
-#include <boost/corosio/endpoint.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
-#include <coroutine>
-#include <boost/capy/error.hpp>
-#include <system_error>
+#include <boost/corosio/native/detail/reactor/reactor_op.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 
-#include <boost/corosio/native/detail/make_err.hpp>
-#include <boost/corosio/detail/dispatch_coro.hpp>
-#include <boost/corosio/detail/scheduler_op.hpp>
-#include <boost/corosio/native/detail/endpoint_convert.hpp>
-
-#include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
-
-#include <atomic>
-#include <cstddef>
-#include <memory>
-#include <optional>
-#include <stop_token>
-
-#include <netinet/in.h>
-#include <sys/select.h>
 #include <sys/socket.h>
-#include <sys/uio.h>
+#include <unistd.h>
 
 /*
-    select Operation State
-    ======================
+    File descriptors are registered with the select scheduler once (via
+    select_descriptor_state) and stay registered until closed.
 
-    Each async I/O operation has a corresponding select_op-derived struct that
-    holds the operation's state while it's in flight. The socket impl owns
-    fixed slots for each operation type (conn_, rd_, wr_), so only one
-    operation of each type can be pending per socket at a time.
+    select() is level-triggered but the descriptor_state pattern
+    (designed for edge-triggered) works correctly: is_enqueued_ CAS
+    prevents double-enqueue, add_ready_events is idempotent, and
+    EAGAIN ops stay parked until the next select() re-reports readiness.
 
-    This mirrors the epoll_op design for consistency across backends.
+    cancel() captures shared_from_this() into op.impl_ptr to prevent
+    use-after-free when the socket is closed with pending ops.
 
-    Completion vs Cancellation Race
-    -------------------------------
-    The `registered` atomic uses a tri-state (unregistered, registering,
-    registered) to handle two races: (1) between register_fd() and the
-    reactor seeing an event, and (2) between reactor completion and cancel().
-
-    The registering state closes the window where an event could arrive
-    after register_fd() but before the boolean was set. The reactor and
-    cancel() both treat registering the same as registered when claiming.
-
-    Whoever atomically exchanges to unregistered "claims" the operation
-    and is responsible for completing it. The loser sees unregistered and
-    does nothing. The initiating thread uses compare_exchange to transition
-    from registering to registered; if this fails, the reactor or cancel
-    already claimed the op.
-
-    Impl Lifetime Management
-    ------------------------
-    When cancel() posts an op to the scheduler's ready queue, the socket impl
-    might be destroyed before the scheduler processes the op. The `impl_ptr`
-    member holds a shared_ptr to the impl, keeping it alive until the op
-    completes.
-
-    EOF Detection
-    -------------
-    For reads, 0 bytes with no error means EOF. But an empty user buffer also
-    returns 0 bytes. The `empty_buffer_read` flag distinguishes these cases.
-
-    SIGPIPE Prevention
-    ------------------
-    Writes use sendmsg() with MSG_NOSIGNAL instead of writev() to prevent
-    SIGPIPE when the peer has closed.
+    Writes use sendmsg(MSG_NOSIGNAL) on Linux. On macOS/BSD where
+    MSG_NOSIGNAL may be absent, SO_NOSIGPIPE is set at socket creation
+    and accepted-socket setup instead.
 */
 
 namespace boost::corosio::detail {
 
-// Forward declarations for cancellation support
+// Forward declarations
 class select_socket;
 class select_acceptor;
+struct select_op;
 
-/** Registration state for async operations.
+// Forward declaration
+class select_scheduler;
 
-    Tri-state enum to handle the race between register_fd() and
-    run_reactor() seeing an event. Setting REGISTERING before
-    calling register_fd() ensures events delivered during the
-    registration window are not dropped.
-*/
-enum class select_registration_state : std::uint8_t
+/// Per-descriptor state for persistent select registration.
+struct select_descriptor_state final : reactor_descriptor_state
+{};
+
+/// select base operation — thin wrapper over reactor_op.
+struct select_op : reactor_op<select_socket, select_acceptor>
 {
-    unregistered, ///< Not registered with reactor
-    registering,  ///< register_fd() called, not yet confirmed
-    registered    ///< Fully registered, ready for events
+    void operator()() override;
 };
 
-struct select_op : scheduler_op
+/// select connect operation.
+struct select_connect_op final : reactor_connect_op<select_op>
 {
-    struct canceller
-    {
-        select_op* op;
-        void operator()() const noexcept;
-    };
-
-    std::coroutine_handle<> h;
-    capy::executor_ref ex;
-    std::error_code* ec_out = nullptr;
-    std::size_t* bytes_out  = nullptr;
-
-    int fd                        = -1;
-    int errn                      = 0;
-    std::size_t bytes_transferred = 0;
-
-    std::atomic<bool> cancelled{false};
-    std::atomic<select_registration_state> registered{
-        select_registration_state::unregistered};
-    std::optional<std::stop_callback<canceller>> stop_cb;
-
-    // Prevents use-after-free when socket is closed with pending ops.
-    std::shared_ptr<void> impl_ptr;
-
-    // For stop_token cancellation - pointer to owning socket/acceptor impl.
-    select_socket* socket_impl_     = nullptr;
-    select_acceptor* acceptor_impl_ = nullptr;
-
-    select_op() = default;
-
-    void reset() noexcept
-    {
-        fd                = -1;
-        errn              = 0;
-        bytes_transferred = 0;
-        cancelled.store(false, std::memory_order_relaxed);
-        registered.store(
-            select_registration_state::unregistered, std::memory_order_relaxed);
-        impl_ptr.reset();
-        socket_impl_   = nullptr;
-        acceptor_impl_ = nullptr;
-    }
-
-    void operator()() override
-    {
-        stop_cb.reset();
-
-        if (ec_out)
-        {
-            if (cancelled.load(std::memory_order_acquire))
-                *ec_out = capy::error::canceled;
-            else if (errn != 0)
-                *ec_out = make_err(errn);
-            else if (is_read_operation() && bytes_transferred == 0)
-                *ec_out = capy::error::eof;
-            else
-                *ec_out = {};
-        }
-
-        if (bytes_out)
-            *bytes_out = bytes_transferred;
-
-        // Move to stack before destroying the frame
-        capy::executor_ref saved_ex(ex);
-        std::coroutine_handle<> saved_h(h);
-        impl_ptr.reset();
-        dispatch_coro(saved_ex, saved_h).resume();
-    }
-
-    virtual bool is_read_operation() const noexcept
-    {
-        return false;
-    }
-    virtual void cancel() noexcept = 0;
-
-    void destroy() override
-    {
-        stop_cb.reset();
-        impl_ptr.reset();
-    }
-
-    void request_cancel() noexcept
-    {
-        cancelled.store(true, std::memory_order_release);
-    }
-
-    void start(std::stop_token const& token)
-    {
-        cancelled.store(false, std::memory_order_release);
-        stop_cb.reset();
-        socket_impl_   = nullptr;
-        acceptor_impl_ = nullptr;
-
-        if (token.stop_possible())
-            stop_cb.emplace(token, canceller{this});
-    }
-
-    void start(std::stop_token const& token, select_socket* impl)
-    {
-        cancelled.store(false, std::memory_order_release);
-        stop_cb.reset();
-        socket_impl_   = impl;
-        acceptor_impl_ = nullptr;
-
-        if (token.stop_possible())
-            stop_cb.emplace(token, canceller{this});
-    }
-
-    void start(std::stop_token const& token, select_acceptor* impl)
-    {
-        cancelled.store(false, std::memory_order_release);
-        stop_cb.reset();
-        socket_impl_   = nullptr;
-        acceptor_impl_ = impl;
-
-        if (token.stop_possible())
-            stop_cb.emplace(token, canceller{this});
-    }
-
-    void complete(int err, std::size_t bytes) noexcept
-    {
-        errn              = err;
-        bytes_transferred = bytes;
-    }
-
-    virtual void perform_io() noexcept {}
-};
-
-struct select_connect_op final : select_op
-{
-    endpoint target_endpoint;
-
-    void reset() noexcept
-    {
-        select_op::reset();
-        target_endpoint = endpoint{};
-    }
-
-    void perform_io() noexcept override
-    {
-        // connect() completion status is retrieved via SO_ERROR, not return value
-        int err       = 0;
-        socklen_t len = sizeof(err);
-        if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
-            err = errno;
-        complete(err, 0);
-    }
-
-    // Defined in sockets.cpp where select_socket is complete
     void operator()() override;
     void cancel() noexcept override;
 };
 
-struct select_read_op final : select_op
+/// select scatter-read operation.
+struct select_read_op final : reactor_read_op<select_op>
 {
-    static constexpr std::size_t max_buffers = 16;
-    iovec iovecs[max_buffers];
-    int iovec_count        = 0;
-    bool empty_buffer_read = false;
-
-    bool is_read_operation() const noexcept override
-    {
-        return !empty_buffer_read;
-    }
-
-    void reset() noexcept
-    {
-        select_op::reset();
-        iovec_count       = 0;
-        empty_buffer_read = false;
-    }
-
-    void perform_io() noexcept override
-    {
-        ssize_t n = ::readv(fd, iovecs, iovec_count);
-        if (n >= 0)
-            complete(0, static_cast<std::size_t>(n));
-        else
-            complete(errno, 0);
-    }
-
     void cancel() noexcept override;
 };
 
-struct select_write_op final : select_op
+/** Provides sendmsg() with EINTR retry for select writes.
+
+    Uses MSG_NOSIGNAL where available (Linux). On platforms without
+    it (macOS/BSD), SO_NOSIGPIPE is set at socket creation time
+    and flags=0 is used here.
+*/
+struct select_write_policy
 {
-    static constexpr std::size_t max_buffers = 16;
-    iovec iovecs[max_buffers];
-    int iovec_count = 0;
-
-    void reset() noexcept
-    {
-        select_op::reset();
-        iovec_count = 0;
-    }
-
-    void perform_io() noexcept override
+    static ssize_t write(int fd, iovec* iovecs, int count) noexcept
     {
         msghdr msg{};
         msg.msg_iov    = iovecs;
-        msg.msg_iovlen = static_cast<std::size_t>(iovec_count);
+        msg.msg_iovlen = static_cast<std::size_t>(count);
 
-        ssize_t n = ::sendmsg(fd, &msg, MSG_NOSIGNAL);
-        if (n >= 0)
-            complete(0, static_cast<std::size_t>(n));
-        else
-            complete(errno, 0);
+#ifdef MSG_NOSIGNAL
+        constexpr int send_flags = MSG_NOSIGNAL;
+#else
+        constexpr int send_flags = 0;
+#endif
+
+        ssize_t n;
+        do
+        {
+            n = ::sendmsg(fd, &msg, send_flags);
+        }
+        while (n < 0 && errno == EINTR);
+        return n;
     }
+};
 
+/// select gather-write operation.
+struct select_write_op final : reactor_write_op<select_op, select_write_policy>
+{
     void cancel() noexcept override;
 };
 
-struct select_accept_op final : select_op
+/** Provides accept() + fcntl(O_NONBLOCK|FD_CLOEXEC) with FD_SETSIZE check.
+
+    Uses accept() instead of accept4() for broader POSIX compatibility.
+*/
+struct select_accept_policy
 {
-    int accepted_fd                      = -1;
-    io_object::implementation* peer_impl = nullptr;
-    io_object::implementation** impl_out = nullptr;
-
-    void reset() noexcept
+    static int do_accept(int fd, sockaddr_storage& peer) noexcept
     {
-        select_op::reset();
-        accepted_fd = -1;
-        peer_impl   = nullptr;
-        impl_out    = nullptr;
-    }
-
-    void perform_io() noexcept override
-    {
-        sockaddr_storage addr_storage{};
-        socklen_t addrlen = sizeof(addr_storage);
-
-        // Note: select backend uses accept() + fcntl instead of accept4()
-        // for broader POSIX compatibility
-        int new_fd =
-            ::accept(fd, reinterpret_cast<sockaddr*>(&addr_storage), &addrlen);
-
-        if (new_fd >= 0)
+        socklen_t addrlen = sizeof(peer);
+        int new_fd;
+        do
         {
-            // Reject fds that exceed select()'s FD_SETSIZE limit.
-            // Better to fail now than during later async operations.
-            if (new_fd >= FD_SETSIZE)
-            {
-                ::close(new_fd);
-                complete(EINVAL, 0);
-                return;
-            }
-
-            // Set non-blocking and close-on-exec flags.
-            // A non-blocking socket is essential for the async reactor;
-            // if we can't configure it, fail rather than risk blocking.
-            int flags = ::fcntl(new_fd, F_GETFL, 0);
-            if (flags == -1)
-            {
-                int err = errno;
-                ::close(new_fd);
-                complete(err, 0);
-                return;
-            }
-
-            if (::fcntl(new_fd, F_SETFL, flags | O_NONBLOCK) == -1)
-            {
-                int err = errno;
-                ::close(new_fd);
-                complete(err, 0);
-                return;
-            }
-
-            if (::fcntl(new_fd, F_SETFD, FD_CLOEXEC) == -1)
-            {
-                int err = errno;
-                ::close(new_fd);
-                complete(err, 0);
-                return;
-            }
-
-            accepted_fd = new_fd;
-            complete(0, 0);
+            new_fd = ::accept(fd, reinterpret_cast<sockaddr*>(&peer), &addrlen);
         }
-        else
+        while (new_fd < 0 && errno == EINTR);
+
+        if (new_fd < 0)
+            return new_fd;
+
+        if (new_fd >= FD_SETSIZE)
         {
-            complete(errno, 0);
+            ::close(new_fd);
+            errno = EINVAL;
+            return -1;
         }
-    }
 
-    // Defined in acceptors.cpp where select_acceptor is complete
+        int flags = ::fcntl(new_fd, F_GETFL, 0);
+        if (flags == -1)
+        {
+            int err = errno;
+            ::close(new_fd);
+            errno = err;
+            return -1;
+        }
+
+        if (::fcntl(new_fd, F_SETFL, flags | O_NONBLOCK) == -1)
+        {
+            int err = errno;
+            ::close(new_fd);
+            errno = err;
+            return -1;
+        }
+
+        if (::fcntl(new_fd, F_SETFD, FD_CLOEXEC) == -1)
+        {
+            int err = errno;
+            ::close(new_fd);
+            errno = err;
+            return -1;
+        }
+
+#ifdef SO_NOSIGPIPE
+        int one = 1;
+        if (::setsockopt(
+                new_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) == -1)
+        {
+            int err = errno;
+            ::close(new_fd);
+            errno = err;
+            return -1;
+        }
+#endif
+
+        return new_fd;
+    }
+};
+
+/// select accept operation.
+struct select_accept_op final
+    : reactor_accept_op<select_op, select_accept_policy>
+{
     void operator()() override;
     void cancel() noexcept override;
 };
