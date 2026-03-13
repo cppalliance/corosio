@@ -15,30 +15,11 @@
 
 #if BOOST_COROSIO_HAS_KQUEUE
 
-#include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/io/io_object.hpp>
-#include <boost/corosio/endpoint.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
-#include <coroutine>
-#include <boost/capy/error.hpp>
-#include <system_error>
+#include <boost/corosio/native/detail/reactor/reactor_op.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 
-#include <boost/corosio/detail/scheduler_op.hpp>
-
-#include <unistd.h>
-#include <errno.h>
 #include <fcntl.h>
-
-#include <atomic>
-#include <cstddef>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <stop_token>
-
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/uio.h>
+#include <unistd.h>
 
 /*
     kqueue Operation State
@@ -79,13 +60,11 @@
 
 namespace boost::corosio::detail {
 
-// Ready-event flag constants for descriptor_state::ready_events_.
-// These match the epoll numeric values (EPOLLIN=0x1, EPOLLOUT=0x4,
-// EPOLLERR=0x8) so that descriptor_state::operator()() uses the same
-// flag-checking logic as the epoll backend.
-static constexpr std::uint32_t kqueue_event_read  = 0x001;
-static constexpr std::uint32_t kqueue_event_write = 0x004;
-static constexpr std::uint32_t kqueue_event_error = 0x008;
+// Aliases for shared reactor event constants.
+// Kept for backward compatibility in kqueue-specific code.
+static constexpr std::uint32_t kqueue_event_read  = reactor_event_read;
+static constexpr std::uint32_t kqueue_event_write = reactor_event_write;
+static constexpr std::uint32_t kqueue_event_error = reactor_event_error;
 
 // Forward declarations
 class kqueue_socket;
@@ -94,326 +73,111 @@ struct kqueue_op;
 
 class kqueue_scheduler;
 
-/** Per-descriptor state for persistent kqueue registration.
+/// Per-descriptor state for persistent kqueue registration.
+struct descriptor_state final : reactor_descriptor_state
+{};
 
-    Tracks pending operations for a file descriptor. The fd is registered
-    once with kqueue (EVFILT_READ + EVFILT_WRITE, both EV_CLEAR) and stays
-    registered until closed.
+/// kqueue base operation — thin wrapper over reactor_op.
+struct kqueue_op : reactor_op<kqueue_socket, kqueue_acceptor>
+{
+    void operator()() override;
+};
 
-    This struct extends scheduler_op to support deferred I/O processing.
-    When kqueue events arrive, the reactor sets ready_events and queues
-    this descriptor for processing. When popped from the scheduler queue,
-    operator() performs the actual I/O and queues completion handlers.
+/// kqueue connect operation.
+struct kqueue_connect_op final : reactor_connect_op<kqueue_op>
+{
+    void operator()() override;
+    void cancel() noexcept override;
+};
 
-    @par Deferred I/O Model
-    The reactor no longer performs I/O directly. Instead:
-    1. Reactor sets ready_events and queues descriptor_state
-    2. Scheduler pops descriptor_state and calls operator()
-    3. operator() performs I/O under mutex and queues completions
+/// kqueue scatter-read operation.
+struct kqueue_read_op final : reactor_read_op<kqueue_op>
+{
+    void cancel() noexcept override;
+};
 
-    This eliminates per-descriptor mutex locking from the reactor hot path.
+/** Provides writev() for kqueue writes.
 
-    @par Thread Safety
-    The mutex protects operation pointers and ready flags during I/O.
-    ready_events_ and is_enqueued_ are atomic for lock-free reactor access.
+    SO_NOSIGPIPE is set on the socket at creation time (macOS lacks
+    MSG_NOSIGNAL), so writev() is safe from SIGPIPE.
 */
-struct descriptor_state final : scheduler_op
+struct kqueue_write_policy
 {
-    std::mutex mutex;
-
-    // Protected by mutex
-    kqueue_op* read_op    = nullptr;
-    kqueue_op* write_op   = nullptr;
-    kqueue_op* connect_op = nullptr;
-
-    // Caches edge events that arrived before an op was registered
-    bool read_ready  = false;
-    bool write_ready = false;
-
-    // Deferred cancellation: set by cancel() when the target op is not
-    // parked (e.g. completing inline via speculative I/O). Checked when
-    // the next op parks; if set, the op is immediately self-cancelled.
-    // This matches IOCP semantics where CancelIoEx always succeeds.
-    bool read_cancel_pending    = false;
-    bool write_cancel_pending   = false;
-    bool connect_cancel_pending = false;
-
-    // Set during registration only (no mutex needed)
-    std::uint32_t registered_events = 0;
-    int fd                          = -1;
-
-    // For deferred I/O - set by reactor, read by scheduler
-    std::atomic<std::uint32_t> ready_events_{0};
-    std::atomic<bool> is_enqueued_{false};
-    kqueue_scheduler const* scheduler_ = nullptr;
-
-    // Prevents impl destruction while this descriptor_state is queued.
-    // Set by close_socket() when is_enqueued_ is true, cleared by operator().
-    std::shared_ptr<void> impl_ref_;
-
-    /// Add ready events atomically.
-    /// Release pairs with the consumer's acquire exchange on
-    /// ready_events_ so the consumer sees all flags. On x86 (TSO)
-    /// this compiles to the same LOCK OR as relaxed.
-    void add_ready_events(std::uint32_t ev) noexcept
+    static ssize_t write(int fd, iovec* iovecs, int count) noexcept
     {
-        ready_events_.fetch_or(ev, std::memory_order_release);
-    }
-
-    /// Perform deferred I/O and queue completions.
-    void operator()() override;
-
-    /// Destroy without invoking.
-    /// Called during scheduler::shutdown() drain. Clear impl_ref_ to break
-    /// the self-referential cycle set by close_socket().
-    void destroy() override
-    {
-        impl_ref_.reset();
-    }
-};
-
-struct kqueue_op : scheduler_op
-{
-    struct canceller
-    {
-        kqueue_op* op;
-        void operator()() const noexcept;
-    };
-
-    std::coroutine_handle<> h;
-    capy::executor_ref ex;
-    std::error_code* ec_out = nullptr;
-    std::size_t* bytes_out  = nullptr;
-
-    int fd                        = -1;
-    int errn                      = 0;
-    std::size_t bytes_transferred = 0;
-
-    std::atomic<bool> cancelled{false};
-    std::optional<std::stop_callback<canceller>> stop_cb;
-
-    // Prevents use-after-free when socket is closed with pending ops.
-    // See "Impl Lifetime Management" in file header.
-    std::shared_ptr<void> impl_ptr;
-
-    // For stop_token cancellation - pointer to owning socket/acceptor impl.
-    // When stop is requested, we call back to the impl to perform actual I/O cancellation.
-    kqueue_socket* socket_impl_     = nullptr;
-    kqueue_acceptor* acceptor_impl_ = nullptr;
-
-    kqueue_op() = default;
-
-    void reset() noexcept
-    {
-        fd                = -1;
-        errn              = 0;
-        bytes_transferred = 0;
-        cancelled.store(false, std::memory_order_relaxed);
-        impl_ptr.reset();
-        socket_impl_   = nullptr;
-        acceptor_impl_ = nullptr;
-    }
-
-    // Defined in sockets.cpp where kqueue_socket is complete
-    void operator()() override;
-
-    virtual bool is_read_operation() const noexcept
-    {
-        return false;
-    }
-    virtual void cancel() noexcept = 0;
-
-    void destroy() override
-    {
-        stop_cb.reset();
-        impl_ptr.reset();
-    }
-
-    void request_cancel() noexcept
-    {
-        cancelled.store(true, std::memory_order_release);
-    }
-
-    void start(std::stop_token token, kqueue_socket* impl)
-    {
-        cancelled.store(false, std::memory_order_release);
-        stop_cb.reset();
-        socket_impl_   = impl;
-        acceptor_impl_ = nullptr;
-
-        if (token.stop_possible())
-            stop_cb.emplace(token, canceller{this});
-    }
-
-    void start(std::stop_token token, kqueue_acceptor* impl)
-    {
-        cancelled.store(false, std::memory_order_release);
-        stop_cb.reset();
-        socket_impl_   = nullptr;
-        acceptor_impl_ = impl;
-
-        if (token.stop_possible())
-            stop_cb.emplace(token, canceller{this});
-    }
-
-    void complete(int err, std::size_t bytes) noexcept
-    {
-        errn              = err;
-        bytes_transferred = bytes;
-    }
-
-    virtual void perform_io() noexcept {}
-};
-
-struct kqueue_connect_op final : kqueue_op
-{
-    endpoint target_endpoint;
-
-    void reset() noexcept
-    {
-        kqueue_op::reset();
-        target_endpoint = endpoint{};
-    }
-
-    void perform_io() noexcept override
-    {
-        // connect() completion status is retrieved via SO_ERROR, not return value
-        int err       = 0;
-        socklen_t len = sizeof(err);
-        if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
-            err = errno;
-        complete(err, 0);
-    }
-
-    // Defined in sockets.cpp where kqueue_socket is complete
-    void operator()() override;
-    void cancel() noexcept override;
-};
-
-struct kqueue_read_op final : kqueue_op
-{
-    static constexpr std::size_t max_buffers = 16;
-    iovec iovecs[max_buffers];
-    int iovec_count        = 0;
-    bool empty_buffer_read = false;
-
-    bool is_read_operation() const noexcept override
-    {
-        return !empty_buffer_read;
-    }
-
-    void reset() noexcept
-    {
-        kqueue_op::reset();
-        iovec_count       = 0;
-        empty_buffer_read = false;
-    }
-
-    void perform_io() noexcept override
-    {
-        ssize_t n = ::readv(fd, iovecs, iovec_count);
-        if (n >= 0)
-            complete(0, static_cast<std::size_t>(n));
-        else
-            complete(errno, 0);
-    }
-
-    void cancel() noexcept override;
-};
-
-struct kqueue_write_op final : kqueue_op
-{
-    static constexpr std::size_t max_buffers = 16;
-    iovec iovecs[max_buffers];
-    int iovec_count = 0;
-
-    void reset() noexcept
-    {
-        kqueue_op::reset();
-        iovec_count = 0;
-    }
-
-    void perform_io() noexcept override
-    {
-        // SO_NOSIGPIPE is set on the socket at creation time (see sockets.cpp),
-        // so writev() is safe from SIGPIPE.
-        // FreeBSD: Supports MSG_NOSIGNAL on sendmsg()
-        ssize_t n = ::writev(fd, iovecs, iovec_count);
-        if (n >= 0)
-            complete(0, static_cast<std::size_t>(n));
-        else
-            complete(errno, 0);
-    }
-
-    void cancel() noexcept override;
-};
-
-struct kqueue_accept_op final : kqueue_op
-{
-    int accepted_fd                      = -1;
-    io_object::implementation* peer_impl = nullptr;
-    io_object::implementation** impl_out = nullptr;
-
-    void reset() noexcept
-    {
-        kqueue_op::reset();
-        accepted_fd = -1;
-        peer_impl   = nullptr;
-        impl_out    = nullptr;
-    }
-
-    void perform_io() noexcept override
-    {
-        sockaddr_storage addr_storage{};
-        socklen_t addrlen = sizeof(addr_storage);
-
-        // FreeBSD: Can use accept4(fd, addr, len, SOCK_NONBLOCK | SOCK_CLOEXEC)
-        int new_fd =
-            ::accept(fd, reinterpret_cast<sockaddr*>(&addr_storage), &addrlen);
-
-        if (new_fd >= 0)
+        ssize_t n;
+        do
         {
-            // Set non-blocking
-            int flags = ::fcntl(new_fd, F_GETFL, 0);
-            if (flags == -1 ||
-                ::fcntl(new_fd, F_SETFL, flags | O_NONBLOCK) == -1)
-            {
-                int err = errno;
-                ::close(new_fd);
-                complete(err, 0);
-                return;
-            }
-
-            // Set close-on-exec
-            if (::fcntl(new_fd, F_SETFD, FD_CLOEXEC) == -1)
-            {
-                int err = errno;
-                ::close(new_fd);
-                complete(err, 0);
-                return;
-            }
-
-            // Suppress SIGPIPE on accepted sockets; macOS lacks MSG_NOSIGNAL
-            int one = 1;
-            if (::setsockopt(
-                    new_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) == -1)
-            {
-                int err = errno;
-                ::close(new_fd);
-                complete(err, 0);
-                return;
-            }
-
-            accepted_fd = new_fd;
-            complete(0, 0);
+            n = ::writev(fd, iovecs, count);
         }
-        else
-        {
-            complete(errno, 0);
-        }
+        while (n < 0 && errno == EINTR);
+        return n;
     }
+};
 
-    // Defined in acceptors.cpp where kqueue_acceptor is complete
+/// kqueue gather-write operation.
+struct kqueue_write_op final : reactor_write_op<kqueue_op, kqueue_write_policy>
+{
+    void cancel() noexcept override;
+};
+
+/** Provides accept() + fcntl() + SO_NOSIGPIPE for kqueue accepts.
+
+    Unlike Linux's accept4(), BSD accept() does not support atomic
+    flag setting. Non-blocking, close-on-exec, and SIGPIPE suppression
+    are applied via separate syscalls after accept().
+*/
+struct kqueue_accept_policy
+{
+    static int do_accept(int fd, sockaddr_storage& peer) noexcept
+    {
+        int new_fd;
+        do
+        {
+            socklen_t addrlen = sizeof(peer);
+            new_fd = ::accept(fd, reinterpret_cast<sockaddr*>(&peer), &addrlen);
+        }
+        while (new_fd < 0 && errno == EINTR);
+
+        if (new_fd < 0)
+            return new_fd;
+
+        int flags = ::fcntl(new_fd, F_GETFL, 0);
+        if (flags == -1 || ::fcntl(new_fd, F_SETFL, flags | O_NONBLOCK) == -1)
+        {
+            int err = errno;
+            ::close(new_fd);
+            errno = err;
+            return -1;
+        }
+
+        if (::fcntl(new_fd, F_SETFD, FD_CLOEXEC) == -1)
+        {
+            int err = errno;
+            ::close(new_fd);
+            errno = err;
+            return -1;
+        }
+
+        // macOS lacks MSG_NOSIGNAL
+        int one = 1;
+        if (::setsockopt(new_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) ==
+            -1)
+        {
+            int err = errno;
+            ::close(new_fd);
+            errno = err;
+            return -1;
+        }
+
+        return new_fd;
+    }
+};
+
+/// kqueue accept operation.
+struct kqueue_accept_op final
+    : reactor_accept_op<kqueue_op, kqueue_accept_policy>
+{
     void operator()() override;
     void cancel() noexcept override;
 };
