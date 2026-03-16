@@ -86,4 +86,12 @@ udp_socket::local_endpoint() const noexcept
     return get().local_endpoint();
 }
 
+endpoint
+udp_socket::remote_endpoint() const noexcept
+{
+    if (!is_open())
+        return endpoint{};
+    return get().remote_endpoint();
+}
+
 } // namespace boost::corosio

@@ -618,6 +618,195 @@ struct udp_socket_test
         sock.close();
     }
 
+    void testConnect()
+    {
+        io_context ioc(Backend);
+
+        udp_socket sender(ioc);
+        udp_socket receiver(ioc);
+
+        receiver.open();
+        auto ec = receiver.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST_EQ(ec, std::error_code{});
+        auto recv_ep = receiver.local_endpoint();
+
+        sender.open();
+
+        auto task = [](udp_socket& s, endpoint dest) -> capy::task<> {
+            auto [ec] = co_await s.connect(dest);
+            BOOST_TEST_EQ(ec, std::error_code{});
+            BOOST_TEST_EQ(s.remote_endpoint().port(), dest.port());
+            BOOST_TEST_EQ(s.remote_endpoint().v4_address(), dest.v4_address());
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(task(sender, recv_ep));
+        ioc.run();
+    }
+
+    void testConnectAutoOpen()
+    {
+        io_context ioc(Backend);
+
+        udp_socket receiver(ioc);
+        receiver.open();
+        auto ec = receiver.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST_EQ(ec, std::error_code{});
+        auto recv_ep = receiver.local_endpoint();
+
+        udp_socket sender(ioc);
+        BOOST_TEST_EQ(sender.is_open(), false);
+
+        auto task = [](udp_socket& s, endpoint dest) -> capy::task<> {
+            auto [ec] = co_await s.connect(dest);
+            BOOST_TEST_EQ(ec, std::error_code{});
+            BOOST_TEST_EQ(s.is_open(), true);
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(task(sender, recv_ep));
+        ioc.run();
+    }
+
+    void testSendRecvConnected()
+    {
+        io_context ioc(Backend);
+
+        udp_socket a(ioc);
+        udp_socket b(ioc);
+
+        b.open();
+        auto ec = b.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST_EQ(ec, std::error_code{});
+        auto b_ep = b.local_endpoint();
+
+        auto task = [](udp_socket& a, udp_socket& b,
+                       endpoint dest) -> capy::task<> {
+            // Connect a -> b
+            auto [ec1] = co_await a.connect(dest);
+            BOOST_TEST_EQ(ec1, std::error_code{});
+
+            // Send via connected send
+            char const msg[] = "connected";
+            auto [ec2, n2] =
+                co_await a.send(capy::const_buffer(msg, sizeof(msg)));
+            BOOST_TEST_EQ(ec2, std::error_code{});
+            BOOST_TEST_EQ(n2, sizeof(msg));
+
+            // Receive on b (still connectionless)
+            char buf[64] = {};
+            endpoint source;
+            auto [ec3, n3] = co_await b.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            BOOST_TEST_EQ(ec3, std::error_code{});
+            BOOST_TEST_EQ(n3, sizeof(msg));
+            BOOST_TEST_EQ(std::strcmp(buf, "connected"), 0);
+
+            // Connect b -> a so we can use connected recv
+            auto [ec4] = co_await b.connect(source);
+            BOOST_TEST_EQ(ec4, std::error_code{});
+
+            // Send from b, receive on a via connected recv
+            char const reply[] = "reply";
+            auto [ec5, n5] =
+                co_await b.send(capy::const_buffer(reply, sizeof(reply)));
+            BOOST_TEST_EQ(ec5, std::error_code{});
+
+            char buf2[64] = {};
+            auto [ec6, n6] =
+                co_await a.recv(capy::mutable_buffer(buf2, sizeof(buf2)));
+            BOOST_TEST_EQ(ec6, std::error_code{});
+            BOOST_TEST_EQ(n6, sizeof(reply));
+            BOOST_TEST_EQ(std::strcmp(buf2, "reply"), 0);
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(task(a, b, b_ep));
+        ioc.run();
+    }
+
+    void testSendRecvConnectedV6()
+    {
+        io_context ioc(Backend);
+
+        udp_socket a(ioc);
+        udp_socket b(ioc);
+
+        b.open(udp::v6());
+        auto ec = b.bind(endpoint(ipv6_address::loopback(), 0));
+        BOOST_TEST_EQ(ec, std::error_code{});
+        auto b_ep = b.local_endpoint();
+
+        auto task = [](udp_socket& a, udp_socket& b,
+                       endpoint dest) -> capy::task<> {
+            auto [ec1] = co_await a.connect(dest);
+            BOOST_TEST_EQ(ec1, std::error_code{});
+
+            char const msg[] = "v6conn";
+            auto [ec2, n2] =
+                co_await a.send(capy::const_buffer(msg, sizeof(msg)));
+            BOOST_TEST_EQ(ec2, std::error_code{});
+            BOOST_TEST_EQ(n2, sizeof(msg));
+
+            char buf[64] = {};
+            endpoint source;
+            auto [ec3, n3] = co_await b.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            BOOST_TEST_EQ(ec3, std::error_code{});
+            BOOST_TEST_EQ(n3, sizeof(msg));
+            BOOST_TEST_EQ(std::strcmp(buf, "v6conn"), 0);
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(task(a, b, b_ep));
+        ioc.run();
+    }
+
+    void testCancelConnectedRecv()
+    {
+        io_context ioc(Backend);
+
+        udp_socket a(ioc);
+        udp_socket b(ioc);
+
+        b.open();
+        auto ec = b.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST_EQ(ec, std::error_code{});
+        auto b_ep = b.local_endpoint();
+
+        auto task = [&]() -> capy::task<> {
+            auto [ec1] = co_await a.connect(b_ep);
+            BOOST_TEST_EQ(ec1, std::error_code{});
+
+            bool recv_done = false;
+            std::error_code recv_ec;
+
+            auto nested = [&a, &recv_done, &recv_ec]() -> capy::task<> {
+                char buf[64];
+                auto [ec, n] =
+                    co_await a.recv(capy::mutable_buffer(buf, sizeof(buf)));
+                recv_ec   = ec;
+                recv_done = true;
+            };
+            capy::run_async(ioc.get_executor())(nested());
+
+            timer t(ioc);
+            t.expires_after(std::chrono::milliseconds(50));
+            (void)co_await t.wait();
+            a.cancel();
+
+            timer t2(ioc);
+            t2.expires_after(std::chrono::milliseconds(50));
+            (void)co_await t2.wait();
+
+            BOOST_TEST(recv_done);
+            BOOST_TEST(recv_ec == capy::cond::canceled);
+        };
+        capy::run_async(ioc.get_executor())(task());
+
+        ioc.run();
+    }
+
     void testMulticastJoinV4()
     {
         io_context ioc(Backend);
@@ -668,16 +857,6 @@ struct udp_socket_test
         capy::run_async(ex)(task(sender, receiver, recv_ep.port()));
         ioc.run();
 
-        // Clean up
-        try
-        {
-            receiver.set_option(
-                socket_option::leave_group_v4(ipv4_address("239.255.0.1")));
-        }
-        catch (...)
-        {
-        }
-
         receiver.close();
         sender.close();
     }
@@ -702,6 +881,11 @@ struct udp_socket_test
         testConcurrentSendRecv();
         testEmptyBufferRecv();
         testEmptyBufferSend();
+        testConnect();
+        testConnectAutoOpen();
+        testSendRecvConnected();
+        testSendRecvConnectedV6();
+        testCancelConnectedRecv();
         testMulticastLoopHops();
         testMulticastLoopHopsV6();
         testMulticastJoinV4();

@@ -54,7 +54,7 @@ class reactor_basic_socket
     template<class, class, class, class, class, class>
     friend class reactor_stream_socket;
 
-    template<class, class, class, class, class>
+    template<class, class, class, class, class, class, class, class>
     friend class reactor_datagram_socket;
 
     explicit reactor_basic_socket(Service& svc) noexcept : svc_(svc) {}

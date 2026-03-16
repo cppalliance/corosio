@@ -44,13 +44,36 @@ struct epoll_recv_from_op final : reactor_recv_from_op<epoll_datagram_op>
     void cancel() noexcept override;
 };
 
+/// epoll connect operation for UDP.
+struct epoll_udp_connect_op final : reactor_connect_op<epoll_datagram_op>
+{
+    void operator()() override;
+    void cancel() noexcept override;
+};
+
+/// epoll connected send operation.
+struct epoll_send_op final : reactor_send_op<epoll_datagram_op>
+{
+    void cancel() noexcept override;
+};
+
+/// epoll connected recv operation.
+struct epoll_recv_op final : reactor_recv_op<epoll_datagram_op>
+{
+    void operator()() override;
+    void cancel() noexcept override;
+};
+
 /// Datagram socket implementation for epoll backend.
 class epoll_udp_socket final
     : public reactor_datagram_socket<
           epoll_udp_socket,
           epoll_udp_service,
+          epoll_udp_connect_op,
           epoll_send_to_op,
           epoll_recv_from_op,
+          epoll_send_op,
+          epoll_recv_op,
           descriptor_state>
 {
     friend class epoll_udp_service;
@@ -76,6 +99,31 @@ public:
         std::stop_token,
         std::error_code*,
         std::size_t*) override;
+
+    std::coroutine_handle<> connect(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        endpoint,
+        std::stop_token,
+        std::error_code*) override;
+
+    std::coroutine_handle<> send(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        buffer_param,
+        std::stop_token,
+        std::error_code*,
+        std::size_t*) override;
+
+    std::coroutine_handle<> recv(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        buffer_param,
+        std::stop_token,
+        std::error_code*,
+        std::size_t*) override;
+
+    endpoint remote_endpoint() const noexcept override;
 
     void cancel() noexcept override;
     void close_socket() noexcept;

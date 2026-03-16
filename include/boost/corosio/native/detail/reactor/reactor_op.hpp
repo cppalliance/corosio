@@ -304,6 +304,108 @@ struct reactor_accept_op : Base
     }
 };
 
+/** Shared connected send operation for datagram sockets.
+
+    Uses sendmsg() with msg_name=nullptr (connected mode).
+
+    @tparam Base The backend's base op type.
+*/
+template<class Base>
+struct reactor_send_op : Base
+{
+    /// Maximum scatter-gather buffer count.
+    static constexpr std::size_t max_buffers = 16;
+
+    /// Scatter-gather I/O vectors.
+    iovec iovecs[max_buffers];
+
+    /// Number of active I/O vectors.
+    int iovec_count = 0;
+
+    void reset() noexcept
+    {
+        Base::reset();
+        iovec_count = 0;
+    }
+
+    void perform_io() noexcept override
+    {
+        msghdr msg{};
+        msg.msg_iov    = iovecs;
+        msg.msg_iovlen = static_cast<std::size_t>(iovec_count);
+
+#ifdef MSG_NOSIGNAL
+        constexpr int send_flags = MSG_NOSIGNAL;
+#else
+        constexpr int send_flags = 0;
+#endif
+
+        ssize_t n;
+        do
+        {
+            n = ::sendmsg(this->fd, &msg, send_flags);
+        }
+        while (n < 0 && errno == EINTR);
+
+        if (n >= 0)
+            this->complete(0, static_cast<std::size_t>(n));
+        else
+            this->complete(errno, 0);
+    }
+};
+
+/** Shared connected recv operation for datagram sockets.
+
+    Uses recvmsg() with msg_name=nullptr (connected mode).
+    Unlike reactor_read_op, does not map n==0 to EOF
+    (zero-length datagrams are valid).
+
+    @tparam Base The backend's base op type.
+*/
+template<class Base>
+struct reactor_recv_op : Base
+{
+    /// Maximum scatter-gather buffer count.
+    static constexpr std::size_t max_buffers = 16;
+
+    /// Scatter-gather I/O vectors.
+    iovec iovecs[max_buffers];
+
+    /// Number of active I/O vectors.
+    int iovec_count = 0;
+
+    /// Return true (this is a read-direction operation).
+    bool is_read_operation() const noexcept override
+    {
+        return true;
+    }
+
+    void reset() noexcept
+    {
+        Base::reset();
+        iovec_count = 0;
+    }
+
+    void perform_io() noexcept override
+    {
+        msghdr msg{};
+        msg.msg_iov    = iovecs;
+        msg.msg_iovlen = static_cast<std::size_t>(iovec_count);
+
+        ssize_t n;
+        do
+        {
+            n = ::recvmsg(this->fd, &msg, 0);
+        }
+        while (n < 0 && errno == EINTR);
+
+        if (n >= 0)
+            this->complete(0, static_cast<std::size_t>(n));
+        else
+            this->complete(errno, 0);
+    }
+};
+
 /** Shared send_to operation for datagram sockets.
 
     Uses sendmsg() with the destination endpoint in msg_name.

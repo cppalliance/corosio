@@ -61,6 +61,8 @@ public:
     bind_datagram(udp_socket::implementation& impl, endpoint ep) override;
 };
 
+// Cancellation for connectionless ops
+
 inline void
 epoll_send_to_op::cancel() noexcept
 {
@@ -79,6 +81,37 @@ epoll_recv_from_op::cancel() noexcept
         request_cancel();
 }
 
+// Cancellation for connected-mode ops
+
+inline void
+epoll_udp_connect_op::cancel() noexcept
+{
+    if (socket_impl_)
+        socket_impl_->cancel_single_op(*this);
+    else
+        request_cancel();
+}
+
+inline void
+epoll_send_op::cancel() noexcept
+{
+    if (socket_impl_)
+        socket_impl_->cancel_single_op(*this);
+    else
+        request_cancel();
+}
+
+inline void
+epoll_recv_op::cancel() noexcept
+{
+    if (socket_impl_)
+        socket_impl_->cancel_single_op(*this);
+    else
+        request_cancel();
+}
+
+// Completion handlers
+
 inline void
 epoll_datagram_op::operator()()
 {
@@ -91,12 +124,28 @@ epoll_recv_from_op::operator()()
     complete_datagram_op(*this, this->source_out);
 }
 
+inline void
+epoll_udp_connect_op::operator()()
+{
+    complete_connect_op(*this);
+}
+
+inline void
+epoll_recv_op::operator()()
+{
+    complete_io_op(*this);
+}
+
+// Socket construction/destruction
+
 inline epoll_udp_socket::epoll_udp_socket(epoll_udp_service& svc) noexcept
     : reactor_datagram_socket(svc)
 {
 }
 
 inline epoll_udp_socket::~epoll_udp_socket() = default;
+
+// Connectionless I/O
 
 inline std::coroutine_handle<>
 epoll_udp_socket::send_to(
@@ -122,6 +171,49 @@ epoll_udp_socket::recv_from(
     std::size_t* bytes_out)
 {
     return do_recv_from(h, ex, buf, source, token, ec, bytes_out);
+}
+
+// Connected-mode I/O
+
+inline std::coroutine_handle<>
+epoll_udp_socket::connect(
+    std::coroutine_handle<> h,
+    capy::executor_ref ex,
+    endpoint ep,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    return do_connect(h, ex, ep, token, ec);
+}
+
+inline std::coroutine_handle<>
+epoll_udp_socket::send(
+    std::coroutine_handle<> h,
+    capy::executor_ref ex,
+    buffer_param buf,
+    std::stop_token token,
+    std::error_code* ec,
+    std::size_t* bytes_out)
+{
+    return do_send(h, ex, buf, token, ec, bytes_out);
+}
+
+inline std::coroutine_handle<>
+epoll_udp_socket::recv(
+    std::coroutine_handle<> h,
+    capy::executor_ref ex,
+    buffer_param buf,
+    std::stop_token token,
+    std::error_code* ec,
+    std::size_t* bytes_out)
+{
+    return do_recv(h, ex, buf, token, ec, bytes_out);
+}
+
+inline endpoint
+epoll_udp_socket::remote_endpoint() const noexcept
+{
+    return reactor_datagram_socket::remote_endpoint();
 }
 
 inline void
