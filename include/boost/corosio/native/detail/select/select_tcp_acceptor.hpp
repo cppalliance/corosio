@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_ACCEPTOR_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_ACCEPTOR_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_TCP_ACCEPTOR_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_TCP_ACCEPTOR_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -20,21 +20,21 @@
 
 namespace boost::corosio::detail {
 
-class select_acceptor_service;
+class select_tcp_acceptor_service;
 
 /// Acceptor implementation for select backend.
-class select_acceptor final
+class select_tcp_acceptor final
     : public reactor_acceptor<
-          select_acceptor,
-          select_acceptor_service,
+          select_tcp_acceptor,
+          select_tcp_acceptor_service,
           select_op,
           select_accept_op,
           select_descriptor_state>
 {
-    friend class select_acceptor_service;
+    friend class select_tcp_acceptor_service;
 
 public:
-    explicit select_acceptor(select_acceptor_service& svc) noexcept;
+    explicit select_tcp_acceptor(select_tcp_acceptor_service& svc) noexcept;
 
     std::coroutine_handle<> accept(
         std::coroutine_handle<>,
@@ -51,4 +51,4 @@ public:
 
 #endif // BOOST_COROSIO_HAS_SELECT
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_ACCEPTOR_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_TCP_ACCEPTOR_HPP

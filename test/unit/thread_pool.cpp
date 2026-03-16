@@ -107,9 +107,7 @@ struct thread_pool_test
         io_context ioc;
 
         // Creating a pool with 0 threads must throw
-        BOOST_TEST_THROWS(
-            detail::thread_pool(ioc, 0),
-            std::logic_error);
+        BOOST_TEST_THROWS(detail::thread_pool(ioc, 0), std::logic_error);
     }
 
     void testMultipleThreads()

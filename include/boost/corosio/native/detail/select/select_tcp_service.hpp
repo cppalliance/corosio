@@ -7,26 +7,24 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_SOCKET_SERVICE_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_SOCKET_SERVICE_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_TCP_SERVICE_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_TCP_SERVICE_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_SELECT
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/capy/ex/execution_context.hpp>
-#include <boost/corosio/detail/socket_service.hpp>
+#include <boost/corosio/detail/tcp_service.hpp>
 
-#include <boost/corosio/native/detail/select/select_socket.hpp>
+#include <boost/corosio/native/detail/select/select_tcp_socket.hpp>
 #include <boost/corosio/native/detail/select/select_scheduler.hpp>
-#include <boost/corosio/native/detail/reactor/reactor_service_state.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_socket_service.hpp>
 
 #include <boost/corosio/native/detail/reactor/reactor_op_complete.hpp>
 
 #include <coroutine>
 #include <mutex>
-#include <utility>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -46,45 +44,29 @@
 
 namespace boost::corosio::detail {
 
-/// State for select socket service.
-using select_socket_state =
-    reactor_service_state<select_scheduler, select_socket>;
+/** select TCP service implementation.
 
-/** select socket service implementation.
-
-    Inherits from socket_service to enable runtime polymorphism.
-    Uses key_type = socket_service for service lookup.
+    Inherits from tcp_service to enable runtime polymorphism.
+    Uses key_type = tcp_service for service lookup.
 */
-class BOOST_COROSIO_DECL select_socket_service final : public socket_service
+class BOOST_COROSIO_DECL select_tcp_service final
+    : public reactor_socket_service<
+          select_tcp_service,
+          tcp_service,
+          select_scheduler,
+          select_tcp_socket>
 {
 public:
-    explicit select_socket_service(capy::execution_context& ctx);
-    ~select_socket_service() override;
+    explicit select_tcp_service(capy::execution_context& ctx)
+        : reactor_socket_service(ctx)
+    {
+    }
 
-    select_socket_service(select_socket_service const&)            = delete;
-    select_socket_service& operator=(select_socket_service const&) = delete;
-
-    void shutdown() override;
-
-    io_object::implementation* construct() override;
-    void destroy(io_object::implementation*) override;
-    void close(io_object::handle&) override;
     std::error_code open_socket(
         tcp_socket::implementation& impl,
         int family,
         int type,
         int protocol) override;
-
-    select_scheduler& scheduler() const noexcept
-    {
-        return state_->sched_;
-    }
-    void post(scheduler_op* op);
-    void work_started() noexcept;
-    void work_finished() noexcept;
-
-private:
-    std::unique_ptr<select_socket_state> state_;
 };
 
 inline void
@@ -126,15 +108,15 @@ select_connect_op::operator()()
     complete_connect_op(*this);
 }
 
-inline select_socket::select_socket(select_socket_service& svc) noexcept
-    : reactor_socket(svc)
+inline select_tcp_socket::select_tcp_socket(select_tcp_service& svc) noexcept
+    : reactor_stream_socket(svc)
 {
 }
 
-inline select_socket::~select_socket() = default;
+inline select_tcp_socket::~select_tcp_socket() = default;
 
 inline std::coroutine_handle<>
-select_socket::connect(
+select_tcp_socket::connect(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     endpoint ep,
@@ -149,7 +131,7 @@ select_socket::connect(
 }
 
 inline std::coroutine_handle<>
-select_socket::read_some(
+select_tcp_socket::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     buffer_param param,
@@ -161,7 +143,7 @@ select_socket::read_some(
 }
 
 inline std::coroutine_handle<>
-select_socket::write_some(
+select_tcp_socket::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     buffer_param param,
@@ -177,71 +159,22 @@ select_socket::write_some(
 }
 
 inline void
-select_socket::cancel() noexcept
+select_tcp_socket::cancel() noexcept
 {
     do_cancel();
 }
 
 inline void
-select_socket::close_socket() noexcept
+select_tcp_socket::close_socket() noexcept
 {
     do_close_socket();
 }
 
-inline select_socket_service::select_socket_service(
-    capy::execution_context& ctx)
-    : state_(
-          std::make_unique<select_socket_state>(
-              ctx.use_service<select_scheduler>()))
-{
-}
-
-inline select_socket_service::~select_socket_service() {}
-
-inline void
-select_socket_service::shutdown()
-{
-    std::lock_guard lock(state_->mutex_);
-
-    while (auto* impl = state_->impl_list_.pop_front())
-        impl->close_socket();
-
-    // Don't clear impl_ptrs_ here. The scheduler shuts down after us and
-    // drains completed_ops_, calling destroy() on each queued op. Letting
-    // ~state_ release the ptrs (during service destruction, after scheduler
-    // shutdown) keeps every impl alive until all ops have been drained.
-}
-
-inline io_object::implementation*
-select_socket_service::construct()
-{
-    auto impl = std::make_shared<select_socket>(*this);
-    auto* raw = impl.get();
-
-    {
-        std::lock_guard lock(state_->mutex_);
-        state_->impl_ptrs_.emplace(raw, std::move(impl));
-        state_->impl_list_.push_back(raw);
-    }
-
-    return raw;
-}
-
-inline void
-select_socket_service::destroy(io_object::implementation* impl)
-{
-    auto* select_impl = static_cast<select_socket*>(impl);
-    select_impl->close_socket();
-    std::lock_guard lock(state_->mutex_);
-    state_->impl_list_.remove(select_impl);
-    state_->impl_ptrs_.erase(select_impl);
-}
-
 inline std::error_code
-select_socket_service::open_socket(
+select_tcp_service::open_socket(
     tcp_socket::implementation& impl, int family, int type, int protocol)
 {
-    auto* select_impl = static_cast<select_socket*>(&impl);
+    auto* select_impl = static_cast<select_tcp_socket*>(&impl);
     select_impl->close_socket();
 
     int fd = ::socket(family, type, protocol);
@@ -301,32 +234,8 @@ select_socket_service::open_socket(
     return {};
 }
 
-inline void
-select_socket_service::close(io_object::handle& h)
-{
-    static_cast<select_socket*>(h.get())->close_socket();
-}
-
-inline void
-select_socket_service::post(scheduler_op* op)
-{
-    state_->sched_.post(op);
-}
-
-inline void
-select_socket_service::work_started() noexcept
-{
-    state_->sched_.work_started();
-}
-
-inline void
-select_socket_service::work_finished() noexcept
-{
-    state_->sched_.work_finished();
-}
-
 } // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_HAS_SELECT
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_SOCKET_SERVICE_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_SELECT_SELECT_TCP_SERVICE_HPP

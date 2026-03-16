@@ -321,8 +321,8 @@ select_scheduler::run_task(
         if (snapshot_count < FD_SETSIZE)
         {
             std::lock_guard desc_lock(desc->mutex);
-            snapshot[snapshot_count].fd          = fd;
-            snapshot[snapshot_count].desc        = desc;
+            snapshot[snapshot_count].fd   = fd;
+            snapshot[snapshot_count].desc = desc;
             snapshot[snapshot_count].needs_write =
                 (desc->write_op || desc->connect_op);
             ++snapshot_count;

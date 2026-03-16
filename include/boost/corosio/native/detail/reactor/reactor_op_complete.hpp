@@ -34,7 +34,7 @@ namespace boost::corosio::detail {
     @tparam Op The concrete operation type.
     @param op The operation to complete.
 */
-template <typename Op>
+template<typename Op>
 void
 complete_io_op(Op& op)
 {
@@ -67,7 +67,7 @@ complete_io_op(Op& op)
     @tparam Op The concrete connect operation type.
     @param op The operation to complete.
 */
-template <typename Op>
+template<typename Op>
 void
 complete_connect_op(Op& op)
 {
@@ -83,8 +83,7 @@ complete_connect_op(Op& op)
         sockaddr_storage local_storage{};
         socklen_t local_len = sizeof(local_storage);
         if (::getsockname(
-                op.fd,
-                reinterpret_cast<sockaddr*>(&local_storage),
+                op.fd, reinterpret_cast<sockaddr*>(&local_storage),
                 &local_len) == 0)
             local_ep = from_sockaddr(local_storage);
         op.socket_impl_->set_endpoints(local_ep, op.target_endpoint);
@@ -118,7 +117,7 @@ complete_connect_op(Op& op)
     @param ec_out Output pointer for any error.
     @return True on success, false on failure.
 */
-template <typename SocketImpl, typename AcceptorImpl>
+template<typename SocketImpl, typename AcceptorImpl>
 bool
 setup_accepted_socket(
     AcceptorImpl* acceptor_impl,
@@ -127,7 +126,7 @@ setup_accepted_socket(
     io_object::implementation** impl_out,
     std::error_code* ec_out)
 {
-    auto* socket_svc = acceptor_impl->service().socket_service();
+    auto* socket_svc = acceptor_impl->service().tcp_service();
     if (!socket_svc)
     {
         *ec_out = make_err(ENOENT);
@@ -144,12 +143,10 @@ setup_accepted_socket(
         impl.desc_state_.write_op   = nullptr;
         impl.desc_state_.connect_op = nullptr;
     }
-    socket_svc->scheduler().register_descriptor(
-        accepted_fd, &impl.desc_state_);
+    socket_svc->scheduler().register_descriptor(accepted_fd, &impl.desc_state_);
 
     impl.set_endpoints(
-        acceptor_impl->local_endpoint(),
-        from_sockaddr(peer_storage));
+        acceptor_impl->local_endpoint(), from_sockaddr(peer_storage));
 
     if (impl_out)
         *impl_out = &impl;
@@ -166,7 +163,7 @@ setup_accepted_socket(
     @tparam Op The concrete accept operation type.
     @param op The operation to complete.
 */
-template <typename SocketImpl, typename Op>
+template<typename SocketImpl, typename Op>
 void
 complete_accept_op(Op& op)
 {
@@ -186,10 +183,7 @@ complete_accept_op(Op& op)
     if (success && op.accepted_fd >= 0 && op.acceptor_impl_)
     {
         if (!setup_accepted_socket<SocketImpl>(
-                op.acceptor_impl_,
-                op.accepted_fd,
-                op.peer_storage,
-                op.impl_out,
+                op.acceptor_impl_, op.accepted_fd, op.peer_storage, op.impl_out,
                 op.ec_out))
             success = false;
     }
@@ -204,6 +198,43 @@ complete_accept_op(Op& op)
         if (op.impl_out)
             *op.impl_out = nullptr;
     }
+
+    capy::executor_ref saved_ex(op.ex);
+    std::coroutine_handle<> saved_h(op.h);
+    auto prevent = std::move(op.impl_ptr);
+    dispatch_coro(saved_ex, saved_h).resume();
+}
+
+/** Complete a datagram operation (send_to or recv_from).
+
+    For recv_from operations, writes the source endpoint from the
+    recorded sockaddr_storage into the caller's endpoint pointer.
+    Then resumes the caller via symmetric transfer.
+
+    @tparam Op The concrete datagram operation type.
+    @param op The operation to complete.
+    @param source_out Optional pointer to store source endpoint
+        (non-null for recv_from, null for send_to).
+*/
+template<typename Op>
+void
+complete_datagram_op(Op& op, endpoint* source_out)
+{
+    op.stop_cb.reset();
+    op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
+
+    if (op.cancelled.load(std::memory_order_acquire))
+        *op.ec_out = capy::error::canceled;
+    else if (op.errn != 0)
+        *op.ec_out = make_err(op.errn);
+    else
+        *op.ec_out = {};
+
+    *op.bytes_out = op.bytes_transferred;
+
+    if (source_out && !op.cancelled.load(std::memory_order_acquire) &&
+        op.errn == 0)
+        *source_out = from_sockaddr(op.source_storage);
 
     capy::executor_ref saved_ex(op.ex);
     std::coroutine_handle<> saved_h(op.h);

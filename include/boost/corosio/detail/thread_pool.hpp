@@ -73,8 +73,7 @@ struct pool_work_item : intrusive_queue<pool_work_item>::node
     In-flight blocking calls complete naturally before the thread
     exits.
 */
-class thread_pool final
-    : public capy::execution_context::service
+class thread_pool final : public capy::execution_context::service
 {
     std::mutex mutex_;
     std::condition_variable cv_;
@@ -102,14 +101,11 @@ public:
 
         @throws std::logic_error If `num_threads` is 0.
     */
-    explicit thread_pool(
-        capy::execution_context& ctx,
-        unsigned num_threads = 1)
+    explicit thread_pool(capy::execution_context& ctx, unsigned num_threads = 1)
     {
         (void)ctx;
         if (!num_threads)
-            throw std::logic_error(
-                "thread_pool requires at least 1 thread");
+            throw std::logic_error("thread_pool requires at least 1 thread");
         threads_.reserve(num_threads);
         try
         {
@@ -125,7 +121,7 @@ public:
 
     ~thread_pool() override = default;
 
-    thread_pool(thread_pool const&) = delete;
+    thread_pool(thread_pool const&)            = delete;
     thread_pool& operator=(thread_pool const&) = delete;
 
     /** Enqueue a work item for execution on the thread pool.
@@ -156,9 +152,8 @@ thread_pool::worker_loop()
         pool_work_item* w;
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait(lock, [this] {
-                return shutdown_ || !work_queue_.empty();
-            });
+            cv_.wait(
+                lock, [this] { return shutdown_ || !work_queue_.empty(); });
 
             w = work_queue_.pop();
             if (!w)

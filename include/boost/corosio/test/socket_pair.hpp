@@ -37,7 +37,10 @@ namespace boost::corosio::test {
 
     @return A pair of connected sockets.
 */
-template<class Socket = tcp_socket, class Acceptor = tcp_acceptor>
+template<
+    class Socket   = tcp_socket,
+    class Acceptor = tcp_acceptor,
+    bool Linger    = true>
 std::pair<Socket, Socket>
 make_socket_pair(io_context& ctx)
 {
@@ -102,8 +105,11 @@ make_socket_pair(io_context& ctx)
 
     acc.close();
 
-    s1.set_option(socket_option::linger(true, 0));
-    s2.set_option(socket_option::linger(true, 0));
+    if constexpr (Linger)
+    {
+        s1.set_option(socket_option::linger(true, 0));
+        s2.set_option(socket_option::linger(true, 0));
+    }
 
     return {std::move(s1), std::move(s2)};
 }

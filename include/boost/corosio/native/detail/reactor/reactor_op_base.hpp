@@ -21,7 +21,7 @@ namespace boost::corosio::detail {
 /** Non-template base for reactor operations.
 
     Holds per-operation state accessed by reactor_descriptor_state
-    and reactor_socket without requiring knowledge of the concrete
+    and reactor_stream_socket without requiring knowledge of the concrete
     backend socket/acceptor types. This avoids duplicate template
     instantiations for the descriptor_state and scheduler hot paths.
 

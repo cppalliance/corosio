@@ -15,15 +15,15 @@
 
 #ifndef BOOST_COROSIO_MRDOCS
 #if BOOST_COROSIO_HAS_EPOLL
-#include <boost/corosio/native/detail/epoll/epoll_acceptor_service.hpp>
+#include <boost/corosio/native/detail/epoll/epoll_tcp_acceptor_service.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_SELECT
-#include <boost/corosio/native/detail/select/select_acceptor_service.hpp>
+#include <boost/corosio/native/detail/select/select_tcp_acceptor_service.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_KQUEUE
-#include <boost/corosio/native/detail/kqueue/kqueue_acceptor_service.hpp>
+#include <boost/corosio/native/detail/kqueue/kqueue_tcp_acceptor_service.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -57,8 +57,8 @@ template<auto Backend>
 class native_tcp_acceptor : public tcp_acceptor
 {
     using backend_type = decltype(Backend);
-    using impl_type    = typename backend_type::acceptor_type;
-    using service_type = typename backend_type::acceptor_service_type;
+    using impl_type    = typename backend_type::tcp_acceptor_type;
+    using service_type = typename backend_type::tcp_acceptor_service_type;
 
     impl_type& get_impl() noexcept
     {

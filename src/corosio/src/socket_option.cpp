@@ -66,6 +66,19 @@ reuse_address::name() noexcept
     return native_socket_option::reuse_address::name();
 }
 
+// broadcast
+
+int
+broadcast::level() noexcept
+{
+    return native_socket_option::broadcast::level();
+}
+int
+broadcast::name() noexcept
+{
+    return native_socket_option::broadcast::name();
+}
+
 // reuse_port
 
 #ifdef SO_REUSEPORT

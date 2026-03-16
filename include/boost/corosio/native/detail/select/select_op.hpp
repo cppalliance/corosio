@@ -42,8 +42,8 @@
 namespace boost::corosio::detail {
 
 // Forward declarations
-class select_socket;
-class select_acceptor;
+class select_tcp_socket;
+class select_tcp_acceptor;
 struct select_op;
 
 // Forward declaration
@@ -54,7 +54,7 @@ struct select_descriptor_state final : reactor_descriptor_state
 {};
 
 /// select base operation — thin wrapper over reactor_op.
-struct select_op : reactor_op<select_socket, select_acceptor>
+struct select_op : reactor_op<select_tcp_socket, select_tcp_acceptor>
 {
     void operator()() override;
 };
@@ -161,8 +161,8 @@ struct select_accept_policy
 
 #ifdef SO_NOSIGPIPE
         int one = 1;
-        if (::setsockopt(
-                new_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) == -1)
+        if (::setsockopt(new_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) ==
+            -1)
         {
             int err = errno;
             ::close(new_fd);

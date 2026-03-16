@@ -141,8 +141,7 @@ reactor_descriptor_state::invoke_deferred_io()
         prevent_impl_destruction = std::move(impl_ref_);
         is_enqueued_.store(false, std::memory_order_release);
 
-        std::uint32_t ev =
-            ready_events_.exchange(0, std::memory_order_acquire);
+        std::uint32_t ev = ready_events_.exchange(0, std::memory_order_acquire);
         if (ev == 0)
         {
             // Mutex unlocks here; compensate for work_cleanup's decrement

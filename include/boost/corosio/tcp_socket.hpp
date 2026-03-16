@@ -14,6 +14,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/io/io_stream.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
@@ -33,13 +34,6 @@
 #include <type_traits>
 
 namespace boost::corosio {
-
-/// Represent a platform-specific socket descriptor (`int` on POSIX, `SOCKET` on Windows).
-#if BOOST_COROSIO_HAS_IOCP && !defined(BOOST_COROSIO_MRDOCS)
-using native_handle_type = std::uintptr_t;
-#else
-using native_handle_type = int;
-#endif
 
 /** An asynchronous TCP socket for coroutine I/O.
 

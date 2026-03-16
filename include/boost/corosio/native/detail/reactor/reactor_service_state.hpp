@@ -26,14 +26,11 @@ namespace boost::corosio::detail {
     @tparam Scheduler The backend's scheduler type.
     @tparam Impl The backend's socket or acceptor impl type.
 */
-template <class Scheduler, class Impl>
+template<class Scheduler, class Impl>
 struct reactor_service_state
 {
     /// Construct with a reference to the owning scheduler.
-    explicit reactor_service_state(Scheduler& sched) noexcept
-        : sched_(sched)
-    {
-    }
+    explicit reactor_service_state(Scheduler& sched) noexcept : sched_(sched) {}
 
     /// Reference to the owning scheduler.
     Scheduler& sched_;
