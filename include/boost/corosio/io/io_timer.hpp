@@ -72,8 +72,8 @@ class BOOST_COROSIO_DECL io_timer : public io_object
                  impl.expiry_ <= clock_type::now()))
             {
                 ec_    = {};
-                token_ = {};  // match normal path so await_resume
-                              // returns ec_, not a stale stop check
+                token_ = {}; // match normal path so await_resume
+                             // returns ec_, not a stale stop check
                 auto d = env->executor;
                 d.post(h);
                 return std::noop_coroutine();

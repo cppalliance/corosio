@@ -67,8 +67,8 @@ static constexpr std::uint32_t kqueue_event_write = reactor_event_write;
 static constexpr std::uint32_t kqueue_event_error = reactor_event_error;
 
 // Forward declarations
-class kqueue_socket;
-class kqueue_acceptor;
+class kqueue_tcp_socket;
+class kqueue_tcp_acceptor;
 struct kqueue_op;
 
 class kqueue_scheduler;
@@ -78,7 +78,7 @@ struct descriptor_state final : reactor_descriptor_state
 {};
 
 /// kqueue base operation — thin wrapper over reactor_op.
-struct kqueue_op : reactor_op<kqueue_socket, kqueue_acceptor>
+struct kqueue_op : reactor_op<kqueue_tcp_socket, kqueue_tcp_acceptor>
 {
     void operator()() override;
 };

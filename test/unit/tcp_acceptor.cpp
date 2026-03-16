@@ -30,7 +30,7 @@ namespace boost::corosio {
 // Tests are templated on the context type to run with all available backends.
 
 template<auto Backend>
-struct acceptor_test
+struct tcp_acceptor_test
 {
     void testConstruction()
     {
@@ -606,6 +606,6 @@ struct acceptor_test
     }
 };
 
-COROSIO_BACKEND_TESTS(acceptor_test, "boost.corosio.acceptor")
+COROSIO_BACKEND_TESTS(tcp_acceptor_test, "boost.corosio.acceptor")
 
 } // namespace boost::corosio

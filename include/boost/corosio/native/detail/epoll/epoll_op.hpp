@@ -55,8 +55,8 @@
 namespace boost::corosio::detail {
 
 // Forward declarations
-class epoll_socket;
-class epoll_acceptor;
+class epoll_tcp_socket;
+class epoll_tcp_acceptor;
 struct epoll_op;
 
 // Forward declaration
@@ -67,7 +67,7 @@ struct descriptor_state final : reactor_descriptor_state
 {};
 
 /// epoll base operation — thin wrapper over reactor_op.
-struct epoll_op : reactor_op<epoll_socket, epoll_acceptor>
+struct epoll_op : reactor_op<epoll_tcp_socket, epoll_tcp_acceptor>
 {
     void operator()() override;
 };

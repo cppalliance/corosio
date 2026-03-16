@@ -304,6 +304,126 @@ struct reactor_accept_op : Base
     }
 };
 
+/** Shared send_to operation for datagram sockets.
+
+    Uses sendmsg() with the destination endpoint in msg_name.
+
+    @tparam Base The backend's base op type.
+*/
+template<class Base>
+struct reactor_send_to_op : Base
+{
+    /// Maximum scatter-gather buffer count.
+    static constexpr std::size_t max_buffers = 16;
+
+    /// Scatter-gather I/O vectors.
+    iovec iovecs[max_buffers];
+
+    /// Number of active I/O vectors.
+    int iovec_count = 0;
+
+    /// Destination address storage.
+    sockaddr_storage dest_storage{};
+
+    /// Destination address length.
+    socklen_t dest_len = 0;
+
+    void reset() noexcept
+    {
+        Base::reset();
+        iovec_count  = 0;
+        dest_storage = {};
+        dest_len     = 0;
+    }
+
+    void perform_io() noexcept override
+    {
+        msghdr msg{};
+        msg.msg_name    = &dest_storage;
+        msg.msg_namelen = dest_len;
+        msg.msg_iov     = iovecs;
+        msg.msg_iovlen  = static_cast<std::size_t>(iovec_count);
+
+#ifdef MSG_NOSIGNAL
+        constexpr int send_flags = MSG_NOSIGNAL;
+#else
+        constexpr int send_flags = 0;
+#endif
+
+        ssize_t n;
+        do
+        {
+            n = ::sendmsg(this->fd, &msg, send_flags);
+        }
+        while (n < 0 && errno == EINTR);
+
+        if (n >= 0)
+            this->complete(0, static_cast<std::size_t>(n));
+        else
+            this->complete(errno, 0);
+    }
+};
+
+/** Shared recv_from operation for datagram sockets.
+
+    Uses recvmsg() with msg_name to capture the source endpoint.
+
+    @tparam Base The backend's base op type.
+*/
+template<class Base>
+struct reactor_recv_from_op : Base
+{
+    /// Maximum scatter-gather buffer count.
+    static constexpr std::size_t max_buffers = 16;
+
+    /// Scatter-gather I/O vectors.
+    iovec iovecs[max_buffers];
+
+    /// Number of active I/O vectors.
+    int iovec_count = 0;
+
+    /// Source address storage filled by recvmsg.
+    sockaddr_storage source_storage{};
+
+    /// Output pointer for the source endpoint (set by do_recv_from).
+    endpoint* source_out = nullptr;
+
+    /// Return true (this is a read-direction operation).
+    bool is_read_operation() const noexcept override
+    {
+        return true;
+    }
+
+    void reset() noexcept
+    {
+        Base::reset();
+        iovec_count    = 0;
+        source_storage = {};
+        source_out     = nullptr;
+    }
+
+    void perform_io() noexcept override
+    {
+        msghdr msg{};
+        msg.msg_name    = &source_storage;
+        msg.msg_namelen = sizeof(source_storage);
+        msg.msg_iov     = iovecs;
+        msg.msg_iovlen  = static_cast<std::size_t>(iovec_count);
+
+        ssize_t n;
+        do
+        {
+            n = ::recvmsg(this->fd, &msg, 0);
+        }
+        while (n < 0 && errno == EINTR);
+
+        if (n >= 0)
+            this->complete(0, static_cast<std::size_t>(n));
+        else
+            this->complete(errno, 0);
+    }
+};
+
 } // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_OP_HPP

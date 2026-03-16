@@ -16,7 +16,7 @@
 
 namespace boost::corosio {
 
-tcp_server::worker_base::worker_base() = default;
+tcp_server::worker_base::worker_base()  = default;
 tcp_server::worker_base::~worker_base() = default;
 
 struct tcp_server::impl

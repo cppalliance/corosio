@@ -348,6 +348,9 @@ using v6_only = boolean<IPPROTO_IPV6, IPV6_V6ONLY>;
 /// Allow local address reuse (SO_REUSEADDR).
 using reuse_address = boolean<SOL_SOCKET, SO_REUSEADDR>;
 
+/// Allow sending to broadcast addresses (SO_BROADCAST).
+using broadcast = boolean<SOL_SOCKET, SO_BROADCAST>;
+
 /// Set the receive buffer size (SO_RCVBUF).
 using receive_buffer_size = integer<SOL_SOCKET, SO_RCVBUF>;
 

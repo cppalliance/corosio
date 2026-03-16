@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_EPOLL_EPOLL_ACCEPTOR_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_EPOLL_EPOLL_ACCEPTOR_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_EPOLL_EPOLL_TCP_ACCEPTOR_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_EPOLL_EPOLL_TCP_ACCEPTOR_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -20,21 +20,21 @@
 
 namespace boost::corosio::detail {
 
-class epoll_acceptor_service;
+class epoll_tcp_acceptor_service;
 
 /// Acceptor implementation for epoll backend.
-class epoll_acceptor final
+class epoll_tcp_acceptor final
     : public reactor_acceptor<
-        epoll_acceptor,
-        epoll_acceptor_service,
-        epoll_op,
-        epoll_accept_op,
-        descriptor_state>
+          epoll_tcp_acceptor,
+          epoll_tcp_acceptor_service,
+          epoll_op,
+          epoll_accept_op,
+          descriptor_state>
 {
-    friend class epoll_acceptor_service;
+    friend class epoll_tcp_acceptor_service;
 
 public:
-    explicit epoll_acceptor(epoll_acceptor_service& svc) noexcept;
+    explicit epoll_tcp_acceptor(epoll_tcp_acceptor_service& svc) noexcept;
 
     std::coroutine_handle<> accept(
         std::coroutine_handle<>,
@@ -51,4 +51,4 @@ public:
 
 #endif // BOOST_COROSIO_HAS_EPOLL
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_EPOLL_EPOLL_ACCEPTOR_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_EPOLL_EPOLL_TCP_ACCEPTOR_HPP

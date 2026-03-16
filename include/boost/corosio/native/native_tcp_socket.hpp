@@ -15,15 +15,15 @@
 
 #ifndef BOOST_COROSIO_MRDOCS
 #if BOOST_COROSIO_HAS_EPOLL
-#include <boost/corosio/native/detail/epoll/epoll_socket_service.hpp>
+#include <boost/corosio/native/detail/epoll/epoll_tcp_service.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_SELECT
-#include <boost/corosio/native/detail/select/select_socket_service.hpp>
+#include <boost/corosio/native/detail/select/select_tcp_service.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_KQUEUE
-#include <boost/corosio/native/detail/kqueue/kqueue_socket_service.hpp>
+#include <boost/corosio/native/detail/kqueue/kqueue_tcp_service.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -71,8 +71,8 @@ template<auto Backend>
 class native_tcp_socket : public tcp_socket
 {
     using backend_type = decltype(Backend);
-    using impl_type    = typename backend_type::socket_type;
-    using service_type = typename backend_type::socket_service_type;
+    using impl_type    = typename backend_type::tcp_socket_type;
+    using service_type = typename backend_type::tcp_service_type;
 
     impl_type& get_impl() noexcept
     {

@@ -27,10 +27,12 @@ struct scheduler;
 
 namespace detail {
 
-class epoll_socket;
-class epoll_socket_service;
-class epoll_acceptor;
-class epoll_acceptor_service;
+class epoll_tcp_socket;
+class epoll_tcp_service;
+class epoll_udp_socket;
+class epoll_udp_service;
+class epoll_tcp_acceptor;
+class epoll_tcp_acceptor_service;
 class epoll_scheduler;
 
 class posix_signal;
@@ -43,11 +45,13 @@ class posix_resolver_service;
 /// Backend tag for the Linux epoll I/O multiplexer.
 struct epoll_t
 {
-    using scheduler_type        = detail::epoll_scheduler;
-    using socket_type           = detail::epoll_socket;
-    using socket_service_type   = detail::epoll_socket_service;
-    using acceptor_type         = detail::epoll_acceptor;
-    using acceptor_service_type = detail::epoll_acceptor_service;
+    using scheduler_type            = detail::epoll_scheduler;
+    using tcp_socket_type           = detail::epoll_tcp_socket;
+    using tcp_service_type          = detail::epoll_tcp_service;
+    using udp_socket_type           = detail::epoll_udp_socket;
+    using udp_service_type          = detail::epoll_udp_service;
+    using tcp_acceptor_type         = detail::epoll_tcp_acceptor;
+    using tcp_acceptor_service_type = detail::epoll_tcp_acceptor_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
@@ -68,10 +72,12 @@ inline constexpr epoll_t epoll{};
 
 namespace detail {
 
-class select_socket;
-class select_socket_service;
-class select_acceptor;
-class select_acceptor_service;
+class select_tcp_socket;
+class select_tcp_service;
+class select_udp_socket;
+class select_udp_service;
+class select_tcp_acceptor;
+class select_tcp_acceptor_service;
 class select_scheduler;
 
 class posix_signal;
@@ -84,11 +90,13 @@ class posix_resolver_service;
 /// Backend tag for the portable select() I/O multiplexer.
 struct select_t
 {
-    using scheduler_type        = detail::select_scheduler;
-    using socket_type           = detail::select_socket;
-    using socket_service_type   = detail::select_socket_service;
-    using acceptor_type         = detail::select_acceptor;
-    using acceptor_service_type = detail::select_acceptor_service;
+    using scheduler_type            = detail::select_scheduler;
+    using tcp_socket_type           = detail::select_tcp_socket;
+    using tcp_service_type          = detail::select_tcp_service;
+    using udp_socket_type           = detail::select_udp_socket;
+    using udp_service_type          = detail::select_udp_service;
+    using tcp_acceptor_type         = detail::select_tcp_acceptor;
+    using tcp_acceptor_service_type = detail::select_tcp_acceptor_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
@@ -109,10 +117,12 @@ inline constexpr select_t select{};
 
 namespace detail {
 
-class kqueue_socket;
-class kqueue_socket_service;
-class kqueue_acceptor;
-class kqueue_acceptor_service;
+class kqueue_tcp_socket;
+class kqueue_tcp_service;
+class kqueue_udp_socket;
+class kqueue_udp_service;
+class kqueue_tcp_acceptor;
+class kqueue_tcp_acceptor_service;
 class kqueue_scheduler;
 
 class posix_signal;
@@ -125,11 +135,13 @@ class posix_resolver_service;
 /// Backend tag for the BSD kqueue I/O multiplexer.
 struct kqueue_t
 {
-    using scheduler_type        = detail::kqueue_scheduler;
-    using socket_type           = detail::kqueue_socket;
-    using socket_service_type   = detail::kqueue_socket_service;
-    using acceptor_type         = detail::kqueue_acceptor;
-    using acceptor_service_type = detail::kqueue_acceptor_service;
+    using scheduler_type            = detail::kqueue_scheduler;
+    using tcp_socket_type           = detail::kqueue_tcp_socket;
+    using tcp_service_type          = detail::kqueue_tcp_service;
+    using udp_socket_type           = detail::kqueue_udp_socket;
+    using udp_service_type          = detail::kqueue_udp_service;
+    using tcp_acceptor_type         = detail::kqueue_tcp_acceptor;
+    using tcp_acceptor_service_type = detail::kqueue_tcp_acceptor_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
@@ -166,11 +178,11 @@ class win_resolver_service;
 /// Backend tag for the Windows I/O Completion Ports multiplexer.
 struct iocp_t
 {
-    using scheduler_type        = detail::win_scheduler;
-    using socket_type           = detail::win_socket;
-    using socket_service_type   = detail::win_sockets;
-    using acceptor_type         = detail::win_acceptor;
-    using acceptor_service_type = detail::win_acceptor_service;
+    using scheduler_type            = detail::win_scheduler;
+    using tcp_socket_type           = detail::win_socket;
+    using tcp_service_type          = detail::win_sockets;
+    using tcp_acceptor_type         = detail::win_acceptor;
+    using tcp_acceptor_service_type = detail::win_acceptor_service;
 
     using signal_type           = detail::win_signal;
     using signal_service_type   = detail::win_signals;

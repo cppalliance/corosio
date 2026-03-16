@@ -257,6 +257,32 @@ public:
     static int name() noexcept;
 };
 
+/** Allow sending to broadcast addresses (SO_BROADCAST).
+
+    Required for UDP sockets that send to broadcast addresses
+    such as 255.255.255.255. Without this option, `send_to`
+    returns an error.
+
+    @par Example
+    @code
+    udp_socket sock( ioc );
+    sock.open();
+    sock.set_option( socket_option::broadcast( true ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL broadcast : public boolean_option
+{
+public:
+    using boolean_option::boolean_option;
+    using boolean_option::operator=;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+};
+
 /** Allow multiple sockets to bind to the same port (SO_REUSEPORT).
 
     Not available on all platforms. On unsupported platforms,

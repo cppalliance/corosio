@@ -61,7 +61,10 @@ public:
     void work_finished() noexcept;
 
     /** Return the resolver thread pool. */
-    thread_pool& pool() noexcept { return pool_; }
+    thread_pool& pool() noexcept
+    {
+        return pool_;
+    }
 
 private:
     scheduler* sched_;
@@ -421,7 +424,7 @@ posix_resolver::reverse_resolve(
     // Prevent impl destruction while work is in flight
     reverse_pool_op_.resolver_ = this;
     reverse_pool_op_.ref_      = this->shared_from_this();
-    reverse_pool_op_.func_ = &posix_resolver::do_reverse_resolve_work;
+    reverse_pool_op_.func_     = &posix_resolver::do_reverse_resolve_work;
     if (!svc_.pool().post(&reverse_pool_op_))
     {
         // Pool shut down — complete with cancellation
@@ -448,21 +451,20 @@ posix_resolver::do_resolve_work(pool_work_item* w) noexcept
     struct addrinfo hints{};
     hints.ai_family   = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = posix_resolver_detail::flags_to_hints(self->op_.flags);
+    hints.ai_flags    = posix_resolver_detail::flags_to_hints(self->op_.flags);
 
     struct addrinfo* ai = nullptr;
     int result          = ::getaddrinfo(
         self->op_.host.empty() ? nullptr : self->op_.host.c_str(),
-        self->op_.service.empty() ? nullptr : self->op_.service.c_str(),
-        &hints, &ai);
+        self->op_.service.empty() ? nullptr : self->op_.service.c_str(), &hints,
+        &ai);
 
     if (!self->op_.cancelled.load(std::memory_order_acquire))
     {
         if (result == 0 && ai)
         {
-            self->op_.stored_results =
-                posix_resolver_detail::convert_results(
-                    ai, self->op_.host, self->op_.service);
+            self->op_.stored_results = posix_resolver_detail::convert_results(
+                ai, self->op_.host, self->op_.service);
             self->op_.gai_error = 0;
         }
         else
@@ -506,8 +508,8 @@ posix_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
     char service[NI_MAXSERV];
 
     int result = ::getnameinfo(
-        reinterpret_cast<sockaddr*>(&ss), ss_len, host, sizeof(host),
-        service, sizeof(service),
+        reinterpret_cast<sockaddr*>(&ss), ss_len, host, sizeof(host), service,
+        sizeof(service),
         posix_resolver_detail::flags_to_ni_flags(self->reverse_op_.flags));
 
     if (!self->reverse_op_.cancelled.load(std::memory_order_acquire))

@@ -8,8 +8,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_ACCEPTOR_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_ACCEPTOR_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_TCP_ACCEPTOR_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_TCP_ACCEPTOR_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -21,21 +21,21 @@
 
 namespace boost::corosio::detail {
 
-class kqueue_acceptor_service;
+class kqueue_tcp_acceptor_service;
 
 /// Acceptor implementation for kqueue backend.
-class kqueue_acceptor final
+class kqueue_tcp_acceptor final
     : public reactor_acceptor<
-        kqueue_acceptor,
-        kqueue_acceptor_service,
-        kqueue_op,
-        kqueue_accept_op,
-        descriptor_state>
+          kqueue_tcp_acceptor,
+          kqueue_tcp_acceptor_service,
+          kqueue_op,
+          kqueue_accept_op,
+          descriptor_state>
 {
-    friend class kqueue_acceptor_service;
+    friend class kqueue_tcp_acceptor_service;
 
 public:
-    explicit kqueue_acceptor(kqueue_acceptor_service& svc) noexcept;
+    explicit kqueue_tcp_acceptor(kqueue_tcp_acceptor_service& svc) noexcept;
 
     /** Initiate an asynchronous accept on the listening socket.
 
@@ -72,4 +72,4 @@ public:
 
 #endif // BOOST_COROSIO_HAS_KQUEUE
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_ACCEPTOR_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_TCP_ACCEPTOR_HPP

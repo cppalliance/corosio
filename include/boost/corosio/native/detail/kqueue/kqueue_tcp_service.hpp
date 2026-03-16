@@ -8,27 +8,23 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_SOCKET_SERVICE_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_SOCKET_SERVICE_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_TCP_SERVICE_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_TCP_SERVICE_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_KQUEUE
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/capy/ex/execution_context.hpp>
-#include <boost/corosio/detail/socket_service.hpp>
+#include <boost/corosio/detail/tcp_service.hpp>
 
-#include <boost/corosio/native/detail/kqueue/kqueue_socket.hpp>
+#include <boost/corosio/native/detail/kqueue/kqueue_tcp_socket.hpp>
 #include <boost/corosio/native/detail/kqueue/kqueue_scheduler.hpp>
-#include <boost/corosio/native/detail/reactor/reactor_service_state.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_socket_service.hpp>
 
 #include <boost/corosio/native/detail/reactor/reactor_op_complete.hpp>
 
 #include <coroutine>
-#include <memory>
-#include <mutex>
-#include <utility>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -73,7 +69,7 @@
 
     Service Ownership
     -----------------
-    kqueue_socket_service owns all socket impls. destroy_impl() removes the
+    kqueue_tcp_service owns all socket impls. destroy_impl() removes the
     shared_ptr from the map, but the impl may survive if ops still hold
     impl_ptr refs. shutdown() closes all sockets and clears the map; any
     in-flight ops will complete and release their refs.
@@ -83,7 +79,7 @@
     kqueue socket implementation
     ============================
 
-    Each kqueue_socket owns a descriptor_state that is persistently
+    Each kqueue_tcp_socket owns a descriptor_state that is persistently
     registered with kqueue (EVFILT_READ + EVFILT_WRITE, both EV_CLEAR for
     edge-triggered semantics). The descriptor_state tracks three operation
     slots (read_op, write_op, connect_op) and two ready flags
@@ -115,48 +111,61 @@
 
 namespace boost::corosio::detail {
 
-/// State for kqueue socket service.
-using kqueue_socket_state =
-    reactor_service_state<kqueue_scheduler, kqueue_socket>;
+/** kqueue TCP service implementation.
 
-/** kqueue socket service implementation.
-
-    Inherits from socket_service to enable runtime polymorphism.
-    Uses key_type = socket_service for service lookup.
+    Inherits from tcp_service to enable runtime polymorphism.
+    Uses key_type = tcp_service for service lookup.
 */
-class BOOST_COROSIO_DECL kqueue_socket_service final : public socket_service
+class BOOST_COROSIO_DECL kqueue_tcp_service final
+    : public reactor_socket_service<
+          kqueue_tcp_service,
+          tcp_service,
+          kqueue_scheduler,
+          kqueue_tcp_socket>
 {
+    using base_service = reactor_socket_service<
+        kqueue_tcp_service,
+        tcp_service,
+        kqueue_scheduler,
+        kqueue_tcp_socket>;
+    friend base_service;
+
+    // Clear SO_LINGER before close so the destructor doesn't block
+    // and close() sends FIN instead of RST. RST doesn't reliably
+    // trigger EV_EOF on macOS kqueue.
+    static void reset_linger(kqueue_tcp_socket* impl) noexcept
+    {
+        if (impl->user_set_linger_ && impl->fd_ >= 0)
+        {
+            struct ::linger lg;
+            lg.l_onoff  = 0;
+            lg.l_linger = 0;
+            ::setsockopt(impl->fd_, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+        }
+    }
+
+    void pre_shutdown(kqueue_tcp_socket* impl) noexcept
+    {
+        reset_linger(impl);
+    }
+
+    void pre_destroy(kqueue_tcp_socket* impl) noexcept
+    {
+        reset_linger(impl);
+    }
+
 public:
-    explicit kqueue_socket_service(capy::execution_context& ctx);
-    ~kqueue_socket_service();
+    explicit kqueue_tcp_service(capy::execution_context& ctx)
+        : reactor_socket_service(ctx)
+    {
+    }
 
-    kqueue_socket_service(kqueue_socket_service const&)            = delete;
-    kqueue_socket_service& operator=(kqueue_socket_service const&) = delete;
-
-    void shutdown() override;
-
-    io_object::implementation* construct() override;
-    void destroy(io_object::implementation*) override;
-    void close(io_object::handle&) override;
     std::error_code open_socket(
         tcp_socket::implementation& impl,
         int family,
         int type,
         int protocol) override;
-
-    kqueue_scheduler& scheduler() const noexcept
-    {
-        return state_->sched_;
-    }
-    void post(scheduler_op* op);
-    void work_started() noexcept;
-    void work_finished() noexcept;
-
-private:
-    std::unique_ptr<kqueue_socket_state> state_;
 };
-
-// -- Implementation ---------------------------------------------------------
 
 inline void
 kqueue_connect_op::cancel() noexcept
@@ -197,15 +206,15 @@ kqueue_connect_op::operator()()
     complete_connect_op(*this);
 }
 
-inline kqueue_socket::kqueue_socket(kqueue_socket_service& svc) noexcept
-    : reactor_socket(svc)
+inline kqueue_tcp_socket::kqueue_tcp_socket(kqueue_tcp_service& svc) noexcept
+    : reactor_stream_socket(svc)
 {
 }
 
-inline kqueue_socket::~kqueue_socket() = default;
+inline kqueue_tcp_socket::~kqueue_tcp_socket() = default;
 
 inline std::coroutine_handle<>
-kqueue_socket::connect(
+kqueue_tcp_socket::connect(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     endpoint ep,
@@ -216,7 +225,7 @@ kqueue_socket::connect(
 }
 
 inline std::coroutine_handle<>
-kqueue_socket::read_some(
+kqueue_tcp_socket::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     buffer_param param,
@@ -228,7 +237,7 @@ kqueue_socket::read_some(
 }
 
 inline std::coroutine_handle<>
-kqueue_socket::write_some(
+kqueue_tcp_socket::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     buffer_param param,
@@ -240,7 +249,7 @@ kqueue_socket::write_some(
 }
 
 inline std::error_code
-kqueue_socket::set_option(
+kqueue_tcp_socket::set_option(
     int level, int optname, void const* data, std::size_t size) noexcept
 {
     if (::setsockopt(fd_, level, optname, data, static_cast<socklen_t>(size)) !=
@@ -254,96 +263,23 @@ kqueue_socket::set_option(
 }
 
 inline void
-kqueue_socket::cancel() noexcept
+kqueue_tcp_socket::cancel() noexcept
 {
     do_cancel();
 }
 
 inline void
-kqueue_socket::close_socket() noexcept
+kqueue_tcp_socket::close_socket() noexcept
 {
     do_close_socket();
     user_set_linger_ = false;
 }
 
-inline kqueue_socket_service::kqueue_socket_service(
-    capy::execution_context& ctx)
-    : state_(
-          std::make_unique<kqueue_socket_state>(
-              ctx.use_service<kqueue_scheduler>()))
-{
-}
-
-inline kqueue_socket_service::~kqueue_socket_service() {}
-
-inline void
-kqueue_socket_service::shutdown()
-{
-    std::lock_guard lock(state_->mutex_);
-
-    while (auto* impl = state_->impl_list_.pop_front())
-    {
-        if (impl->user_set_linger_ && impl->fd_ >= 0)
-        {
-            struct ::linger lg;
-            lg.l_onoff  = 0;
-            lg.l_linger = 0;
-            ::setsockopt(impl->fd_, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
-        }
-        impl->close_socket();
-    }
-
-    // Don't clear impl_ptrs_ here. The scheduler shuts down after us and
-    // drains completed_ops_, calling destroy() on each queued op. If we
-    // released our shared_ptrs now, a kqueue_op::destroy() could free the
-    // last ref to an impl whose embedded descriptor_state is still linked
-    // in the queue — use-after-free on the next pop(). Letting ~state_
-    // release the ptrs (during service destruction, after scheduler
-    // shutdown) keeps every impl alive until all ops have been drained.
-}
-
-inline io_object::implementation*
-kqueue_socket_service::construct()
-{
-    auto impl = std::make_shared<kqueue_socket>(*this);
-    auto* raw = impl.get();
-
-    {
-        std::lock_guard lock(state_->mutex_);
-        state_->impl_ptrs_.emplace(raw, std::move(impl));
-        state_->impl_list_.push_back(raw);
-    }
-
-    return raw;
-}
-
-inline void
-kqueue_socket_service::destroy(io_object::implementation* impl)
-{
-    auto* kq_impl = static_cast<kqueue_socket*>(impl);
-
-    // Match asio: if the user set SO_LINGER, clear it before close so
-    // the destructor doesn't block and close() sends FIN instead of RST.
-    // RST doesn't reliably trigger EV_EOF on macOS kqueue.
-    if (kq_impl->user_set_linger_ && kq_impl->fd_ >= 0)
-    {
-        struct ::linger lg;
-        lg.l_onoff  = 0;
-        lg.l_linger = 0;
-        ::setsockopt(kq_impl->fd_, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
-    }
-
-    kq_impl->close_socket();
-    std::lock_guard lock(state_->mutex_);
-    state_->impl_list_.remove(kq_impl);
-    state_->impl_ptrs_.erase(kq_impl);
-}
-
 inline std::error_code
-kqueue_socket_service::open_socket(
+kqueue_tcp_service::open_socket(
     tcp_socket::implementation& impl, int family, int type, int protocol)
 {
-    auto* kq_impl = static_cast<kqueue_socket*>(&impl);
+    auto* kq_impl = static_cast<kqueue_tcp_socket*>(&impl);
     kq_impl->close_socket();
 
     int fd = ::socket(family, type, protocol);
@@ -404,32 +340,8 @@ kqueue_socket_service::open_socket(
     return {};
 }
 
-inline void
-kqueue_socket_service::close(io_object::handle& h)
-{
-    static_cast<kqueue_socket*>(h.get())->close_socket();
-}
-
-inline void
-kqueue_socket_service::post(scheduler_op* op)
-{
-    state_->sched_.post(op);
-}
-
-inline void
-kqueue_socket_service::work_started() noexcept
-{
-    state_->sched_.work_started();
-}
-
-inline void
-kqueue_socket_service::work_finished() noexcept
-{
-    state_->sched_.work_finished();
-}
-
 } // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_HAS_KQUEUE
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_SOCKET_SERVICE_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_KQUEUE_KQUEUE_TCP_SERVICE_HPP

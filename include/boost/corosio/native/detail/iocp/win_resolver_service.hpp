@@ -82,7 +82,10 @@ public:
     void work_finished() noexcept;
 
     /** Return the resolver thread pool. */
-    thread_pool& pool() noexcept { return pool_; }
+    thread_pool& pool() noexcept
+    {
+        return pool_;
+    }
 
 private:
     scheduler& sched_;
@@ -411,7 +414,7 @@ win_resolver::reverse_resolve(
     // Prevent impl destruction while work is in flight
     reverse_pool_op_.resolver_ = this;
     reverse_pool_op_.ref_      = this->shared_from_this();
-    reverse_pool_op_.func_ = &win_resolver::do_reverse_resolve_work;
+    reverse_pool_op_.func_     = &win_resolver::do_reverse_resolve_work;
     if (!svc_.pool().post(&reverse_pool_op_))
     {
         // Pool shut down — complete with cancellation
@@ -462,16 +465,15 @@ win_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
     wchar_t service[NI_MAXSERV];
 
     int result = ::GetNameInfoW(
-        reinterpret_cast<sockaddr*>(&ss), ss_len, host, NI_MAXHOST,
-        service, NI_MAXSERV,
+        reinterpret_cast<sockaddr*>(&ss), ss_len, host, NI_MAXHOST, service,
+        NI_MAXSERV,
         resolver_detail::flags_to_ni_flags(self->reverse_op_.flags));
 
     if (!self->reverse_op_.cancelled.load(std::memory_order_acquire))
     {
         if (result == 0)
         {
-            self->reverse_op_.stored_host =
-                resolver_detail::from_wide(host);
+            self->reverse_op_.stored_host = resolver_detail::from_wide(host);
             self->reverse_op_.stored_service =
                 resolver_detail::from_wide(service);
             self->reverse_op_.gai_error = 0;

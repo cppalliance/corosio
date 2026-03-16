@@ -258,7 +258,7 @@ protected:
     mutable std::condition_variable cond_;
     mutable op_queue completed_ops_;
     mutable std::atomic<std::int64_t> outstanding_work_{0};
-    bool stopped_                  = false;
+    bool stopped_ = false;
     mutable std::atomic<bool> task_running_{false};
     mutable bool task_interrupted_ = false;
 

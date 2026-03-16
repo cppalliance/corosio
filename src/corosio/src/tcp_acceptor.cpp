@@ -13,9 +13,9 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
-#include <boost/corosio/native/detail/iocp/win_acceptor_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #else
-#include <boost/corosio/detail/acceptor_service.hpp>
+#include <boost/corosio/detail/tcp_acceptor_service.hpp>
 #endif
 
 #include <boost/corosio/detail/except.hpp>
@@ -29,9 +29,9 @@ tcp_acceptor::~tcp_acceptor()
 
 tcp_acceptor::tcp_acceptor(capy::execution_context& ctx)
 #if BOOST_COROSIO_HAS_IOCP
-    : io_object(create_handle<detail::win_acceptor_service>(ctx))
+    : io_object(create_handle<detail::win_tcp_acceptor_service>(ctx))
 #else
-    : io_object(create_handle<detail::acceptor_service>(ctx))
+    : io_object(create_handle<detail::tcp_acceptor_service>(ctx))
 #endif
 {
 }
@@ -55,9 +55,9 @@ tcp_acceptor::open(tcp proto)
         return;
 
 #if BOOST_COROSIO_HAS_IOCP
-    auto& svc = static_cast<detail::win_acceptor_service&>(h_.service());
+    auto& svc = static_cast<detail::win_tcp_acceptor_service&>(h_.service());
 #else
-    auto& svc = static_cast<detail::acceptor_service&>(h_.service());
+    auto& svc = static_cast<detail::tcp_acceptor_service&>(h_.service());
 #endif
     std::error_code ec = svc.open_acceptor_socket(
         *static_cast<tcp_acceptor::implementation*>(h_.get()), proto.family(),
@@ -72,9 +72,9 @@ tcp_acceptor::bind(endpoint ep)
     if (!is_open())
         detail::throw_logic_error("bind: acceptor not open");
 #if BOOST_COROSIO_HAS_IOCP
-    auto& svc = static_cast<detail::win_acceptor_service&>(h_.service());
+    auto& svc = static_cast<detail::win_tcp_acceptor_service&>(h_.service());
 #else
-    auto& svc = static_cast<detail::acceptor_service&>(h_.service());
+    auto& svc = static_cast<detail::tcp_acceptor_service&>(h_.service());
 #endif
     return svc.bind_acceptor(
         *static_cast<tcp_acceptor::implementation*>(h_.get()), ep);
@@ -86,9 +86,9 @@ tcp_acceptor::listen(int backlog)
     if (!is_open())
         detail::throw_logic_error("listen: acceptor not open");
 #if BOOST_COROSIO_HAS_IOCP
-    auto& svc = static_cast<detail::win_acceptor_service&>(h_.service());
+    auto& svc = static_cast<detail::win_tcp_acceptor_service&>(h_.service());
 #else
-    auto& svc = static_cast<detail::acceptor_service&>(h_.service());
+    auto& svc = static_cast<detail::tcp_acceptor_service&>(h_.service());
 #endif
     return svc.listen_acceptor(
         *static_cast<tcp_acceptor::implementation*>(h_.get()), backlog);
