@@ -165,6 +165,18 @@ struct ipv6_address_test
         }
         BOOST_TEST(!ipv6_address().is_v4_mapped());
         BOOST_TEST(!ipv6_address::loopback().is_v4_mapped());
+
+        // Multicast
+        {
+            ipv6_address a("ff02::1");
+            BOOST_TEST(a.is_multicast());
+        }
+        {
+            ipv6_address a("ff05::1:3");
+            BOOST_TEST(a.is_multicast());
+        }
+        BOOST_TEST(!ipv6_address().is_multicast());
+        BOOST_TEST(!ipv6_address::loopback().is_multicast());
     }
 
     void testComparison()

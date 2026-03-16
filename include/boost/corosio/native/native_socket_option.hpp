@@ -38,7 +38,19 @@
 #include <sys/socket.h>
 #endif
 
+// Some older systems define only the legacy names
+#ifndef IPV6_JOIN_GROUP
+#define IPV6_JOIN_GROUP IPV6_ADD_MEMBERSHIP
+#endif
+#ifndef IPV6_LEAVE_GROUP
+#define IPV6_LEAVE_GROUP IPV6_DROP_MEMBERSHIP
+#endif
+
+#include <boost/corosio/ipv4_address.hpp>
+#include <boost/corosio/ipv6_address.hpp>
+
 #include <cstddef>
+#include <cstring>
 
 namespace boost::corosio::native_socket_option {
 
@@ -361,6 +373,336 @@ using send_buffer_size = integer<SOL_SOCKET, SO_SNDBUF>;
 /// Allow multiple sockets to bind to the same port (SO_REUSEPORT).
 using reuse_port = boolean<SOL_SOCKET, SO_REUSEPORT>;
 #endif
+
+/// Enable loopback of outgoing multicast on IPv4 (IP_MULTICAST_LOOP).
+using multicast_loop_v4 = boolean<IPPROTO_IP, IP_MULTICAST_LOOP>;
+
+/// Enable loopback of outgoing multicast on IPv6 (IPV6_MULTICAST_LOOP).
+using multicast_loop_v6 = boolean<IPPROTO_IPV6, IPV6_MULTICAST_LOOP>;
+
+/// Set the multicast TTL for IPv4 (IP_MULTICAST_TTL).
+using multicast_hops_v4 = integer<IPPROTO_IP, IP_MULTICAST_TTL>;
+
+/// Set the multicast hop limit for IPv6 (IPV6_MULTICAST_HOPS).
+using multicast_hops_v6 = integer<IPPROTO_IPV6, IPV6_MULTICAST_HOPS>;
+
+/// Set the outgoing interface for IPv6 multicast (IPV6_MULTICAST_IF).
+using multicast_interface_v6 = integer<IPPROTO_IPV6, IPV6_MULTICAST_IF>;
+
+/** Join an IPv4 multicast group (IP_ADD_MEMBERSHIP).
+
+    @par Example
+    @code
+    sock.set_option( native_socket_option::join_group_v4(
+        ipv4_address( "239.255.0.1" ) ) );
+    @endcode
+*/
+class join_group_v4
+{
+    struct ip_mreq value_{};
+
+public:
+    /// Construct with default values.
+    join_group_v4() = default;
+
+    /** Construct with a group and optional interface address.
+
+        @param group The multicast group address to join.
+        @param iface The local interface to use (default: any).
+    */
+    join_group_v4(
+        ipv4_address group, ipv4_address iface = ipv4_address()) noexcept
+    {
+        auto gb = group.to_bytes();
+        auto ib = iface.to_bytes();
+        std::memcpy(&value_.imr_multiaddr, gb.data(), 4);
+        std::memcpy(&value_.imr_interface, ib.data(), 4);
+    }
+
+    /// Return the protocol level for `setsockopt`/`getsockopt`.
+    static constexpr int level() noexcept
+    {
+        return IPPROTO_IP;
+    }
+
+    /// Return the option name for `setsockopt`/`getsockopt`.
+    static constexpr int name() noexcept
+    {
+        return IP_ADD_MEMBERSHIP;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return &value_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
+
+    /// No-op resize.
+    void resize(std::size_t) noexcept {}
+};
+
+/** Leave an IPv4 multicast group (IP_DROP_MEMBERSHIP).
+
+    @par Example
+    @code
+    sock.set_option( native_socket_option::leave_group_v4(
+        ipv4_address( "239.255.0.1" ) ) );
+    @endcode
+*/
+class leave_group_v4
+{
+    struct ip_mreq value_{};
+
+public:
+    /// Construct with default values.
+    leave_group_v4() = default;
+
+    /** Construct with a group and optional interface address.
+
+        @param group The multicast group address to leave.
+        @param iface The local interface (default: any).
+    */
+    leave_group_v4(
+        ipv4_address group, ipv4_address iface = ipv4_address()) noexcept
+    {
+        auto gb = group.to_bytes();
+        auto ib = iface.to_bytes();
+        std::memcpy(&value_.imr_multiaddr, gb.data(), 4);
+        std::memcpy(&value_.imr_interface, ib.data(), 4);
+    }
+
+    /// Return the protocol level for `setsockopt`/`getsockopt`.
+    static constexpr int level() noexcept
+    {
+        return IPPROTO_IP;
+    }
+
+    /// Return the option name for `setsockopt`/`getsockopt`.
+    static constexpr int name() noexcept
+    {
+        return IP_DROP_MEMBERSHIP;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return &value_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
+
+    /// No-op resize.
+    void resize(std::size_t) noexcept {}
+};
+
+/** Join an IPv6 multicast group (IPV6_JOIN_GROUP).
+
+    @par Example
+    @code
+    sock.set_option( native_socket_option::join_group_v6(
+        ipv6_address( "ff02::1" ), 0 ) );
+    @endcode
+*/
+class join_group_v6
+{
+    struct ipv6_mreq value_{};
+
+public:
+    /// Construct with default values.
+    join_group_v6() = default;
+
+    /** Construct with a group and optional interface index.
+
+        @param group The multicast group address to join.
+        @param if_index The interface index (0 = kernel chooses).
+    */
+    join_group_v6(ipv6_address group, unsigned int if_index = 0) noexcept
+    {
+        auto gb = group.to_bytes();
+        std::memcpy(&value_.ipv6mr_multiaddr, gb.data(), 16);
+        value_.ipv6mr_interface = if_index;
+    }
+
+    /// Return the protocol level for `setsockopt`/`getsockopt`.
+    static constexpr int level() noexcept
+    {
+        return IPPROTO_IPV6;
+    }
+
+    /// Return the option name for `setsockopt`/`getsockopt`.
+    static constexpr int name() noexcept
+    {
+        return IPV6_JOIN_GROUP;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return &value_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
+
+    /// No-op resize.
+    void resize(std::size_t) noexcept {}
+};
+
+/** Leave an IPv6 multicast group (IPV6_LEAVE_GROUP).
+
+    @par Example
+    @code
+    sock.set_option( native_socket_option::leave_group_v6(
+        ipv6_address( "ff02::1" ), 0 ) );
+    @endcode
+*/
+class leave_group_v6
+{
+    struct ipv6_mreq value_{};
+
+public:
+    /// Construct with default values.
+    leave_group_v6() = default;
+
+    /** Construct with a group and optional interface index.
+
+        @param group The multicast group address to leave.
+        @param if_index The interface index (0 = kernel chooses).
+    */
+    leave_group_v6(ipv6_address group, unsigned int if_index = 0) noexcept
+    {
+        auto gb = group.to_bytes();
+        std::memcpy(&value_.ipv6mr_multiaddr, gb.data(), 16);
+        value_.ipv6mr_interface = if_index;
+    }
+
+    /// Return the protocol level for `setsockopt`/`getsockopt`.
+    static constexpr int level() noexcept
+    {
+        return IPPROTO_IPV6;
+    }
+
+    /// Return the option name for `setsockopt`/`getsockopt`.
+    static constexpr int name() noexcept
+    {
+        return IPV6_LEAVE_GROUP;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return &value_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
+
+    /// No-op resize.
+    void resize(std::size_t) noexcept {}
+};
+
+/** Set the outgoing interface for IPv4 multicast (IP_MULTICAST_IF).
+
+    Unlike the integer-based `multicast_interface_v6`, this option
+    takes an `ipv4_address` identifying the local interface.
+
+    @par Example
+    @code
+    sock.set_option( native_socket_option::multicast_interface_v4(
+        ipv4_address( "192.168.1.1" ) ) );
+    @endcode
+*/
+class multicast_interface_v4
+{
+    struct in_addr value_{};
+
+public:
+    /// Construct with default values (INADDR_ANY).
+    multicast_interface_v4() = default;
+
+    /** Construct with an interface address.
+
+        @param iface The local interface address.
+    */
+    explicit multicast_interface_v4(ipv4_address iface) noexcept
+    {
+        auto b = iface.to_bytes();
+        std::memcpy(&value_, b.data(), 4);
+    }
+
+    /// Return the protocol level for `setsockopt`/`getsockopt`.
+    static constexpr int level() noexcept
+    {
+        return IPPROTO_IP;
+    }
+
+    /// Return the option name for `setsockopt`/`getsockopt`.
+    static constexpr int name() noexcept
+    {
+        return IP_MULTICAST_IF;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return &value_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
+
+    /// No-op resize.
+    void resize(std::size_t) noexcept {}
+};
 
 } // namespace boost::corosio::native_socket_option
 

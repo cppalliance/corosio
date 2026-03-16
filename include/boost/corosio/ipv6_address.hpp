@@ -240,6 +240,18 @@ public:
     */
     bool is_v4_mapped() const noexcept;
 
+    /** Return true if the address is a multicast address.
+
+        IPv6 multicast addresses have the prefix ff00::/8.
+
+        @return `true` if the address is a multicast address.
+
+        @par Specification
+        @li <a href="https://datatracker.ietf.org/doc/html/rfc4291#section-2.7">
+            2.7. Multicast Addresses (rfc4291)</a>
+    */
+    bool is_multicast() const noexcept;
+
     /** Return true if two addresses are equal.
 
         @return `true` if the addresses are equal.
