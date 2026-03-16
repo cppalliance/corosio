@@ -11,6 +11,8 @@
 #define BOOST_COROSIO_SOCKET_OPTION_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/ipv4_address.hpp>
+#include <boost/corosio/ipv6_address.hpp>
 
 #include <cstddef>
 
@@ -423,6 +425,355 @@ public:
 
         @param s The number of bytes actually written by `getsockopt`.
     */
+    void resize(std::size_t) noexcept {}
+};
+
+/** Enable loopback of outgoing multicast on IPv4 (IP_MULTICAST_LOOP).
+
+    @par Example
+    @code
+    sock.set_option( socket_option::multicast_loop_v4( true ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL multicast_loop_v4 : public boolean_option
+{
+public:
+    using boolean_option::boolean_option;
+    using boolean_option::operator=;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+};
+
+/** Enable loopback of outgoing multicast on IPv6 (IPV6_MULTICAST_LOOP).
+
+    @par Example
+    @code
+    sock.set_option( socket_option::multicast_loop_v6( true ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL multicast_loop_v6 : public boolean_option
+{
+public:
+    using boolean_option::boolean_option;
+    using boolean_option::operator=;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+};
+
+/** Set the multicast TTL for IPv4 (IP_MULTICAST_TTL).
+
+    @par Example
+    @code
+    sock.set_option( socket_option::multicast_hops_v4( 4 ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL multicast_hops_v4 : public integer_option
+{
+public:
+    using integer_option::integer_option;
+    using integer_option::operator=;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+};
+
+/** Set the multicast hop limit for IPv6 (IPV6_MULTICAST_HOPS).
+
+    @par Example
+    @code
+    sock.set_option( socket_option::multicast_hops_v6( 4 ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL multicast_hops_v6 : public integer_option
+{
+public:
+    using integer_option::integer_option;
+    using integer_option::operator=;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+};
+
+/** Set the outgoing interface for IPv6 multicast (IPV6_MULTICAST_IF).
+
+    @par Example
+    @code
+    sock.set_option( socket_option::multicast_interface_v6( 1 ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL multicast_interface_v6 : public integer_option
+{
+public:
+    using integer_option::integer_option;
+    using integer_option::operator=;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+};
+
+/** Join an IPv4 multicast group (IP_ADD_MEMBERSHIP).
+
+    @par Example
+    @code
+    sock.set_option( socket_option::join_group_v4(
+        ipv4_address( "239.255.0.1" ) ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL join_group_v4
+{
+    static constexpr std::size_t max_storage_ = 8;
+    alignas(4) unsigned char storage_[max_storage_]{};
+
+public:
+    /// Construct with default values.
+    join_group_v4() noexcept = default;
+
+    /** Construct with a group and optional interface address.
+
+        @param group The multicast group address to join.
+        @param iface The local interface to use (default: any).
+    */
+    join_group_v4(
+        ipv4_address group, ipv4_address iface = ipv4_address()) noexcept;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return storage_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return storage_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept;
+
+    /// No-op resize.
+    void resize(std::size_t) noexcept {}
+};
+
+/** Leave an IPv4 multicast group (IP_DROP_MEMBERSHIP).
+
+    @par Example
+    @code
+    sock.set_option( socket_option::leave_group_v4(
+        ipv4_address( "239.255.0.1" ) ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL leave_group_v4
+{
+    static constexpr std::size_t max_storage_ = 8;
+    alignas(4) unsigned char storage_[max_storage_]{};
+
+public:
+    /// Construct with default values.
+    leave_group_v4() noexcept = default;
+
+    /** Construct with a group and optional interface address.
+
+        @param group The multicast group address to leave.
+        @param iface The local interface (default: any).
+    */
+    leave_group_v4(
+        ipv4_address group, ipv4_address iface = ipv4_address()) noexcept;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return storage_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return storage_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept;
+
+    /// No-op resize.
+    void resize(std::size_t) noexcept {}
+};
+
+/** Join an IPv6 multicast group (IPV6_JOIN_GROUP).
+
+    @par Example
+    @code
+    sock.set_option( socket_option::join_group_v6(
+        ipv6_address( "ff02::1" ), 0 ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL join_group_v6
+{
+    static constexpr std::size_t max_storage_ = 20;
+    alignas(4) unsigned char storage_[max_storage_]{};
+
+public:
+    /// Construct with default values.
+    join_group_v6() noexcept = default;
+
+    /** Construct with a group and optional interface index.
+
+        @param group The multicast group address to join.
+        @param if_index The interface index (0 = kernel chooses).
+    */
+    join_group_v6(ipv6_address group, unsigned int if_index = 0) noexcept;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return storage_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return storage_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept;
+
+    /// No-op resize.
+    void resize(std::size_t) noexcept {}
+};
+
+/** Leave an IPv6 multicast group (IPV6_LEAVE_GROUP).
+
+    @par Example
+    @code
+    sock.set_option( socket_option::leave_group_v6(
+        ipv6_address( "ff02::1" ), 0 ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL leave_group_v6
+{
+    static constexpr std::size_t max_storage_ = 20;
+    alignas(4) unsigned char storage_[max_storage_]{};
+
+public:
+    /// Construct with default values.
+    leave_group_v6() noexcept = default;
+
+    /** Construct with a group and optional interface index.
+
+        @param group The multicast group address to leave.
+        @param if_index The interface index (0 = kernel chooses).
+    */
+    leave_group_v6(ipv6_address group, unsigned int if_index = 0) noexcept;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return storage_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return storage_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept;
+
+    /// No-op resize.
+    void resize(std::size_t) noexcept {}
+};
+
+/** Set the outgoing interface for IPv4 multicast (IP_MULTICAST_IF).
+
+    Unlike the integer-based `multicast_interface_v6`, this option
+    takes an `ipv4_address` identifying the local interface.
+
+    @par Example
+    @code
+    sock.set_option( socket_option::multicast_interface_v4(
+        ipv4_address( "192.168.1.1" ) ) );
+    @endcode
+*/
+class BOOST_COROSIO_DECL multicast_interface_v4
+{
+    static constexpr std::size_t max_storage_ = 4;
+    alignas(4) unsigned char storage_[max_storage_]{};
+
+public:
+    /// Construct with default values (INADDR_ANY).
+    multicast_interface_v4() noexcept = default;
+
+    /** Construct with an interface address.
+
+        @param iface The local interface address.
+    */
+    explicit multicast_interface_v4(ipv4_address iface) noexcept;
+
+    /// Return the protocol level.
+    static int level() noexcept;
+
+    /// Return the option name.
+    static int name() noexcept;
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return storage_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return storage_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept;
+
+    /// No-op resize.
     void resize(std::size_t) noexcept {}
 };
 

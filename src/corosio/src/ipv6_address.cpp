@@ -65,6 +65,12 @@ ipv6_address::is_loopback() const noexcept
 }
 
 bool
+ipv6_address::is_multicast() const noexcept
+{
+    return addr_[0] == 0xff;
+}
+
+bool
 ipv6_address::is_v4_mapped() const noexcept
 {
     return addr_[0] == 0 && addr_[1] == 0 && addr_[2] == 0 && addr_[3] == 0 &&

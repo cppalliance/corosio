@@ -193,4 +193,205 @@ linger::size() const noexcept
     return native_socket_option::linger{}.size();
 }
 
+// multicast_loop_v4
+
+int
+multicast_loop_v4::level() noexcept
+{
+    return native_socket_option::multicast_loop_v4::level();
+}
+int
+multicast_loop_v4::name() noexcept
+{
+    return native_socket_option::multicast_loop_v4::name();
+}
+
+// multicast_loop_v6
+
+int
+multicast_loop_v6::level() noexcept
+{
+    return native_socket_option::multicast_loop_v6::level();
+}
+int
+multicast_loop_v6::name() noexcept
+{
+    return native_socket_option::multicast_loop_v6::name();
+}
+
+// multicast_hops_v4
+
+int
+multicast_hops_v4::level() noexcept
+{
+    return native_socket_option::multicast_hops_v4::level();
+}
+int
+multicast_hops_v4::name() noexcept
+{
+    return native_socket_option::multicast_hops_v4::name();
+}
+
+// multicast_hops_v6
+
+int
+multicast_hops_v6::level() noexcept
+{
+    return native_socket_option::multicast_hops_v6::level();
+}
+int
+multicast_hops_v6::name() noexcept
+{
+    return native_socket_option::multicast_hops_v6::name();
+}
+
+// multicast_interface_v6
+
+int
+multicast_interface_v6::level() noexcept
+{
+    return native_socket_option::multicast_interface_v6::level();
+}
+int
+multicast_interface_v6::name() noexcept
+{
+    return native_socket_option::multicast_interface_v6::name();
+}
+
+// join_group_v4
+
+join_group_v4::join_group_v4(ipv4_address group, ipv4_address iface) noexcept
+{
+    native_socket_option::join_group_v4 native(group, iface);
+    static_assert(
+        sizeof(native) <= sizeof(storage_),
+        "platform ip_mreq exceeds join_group_v4 storage");
+    std::memcpy(storage_, native.data(), native.size());
+}
+
+int
+join_group_v4::level() noexcept
+{
+    return native_socket_option::join_group_v4::level();
+}
+int
+join_group_v4::name() noexcept
+{
+    return native_socket_option::join_group_v4::name();
+}
+std::size_t
+join_group_v4::size() const noexcept
+{
+    return native_socket_option::join_group_v4{}.size();
+}
+
+// leave_group_v4
+
+leave_group_v4::leave_group_v4(ipv4_address group, ipv4_address iface) noexcept
+{
+    native_socket_option::leave_group_v4 native(group, iface);
+    static_assert(
+        sizeof(native) <= sizeof(storage_),
+        "platform ip_mreq exceeds leave_group_v4 storage");
+    std::memcpy(storage_, native.data(), native.size());
+}
+
+int
+leave_group_v4::level() noexcept
+{
+    return native_socket_option::leave_group_v4::level();
+}
+int
+leave_group_v4::name() noexcept
+{
+    return native_socket_option::leave_group_v4::name();
+}
+std::size_t
+leave_group_v4::size() const noexcept
+{
+    return native_socket_option::leave_group_v4{}.size();
+}
+
+// join_group_v6
+
+join_group_v6::join_group_v6(ipv6_address group, unsigned int if_index) noexcept
+{
+    native_socket_option::join_group_v6 native(group, if_index);
+    static_assert(
+        sizeof(native) <= sizeof(storage_),
+        "platform ipv6_mreq exceeds join_group_v6 storage");
+    std::memcpy(storage_, native.data(), native.size());
+}
+
+int
+join_group_v6::level() noexcept
+{
+    return native_socket_option::join_group_v6::level();
+}
+int
+join_group_v6::name() noexcept
+{
+    return native_socket_option::join_group_v6::name();
+}
+std::size_t
+join_group_v6::size() const noexcept
+{
+    return native_socket_option::join_group_v6{}.size();
+}
+
+// leave_group_v6
+
+leave_group_v6::leave_group_v6(
+    ipv6_address group, unsigned int if_index) noexcept
+{
+    native_socket_option::leave_group_v6 native(group, if_index);
+    static_assert(
+        sizeof(native) <= sizeof(storage_),
+        "platform ipv6_mreq exceeds leave_group_v6 storage");
+    std::memcpy(storage_, native.data(), native.size());
+}
+
+int
+leave_group_v6::level() noexcept
+{
+    return native_socket_option::leave_group_v6::level();
+}
+int
+leave_group_v6::name() noexcept
+{
+    return native_socket_option::leave_group_v6::name();
+}
+std::size_t
+leave_group_v6::size() const noexcept
+{
+    return native_socket_option::leave_group_v6{}.size();
+}
+
+// multicast_interface_v4
+
+multicast_interface_v4::multicast_interface_v4(ipv4_address iface) noexcept
+{
+    native_socket_option::multicast_interface_v4 native(iface);
+    static_assert(
+        sizeof(native) <= sizeof(storage_),
+        "platform in_addr exceeds multicast_interface_v4 storage");
+    std::memcpy(storage_, native.data(), native.size());
+}
+
+int
+multicast_interface_v4::level() noexcept
+{
+    return native_socket_option::multicast_interface_v4::level();
+}
+int
+multicast_interface_v4::name() noexcept
+{
+    return native_socket_option::multicast_interface_v4::name();
+}
+std::size_t
+multicast_interface_v4::size() const noexcept
+{
+    return native_socket_option::multicast_interface_v4{}.size();
+}
+
 } // namespace boost::corosio::socket_option

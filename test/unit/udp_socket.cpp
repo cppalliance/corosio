@@ -576,6 +576,112 @@ struct udp_socket_test
         sock.close();
     }
 
+    void testMulticastLoopHops()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open();
+
+        sock.set_option(socket_option::multicast_loop_v4(true));
+        auto loop = sock.get_option<socket_option::multicast_loop_v4>();
+        BOOST_TEST(loop.value());
+
+        sock.set_option(socket_option::multicast_loop_v4(false));
+        loop = sock.get_option<socket_option::multicast_loop_v4>();
+        BOOST_TEST(!loop.value());
+
+        sock.set_option(socket_option::multicast_hops_v4(4));
+        auto hops = sock.get_option<socket_option::multicast_hops_v4>();
+        BOOST_TEST_EQ(hops.value(), 4);
+
+        sock.close();
+    }
+
+    void testMulticastLoopHopsV6()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open(udp::v6());
+
+        sock.set_option(socket_option::multicast_loop_v6(true));
+        auto loop = sock.get_option<socket_option::multicast_loop_v6>();
+        BOOST_TEST(loop.value());
+
+        sock.set_option(socket_option::multicast_loop_v6(false));
+        loop = sock.get_option<socket_option::multicast_loop_v6>();
+        BOOST_TEST(!loop.value());
+
+        sock.set_option(socket_option::multicast_hops_v6(4));
+        auto hops = sock.get_option<socket_option::multicast_hops_v6>();
+        BOOST_TEST_EQ(hops.value(), 4);
+
+        sock.close();
+    }
+
+    void testMulticastJoinV4()
+    {
+        io_context ioc(Backend);
+
+        udp_socket receiver(ioc);
+        udp_socket sender(ioc);
+
+        receiver.open();
+        sender.open();
+
+        auto ec = receiver.bind(endpoint(ipv4_address::any(), 0));
+        BOOST_TEST_EQ(ec, std::error_code{});
+        auto recv_ep = receiver.local_endpoint();
+
+        // Join may fail in CI environments without multicast routing
+        try
+        {
+            receiver.set_option(
+                socket_option::join_group_v4(ipv4_address("239.255.0.1")));
+        }
+        catch (std::system_error const&)
+        {
+            receiver.close();
+            sender.close();
+            return;
+        }
+
+        receiver.set_option(socket_option::multicast_loop_v4(true));
+
+        auto task = [](udp_socket& s, udp_socket& r,
+                       unsigned short port) -> capy::task<> {
+            endpoint dest(ipv4_address("239.255.0.1"), port);
+            char const msg[] = "mcast";
+            auto [ec1, n1] =
+                co_await s.send_to(capy::const_buffer(msg, sizeof(msg)), dest);
+            BOOST_TEST_EQ(ec1, std::error_code{});
+
+            char buf[64] = {};
+            endpoint source;
+            auto [ec2, n2] = co_await r.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            BOOST_TEST_EQ(ec2, std::error_code{});
+            BOOST_TEST_EQ(n2, sizeof(msg));
+            BOOST_TEST_EQ(std::strcmp(buf, "mcast"), 0);
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(task(sender, receiver, recv_ep.port()));
+        ioc.run();
+
+        // Clean up
+        try
+        {
+            receiver.set_option(
+                socket_option::leave_group_v4(ipv4_address("239.255.0.1")));
+        }
+        catch (...)
+        {
+        }
+
+        receiver.close();
+        sender.close();
+    }
+
     void run()
     {
         testConstruction();
@@ -596,6 +702,9 @@ struct udp_socket_test
         testConcurrentSendRecv();
         testEmptyBufferRecv();
         testEmptyBufferSend();
+        testMulticastLoopHops();
+        testMulticastLoopHopsV6();
+        testMulticastJoinV4();
     }
 };
 
