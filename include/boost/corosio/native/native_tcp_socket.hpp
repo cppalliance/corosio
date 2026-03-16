@@ -27,7 +27,7 @@
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP
-#include <boost/corosio/native/detail/iocp/win_acceptor_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #endif
 #endif // !BOOST_COROSIO_MRDOCS
 

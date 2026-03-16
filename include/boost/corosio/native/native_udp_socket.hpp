@@ -25,6 +25,10 @@
 #if BOOST_COROSIO_HAS_KQUEUE
 #include <boost/corosio/native/detail/kqueue/kqueue_udp_service.hpp>
 #endif
+
+#if BOOST_COROSIO_HAS_IOCP
+#include <boost/corosio/native/detail/iocp/win_udp_service.hpp>
+#endif
 #endif // !BOOST_COROSIO_MRDOCS
 
 namespace boost::corosio {

@@ -8,8 +8,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_ACCEPTOR_SERVICE_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_ACCEPTOR_SERVICE_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_ACCEPTOR_SERVICE_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_ACCEPTOR_SERVICE_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -19,8 +19,8 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
-#include <boost/corosio/native/detail/iocp/win_acceptor.hpp>
-#include <boost/corosio/native/detail/iocp/win_sockets.hpp>
+#include <boost/corosio/native/detail/iocp/win_tcp_acceptor.hpp>
+#include <boost/corosio/native/detail/iocp/win_tcp_service.hpp>
 
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
@@ -33,19 +33,19 @@
 
 namespace boost::corosio::detail {
 
-/** IOCP acceptor service wrapping win_sockets for acceptor lifecycle.
+/** IOCP acceptor service wrapping win_tcp_service for acceptor lifecycle.
 
     Provides io_service + acceptor_service interface for tcp_acceptor
-    on Windows. Delegates to win_sockets for actual socket operations.
+    on Windows. Delegates to win_tcp_service for actual socket operations.
 */
-class BOOST_COROSIO_DECL win_acceptor_service final
+class BOOST_COROSIO_DECL win_tcp_acceptor_service final
     : public capy::execution_context::service
     , public io_object::io_service
 {
 public:
-    using key_type = win_acceptor_service;
+    using key_type = win_tcp_acceptor_service;
 
-    win_acceptor_service(capy::execution_context& ctx, win_sockets& svc);
+    win_tcp_acceptor_service(capy::execution_context& ctx, win_tcp_service& svc);
 
     io_object::implementation* construct() override;
 
@@ -68,30 +68,26 @@ public:
     void shutdown() override;
 
 private:
-    win_sockets& svc_;
+    win_tcp_service& svc_;
 };
-
-// ---------------------------------------------------------------
-// Inline implementations for all classes
-// ---------------------------------------------------------------
 
 // Operation constructors
 
-inline connect_op::connect_op(win_socket_internal& internal_) noexcept
+inline connect_op::connect_op(win_tcp_socket_internal& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
     cancel_func_ = &do_cancel_impl;
 }
 
-inline read_op::read_op(win_socket_internal& internal_) noexcept
+inline read_op::read_op(win_tcp_socket_internal& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
     cancel_func_ = &do_cancel_impl;
 }
 
-inline write_op::write_op(win_socket_internal& internal_) noexcept
+inline write_op::write_op(win_tcp_socket_internal& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
@@ -334,9 +330,9 @@ write_op::do_complete(
     op->invoke_handler();
 }
 
-// win_socket_internal
+// win_tcp_socket_internal
 
-inline win_socket_internal::win_socket_internal(win_sockets& svc) noexcept
+inline win_tcp_socket_internal::win_tcp_socket_internal(win_tcp_service& svc) noexcept
     : svc_(svc)
     , conn_(*this)
     , rd_(*this)
@@ -344,50 +340,50 @@ inline win_socket_internal::win_socket_internal(win_sockets& svc) noexcept
 {
 }
 
-inline win_socket_internal::~win_socket_internal()
+inline win_tcp_socket_internal::~win_tcp_socket_internal()
 {
     svc_.unregister_impl(*this);
 }
 
 inline SOCKET
-win_socket_internal::native_handle() const noexcept
+win_tcp_socket_internal::native_handle() const noexcept
 {
     return socket_;
 }
 
 inline endpoint
-win_socket_internal::local_endpoint() const noexcept
+win_tcp_socket_internal::local_endpoint() const noexcept
 {
     return local_endpoint_;
 }
 
 inline endpoint
-win_socket_internal::remote_endpoint() const noexcept
+win_tcp_socket_internal::remote_endpoint() const noexcept
 {
     return remote_endpoint_;
 }
 
 inline bool
-win_socket_internal::is_open() const noexcept
+win_tcp_socket_internal::is_open() const noexcept
 {
     return socket_ != INVALID_SOCKET;
 }
 
 inline void
-win_socket_internal::set_socket(SOCKET s) noexcept
+win_tcp_socket_internal::set_socket(SOCKET s) noexcept
 {
     socket_ = s;
 }
 
 inline void
-win_socket_internal::set_endpoints(endpoint local, endpoint remote) noexcept
+win_tcp_socket_internal::set_endpoints(endpoint local, endpoint remote) noexcept
 {
     local_endpoint_  = local;
     remote_endpoint_ = remote;
 }
 
 inline std::coroutine_handle<>
-win_socket_internal::connect(
+win_tcp_socket_internal::connect(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     endpoint ep,
@@ -465,7 +461,7 @@ win_socket_internal::connect(
 }
 
 inline std::coroutine_handle<>
-win_socket_internal::read_some(
+win_tcp_socket_internal::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param param,
@@ -531,7 +527,7 @@ win_socket_internal::read_some(
 }
 
 inline std::coroutine_handle<>
-win_socket_internal::write_some(
+win_tcp_socket_internal::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param param,
@@ -593,7 +589,7 @@ win_socket_internal::write_some(
 }
 
 inline void
-win_socket_internal::cancel() noexcept
+win_tcp_socket_internal::cancel() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
@@ -606,7 +602,7 @@ win_socket_internal::cancel() noexcept
 }
 
 inline void
-win_socket_internal::close_socket() noexcept
+win_tcp_socket_internal::close_socket() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
@@ -622,16 +618,16 @@ win_socket_internal::close_socket() noexcept
     remote_endpoint_ = endpoint{};
 }
 
-// win_socket
+// win_tcp_socket
 
-inline win_socket::win_socket(
-    std::shared_ptr<win_socket_internal> internal) noexcept
+inline win_tcp_socket::win_tcp_socket(
+    std::shared_ptr<win_tcp_socket_internal> internal) noexcept
     : internal_(std::move(internal))
 {
 }
 
 inline void
-win_socket::close_internal() noexcept
+win_tcp_socket::close_internal() noexcept
 {
     if (internal_)
     {
@@ -641,7 +637,7 @@ win_socket::close_internal() noexcept
 }
 
 inline std::coroutine_handle<>
-win_socket::connect(
+win_tcp_socket::connect(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     endpoint ep,
@@ -652,7 +648,7 @@ win_socket::connect(
 }
 
 inline std::coroutine_handle<>
-win_socket::read_some(
+win_tcp_socket::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param buf,
@@ -664,7 +660,7 @@ win_socket::read_some(
 }
 
 inline std::coroutine_handle<>
-win_socket::write_some(
+win_tcp_socket::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param buf,
@@ -676,7 +672,7 @@ win_socket::write_some(
 }
 
 inline std::error_code
-win_socket::shutdown(tcp_socket::shutdown_type what) noexcept
+win_tcp_socket::shutdown(tcp_socket::shutdown_type what) noexcept
 {
     int how;
     switch (what)
@@ -699,13 +695,13 @@ win_socket::shutdown(tcp_socket::shutdown_type what) noexcept
 }
 
 inline native_handle_type
-win_socket::native_handle() const noexcept
+win_tcp_socket::native_handle() const noexcept
 {
     return static_cast<native_handle_type>(internal_->native_handle());
 }
 
 inline std::error_code
-win_socket::set_option(
+win_tcp_socket::set_option(
     int level, int optname, void const* data, std::size_t size) noexcept
 {
     if (::setsockopt(
@@ -716,7 +712,7 @@ win_socket::set_option(
 }
 
 inline std::error_code
-win_socket::get_option(
+win_tcp_socket::get_option(
     int level, int optname, void* data, std::size_t* size) const noexcept
 {
     int len = static_cast<int>(*size);
@@ -729,39 +725,39 @@ win_socket::get_option(
 }
 
 inline endpoint
-win_socket::local_endpoint() const noexcept
+win_tcp_socket::local_endpoint() const noexcept
 {
     return internal_->local_endpoint();
 }
 
 inline endpoint
-win_socket::remote_endpoint() const noexcept
+win_tcp_socket::remote_endpoint() const noexcept
 {
     return internal_->remote_endpoint();
 }
 
 inline void
-win_socket::cancel() noexcept
+win_tcp_socket::cancel() noexcept
 {
     internal_->cancel();
 }
 
-inline win_socket_internal*
-win_socket::get_internal() const noexcept
+inline win_tcp_socket_internal*
+win_tcp_socket::get_internal() const noexcept
 {
     return internal_.get();
 }
 
-// win_sockets
+// win_tcp_service
 
-inline win_sockets::win_sockets(capy::execution_context& ctx)
+inline win_tcp_service::win_tcp_service(capy::execution_context& ctx)
     : sched_(ctx.use_service<win_scheduler>())
     , iocp_(sched_.native_handle())
 {
     load_extension_functions();
 }
 
-inline win_sockets::~win_sockets()
+inline win_tcp_service::~win_tcp_service()
 {
     // Delete wrappers that survived shutdown. This runs after
     // win_scheduler is destroyed (reverse creation order), so
@@ -776,14 +772,14 @@ inline win_sockets::~win_sockets()
 }
 
 inline void
-win_sockets::shutdown()
+win_tcp_service::shutdown()
 {
     std::lock_guard<win_mutex> lock(mutex_);
 
     // Close all sockets to force pending I/O to complete via IOCP.
     // Wrappers are NOT deleted here - coroutine frames destroyed
     // during scheduler shutdown may still hold tcp_socket objects
-    // that reference them. Wrapper deletion is deferred to ~win_sockets
+    // that reference them. Wrapper deletion is deferred to ~win_tcp_service
     // after the scheduler has drained all outstanding operations.
     for (auto* impl = socket_list_.pop_front(); impl != nullptr;
          impl       = socket_list_.pop_front())
@@ -799,16 +795,16 @@ win_sockets::shutdown()
 }
 
 inline io_object::implementation*
-win_sockets::construct()
+win_tcp_service::construct()
 {
-    auto internal = std::make_shared<win_socket_internal>(*this);
+    auto internal = std::make_shared<win_tcp_socket_internal>(*this);
 
     {
         std::lock_guard<win_mutex> lock(mutex_);
         socket_list_.push_back(internal.get());
     }
 
-    auto* wrapper = new win_socket(std::move(internal));
+    auto* wrapper = new win_tcp_socket(std::move(internal));
 
     {
         std::lock_guard<win_mutex> lock(mutex_);
@@ -819,25 +815,25 @@ win_sockets::construct()
 }
 
 inline void
-win_sockets::destroy(io_object::implementation* p)
+win_tcp_service::destroy(io_object::implementation* p)
 {
     if (p)
     {
-        auto& wrapper = static_cast<win_socket&>(*p);
+        auto& wrapper = static_cast<win_tcp_socket&>(*p);
         wrapper.close_internal();
         destroy_impl(wrapper);
     }
 }
 
 inline void
-win_sockets::close(io_object::handle& h)
+win_tcp_service::close(io_object::handle& h)
 {
-    auto& wrapper = static_cast<win_socket&>(*h.get());
+    auto& wrapper = static_cast<win_tcp_socket&>(*h.get());
     wrapper.get_internal()->close_socket();
 }
 
 inline void
-win_sockets::destroy_impl(win_socket& impl)
+win_tcp_service::destroy_impl(win_tcp_socket& impl)
 {
     {
         std::lock_guard<win_mutex> lock(mutex_);
@@ -847,15 +843,15 @@ win_sockets::destroy_impl(win_socket& impl)
 }
 
 inline void
-win_sockets::unregister_impl(win_socket_internal& impl)
+win_tcp_service::unregister_impl(win_tcp_socket_internal& impl)
 {
     std::lock_guard<win_mutex> lock(mutex_);
     socket_list_.remove(&impl);
 }
 
 inline std::error_code
-win_sockets::open_socket(
-    win_socket_internal& impl, int family, int type, int protocol)
+win_tcp_service::open_socket(
+    win_tcp_socket_internal& impl, int family, int type, int protocol)
 {
     impl.close_socket();
 
@@ -889,55 +885,55 @@ win_sockets::open_socket(
 }
 
 inline void*
-win_sockets::native_handle() const noexcept
+win_tcp_service::native_handle() const noexcept
 {
     return iocp_;
 }
 
 inline LPFN_CONNECTEX
-win_sockets::connect_ex() const noexcept
+win_tcp_service::connect_ex() const noexcept
 {
     return connect_ex_;
 }
 
 inline LPFN_ACCEPTEX
-win_sockets::accept_ex() const noexcept
+win_tcp_service::accept_ex() const noexcept
 {
     return accept_ex_;
 }
 
 inline void
-win_sockets::post(overlapped_op* op)
+win_tcp_service::post(overlapped_op* op)
 {
     sched_.post(op);
 }
 
 inline void
-win_sockets::on_pending(overlapped_op* op) noexcept
+win_tcp_service::on_pending(overlapped_op* op) noexcept
 {
     sched_.on_pending(op);
 }
 
 inline void
-win_sockets::on_completion(overlapped_op* op, DWORD error, DWORD bytes) noexcept
+win_tcp_service::on_completion(overlapped_op* op, DWORD error, DWORD bytes) noexcept
 {
     sched_.on_completion(op, error, bytes);
 }
 
 inline void
-win_sockets::work_started() noexcept
+win_tcp_service::work_started() noexcept
 {
     sched_.work_started();
 }
 
 inline void
-win_sockets::work_finished() noexcept
+win_tcp_service::work_finished() noexcept
 {
     sched_.work_finished();
 }
 
 inline void
-win_sockets::load_extension_functions()
+win_tcp_service::load_extension_functions()
 {
     SOCKET sock = ::WSASocketW(
         AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
@@ -963,7 +959,7 @@ win_sockets::load_extension_functions()
 }
 
 inline void
-win_sockets::destroy_acceptor_impl(win_acceptor& impl)
+win_tcp_service::destroy_acceptor_impl(win_tcp_acceptor& impl)
 {
     {
         std::lock_guard<win_mutex> lock(mutex_);
@@ -973,15 +969,15 @@ win_sockets::destroy_acceptor_impl(win_acceptor& impl)
 }
 
 inline void
-win_sockets::unregister_acceptor_impl(win_acceptor_internal& impl)
+win_tcp_service::unregister_acceptor_impl(win_tcp_acceptor_internal& impl)
 {
     std::lock_guard<win_mutex> lock(mutex_);
     acceptor_list_.remove(&impl);
 }
 
 inline std::error_code
-win_sockets::open_acceptor_socket(
-    win_acceptor_internal& impl, int family, int type, int protocol)
+win_tcp_service::open_acceptor_socket(
+    win_tcp_acceptor_internal& impl, int family, int type, int protocol)
 {
     impl.close_socket();
 
@@ -1014,7 +1010,7 @@ win_sockets::open_acceptor_socket(
 }
 
 inline std::error_code
-win_sockets::bind_acceptor(win_acceptor_internal& impl, endpoint ep)
+win_tcp_service::bind_acceptor(win_tcp_acceptor_internal& impl, endpoint ep)
 {
     SOCKET sock = impl.socket_;
 
@@ -1036,7 +1032,7 @@ win_sockets::bind_acceptor(win_acceptor_internal& impl, endpoint ep)
 }
 
 inline std::error_code
-win_sockets::listen_acceptor(win_acceptor_internal& impl, int backlog)
+win_tcp_service::listen_acceptor(win_tcp_acceptor_internal& impl, int backlog)
 {
     SOCKET sock = impl.socket_;
 
@@ -1046,50 +1042,50 @@ win_sockets::listen_acceptor(win_acceptor_internal& impl, int backlog)
     return {};
 }
 
-// win_acceptor_internal
+// win_tcp_acceptor_internal
 
-inline win_acceptor_internal::win_acceptor_internal(win_sockets& svc) noexcept
+inline win_tcp_acceptor_internal::win_tcp_acceptor_internal(win_tcp_service& svc) noexcept
     : svc_(svc)
 {
 }
 
-inline win_acceptor_internal::~win_acceptor_internal()
+inline win_tcp_acceptor_internal::~win_tcp_acceptor_internal()
 {
     svc_.unregister_acceptor_impl(*this);
 }
 
-inline win_sockets&
-win_acceptor_internal::socket_service() noexcept
+inline win_tcp_service&
+win_tcp_acceptor_internal::socket_service() noexcept
 {
     return svc_;
 }
 
 inline SOCKET
-win_acceptor_internal::native_handle() const noexcept
+win_tcp_acceptor_internal::native_handle() const noexcept
 {
     return socket_;
 }
 
 inline endpoint
-win_acceptor_internal::local_endpoint() const noexcept
+win_tcp_acceptor_internal::local_endpoint() const noexcept
 {
     return local_endpoint_;
 }
 
 inline bool
-win_acceptor_internal::is_open() const noexcept
+win_tcp_acceptor_internal::is_open() const noexcept
 {
     return socket_ != INVALID_SOCKET;
 }
 
 inline void
-win_acceptor_internal::set_local_endpoint(endpoint ep) noexcept
+win_tcp_acceptor_internal::set_local_endpoint(endpoint ep) noexcept
 {
     local_endpoint_ = ep;
 }
 
 inline std::coroutine_handle<>
-win_acceptor_internal::accept(
+win_tcp_acceptor_internal::accept(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
@@ -1110,7 +1106,7 @@ win_acceptor_internal::accept(
     svc_.work_started();
 
     // Create wrapper for the peer socket (service owns it)
-    auto& peer_wrapper = static_cast<win_socket&>(*svc_.construct());
+    auto& peer_wrapper = static_cast<win_tcp_socket&>(*svc_.construct());
 
     // Derive AF from the listening socket's cached local endpoint
     int af = local_endpoint_.is_v6() ? AF_INET6 : AF_INET;
@@ -1182,7 +1178,7 @@ win_acceptor_internal::accept(
 }
 
 inline void
-win_acceptor_internal::cancel() noexcept
+win_tcp_acceptor_internal::cancel() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
@@ -1193,7 +1189,7 @@ win_acceptor_internal::cancel() noexcept
 }
 
 inline void
-win_acceptor_internal::close_socket() noexcept
+win_tcp_acceptor_internal::close_socket() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
@@ -1206,16 +1202,16 @@ win_acceptor_internal::close_socket() noexcept
     local_endpoint_ = endpoint{};
 }
 
-// win_acceptor
+// win_tcp_acceptor
 
-inline win_acceptor::win_acceptor(
-    std::shared_ptr<win_acceptor_internal> internal) noexcept
+inline win_tcp_acceptor::win_tcp_acceptor(
+    std::shared_ptr<win_tcp_acceptor_internal> internal) noexcept
     : internal_(std::move(internal))
 {
 }
 
 inline void
-win_acceptor::close_internal() noexcept
+win_tcp_acceptor::close_internal() noexcept
 {
     if (internal_)
     {
@@ -1225,7 +1221,7 @@ win_acceptor::close_internal() noexcept
 }
 
 inline std::coroutine_handle<>
-win_acceptor::accept(
+win_tcp_acceptor::accept(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
@@ -1236,25 +1232,25 @@ win_acceptor::accept(
 }
 
 inline endpoint
-win_acceptor::local_endpoint() const noexcept
+win_tcp_acceptor::local_endpoint() const noexcept
 {
     return internal_->local_endpoint();
 }
 
 inline bool
-win_acceptor::is_open() const noexcept
+win_tcp_acceptor::is_open() const noexcept
 {
     return internal_ && internal_->is_open();
 }
 
 inline void
-win_acceptor::cancel() noexcept
+win_tcp_acceptor::cancel() noexcept
 {
     internal_->cancel();
 }
 
 inline std::error_code
-win_acceptor::set_option(
+win_tcp_acceptor::set_option(
     int level, int optname, void const* data, std::size_t size) noexcept
 {
     if (::setsockopt(
@@ -1265,7 +1261,7 @@ win_acceptor::set_option(
 }
 
 inline std::error_code
-win_acceptor::get_option(
+win_tcp_acceptor::get_option(
     int level, int optname, void* data, std::size_t* size) const noexcept
 {
     int len = static_cast<int>(*size);
@@ -1277,32 +1273,32 @@ win_acceptor::get_option(
     return {};
 }
 
-inline win_acceptor_internal*
-win_acceptor::get_internal() const noexcept
+inline win_tcp_acceptor_internal*
+win_tcp_acceptor::get_internal() const noexcept
 {
     return internal_.get();
 }
 
-// win_acceptor_service
+// win_tcp_acceptor_service
 
-inline win_acceptor_service::win_acceptor_service(
-    capy::execution_context& ctx, win_sockets& svc)
+inline win_tcp_acceptor_service::win_tcp_acceptor_service(
+    capy::execution_context& ctx, win_tcp_service& svc)
     : svc_(svc)
 {
     (void)ctx;
 }
 
 inline io_object::implementation*
-win_acceptor_service::construct()
+win_tcp_acceptor_service::construct()
 {
-    auto internal = std::make_shared<win_acceptor_internal>(svc_);
+    auto internal = std::make_shared<win_tcp_acceptor_internal>(svc_);
 
     {
         std::lock_guard<win_mutex> lock(svc_.mutex_);
         svc_.acceptor_list_.push_back(internal.get());
     }
 
-    auto* wrapper = new win_acceptor(std::move(internal));
+    auto* wrapper = new win_tcp_acceptor(std::move(internal));
 
     {
         std::lock_guard<win_mutex> lock(svc_.mutex_);
@@ -1313,50 +1309,50 @@ win_acceptor_service::construct()
 }
 
 inline void
-win_acceptor_service::destroy(io_object::implementation* p)
+win_tcp_acceptor_service::destroy(io_object::implementation* p)
 {
     if (p)
     {
-        auto& wrapper = static_cast<win_acceptor&>(*p);
+        auto& wrapper = static_cast<win_tcp_acceptor&>(*p);
         wrapper.close_internal();
         svc_.destroy_acceptor_impl(wrapper);
     }
 }
 
 inline void
-win_acceptor_service::close(io_object::handle& h)
+win_tcp_acceptor_service::close(io_object::handle& h)
 {
-    auto& wrapper = static_cast<win_acceptor&>(*h.get());
+    auto& wrapper = static_cast<win_tcp_acceptor&>(*h.get());
     wrapper.get_internal()->close_socket();
 }
 
 inline std::error_code
-win_acceptor_service::open_acceptor_socket(
+win_tcp_acceptor_service::open_acceptor_socket(
     tcp_acceptor::implementation& impl, int family, int type, int protocol)
 {
-    auto& wrapper = static_cast<win_acceptor&>(impl);
+    auto& wrapper = static_cast<win_tcp_acceptor&>(impl);
     return svc_.open_acceptor_socket(
         *wrapper.get_internal(), family, type, protocol);
 }
 
 inline std::error_code
-win_acceptor_service::bind_acceptor(
+win_tcp_acceptor_service::bind_acceptor(
     tcp_acceptor::implementation& impl, endpoint ep)
 {
-    auto& wrapper = static_cast<win_acceptor&>(impl);
+    auto& wrapper = static_cast<win_tcp_acceptor&>(impl);
     return svc_.bind_acceptor(*wrapper.get_internal(), ep);
 }
 
 inline std::error_code
-win_acceptor_service::listen_acceptor(
+win_tcp_acceptor_service::listen_acceptor(
     tcp_acceptor::implementation& impl, int backlog)
 {
-    auto& wrapper = static_cast<win_acceptor&>(impl);
+    auto& wrapper = static_cast<win_tcp_acceptor&>(impl);
     return svc_.listen_acceptor(*wrapper.get_internal(), backlog);
 }
 
 inline void
-win_acceptor_service::shutdown()
+win_tcp_acceptor_service::shutdown()
 {
 }
 
@@ -1364,4 +1360,4 @@ win_acceptor_service::shutdown()
 
 #endif // BOOST_COROSIO_HAS_IOCP
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_ACCEPTOR_SERVICE_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_ACCEPTOR_SERVICE_HPP

@@ -8,8 +8,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_SOCKET_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_SOCKET_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_SOCKET_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_SOCKET_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -29,14 +29,14 @@
 
 namespace boost::corosio::detail {
 
-class win_sockets;
-class win_socket_internal;
+class win_tcp_service;
+class win_tcp_socket_internal;
 
 /** Connect operation state. */
 struct connect_op : overlapped_op
 {
-    win_socket_internal& internal;
-    std::shared_ptr<win_socket_internal> internal_ptr;
+    win_tcp_socket_internal& internal;
+    std::shared_ptr<win_tcp_socket_internal> internal_ptr;
     endpoint target_endpoint;
 
     static void do_complete(
@@ -46,7 +46,7 @@ struct connect_op : overlapped_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    explicit connect_op(win_socket_internal& internal_) noexcept;
+    explicit connect_op(win_tcp_socket_internal& internal_) noexcept;
 };
 
 /** Read operation state with buffer descriptors. */
@@ -56,8 +56,8 @@ struct read_op : overlapped_op
     WSABUF wsabufs[max_buffers];
     DWORD wsabuf_count = 0;
     DWORD flags        = 0;
-    win_socket_internal& internal;
-    std::shared_ptr<win_socket_internal> internal_ptr;
+    win_tcp_socket_internal& internal;
+    std::shared_ptr<win_tcp_socket_internal> internal_ptr;
 
     static void do_complete(
         void* owner,
@@ -66,7 +66,7 @@ struct read_op : overlapped_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    explicit read_op(win_socket_internal& internal_) noexcept;
+    explicit read_op(win_tcp_socket_internal& internal_) noexcept;
 };
 
 /** Write operation state with buffer descriptors. */
@@ -75,8 +75,8 @@ struct write_op : overlapped_op
     static constexpr std::size_t max_buffers = 16;
     WSABUF wsabufs[max_buffers];
     DWORD wsabuf_count = 0;
-    win_socket_internal& internal;
-    std::shared_ptr<win_socket_internal> internal_ptr;
+    win_tcp_socket_internal& internal;
+    std::shared_ptr<win_tcp_socket_internal> internal_ptr;
 
     static void do_complete(
         void* owner,
@@ -85,7 +85,7 @@ struct write_op : overlapped_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    explicit write_op(win_socket_internal& internal_) noexcept;
+    explicit write_op(win_tcp_socket_internal& internal_) noexcept;
 };
 
 /** Internal socket state for IOCP-based I/O.
@@ -96,17 +96,17 @@ struct write_op : overlapped_op
 
     @note Internal implementation detail. Users interact with socket class.
 */
-class win_socket_internal
-    : public intrusive_list<win_socket_internal>::node
-    , public std::enable_shared_from_this<win_socket_internal>
+class win_tcp_socket_internal
+    : public intrusive_list<win_tcp_socket_internal>::node
+    , public std::enable_shared_from_this<win_tcp_socket_internal>
 {
-    friend class win_sockets;
-    friend class win_socket;
+    friend class win_tcp_service;
+    friend class win_tcp_socket;
     friend struct read_op;
     friend struct write_op;
     friend struct connect_op;
 
-    win_sockets& svc_;
+    win_tcp_service& svc_;
     connect_op conn_;
     read_op rd_;
     write_op wr_;
@@ -114,8 +114,8 @@ class win_socket_internal
     int family_    = AF_UNSPEC;
 
 public:
-    explicit win_socket_internal(win_sockets& svc) noexcept;
-    ~win_socket_internal();
+    explicit win_tcp_socket_internal(win_tcp_service& svc) noexcept;
+    ~win_tcp_socket_internal();
 
     std::coroutine_handle<> connect(
         std::coroutine_handle<>,
@@ -161,14 +161,14 @@ private:
 
     @note Internal implementation detail. Users interact with socket class.
 */
-class win_socket final
+class win_tcp_socket final
     : public tcp_socket::implementation
-    , public intrusive_list<win_socket>::node
+    , public intrusive_list<win_tcp_socket>::node
 {
-    std::shared_ptr<win_socket_internal> internal_;
+    std::shared_ptr<win_tcp_socket_internal> internal_;
 
 public:
-    explicit win_socket(std::shared_ptr<win_socket_internal> internal) noexcept;
+    explicit win_tcp_socket(std::shared_ptr<win_tcp_socket_internal> internal) noexcept;
 
     void close_internal() noexcept;
 
@@ -212,11 +212,11 @@ public:
     endpoint remote_endpoint() const noexcept override;
     void cancel() noexcept override;
 
-    win_socket_internal* get_internal() const noexcept;
+    win_tcp_socket_internal* get_internal() const noexcept;
 };
 
 } // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_HAS_IOCP
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_SOCKET_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_SOCKET_HPP
