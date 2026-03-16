@@ -44,13 +44,36 @@ struct select_recv_from_op final : reactor_recv_from_op<select_datagram_op>
     void cancel() noexcept override;
 };
 
+/// select connect operation for UDP.
+struct select_udp_connect_op final : reactor_connect_op<select_datagram_op>
+{
+    void operator()() override;
+    void cancel() noexcept override;
+};
+
+/// select connected send operation.
+struct select_send_op final : reactor_send_op<select_datagram_op>
+{
+    void cancel() noexcept override;
+};
+
+/// select connected recv operation.
+struct select_recv_op final : reactor_recv_op<select_datagram_op>
+{
+    void operator()() override;
+    void cancel() noexcept override;
+};
+
 /// Datagram socket implementation for select backend.
 class select_udp_socket final
     : public reactor_datagram_socket<
           select_udp_socket,
           select_udp_service,
+          select_udp_connect_op,
           select_send_to_op,
           select_recv_from_op,
+          select_send_op,
+          select_recv_op,
           select_descriptor_state>
 {
     friend class select_udp_service;
@@ -76,6 +99,31 @@ public:
         std::stop_token,
         std::error_code*,
         std::size_t*) override;
+
+    std::coroutine_handle<> connect(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        endpoint,
+        std::stop_token,
+        std::error_code*) override;
+
+    std::coroutine_handle<> send(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        buffer_param,
+        std::stop_token,
+        std::error_code*,
+        std::size_t*) override;
+
+    std::coroutine_handle<> recv(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        buffer_param,
+        std::stop_token,
+        std::error_code*,
+        std::size_t*) override;
+
+    endpoint remote_endpoint() const noexcept override;
 
     void cancel() noexcept override;
     void close_socket() noexcept;

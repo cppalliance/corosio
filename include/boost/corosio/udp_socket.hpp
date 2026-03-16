@@ -41,9 +41,16 @@ namespace boost::corosio {
     awaitable protocol, ensuring coroutines resume on the correct
     executor.
 
-    UDP is connectionless: each `send_to` specifies a destination
+    Supports two modes of operation:
+
+    **Connectionless mode**: each `send_to` specifies a destination
     endpoint, and each `recv_from` captures the source endpoint.
     The socket must be opened (and optionally bound) before I/O.
+
+    **Connected mode**: call `connect()` to set a default peer,
+    then use `send()`/`recv()` without endpoint arguments.
+    The kernel filters incoming datagrams to those from the
+    connected peer.
 
     @par Thread Safety
     Distinct objects: Safe.@n
@@ -53,6 +60,7 @@ namespace boost::corosio {
 
     @par Example
     @code
+    // Connectionless mode
     io_context ioc;
     udp_socket sock( ioc );
     sock.open( udp::v4() );
@@ -65,6 +73,14 @@ namespace boost::corosio {
     if ( !ec )
         co_await sock.send_to(
             capy::const_buffer( buf, n ), sender );
+
+    // Connected mode
+    udp_socket csock( ioc );
+    auto [cec] = co_await csock.connect(
+        endpoint( ipv4_address::loopback(), 9000 ) );
+    if ( !cec )
+        co_await csock.send(
+            capy::const_buffer( buf, n ) );
     @endcode
 */
 class BOOST_COROSIO_DECL udp_socket : public io_object
@@ -158,6 +174,64 @@ public:
 
         /// Return the cached local endpoint.
         virtual endpoint local_endpoint() const noexcept = 0;
+
+        /// Return the cached remote endpoint (connected mode).
+        virtual endpoint remote_endpoint() const noexcept = 0;
+
+        /** Initiate an asynchronous connect to set the default peer.
+
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param ep The remote endpoint to connect to.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+
+            @return Coroutine handle to resume immediately.
+        */
+        virtual std::coroutine_handle<> connect(
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
+            endpoint ep,
+            std::stop_token token,
+            std::error_code* ec) = 0;
+
+        /** Initiate an asynchronous connected send operation.
+
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param buf The buffer data to send.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+            @param bytes_out Output bytes transferred.
+
+            @return Coroutine handle to resume immediately.
+        */
+        virtual std::coroutine_handle<> send(
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
+            buffer_param buf,
+            std::stop_token token,
+            std::error_code* ec,
+            std::size_t* bytes_out) = 0;
+
+        /** Initiate an asynchronous connected recv operation.
+
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param buf The buffer to receive into.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+            @param bytes_out Output bytes transferred.
+
+            @return Coroutine handle to resume immediately.
+        */
+        virtual std::coroutine_handle<> recv(
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
+            buffer_param buf,
+            std::stop_token token,
+            std::error_code* ec,
+            std::size_t* bytes_out) = 0;
     };
 
     /** Represent the awaitable returned by @ref send_to.
@@ -243,6 +317,124 @@ public:
             token_ = env->stop_token;
             return s_.get().recv_from(
                 h, env->executor, buf_, &source_, token_, &ec_, &bytes_);
+        }
+    };
+
+    /** Represent the awaitable returned by @ref connect.
+
+        Captures the target endpoint, then dispatches to the backend
+        implementation on suspension.
+    */
+    struct connect_awaitable
+    {
+        udp_socket& s_;
+        endpoint endpoint_;
+        std::stop_token token_;
+        mutable std::error_code ec_;
+
+        connect_awaitable(udp_socket& s, endpoint ep) noexcept
+            : s_(s)
+            , endpoint_(ep)
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return token_.stop_requested();
+        }
+
+        capy::io_result<> await_resume() const noexcept
+        {
+            if (token_.stop_requested())
+                return {make_error_code(std::errc::operation_canceled)};
+            return {ec_};
+        }
+
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
+        {
+            token_ = env->stop_token;
+            return s_.get().connect(h, env->executor, endpoint_, token_, &ec_);
+        }
+    };
+
+    /** Represent the awaitable returned by @ref send.
+
+        Captures the buffer, then dispatches to the backend
+        implementation on suspension. No endpoint argument
+        (uses the connected peer).
+    */
+    struct send_awaitable
+    {
+        udp_socket& s_;
+        buffer_param buf_;
+        std::stop_token token_;
+        mutable std::error_code ec_;
+        mutable std::size_t bytes_ = 0;
+
+        send_awaitable(udp_socket& s, buffer_param buf) noexcept
+            : s_(s)
+            , buf_(buf)
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return token_.stop_requested();
+        }
+
+        capy::io_result<std::size_t> await_resume() const noexcept
+        {
+            if (token_.stop_requested())
+                return {make_error_code(std::errc::operation_canceled), 0};
+            return {ec_, bytes_};
+        }
+
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
+        {
+            token_ = env->stop_token;
+            return s_.get().send(h, env->executor, buf_, token_, &ec_, &bytes_);
+        }
+    };
+
+    /** Represent the awaitable returned by @ref recv.
+
+        Captures the receive buffer, then dispatches to the backend
+        implementation on suspension. No source endpoint (connected
+        mode filters at the kernel level).
+    */
+    struct recv_awaitable
+    {
+        udp_socket& s_;
+        buffer_param buf_;
+        std::stop_token token_;
+        mutable std::error_code ec_;
+        mutable std::size_t bytes_ = 0;
+
+        recv_awaitable(udp_socket& s, buffer_param buf) noexcept
+            : s_(s)
+            , buf_(buf)
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return token_.stop_requested();
+        }
+
+        capy::io_result<std::size_t> await_resume() const noexcept
+        {
+            if (token_.stop_requested())
+                return {make_error_code(std::errc::operation_canceled), 0};
+            return {ec_, bytes_};
+        }
+
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
+        {
+            token_ = env->stop_token;
+            return s_.get().recv(h, env->executor, buf_, token_, &ec_, &bytes_);
         }
     };
 
@@ -441,6 +633,68 @@ public:
             detail::throw_logic_error("recv_from: socket not open");
         return recv_from_awaitable(*this, buf, source);
     }
+
+    /** Initiate an asynchronous connect to set the default peer.
+
+        If the socket is not already open, it is opened automatically
+        using the address family of @p ep.
+
+        @param ep The remote endpoint to connect to.
+
+        @return An awaitable that completes with `io_result<>`.
+
+        @throws std::system_error if the socket needs to be opened
+            and the open fails.
+    */
+    auto connect(endpoint ep)
+    {
+        if (!is_open())
+            open(ep.is_v6() ? udp::v6() : udp::v4());
+        return connect_awaitable(*this, ep);
+    }
+
+    /** Send a datagram to the connected peer.
+
+        @param buf The buffer containing data to send.
+
+        @return An awaitable that completes with
+            `io_result<std::size_t>`.
+
+        @throws std::logic_error if the socket is not open.
+    */
+    template<capy::ConstBufferSequence Buffers>
+    auto send(Buffers const& buf)
+    {
+        if (!is_open())
+            detail::throw_logic_error("send: socket not open");
+        return send_awaitable(*this, buf);
+    }
+
+    /** Receive a datagram from the connected peer.
+
+        @param buf The buffer to receive data into.
+
+        @return An awaitable that completes with
+            `io_result<std::size_t>`.
+
+        @throws std::logic_error if the socket is not open.
+    */
+    template<capy::MutableBufferSequence Buffers>
+    auto recv(Buffers const& buf)
+    {
+        if (!is_open())
+            detail::throw_logic_error("recv: socket not open");
+        return recv_awaitable(*this, buf);
+    }
+
+    /** Get the remote endpoint of the socket.
+
+        Returns the address and port of the connected peer.
+
+        @return The remote endpoint, or a default endpoint if
+            not connected.
+    */
+    endpoint remote_endpoint() const noexcept;
 
 protected:
     /// Construct from a pre-built handle (for native_udp_socket).

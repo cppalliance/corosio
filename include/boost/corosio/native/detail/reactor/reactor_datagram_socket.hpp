@@ -27,19 +27,26 @@ namespace boost::corosio::detail {
 
     Inherits shared data members and cancel/close/register logic
     from reactor_basic_socket. Adds datagram-specific I/O dispatch
-    (send_to, recv_from).
+    for both connectionless (send_to, recv_from) and connected
+    (connect, send, recv) modes.
 
     @tparam Derived    The concrete socket type (CRTP).
     @tparam Service    The backend's datagram service type.
+    @tparam ConnOp     The backend's connect op type.
     @tparam SendToOp   The backend's send_to op type.
     @tparam RecvFromOp The backend's recv_from op type.
+    @tparam SendOp     The backend's connected send op type.
+    @tparam RecvOp     The backend's connected recv op type.
     @tparam DescState  The backend's descriptor_state type.
 */
 template<
     class Derived,
     class Service,
+    class ConnOp,
     class SendToOp,
     class RecvFromOp,
+    class SendOp,
+    class RecvOp,
     class DescState>
 class reactor_datagram_socket
     : public reactor_basic_socket<
@@ -58,14 +65,39 @@ class reactor_datagram_socket
 
     explicit reactor_datagram_socket(Service& svc) noexcept : base_type(svc) {}
 
+protected:
+    endpoint remote_endpoint_;
+
 public:
+    /// Pending connect operation slot.
+    ConnOp conn_;
+
     /// Pending send_to operation slot.
     SendToOp wr_;
 
     /// Pending recv_from operation slot.
     RecvFromOp rd_;
 
+    /// Pending connected send operation slot.
+    SendOp send_wr_;
+
+    /// Pending connected recv operation slot.
+    RecvOp recv_rd_;
+
     ~reactor_datagram_socket() override = default;
+
+    /// Return the cached remote endpoint.
+    endpoint remote_endpoint() const noexcept override
+    {
+        return remote_endpoint_;
+    }
+
+    /// Cache local and remote endpoints.
+    void set_endpoints(endpoint local, endpoint remote) noexcept
+    {
+        this->local_endpoint_ = local;
+        remote_endpoint_      = remote;
+    }
 
     /** Shared send_to dispatch.
 
@@ -97,15 +129,71 @@ public:
         std::error_code*,
         std::size_t*);
 
+    /** Shared connect dispatch.
+
+        Tries connect() speculatively. On synchronous completion,
+        returns via inline budget or posts through queue.
+        On EINPROGRESS, registers with the reactor.
+    */
+    std::coroutine_handle<> do_connect(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        endpoint,
+        std::stop_token const&,
+        std::error_code*);
+
+    /** Shared connected send dispatch.
+
+        Like do_send_to but uses send_wr_ slot and sendmsg()
+        with msg_name=nullptr.
+    */
+    std::coroutine_handle<> do_send(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        buffer_param,
+        std::stop_token const&,
+        std::error_code*,
+        std::size_t*);
+
+    /** Shared connected recv dispatch.
+
+        Like do_recv_from but uses recv_rd_ slot and recvmsg()
+        with msg_name=nullptr.
+    */
+    std::coroutine_handle<> do_recv(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        buffer_param,
+        std::stop_token const&,
+        std::error_code*,
+        std::size_t*);
+
+    /** Close the socket and cancel pending operations.
+
+        Extends the base do_close_socket() to also reset
+        the remote endpoint.
+    */
+    void do_close_socket() noexcept
+    {
+        base_type::do_close_socket();
+        remote_endpoint_ = endpoint{};
+    }
+
 private:
     // CRTP callbacks for reactor_basic_socket cancel/close
 
     template<class Op>
     reactor_op_base** op_to_desc_slot(Op& op) noexcept
     {
+        if (&op == static_cast<void*>(&conn_))
+            return &this->desc_state_.connect_op;
         if (&op == static_cast<void*>(&rd_))
             return &this->desc_state_.read_op;
         if (&op == static_cast<void*>(&wr_))
+            return &this->desc_state_.write_op;
+        if (&op == static_cast<void*>(&recv_rd_))
+            return &this->desc_state_.read_op;
+        if (&op == static_cast<void*>(&send_wr_))
             return &this->desc_state_.write_op;
         return nullptr;
     }
@@ -113,9 +201,15 @@ private:
     template<class Op>
     bool* op_to_cancel_flag(Op& op) noexcept
     {
+        if (&op == static_cast<void*>(&conn_))
+            return &this->desc_state_.connect_cancel_pending;
         if (&op == static_cast<void*>(&rd_))
             return &this->desc_state_.read_cancel_pending;
         if (&op == static_cast<void*>(&wr_))
+            return &this->desc_state_.write_cancel_pending;
+        if (&op == static_cast<void*>(&recv_rd_))
+            return &this->desc_state_.read_cancel_pending;
+        if (&op == static_cast<void*>(&send_wr_))
             return &this->desc_state_.write_cancel_pending;
         return nullptr;
     }
@@ -123,26 +217,45 @@ private:
     template<class Fn>
     void for_each_op(Fn fn) noexcept
     {
+        fn(conn_);
         fn(rd_);
         fn(wr_);
+        fn(recv_rd_);
+        fn(send_wr_);
     }
 
     template<class Fn>
     void for_each_desc_entry(Fn fn) noexcept
     {
+        fn(conn_, this->desc_state_.connect_op);
         fn(rd_, this->desc_state_.read_op);
         fn(wr_, this->desc_state_.write_op);
+        fn(recv_rd_, this->desc_state_.read_op);
+        fn(send_wr_, this->desc_state_.write_op);
     }
 };
+
+// do_send_to
 
 template<
     class Derived,
     class Service,
+    class ConnOp,
     class SendToOp,
     class RecvFromOp,
+    class SendOp,
+    class RecvOp,
     class DescState>
 std::coroutine_handle<>
-reactor_datagram_socket<Derived, Service, SendToOp, RecvFromOp, DescState>::
+reactor_datagram_socket<
+    Derived,
+    Service,
+    ConnOp,
+    SendToOp,
+    RecvFromOp,
+    SendOp,
+    RecvOp,
+    DescState>::
     do_send_to(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -238,14 +351,27 @@ reactor_datagram_socket<Derived, Service, SendToOp, RecvFromOp, DescState>::
     return std::noop_coroutine();
 }
 
+// do_recv_from
+
 template<
     class Derived,
     class Service,
+    class ConnOp,
     class SendToOp,
     class RecvFromOp,
+    class SendOp,
+    class RecvOp,
     class DescState>
 std::coroutine_handle<>
-reactor_datagram_socket<Derived, Service, SendToOp, RecvFromOp, DescState>::
+reactor_datagram_socket<
+    Derived,
+    Service,
+    ConnOp,
+    SendToOp,
+    RecvFromOp,
+    SendOp,
+    RecvOp,
+    DescState>::
     do_recv_from(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -309,6 +435,303 @@ reactor_datagram_socket<Derived, Service, SendToOp, RecvFromOp, DescState>::
             *bytes_out = bytes;
             if (source && !err && n > 0)
                 *source = from_sockaddr(op.source_storage);
+            return dispatch_coro(ex, h);
+        }
+        op.h         = h;
+        op.ex        = ex;
+        op.ec_out    = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, static_cast<Derived*>(this));
+        op.impl_ptr = this->shared_from_this();
+        op.complete(err, bytes);
+        this->svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    // EAGAIN — register with reactor
+    op.h         = h;
+    op.ex        = ex;
+    op.ec_out    = ec;
+    op.bytes_out = bytes_out;
+    op.start(token, static_cast<Derived*>(this));
+    op.impl_ptr = this->shared_from_this();
+
+    this->register_op(
+        op, this->desc_state_.read_op, this->desc_state_.read_ready,
+        this->desc_state_.read_cancel_pending);
+    return std::noop_coroutine();
+}
+
+// do_connect
+
+template<
+    class Derived,
+    class Service,
+    class ConnOp,
+    class SendToOp,
+    class RecvFromOp,
+    class SendOp,
+    class RecvOp,
+    class DescState>
+std::coroutine_handle<>
+reactor_datagram_socket<
+    Derived,
+    Service,
+    ConnOp,
+    SendToOp,
+    RecvFromOp,
+    SendOp,
+    RecvOp,
+    DescState>::
+    do_connect(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        endpoint ep,
+        std::stop_token const& token,
+        std::error_code* ec)
+{
+    auto& op = conn_;
+
+    sockaddr_storage storage{};
+    socklen_t addrlen = to_sockaddr(ep, socket_family(this->fd_), storage);
+    int result =
+        ::connect(this->fd_, reinterpret_cast<sockaddr*>(&storage), addrlen);
+
+    if (result == 0)
+    {
+        sockaddr_storage local_storage{};
+        socklen_t local_len = sizeof(local_storage);
+        if (::getsockname(
+                this->fd_, reinterpret_cast<sockaddr*>(&local_storage),
+                &local_len) == 0)
+            this->local_endpoint_ = from_sockaddr(local_storage);
+        remote_endpoint_ = ep;
+    }
+
+    if (result == 0 || errno != EINPROGRESS)
+    {
+        int err = (result < 0) ? errno : 0;
+        if (this->svc_.scheduler().try_consume_inline_budget())
+        {
+            *ec = err ? make_err(err) : std::error_code{};
+            return dispatch_coro(ex, h);
+        }
+        op.reset();
+        op.h               = h;
+        op.ex              = ex;
+        op.ec_out          = ec;
+        op.fd              = this->fd_;
+        op.target_endpoint = ep;
+        op.start(token, static_cast<Derived*>(this));
+        op.impl_ptr = this->shared_from_this();
+        op.complete(err, 0);
+        this->svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    // EINPROGRESS — register with reactor
+    op.reset();
+    op.h               = h;
+    op.ex              = ex;
+    op.ec_out          = ec;
+    op.fd              = this->fd_;
+    op.target_endpoint = ep;
+    op.start(token, static_cast<Derived*>(this));
+    op.impl_ptr = this->shared_from_this();
+
+    this->register_op(
+        op, this->desc_state_.connect_op, this->desc_state_.write_ready,
+        this->desc_state_.connect_cancel_pending);
+    return std::noop_coroutine();
+}
+
+// do_send (connected mode)
+
+template<
+    class Derived,
+    class Service,
+    class ConnOp,
+    class SendToOp,
+    class RecvFromOp,
+    class SendOp,
+    class RecvOp,
+    class DescState>
+std::coroutine_handle<>
+reactor_datagram_socket<
+    Derived,
+    Service,
+    ConnOp,
+    SendToOp,
+    RecvFromOp,
+    SendOp,
+    RecvOp,
+    DescState>::
+    do_send(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param param,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes_out)
+{
+    auto& op = send_wr_;
+    op.reset();
+
+    capy::mutable_buffer bufs[SendOp::max_buffers];
+    op.iovec_count = static_cast<int>(param.copy_to(bufs, SendOp::max_buffers));
+
+    if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
+    {
+        op.h         = h;
+        op.ex        = ex;
+        op.ec_out    = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, static_cast<Derived*>(this));
+        op.impl_ptr = this->shared_from_this();
+        op.complete(0, 0);
+        this->svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    for (int i = 0; i < op.iovec_count; ++i)
+    {
+        op.iovecs[i].iov_base = bufs[i].data();
+        op.iovecs[i].iov_len  = bufs[i].size();
+    }
+
+    op.fd = this->fd_;
+
+    // Speculative sendmsg with no destination (connected mode)
+    msghdr msg{};
+    msg.msg_iov    = op.iovecs;
+    msg.msg_iovlen = static_cast<std::size_t>(op.iovec_count);
+
+#ifdef MSG_NOSIGNAL
+    constexpr int send_flags = MSG_NOSIGNAL;
+#else
+    constexpr int send_flags = 0;
+#endif
+
+    ssize_t n;
+    do
+    {
+        n = ::sendmsg(this->fd_, &msg, send_flags);
+    }
+    while (n < 0 && errno == EINTR);
+
+    if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
+    {
+        int err    = (n < 0) ? errno : 0;
+        auto bytes = (n > 0) ? static_cast<std::size_t>(n) : std::size_t(0);
+
+        if (this->svc_.scheduler().try_consume_inline_budget())
+        {
+            *ec        = err ? make_err(err) : std::error_code{};
+            *bytes_out = bytes;
+            return dispatch_coro(ex, h);
+        }
+        op.h         = h;
+        op.ex        = ex;
+        op.ec_out    = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, static_cast<Derived*>(this));
+        op.impl_ptr = this->shared_from_this();
+        op.complete(err, bytes);
+        this->svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    // EAGAIN — register with reactor
+    op.h         = h;
+    op.ex        = ex;
+    op.ec_out    = ec;
+    op.bytes_out = bytes_out;
+    op.start(token, static_cast<Derived*>(this));
+    op.impl_ptr = this->shared_from_this();
+
+    this->register_op(
+        op, this->desc_state_.write_op, this->desc_state_.write_ready,
+        this->desc_state_.write_cancel_pending);
+    return std::noop_coroutine();
+}
+
+// do_recv (connected mode)
+
+template<
+    class Derived,
+    class Service,
+    class ConnOp,
+    class SendToOp,
+    class RecvFromOp,
+    class SendOp,
+    class RecvOp,
+    class DescState>
+std::coroutine_handle<>
+reactor_datagram_socket<
+    Derived,
+    Service,
+    ConnOp,
+    SendToOp,
+    RecvFromOp,
+    SendOp,
+    RecvOp,
+    DescState>::
+    do_recv(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param param,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes_out)
+{
+    auto& op = recv_rd_;
+    op.reset();
+
+    capy::mutable_buffer bufs[RecvOp::max_buffers];
+    op.iovec_count = static_cast<int>(param.copy_to(bufs, RecvOp::max_buffers));
+
+    if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
+    {
+        op.h         = h;
+        op.ex        = ex;
+        op.ec_out    = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, static_cast<Derived*>(this));
+        op.impl_ptr = this->shared_from_this();
+        op.complete(0, 0);
+        this->svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    for (int i = 0; i < op.iovec_count; ++i)
+    {
+        op.iovecs[i].iov_base = bufs[i].data();
+        op.iovecs[i].iov_len  = bufs[i].size();
+    }
+
+    op.fd = this->fd_;
+
+    // Speculative recvmsg with no source (connected mode)
+    msghdr msg{};
+    msg.msg_iov    = op.iovecs;
+    msg.msg_iovlen = static_cast<std::size_t>(op.iovec_count);
+
+    ssize_t n;
+    do
+    {
+        n = ::recvmsg(this->fd_, &msg, 0);
+    }
+    while (n < 0 && errno == EINTR);
+
+    if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
+    {
+        int err    = (n < 0) ? errno : 0;
+        auto bytes = (n > 0) ? static_cast<std::size_t>(n) : std::size_t(0);
+
+        if (this->svc_.scheduler().try_consume_inline_budget())
+        {
+            *ec        = err ? make_err(err) : std::error_code{};
+            *bytes_out = bytes;
             return dispatch_coro(ex, h);
         }
         op.h         = h;

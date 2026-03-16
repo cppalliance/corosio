@@ -44,13 +44,36 @@ struct kqueue_recv_from_op final : reactor_recv_from_op<kqueue_datagram_op>
     void cancel() noexcept override;
 };
 
+/// kqueue connect operation for UDP.
+struct kqueue_udp_connect_op final : reactor_connect_op<kqueue_datagram_op>
+{
+    void operator()() override;
+    void cancel() noexcept override;
+};
+
+/// kqueue connected send operation.
+struct kqueue_send_op final : reactor_send_op<kqueue_datagram_op>
+{
+    void cancel() noexcept override;
+};
+
+/// kqueue connected recv operation.
+struct kqueue_recv_op final : reactor_recv_op<kqueue_datagram_op>
+{
+    void operator()() override;
+    void cancel() noexcept override;
+};
+
 /// Datagram socket implementation for kqueue backend.
 class kqueue_udp_socket final
     : public reactor_datagram_socket<
           kqueue_udp_socket,
           kqueue_udp_service,
+          kqueue_udp_connect_op,
           kqueue_send_to_op,
           kqueue_recv_from_op,
+          kqueue_send_op,
+          kqueue_recv_op,
           descriptor_state>
 {
     friend class kqueue_udp_service;
@@ -76,6 +99,31 @@ public:
         std::stop_token,
         std::error_code*,
         std::size_t*) override;
+
+    std::coroutine_handle<> connect(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        endpoint,
+        std::stop_token,
+        std::error_code*) override;
+
+    std::coroutine_handle<> send(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        buffer_param,
+        std::stop_token,
+        std::error_code*,
+        std::size_t*) override;
+
+    std::coroutine_handle<> recv(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        buffer_param,
+        std::stop_token,
+        std::error_code*,
+        std::size_t*) override;
+
+    endpoint remote_endpoint() const noexcept override;
 
     void cancel() noexcept override;
     void close_socket() noexcept;

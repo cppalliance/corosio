@@ -62,6 +62,8 @@ public:
     bind_datagram(udp_socket::implementation& impl, endpoint ep) override;
 };
 
+// Cancellation for connectionless ops
+
 inline void
 select_send_to_op::cancel() noexcept
 {
@@ -80,6 +82,37 @@ select_recv_from_op::cancel() noexcept
         request_cancel();
 }
 
+// Cancellation for connected-mode ops
+
+inline void
+select_udp_connect_op::cancel() noexcept
+{
+    if (socket_impl_)
+        socket_impl_->cancel_single_op(*this);
+    else
+        request_cancel();
+}
+
+inline void
+select_send_op::cancel() noexcept
+{
+    if (socket_impl_)
+        socket_impl_->cancel_single_op(*this);
+    else
+        request_cancel();
+}
+
+inline void
+select_recv_op::cancel() noexcept
+{
+    if (socket_impl_)
+        socket_impl_->cancel_single_op(*this);
+    else
+        request_cancel();
+}
+
+// Completion handlers
+
 inline void
 select_datagram_op::operator()()
 {
@@ -92,12 +125,28 @@ select_recv_from_op::operator()()
     complete_datagram_op(*this, this->source_out);
 }
 
+inline void
+select_udp_connect_op::operator()()
+{
+    complete_connect_op(*this);
+}
+
+inline void
+select_recv_op::operator()()
+{
+    complete_io_op(*this);
+}
+
+// Socket construction/destruction
+
 inline select_udp_socket::select_udp_socket(select_udp_service& svc) noexcept
     : reactor_datagram_socket(svc)
 {
 }
 
 inline select_udp_socket::~select_udp_socket() = default;
+
+// Connectionless I/O
 
 inline std::coroutine_handle<>
 select_udp_socket::send_to(
@@ -126,6 +175,55 @@ select_udp_socket::recv_from(
     std::size_t* bytes_out)
 {
     return do_recv_from(h, ex, buf, source, token, ec, bytes_out);
+}
+
+// Connected-mode I/O
+
+inline std::coroutine_handle<>
+select_udp_socket::connect(
+    std::coroutine_handle<> h,
+    capy::executor_ref ex,
+    endpoint ep,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    auto result = do_connect(h, ex, ep, token, ec);
+    if (result == std::noop_coroutine())
+        svc_.scheduler().notify_reactor();
+    return result;
+}
+
+inline std::coroutine_handle<>
+select_udp_socket::send(
+    std::coroutine_handle<> h,
+    capy::executor_ref ex,
+    buffer_param buf,
+    std::stop_token token,
+    std::error_code* ec,
+    std::size_t* bytes_out)
+{
+    auto result = do_send(h, ex, buf, token, ec, bytes_out);
+    if (result == std::noop_coroutine())
+        svc_.scheduler().notify_reactor();
+    return result;
+}
+
+inline std::coroutine_handle<>
+select_udp_socket::recv(
+    std::coroutine_handle<> h,
+    capy::executor_ref ex,
+    buffer_param buf,
+    std::stop_token token,
+    std::error_code* ec,
+    std::size_t* bytes_out)
+{
+    return do_recv(h, ex, buf, token, ec, bytes_out);
+}
+
+inline endpoint
+select_udp_socket::remote_endpoint() const noexcept
+{
+    return reactor_datagram_socket::remote_endpoint();
 }
 
 inline void
