@@ -8,8 +8,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_ACCEPTOR_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_ACCEPTOR_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_ACCEPTOR_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_ACCEPTOR_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -29,17 +29,17 @@
 
 namespace boost::corosio::detail {
 
-class win_acceptor_service;
-class win_sockets;
-class win_socket;
-class win_acceptor_internal;
+class win_tcp_acceptor_service;
+class win_tcp_service;
+class win_tcp_socket;
+class win_tcp_acceptor_internal;
 
 /** Accept operation state. */
 struct accept_op : overlapped_op
 {
     SOCKET accepted_socket   = INVALID_SOCKET;
-    win_socket* peer_wrapper = nullptr;
-    std::shared_ptr<win_acceptor_internal> acceptor_ptr;
+    win_tcp_socket* peer_wrapper = nullptr;
+    std::shared_ptr<win_tcp_acceptor_internal> acceptor_ptr;
     SOCKET listen_socket                 = INVALID_SOCKET;
     io_object::implementation** impl_out = nullptr;
     char addr_buf[2 * (sizeof(sockaddr_in6) + 16)];
@@ -61,19 +61,19 @@ struct accept_op : overlapped_op
 
     @note Internal implementation detail. Users interact with acceptor class.
 */
-class win_acceptor_internal
-    : public intrusive_list<win_acceptor_internal>::node
-    , public std::enable_shared_from_this<win_acceptor_internal>
+class win_tcp_acceptor_internal
+    : public intrusive_list<win_tcp_acceptor_internal>::node
+    , public std::enable_shared_from_this<win_tcp_acceptor_internal>
 {
-    friend class win_sockets;
-    friend class win_acceptor;
+    friend class win_tcp_service;
+    friend class win_tcp_acceptor;
 
 public:
-    explicit win_acceptor_internal(win_sockets& svc) noexcept;
-    ~win_acceptor_internal();
+    explicit win_tcp_acceptor_internal(win_tcp_service& svc) noexcept;
+    ~win_tcp_acceptor_internal();
 
     /// Return the owning socket service.
-    win_sockets& socket_service() noexcept;
+    win_tcp_service& socket_service() noexcept;
 
     std::coroutine_handle<> accept(
         std::coroutine_handle<>,
@@ -92,7 +92,7 @@ public:
     accept_op acc_;
 
 private:
-    win_sockets& svc_;
+    win_tcp_service& svc_;
     SOCKET socket_ = INVALID_SOCKET;
     endpoint local_endpoint_;
 };
@@ -104,15 +104,15 @@ private:
 
     @note Internal implementation detail. Users interact with acceptor class.
 */
-class win_acceptor final
+class win_tcp_acceptor final
     : public tcp_acceptor::implementation
-    , public intrusive_list<win_acceptor>::node
+    , public intrusive_list<win_tcp_acceptor>::node
 {
-    std::shared_ptr<win_acceptor_internal> internal_;
+    std::shared_ptr<win_tcp_acceptor_internal> internal_;
 
 public:
-    explicit win_acceptor(
-        std::shared_ptr<win_acceptor_internal> internal) noexcept;
+    explicit win_tcp_acceptor(
+        std::shared_ptr<win_tcp_acceptor_internal> internal) noexcept;
 
     void close_internal() noexcept;
 
@@ -136,11 +136,11 @@ public:
     get_option(int level, int optname, void* data, std::size_t* size)
         const noexcept override;
 
-    win_acceptor_internal* get_internal() const noexcept;
+    win_tcp_acceptor_internal* get_internal() const noexcept;
 };
 
 } // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_HAS_IOCP
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_ACCEPTOR_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_ACCEPTOR_HPP

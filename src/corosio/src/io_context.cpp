@@ -36,7 +36,8 @@
 
 #if BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
-#include <boost/corosio/native/detail/iocp/win_acceptor_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_udp_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_signals.hpp>
 #endif
 
@@ -94,8 +95,9 @@ iocp_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
     auto& sched = ctx.make_service<detail::win_scheduler>(
         static_cast<int>(concurrency_hint));
 
-    auto& sockets = ctx.make_service<detail::win_sockets>();
-    ctx.make_service<detail::win_acceptor_service>(sockets);
+    auto& sockets = ctx.make_service<detail::win_tcp_service>();
+    ctx.make_service<detail::win_tcp_acceptor_service>(sockets);
+    ctx.make_service<detail::win_udp_service>();
     ctx.make_service<detail::win_signals>();
 
     return sched;

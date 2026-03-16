@@ -250,4 +250,10 @@ TEST_SUITE(
     native_udp_socket_test_kqueue, "boost.corosio.native.udp_socket.kqueue");
 #endif
 
+#if BOOST_COROSIO_HAS_IOCP
+struct native_udp_socket_test_iocp : native_udp_socket_test<iocp>
+{};
+TEST_SUITE(native_udp_socket_test_iocp, "boost.corosio.native.udp_socket.iocp");
+#endif
+
 } // namespace boost::corosio

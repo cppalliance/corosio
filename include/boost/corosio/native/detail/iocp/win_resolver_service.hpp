@@ -208,10 +208,6 @@ convert_results(
 
 } // namespace resolver_detail
 
-// ---------------------------------------------------------------------------
-// Inline implementation
-// ---------------------------------------------------------------------------
-
 // resolve_op
 
 inline void CALLBACK

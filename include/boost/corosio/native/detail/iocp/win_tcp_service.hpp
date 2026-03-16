@@ -8,8 +8,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_SOCKETS_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_SOCKETS_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_SERVICE_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_SERVICE_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -22,16 +22,16 @@
 #include <boost/corosio/native/detail/iocp/win_wsa_init.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
-#include <boost/corosio/native/detail/iocp/win_socket.hpp>
+#include <boost/corosio/native/detail/iocp/win_tcp_socket.hpp>
 
 #include <MSWSock.h>
 
 namespace boost::corosio::detail {
 
 class win_scheduler;
-class win_acceptor;
-class win_acceptor_internal;
-class win_acceptor_service;
+class win_tcp_acceptor;
+class win_tcp_acceptor_internal;
+class win_tcp_acceptor_service;
 
 /** Windows IOCP socket management service.
 
@@ -48,13 +48,13 @@ class win_acceptor_service;
 
     @note Only available on Windows platforms.
 */
-class BOOST_COROSIO_DECL win_sockets final
+class BOOST_COROSIO_DECL win_tcp_service final
     : private win_wsa_init
     , public capy::execution_context::service
     , public io_object::io_service
 {
 public:
-    using key_type = win_sockets;
+    using key_type = win_tcp_service;
 
     io_object::implementation* construct() override;
 
@@ -69,13 +69,13 @@ public:
 
         @param ctx Reference to the owning execution_context.
     */
-    explicit win_sockets(capy::execution_context& ctx);
+    explicit win_tcp_service(capy::execution_context& ctx);
 
     /** Destroy the socket service. */
-    ~win_sockets();
+    ~win_tcp_service();
 
-    win_sockets(win_sockets const&)            = delete;
-    win_sockets& operator=(win_sockets const&) = delete;
+    win_tcp_service(win_tcp_service const&)            = delete;
+    win_tcp_service& operator=(win_tcp_service const&) = delete;
 
     /** Shut down the service. */
     void shutdown() override;
@@ -83,12 +83,12 @@ public:
     /** Destroy a socket implementation wrapper.
         Removes from tracking list and deletes.
     */
-    void destroy_impl(win_socket& impl);
+    void destroy_impl(win_tcp_socket& impl);
 
     /** Unregister a socket implementation from the service list.
         Called by the internal impl destructor.
     */
-    void unregister_impl(win_socket_internal& impl);
+    void unregister_impl(win_tcp_socket_internal& impl);
 
     /** Create and register a socket with the IOCP.
 
@@ -96,17 +96,17 @@ public:
         @return Error code, or success.
     */
     std::error_code
-    open_socket(win_socket_internal& impl, int family, int type, int protocol);
+    open_socket(win_tcp_socket_internal& impl, int family, int type, int protocol);
 
     /** Destroy an acceptor implementation wrapper.
         Removes from tracking list and deletes.
     */
-    void destroy_acceptor_impl(win_acceptor& impl);
+    void destroy_acceptor_impl(win_tcp_acceptor& impl);
 
     /** Unregister an acceptor implementation from the service list.
         Called by the internal impl destructor.
     */
-    void unregister_acceptor_impl(win_acceptor_internal& impl);
+    void unregister_acceptor_impl(win_tcp_acceptor_internal& impl);
 
     /** Create an acceptor socket without binding or listening.
 
@@ -121,7 +121,7 @@ public:
         @return Error code, or success.
     */
     std::error_code open_acceptor_socket(
-        win_acceptor_internal& impl, int family, int type, int protocol);
+        win_tcp_acceptor_internal& impl, int family, int type, int protocol);
 
     /** Bind an open acceptor to a local endpoint.
 
@@ -129,7 +129,7 @@ public:
         @param ep The local endpoint to bind to.
         @return Error code, or success.
     */
-    std::error_code bind_acceptor(win_acceptor_internal& impl, endpoint ep);
+    std::error_code bind_acceptor(win_tcp_acceptor_internal& impl, endpoint ep);
 
     /** Start listening for incoming connections.
 
@@ -137,7 +137,7 @@ public:
         @param backlog The listen backlog.
         @return Error code, or success.
     */
-    std::error_code listen_acceptor(win_acceptor_internal& impl, int backlog);
+    std::error_code listen_acceptor(win_tcp_acceptor_internal& impl, int backlog);
 
     /** Return the IOCP handle. */
     void* native_handle() const noexcept;
@@ -164,16 +164,16 @@ public:
     void work_finished() noexcept;
 
 private:
-    friend class win_acceptor_service;
+    friend class win_tcp_acceptor_service;
 
     void load_extension_functions();
 
     win_scheduler& sched_;
     win_mutex mutex_;
-    intrusive_list<win_socket_internal> socket_list_;
-    intrusive_list<win_acceptor_internal> acceptor_list_;
-    intrusive_list<win_socket> socket_wrapper_list_;
-    intrusive_list<win_acceptor> acceptor_wrapper_list_;
+    intrusive_list<win_tcp_socket_internal> socket_list_;
+    intrusive_list<win_tcp_acceptor_internal> acceptor_list_;
+    intrusive_list<win_tcp_socket> socket_wrapper_list_;
+    intrusive_list<win_tcp_acceptor> acceptor_wrapper_list_;
     void* iocp_;
     LPFN_CONNECTEX connect_ex_ = nullptr;
     LPFN_ACCEPTEX accept_ex_   = nullptr;
@@ -183,4 +183,4 @@ private:
 
 #endif // BOOST_COROSIO_HAS_IOCP
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_SOCKETS_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_SERVICE_HPP

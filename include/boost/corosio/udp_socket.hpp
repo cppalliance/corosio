@@ -325,7 +325,11 @@ public:
     */
     bool is_open() const noexcept
     {
+#if BOOST_COROSIO_HAS_IOCP && !defined(BOOST_COROSIO_MRDOCS)
+        return h_ && get().native_handle() != ~native_handle_type(0);
+#else
         return h_ && get().native_handle() >= 0;
+#endif
     }
 
     /** Bind the socket to a local endpoint.

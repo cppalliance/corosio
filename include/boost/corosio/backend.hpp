@@ -162,11 +162,14 @@ inline constexpr kqueue_t kqueue{};
 
 namespace detail {
 
-class win_socket;
-class win_sockets;
-class win_acceptor;
-class win_acceptor_service;
+class win_tcp_socket;
+class win_tcp_service;
+class win_tcp_acceptor;
+class win_tcp_acceptor_service;
 class win_scheduler;
+
+class win_udp_socket;
+class win_udp_service;
 
 class win_signal;
 class win_signals;
@@ -179,10 +182,12 @@ class win_resolver_service;
 struct iocp_t
 {
     using scheduler_type            = detail::win_scheduler;
-    using tcp_socket_type           = detail::win_socket;
-    using tcp_service_type          = detail::win_sockets;
-    using tcp_acceptor_type         = detail::win_acceptor;
-    using tcp_acceptor_service_type = detail::win_acceptor_service;
+    using tcp_socket_type           = detail::win_tcp_socket;
+    using tcp_service_type          = detail::win_tcp_service;
+    using tcp_acceptor_type         = detail::win_tcp_acceptor;
+    using tcp_acceptor_service_type = detail::win_tcp_acceptor_service;
+    using udp_socket_type           = detail::win_udp_socket;
+    using udp_service_type          = detail::win_udp_service;
 
     using signal_type           = detail::win_signal;
     using signal_service_type   = detail::win_signals;
