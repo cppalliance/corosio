@@ -194,7 +194,7 @@ recv_from_op::do_complete(
     // Extract source endpoint on success
     bool success =
         (op->dwError == 0 && !op->cancelled.load(std::memory_order_acquire));
-    if (success && op->source_out && op->bytes_transferred > 0)
+    if (success && op->source_out)
     {
         *op->source_out = from_sockaddr(op->source_storage);
     }
@@ -382,13 +382,6 @@ win_udp_socket_internal::send_to(
     op.wsabuf_count =
         static_cast<DWORD>(param.copy_to(bufs, send_to_op::max_buffers));
 
-    // Handle empty buffer: complete immediately with 0 bytes
-    if (op.wsabuf_count == 0 || (op.wsabuf_count == 1 && bufs[0].size() == 0))
-    {
-        svc_.on_completion(&op, 0, 0);
-        return std::noop_coroutine();
-    }
-
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
     {
         op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
@@ -552,12 +545,6 @@ win_udp_socket_internal::send(
     capy::mutable_buffer bufs[udp_send_op::max_buffers];
     op.wsabuf_count =
         static_cast<DWORD>(param.copy_to(bufs, udp_send_op::max_buffers));
-
-    if (op.wsabuf_count == 0 || (op.wsabuf_count == 1 && bufs[0].size() == 0))
-    {
-        svc_.on_completion(&op, 0, 0);
-        return std::noop_coroutine();
-    }
 
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
     {

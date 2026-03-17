@@ -272,19 +272,6 @@ reactor_datagram_socket<
     op.iovec_count =
         static_cast<int>(param.copy_to(bufs, SendToOp::max_buffers));
 
-    if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
-    {
-        op.h         = h;
-        op.ex        = ex;
-        op.ec_out    = ec;
-        op.bytes_out = bytes_out;
-        op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
-        op.complete(0, 0);
-        this->svc_.post(&op);
-        return std::noop_coroutine();
-    }
-
     for (int i = 0; i < op.iovec_count; ++i)
     {
         op.iovecs[i].iov_base = bufs[i].data();
@@ -433,7 +420,7 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            if (source && !err && n > 0)
+            if (source && !err && n >= 0)
                 *source = from_sockaddr(op.source_storage);
             return dispatch_coro(ex, h);
         }
@@ -579,19 +566,6 @@ reactor_datagram_socket<
 
     capy::mutable_buffer bufs[SendOp::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, SendOp::max_buffers));
-
-    if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
-    {
-        op.h         = h;
-        op.ex        = ex;
-        op.ec_out    = ec;
-        op.bytes_out = bytes_out;
-        op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
-        op.complete(0, 0);
-        this->svc_.post(&op);
-        return std::noop_coroutine();
-    }
 
     for (int i = 0; i < op.iovec_count; ++i)
     {
