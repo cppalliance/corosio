@@ -1038,6 +1038,58 @@ struct timer_test
         BOOST_TEST_PASS();
     }
 
+    void testShutdownWithTimerOwnedByCoroutine()
+    {
+        // Reproduces UB: timer_service::shutdown() iterates heap_,
+        // calls h.destroy() on a waiter. The coroutine frame owns
+        // a timer whose destructor re-enters destroy_impl() →
+        // cancel_timer() → remove_timer_impl(), modifying heap_
+        // during the range-for iteration.
+        //
+        // All timers must be owned by coroutines (not on the stack)
+        // so that their heap entries survive until shutdown().
+        int destroyed = 0;
+
+        {
+            io_context ioc(Backend);
+
+            auto owning_task = [](io_context& ctx,
+                                  int& counter) -> capy::task<> {
+                struct guard
+                {
+                    int& c_;
+                    ~guard()
+                    {
+                        ++c_;
+                    }
+                };
+                guard g{counter};
+                timer t(ctx);
+                t.expires_after(std::chrono::hours(1));
+                auto [ec] = co_await t.wait();
+                (void)ec;
+            };
+
+            auto stopper = [](io_context& ctx) -> capy::task<> {
+                ctx.stop();
+                co_return;
+            };
+
+            capy::run_async(ioc.get_executor())(owning_task(ioc, destroyed));
+            capy::run_async(ioc.get_executor())(owning_task(ioc, destroyed));
+            capy::run_async(ioc.get_executor())(owning_task(ioc, destroyed));
+            capy::run_async(ioc.get_executor())(stopper(ioc));
+
+            ioc.run();
+            // ~io_context → timer_service::shutdown() iterates heap_
+            // with 3 entries. Destroying the first coroutine handle
+            // triggers its timer destructor which removes an entry
+            // via remove_timer_impl(), corrupting the iteration.
+        }
+
+        BOOST_TEST_EQ(destroyed, 3);
+    }
+
     // Edge cases
 
     void testLongDuration()
@@ -1156,6 +1208,7 @@ struct timer_test
         testShutdownDestroysTimerWaiters();
         testShutdownDrainsHeapWaiters();
         testAbruptStopWithPendingTimerOps();
+        testShutdownWithTimerOwnedByCoroutine();
 
         // Edge cases
         testLongDuration();

@@ -18,6 +18,7 @@
 ** xref:3.tutorials/3c.dns-lookup.adoc[DNS Lookup Tutorial]
 ** xref:3.tutorials/3d.tls-context.adoc[TLS Context Configuration]
 ** xref:3.tutorials/3e.hash-server.adoc[Hash Server]
+** xref:3.tutorials/3f.reconnect.adoc[Reconnect with Backoff]
 * xref:4.guide/4.intro.adoc[Guide]
 ** xref:4.guide/4a.tcp-networking.adoc[TCP/IP Networking]
 ** xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming]
