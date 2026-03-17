@@ -128,6 +128,7 @@ private:
     implementation* free_list_     = nullptr;
     waiter_node* waiter_free_list_ = nullptr;
     callback on_earliest_changed_;
+    bool shutting_down_ = false;
     // Avoids mutex in nearest_expiry() and empty()
     mutable std::atomic<std::int64_t> cached_nearest_ns_{
         (std::numeric_limits<std::int64_t>::max)()};
@@ -363,16 +364,30 @@ inline void
 timer_service::shutdown()
 {
     timer_service_invalidate_cache();
+    shutting_down_ = true;
 
-    // Cancel waiting timers still in the heap.
-    // Each waiter called work_started() in implementation::wait().
-    // On IOCP the scheduler shutdown loop exits when outstanding_work_
-    // reaches zero, so we must call work_finished() here to balance it.
-    // On other backends this is harmless (their drain loops exit when
-    // the queue is empty, not based on outstanding_work_).
+    // Snapshot impls and detach them from the heap so that
+    // coroutine-owned timer destructors (triggered by h.destroy()
+    // below) cannot re-enter remove_timer_impl() and mutate the
+    // vector during iteration.
+    std::vector<implementation*> impls;
+    impls.reserve(heap_.size());
     for (auto& entry : heap_)
     {
-        auto* impl = entry.timer_;
+        entry.timer_->heap_index_ = (std::numeric_limits<std::size_t>::max)();
+        impls.push_back(entry.timer_);
+    }
+    heap_.clear();
+    cached_nearest_ns_.store(
+        (std::numeric_limits<std::int64_t>::max)(), std::memory_order_release);
+
+    // Cancel waiting timers. Each waiter called work_started()
+    // in implementation::wait(). On IOCP the scheduler shutdown
+    // loop exits when outstanding_work_ reaches zero, so we must
+    // call work_finished() here to balance it. On other backends
+    // this is harmless.
+    for (auto* impl : impls)
+    {
         while (auto* w = impl->waiters_.pop_front())
         {
             w->stop_cb_.reset();
@@ -382,12 +397,8 @@ timer_service::shutdown()
                 h.destroy();
             delete w;
         }
-        impl->heap_index_ = (std::numeric_limits<std::size_t>::max)();
         delete impl;
     }
-    heap_.clear();
-    cached_nearest_ns_.store(
-        (std::numeric_limits<std::int64_t>::max)(), std::memory_order_release);
 
     // Delete free-listed impls
     while (free_list_)
@@ -444,6 +455,13 @@ timer_service::destroy(io_object::implementation* p)
 inline void
 timer_service::destroy_impl(implementation& impl)
 {
+    // During shutdown the impl is owned by the shutdown loop.
+    // Re-entering here (from a coroutine-owned timer destructor
+    // triggered by h.destroy()) must not modify the heap or
+    // recycle the impl — shutdown deletes it directly.
+    if (shutting_down_)
+        return;
+
     cancel_timer(impl);
 
     if (impl.heap_index_ != (std::numeric_limits<std::size_t>::max)())

@@ -1,0 +1,340 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Reconnect with Exponential Backoff
+
+This tutorial builds a TCP client that connects to a server and automatically
+reconnects with exponential backoff when the connection fails. You'll learn
+how to combine timers with sockets for retry logic and how to use stop tokens
+for graceful shutdown.
+
+NOTE: Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/timer.hpp>
+#include <boost/capy/buffers.hpp>
+#include <boost/capy/cond.hpp>
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/task.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+
+== Overview
+
+Client applications often need to maintain a persistent connection to a server.
+When the server is temporarily unavailable — during a restart, a network blip,
+or a deployment — the client should retry rather than give up immediately.
+Retrying too aggressively wastes resources and can overwhelm a recovering
+server, so the delay between attempts should grow over time.
+
+Exponential backoff solves this: start with a short delay, double it on each
+failure, and cap it at a maximum. This gives fast recovery when the outage is
+brief and backs off gracefully when it isn't.
+
+This tutorial demonstrates:
+
+* Separating the backoff _policy_ (pure state) from the _mechanism_ (timer wait)
+* Using `timer` for inter-attempt delays
+* Graceful cancellation via stop tokens
+* Why `io_context::stop()` alone is not sufficient for coroutine shutdown
+
+== The Backoff Policy
+
+The delay logic is pure computation — no I/O, no coroutines. A simple value
+type tracks the current delay, doubles it on each call, and caps it at a
+configured maximum:
+
+[source,cpp]
+----
+struct exponential_backoff
+{
+    using duration = std::chrono::milliseconds;
+
+private:
+    duration initial_;
+    duration delay_;
+    duration max_;
+
+public:
+    exponential_backoff(duration initial, duration max) noexcept
+        : initial_(initial)
+        , delay_(initial)
+        , max_(max)
+    {
+    }
+
+    /// Return the current delay and advance to the next.
+    duration next() noexcept
+    {
+        auto current = (std::min)(delay_, max_);
+        delay_       = (std::min)(delay_ * 2, max_);
+        return current;
+    }
+
+    /// Restart the sequence from the initial delay.
+    void reset() noexcept
+    {
+        delay_ = initial_;
+    }
+};
+----
+
+With an initial delay of 500ms and a 30s cap, calling `next()` produces:
+500, 1000, 2000, 4000, 8000, 16000, 30000, 30000, ...
+
+Keeping the policy separate from the timer means it can be reused in any
+context — synchronous retries, tests, or logging — without pulling in
+async machinery.
+
+== Session Coroutine
+
+Once connected, the client reads data until the peer disconnects:
+
+[source,cpp]
+----
+capy::task<>
+do_session(corosio::tcp_socket& sock)
+{
+    char buf[4096];
+    for (;;)
+    {
+        auto [ec, n] =
+            co_await sock.read_some(capy::mutable_buffer(buf, sizeof buf));
+        if (ec)
+            break;
+        std::cout.write(buf, static_cast<std::streamsize>(n));
+        std::cout.flush();
+    }
+}
+----
+
+This is the same read loop you would find in any echo client. The interesting
+part is what happens after it returns — the caller reconnects.
+
+== Reconnection Loop
+
+The retry loop ties everything together. On each failed connection it asks the
+backoff policy for the next delay, waits on a timer, and tries again:
+
+[source,cpp]
+----
+capy::task<>
+connect_with_backoff(
+    corosio::io_context& ioc,
+    corosio::endpoint ep,
+    exponential_backoff backoff,
+    int max_attempts)
+{
+    corosio::tcp_socket sock(ioc);
+    corosio::timer delay(ioc);
+    int attempt = 0;
+
+    for (;;)
+    {
+        ++attempt;
+
+        auto [ec] = co_await sock.connect(ep);
+        if (!ec)
+        {
+            std::cout << "Connected on attempt " << attempt << std::endl;
+            co_await do_session(sock);
+
+            // Peer disconnected — restart the retry sequence
+            sock.close();
+            backoff.reset();
+            attempt = 0;
+            continue;
+        }
+
+        sock.close();
+
+        if (max_attempts > 0 && attempt >= max_attempts)
+            co_return;
+
+        auto wait_for = backoff.next();
+
+        delay.expires_after(wait_for);
+        auto [timer_ec] = co_await delay.wait();
+        if (timer_ec == capy::cond::canceled)
+            co_return;
+
+        // delay doubles automatically via backoff.next()
+    }
+}
+----
+
+There are two exit conditions:
+
+1. **Max attempts exhausted** — the coroutine gives up.
+2. **Timer cancelled** — someone signaled the stop token, requesting graceful
+   shutdown. The coroutine unwinds through normal control flow.
+
+After a successful connection and subsequent disconnect, `backoff.reset()`
+restarts the delay sequence from the initial value.
+
+== Graceful Shutdown with Stop Tokens
+
+The key insight of this tutorial: **`io_context::stop()` does not cancel
+pending operations.** It only stops the event loop. Suspended coroutines are
+left in place and destroyed during `~io_context` without ever observing an
+error. This is by design — `stop()` is a _pause_ that preserves state for
+a potential `restart()`.
+
+For graceful shutdown where coroutines unwind through their own control flow,
+use a stop token:
+
+[source,cpp]
+----
+std::stop_source stop_src;
+
+capy::run_async(ioc.get_executor(), stop_src.get_token())(
+    connect_with_backoff(ioc, ep, backoff, 10));
+
+// Later, from any thread:
+stop_src.request_stop();
+----
+
+When the stop source is signaled:
+
+1. The timer's `wait()` returns `cond::canceled`.
+2. The coroutine checks the error and executes `co_return`.
+3. Local variables (`sock`, `delay`) are destroyed through normal unwinding.
+4. With no more outstanding work, `run()` returns.
+5. `~io_context` finds an empty heap — nothing to clean up.
+
+Contrast with calling `stop()` directly:
+
+1. `run()` exits immediately.
+2. The coroutine remains suspended — it never sees an error.
+3. `~io_context` calls `h.destroy()` on the coroutine frame, bypassing its
+   error-handling logic.
+
+Both paths are safe (no leaks or crashes), but only the stop token path
+executes the coroutine's own cleanup code.
+
+[cols="1,1,1"]
+|===
+| Mechanism | Coroutine sees cancellation? | Use case
+
+| `stop_token`
+| Yes — operations return `cond::canceled`
+| Graceful shutdown
+
+| `stop()` + `restart()`
+| No — coroutines stay suspended
+| Pause and resume the event loop
+
+| `~io_context`
+| No — frames destroyed via `h.destroy()`
+| Final cleanup (after `stop()` or natural exit)
+|===
+
+== Main Function
+
+[source,cpp]
+----
+int main(int argc, char* argv[])
+{
+    if (argc != 3)
+    {
+        std::cerr << "Usage: reconnect <ip-address> <port>\n";
+        return EXIT_FAILURE;
+    }
+
+    corosio::ipv4_address addr;
+    if (auto ec = corosio::parse_ipv4_address(argv[1], addr); ec)
+    {
+        std::cerr << "Invalid IP address: " << argv[1] << "\n";
+        return EXIT_FAILURE;
+    }
+
+    auto port = static_cast<std::uint16_t>(std::atoi(argv[2]));
+
+    corosio::io_context ioc;
+
+    using namespace std::chrono_literals;
+    exponential_backoff backoff(500ms, 30s);
+
+    std::stop_source stop_src;
+
+    capy::run_async(ioc.get_executor(), stop_src.get_token())(
+        connect_with_backoff(ioc, corosio::endpoint(addr, port), backoff, 10));
+
+    // Run the event loop on a background thread so main
+    // can signal cancellation after a timeout.
+    auto worker = std::jthread([&ioc] { ioc.run(); });
+
+    std::this_thread::sleep_for(5s);
+    stop_src.request_stop();
+}
+----
+
+The event loop runs on a background thread. After five seconds the main thread
+signals cancellation. The coroutine observes `cond::canceled`, unwinds, the
+work count reaches zero, and `run()` returns. The `jthread` destructor joins
+automatically.
+
+== Testing
+
+Start an echo server on one terminal:
+
+[source,bash]
+----
+$ ./echo_server 8080 10
+Echo server listening on port 8080 with 10 workers
+----
+
+Run the reconnect client on another:
+
+[source,bash]
+----
+$ ./reconnect 127.0.0.1 8080
+Connected on attempt 1
+----
+
+Stop the server and watch the client retry:
+
+[source,bash]
+----
+Attempt 1 failed: Connection refused
+Retrying in 500ms
+Attempt 2 failed: Connection refused
+Retrying in 1000ms
+Attempt 3 failed: Connection refused
+Retrying in 2000ms
+----
+
+Restart the server — the client reconnects on the next attempt.
+
+To test the no-server case, point the client at a port with nothing listening:
+
+[source,bash]
+----
+$ ./reconnect 127.0.0.1 19999
+Attempt 1 failed: Connection refused
+Retrying in 500ms
+Attempt 2 failed: Connection refused
+Retrying in 1000ms
+...
+Retry cancelled
+----
+
+After five seconds the stop token fires and the client exits cleanly.
+
+== Next Steps
+
+* xref:../4.guide/4h.timers.adoc[Timers Guide] — Timer operations in detail
+* xref:../4.guide/4d.sockets.adoc[Sockets Guide] — Socket operations and error handling
+* xref:../4.guide/4c.io-context.adoc[I/O Context Guide] — Event loop mechanics, `stop()`, and `restart()`
+* xref:../4.guide/4m.error-handling.adoc[Error Handling] — Portable error conditions and `cond`
