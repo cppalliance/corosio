@@ -264,14 +264,13 @@ kqueue_udp_service::open_datagram_socket(
         return make_err(errn);
     }
 
-    // SO_NOSIGPIPE for macOS/BSD
-    int one = 1;
-    if (::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) != 0)
+    // SO_NOSIGPIPE on macOS (where MSG_NOSIGNAL doesn't exist)
+#ifdef SO_NOSIGPIPE
     {
-        int errn = errno;
-        ::close(fd);
-        return make_err(errn);
+        int one = 1;
+        ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
     }
+#endif
 
     kq_impl->fd_ = fd;
 
