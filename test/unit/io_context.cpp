@@ -543,16 +543,19 @@ struct io_context_test
         }
     }
 
-    static capy::task<void> set_event_task(capy::async_event& evt)
+    static capy::task<capy::io_result<>> set_event_task(capy::async_event& evt)
     {
         evt.set();
-        co_return;
+        co_return capy::io_result<>{{}};
     }
 
     static capy::task<void> when_all_set_event_main(bool& finished)
     {
         capy::async_event evt;
-        co_await capy::when_all(evt.wait(), set_event_task(evt));
+        auto [ec, a, b] = co_await capy::when_all(evt.wait(), set_event_task(evt));
+        (void)a;
+        (void)b;
+        BOOST_TEST(!ec);
         finished = true;
     }
 
