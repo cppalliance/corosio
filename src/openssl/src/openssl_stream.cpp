@@ -374,9 +374,10 @@ struct openssl_stream::impl
                 break;
 
             {
-                auto [lec, guard] = co_await io_cm_.scoped_lock();
+                auto [lec] = co_await io_cm_.lock();
                 if (lec)
                     co_return lec;
+                capy::async_mutex::lock_guard io_guard(&io_cm_);
                 auto [ec, n] = co_await capy::write(
                     s_, capy::const_buffer(out_buf_.data(), got));
                 if (ec)
@@ -388,9 +389,10 @@ struct openssl_stream::impl
 
     capy::task<std::error_code> read_input()
     {
-        auto [lec, guard] = co_await io_cm_.scoped_lock();
+        auto [lec] = co_await io_cm_.lock();
         if (lec)
             co_return lec;
+        capy::async_mutex::lock_guard io_guard(&io_cm_);
         auto [ec, n] = co_await s_.read_some(
             capy::mutable_buffer(in_buf_.data(), in_buf_.size()));
         if (ec)

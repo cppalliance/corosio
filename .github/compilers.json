@@ -130,20 +130,11 @@
       "version": "*",
       "cxxstd": "20,23",
       "latest_cxxstd": "23",
-      "runs_on": "macos-14",
+      "runs_on": "macos-15",
       "cxx": "clang++",
       "cc": "clang",
       "b2_toolset": "clang",
       "is_earliest": true
-    },
-    {
-      "version": "*",
-      "cxxstd": "20,23",
-      "latest_cxxstd": "23",
-      "runs_on": "macos-15",
-      "cxx": "clang++",
-      "cc": "clang",
-      "b2_toolset": "clang"
     },
     {
       "version": "*",
