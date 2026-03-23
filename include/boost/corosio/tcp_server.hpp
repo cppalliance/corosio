@@ -16,7 +16,6 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/endpoint.hpp>
-#include <boost/capy/continuation.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
@@ -160,7 +159,7 @@ private:
     {
         waiter* next;
         std::coroutine_handle<> h;
-        capy::continuation cont;
+        detail::continuation_op cont_op;
         worker_base* w;
     };
 
@@ -349,7 +348,7 @@ private:
     {
         tcp_server& self_;
         worker_base& w_;
-        capy::continuation cont_;
+        detail::continuation_op cont_op_;
 
     public:
         push_awaitable(tcp_server& self, worker_base& w) noexcept
@@ -367,8 +366,8 @@ private:
         await_suspend(std::coroutine_handle<> h, capy::io_env const*) noexcept
         {
             // Symmetric transfer to server's executor
-            cont_.h = h;
-            return self_.ex_.dispatch(cont_);
+            cont_op_.cont.h = h;
+            return self_.ex_.dispatch(cont_op_.cont);
         }
 
         void await_resume() noexcept
@@ -381,8 +380,8 @@ private:
                 auto* wait     = self_.waiters_;
                 self_.waiters_ = wait->next;
                 wait->w        = &w_;
-                wait->cont.h   = wait->h;
-                self_.ex_.post(wait->cont);
+                wait->cont_op.cont.h = wait->h;
+                self_.ex_.post(wait->cont_op.cont);
             }
             else
             {
@@ -439,8 +438,8 @@ private:
             auto* wait = waiters_;
             waiters_   = wait->next;
             wait->w    = &w;
-            wait->cont.h = wait->h;
-            ex_.post(wait->cont);
+            wait->cont_op.cont.h = wait->h;
+            ex_.post(wait->cont_op.cont);
         }
         else
         {
@@ -576,8 +575,7 @@ public:
                 launch_coro<Executor>{}(ex, st, srv_, std::move(task), w);
 
             // Executor and stop token stored in promise via constructor
-            capy::continuation launch_cont{std::exchange(wrapper.h, nullptr)};
-            ex.post(launch_cont); // Release before post
+            ex.post(std::exchange(wrapper.h, nullptr)); // Release before post
             guard.w = nullptr; // Success - dismiss guard
         }
     };
