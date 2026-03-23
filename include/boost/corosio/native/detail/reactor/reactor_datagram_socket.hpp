@@ -311,7 +311,8 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            return dispatch_coro(ex, h);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
         op.ex        = ex;
@@ -422,7 +423,8 @@ reactor_datagram_socket<
             *bytes_out = bytes;
             if (source && !err && n >= 0)
                 *source = from_sockaddr(op.source_storage);
-            return dispatch_coro(ex, h);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
         op.ex        = ex;
@@ -501,7 +503,8 @@ reactor_datagram_socket<
         if (this->svc_.scheduler().try_consume_inline_budget())
         {
             *ec = err ? make_err(err) : std::error_code{};
-            return dispatch_coro(ex, h);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.reset();
         op.h               = h;
@@ -602,7 +605,8 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            return dispatch_coro(ex, h);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
         op.ex        = ex;
@@ -706,7 +710,8 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            return dispatch_coro(ex, h);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
         op.ex        = ex;

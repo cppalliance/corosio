@@ -217,7 +217,8 @@ select_tcp_acceptor::accept(
                 if (impl_out)
                     *impl_out = nullptr;
             }
-            return dispatch_coro(ex, h);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
 
         op.accepted_fd  = accepted;

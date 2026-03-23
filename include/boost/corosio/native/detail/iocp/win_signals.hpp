@@ -304,7 +304,8 @@ signal_op::do_complete(
     auto* service = op->svc;
     op->svc       = nullptr;
 
-    dispatch_coro(op->d, op->h).resume();
+    op->cont.h = op->h;
+    dispatch_coro(op->d, op->cont).resume();
 
     if (service)
         service->work_finished();
@@ -337,7 +338,8 @@ win_signal::wait(
             *ec = make_error_code(capy::error::canceled);
         if (signal_out)
             *signal_out = 0;
-        dispatch_coro(d, h).resume();
+        pending_op_.cont.h = h;
+        dispatch_coro(d, pending_op_.cont).resume();
         // completion is always posted to scheduler queue, never inline.
         return std::noop_coroutine();
     }
@@ -610,7 +612,8 @@ win_signals::cancel_wait(win_signal& impl)
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        dispatch_coro(op->d, op->h).resume();
+        op->cont.h = op->h;
+        dispatch_coro(op->d, op->cont).resume();
         sched_.work_finished();
     }
 }

@@ -13,6 +13,7 @@
 #include <boost/corosio/native/detail/reactor/reactor_op_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/corosio/endpoint.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <atomic>
@@ -61,6 +62,9 @@ struct reactor_op : reactor_op_base
 
     /// Caller's coroutine handle to resume on completion.
     std::coroutine_handle<> h;
+
+    /// Continuation for executor dispatch/post (wraps h).
+    capy::continuation cont;
 
     /// Executor for dispatching the completion.
     capy::executor_ref ex;
