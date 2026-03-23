@@ -13,6 +13,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/io/io_object.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -46,6 +47,7 @@ class BOOST_COROSIO_DECL io_timer : public io_object
         io_timer& t_;
         std::stop_token token_;
         mutable std::error_code ec_;
+        capy::continuation cont_;
 
         explicit wait_awaitable(io_timer& t) noexcept : t_(t) {}
 
@@ -65,6 +67,7 @@ class BOOST_COROSIO_DECL io_timer : public io_object
             -> std::coroutine_handle<>
         {
             token_     = env->stop_token;
+            cont_.h    = h;
             auto& impl = t_.get();
             // Inline fast path: already expired and not in the heap
             if (impl.heap_index_ == implementation::npos &&
@@ -75,10 +78,10 @@ class BOOST_COROSIO_DECL io_timer : public io_object
                 token_ = {}; // match normal path so await_resume
                              // returns ec_, not a stale stop check
                 auto d = env->executor;
-                d.post(h);
+                d.post(cont_);
                 return std::noop_coroutine();
             }
-            return impl.wait(h, env->executor, std::move(token_), &ec_);
+            return impl.wait(h, env->executor, std::move(token_), &ec_, &cont_);
         }
     };
 
@@ -109,7 +112,8 @@ public:
             std::coroutine_handle<>,
             capy::executor_ref,
             std::stop_token,
-            std::error_code*) = 0;
+            std::error_code*,
+            capy::continuation*) = 0;
     };
 
     /// The clock type used for time operations.

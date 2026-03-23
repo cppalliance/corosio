@@ -250,6 +250,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
     timer_service::implementation* impl_ = nullptr;
     timer_service* svc_                  = nullptr;
     std::coroutine_handle<> h_;
+    capy::continuation* cont_            = nullptr;
     capy::executor_ref d_;
     std::error_code* ec_out_ = nullptr;
     std::stop_token token_;
@@ -282,7 +283,8 @@ struct timer_service::implementation final : timer::implementation
         std::coroutine_handle<>,
         capy::executor_ref,
         std::stop_token,
-        std::error_code*) override;
+        std::error_code*,
+        capy::continuation*) override;
 };
 
 // Thread-local caches avoid hot-path mutex acquisitions:
@@ -803,14 +805,14 @@ waiter_node::completion_op::operator()()
     if (w->ec_out_)
         *w->ec_out_ = w->ec_value_;
 
-    auto h      = w->h_;
+    auto* cont  = w->cont_;
     auto d      = w->d_;
     auto* svc   = w->svc_;
     auto& sched = svc->get_scheduler();
 
     svc->destroy_waiter(w);
 
-    d.post(h);
+    d.post(*cont);
     sched.work_finished();
 }
 
@@ -852,7 +854,8 @@ timer_service::implementation::wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
-    std::error_code* ec)
+    std::error_code* ec,
+    capy::continuation* cont)
 {
     // Already-expired fast path — no waiter_node, no mutex.
     // Post instead of dispatch so the coroutine yields to the
@@ -863,7 +866,7 @@ timer_service::implementation::wait(
         {
             if (ec)
                 *ec = {};
-            d.post(h);
+            d.post(*cont);
             return std::noop_coroutine();
         }
     }
@@ -872,6 +875,7 @@ timer_service::implementation::wait(
     w->impl_   = this;
     w->svc_    = svc_;
     w->h_      = h;
+    w->cont_   = cont;
     w->d_      = d;
     w->token_  = std::move(token);
     w->ec_out_ = ec;

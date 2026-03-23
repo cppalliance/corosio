@@ -18,6 +18,7 @@
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <coroutine>
@@ -43,6 +44,7 @@ enum
 struct signal_op : scheduler_op
 {
     std::coroutine_handle<> h;
+    capy::continuation cont;
     capy::executor_ref d;
     std::error_code* ec_out   = nullptr;
     int* signal_out           = nullptr;

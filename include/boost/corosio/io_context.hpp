@@ -15,6 +15,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <chrono>
@@ -375,34 +376,34 @@ public:
         ctx_->sched_->work_finished();
     }
 
-    /** Dispatch a coroutine handle.
+    /** Dispatch a continuation.
 
         Returns a handle for symmetric transfer. If called from
-        within `run()`, returns `h`. Otherwise posts the coroutine
+        within `run()`, returns `c.h`. Otherwise posts the coroutine
         for later execution and returns `std::noop_coroutine()`.
 
-        @param h The coroutine handle to dispatch.
+        @param c The continuation to dispatch.
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
     */
-    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(capy::continuation& c) const
     {
         if (running_in_this_thread())
-            return h;
-        ctx_->sched_->post(h);
+            return c.h;
+        ctx_->sched_->post(c.h);
         return std::noop_coroutine();
     }
 
-    /** Post a coroutine for deferred execution.
+    /** Post a continuation for deferred execution.
 
         The coroutine will be resumed during a subsequent call to
         `run()`.
 
-        @param h The coroutine handle to post.
+        @param c The continuation to post.
     */
-    void post(std::coroutine_handle<> h) const
+    void post(capy::continuation& c) const
     {
-        ctx_->sched_->post(h);
+        ctx_->sched_->post(c.h);
     }
 
     /** Compare two executors for equality.

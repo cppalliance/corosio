@@ -9,6 +9,7 @@
 
 // Test that header file is self-contained.
 #include <boost/corosio/io_context.hpp>
+#include <boost/capy/continuation.hpp>
 
 #include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -226,6 +227,14 @@ make_check_coro(bool& result, io_context::executor_type& ex)
     return c;
 }
 
+// Helper: post a coroutine handle through a continuation
+inline void
+post_coro(io_context::executor_type& ex, std::coroutine_handle<> h)
+{
+    capy::continuation c{h};
+    ex.post(c);
+}
+
 struct io_context_test
 {
     void testConstruction()
@@ -260,9 +269,9 @@ struct io_context_test
         int counter = 0;
 
         // Post some work
-        ex.post(make_coro(counter));
-        ex.post(make_coro(counter));
-        ex.post(make_coro(counter));
+        post_coro(ex, make_coro(counter));
+        post_coro(ex, make_coro(counter));
+        post_coro(ex, make_coro(counter));
 
         // Run should execute all work
         std::size_t n = ioc.run();
@@ -276,8 +285,8 @@ struct io_context_test
         auto ex     = ioc.get_executor();
         int counter = 0;
 
-        ex.post(make_coro(counter));
-        ex.post(make_coro(counter));
+        post_coro(ex, make_coro(counter));
+        post_coro(ex, make_coro(counter));
 
         // run_one should execute exactly one
         std::size_t n = ioc.run_one();
@@ -304,8 +313,8 @@ struct io_context_test
         BOOST_TEST(ioc.stopped());
 
         // Add work
-        ex.post(make_coro(counter));
-        ex.post(make_coro(counter));
+        post_coro(ex, make_coro(counter));
+        post_coro(ex, make_coro(counter));
 
         // Must restart after stop before poll will process handlers
         ioc.restart();
@@ -327,8 +336,8 @@ struct io_context_test
         BOOST_TEST(n == 0);
         BOOST_TEST(ioc.stopped());
 
-        ex.post(make_coro(counter));
-        ex.post(make_coro(counter));
+        post_coro(ex, make_coro(counter));
+        post_coro(ex, make_coro(counter));
 
         // Must restart after stop before poll_one will process handlers
         ioc.restart();
@@ -361,7 +370,7 @@ struct io_context_test
         BOOST_TEST(ioc.stopped());
 
         // Post work after stop
-        ex.post(make_coro(counter));
+        post_coro(ex, make_coro(counter));
 
         // Run should return immediately when stopped
         std::size_t n = ioc.run();
@@ -393,7 +402,7 @@ struct io_context_test
         ioc.restart();
 
         // With work posted
-        ex.post(make_coro(counter));
+        post_coro(ex, make_coro(counter));
 
         n = ioc.run_one_for(std::chrono::milliseconds(100));
         BOOST_TEST(n == 1);
@@ -417,7 +426,7 @@ struct io_context_test
         ioc.restart();
 
         // Post work and run_one_until
-        ex.post(make_coro(counter));
+        post_coro(ex, make_coro(counter));
 
         deadline =
             std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
@@ -447,7 +456,7 @@ struct io_context_test
         ioc.restart();
 
         // run_for with work
-        ex.post(make_coro(counter));
+        post_coro(ex, make_coro(counter));
         n = ioc.run_for(std::chrono::milliseconds(100));
         BOOST_TEST(n == 1);
         BOOST_TEST(counter == 1);
@@ -463,7 +472,7 @@ struct io_context_test
 
         // Post work that checks running_in_this_thread
         bool during = false;
-        ex.post(make_check_coro(during, ex));
+        post_coro(ex, make_check_coro(during, ex));
         ioc.run();
 
         BOOST_TEST(during == true);
@@ -485,7 +494,7 @@ struct io_context_test
         {
             posters.emplace_back([&ex, &counter]() {
                 for (int i = 0; i < handlers_per_thread; ++i)
-                    ex.post(make_atomic_coro(counter));
+                    post_coro(ex, make_atomic_coro(counter));
             });
         }
 
@@ -521,7 +530,7 @@ struct io_context_test
 
             // Post all handlers first
             for (int i = 0; i < handlers_per_iteration; ++i)
-                ex.post(make_atomic_coro(counter));
+                post_coro(ex, make_atomic_coro(counter));
 
             // Run with multiple threads
             std::vector<std::thread> runners;
@@ -578,9 +587,9 @@ struct io_context_test
             io_context ioc;
             auto ex = ioc.get_executor();
 
-            ex.post(make_destroy_coro(destroyed));
-            ex.post(make_destroy_coro(destroyed));
-            ex.post(make_destroy_coro(destroyed));
+            post_coro(ex, make_destroy_coro(destroyed));
+            post_coro(ex, make_destroy_coro(destroyed));
+            post_coro(ex, make_destroy_coro(destroyed));
 
             // io_context destructor triggers shutdown
         }
@@ -622,9 +631,9 @@ struct io_context_shutdown_test
             io_context ioc(Backend);
             auto ex = ioc.get_executor();
 
-            ex.post(make_destroy_coro(destroyed));
-            ex.post(make_destroy_coro(destroyed));
-            ex.post(make_destroy_coro(destroyed));
+            post_coro(ex, make_destroy_coro(destroyed));
+            post_coro(ex, make_destroy_coro(destroyed));
+            post_coro(ex, make_destroy_coro(destroyed));
         }
 
         BOOST_TEST_EQ(destroyed, 3);

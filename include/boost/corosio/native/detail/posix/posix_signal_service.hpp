@@ -313,7 +313,8 @@ signal_op::operator()()
     auto* service = svc;
     svc           = nullptr;
 
-    d.post(h);
+    cont.h = h;
+    d.post(cont);
 
     // Balance the work_started() from start_wait
     if (service)
@@ -353,7 +354,8 @@ posix_signal::wait(
             *ec = make_error_code(capy::error::canceled);
         if (signal_out)
             *signal_out = 0;
-        d.post(h);
+        pending_op_.cont.h = h;
+        d.post(pending_op_.cont);
         // completion is always posted to scheduler queue, never inline.
         return std::noop_coroutine();
     }
@@ -653,7 +655,8 @@ posix_signal_service::cancel_wait(posix_signal& impl)
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        op->d.post(op->h);
+        op->cont.h = op->h;
+        op->d.post(op->cont);
         sched_->work_finished();
     }
 }

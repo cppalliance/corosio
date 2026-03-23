@@ -238,11 +238,11 @@ accept_op::do_complete(
             *op->impl_out = nullptr;
     }
 
-    auto saved_h                       = op->h;
+    op->cont.h                         = op->h;
     auto saved_ex                      = op->ex;
     auto prevent_premature_destruction = std::move(op->acceptor_ptr);
 
-    dispatch_coro(saved_ex, saved_h).resume();
+    dispatch_coro(saved_ex, op->cont).resume();
 }
 
 // connect_op completion handler
