@@ -265,8 +265,8 @@ posix_resolver::resolve_op::operator()()
         *out = std::move(stored_results);
 
     impl->svc_.work_finished();
-    cont.h = h;
-    dispatch_coro(ex, cont).resume();
+    cont_op.cont.h = h;
+    dispatch_coro(ex, cont_op.cont).resume();
 }
 
 inline void
@@ -331,8 +331,8 @@ posix_resolver::reverse_resolve_op::operator()()
     }
 
     impl->svc_.work_finished();
-    cont.h = h;
-    dispatch_coro(ex, cont).resume();
+    cont_op.cont.h = h;
+    dispatch_coro(ex, cont_op.cont).resume();
 }
 
 inline void

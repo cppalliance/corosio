@@ -9,7 +9,6 @@
 
 // Test that header file is self-contained.
 #include <boost/corosio/io_context.hpp>
-#include <boost/capy/continuation.hpp>
 
 #include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -227,12 +226,14 @@ make_check_coro(bool& result, io_context::executor_type& ex)
     return c;
 }
 
-// Helper: post a coroutine handle through a continuation
+// Helper: post a bare coroutine handle (heap-allocating path).
+// Test-only: production code embeds continuation_op in long-lived
+// structures; this helper uses the executor's post(coroutine_handle<>)
+// overload since the handle has no enclosing continuation_op.
 inline void
 post_coro(io_context::executor_type& ex, std::coroutine_handle<> h)
 {
-    capy::continuation c{h};
-    ex.post(c);
+    ex.post(h);
 }
 
 struct io_context_test

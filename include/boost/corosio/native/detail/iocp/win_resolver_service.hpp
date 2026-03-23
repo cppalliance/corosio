@@ -270,8 +270,8 @@ resolve_op::do_complete(
 
     op->cancel_handle = nullptr;
 
-    op->cont.h = op->h;
-    dispatch_coro(op->ex, op->cont).resume();
+    op->cont_op.cont.h = op->h;
+    dispatch_coro(op->ex, op->cont_op.cont).resume();
 }
 
 // reverse_resolve_op
@@ -315,8 +315,8 @@ reverse_resolve_op::do_complete(
             op->ep, std::move(op->stored_host), std::move(op->stored_service));
     }
 
-    op->cont.h = op->h;
-    dispatch_coro(op->ex, op->cont).resume();
+    op->cont_op.cont.h = op->h;
+    dispatch_coro(op->ex, op->cont_op.cont).resume();
 }
 
 // win_resolver

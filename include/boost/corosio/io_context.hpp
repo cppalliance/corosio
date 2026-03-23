@@ -13,6 +13,7 @@
 #define BOOST_COROSIO_IO_CONTEXT_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/continuation_op.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/continuation.hpp>
@@ -379,10 +380,12 @@ public:
     /** Dispatch a continuation.
 
         Returns a handle for symmetric transfer. If called from
-        within `run()`, returns `c.h`. Otherwise posts the coroutine
-        for later execution and returns `std::noop_coroutine()`.
+        within `run()`, returns `c.h`. Otherwise posts the
+        enclosing continuation_op as a scheduler_op for later
+        execution and returns `std::noop_coroutine()`.
 
-        @param c The continuation to dispatch.
+        @param c The continuation to dispatch. Must be the `cont`
+                 member of a `detail::continuation_op`.
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
     */
@@ -390,20 +393,37 @@ public:
     {
         if (running_in_this_thread())
             return c.h;
-        ctx_->sched_->post(c.h);
+        post(c);
         return std::noop_coroutine();
     }
 
     /** Post a continuation for deferred execution.
 
-        The coroutine will be resumed during a subsequent call to
-        `run()`.
-
-        @param c The continuation to post.
+        If the continuation is backed by a continuation_op
+        (tagged), posts it directly as a scheduler_op — zero
+        heap allocation. Otherwise falls back to the
+        heap-allocating post(coroutine_handle<>) path.
     */
     void post(capy::continuation& c) const
     {
-        ctx_->sched_->post(c.h);
+        auto* op = detail::continuation_op::try_from_continuation(c);
+        if (op)
+            ctx_->sched_->post(op);
+        else
+            ctx_->sched_->post(c.h);
+    }
+
+    /** Post a bare coroutine handle for deferred execution.
+
+        Heap-allocates a scheduler_op to wrap the handle. Prefer
+        posting through a continuation_op-backed continuation when
+        the continuation has suitable lifetime.
+
+        @param h The coroutine handle to post.
+    */
+    void post(std::coroutine_handle<> h) const
+    {
+        ctx_->sched_->post(h);
     }
 
     /** Compare two executors for equality.

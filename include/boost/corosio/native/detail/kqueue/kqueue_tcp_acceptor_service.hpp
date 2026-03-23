@@ -208,8 +208,8 @@ kqueue_tcp_acceptor::accept(
                 if (impl_out)
                     *impl_out = nullptr;
             }
-            op.cont.h = h;
-            return dispatch_coro(ex, op.cont);
+            op.cont_op.cont.h = h;
+            return dispatch_coro(ex, op.cont_op.cont);
         }
 
         op.accepted_fd  = accepted;

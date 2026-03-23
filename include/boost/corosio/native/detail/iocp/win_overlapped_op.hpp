@@ -62,7 +62,7 @@ struct overlapped_op
 
     long ready_ = 0;
     std::coroutine_handle<> h;
-    capy::continuation cont;
+    detail::continuation_op cont_op;
     capy::executor_ref ex;
     std::error_code* ec_out = nullptr;
     std::size_t* bytes_out  = nullptr;
@@ -145,8 +145,8 @@ struct overlapped_op
         if (bytes_out)
             *bytes_out = static_cast<std::size_t>(bytes_transferred);
 
-        cont.h = h;
-        dispatch_coro(ex, cont).resume();
+        cont_op.cont.h = h;
+        dispatch_coro(ex, cont_op.cont).resume();
     }
 
     /** Disarm cancellation and abandon the coroutine handle. */
