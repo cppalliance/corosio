@@ -34,6 +34,7 @@
 ** xref:4.guide/4l.tls.adoc[TLS Encryption]
 ** xref:4.guide/4m.error-handling.adoc[Error Handling]
 ** xref:4.guide/4n.buffers.adoc[Buffer Sequences]
+** xref:4.guide/4o.file-io.adoc[File I/O]
 * xref:5.testing/5.intro.adoc[Testing]
 ** xref:5.testing/5a.mocket.adoc[Mock Sockets]
 * xref:benchmark-report.adoc[Benchmarks]

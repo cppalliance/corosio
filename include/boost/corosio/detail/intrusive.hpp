@@ -65,10 +65,11 @@ public:
 
     void push_back(T* w) noexcept
     {
-        w->next_ = nullptr;
-        w->prev_ = tail_;
+        auto* n = static_cast<node*>(w);
+        n->next_ = nullptr;
+        n->prev_ = tail_;
         if (tail_)
-            tail_->next_ = w;
+            static_cast<node*>(tail_)->next_ = w;
         else
             head_ = w;
         tail_ = w;
@@ -80,9 +81,9 @@ public:
             return;
         if (tail_)
         {
-            tail_->next_       = other.head_;
-            other.head_->prev_ = tail_;
-            tail_              = other.tail_;
+            static_cast<node*>(tail_)->next_        = other.head_;
+            static_cast<node*>(other.head_)->prev_  = tail_;
+            tail_                                   = other.tail_;
         }
         else
         {
@@ -98,28 +99,43 @@ public:
         if (!head_)
             return nullptr;
         T* w  = head_;
-        head_ = head_->next_;
+        head_ = static_cast<node*>(head_)->next_;
         if (head_)
-            head_->prev_ = nullptr;
+            static_cast<node*>(head_)->prev_ = nullptr;
         else
             tail_ = nullptr;
         // Defensive: clear stale linkage so remove() on a
         // popped node cannot corrupt the list.
-        w->next_ = nullptr;
-        w->prev_ = nullptr;
+        auto* n = static_cast<node*>(w);
+        n->next_ = nullptr;
+        n->prev_ = nullptr;
         return w;
     }
 
     void remove(T* w) noexcept
     {
-        if (w->prev_)
-            w->prev_->next_ = w->next_;
+        auto* n = static_cast<node*>(w);
+        // Already detached — nothing to do.
+        if (!n->next_ && !n->prev_ && head_ != w && tail_ != w)
+            return;
+        if (n->prev_)
+            static_cast<node*>(n->prev_)->next_ = n->next_;
         else
-            head_ = w->next_;
-        if (w->next_)
-            w->next_->prev_ = w->prev_;
+            head_ = n->next_;
+        if (n->next_)
+            static_cast<node*>(n->next_)->prev_ = n->prev_;
         else
-            tail_ = w->prev_;
+            tail_ = n->prev_;
+        n->next_ = nullptr;
+        n->prev_ = nullptr;
+    }
+
+    /// Invoke @p f for each element in the list.
+    template<class F>
+    void for_each(F f)
+    {
+        for (T* p = head_; p; p = static_cast<node*>(p)->next_)
+            f(p);
     }
 };
 
