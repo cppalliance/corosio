@@ -39,6 +39,8 @@
 #include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_udp_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_signals.hpp>
+#include <boost/corosio/native/detail/iocp/win_file_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_random_access_file_service.hpp>
 #endif
 
 namespace boost::corosio {
@@ -99,6 +101,8 @@ iocp_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
     ctx.make_service<detail::win_tcp_acceptor_service>(sockets);
     ctx.make_service<detail::win_udp_service>();
     ctx.make_service<detail::win_signals>();
+    ctx.make_service<detail::win_file_service>();
+    ctx.make_service<detail::win_random_access_file_service>();
 
     return sched;
 }

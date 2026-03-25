@@ -64,6 +64,16 @@
 #define BOOST_COROSIO_POSIX 0
 #endif
 
+// fdatasync availability — Linux and FreeBSD provide it.
+// macOS does not have fdatasync; sync_data() falls back to fsync().
+// We use platform detection rather than _POSIX_SYNCHRONIZED_IO
+// because <unistd.h> may not have been included yet.
+#if defined(__linux__) || defined(__FreeBSD__)
+#define BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO 1
+#else
+#define BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO 0
+#endif
+
 #endif // BOOST_COROSIO_MRDOCS
 
 #endif // BOOST_COROSIO_DETAIL_PLATFORM_HPP

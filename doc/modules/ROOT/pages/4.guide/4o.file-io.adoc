@@ -1,0 +1,203 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= File I/O
+
+Corosio provides two classes for asynchronous file operations:
+`stream_file` for sequential access and `random_access_file` for
+offset-based access. Both dispatch I/O to a worker thread on POSIX
+platforms and use native overlapped I/O on Windows.
+
+[NOTE]
+====
+Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/stream_file.hpp>
+#include <boost/corosio/random_access_file.hpp>
+namespace corosio = boost::corosio;
+----
+====
+
+== Stream File
+
+`stream_file` reads and writes sequentially, maintaining an internal
+position that advances after each operation. It inherits from `io_stream`,
+so it works with any algorithm that accepts an `io_stream&`.
+
+=== Reading a File
+
+[source,cpp]
+----
+corosio::stream_file f(ioc);
+f.open("data.bin", corosio::file_base::read_only);
+
+char buf[4096];
+auto [ec, n] = co_await f.read_some(
+    capy::mutable_buffer(buf, sizeof(buf)));
+
+if (ec == capy::cond::eof)
+    // reached end of file
+----
+
+=== Writing a File
+
+[source,cpp]
+----
+corosio::stream_file f(ioc);
+f.open("output.bin",
+    corosio::file_base::write_only
+    | corosio::file_base::create
+    | corosio::file_base::truncate);
+
+std::string data = "hello world";
+auto [ec, n] = co_await f.write_some(
+    capy::const_buffer(data.data(), data.size()));
+----
+
+=== Seeking
+
+The file position can be moved with `seek()`:
+
+[source,cpp]
+----
+f.seek(0, corosio::file_base::seek_set);    // beginning
+f.seek(100, corosio::file_base::seek_cur);  // forward 100 bytes
+f.seek(-10, corosio::file_base::seek_end);  // 10 bytes before end
+----
+
+== Random Access File
+
+`random_access_file` reads and writes at explicit byte offsets
+without maintaining an internal position. This is useful for
+databases, indices, or any workload that accesses non-sequential
+regions of a file.
+
+=== Reading at an Offset
+
+[source,cpp]
+----
+corosio::random_access_file f(ioc);
+f.open("data.bin", corosio::file_base::read_only);
+
+char buf[256];
+auto [ec, n] = co_await f.read_some_at(
+    1024,  // byte offset
+    capy::mutable_buffer(buf, sizeof(buf)));
+----
+
+=== Writing at an Offset
+
+[source,cpp]
+----
+corosio::random_access_file f(ioc);
+f.open("data.bin", corosio::file_base::read_write);
+
+auto [ec, n] = co_await f.write_some_at(
+    512, capy::const_buffer("patched", 7));
+----
+
+== Open Flags
+
+Both file types accept a bitmask of `file_base::flags` when opening:
+
+[cols="1,3"]
+|===
+| Flag | Meaning
+
+| `read_only` | Open for reading (default)
+| `write_only` | Open for writing
+| `read_write` | Open for both reading and writing
+| `create` | Create the file if it does not exist
+| `exclusive` | Fail if the file already exists (requires `create`)
+| `truncate` | Truncate the file to zero length on open
+| `append` | Seek to end on open (stream_file only)
+| `sync_all_on_write` | Synchronize data to disk on each write
+|===
+
+Flags are combined with `|`:
+
+[source,cpp]
+----
+f.open("log.txt",
+    corosio::file_base::write_only
+    | corosio::file_base::create
+    | corosio::file_base::append);
+----
+
+== File Metadata
+
+Both file types provide synchronous metadata operations:
+
+[source,cpp]
+----
+auto bytes = f.size();       // file size in bytes
+f.resize(1024);              // truncate or extend
+f.sync_data();               // flush data to stable storage
+f.sync_all();                // flush data and metadata
+----
+
+`stream_file` additionally provides `seek()` for repositioning.
+
+== Native Handle Access
+
+Both file types support adopting and releasing native handles:
+
+[source,cpp]
+----
+// Release ownership — caller must close the handle
+auto handle = f.release();
+assert(!f.is_open());
+
+// Adopt an existing handle — file takes ownership
+corosio::random_access_file f2(ioc);
+f2.assign(handle);
+----
+
+== Error Handling
+
+File operations follow the same error model as sockets. Reads past
+end-of-file return `capy::cond::eof`:
+
+[source,cpp]
+----
+auto [ec, n] = co_await f.read_some(buf);
+if (ec == capy::cond::eof)
+{
+    // no more data
+}
+else if (ec)
+{
+    // I/O error
+}
+----
+
+Opening a nonexistent file with `read_only` throws `std::system_error`.
+Use `create` to create files that may not exist.
+
+== Thread Safety
+
+* Distinct objects are safe to use concurrently.
+* `random_access_file` supports multiple concurrent reads and writes
+  from coroutines sharing the same file object. Each operation is
+  independently heap-allocated.
+* `stream_file` allows at most one asynchronous operation in flight at
+  a time (same as Asio's stream_file). Sequential access with an
+  implicit position makes concurrent ops semantically undefined.
+* Non-async operations (open, close, size, resize, etc.) require
+  external synchronization.
+
+== Platform Notes
+
+On Linux, macOS, and BSD, file I/O is dispatched to a shared worker
+thread pool using `preadv`/`pwritev`. This is the same pool used by
+the resolver.
+
+On Windows, file I/O uses native IOCP overlapped I/O via
+`ReadFile`/`WriteFile` with `FILE_FLAG_OVERLAPPED`.

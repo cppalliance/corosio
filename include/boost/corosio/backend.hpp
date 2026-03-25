@@ -176,6 +176,11 @@ class win_signals;
 class win_resolver;
 class win_resolver_service;
 
+class win_stream_file;
+class win_file_service;
+class win_random_access_file;
+class win_random_access_file_service;
+
 } // namespace detail
 
 /// Backend tag for the Windows I/O Completion Ports multiplexer.
