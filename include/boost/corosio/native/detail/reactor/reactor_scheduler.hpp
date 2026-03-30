@@ -279,7 +279,8 @@ protected:
 
     /// Run the platform-specific reactor poll.
     virtual void
-    run_task(std::unique_lock<std::mutex>& lock, context_type* ctx) = 0;
+    run_task(std::unique_lock<std::mutex>& lock, context_type* ctx,
+        long timeout_us) = 0;
 
     /// Wake a blocked reactor (e.g. write to eventfd or pipe).
     virtual void interrupt_reactor() const = 0;
@@ -775,7 +776,8 @@ reactor_scheduler_base::do_one(
                 return 0;
             }
 
-            task_interrupted_ = more_handlers || timeout_us == 0;
+            long task_timeout_us = more_handlers ? 0 : timeout_us;
+            task_interrupted_ = task_timeout_us == 0;
             task_running_.store(true, std::memory_order_release);
 
             if (more_handlers)
@@ -783,7 +785,7 @@ reactor_scheduler_base::do_one(
 
             try
             {
-                run_task(lock, ctx);
+                run_task(lock, ctx, task_timeout_us);
             }
             catch (...)
             {
@@ -793,6 +795,8 @@ reactor_scheduler_base::do_one(
 
             task_running_.store(false, std::memory_order_relaxed);
             completed_ops_.push(&task_op_);
+            if (timeout_us > 0)
+                return 0;
             continue;
         }
 
