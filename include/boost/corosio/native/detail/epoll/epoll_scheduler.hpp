@@ -117,7 +117,8 @@ public:
 
 private:
     void
-    run_task(std::unique_lock<std::mutex>& lock, context_type* ctx) override;
+    run_task(std::unique_lock<std::mutex>& lock, context_type* ctx,
+        long timeout_us) override;
     void interrupt_reactor() const override;
     void update_timerfd() const;
 
@@ -294,9 +295,16 @@ epoll_scheduler::update_timerfd() const
 }
 
 inline void
-epoll_scheduler::run_task(std::unique_lock<std::mutex>& lock, context_type* ctx)
+epoll_scheduler::run_task(
+    std::unique_lock<std::mutex>& lock, context_type* ctx, long timeout_us)
 {
-    int timeout_ms = task_interrupted_ ? 0 : -1;
+    int timeout_ms;
+    if (task_interrupted_)
+        timeout_ms = 0;
+    else if (timeout_us < 0)
+        timeout_ms = -1;
+    else
+        timeout_ms = static_cast<int>((timeout_us + 999) / 1000);
 
     if (lock.owns_lock())
         lock.unlock();

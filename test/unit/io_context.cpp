@@ -463,6 +463,50 @@ struct io_context_test
         BOOST_TEST(counter == 1);
     }
 
+    void testRunForWithOutstandingWork()
+    {
+        io_context ioc;
+        auto ex = ioc.get_executor();
+
+        // Simulate persistent outstanding work (like a listening acceptor)
+        ex.on_work_started();
+
+        auto start    = std::chrono::steady_clock::now();
+        std::size_t n = ioc.run_for(std::chrono::milliseconds(200));
+        auto elapsed  = std::chrono::steady_clock::now() - start;
+
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
+                      .count();
+
+        // Must return after ~200ms, not block forever
+        BOOST_TEST(n == 0);
+        BOOST_TEST(ms >= 150);
+        BOOST_TEST(ms < 1000);
+
+        ex.on_work_finished();
+    }
+
+    void testRunOneForWithOutstandingWork()
+    {
+        io_context ioc;
+        auto ex = ioc.get_executor();
+
+        ex.on_work_started();
+
+        auto start    = std::chrono::steady_clock::now();
+        std::size_t n = ioc.run_one_for(std::chrono::milliseconds(200));
+        auto elapsed  = std::chrono::steady_clock::now() - start;
+
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
+                      .count();
+
+        BOOST_TEST(n == 0);
+        BOOST_TEST(ms >= 150);
+        BOOST_TEST(ms < 1000);
+
+        ex.on_work_finished();
+    }
+
     void testExecutorRunningInThisThread()
     {
         io_context ioc;
@@ -610,6 +654,8 @@ struct io_context_test
         testRunOneFor();
         testRunOneUntil();
         testRunFor();
+        testRunForWithOutstandingWork();
+        testRunOneForWithOutstandingWork();
         testExecutorRunningInThisThread();
         testMultithreaded();
         testMultithreadedStress();
