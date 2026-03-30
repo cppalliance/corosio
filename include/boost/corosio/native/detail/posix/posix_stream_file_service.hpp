@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/native/detail/posix/posix_stream_file.hpp>
+#include <boost/corosio/native/native_scheduler.hpp>
 #include <boost/corosio/detail/file_service.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 
@@ -81,6 +82,8 @@ public:
         std::filesystem::path const& path,
         file_base::flags mode) override
     {
+        if (static_cast<native_scheduler const*>(sched_)->single_threaded_)
+            return std::make_error_code(std::errc::operation_not_supported);
         return static_cast<posix_stream_file&>(impl).open_file(path, mode);
     }
 

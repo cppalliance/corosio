@@ -127,7 +127,7 @@ public:
 
 private:
     void
-    run_task(std::unique_lock<std::mutex>& lock, context_type* ctx,
+    run_task(lock_type& lock, context_type* ctx,
         long timeout_us) override;
     void interrupt_reactor() const override;
     long calculate_timeout(long requested_timeout_us) const;
@@ -214,17 +214,18 @@ select_scheduler::register_descriptor(
     desc->registered_events = reactor_event_read | reactor_event_write;
     desc->fd                = fd;
     desc->scheduler_        = this;
+    desc->mutex.set_enabled(!single_threaded_);
     desc->ready_events_.store(0, std::memory_order_relaxed);
 
     {
-        std::lock_guard lock(desc->mutex);
+        conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
         desc->impl_ref_.reset();
         desc->read_ready  = false;
         desc->write_ready = false;
     }
 
     {
-        std::lock_guard lock(mutex_);
+        mutex_type::scoped_lock lock(mutex_);
         registered_descs_[fd] = desc;
         if (fd > max_fd_)
             max_fd_ = fd;
@@ -236,7 +237,7 @@ select_scheduler::register_descriptor(
 inline void
 select_scheduler::deregister_descriptor(int fd) const
 {
-    std::lock_guard lock(mutex_);
+    mutex_type::scoped_lock lock(mutex_);
 
     auto it = registered_descs_.find(fd);
     if (it == registered_descs_.end())
@@ -303,7 +304,7 @@ select_scheduler::calculate_timeout(long requested_timeout_us) const
 
 inline void
 select_scheduler::run_task(
-    std::unique_lock<std::mutex>& lock, context_type* ctx, long timeout_us)
+    lock_type& lock, context_type* ctx, long timeout_us)
 {
     long effective_timeout_us =
         task_interrupted_ ? 0 : calculate_timeout(timeout_us);
@@ -326,7 +327,7 @@ select_scheduler::run_task(
     {
         if (snapshot_count < FD_SETSIZE)
         {
-            std::lock_guard desc_lock(desc->mutex);
+            conditionally_enabled_mutex::scoped_lock desc_lock(desc->mutex);
             snapshot[snapshot_count].fd   = fd;
             snapshot[snapshot_count].desc = desc;
             snapshot[snapshot_count].needs_write =

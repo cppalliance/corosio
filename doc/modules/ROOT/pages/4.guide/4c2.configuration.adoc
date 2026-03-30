@@ -1,0 +1,157 @@
+= Configuration
+:navtitle: Configuration
+
+The `io_context_options` struct provides runtime tuning knobs for the
+I/O context and its backend scheduler.  All defaults match the
+library's built-in values, so an unconfigured context behaves
+identically to previous releases.
+
+[source,cpp]
+----
+#include <boost/corosio/io_context.hpp>
+
+corosio::io_context_options opts;
+opts.max_events_per_poll = 256;
+opts.inline_budget_max   = 32;
+
+corosio::io_context ioc(opts);
+----
+
+Both `io_context` and `native_io_context` accept options:
+
+[source,cpp]
+----
+#include <boost/corosio/native/native_io_context.hpp>
+
+corosio::io_context_options opts;
+opts.max_events_per_poll = 512;
+
+corosio::native_io_context<corosio::epoll> ioc(opts);
+----
+
+== Available Options
+
+[cols="1,1,1,3"]
+|===
+| Option | Default | Backends | Description
+
+| `max_events_per_poll`
+| 128
+| epoll, kqueue
+| Number of events fetched per reactor poll call.  Larger values
+  reduce syscall frequency under high load; smaller values improve
+  fairness between connections.
+
+| `inline_budget_initial`
+| 2
+| epoll, kqueue, select
+| Starting inline completion budget per handler chain.  After a
+  posted handler executes, the reactor grants this many speculative
+  inline completions before forcing a re-queue.
+
+| `inline_budget_max`
+| 16
+| epoll, kqueue, select
+| Hard ceiling on adaptive inline budget ramp-up.  The budget
+  doubles each cycle it is fully consumed, up to this limit.
+
+| `unassisted_budget`
+| 4
+| epoll, kqueue, select
+| Inline budget when no other thread is running the event loop.
+  Prevents a single-threaded context from starving connections.
+
+| `gqcs_timeout_ms`
+| 500
+| IOCP
+| Maximum `GetQueuedCompletionStatus` blocking time in
+  milliseconds.  Lower values improve timer responsiveness at the
+  cost of more syscalls.
+
+| `thread_pool_size`
+| 1
+| POSIX (epoll, kqueue, select)
+| Number of worker threads in the shared thread pool used for
+  blocking file I/O and DNS resolution.  Ignored on IOCP where
+  file I/O uses native overlapped I/O.
+
+| `single_threaded`
+| false
+| all
+| Disable all scheduler mutex and condition variable operations.
+  Eliminates synchronization overhead when only one thread calls
+  `run()`.  See <<single-threaded-mode>> for restrictions.
+|===
+
+Options that do not apply to the active backend are silently ignored.
+
+== Tuning Guidelines
+
+=== Event Buffer Size (`max_events_per_poll`)
+
+The event buffer controls how many I/O events are fetched in a single
+`epoll_wait()` or `kevent()` call.
+
+* *High-throughput streaming* (few connections, high bandwidth):
+  increase to 256-512 to reduce syscall overhead.
+* *Many idle connections* (chat servers, WebSocket hubs):
+  keep at 128 or lower for better fairness.
+
+=== Inline Completion Budget
+
+The inline budget controls how many I/O completions the reactor
+completes speculatively within a single handler chain before forcing
+a re-queue through the scheduler.
+
+* *Streaming workloads* (file transfer, video):
+  `inline_budget_max = 32` or higher reduces context switches.
+* *Request-response workloads* (HTTP, RPC):
+  keep at 16 to prevent one connection from monopolizing a thread.
+* *Single-threaded contexts*:
+  `unassisted_budget` caps the budget when only one thread is
+  running the event loop, preserving fairness.
+
+=== IOCP Timeout (`gqcs_timeout_ms`)
+
+On Windows, the IOCP scheduler periodically wakes to recheck timers.
+The default 500ms balances responsiveness with efficiency.
+
+* *Sub-second timer precision*: reduce to 50-100ms.
+* *Minimal syscall overhead*: increase to 1000ms or higher.
+
+=== Thread Pool Size (`thread_pool_size`)
+
+On POSIX platforms, file I/O (`stream_file`, `random_access_file`)
+and DNS resolution use a shared thread pool.
+
+* *Concurrent file operations*: increase to match expected
+  parallelism (e.g. 4 for four concurrent file reads).
+* *No file I/O*: leave at 1 (the pool is created lazily).
+
+[#single-threaded-mode]
+=== Single-Threaded Mode (`single_threaded`)
+
+Disables all mutex and condition variable operations inside the
+scheduler and per-socket descriptor states.  This eliminates
+15-25% of overhead on the post-and-dispatch hot path.
+
+[source,cpp]
+----
+corosio::io_context_options opts;
+opts.single_threaded = true;
+
+corosio::io_context ioc(opts);
+ioc.run();  // only one thread may call this
+----
+
+WARNING: Single-threaded mode imposes hard restrictions.
+Violating them is undefined behavior.
+
+* Only **one thread** may call `run()` (or any run/poll variant).
+* **Posting work from another thread** is undefined behavior.
+* **DNS resolution** returns `operation_not_supported`.
+* **POSIX file I/O** (`stream_file`, `random_access_file`) returns
+  `operation_not_supported` on `open()`.
+* **Signal sets** should not be shared across contexts.
+* **Timer cancellation via `stop_token`** from another thread
+  remains safe (the timer service retains its own mutex).

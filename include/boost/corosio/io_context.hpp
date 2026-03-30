@@ -27,6 +27,95 @@
 
 namespace boost::corosio {
 
+/** Runtime tuning options for @ref io_context.
+
+    All fields have defaults that match the library's built-in
+    values, so constructing a default `io_context_options` produces
+    identical behavior to an unconfigured context.
+
+    Options that apply only to a specific backend family are
+    silently ignored when the active backend does not support them.
+
+    @par Example
+    @code
+    io_context_options opts;
+    opts.max_events_per_poll  = 256;   // larger batch per syscall
+    opts.inline_budget_max    = 32;    // more speculative completions
+    opts.thread_pool_size     = 4;     // more file-I/O workers
+
+    io_context ioc(opts);
+    @endcode
+
+    @see io_context, native_io_context
+*/
+struct io_context_options
+{
+    /** Maximum events fetched per reactor poll call.
+
+        Controls the buffer size passed to `epoll_wait()` or
+        `kevent()`. Larger values reduce syscall frequency under
+        high load; smaller values improve fairness between
+        connections. Ignored on IOCP and select backends.
+    */
+    unsigned max_events_per_poll = 128;
+
+    /** Starting inline completion budget per handler chain.
+
+        After a posted handler executes, the reactor grants this
+        many speculative inline completions before forcing a
+        re-queue. Applies to reactor backends only.
+    */
+    unsigned inline_budget_initial = 2;
+
+    /** Hard ceiling on adaptive inline budget ramp-up.
+
+        The budget doubles each cycle it is fully consumed, up to
+        this limit. Applies to reactor backends only.
+    */
+    unsigned inline_budget_max = 16;
+
+    /** Inline budget when no other thread assists the reactor.
+
+        When only one thread is running the event loop, this
+        value caps the inline budget to preserve fairness.
+        Applies to reactor backends only.
+    */
+    unsigned unassisted_budget = 4;
+
+    /** Maximum `GetQueuedCompletionStatus` timeout in milliseconds.
+
+        Bounds how long the IOCP scheduler blocks between timer
+        rechecks. Lower values improve timer responsiveness at the
+        cost of more syscalls. Applies to IOCP only.
+    */
+    unsigned gqcs_timeout_ms = 500;
+
+    /** Thread pool size for blocking I/O (file I/O, DNS resolution).
+
+        Sets the number of worker threads in the shared thread pool
+        used by POSIX file services and DNS resolution. Must be at
+        least 1. Applies to POSIX backends only; ignored on IOCP
+        where file I/O uses native overlapped I/O.
+    */
+    unsigned thread_pool_size = 1;
+
+    /** Enable single-threaded mode (disable scheduler locking).
+
+        When true, the scheduler skips all mutex lock/unlock and
+        condition variable operations on the hot path. This
+        eliminates synchronization overhead when only one thread
+        calls `run()`.
+
+        @par Restrictions
+        - Only one thread may call `run()` (or any run variant).
+        - Posting work from another thread is undefined behavior.
+        - DNS resolution returns `operation_not_supported`.
+        - POSIX file I/O returns `operation_not_supported`.
+        - Signal sets should not be shared across contexts.
+    */
+    bool single_threaded = false;
+};
+
 namespace detail {
 struct timer_service_access;
 } // namespace detail
@@ -64,6 +153,12 @@ class BOOST_COROSIO_DECL io_context : public capy::execution_context
 {
     friend struct detail::timer_service_access;
 
+    /// Pre-create services that depend on options (before construct).
+    void apply_options_pre_(io_context_options const& opts);
+
+    /// Apply runtime tuning to the scheduler (after construct).
+    void apply_options_post_(io_context_options const& opts);
+
 protected:
     detail::scheduler* sched_;
 
@@ -80,6 +175,17 @@ public:
             that will call `run()`.
     */
     explicit io_context(unsigned concurrency_hint);
+
+    /** Construct with runtime tuning options and platform backend.
+
+        @param opts Runtime options controlling scheduler and
+            service behavior.
+        @param concurrency_hint Hint for the number of threads
+            that will call `run()`.
+    */
+    explicit io_context(
+        io_context_options const& opts,
+        unsigned concurrency_hint = std::thread::hardware_concurrency());
 
     /** Construct with an explicit backend tag.
 
@@ -98,6 +204,30 @@ public:
     {
         (void)backend;
         sched_ = &Backend::construct(*this, concurrency_hint);
+    }
+
+    /** Construct with an explicit backend tag and runtime options.
+
+        @param backend The backend tag value selecting the I/O
+            multiplexer (e.g. `corosio::epoll`).
+        @param opts Runtime options controlling scheduler and
+            service behavior.
+        @param concurrency_hint Hint for the number of threads
+            that will call `run()`.
+    */
+    template<class Backend>
+        requires requires { Backend::construct; }
+    explicit io_context(
+        Backend backend,
+        io_context_options const& opts,
+        unsigned concurrency_hint = std::thread::hardware_concurrency())
+        : capy::execution_context(this)
+        , sched_(nullptr)
+    {
+        (void)backend;
+        apply_options_pre_(opts);
+        sched_ = &Backend::construct(*this, concurrency_hint);
+        apply_options_post_(opts);
     }
 
     ~io_context();

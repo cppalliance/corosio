@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/native/detail/posix/posix_resolver.hpp>
+#include <boost/corosio/native/native_scheduler.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 
 #include <unordered_map>
@@ -64,6 +65,13 @@ public:
     thread_pool& pool() noexcept
     {
         return pool_;
+    }
+
+    /** Return true if single-threaded mode is active. */
+    bool single_threaded() const noexcept
+    {
+        return static_cast<native_scheduler const*>(sched_)
+            ->single_threaded_;
     }
 
 private:
@@ -370,6 +378,13 @@ posix_resolver::resolve(
     std::error_code* ec,
     resolver_results* out)
 {
+    if (svc_.single_threaded())
+    {
+        *ec = std::make_error_code(std::errc::operation_not_supported);
+        op_.cont_op.cont.h = h;
+        return dispatch_coro(ex, op_.cont_op.cont);
+    }
+
     auto& op = op_;
     op.reset();
     op.h       = h;
@@ -409,6 +424,13 @@ posix_resolver::reverse_resolve(
     std::error_code* ec,
     reverse_resolver_result* result_out)
 {
+    if (svc_.single_threaded())
+    {
+        *ec = std::make_error_code(std::errc::operation_not_supported);
+        reverse_op_.cont_op.cont.h = h;
+        return dispatch_coro(ex, reverse_op_.cont_op.cont);
+    }
+
     auto& op = reverse_op_;
     op.reset();
     op.h          = h;
