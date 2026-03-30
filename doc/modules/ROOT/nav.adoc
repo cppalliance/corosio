@@ -23,6 +23,7 @@
 ** xref:4.guide/4a.tcp-networking.adoc[TCP/IP Networking]
 ** xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming]
 ** xref:4.guide/4c.io-context.adoc[I/O Context]
+*** xref:4.guide/4c2.configuration.adoc[Configuration]
 ** xref:4.guide/4d.sockets.adoc[Sockets]
 ** xref:4.guide/4e.tcp-acceptor.adoc[Acceptors]
 ** xref:4.guide/4f.endpoints.adoc[Endpoints]

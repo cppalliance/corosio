@@ -13,10 +13,11 @@
 #include <boost/corosio/native/detail/reactor/reactor_op_base.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
 
+#include <boost/corosio/detail/conditionally_enabled_mutex.hpp>
+
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 
 #include <errno.h>
 #include <sys/socket.h>
@@ -48,7 +49,8 @@ static constexpr std::uint32_t reactor_event_error = 0x008;
 struct reactor_descriptor_state : scheduler_op
 {
     /// Protects operation pointers and ready/cancel flags.
-    std::mutex mutex;
+    /// Becomes a no-op in single-threaded mode.
+    conditionally_enabled_mutex mutex{true};
 
     /// Pending read operation (guarded by `mutex`).
     reactor_op_base* read_op = nullptr;
@@ -131,7 +133,7 @@ reactor_descriptor_state::invoke_deferred_io()
     op_queue local_ops;
 
     {
-        std::lock_guard lock(mutex);
+        conditionally_enabled_mutex::scoped_lock lock(mutex);
 
         // Must clear is_enqueued_ and move impl_ref_ under the same
         // lock that processes I/O. close_socket() checks is_enqueued_

@@ -10,7 +10,9 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/backend.hpp>
+#include <boost/corosio/detail/thread_pool.hpp>
 
+#include <stdexcept>
 #include <thread>
 
 #if BOOST_COROSIO_HAS_EPOLL
@@ -108,21 +110,102 @@ iocp_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
 }
 #endif
 
+namespace {
+
+// Pre-create services that must exist before construct() runs.
+void
+pre_create_services(
+    capy::execution_context& ctx,
+    io_context_options const& opts)
+{
+#if BOOST_COROSIO_POSIX
+    if (opts.thread_pool_size < 1)
+        throw std::invalid_argument(
+            "thread_pool_size must be at least 1");
+    // Pre-create the shared thread pool with the configured size.
+    // This must happen before construct() because the scheduler
+    // constructor creates file and resolver services that call
+    // get_or_create_pool(), which would create a 1-thread pool.
+    if (opts.thread_pool_size != 1)
+        ctx.make_service<detail::thread_pool>(opts.thread_pool_size);
+#endif
+
+    (void)ctx;
+    (void)opts;
+}
+
+// Apply runtime tuning to the scheduler after construction.
+void
+apply_scheduler_options(
+    detail::scheduler& sched,
+    io_context_options const& opts)
+{
+#if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || BOOST_COROSIO_HAS_SELECT
+    auto& reactor =
+        static_cast<detail::reactor_scheduler_base&>(sched);
+    reactor.configure_reactor(
+        opts.max_events_per_poll,
+        opts.inline_budget_initial,
+        opts.inline_budget_max,
+        opts.unassisted_budget);
+    if (opts.single_threaded)
+        reactor.configure_single_threaded(true);
+#endif
+
+#if BOOST_COROSIO_HAS_IOCP
+    static_cast<detail::win_scheduler&>(sched).configure_iocp(
+        opts.gqcs_timeout_ms);
+#endif
+
+    (void)sched;
+    (void)opts;
+}
+
+detail::scheduler&
+construct_default(capy::execution_context& ctx, unsigned concurrency_hint)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    return iocp_t::construct(ctx, concurrency_hint);
+#elif BOOST_COROSIO_HAS_EPOLL
+    return epoll_t::construct(ctx, concurrency_hint);
+#elif BOOST_COROSIO_HAS_KQUEUE
+    return kqueue_t::construct(ctx, concurrency_hint);
+#elif BOOST_COROSIO_HAS_SELECT
+    return select_t::construct(ctx, concurrency_hint);
+#endif
+}
+
+} // anonymous namespace
+
 io_context::io_context() : io_context(std::thread::hardware_concurrency()) {}
 
 io_context::io_context(unsigned concurrency_hint)
     : capy::execution_context(this)
+    , sched_(&construct_default(*this, concurrency_hint))
+{
+}
+
+io_context::io_context(
+    io_context_options const& opts,
+    unsigned concurrency_hint)
+    : capy::execution_context(this)
     , sched_(nullptr)
 {
-#if BOOST_COROSIO_HAS_IOCP
-    sched_ = &iocp_t::construct(*this, concurrency_hint);
-#elif BOOST_COROSIO_HAS_EPOLL
-    sched_ = &epoll_t::construct(*this, concurrency_hint);
-#elif BOOST_COROSIO_HAS_KQUEUE
-    sched_ = &kqueue_t::construct(*this, concurrency_hint);
-#elif BOOST_COROSIO_HAS_SELECT
-    sched_ = &select_t::construct(*this, concurrency_hint);
-#endif
+    pre_create_services(*this, opts);
+    sched_ = &construct_default(*this, concurrency_hint);
+    apply_scheduler_options(*sched_, opts);
+}
+
+void
+io_context::apply_options_pre_(io_context_options const& opts)
+{
+    pre_create_services(*this, opts);
+}
+
+void
+io_context::apply_options_post_(io_context_options const& opts)
+{
+    apply_scheduler_options(*sched_, opts);
 }
 
 io_context::~io_context()

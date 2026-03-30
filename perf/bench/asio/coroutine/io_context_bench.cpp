@@ -13,6 +13,7 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/detail/concurrency_hint.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -187,6 +188,59 @@ bench_concurrent_post_run(bench::state& state)
     state.counters["threads"] = num_threads;
 }
 
+void
+bench_single_threaded_lockless(bench::state& state)
+{
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
+    int64_t counter          = 0;
+    int constexpr batch_size = 1000;
+
+    perf::stopwatch sw;
+    auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::duration<double>(state.duration());
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        for (int i = 0; i < batch_size; ++i)
+            asio::co_spawn(ioc, increment_task(counter), asio::detached);
+
+        ioc.poll();
+        ioc.restart();
+    }
+
+    ioc.run();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    state.add_items(counter);
+}
+
+void
+bench_interleaved_lockless(bench::state& state)
+{
+    int handlers_per_iteration = 100;
+
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
+    int64_t counter = 0;
+
+    perf::stopwatch sw;
+    auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::duration<double>(state.duration());
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        for (int i = 0; i < handlers_per_iteration; ++i)
+            asio::co_spawn(ioc, increment_task(counter), asio::detached);
+
+        ioc.poll();
+        ioc.restart();
+    }
+
+    ioc.run();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    state.add_items(counter);
+}
+
 } // anonymous namespace
 
 bench::benchmark_suite
@@ -206,7 +260,9 @@ make_io_context_suite()
             .args({8})
         .add("interleaved", bench_interleaved_post_run)
         .add("concurrent", bench_concurrent_post_run)
-            .args({4});
+            .args({4})
+        .add("single_threaded_lockless", bench_single_threaded_lockless)
+        .add("interleaved_lockless", bench_interleaved_lockless);
 }
 
 } // namespace asio_bench

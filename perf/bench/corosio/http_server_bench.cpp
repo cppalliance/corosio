@@ -150,6 +150,39 @@ bench_single_connection(bench::state& state)
 
 template<auto Backend>
 void
+bench_single_connection_lockless(bench::state& state)
+{
+    using socket_type = corosio::native_tcp_socket<Backend>;
+
+    corosio::io_context_options opts;
+    opts.single_threaded = true;
+    corosio::native_io_context<Backend> ioc(opts);
+    auto [client, server] = corosio::test::make_socket_pair<
+        socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+
+    client.set_option(corosio::native_socket_option::no_delay(true));
+    server.set_option(corosio::native_socket_option::no_delay(true));
+
+    capy::run_async(ioc.get_executor())(server_task<Backend>(server));
+    capy::run_async(ioc.get_executor())(client_task<Backend>(client, state));
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        state.stop();
+    });
+
+    perf::stopwatch sw;
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    client.close();
+    server.close();
+}
+
+template<auto Backend>
+void
 bench_concurrent_connections(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
@@ -308,6 +341,7 @@ make_http_server_suite()
             s.close();
         })
         .add("single_conn", bench_single_connection<Backend>)
+        .add("single_conn_lockless", bench_single_connection_lockless<Backend>)
         .add("concurrent", bench_concurrent_connections<Backend>)
             .args({1, 4, 16, 32})
         .add("multithread", bench_multithread<Backend>)

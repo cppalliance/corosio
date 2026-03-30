@@ -85,6 +85,20 @@ public:
     {
     }
 
+    /** Construct with runtime tuning options.
+
+        @param opts Runtime options controlling scheduler and
+            service behavior.
+        @param concurrency_hint Hint for the number of threads that
+            will call `run()`.
+    */
+    explicit native_io_context(
+        io_context_options const& opts,
+        unsigned concurrency_hint = std::thread::hardware_concurrency())
+        : io_context(Backend, opts, concurrency_hint)
+    {
+    }
+
     // Non-copyable, non-movable
     native_io_context(native_io_context const&)            = delete;
     native_io_context& operator=(native_io_context const&) = delete;

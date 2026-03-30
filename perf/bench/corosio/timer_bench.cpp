@@ -104,6 +104,83 @@ bench_fire_rate(bench::state& state)
     state.add_items(counter);
 }
 
+template<auto Backend>
+void
+bench_schedule_cancel_lockless(bench::state& state)
+{
+    using timer_type = corosio::native_timer<Backend>;
+
+    corosio::io_context_options opts;
+    opts.single_threaded = true;
+    corosio::native_io_context<Backend> ioc(opts);
+    int64_t counter          = 0;
+    int constexpr batch_size = 1000;
+
+    perf::stopwatch sw;
+    auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::duration<double>(state.duration());
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        for (int i = 0; i < batch_size; ++i)
+        {
+            timer_type t(ioc);
+            t.expires_after(std::chrono::hours(1));
+            t.cancel();
+            ++counter;
+        }
+
+        ioc.poll();
+        ioc.restart();
+    }
+
+    ioc.run();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    state.add_items(counter);
+}
+
+template<auto Backend>
+void
+bench_fire_rate_lockless(bench::state& state)
+{
+    using timer_type = corosio::native_timer<Backend>;
+
+    corosio::io_context_options opts;
+    opts.single_threaded = true;
+    corosio::native_io_context<Backend> ioc(opts);
+    std::atomic<bool> running{true};
+    int64_t counter = 0;
+
+    auto task = [&]() -> capy::task<> {
+        timer_type t(ioc);
+        while (running.load(std::memory_order_relaxed))
+        {
+            t.expires_after(std::chrono::nanoseconds(0));
+            auto [ec] = co_await t.wait();
+            if (ec)
+                co_return;
+            ++counter;
+        }
+    };
+
+    perf::stopwatch sw;
+
+    capy::run_async(ioc.get_executor())(task());
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        running.store(false, std::memory_order_relaxed);
+    });
+
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    state.add_items(counter);
+}
+
 // N timers with staggered intervals (100us–1000us) firing concurrently.
 // Stresses the timer heap under contention.
 template<auto Backend>
@@ -168,7 +245,9 @@ make_timer_suite()
 {
     return bench::benchmark_suite("timer")
         .add("schedule_cancel", bench_schedule_cancel<Backend>)
+        .add("schedule_cancel_lockless", bench_schedule_cancel_lockless<Backend>)
         .add("fire_rate", bench_fire_rate<Backend>)
+        .add("fire_rate_lockless", bench_fire_rate_lockless<Backend>)
         .add("concurrent", bench_concurrent_timers<Backend>)
             .args({10, 100, 1000});
 }

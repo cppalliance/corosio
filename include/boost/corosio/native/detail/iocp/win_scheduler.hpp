@@ -80,6 +80,15 @@ public:
     void work_started() noexcept override;
     void work_finished() noexcept override;
 
+    /** Apply runtime IOCP configuration.
+
+        @param gqcs_timeout_ms  Max GQCS blocking time in milliseconds.
+    */
+    void configure_iocp(unsigned gqcs_timeout_ms) noexcept
+    {
+        gqcs_timeout_ms_ = gqcs_timeout_ms;
+    }
+
     /** Signal that an overlapped I/O operation is now pending.
         Coordinates with do_one() via the ready_ CAS protocol. */
     void on_pending(overlapped_op* op) const;
@@ -102,6 +111,7 @@ private:
     mutable long stopped_;
     long stop_event_posted_;
     mutable long dispatch_required_;
+    unsigned long gqcs_timeout_ms_ = 500;
 
     mutable win_mutex dispatch_mutex_;
     mutable op_queue completed_ops_;
@@ -226,7 +236,7 @@ win_scheduler::shutdown()
             ULONG_PTR key;
             LPOVERLAPPED overlapped;
             ::GetQueuedCompletionStatus(
-                iocp_, &bytes, &key, &overlapped, iocp::max_gqcs_timeout);
+                iocp_, &bytes, &key, &overlapped, gqcs_timeout_ms_);
             if (overlapped)
             {
                 ::InterlockedDecrement(&outstanding_work_);
@@ -389,7 +399,7 @@ win_scheduler::stop()
             {
                 // PQCS failure is non-fatal: stopped_ is already set.
                 // The run() loop will notice via the GQCS timeout
-                // (max_gqcs_timeout = 500ms) and exit.
+                // (gqcs_timeout_ms_, default 500ms) and exit.
                 ::InterlockedExchange(&dispatch_required_, 1);
             }
         }
@@ -547,8 +557,8 @@ win_scheduler::do_one(unsigned long timeout_ms)
 
         BOOL result = ::GetQueuedCompletionStatus(
             iocp_, &bytes, &key, &overlapped,
-            timeout_ms < iocp::max_gqcs_timeout ? timeout_ms
-                                                : iocp::max_gqcs_timeout);
+            timeout_ms < gqcs_timeout_ms_ ? timeout_ms
+                                        : gqcs_timeout_ms_);
         DWORD dwError = ::GetLastError();
 
         // Handle based on completion key

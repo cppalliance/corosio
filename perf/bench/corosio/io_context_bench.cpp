@@ -193,6 +193,135 @@ bench_concurrent_post_run(bench::state& state)
     state.counters["threads"] = num_threads;
 }
 
+// Configuration variant: high inline budget
+template<auto Backend>
+void
+bench_high_inline_budget(bench::state& state)
+{
+    corosio::io_context_options opts;
+    opts.inline_budget_max = 64;
+
+    corosio::native_io_context<Backend> ioc(opts);
+    auto ex                  = ioc.get_executor();
+    int64_t counter          = 0;
+    int constexpr batch_size = 1000;
+
+    perf::stopwatch sw;
+    auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::duration<double>(state.duration());
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        for (int i = 0; i < batch_size; ++i)
+            capy::run_async(ex)(increment_task(counter));
+
+        ioc.poll();
+        ioc.restart();
+    }
+
+    ioc.run();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    state.add_items(counter);
+}
+
+// Configuration variant: large event buffer
+template<auto Backend>
+void
+bench_large_event_buffer(bench::state& state)
+{
+    corosio::io_context_options opts;
+    opts.max_events_per_poll = 512;
+
+    corosio::native_io_context<Backend> ioc(opts);
+    auto ex                  = ioc.get_executor();
+    int64_t counter          = 0;
+    int constexpr batch_size = 1000;
+
+    perf::stopwatch sw;
+    auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::duration<double>(state.duration());
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        for (int i = 0; i < batch_size; ++i)
+            capy::run_async(ex)(increment_task(counter));
+
+        ioc.poll();
+        ioc.restart();
+    }
+
+    ioc.run();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    state.add_items(counter);
+}
+
+// Lockless variant of single_threaded (batch 1000)
+template<auto Backend>
+void
+bench_single_threaded_lockless(bench::state& state)
+{
+    corosio::io_context_options opts;
+    opts.single_threaded = true;
+
+    corosio::native_io_context<Backend> ioc(opts);
+    auto ex                  = ioc.get_executor();
+    int64_t counter          = 0;
+    int constexpr batch_size = 1000;
+
+    perf::stopwatch sw;
+    auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::duration<double>(state.duration());
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        for (int i = 0; i < batch_size; ++i)
+            capy::run_async(ex)(increment_task(counter));
+
+        ioc.poll();
+        ioc.restart();
+    }
+
+    ioc.run();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    state.add_items(counter);
+}
+
+// Lockless variant of interleaved (batch 100)
+template<auto Backend>
+void
+bench_interleaved_lockless(bench::state& state)
+{
+    corosio::io_context_options opts;
+    opts.single_threaded = true;
+
+    int handlers_per_iteration = 100;
+
+    corosio::native_io_context<Backend> ioc(opts);
+    auto ex         = ioc.get_executor();
+    int64_t counter = 0;
+
+    perf::stopwatch sw;
+    auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::duration<double>(state.duration());
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        for (int i = 0; i < handlers_per_iteration; ++i)
+            capy::run_async(ex)(increment_task(counter));
+
+        ioc.poll();
+        ioc.restart();
+    }
+
+    ioc.run();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    state.add_items(counter);
+}
+
 } // anonymous namespace
 
 template<auto Backend>
@@ -214,7 +343,11 @@ make_io_context_suite()
             .args({8})
         .add("interleaved", bench_interleaved_post_run<Backend>)
         .add("concurrent", bench_concurrent_post_run<Backend>)
-            .args({4});
+            .args({4})
+        .add("high_inline_budget", bench_high_inline_budget<Backend>)
+        .add("large_event_buffer", bench_large_event_buffer<Backend>)
+        .add("single_threaded_lockless", bench_single_threaded_lockless<Backend>)
+        .add("interleaved_lockless", bench_interleaved_lockless<Backend>);
 }
 
 } // namespace corosio_bench

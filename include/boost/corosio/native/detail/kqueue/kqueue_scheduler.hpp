@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <limits>
 #include <mutex>
+#include <vector>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -102,6 +103,13 @@ public:
     /// Shut down the scheduler, draining pending operations.
     void shutdown() override;
 
+    /// Apply runtime configuration, resizing the event buffer.
+    void configure_reactor(
+        unsigned max_events,
+        unsigned budget_init,
+        unsigned budget_max,
+        unsigned unassisted) override;
+
     /** Return the kqueue file descriptor.
 
         Used by socket services to register file descriptors
@@ -139,7 +147,7 @@ public:
 
 private:
     void
-    run_task(std::unique_lock<std::mutex>& lock, context_type* ctx,
+    run_task(lock_type& lock, context_type* ctx,
         long timeout_us) override;
     void interrupt_reactor() const override;
     long calculate_timeout(long requested_timeout_us) const;
@@ -148,10 +156,14 @@ private:
 
     // EVFILT_USER idempotency
     mutable std::atomic<bool> user_event_armed_{false};
+
+    // Event buffer sized from max_events_per_poll_.
+    std::vector<struct kevent> event_buffer_;
 };
 
 inline kqueue_scheduler::kqueue_scheduler(capy::execution_context& ctx, int)
     : kq_fd_(-1)
+    , event_buffer_(max_events_per_poll_)
 {
     kq_fd_ = ::kqueue();
     if (kq_fd_ < 0)
@@ -203,6 +215,18 @@ kqueue_scheduler::shutdown()
 }
 
 inline void
+kqueue_scheduler::configure_reactor(
+    unsigned max_events,
+    unsigned budget_init,
+    unsigned budget_max,
+    unsigned unassisted)
+{
+    reactor_scheduler_base::configure_reactor(
+        max_events, budget_init, budget_max, unassisted);
+    event_buffer_.resize(max_events_per_poll_);
+}
+
+inline void
 kqueue_scheduler::register_descriptor(int fd, descriptor_state* desc) const
 {
     struct kevent changes[2];
@@ -219,9 +243,10 @@ kqueue_scheduler::register_descriptor(int fd, descriptor_state* desc) const
     desc->registered_events = kqueue_event_read | kqueue_event_write;
     desc->fd                = fd;
     desc->scheduler_        = this;
+    desc->mutex.set_enabled(!single_threaded_);
     desc->ready_events_.store(0, std::memory_order_relaxed);
 
-    std::lock_guard lock(desc->mutex);
+    conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
     desc->impl_ref_.reset();
     desc->read_ready  = false;
     desc->write_ready = false;
@@ -286,7 +311,7 @@ kqueue_scheduler::calculate_timeout(long requested_timeout_us) const
 
 inline void
 kqueue_scheduler::run_task(
-    std::unique_lock<std::mutex>& lock, context_type* ctx, long timeout_us)
+    lock_type& lock, context_type* ctx, long timeout_us)
 {
     long effective_timeout_us =
         task_interrupted_ ? 0 : calculate_timeout(timeout_us);
@@ -305,8 +330,9 @@ kqueue_scheduler::run_task(
         ts_ptr     = &ts;
     }
 
-    struct kevent events[128];
-    int nev         = ::kevent(kq_fd_, nullptr, 0, events, 128, ts_ptr);
+    int nev = ::kevent(
+        kq_fd_, nullptr, 0, event_buffer_.data(),
+        static_cast<int>(event_buffer_.size()), ts_ptr);
     int saved_errno = errno;
 
     if (nev < 0 && saved_errno != EINTR)
@@ -316,31 +342,32 @@ kqueue_scheduler::run_task(
 
     for (int i = 0; i < nev; ++i)
     {
-        if (events[i].filter == EVFILT_USER)
+        if (event_buffer_[i].filter == EVFILT_USER)
         {
             user_event_armed_.store(false, std::memory_order_release);
             continue;
         }
 
-        auto* desc = static_cast<descriptor_state*>(events[i].udata);
+        auto* desc =
+            static_cast<descriptor_state*>(event_buffer_[i].udata);
         if (!desc)
             continue;
 
         std::uint32_t ready = 0;
 
-        if (events[i].filter == EVFILT_READ)
+        if (event_buffer_[i].filter == EVFILT_READ)
             ready |= kqueue_event_read;
-        else if (events[i].filter == EVFILT_WRITE)
+        else if (event_buffer_[i].filter == EVFILT_WRITE)
             ready |= kqueue_event_write;
 
-        if (events[i].flags & EV_ERROR)
+        if (event_buffer_[i].flags & EV_ERROR)
             ready |= kqueue_event_error;
 
-        if (events[i].flags & EV_EOF)
+        if (event_buffer_[i].flags & EV_EOF)
         {
-            if (events[i].filter == EVFILT_READ)
+            if (event_buffer_[i].filter == EVFILT_READ)
                 ready |= kqueue_event_read;
-            if (events[i].fflags != 0)
+            if (event_buffer_[i].fflags != 0)
                 ready |= kqueue_event_error;
         }
 

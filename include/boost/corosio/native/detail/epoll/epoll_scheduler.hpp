@@ -33,6 +33,7 @@
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include <vector>
 
 #include <errno.h>
 #include <sys/epoll.h>
@@ -86,6 +87,13 @@ public:
     /// Shut down the scheduler, draining pending operations.
     void shutdown() override;
 
+    /// Apply runtime configuration, resizing the event buffer.
+    void configure_reactor(
+        unsigned max_events,
+        unsigned budget_init,
+        unsigned budget_max,
+        unsigned unassisted) override;
+
     /** Return the epoll file descriptor.
 
         Used by socket services to register file descriptors
@@ -117,7 +125,7 @@ public:
 
 private:
     void
-    run_task(std::unique_lock<std::mutex>& lock, context_type* ctx,
+    run_task(lock_type& lock, context_type* ctx,
         long timeout_us) override;
     void interrupt_reactor() const override;
     void update_timerfd() const;
@@ -131,12 +139,17 @@ private:
 
     // Set when the earliest timer changes; flushed before epoll_wait
     mutable std::atomic<bool> timerfd_stale_{false};
+
+    // Event buffer sized from max_events_per_poll_ (set at construction,
+    // resized by configure_reactor via io_context_options).
+    std::vector<epoll_event> event_buffer_;
 };
 
 inline epoll_scheduler::epoll_scheduler(capy::execution_context& ctx, int)
     : epoll_fd_(-1)
     , event_fd_(-1)
     , timer_fd_(-1)
+    , event_buffer_(max_events_per_poll_)
 {
     epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
     if (epoll_fd_ < 0)
@@ -219,6 +232,18 @@ epoll_scheduler::shutdown()
 }
 
 inline void
+epoll_scheduler::configure_reactor(
+    unsigned max_events,
+    unsigned budget_init,
+    unsigned budget_max,
+    unsigned unassisted)
+{
+    reactor_scheduler_base::configure_reactor(
+        max_events, budget_init, budget_max, unassisted);
+    event_buffer_.resize(max_events_per_poll_);
+}
+
+inline void
 epoll_scheduler::register_descriptor(int fd, descriptor_state* desc) const
 {
     epoll_event ev{};
@@ -231,9 +256,10 @@ epoll_scheduler::register_descriptor(int fd, descriptor_state* desc) const
     desc->registered_events = ev.events;
     desc->fd                = fd;
     desc->scheduler_        = this;
+    desc->mutex.set_enabled(!single_threaded_);
     desc->ready_events_.store(0, std::memory_order_relaxed);
 
-    std::lock_guard lock(desc->mutex);
+    conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
     desc->impl_ref_.reset();
     desc->read_ready  = false;
     desc->write_ready = false;
@@ -296,7 +322,7 @@ epoll_scheduler::update_timerfd() const
 
 inline void
 epoll_scheduler::run_task(
-    std::unique_lock<std::mutex>& lock, context_type* ctx, long timeout_us)
+    lock_type& lock, context_type* ctx, long timeout_us)
 {
     int timeout_ms;
     if (task_interrupted_)
@@ -315,8 +341,9 @@ epoll_scheduler::run_task(
     if (timerfd_stale_.exchange(false, std::memory_order_acquire))
         update_timerfd();
 
-    epoll_event events[128];
-    int nfds = ::epoll_wait(epoll_fd_, events, 128, timeout_ms);
+    int nfds = ::epoll_wait(
+        epoll_fd_, event_buffer_.data(),
+        static_cast<int>(event_buffer_.size()), timeout_ms);
 
     if (nfds < 0 && errno != EINTR)
         detail::throw_system_error(make_err(errno), "epoll_wait");
@@ -326,7 +353,7 @@ epoll_scheduler::run_task(
 
     for (int i = 0; i < nfds; ++i)
     {
-        if (events[i].data.ptr == nullptr)
+        if (event_buffer_[i].data.ptr == nullptr)
         {
             std::uint64_t val;
             // NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection)
@@ -335,7 +362,7 @@ epoll_scheduler::run_task(
             continue;
         }
 
-        if (events[i].data.ptr == &timer_fd_)
+        if (event_buffer_[i].data.ptr == &timer_fd_)
         {
             std::uint64_t expirations;
             // NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection)
@@ -345,8 +372,9 @@ epoll_scheduler::run_task(
             continue;
         }
 
-        auto* desc = static_cast<descriptor_state*>(events[i].data.ptr);
-        desc->add_ready_events(events[i].events);
+        auto* desc =
+            static_cast<descriptor_state*>(event_buffer_[i].data.ptr);
+        desc->add_ready_events(event_buffer_[i].events);
 
         bool expected = false;
         if (desc->is_enqueued_.compare_exchange_strong(

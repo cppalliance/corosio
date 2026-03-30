@@ -28,6 +28,9 @@ struct native_scheduler : scheduler
 {
     /// Store the timer service pointer, set during construction.
     timer_service* timer_svc_ = nullptr;
+
+    /// True when single-threaded (lockless) mode is active.
+    bool single_threaded_ = false;
 };
 
 } // namespace boost::corosio::detail

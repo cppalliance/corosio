@@ -157,6 +157,95 @@ bench_concurrent_latency(bench::state& state)
         s.close();
 }
 
+template<auto Backend>
+void
+bench_pingpong_latency_lockless(bench::state& state)
+{
+    using socket_type = corosio::native_tcp_socket<Backend>;
+
+    auto message_size = static_cast<std::size_t>(state.range(0));
+    state.counters["message_size"] = static_cast<double>(message_size);
+
+    corosio::io_context_options opts;
+    opts.single_threaded = true;
+    corosio::native_io_context<Backend> ioc(opts);
+    auto [client, server] = corosio::test::make_socket_pair<
+        socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+
+    client.set_option(corosio::native_socket_option::no_delay(true));
+    server.set_option(corosio::native_socket_option::no_delay(true));
+
+    capy::run_async(ioc.get_executor())(
+        pingpong_client_task<Backend>(client, server, message_size, state));
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        state.stop();
+    });
+
+    perf::stopwatch sw;
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    client.close();
+    server.close();
+}
+
+template<auto Backend>
+void
+bench_concurrent_latency_lockless(bench::state& state)
+{
+    using socket_type = corosio::native_tcp_socket<Backend>;
+
+    int num_pairs = static_cast<int>(state.range(0));
+    state.counters["num_pairs"] = num_pairs;
+
+    corosio::io_context_options opts;
+    opts.single_threaded = true;
+    corosio::native_io_context<Backend> ioc(opts);
+
+    std::vector<socket_type> clients;
+    std::vector<socket_type> servers;
+
+    clients.reserve(num_pairs);
+    servers.reserve(num_pairs);
+
+    for (int i = 0; i < num_pairs; ++i)
+    {
+        auto [c, s] = corosio::test::make_socket_pair<
+            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+        c.set_option(corosio::native_socket_option::no_delay(true));
+        s.set_option(corosio::native_socket_option::no_delay(true));
+        clients.push_back(std::move(c));
+        servers.push_back(std::move(s));
+    }
+
+    for (int p = 0; p < num_pairs; ++p)
+    {
+        capy::run_async(ioc.get_executor())(
+            pingpong_client_task<Backend>(clients[p], servers[p], 64, state));
+    }
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        state.stop();
+    });
+
+    perf::stopwatch sw;
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(sw.elapsed_seconds());
+
+    for (auto& c : clients)
+        c.close();
+    for (auto& s : servers)
+        s.close();
+}
+
 } // anonymous namespace
 
 template<auto Backend>
@@ -188,7 +277,11 @@ make_socket_latency_suite()
         })
         .add("pingpong", bench_pingpong_latency<Backend>)
             .args({1, 64, 1024})
+        .add("pingpong_lockless", bench_pingpong_latency_lockless<Backend>)
+            .args({1, 64, 1024})
         .add("concurrent", bench_concurrent_latency<Backend>)
+            .args({1, 4, 16})
+        .add("concurrent_lockless", bench_concurrent_latency_lockless<Backend>)
             .args({1, 4, 16});
 }
 
