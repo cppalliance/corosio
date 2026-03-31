@@ -586,6 +586,28 @@ jobs:
           toolchain: ${{ env.CMAKE_TOOLCHAIN_FILE }}
           ref-source-dir: boost-root/libs/corosio/test/cmake_test
 
+      # Standalone root-project builds (build-cmake, coverage, clang-tidy)
+      # need the consumer to provide Boost::capy. Inject it via
+      # CMAKE_PROJECT_boost_corosio_INCLUDE so the already-cloned capy-root
+      # is added as a subdirectory at configure time.
+      - name: Create capy provider for standalone builds
+        if: ${{ matrix.build-cmake || matrix.coverage || matrix.clang-tidy }}
+        shell: bash
+        run: |
+          workspace_root=$(echo "$GITHUB_WORKSPACE" | sed 's/\\/\//g')
+          cat > "${workspace_root}/provide-capy.cmake" << 'EOF'
+          set(BOOST_CAPY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+          set(BOOST_CAPY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+          # Co-locate DLLs with executables so post-build test discovery works
+          if(BUILD_SHARED_LIBS)
+              set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+          endif()
+          add_subdirectory("${COROSIO_CI_CAPY_SOURCE_DIR}"
+              "${CMAKE_BINARY_DIR}/_deps/capy-build" EXCLUDE_FROM_ALL)
+          EOF
+          echo "COROSIO_CI_PROVIDE_CAPY=${workspace_root}/provide-capy.cmake" >> $GITHUB_ENV
+          echo "COROSIO_CI_CAPY_DIR=${workspace_root}/capy-root" >> $GITHUB_ENV
+
       - name: Root Project CMake Workflow
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
         if: ${{ matrix.build-cmake || matrix.coverage }}
@@ -606,6 +628,8 @@ jobs:
           cmake-version: '>=3.20'
           extra-args: |
             -D Boost_VERBOSE=ON
+            -D CMAKE_PROJECT_boost_corosio_INCLUDE=${{ env.COROSIO_CI_PROVIDE_CAPY }}
+            -D COROSIO_CI_CAPY_SOURCE_DIR=${{ env.COROSIO_CI_CAPY_DIR }}
             ${{ matrix.compiler == 'mingw' && '-D CMAKE_VERBOSE_MAKEFILE=ON' || '' }}
             ${{ contains(matrix.generator || '', 'Visual Studio') && format('-D CMAKE_CONFIGURATION_TYPES={0}', matrix.build-type) || '' }}
             ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
@@ -630,6 +654,8 @@ jobs:
           cmake-version: '>=3.20'
           extra-args: |
             -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
+            -D CMAKE_PROJECT_boost_corosio_INCLUDE=${{ env.COROSIO_CI_PROVIDE_CAPY }}
+            -D COROSIO_CI_CAPY_SOURCE_DIR=${{ env.COROSIO_CI_CAPY_DIR }}
             ${{ env.CMAKE_WOLFSSL_INCLUDE && format('-D WolfSSL_INCLUDE_DIR={0}', env.CMAKE_WOLFSSL_INCLUDE) || '' }}
             ${{ env.CMAKE_WOLFSSL_LIBRARY && format('-D WolfSSL_LIBRARY={0}', env.CMAKE_WOLFSSL_LIBRARY) || '' }}
             ${{ env.CMAKE_OPENSSL_ROOT && format('-D OPENSSL_ROOT_DIR="{0}"', env.CMAKE_OPENSSL_ROOT) || '' }}

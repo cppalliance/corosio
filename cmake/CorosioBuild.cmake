@@ -9,8 +9,10 @@
 
 # corosio_resolve_deps()
 #
-# Resolve all build dependencies: sibling Boost libraries when inside a
-# boost tree, Capy via find_package / FetchContent, and Threads.
+# Resolve build dependencies: sibling Boost libraries when inside a
+# boost tree, and Threads. Capy (Boost::capy) must be provided by
+# the consumer — CMake resolves the target reference at generation
+# time, so declaration order does not matter.
 #
 # Must be a macro so find_package results propagate to the caller's scope.
 macro(corosio_resolve_deps)
@@ -27,55 +29,6 @@ macro(corosio_resolve_deps)
         set(CMAKE_FOLDER _deps)
         add_subdirectory(../.. ${CMAKE_CURRENT_BINARY_DIR}/deps/boost EXCLUDE_FROM_ALL)
         unset(CMAKE_FOLDER)
-    endif()
-
-    # Capy: prefer already-available target, then find_package, then FetchContent
-    if(NOT TARGET Boost::capy)
-        find_package(boost_capy QUIET)
-    endif()
-
-    if(NOT TARGET Boost::capy)
-        include(FetchContent)
-
-        # Match capy branch to corosio's current branch when possible
-        if(NOT DEFINED CACHE{BOOST_COROSIO_CAPY_TAG})
-            execute_process(
-                COMMAND git rev-parse --abbrev-ref HEAD
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                OUTPUT_VARIABLE _corosio_branch
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-                ERROR_QUIET
-                RESULT_VARIABLE _git_result)
-            if(_git_result EQUAL 0 AND _corosio_branch)
-                execute_process(
-                    COMMAND git ls-remote --heads
-                        https://github.com/cppalliance/capy.git
-                        ${_corosio_branch}
-                    OUTPUT_VARIABLE _capy_has_branch
-                    OUTPUT_STRIP_TRAILING_WHITESPACE
-                    ERROR_QUIET
-                    TIMEOUT 30)
-                if(_capy_has_branch)
-                    set(_default_capy_tag "${_corosio_branch}")
-                endif()
-            endif()
-            if(NOT DEFINED _default_capy_tag)
-                set(_default_capy_tag "develop")
-            endif()
-        endif()
-        set(BOOST_COROSIO_CAPY_TAG "${_default_capy_tag}" CACHE STRING
-            "Git tag/branch for capy when fetching via FetchContent")
-
-        message(STATUS "Fetching capy...")
-        set(BOOST_CAPY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-        set(BOOST_CAPY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-        FetchContent_Declare(
-            capy
-            GIT_REPOSITORY https://github.com/cppalliance/capy.git
-            GIT_TAG ${BOOST_COROSIO_CAPY_TAG}
-            GIT_SHALLOW TRUE
-        )
-        FetchContent_MakeAvailable(capy)
     endif()
 
     find_package(Threads REQUIRED)
@@ -196,9 +149,11 @@ function(corosio_install)
                 $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
         endforeach()
 
-        if(boost_capy_FOUND)
-            # Capy from find_package (imported target): full install with
-            # CMake package config and export sets.
+        get_target_property(_capy_imported boost_capy IMPORTED)
+
+        if(_capy_imported)
+            # Capy is an imported target (find_package, vcpkg, conan):
+            # full install with export sets and package config.
             include(CMakePackageConfigHelpers)
 
             set(BOOST_COROSIO_INSTALL_CMAKEDIR
@@ -233,9 +188,9 @@ function(corosio_install)
             install(FILES ${_corosio_config_files}
                 DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
         else()
-            # Capy from source tree (boost root or FetchContent): export sets
-            # can't work because capy isn't an imported target. Install the
-            # library and headers only.
+            # Capy from source tree (boost root, FetchContent,
+            # add_subdirectory): export sets can't reference a
+            # non-exported dependency.
             install(TARGETS ${_corosio_install_targets}
                 ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
