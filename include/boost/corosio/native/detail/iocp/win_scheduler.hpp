@@ -89,6 +89,17 @@ public:
         gqcs_timeout_ms_ = gqcs_timeout_ms;
     }
 
+    /** Enable or disable single-threaded (lockless) mode.
+
+        When enabled, the dispatch mutex becomes a no-op.
+        Cross-thread post() is undefined behavior.
+    */
+    void configure_single_threaded(bool v) noexcept
+    {
+        single_threaded_ = v;
+        dispatch_mutex_.set_enabled(!v);
+    }
+
     /** Signal that an overlapped I/O operation is now pending.
         Coordinates with do_one() via the ready_ CAS protocol. */
     void on_pending(overlapped_op* op) const;
@@ -113,6 +124,7 @@ private:
     long stop_event_posted_;
     mutable long dispatch_required_;
     unsigned long gqcs_timeout_ms_ = 500;
+    bool single_threaded_ = false;
 
     mutable win_mutex dispatch_mutex_;
     mutable op_queue completed_ops_;

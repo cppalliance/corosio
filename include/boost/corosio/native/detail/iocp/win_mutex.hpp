@@ -27,6 +27,10 @@ namespace boost::corosio::detail {
     Each call to `lock()` or successful `try_lock()` must be
     balanced by a corresponding call to `unlock()`.
 
+    When disabled via `set_enabled(false)`, all locking operations
+    become no-ops. This supports single-threaded (lockless) mode
+    where cross-thread posting is undefined behavior.
+
     Satisfies the Lockable named requirement and is compatible
     with `std::lock_guard`, `std::unique_lock`, and `std::scoped_lock`.
 */
@@ -46,23 +50,29 @@ public:
     win_mutex(win_mutex const&)            = delete;
     win_mutex& operator=(win_mutex const&) = delete;
 
+    void set_enabled(bool v) noexcept { enabled_ = v; }
+    bool enabled() const noexcept { return enabled_; }
+
     void lock() noexcept
     {
-        ::EnterCriticalSection(&cs_);
+        if (enabled_)
+            ::EnterCriticalSection(&cs_);
     }
 
     void unlock() noexcept
     {
-        ::LeaveCriticalSection(&cs_);
+        if (enabled_)
+            ::LeaveCriticalSection(&cs_);
     }
 
     bool try_lock() noexcept
     {
-        return ::TryEnterCriticalSection(&cs_) != 0;
+        return !enabled_ || ::TryEnterCriticalSection(&cs_) != 0;
     }
 
 private:
     ::CRITICAL_SECTION cs_;
+    bool enabled_ = true;
 };
 
 } // namespace boost::corosio::detail

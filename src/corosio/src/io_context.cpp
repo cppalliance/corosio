@@ -153,8 +153,10 @@ apply_scheduler_options(
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP
-    static_cast<detail::win_scheduler&>(sched).configure_iocp(
-        opts.gqcs_timeout_ms);
+    auto& iocp_sched = static_cast<detail::win_scheduler&>(sched);
+    iocp_sched.configure_iocp(opts.gqcs_timeout_ms);
+    if (opts.single_threaded)
+        iocp_sched.configure_single_threaded(true);
 #endif
 
     (void)sched;
