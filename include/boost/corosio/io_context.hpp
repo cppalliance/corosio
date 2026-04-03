@@ -117,6 +117,7 @@ struct io_context_options
 };
 
 namespace detail {
+class timer_service;
 struct timer_service_access;
 } // namespace detail
 
@@ -160,6 +161,7 @@ class BOOST_COROSIO_DECL io_context : public capy::execution_context
     void apply_options_post_(io_context_options const& opts);
 
 protected:
+    detail::timer_service* timer_svc_ = nullptr;
     detail::scheduler* sched_;
 
 public:

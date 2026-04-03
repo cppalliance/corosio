@@ -51,7 +51,8 @@ class BOOST_COROSIO_DECL kqueue_tcp_acceptor_service final
     : public tcp_acceptor_service
 {
 public:
-    explicit kqueue_tcp_acceptor_service(capy::execution_context& ctx);
+    explicit kqueue_tcp_acceptor_service(
+        capy::execution_context& ctx, kqueue_tcp_service& tcp_svc);
     ~kqueue_tcp_acceptor_service();
 
     kqueue_tcp_acceptor_service(kqueue_tcp_acceptor_service const&) = delete;
@@ -84,7 +85,7 @@ public:
     kqueue_tcp_service* tcp_service() const noexcept;
 
 private:
-    capy::execution_context& ctx_;
+    kqueue_tcp_service* tcp_svc_;
     std::unique_ptr<kqueue_tcp_acceptor_state> state_;
 };
 
@@ -267,8 +268,8 @@ kqueue_tcp_acceptor::close_socket() noexcept
 }
 
 inline kqueue_tcp_acceptor_service::kqueue_tcp_acceptor_service(
-    capy::execution_context& ctx)
-    : ctx_(ctx)
+    capy::execution_context& ctx, kqueue_tcp_service& tcp_svc)
+    : tcp_svc_(&tcp_svc)
     , state_(
           std::make_unique<kqueue_tcp_acceptor_state>(
               ctx.use_service<kqueue_scheduler>()))
@@ -406,8 +407,7 @@ kqueue_tcp_acceptor_service::work_finished() noexcept
 inline kqueue_tcp_service*
 kqueue_tcp_acceptor_service::tcp_service() const noexcept
 {
-    auto* svc = ctx_.find_service<detail::tcp_service>();
-    return svc ? dynamic_cast<kqueue_tcp_service*>(svc) : nullptr;
+    return tcp_svc_;
 }
 
 } // namespace boost::corosio::detail

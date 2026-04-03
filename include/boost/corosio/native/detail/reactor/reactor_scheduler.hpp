@@ -13,7 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
-#include <boost/corosio/native/native_scheduler.hpp>
+#include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
 
@@ -31,8 +31,9 @@
 
 namespace boost::corosio::detail {
 
-// Forward declaration
-class reactor_scheduler_base;
+// Forward declarations
+class reactor_scheduler;
+class timer_service;
 
 /** Per-thread state for a reactor scheduler.
 
@@ -43,7 +44,7 @@ class reactor_scheduler_base;
 struct BOOST_COROSIO_SYMBOL_VISIBLE reactor_scheduler_context
 {
     /// Scheduler this context belongs to.
-    reactor_scheduler_base const* key;
+    reactor_scheduler const* key;
 
     /// Next context frame on this thread's stack.
     reactor_scheduler_context* next;
@@ -65,7 +66,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE reactor_scheduler_context
 
     /// Construct a context frame linked to @a n.
     reactor_scheduler_context(
-        reactor_scheduler_base const* k,
+        reactor_scheduler const* k,
         reactor_scheduler_context* n);
 };
 
@@ -74,7 +75,7 @@ inline thread_local_ptr<reactor_scheduler_context> reactor_context_stack;
 
 /// Find the context frame for a scheduler on this thread.
 inline reactor_scheduler_context*
-reactor_find_context(reactor_scheduler_base const* self) noexcept
+reactor_find_context(reactor_scheduler const* self) noexcept
 {
     for (auto* c = reactor_context_stack.get(); c != nullptr; c = c->next)
     {
@@ -136,8 +137,8 @@ reactor_drain_private_queue(
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class reactor_scheduler_base
-    : public native_scheduler
+class reactor_scheduler
+    : public scheduler
     , public capy::execution_context::service
 {
 public:
@@ -253,6 +254,12 @@ public:
         return inline_budget_initial_;
     }
 
+    /// Return true if single-threaded (lockless) mode is active.
+    bool is_single_threaded() const noexcept
+    {
+        return single_threaded_;
+    }
+
     /** Enable or disable single-threaded (lockless) mode.
 
         When enabled, all scheduler mutex and condition variable
@@ -267,7 +274,10 @@ public:
     }
 
 protected:
-    reactor_scheduler_base() = default;
+    timer_service* timer_svc_ = nullptr;
+    bool single_threaded_ = false;
+
+    reactor_scheduler() = default;
 
     /** Drain completed_ops during shutdown.
 
@@ -281,7 +291,7 @@ protected:
     /// RAII guard that re-inserts the task sentinel after `run_task`.
     struct task_cleanup
     {
-        reactor_scheduler_base const* sched;
+        reactor_scheduler const* sched;
         lock_type* lock;
         context_type* ctx;
         ~task_cleanup();
@@ -328,7 +338,7 @@ protected:
 private:
     struct work_cleanup
     {
-        reactor_scheduler_base* sched;
+        reactor_scheduler* sched;
         lock_type* lock;
         context_type* ctx;
         ~work_cleanup();
@@ -360,7 +370,7 @@ struct reactor_thread_context_guard
 
     /// Construct the guard, pushing a frame for @a sched.
     explicit reactor_thread_context_guard(
-        reactor_scheduler_base const* sched) noexcept
+        reactor_scheduler const* sched) noexcept
         : frame_(sched, reactor_context_stack.get())
     {
         reactor_context_stack.set(&frame_);
@@ -380,7 +390,7 @@ struct reactor_thread_context_guard
 
 inline
 reactor_scheduler_context::reactor_scheduler_context(
-    reactor_scheduler_base const* k,
+    reactor_scheduler const* k,
     reactor_scheduler_context* n)
     : key(k)
     , next(n)
@@ -393,7 +403,7 @@ reactor_scheduler_context::reactor_scheduler_context(
 }
 
 inline void
-reactor_scheduler_base::configure_reactor(
+reactor_scheduler::configure_reactor(
     unsigned max_events,
     unsigned budget_init,
     unsigned budget_max,
@@ -421,7 +431,7 @@ reactor_scheduler_base::configure_reactor(
 }
 
 inline void
-reactor_scheduler_base::reset_inline_budget() const noexcept
+reactor_scheduler::reset_inline_budget() const noexcept
 {
     if (auto* ctx = reactor_find_context(this))
     {
@@ -447,7 +457,7 @@ reactor_scheduler_base::reset_inline_budget() const noexcept
 }
 
 inline bool
-reactor_scheduler_base::try_consume_inline_budget() const noexcept
+reactor_scheduler::try_consume_inline_budget() const noexcept
 {
     if (auto* ctx = reactor_find_context(this))
     {
@@ -461,7 +471,7 @@ reactor_scheduler_base::try_consume_inline_budget() const noexcept
 }
 
 inline void
-reactor_scheduler_base::post(std::coroutine_handle<> h) const
+reactor_scheduler::post(std::coroutine_handle<> h) const
 {
     struct post_handler final : scheduler_op
     {
@@ -504,7 +514,7 @@ reactor_scheduler_base::post(std::coroutine_handle<> h) const
 }
 
 inline void
-reactor_scheduler_base::post(scheduler_op* h) const
+reactor_scheduler::post(scheduler_op* h) const
 {
     if (auto* ctx = reactor_find_context(this))
     {
@@ -521,13 +531,13 @@ reactor_scheduler_base::post(scheduler_op* h) const
 }
 
 inline bool
-reactor_scheduler_base::running_in_this_thread() const noexcept
+reactor_scheduler::running_in_this_thread() const noexcept
 {
     return reactor_find_context(this) != nullptr;
 }
 
 inline void
-reactor_scheduler_base::stop()
+reactor_scheduler::stop()
 {
     lock_type lock(mutex_);
     if (!stopped_.load(std::memory_order_acquire))
@@ -539,19 +549,19 @@ reactor_scheduler_base::stop()
 }
 
 inline bool
-reactor_scheduler_base::stopped() const noexcept
+reactor_scheduler::stopped() const noexcept
 {
     return stopped_.load(std::memory_order_acquire);
 }
 
 inline void
-reactor_scheduler_base::restart()
+reactor_scheduler::restart()
 {
     stopped_.store(false, std::memory_order_release);
 }
 
 inline std::size_t
-reactor_scheduler_base::run()
+reactor_scheduler::run()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -576,7 +586,7 @@ reactor_scheduler_base::run()
 }
 
 inline std::size_t
-reactor_scheduler_base::run_one()
+reactor_scheduler::run_one()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -590,7 +600,7 @@ reactor_scheduler_base::run_one()
 }
 
 inline std::size_t
-reactor_scheduler_base::wait_one(long usec)
+reactor_scheduler::wait_one(long usec)
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -604,7 +614,7 @@ reactor_scheduler_base::wait_one(long usec)
 }
 
 inline std::size_t
-reactor_scheduler_base::poll()
+reactor_scheduler::poll()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -629,7 +639,7 @@ reactor_scheduler_base::poll()
 }
 
 inline std::size_t
-reactor_scheduler_base::poll_one()
+reactor_scheduler::poll_one()
 {
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
@@ -643,20 +653,20 @@ reactor_scheduler_base::poll_one()
 }
 
 inline void
-reactor_scheduler_base::work_started() noexcept
+reactor_scheduler::work_started() noexcept
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 }
 
 inline void
-reactor_scheduler_base::work_finished() noexcept
+reactor_scheduler::work_finished() noexcept
 {
     if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
         stop();
 }
 
 inline void
-reactor_scheduler_base::compensating_work_started() const noexcept
+reactor_scheduler::compensating_work_started() const noexcept
 {
     auto* ctx = reactor_find_context(this);
     if (ctx)
@@ -664,7 +674,7 @@ reactor_scheduler_base::compensating_work_started() const noexcept
 }
 
 inline void
-reactor_scheduler_base::drain_thread_queue(
+reactor_scheduler::drain_thread_queue(
     op_queue& queue, std::int64_t count) const
 {
     if (count > 0)
@@ -677,7 +687,7 @@ reactor_scheduler_base::drain_thread_queue(
 }
 
 inline void
-reactor_scheduler_base::post_deferred_completions(op_queue& ops) const
+reactor_scheduler::post_deferred_completions(op_queue& ops) const
 {
     if (ops.empty())
         return;
@@ -694,7 +704,7 @@ reactor_scheduler_base::post_deferred_completions(op_queue& ops) const
 }
 
 inline void
-reactor_scheduler_base::shutdown_drain()
+reactor_scheduler::shutdown_drain()
 {
     lock_type lock(mutex_);
 
@@ -711,14 +721,14 @@ reactor_scheduler_base::shutdown_drain()
 }
 
 inline void
-reactor_scheduler_base::signal_all(lock_type&) const
+reactor_scheduler::signal_all(lock_type&) const
 {
     state_ |= signaled_bit;
     cond_.notify_all();
 }
 
 inline bool
-reactor_scheduler_base::maybe_unlock_and_signal_one(
+reactor_scheduler::maybe_unlock_and_signal_one(
     lock_type& lock) const
 {
     state_ |= signaled_bit;
@@ -732,7 +742,7 @@ reactor_scheduler_base::maybe_unlock_and_signal_one(
 }
 
 inline bool
-reactor_scheduler_base::unlock_and_signal_one(
+reactor_scheduler::unlock_and_signal_one(
     lock_type& lock) const
 {
     state_ |= signaled_bit;
@@ -744,13 +754,13 @@ reactor_scheduler_base::unlock_and_signal_one(
 }
 
 inline void
-reactor_scheduler_base::clear_signal() const
+reactor_scheduler::clear_signal() const
 {
     state_ &= ~signaled_bit;
 }
 
 inline void
-reactor_scheduler_base::wait_for_signal(
+reactor_scheduler::wait_for_signal(
     lock_type& lock) const
 {
     while ((state_ & signaled_bit) == 0)
@@ -762,7 +772,7 @@ reactor_scheduler_base::wait_for_signal(
 }
 
 inline void
-reactor_scheduler_base::wait_for_signal_for(
+reactor_scheduler::wait_for_signal_for(
     lock_type& lock, long timeout_us) const
 {
     if ((state_ & signaled_bit) == 0)
@@ -774,7 +784,7 @@ reactor_scheduler_base::wait_for_signal_for(
 }
 
 inline void
-reactor_scheduler_base::wake_one_thread_and_unlock(
+reactor_scheduler::wake_one_thread_and_unlock(
     lock_type& lock) const
 {
     if (maybe_unlock_and_signal_one(lock))
@@ -792,7 +802,7 @@ reactor_scheduler_base::wake_one_thread_and_unlock(
     }
 }
 
-inline reactor_scheduler_base::work_cleanup::~work_cleanup()
+inline reactor_scheduler::work_cleanup::~work_cleanup()
 {
     if (ctx)
     {
@@ -816,7 +826,7 @@ inline reactor_scheduler_base::work_cleanup::~work_cleanup()
     }
 }
 
-inline reactor_scheduler_base::task_cleanup::~task_cleanup()
+inline reactor_scheduler::task_cleanup::~task_cleanup()
 {
     if (!ctx)
         return;
@@ -837,7 +847,7 @@ inline reactor_scheduler_base::task_cleanup::~task_cleanup()
 }
 
 inline std::size_t
-reactor_scheduler_base::do_one(
+reactor_scheduler::do_one(
     lock_type& lock, long timeout_us, context_type* ctx)
 {
     for (;;)

@@ -89,7 +89,7 @@ struct reactor_descriptor_state : scheduler_op
     std::atomic<bool> is_enqueued_{false};
 
     /// Owning scheduler for posting completions.
-    reactor_scheduler_base const* scheduler_ = nullptr;
+    reactor_scheduler const* scheduler_ = nullptr;
 
     /// Prevents impl destruction while queued in the scheduler.
     std::shared_ptr<void> impl_ref_;
