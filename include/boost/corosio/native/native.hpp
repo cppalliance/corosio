@@ -20,7 +20,6 @@
 #include <boost/corosio/native/native_cancel.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/native/native_resolver.hpp>
-#include <boost/corosio/native/native_scheduler.hpp>
 #include <boost/corosio/native/native_signal_set.hpp>
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/corosio/native/native_tcp_socket.hpp>

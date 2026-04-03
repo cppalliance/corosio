@@ -71,7 +71,7 @@ struct descriptor_state;
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class BOOST_COROSIO_DECL kqueue_scheduler final : public reactor_scheduler_base
+class BOOST_COROSIO_DECL kqueue_scheduler final : public reactor_scheduler
 {
 public:
     /** Construct the scheduler.
@@ -221,7 +221,7 @@ kqueue_scheduler::configure_reactor(
     unsigned budget_max,
     unsigned unassisted)
 {
-    reactor_scheduler_base::configure_reactor(
+    reactor_scheduler::configure_reactor(
         max_events, budget_init, budget_max, unassisted);
     event_buffer_.resize(max_events_per_poll_);
 }

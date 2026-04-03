@@ -26,7 +26,7 @@ class scheduler_op;
     this to implement the reactor/proactor event loop. The
     @ref io_context delegates all scheduling operations here.
 
-    @see io_context, native_scheduler
+    @see io_context
 */
 struct BOOST_COROSIO_DECL scheduler
 {

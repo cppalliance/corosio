@@ -14,7 +14,6 @@
 #include <boost/corosio/timer.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
-#include <boost/corosio/native/native_scheduler.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
 #include <boost/capy/error.hpp>
@@ -894,18 +893,22 @@ timer_service::implementation::wait(
 
 struct timer_service_access
 {
-    static native_scheduler& get_scheduler(io_context& ctx) noexcept
+    static timer_service& get_timer(io_context& ctx) noexcept
     {
-        return static_cast<native_scheduler&>(*ctx.sched_);
+        return *ctx.timer_svc_;
+    }
+
+    static void set_timer(io_context& ctx, timer_service& svc) noexcept
+    {
+        ctx.timer_svc_ = &svc;
     }
 };
 
-// Bypass find_service() mutex by reading the scheduler's cached pointer
+// Bypass find_service() mutex by reading io_context's cached pointer
 inline io_object::io_service&
 timer_service_direct(capy::execution_context& ctx) noexcept
 {
-    return *timer_service_access::get_scheduler(static_cast<io_context&>(ctx))
-                .timer_svc_;
+    return timer_service_access::get_timer(static_cast<io_context&>(ctx));
 }
 
 inline std::size_t
@@ -932,7 +935,9 @@ timer_service_cancel_one(timer::implementation& base) noexcept
 inline timer_service&
 get_timer_service(capy::execution_context& ctx, scheduler& sched)
 {
-    return ctx.make_service<timer_service>(sched);
+    auto& svc = ctx.make_service<timer_service>(sched);
+    timer_service_access::set_timer(static_cast<io_context&>(ctx), svc);
+    return svc;
 }
 
 } // namespace boost::corosio::detail

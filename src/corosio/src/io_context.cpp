@@ -54,8 +54,8 @@ epoll_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
     auto& sched = ctx.make_service<detail::epoll_scheduler>(
         static_cast<int>(concurrency_hint));
 
-    ctx.make_service<detail::epoll_tcp_service>();
-    ctx.make_service<detail::epoll_tcp_acceptor_service>();
+    auto& tcp_svc = ctx.make_service<detail::epoll_tcp_service>();
+    ctx.make_service<detail::epoll_tcp_acceptor_service>(tcp_svc);
     ctx.make_service<detail::epoll_udp_service>();
 
     return sched;
@@ -69,8 +69,8 @@ select_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
     auto& sched = ctx.make_service<detail::select_scheduler>(
         static_cast<int>(concurrency_hint));
 
-    ctx.make_service<detail::select_tcp_service>();
-    ctx.make_service<detail::select_tcp_acceptor_service>();
+    auto& tcp_svc = ctx.make_service<detail::select_tcp_service>();
+    ctx.make_service<detail::select_tcp_acceptor_service>(tcp_svc);
     ctx.make_service<detail::select_udp_service>();
 
     return sched;
@@ -84,8 +84,8 @@ kqueue_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
     auto& sched = ctx.make_service<detail::kqueue_scheduler>(
         static_cast<int>(concurrency_hint));
 
-    ctx.make_service<detail::kqueue_tcp_service>();
-    ctx.make_service<detail::kqueue_tcp_acceptor_service>();
+    auto& tcp_svc = ctx.make_service<detail::kqueue_tcp_service>();
+    ctx.make_service<detail::kqueue_tcp_acceptor_service>(tcp_svc);
     ctx.make_service<detail::kqueue_udp_service>();
 
     return sched;
@@ -99,8 +99,8 @@ iocp_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
     auto& sched = ctx.make_service<detail::win_scheduler>(
         static_cast<int>(concurrency_hint));
 
-    auto& sockets = ctx.make_service<detail::win_tcp_service>();
-    ctx.make_service<detail::win_tcp_acceptor_service>(sockets);
+    auto& tcp_svc = ctx.make_service<detail::win_tcp_service>();
+    ctx.make_service<detail::win_tcp_acceptor_service>(tcp_svc);
     ctx.make_service<detail::win_udp_service>();
     ctx.make_service<detail::win_signals>();
     ctx.make_service<detail::win_file_service>();
@@ -142,7 +142,7 @@ apply_scheduler_options(
 {
 #if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || BOOST_COROSIO_HAS_SELECT
     auto& reactor =
-        static_cast<detail::reactor_scheduler_base&>(sched);
+        static_cast<detail::reactor_scheduler&>(sched);
     reactor.configure_reactor(
         opts.max_events_per_poll,
         opts.inline_budget_initial,

@@ -18,7 +18,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
-#include <boost/corosio/native/native_scheduler.hpp>
+#include <boost/corosio/detail/scheduler.hpp>
 #include <system_error>
 
 #include <boost/corosio/detail/scheduler_op.hpp>
@@ -48,7 +48,7 @@ struct overlapped_op;
 class win_timers;
 
 class BOOST_COROSIO_DECL win_scheduler final
-    : public native_scheduler
+    : public scheduler
     , public capy::execution_context::service
 {
 public:
@@ -106,6 +106,7 @@ private:
     void post_deferred_completions(op_queue& ops);
     std::size_t do_one(unsigned long timeout_ms);
 
+    timer_service* timer_svc_ = nullptr;
     void* iocp_;
     mutable long outstanding_work_;
     mutable long stopped_;

@@ -50,7 +50,7 @@ struct select_descriptor_state;
 
     This scheduler implements the scheduler interface using the POSIX select()
     call for I/O event notification. It inherits the shared reactor threading
-    model from reactor_scheduler_base: signal state machine, inline completion
+    model from reactor_scheduler: signal state machine, inline completion
     budget, work counting, and the do_one event loop.
 
     The design mirrors epoll_scheduler for behavioral consistency:
@@ -66,7 +66,7 @@ struct select_descriptor_state;
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class BOOST_COROSIO_DECL select_scheduler final : public reactor_scheduler_base
+class BOOST_COROSIO_DECL select_scheduler final : public reactor_scheduler
 {
 public:
     /** Construct the scheduler.

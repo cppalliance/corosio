@@ -15,7 +15,7 @@
 #if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/native/detail/posix/posix_resolver.hpp>
-#include <boost/corosio/native/native_scheduler.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 
 #include <unordered_map>
@@ -70,8 +70,8 @@ public:
     /** Return true if single-threaded mode is active. */
     bool single_threaded() const noexcept
     {
-        return static_cast<native_scheduler const*>(sched_)
-            ->single_threaded_;
+        return static_cast<reactor_scheduler const*>(sched_)
+            ->is_single_threaded();
     }
 
 private:
