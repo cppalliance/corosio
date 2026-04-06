@@ -82,6 +82,141 @@ struct tcp_socket_test
         BOOST_TEST_EQ(sock.is_open(), false);
     }
 
+    void testBind()
+    {
+        io_context ioc(Backend);
+        tcp_socket sock(ioc);
+        sock.open();
+
+        // Bind to loopback with ephemeral port
+        auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+
+        // Local endpoint should reflect the bind
+        auto local = sock.local_endpoint();
+        BOOST_TEST(local.port() != 0);
+        BOOST_TEST(local.is_v4());
+
+        sock.close();
+    }
+
+    void testBindThenConnect()
+    {
+        io_context ioc(Backend);
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto server_port = acc.local_endpoint().port();
+
+        tcp_socket client(ioc);
+        tcp_socket server(ioc);
+        client.open();
+
+        // Bind client to specific local address before connecting
+        ec = client.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto bound_port = client.local_endpoint().port();
+        BOOST_TEST(bound_port != 0);
+
+        auto connect_task = [&]() -> capy::task<> {
+            auto [conn_ec] = co_await client.connect(
+                endpoint(ipv4_address::loopback(), server_port));
+            BOOST_TEST(!conn_ec);
+        };
+
+        auto accept_task = [&]() -> capy::task<> {
+            auto [acc_ec] = co_await acc.accept(server);
+            BOOST_TEST(!acc_ec);
+        };
+
+        capy::run_async(ioc.get_executor())(connect_task());
+        capy::run_async(ioc.get_executor())(accept_task());
+        ioc.run();
+
+        // Client's local port should be the one we bound to
+        BOOST_TEST(client.local_endpoint().port() == bound_port);
+
+        // Server sees our bound port as the remote
+        BOOST_TEST(server.remote_endpoint().port() == bound_port);
+
+        client.close();
+        server.close();
+        acc.close();
+    }
+
+    void testBindClosedSocketThrows()
+    {
+        io_context ioc(Backend);
+        tcp_socket sock(ioc);
+
+        // Bind on a closed socket should throw
+        bool caught = false;
+        try
+        {
+            auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
+            (void)ec;
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testBindV6()
+    {
+        io_context ioc(Backend);
+        tcp_socket sock(ioc);
+        sock.open(tcp::v6());
+
+        auto ec = sock.bind(endpoint(ipv6_address::loopback(), 0));
+        BOOST_TEST(!ec);
+
+        auto local = sock.local_endpoint();
+        BOOST_TEST(local.port() != 0);
+        BOOST_TEST(local.is_v6());
+
+        sock.close();
+    }
+
+    void testBindAddressInUse()
+    {
+        io_context ioc(Backend);
+
+        // Bind first socket to a specific port
+        tcp_socket sock1(ioc);
+        sock1.open();
+        auto ec = sock1.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto port = sock1.local_endpoint().port();
+
+        // Second bind to same port should fail
+        tcp_socket sock2(ioc);
+        sock2.open();
+        ec = sock2.bind(endpoint(ipv4_address::loopback(), port));
+        BOOST_TEST(ec);
+
+        sock1.close();
+        sock2.close();
+    }
+
+    void testBindNonLocalAddress()
+    {
+        io_context ioc(Backend);
+        tcp_socket sock(ioc);
+        sock.open();
+
+        auto ec = sock.bind(endpoint(ipv4_address("1.2.3.4"), 0));
+        BOOST_TEST(ec);
+
+        sock.close();
+    }
+
     void testMoveConstruct()
     {
         io_context ioc(Backend);
@@ -1457,6 +1592,12 @@ struct tcp_socket_test
     {
         testConstruction();
         testOpen();
+        testBind();
+        testBindThenConnect();
+        testBindV6();
+        testBindClosedSocketThrows();
+        testBindAddressInUse();
+        testBindNonLocalAddress();
         testMoveConstruct();
         testMoveAssign();
 

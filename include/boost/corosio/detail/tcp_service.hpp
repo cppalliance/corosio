@@ -49,6 +49,15 @@ public:
         int type,
         int protocol) = 0;
 
+    /** Bind a stream socket to a local endpoint.
+
+        @param impl The socket implementation to bind.
+        @param ep The local endpoint to bind to.
+        @return Error code on failure, empty on success.
+    */
+    virtual std::error_code
+    bind_socket(tcp_socket::implementation& impl, endpoint ep) = 0;
+
 protected:
     /// Construct the TCP service.
     tcp_service() = default;

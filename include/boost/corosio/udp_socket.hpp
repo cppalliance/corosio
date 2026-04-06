@@ -535,7 +535,7 @@ public:
 
         @throws std::logic_error if the socket is not open.
     */
-    std::error_code bind(endpoint ep);
+    [[nodiscard]] std::error_code bind(endpoint ep);
 
     /** Cancel any pending asynchronous operations.
 

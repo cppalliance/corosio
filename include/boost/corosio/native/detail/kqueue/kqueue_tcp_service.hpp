@@ -165,6 +165,9 @@ public:
         int family,
         int type,
         int protocol) override;
+
+    std::error_code
+    bind_socket(tcp_socket::implementation& impl, endpoint ep) override;
 };
 
 inline void
@@ -338,6 +341,13 @@ kqueue_tcp_service::open_socket(
     scheduler().register_descriptor(fd, &kq_impl->desc_state_);
 
     return {};
+}
+
+inline std::error_code
+kqueue_tcp_service::bind_socket(
+    tcp_socket::implementation& impl, endpoint ep)
+{
+    return static_cast<kqueue_tcp_socket*>(&impl)->do_bind(ep);
 }
 
 } // namespace boost::corosio::detail

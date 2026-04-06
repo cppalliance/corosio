@@ -106,6 +106,9 @@ public:
         int family,
         int type,
         int protocol) override;
+
+    std::error_code
+    bind_socket(tcp_socket::implementation& impl, endpoint ep) override;
 };
 
 inline void
@@ -231,6 +234,13 @@ epoll_tcp_service::open_socket(
     scheduler().register_descriptor(fd, &epoll_impl->desc_state_);
 
     return {};
+}
+
+inline std::error_code
+epoll_tcp_service::bind_socket(
+    tcp_socket::implementation& impl, endpoint ep)
+{
+    return static_cast<epoll_tcp_socket*>(&impl)->do_bind(ep);
 }
 
 } // namespace boost::corosio::detail
