@@ -277,6 +277,28 @@ public:
     */
     void open(tcp proto = tcp::v4());
 
+    /** Bind the socket to a local endpoint.
+
+        Associates the socket with a local address and port before
+        connecting. Useful for multi-homed hosts or source-port
+        pinning.
+
+        @param ep The local endpoint to bind to.
+
+        @return An error code indicating success or the reason for
+            failure.
+
+        @par Error Conditions
+        @li `errc::address_in_use`: The endpoint is already in use.
+        @li `errc::address_not_available`: The address is not
+            available on any local interface.
+        @li `errc::permission_denied`: Insufficient privileges to
+            bind to the endpoint (e.g., privileged port).
+
+        @throws std::logic_error if the socket is not open.
+    */
+    [[nodiscard]] std::error_code bind(endpoint ep);
+
     /** Close the socket.
 
         Releases socket resources. Any pending operations complete

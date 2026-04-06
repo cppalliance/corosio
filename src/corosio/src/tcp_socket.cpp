@@ -61,6 +61,23 @@ tcp_socket::open_for_family(int family, int type, int protocol)
         detail::throw_system_error(ec, "tcp_socket::open");
 }
 
+std::error_code
+tcp_socket::bind(endpoint ep)
+{
+    if (!is_open())
+        detail::throw_logic_error("bind: socket not open");
+#if BOOST_COROSIO_HAS_IOCP
+    auto& svc     = static_cast<detail::win_tcp_service&>(h_.service());
+    auto& wrapper = static_cast<tcp_socket::implementation&>(*h_.get());
+    return svc.bind_socket(
+        *static_cast<detail::win_tcp_socket&>(wrapper).get_internal(), ep);
+#else
+    auto& svc = static_cast<detail::tcp_service&>(h_.service());
+    return svc.bind_socket(
+        static_cast<tcp_socket::implementation&>(*h_.get()), ep);
+#endif
+}
+
 void
 tcp_socket::close()
 {

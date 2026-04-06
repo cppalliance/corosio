@@ -556,6 +556,44 @@ struct tcp_acceptor_test
         acc.close();
     }
 
+    void testBindClosedAcceptorThrows()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        bool caught = false;
+        try
+        {
+            auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+            (void)ec;
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testBindAddressInUse()
+    {
+        io_context ioc(Backend);
+
+        tcp_acceptor acc1(ioc);
+        acc1.open();
+        acc1.set_option(socket_option::reuse_address(true));
+        auto ec = acc1.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto port = acc1.local_endpoint().port();
+
+        tcp_acceptor acc2(ioc);
+        acc2.open();
+        ec = acc2.bind(endpoint(ipv4_address::loopback(), port));
+        BOOST_TEST(ec);
+
+        acc1.close();
+        acc2.close();
+    }
+
     void testBindError()
     {
         io_context ioc(Backend);
@@ -602,6 +640,8 @@ struct tcp_acceptor_test
 
         // Explicit bind+listen flow
         testBindThenListen();
+        testBindClosedAcceptorThrows();
+        testBindAddressInUse();
         testBindError();
     }
 };

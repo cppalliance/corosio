@@ -126,6 +126,55 @@ struct udp_socket_test
         sock.close();
     }
 
+    void testBindClosedSocketThrows()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        bool caught = false;
+        try
+        {
+            auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
+            (void)ec;
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testBindAddressInUse()
+    {
+        io_context ioc(Backend);
+
+        udp_socket sock1(ioc);
+        sock1.open();
+        auto ec = sock1.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto port = sock1.local_endpoint().port();
+
+        udp_socket sock2(ioc);
+        sock2.open();
+        ec = sock2.bind(endpoint(ipv4_address::loopback(), port));
+        BOOST_TEST(ec);
+
+        sock1.close();
+        sock2.close();
+    }
+
+    void testBindNonLocalAddress()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open();
+
+        auto ec = sock.bind(endpoint(ipv4_address("1.2.3.4"), 0));
+        BOOST_TEST(ec);
+
+        sock.close();
+    }
+
     void testSetOption()
     {
         io_context ioc(Backend);
@@ -872,6 +921,9 @@ struct udp_socket_test
         testMoveAssign();
         testBind();
         testBindV6();
+        testBindClosedSocketThrows();
+        testBindAddressInUse();
+        testBindNonLocalAddress();
         testSetOption();
         testSendRecvLoopback();
         testSendRecvV6Loopback();

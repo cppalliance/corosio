@@ -403,33 +403,38 @@ win_tcp_socket_internal::connect(
 
     svc_.work_started();
 
-    // Ephemeral bind — must match the socket's family, not the endpoint's
-    sockaddr_storage bind_storage{};
-    socklen_t bind_len;
-    if (family_ == AF_INET6)
+    // ConnectEx requires the socket to be bound. Skip if already bound
+    // (e.g. the caller used tcp_socket::bind() before connect).
+    if (local_endpoint_ == endpoint{})
     {
-        sockaddr_in6 sa6{};
-        sa6.sin6_family = AF_INET6;
-        sa6.sin6_port   = 0;
-        sa6.sin6_addr   = in6addr_any;
-        std::memcpy(&bind_storage, &sa6, sizeof(sa6));
-        bind_len = sizeof(sa6);
-    }
-    else
-    {
-        sockaddr_in sa4{};
-        sa4.sin_family      = AF_INET;
-        sa4.sin_addr.s_addr = INADDR_ANY;
-        sa4.sin_port        = 0;
-        std::memcpy(&bind_storage, &sa4, sizeof(sa4));
-        bind_len = sizeof(sa4);
-    }
+        sockaddr_storage bind_storage{};
+        socklen_t bind_len;
+        if (family_ == AF_INET6)
+        {
+            sockaddr_in6 sa6{};
+            sa6.sin6_family = AF_INET6;
+            sa6.sin6_port   = 0;
+            sa6.sin6_addr   = in6addr_any;
+            std::memcpy(&bind_storage, &sa6, sizeof(sa6));
+            bind_len = sizeof(sa6);
+        }
+        else
+        {
+            sockaddr_in sa4{};
+            sa4.sin_family      = AF_INET;
+            sa4.sin_addr.s_addr = INADDR_ANY;
+            sa4.sin_port        = 0;
+            std::memcpy(&bind_storage, &sa4, sizeof(sa4));
+            bind_len = sizeof(sa4);
+        }
 
-    if (::bind(socket_, reinterpret_cast<sockaddr*>(&bind_storage), bind_len) ==
-        SOCKET_ERROR)
-    {
-        svc_.on_completion(&op, ::WSAGetLastError(), 0);
-        return std::noop_coroutine();
+        if (::bind(
+                socket_, reinterpret_cast<sockaddr*>(&bind_storage),
+                bind_len) == SOCKET_ERROR)
+        {
+            svc_.on_completion(&op, ::WSAGetLastError(), 0);
+            return std::noop_coroutine();
+        }
     }
 
     auto connect_ex = svc_.connect_ex();
@@ -881,6 +886,28 @@ win_tcp_service::open_socket(
 
     impl.socket_ = sock;
     impl.family_ = family;
+    return {};
+}
+
+inline std::error_code
+win_tcp_service::bind_socket(win_tcp_socket_internal& impl, endpoint ep)
+{
+    SOCKET sock = impl.socket_;
+
+    sockaddr_storage storage{};
+    socklen_t addrlen = detail::to_sockaddr(ep, storage);
+    if (::bind(
+            sock, reinterpret_cast<sockaddr*>(&storage),
+            static_cast<int>(addrlen)) == SOCKET_ERROR)
+        return make_err(::WSAGetLastError());
+
+    // Cache local endpoint (resolves ephemeral port)
+    sockaddr_storage local_storage{};
+    int local_len = sizeof(local_storage);
+    if (::getsockname(
+            sock, reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
+        impl.local_endpoint_ = detail::from_sockaddr(local_storage);
+
     return {};
 }
 
