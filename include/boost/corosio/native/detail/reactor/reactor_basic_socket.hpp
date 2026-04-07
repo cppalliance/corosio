@@ -42,8 +42,14 @@ namespace boost::corosio::detail {
                       or udp_socket::implementation).
     @tparam Service   The backend's service type.
     @tparam DescState The backend's descriptor_state type.
+    @tparam Endpoint  The endpoint type (endpoint or local_endpoint).
 */
-template<class Derived, class ImplBase, class Service, class DescState>
+template<
+    class Derived,
+    class ImplBase,
+    class Service,
+    class DescState,
+    class Endpoint = endpoint>
 class reactor_basic_socket
     : public ImplBase
     , public std::enable_shared_from_this<Derived>
@@ -51,10 +57,10 @@ class reactor_basic_socket
 {
     friend Derived;
 
-    template<class, class, class, class, class, class>
+    template<class, class, class, class, class, class, class, class>
     friend class reactor_stream_socket;
 
-    template<class, class, class, class, class, class, class, class>
+    template<class, class, class, class, class, class, class, class, class, class>
     friend class reactor_datagram_socket;
 
     explicit reactor_basic_socket(Service& svc) noexcept : svc_(svc) {}
@@ -62,7 +68,7 @@ class reactor_basic_socket
 protected:
     Service& svc_;
     int fd_ = -1;
-    endpoint local_endpoint_;
+    Endpoint local_endpoint_;
 
 public:
     /// Per-descriptor state for persistent reactor registration.
@@ -77,7 +83,7 @@ public:
     }
 
     /// Return the cached local endpoint.
-    endpoint local_endpoint() const noexcept override
+    Endpoint local_endpoint() const noexcept override
     {
         return local_endpoint_;
     }
@@ -120,7 +126,7 @@ public:
     }
 
     /// Cache the local endpoint.
-    void set_local_endpoint(endpoint ep) noexcept
+    void set_local_endpoint(Endpoint ep) noexcept
     {
         local_endpoint_ = ep;
     }
@@ -133,7 +139,7 @@ public:
         @param ep The endpoint to bind to.
         @return Error code on failure, empty on success.
     */
-    std::error_code do_bind(endpoint ep) noexcept
+    std::error_code do_bind(Endpoint const& ep) noexcept
     {
         sockaddr_storage storage{};
         socklen_t addrlen = to_sockaddr(ep, socket_family(fd_), storage);
@@ -145,7 +151,8 @@ public:
         if (::getsockname(
                 fd_, reinterpret_cast<sockaddr*>(&local_storage), &local_len) ==
             0)
-            local_endpoint_ = from_sockaddr(local_storage);
+            local_endpoint_ =
+                from_sockaddr_as(local_storage, local_len, Endpoint{});
 
         return {};
     }
@@ -193,12 +200,19 @@ public:
           for_each_desc_entry(auto fn)
     */
     void do_close_socket() noexcept;
+
+    /** Release the socket without closing the fd.
+
+        Like do_close_socket() but does not call ::close().
+        Returns the fd so the caller can take ownership.
+    */
+    native_handle_type do_release_socket() noexcept;
 };
 
-template<class Derived, class ImplBase, class Service, class DescState>
+template<class Derived, class ImplBase, class Service, class DescState, class Endpoint>
 template<class Op>
 void
-reactor_basic_socket<Derived, ImplBase, Service, DescState>::register_op(
+reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::register_op(
     Op& op,
     reactor_op_base*& desc_slot,
     bool& ready_flag,
@@ -234,10 +248,10 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState>::register_op(
     }
 }
 
-template<class Derived, class ImplBase, class Service, class DescState>
+template<class Derived, class ImplBase, class Service, class DescState, class Endpoint>
 template<class Op>
 void
-reactor_basic_socket<Derived, ImplBase, Service, DescState>::cancel_single_op(
+reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::cancel_single_op(
     Op& op) noexcept
 {
     auto self = this->weak_from_this().lock();
@@ -272,9 +286,9 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState>::cancel_single_op(
     }
 }
 
-template<class Derived, class ImplBase, class Service, class DescState>
+template<class Derived, class ImplBase, class Service, class DescState, class Endpoint>
 void
-reactor_basic_socket<Derived, ImplBase, Service, DescState>::
+reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
     do_cancel() noexcept
 {
     auto self = this->weak_from_this().lock();
@@ -315,9 +329,9 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState>::
     }
 }
 
-template<class Derived, class ImplBase, class Service, class DescState>
+template<class Derived, class ImplBase, class Service, class DescState, class Endpoint>
 void
-reactor_basic_socket<Derived, ImplBase, Service, DescState>::
+reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
     do_close_socket() noexcept
 {
     auto self = this->weak_from_this().lock();
@@ -374,7 +388,74 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState>::
     desc_state_.fd                = -1;
     desc_state_.registered_events = 0;
 
-    local_endpoint_ = endpoint{};
+    local_endpoint_ = Endpoint{};
+}
+
+template<class Derived, class ImplBase, class Service, class DescState, class Endpoint>
+native_handle_type
+reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
+    do_release_socket() noexcept
+{
+    // Cancel pending ops (same as do_close_socket)
+    auto self = this->weak_from_this().lock();
+    if (self)
+    {
+        auto* d = static_cast<Derived*>(this);
+
+        d->for_each_op([](auto& op) { op.request_cancel(); });
+
+        struct claimed_entry
+        {
+            reactor_op_base* base = nullptr;
+        };
+        claimed_entry claimed[3];
+        int count = 0;
+
+        {
+            std::lock_guard lock(desc_state_.mutex);
+            d->for_each_desc_entry(
+                [&](auto& /*op*/, reactor_op_base*& desc_slot) {
+                    auto* c = std::exchange(desc_slot, nullptr);
+                    if (c)
+                    {
+                        claimed[count].base = c;
+                        ++count;
+                    }
+                });
+            desc_state_.read_ready             = false;
+            desc_state_.write_ready            = false;
+            desc_state_.read_cancel_pending    = false;
+            desc_state_.write_cancel_pending   = false;
+            desc_state_.connect_cancel_pending = false;
+
+            if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
+                desc_state_.impl_ref_ = self;
+        }
+
+        for (int i = 0; i < count; ++i)
+        {
+            claimed[i].base->impl_ptr = self;
+            svc_.post(claimed[i].base);
+            svc_.work_finished();
+        }
+    }
+
+    native_handle_type released = fd_;
+
+    if (fd_ >= 0)
+    {
+        if (desc_state_.registered_events != 0)
+            svc_.scheduler().deregister_descriptor(fd_);
+        // Do NOT close -- caller takes ownership
+        fd_ = -1;
+    }
+
+    desc_state_.fd                = -1;
+    desc_state_.registered_events = 0;
+
+    local_endpoint_ = Endpoint{};
+
+    return released;
 }
 
 } // namespace boost::corosio::detail

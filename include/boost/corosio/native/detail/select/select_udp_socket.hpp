@@ -87,6 +87,7 @@ public:
         capy::executor_ref,
         buffer_param,
         endpoint,
+        int flags,
         std::stop_token,
         std::error_code*,
         std::size_t*) override;
@@ -96,6 +97,7 @@ public:
         capy::executor_ref,
         buffer_param,
         endpoint*,
+        int flags,
         std::stop_token,
         std::error_code*,
         std::size_t*) override;
@@ -111,6 +113,7 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         buffer_param,
+        int flags,
         std::stop_token,
         std::error_code*,
         std::size_t*) override;
@@ -119,6 +122,7 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         buffer_param,
+        int flags,
         std::stop_token,
         std::error_code*,
         std::size_t*) override;

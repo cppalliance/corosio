@@ -22,8 +22,7 @@
 #include <boost/corosio/native/detail/kqueue/kqueue_tcp_acceptor.hpp>
 #include <boost/corosio/native/detail/kqueue/kqueue_tcp_service.hpp>
 #include <boost/corosio/native/detail/kqueue/kqueue_scheduler.hpp>
-#include <boost/corosio/native/detail/reactor/reactor_service_state.hpp>
-
+#include <boost/corosio/native/detail/reactor/reactor_acceptor_service.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_op_complete.hpp>
 
 #include <memory>
@@ -38,31 +37,31 @@
 
 namespace boost::corosio::detail {
 
-/// State for kqueue acceptor service.
-using kqueue_tcp_acceptor_state =
-    reactor_service_state<kqueue_scheduler, kqueue_tcp_acceptor>;
-
 /** kqueue acceptor service implementation.
 
     Inherits from tcp_acceptor_service to enable runtime polymorphism.
     Uses key_type = tcp_acceptor_service for service lookup.
 */
 class BOOST_COROSIO_DECL kqueue_tcp_acceptor_service final
-    : public tcp_acceptor_service
+    : public reactor_acceptor_service<
+          kqueue_tcp_acceptor_service,
+          tcp_acceptor_service,
+          kqueue_scheduler,
+          kqueue_tcp_acceptor,
+          kqueue_tcp_service>
 {
+    using base_type = reactor_acceptor_service<
+        kqueue_tcp_acceptor_service,
+        tcp_acceptor_service,
+        kqueue_scheduler,
+        kqueue_tcp_acceptor,
+        kqueue_tcp_service>;
+    friend base_type;
+
 public:
-    explicit kqueue_tcp_acceptor_service(
-        capy::execution_context& ctx, kqueue_tcp_service& tcp_svc);
-    ~kqueue_tcp_acceptor_service();
+    explicit kqueue_tcp_acceptor_service(capy::execution_context& ctx);
+    ~kqueue_tcp_acceptor_service() override;
 
-    kqueue_tcp_acceptor_service(kqueue_tcp_acceptor_service const&) = delete;
-    kqueue_tcp_acceptor_service&
-    operator=(kqueue_tcp_acceptor_service const&) = delete;
-
-    void shutdown() override;
-    io_object::implementation* construct() override;
-    void destroy(io_object::implementation*) override;
-    void close(io_object::handle&) override;
     std::error_code open_acceptor_socket(
         tcp_acceptor::implementation& impl,
         int family,
@@ -72,21 +71,6 @@ public:
     bind_acceptor(tcp_acceptor::implementation& impl, endpoint ep) override;
     std::error_code
     listen_acceptor(tcp_acceptor::implementation& impl, int backlog) override;
-
-    kqueue_scheduler& scheduler() const noexcept
-    {
-        return state_->sched_;
-    }
-    void post(scheduler_op* op);
-    void work_started() noexcept;
-    void work_finished() noexcept;
-
-    /** Get the TCP service for creating peer sockets during accept. */
-    kqueue_tcp_service* tcp_service() const noexcept;
-
-private:
-    kqueue_tcp_service* tcp_svc_;
-    std::unique_ptr<kqueue_tcp_acceptor_state> state_;
 };
 
 inline void
@@ -178,7 +162,7 @@ kqueue_tcp_acceptor::accept(
 
         if (svc_.scheduler().try_consume_inline_budget())
         {
-            auto* socket_svc = svc_.tcp_service();
+            auto* socket_svc = svc_.stream_service();
             if (socket_svc)
             {
                 auto& impl =
@@ -213,8 +197,9 @@ kqueue_tcp_acceptor::accept(
             return dispatch_coro(ex, op.cont_op.cont);
         }
 
-        op.accepted_fd  = accepted;
-        op.peer_storage = peer_storage;
+        op.accepted_fd   = accepted;
+        op.peer_storage  = peer_storage;
+        op.peer_addrlen  = addrlen;
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
@@ -268,53 +253,14 @@ kqueue_tcp_acceptor::close_socket() noexcept
 }
 
 inline kqueue_tcp_acceptor_service::kqueue_tcp_acceptor_service(
-    capy::execution_context& ctx, kqueue_tcp_service& tcp_svc)
-    : tcp_svc_(&tcp_svc)
-    , state_(
-          std::make_unique<kqueue_tcp_acceptor_state>(
-              ctx.use_service<kqueue_scheduler>()))
+    capy::execution_context& ctx)
+    : base_type(ctx)
 {
+    auto* svc = ctx_.find_service<detail::tcp_service>();
+    stream_svc_ = svc ? dynamic_cast<kqueue_tcp_service*>(svc) : nullptr;
 }
 
-inline kqueue_tcp_acceptor_service::~kqueue_tcp_acceptor_service() = default;
-
-inline void
-kqueue_tcp_acceptor_service::shutdown()
-{
-    std::lock_guard lock(state_->mutex_);
-
-    while (auto* impl = state_->impl_list_.pop_front())
-        impl->close_socket();
-}
-
-inline io_object::implementation*
-kqueue_tcp_acceptor_service::construct()
-{
-    auto impl = std::make_shared<kqueue_tcp_acceptor>(*this);
-    auto* raw = impl.get();
-
-    std::lock_guard lock(state_->mutex_);
-    state_->impl_ptrs_.emplace(raw, std::move(impl));
-    state_->impl_list_.push_back(raw);
-
-    return raw;
-}
-
-inline void
-kqueue_tcp_acceptor_service::destroy(io_object::implementation* impl)
-{
-    auto* kq_impl = static_cast<kqueue_tcp_acceptor*>(impl);
-    kq_impl->close_socket();
-    std::lock_guard lock(state_->mutex_);
-    state_->impl_list_.remove(kq_impl);
-    state_->impl_ptrs_.erase(kq_impl);
-}
-
-inline void
-kqueue_tcp_acceptor_service::close(io_object::handle& h)
-{
-    static_cast<kqueue_tcp_acceptor*>(h.get())->close_socket();
-}
+inline kqueue_tcp_acceptor_service::~kqueue_tcp_acceptor_service() {}
 
 inline std::error_code
 kqueue_tcp_acceptor_service::open_acceptor_socket(
@@ -384,30 +330,6 @@ kqueue_tcp_acceptor_service::listen_acceptor(
     tcp_acceptor::implementation& impl, int backlog)
 {
     return static_cast<kqueue_tcp_acceptor*>(&impl)->do_listen(backlog);
-}
-
-inline void
-kqueue_tcp_acceptor_service::post(scheduler_op* op)
-{
-    state_->sched_.post(op);
-}
-
-inline void
-kqueue_tcp_acceptor_service::work_started() noexcept
-{
-    state_->sched_.work_started();
-}
-
-inline void
-kqueue_tcp_acceptor_service::work_finished() noexcept
-{
-    state_->sched_.work_finished();
-}
-
-inline kqueue_tcp_service*
-kqueue_tcp_acceptor_service::tcp_service() const noexcept
-{
-    return tcp_svc_;
 }
 
 } // namespace boost::corosio::detail

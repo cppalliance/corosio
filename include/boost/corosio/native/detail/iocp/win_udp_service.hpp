@@ -360,6 +360,7 @@ win_udp_socket_internal::send_to(
     capy::executor_ref d,
     buffer_param param,
     endpoint dest,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
@@ -392,7 +393,8 @@ win_udp_socket_internal::send_to(
     op.dest_len = static_cast<int>(to_sockaddr(dest, family_, op.dest_storage));
 
     int result = ::WSASendTo(
-        socket_, op.wsabufs, op.wsabuf_count, nullptr, 0,
+        socket_, op.wsabufs, op.wsabuf_count, nullptr,
+        static_cast<DWORD>(flags),
         reinterpret_cast<sockaddr*>(&op.dest_storage), op.dest_len, &op,
         nullptr);
 
@@ -421,6 +423,7 @@ win_udp_socket_internal::recv_from(
     capy::executor_ref d,
     buffer_param param,
     endpoint* source,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
@@ -458,7 +461,7 @@ win_udp_socket_internal::recv_from(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    op.flags = 0;
+    op.flags = static_cast<DWORD>(flags);
     std::memset(&op.source_storage, 0, sizeof(op.source_storage));
     op.source_len = sizeof(op.source_storage);
 
@@ -526,6 +529,7 @@ win_udp_socket_internal::send(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param param,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
@@ -553,7 +557,8 @@ win_udp_socket_internal::send(
     }
 
     int result = ::WSASend(
-        socket_, op.wsabufs, op.wsabuf_count, nullptr, 0, &op, nullptr);
+        socket_, op.wsabufs, op.wsabuf_count, nullptr,
+        static_cast<DWORD>(flags), &op, nullptr);
 
     if (result == SOCKET_ERROR)
     {
@@ -578,6 +583,7 @@ win_udp_socket_internal::recv(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param param,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
@@ -611,7 +617,7 @@ win_udp_socket_internal::recv(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    op.flags = 0;
+    op.flags = static_cast<DWORD>(flags);
 
     int result = ::WSARecv(
         socket_, op.wsabufs, op.wsabuf_count, nullptr, &op.flags, &op, nullptr);
@@ -689,11 +695,12 @@ win_udp_socket::send_to(
     capy::executor_ref d,
     buffer_param buf,
     endpoint dest,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_->send_to(h, d, buf, dest, token, ec, bytes);
+    return internal_->send_to(h, d, buf, dest, flags, token, ec, bytes);
 }
 
 inline std::coroutine_handle<>
@@ -702,11 +709,12 @@ win_udp_socket::recv_from(
     capy::executor_ref d,
     buffer_param buf,
     endpoint* source,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_->recv_from(h, d, buf, source, token, ec, bytes);
+    return internal_->recv_from(h, d, buf, source, flags, token, ec, bytes);
 }
 
 inline std::coroutine_handle<>
@@ -725,11 +733,12 @@ win_udp_socket::send(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param buf,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_->send(h, d, buf, token, ec, bytes);
+    return internal_->send(h, d, buf, flags, token, ec, bytes);
 }
 
 inline std::coroutine_handle<>
@@ -737,11 +746,12 @@ win_udp_socket::recv(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param buf,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_->recv(h, d, buf, token, ec, bytes);
+    return internal_->recv(h, d, buf, flags, token, ec, bytes);
 }
 
 inline native_handle_type

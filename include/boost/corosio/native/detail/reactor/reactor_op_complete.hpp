@@ -58,6 +58,36 @@ complete_io_op(Op& op)
     dispatch_coro(saved_ex, op.cont_op.cont).resume();
 }
 
+/** Complete a datagram recv operation (connected mode).
+
+    Like complete_io_op but does not translate zero bytes into
+    EOF. Zero-length datagrams are valid and should be reported
+    as success with 0 bytes transferred.
+
+    @param op The operation to complete.
+*/
+template<typename Op>
+void
+complete_dgram_recv_op(Op& op)
+{
+    op.stop_cb.reset();
+    op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
+
+    if (op.cancelled.load(std::memory_order_acquire))
+        *op.ec_out = capy::error::canceled;
+    else if (op.errn != 0)
+        *op.ec_out = make_err(op.errn);
+    else
+        *op.ec_out = {};
+
+    *op.bytes_out = op.bytes_transferred;
+
+    op.cont_op.cont.h = op.h;
+    capy::executor_ref saved_ex(op.ex);
+    auto prevent = std::move(op.impl_ptr);
+    dispatch_coro(saved_ex, op.cont_op.cont).resume();
+}
+
 /** Complete a connect operation with endpoint caching.
 
     On success, queries the local endpoint via getsockname and
@@ -79,13 +109,15 @@ complete_connect_op(Op& op)
 
     if (success && op.socket_impl_)
     {
-        endpoint local_ep;
+        using ep_type = decltype(op.target_endpoint);
+        ep_type local_ep;
         sockaddr_storage local_storage{};
         socklen_t local_len = sizeof(local_storage);
         if (::getsockname(
                 op.fd, reinterpret_cast<sockaddr*>(&local_storage),
                 &local_len) == 0)
-            local_ep = from_sockaddr(local_storage);
+            local_ep =
+                from_sockaddr_as(local_storage, local_len, ep_type{});
         op.socket_impl_->set_endpoints(local_ep, op.target_endpoint);
     }
 
@@ -123,10 +155,11 @@ setup_accepted_socket(
     AcceptorImpl* acceptor_impl,
     int& accepted_fd,
     sockaddr_storage const& peer_storage,
+    socklen_t peer_addrlen,
     io_object::implementation** impl_out,
     std::error_code* ec_out)
 {
-    auto* socket_svc = acceptor_impl->service().tcp_service();
+    auto* socket_svc = acceptor_impl->service().stream_service();
     if (!socket_svc)
     {
         *ec_out = make_err(ENOENT);
@@ -145,8 +178,13 @@ setup_accepted_socket(
     }
     socket_svc->scheduler().register_descriptor(accepted_fd, &impl.desc_state_);
 
+    using ep_type = decltype(acceptor_impl->local_endpoint());
     impl.set_endpoints(
-        acceptor_impl->local_endpoint(), from_sockaddr(peer_storage));
+        acceptor_impl->local_endpoint(),
+        from_sockaddr_as(
+            peer_storage,
+            peer_addrlen,
+            ep_type{}));
 
     if (impl_out)
         *impl_out = &impl;
@@ -183,8 +221,8 @@ complete_accept_op(Op& op)
     if (success && op.accepted_fd >= 0 && op.acceptor_impl_)
     {
         if (!setup_accepted_socket<SocketImpl>(
-                op.acceptor_impl_, op.accepted_fd, op.peer_storage, op.impl_out,
-                op.ec_out))
+                op.acceptor_impl_, op.accepted_fd, op.peer_storage,
+                op.peer_addrlen, op.impl_out, op.ec_out))
             success = false;
     }
 
@@ -216,9 +254,9 @@ complete_accept_op(Op& op)
     @param source_out Optional pointer to store source endpoint
         (non-null for recv_from, null for send_to).
 */
-template<typename Op>
+template<typename Op, typename Endpoint>
 void
-complete_datagram_op(Op& op, endpoint* source_out)
+complete_datagram_op(Op& op, Endpoint* source_out)
 {
     op.stop_cb.reset();
     op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
@@ -234,7 +272,10 @@ complete_datagram_op(Op& op, endpoint* source_out)
 
     if (source_out && !op.cancelled.load(std::memory_order_acquire) &&
         op.errn == 0)
-        *source_out = from_sockaddr(op.source_storage);
+        *source_out = from_sockaddr_as(
+            op.source_storage,
+            op.source_addrlen,
+            Endpoint{});
 
     op.cont_op.cont.h = op.h;
     capy::executor_ref saved_ex(op.ex);

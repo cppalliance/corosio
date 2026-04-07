@@ -27,6 +27,15 @@
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/timer.hpp>
+#include <boost/corosio/udp_socket.hpp>
+
+#include <boost/corosio/local_endpoint.hpp>
+#include <boost/corosio/local_stream.hpp>
+#include <boost/corosio/local_stream_socket.hpp>
+#include <boost/corosio/local_stream_acceptor.hpp>
+#include <boost/corosio/local_datagram.hpp>
+#include <boost/corosio/local_datagram_socket.hpp>
+#include <boost/corosio/local_socket_pair.hpp>
 
 #include <boost/corosio/tls_context.hpp>
 #include <boost/corosio/openssl_stream.hpp>
