@@ -26,7 +26,7 @@ namespace boost::corosio::detail {
 /** CRTP base for reactor-backed stream socket implementations.
 
     Inherits shared data members and cancel/close/register logic
-    from reactor_basic_socket. Adds the TCP-specific remote
+    from reactor_basic_socket. Adds the stream-specific remote
     endpoint, shutdown, and I/O dispatch (connect, read, write).
 
     @tparam Derived   The concrete socket type (CRTP).
@@ -35,6 +35,10 @@ namespace boost::corosio::detail {
     @tparam ReadOp    The backend's read op type.
     @tparam WriteOp   The backend's write op type.
     @tparam DescState The backend's descriptor_state type.
+    @tparam ImplBase  The public vtable base
+                      (tcp_socket::implementation or
+                       local_stream_socket::implementation).
+    @tparam Endpoint  The endpoint type (endpoint or local_endpoint).
 */
 template<
     class Derived,
@@ -42,26 +46,30 @@ template<
     class ConnOp,
     class ReadOp,
     class WriteOp,
-    class DescState>
+    class DescState,
+    class ImplBase = tcp_socket::implementation,
+    class Endpoint = endpoint>
 class reactor_stream_socket
     : public reactor_basic_socket<
           Derived,
-          tcp_socket::implementation,
+          ImplBase,
           Service,
-          DescState>
+          DescState,
+          Endpoint>
 {
     using base_type = reactor_basic_socket<
         Derived,
-        tcp_socket::implementation,
+        ImplBase,
         Service,
-        DescState>;
+        DescState,
+        Endpoint>;
     friend base_type;
     friend Derived;
 
     explicit reactor_stream_socket(Service& svc) noexcept : base_type(svc) {}
 
 protected:
-    endpoint remote_endpoint_;
+    Endpoint remote_endpoint_;
 
 public:
     /// Pending connect operation slot.
@@ -76,24 +84,30 @@ public:
     ~reactor_stream_socket() override = default;
 
     /// Return the cached remote endpoint.
-    endpoint remote_endpoint() const noexcept override
+    Endpoint remote_endpoint() const noexcept override
     {
         return remote_endpoint_;
     }
 
-    /// Shut down part or all of the full-duplex connection.
-    std::error_code shutdown(tcp_socket::shutdown_type what) noexcept override
+    /** Shut down part or all of the full-duplex connection.
+
+        Not an override — concrete backend classes forward their
+        ImplBase-typed shutdown() here.
+
+        @param what 0 = receive, 1 = send, 2 = both.
+    */
+    std::error_code do_shutdown(int what) noexcept
     {
         int how;
         switch (what)
         {
-        case tcp_socket::shutdown_receive:
+        case 0: // shutdown_receive
             how = SHUT_RD;
             break;
-        case tcp_socket::shutdown_send:
+        case 1: // shutdown_send
             how = SHUT_WR;
             break;
-        case tcp_socket::shutdown_both:
+        case 2: // shutdown_both
             how = SHUT_RDWR;
             break;
         default:
@@ -105,10 +119,10 @@ public:
     }
 
     /// Cache local and remote endpoints.
-    void set_endpoints(endpoint local, endpoint remote) noexcept
+    void set_endpoints(Endpoint local, Endpoint remote) noexcept
     {
-        this->local_endpoint_ = local;
-        remote_endpoint_      = remote;
+        this->local_endpoint_ = std::move(local);
+        remote_endpoint_      = std::move(remote);
     }
 
     /** Shared connect dispatch.
@@ -120,7 +134,7 @@ public:
     std::coroutine_handle<> do_connect(
         std::coroutine_handle<>,
         capy::executor_ref,
-        endpoint,
+        Endpoint const&,
         std::stop_token const&,
         std::error_code*);
 
@@ -160,7 +174,7 @@ public:
     void do_close_socket() noexcept
     {
         base_type::do_close_socket();
-        remote_endpoint_ = endpoint{};
+        remote_endpoint_ = Endpoint{};
     }
 
 private:
@@ -213,13 +227,15 @@ template<
     class ConnOp,
     class ReadOp,
     class WriteOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 std::coroutine_handle<>
-reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState>::
+reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, ImplBase, Endpoint>::
     do_connect(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
-        endpoint ep,
+        Endpoint const& ep,
         std::stop_token const& token,
         std::error_code* ec)
 {
@@ -237,7 +253,8 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState>::
         if (::getsockname(
                 this->fd_, reinterpret_cast<sockaddr*>(&local_storage),
                 &local_len) == 0)
-            this->local_endpoint_ = from_sockaddr(local_storage);
+            this->local_endpoint_ =
+                from_sockaddr_as(local_storage, local_len, Endpoint{});
         remote_endpoint_ = ep;
     }
 
@@ -285,9 +302,11 @@ template<
     class ConnOp,
     class ReadOp,
     class WriteOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 std::coroutine_handle<>
-reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState>::
+reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, ImplBase, Endpoint>::
     do_read_some(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -379,9 +398,11 @@ template<
     class ConnOp,
     class ReadOp,
     class WriteOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 std::coroutine_handle<>
-reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState>::
+reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, ImplBase, Endpoint>::
     do_write_some(
         std::coroutine_handle<> h,
         capy::executor_ref ex,

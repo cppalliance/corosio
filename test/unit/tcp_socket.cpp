@@ -896,8 +896,9 @@ struct tcp_socket_test
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then shutdown send
+            // (unqualified: using enum avoids GCC 11 ICE in tsubst_copy)
             (void)co_await a.write_some(capy::const_buffer("hello", 5));
-            a.shutdown(tcp_socket::shutdown_send);
+            a.shutdown(shutdown_send);
 
             // Read the data
             char buf[32] = {};
@@ -926,7 +927,7 @@ struct tcp_socket_test
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Shutdown receive on b
-            b.shutdown(tcp_socket::shutdown_receive);
+            b.shutdown(shutdown_receive);
 
             // b can still send
             (void)co_await b.write_some(capy::const_buffer("from_b", 6));
@@ -950,9 +951,9 @@ struct tcp_socket_test
         tcp_socket sock(ioc);
 
         // Shutdown on closed tcp_socket should not crash
-        sock.shutdown(tcp_socket::shutdown_send);
-        sock.shutdown(tcp_socket::shutdown_receive);
-        sock.shutdown(tcp_socket::shutdown_both);
+        sock.shutdown(shutdown_send);
+        sock.shutdown(shutdown_receive);
+        sock.shutdown(shutdown_both);
     }
 
     void testShutdownBothSendDirection()
@@ -964,7 +965,7 @@ struct tcp_socket_test
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then shutdown both
             (void)co_await a.write_some(capy::const_buffer("goodbye", 7));
-            a.shutdown(tcp_socket::shutdown_both);
+            a.shutdown(shutdown_both);
 
             // Peer should receive the data
             char buf[32] = {};

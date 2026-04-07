@@ -61,6 +61,11 @@ public:
         std::error_code*,
         std::size_t*) override;
 
+    std::error_code shutdown(tcp_socket::shutdown_type what) noexcept override
+    {
+        return do_shutdown(static_cast<int>(what));
+    }
+
     void cancel() noexcept override;
     void close_socket() noexcept;
 };

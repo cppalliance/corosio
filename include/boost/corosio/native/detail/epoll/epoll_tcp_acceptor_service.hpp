@@ -21,8 +21,7 @@
 #include <boost/corosio/native/detail/epoll/epoll_tcp_acceptor.hpp>
 #include <boost/corosio/native/detail/epoll/epoll_tcp_service.hpp>
 #include <boost/corosio/native/detail/epoll/epoll_scheduler.hpp>
-#include <boost/corosio/native/detail/reactor/reactor_service_state.hpp>
-
+#include <boost/corosio/native/detail/reactor/reactor_acceptor_service.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_op_complete.hpp>
 
 #include <memory>
@@ -37,32 +36,33 @@
 
 namespace boost::corosio::detail {
 
-/// State for epoll acceptor service.
-using epoll_tcp_acceptor_state =
-    reactor_service_state<epoll_scheduler, epoll_tcp_acceptor>;
-
 /** epoll acceptor service implementation.
 
-    Inherits from tcp_acceptor_service to enable runtime polymorphism.
+    Derives from reactor_acceptor_service for shared construct/
+    destroy/shutdown/close logic. Provides epoll-specific socket
+    creation (SOCK_NONBLOCK | SOCK_CLOEXEC) and dual-stack defaults.
     Uses key_type = tcp_acceptor_service for service lookup.
 */
 class BOOST_COROSIO_DECL epoll_tcp_acceptor_service final
-    : public tcp_acceptor_service
+    : public reactor_acceptor_service<
+          epoll_tcp_acceptor_service,
+          tcp_acceptor_service,
+          epoll_scheduler,
+          epoll_tcp_acceptor,
+          epoll_tcp_service>
 {
+    using base_type = reactor_acceptor_service<
+        epoll_tcp_acceptor_service,
+        tcp_acceptor_service,
+        epoll_scheduler,
+        epoll_tcp_acceptor,
+        epoll_tcp_service>;
+    friend base_type;
+
 public:
-    explicit epoll_tcp_acceptor_service(
-        capy::execution_context& ctx, epoll_tcp_service& tcp_svc);
+    explicit epoll_tcp_acceptor_service(capy::execution_context& ctx);
     ~epoll_tcp_acceptor_service() override;
 
-    epoll_tcp_acceptor_service(epoll_tcp_acceptor_service const&) = delete;
-    epoll_tcp_acceptor_service&
-    operator=(epoll_tcp_acceptor_service const&) = delete;
-
-    void shutdown() override;
-
-    io_object::implementation* construct() override;
-    void destroy(io_object::implementation*) override;
-    void close(io_object::handle&) override;
     std::error_code open_acceptor_socket(
         tcp_acceptor::implementation& impl,
         int family,
@@ -72,21 +72,6 @@ public:
     bind_acceptor(tcp_acceptor::implementation& impl, endpoint ep) override;
     std::error_code
     listen_acceptor(tcp_acceptor::implementation& impl, int backlog) override;
-
-    epoll_scheduler& scheduler() const noexcept
-    {
-        return state_->sched_;
-    }
-    void post(scheduler_op* op);
-    void work_started() noexcept;
-    void work_finished() noexcept;
-
-    /** Get the TCP service for creating peer sockets during accept. */
-    epoll_tcp_service* tcp_service() const noexcept;
-
-private:
-    epoll_tcp_service* tcp_svc_;
-    std::unique_ptr<epoll_tcp_acceptor_state> state_;
 };
 
 inline void
@@ -128,10 +113,11 @@ epoll_tcp_acceptor::accept(
     op.start(token, this);
 
     sockaddr_storage peer_storage{};
-    socklen_t addrlen = sizeof(peer_storage);
+    socklen_t addrlen;
     int accepted;
     do
     {
+        addrlen = sizeof(peer_storage);
         accepted = ::accept4(
             fd_, reinterpret_cast<sockaddr*>(&peer_storage), &addrlen,
             SOCK_NONBLOCK | SOCK_CLOEXEC);
@@ -147,7 +133,7 @@ epoll_tcp_acceptor::accept(
 
         if (svc_.scheduler().try_consume_inline_budget())
         {
-            auto* socket_svc = svc_.tcp_service();
+            auto* socket_svc = svc_.stream_service();
             if (socket_svc)
             {
                 auto& impl =
@@ -182,8 +168,9 @@ epoll_tcp_acceptor::accept(
             return dispatch_coro(ex, op.cont_op.cont);
         }
 
-        op.accepted_fd  = accepted;
-        op.peer_storage = peer_storage;
+        op.accepted_fd   = accepted;
+        op.peer_storage  = peer_storage;
+        op.peer_addrlen  = addrlen;
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
@@ -238,57 +225,14 @@ epoll_tcp_acceptor::close_socket() noexcept
 }
 
 inline epoll_tcp_acceptor_service::epoll_tcp_acceptor_service(
-    capy::execution_context& ctx, epoll_tcp_service& tcp_svc)
-    : tcp_svc_(&tcp_svc)
-    , state_(
-          std::make_unique<epoll_tcp_acceptor_state>(
-              ctx.use_service<epoll_scheduler>()))
+    capy::execution_context& ctx)
+    : base_type(ctx)
 {
+    auto* svc = ctx_.find_service<detail::tcp_service>();
+    stream_svc_ = svc ? dynamic_cast<epoll_tcp_service*>(svc) : nullptr;
 }
 
 inline epoll_tcp_acceptor_service::~epoll_tcp_acceptor_service() {}
-
-inline void
-epoll_tcp_acceptor_service::shutdown()
-{
-    std::lock_guard lock(state_->mutex_);
-
-    while (auto* impl = state_->impl_list_.pop_front())
-        impl->close_socket();
-
-    // Don't clear impl_ptrs_ here — same rationale as
-    // epoll_tcp_service::shutdown(). Let ~state_ release ptrs
-    // after scheduler shutdown has drained all queued ops.
-}
-
-inline io_object::implementation*
-epoll_tcp_acceptor_service::construct()
-{
-    auto impl = std::make_shared<epoll_tcp_acceptor>(*this);
-    auto* raw = impl.get();
-
-    std::lock_guard lock(state_->mutex_);
-    state_->impl_ptrs_.emplace(raw, std::move(impl));
-    state_->impl_list_.push_back(raw);
-
-    return raw;
-}
-
-inline void
-epoll_tcp_acceptor_service::destroy(io_object::implementation* impl)
-{
-    auto* epoll_impl = static_cast<epoll_tcp_acceptor*>(impl);
-    epoll_impl->close_socket();
-    std::lock_guard lock(state_->mutex_);
-    state_->impl_list_.remove(epoll_impl);
-    state_->impl_ptrs_.erase(epoll_impl);
-}
-
-inline void
-epoll_tcp_acceptor_service::close(io_object::handle& h)
-{
-    static_cast<epoll_tcp_acceptor*>(h.get())->close_socket();
-}
 
 inline std::error_code
 epoll_tcp_acceptor_service::open_acceptor_socket(
@@ -331,30 +275,6 @@ epoll_tcp_acceptor_service::listen_acceptor(
     tcp_acceptor::implementation& impl, int backlog)
 {
     return static_cast<epoll_tcp_acceptor*>(&impl)->do_listen(backlog);
-}
-
-inline void
-epoll_tcp_acceptor_service::post(scheduler_op* op)
-{
-    state_->sched_.post(op);
-}
-
-inline void
-epoll_tcp_acceptor_service::work_started() noexcept
-{
-    state_->sched_.work_started();
-}
-
-inline void
-epoll_tcp_acceptor_service::work_finished() noexcept
-{
-    state_->sched_.work_finished();
-}
-
-inline epoll_tcp_service*
-epoll_tcp_acceptor_service::tcp_service() const noexcept
-{
-    return tcp_svc_;
 }
 
 } // namespace boost::corosio::detail

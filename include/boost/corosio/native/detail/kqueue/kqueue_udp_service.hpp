@@ -152,11 +152,12 @@ kqueue_udp_socket::send_to(
     capy::executor_ref ex,
     buffer_param buf,
     endpoint dest,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    return do_send_to(h, ex, buf, dest, token, ec, bytes_out);
+    return do_send_to(h, ex, buf, dest, flags, token, ec, bytes_out);
 }
 
 inline std::coroutine_handle<>
@@ -165,11 +166,12 @@ kqueue_udp_socket::recv_from(
     capy::executor_ref ex,
     buffer_param buf,
     endpoint* source,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    return do_recv_from(h, ex, buf, source, token, ec, bytes_out);
+    return do_recv_from(h, ex, buf, source, flags, token, ec, bytes_out);
 }
 
 // Connected-mode I/O
@@ -190,11 +192,12 @@ kqueue_udp_socket::send(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     buffer_param buf,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    return do_send(h, ex, buf, token, ec, bytes_out);
+    return do_send(h, ex, buf, flags, token, ec, bytes_out);
 }
 
 inline std::coroutine_handle<>
@@ -202,11 +205,12 @@ kqueue_udp_socket::recv(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     buffer_param buf,
+    int flags,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    return do_recv(h, ex, buf, token, ec, bytes_out);
+    return do_recv(h, ex, buf, flags, token, ec, bytes_out);
 }
 
 inline endpoint

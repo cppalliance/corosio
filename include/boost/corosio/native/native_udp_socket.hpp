@@ -88,6 +88,7 @@ class native_udp_socket : public udp_socket
         native_udp_socket& self_;
         ConstBufferSequence buffers_;
         endpoint dest_;
+        int flags_;
         std::stop_token token_;
         mutable std::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
@@ -95,10 +96,12 @@ class native_udp_socket : public udp_socket
         native_send_to_awaitable(
             native_udp_socket& self,
             ConstBufferSequence buffers,
-            endpoint dest) noexcept
+            endpoint dest,
+            int flags) noexcept
             : self_(self)
             , buffers_(std::move(buffers))
             , dest_(dest)
+            , flags_(flags)
         {
         }
 
@@ -119,8 +122,8 @@ class native_udp_socket : public udp_socket
         {
             token_ = env->stop_token;
             return self_.get_impl().send_to(
-                h, env->executor, buffers_, dest_, token_, &ec_,
-                &bytes_transferred_);
+                h, env->executor, buffers_, dest_, flags_,
+                token_, &ec_, &bytes_transferred_);
         }
     };
 
@@ -130,6 +133,7 @@ class native_udp_socket : public udp_socket
         native_udp_socket& self_;
         MutableBufferSequence buffers_;
         endpoint& source_;
+        int flags_;
         std::stop_token token_;
         mutable std::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
@@ -137,10 +141,12 @@ class native_udp_socket : public udp_socket
         native_recv_from_awaitable(
             native_udp_socket& self,
             MutableBufferSequence buffers,
-            endpoint& source) noexcept
+            endpoint& source,
+            int flags) noexcept
             : self_(self)
             , buffers_(std::move(buffers))
             , source_(source)
+            , flags_(flags)
         {
         }
 
@@ -161,8 +167,8 @@ class native_udp_socket : public udp_socket
         {
             token_ = env->stop_token;
             return self_.get_impl().recv_from(
-                h, env->executor, buffers_, &source_, token_, &ec_,
-                &bytes_transferred_);
+                h, env->executor, buffers_, &source_, flags_,
+                token_, &ec_, &bytes_transferred_);
         }
     };
 
@@ -203,15 +209,27 @@ public:
 
         @param buffers The buffer sequence containing data to send.
         @param dest The destination endpoint.
+        @param flags Message flags.
 
         @return An awaitable yielding `(error_code, std::size_t)`.
     */
     template<capy::ConstBufferSequence CB>
-    auto send_to(CB const& buffers, endpoint dest)
+    auto send_to(
+        CB const& buffers,
+        endpoint dest,
+        corosio::message_flags flags)
     {
         if (!is_open())
             detail::throw_logic_error("send_to: socket not open");
-        return native_send_to_awaitable<CB>(*this, buffers, dest);
+        return native_send_to_awaitable<CB>(
+            *this, buffers, dest, static_cast<int>(flags));
+    }
+
+    /// @overload
+    template<capy::ConstBufferSequence CB>
+    auto send_to(CB const& buffers, endpoint dest)
+    {
+        return send_to(buffers, dest, corosio::message_flags::none);
     }
 
     /** Receive a datagram and capture the sender's endpoint.
@@ -222,15 +240,27 @@ public:
         @param buffers The buffer sequence to receive data into.
         @param source Reference to an endpoint that will be set to
             the sender's address on successful completion.
+        @param flags Message flags (e.g. message_flags::peek).
 
         @return An awaitable yielding `(error_code, std::size_t)`.
     */
     template<capy::MutableBufferSequence MB>
-    auto recv_from(MB const& buffers, endpoint& source)
+    auto recv_from(
+        MB const& buffers,
+        endpoint& source,
+        corosio::message_flags flags)
     {
         if (!is_open())
             detail::throw_logic_error("recv_from: socket not open");
-        return native_recv_from_awaitable<MB>(*this, buffers, source);
+        return native_recv_from_awaitable<MB>(
+            *this, buffers, source, static_cast<int>(flags));
+    }
+
+    /// @overload
+    template<capy::MutableBufferSequence MB>
+    auto recv_from(MB const& buffers, endpoint& source)
+    {
+        return recv_from(buffers, source, corosio::message_flags::none);
     }
 };
 

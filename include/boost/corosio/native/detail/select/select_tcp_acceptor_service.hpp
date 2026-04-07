@@ -21,8 +21,7 @@
 #include <boost/corosio/native/detail/select/select_tcp_acceptor.hpp>
 #include <boost/corosio/native/detail/select/select_tcp_service.hpp>
 #include <boost/corosio/native/detail/select/select_scheduler.hpp>
-#include <boost/corosio/native/detail/reactor/reactor_service_state.hpp>
-
+#include <boost/corosio/native/detail/reactor/reactor_acceptor_service.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_op_complete.hpp>
 
 #include <memory>
@@ -38,32 +37,31 @@
 
 namespace boost::corosio::detail {
 
-/// State for select acceptor service.
-using select_tcp_acceptor_state =
-    reactor_service_state<select_scheduler, select_tcp_acceptor>;
-
 /** select acceptor service implementation.
 
     Inherits from tcp_acceptor_service to enable runtime polymorphism.
     Uses key_type = tcp_acceptor_service for service lookup.
 */
 class BOOST_COROSIO_DECL select_tcp_acceptor_service final
-    : public tcp_acceptor_service
+    : public reactor_acceptor_service<
+          select_tcp_acceptor_service,
+          tcp_acceptor_service,
+          select_scheduler,
+          select_tcp_acceptor,
+          select_tcp_service>
 {
+    using base_type = reactor_acceptor_service<
+        select_tcp_acceptor_service,
+        tcp_acceptor_service,
+        select_scheduler,
+        select_tcp_acceptor,
+        select_tcp_service>;
+    friend base_type;
+
 public:
-    explicit select_tcp_acceptor_service(
-        capy::execution_context& ctx, select_tcp_service& tcp_svc);
+    explicit select_tcp_acceptor_service(capy::execution_context& ctx);
     ~select_tcp_acceptor_service() override;
 
-    select_tcp_acceptor_service(select_tcp_acceptor_service const&) = delete;
-    select_tcp_acceptor_service&
-    operator=(select_tcp_acceptor_service const&) = delete;
-
-    void shutdown() override;
-
-    io_object::implementation* construct() override;
-    void destroy(io_object::implementation*) override;
-    void close(io_object::handle&) override;
     std::error_code open_acceptor_socket(
         tcp_acceptor::implementation& impl,
         int family,
@@ -73,21 +71,6 @@ public:
     bind_acceptor(tcp_acceptor::implementation& impl, endpoint ep) override;
     std::error_code
     listen_acceptor(tcp_acceptor::implementation& impl, int backlog) override;
-
-    select_scheduler& scheduler() const noexcept
-    {
-        return state_->sched_;
-    }
-    void post(scheduler_op* op);
-    void work_started() noexcept;
-    void work_finished() noexcept;
-
-    /** Get the TCP service for creating peer sockets during accept. */
-    select_tcp_service* tcp_service() const noexcept;
-
-private:
-    select_tcp_service* tcp_svc_;
-    std::unique_ptr<select_tcp_acceptor_state> state_;
 };
 
 inline void
@@ -129,10 +112,11 @@ select_tcp_acceptor::accept(
     op.start(token, this);
 
     sockaddr_storage peer_storage{};
-    socklen_t addrlen = sizeof(peer_storage);
+    socklen_t addrlen;
     int accepted;
     do
     {
+        addrlen = sizeof(peer_storage);
         accepted =
             ::accept(fd_, reinterpret_cast<sockaddr*>(&peer_storage), &addrlen);
     }
@@ -180,6 +164,14 @@ select_tcp_acceptor::accept(
             return std::noop_coroutine();
         }
 
+#ifdef SO_NOSIGPIPE
+        {
+            int one = 1;
+            ::setsockopt(
+                accepted, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+        }
+#endif
+
         {
             std::lock_guard lock(desc_state_.mutex);
             desc_state_.read_ready = false;
@@ -187,7 +179,7 @@ select_tcp_acceptor::accept(
 
         if (svc_.scheduler().try_consume_inline_budget())
         {
-            auto* socket_svc = svc_.tcp_service();
+            auto* socket_svc = svc_.stream_service();
             if (socket_svc)
             {
                 auto& impl =
@@ -222,8 +214,9 @@ select_tcp_acceptor::accept(
             return dispatch_coro(ex, op.cont_op.cont);
         }
 
-        op.accepted_fd  = accepted;
-        op.peer_storage = peer_storage;
+        op.accepted_fd   = accepted;
+        op.peer_storage  = peer_storage;
+        op.peer_addrlen  = addrlen;
         op.complete(0, 0);
         op.impl_ptr = shared_from_this();
         svc_.post(&op);
@@ -277,57 +270,14 @@ select_tcp_acceptor::close_socket() noexcept
 }
 
 inline select_tcp_acceptor_service::select_tcp_acceptor_service(
-    capy::execution_context& ctx, select_tcp_service& tcp_svc)
-    : tcp_svc_(&tcp_svc)
-    , state_(
-          std::make_unique<select_tcp_acceptor_state>(
-              ctx.use_service<select_scheduler>()))
+    capy::execution_context& ctx)
+    : base_type(ctx)
 {
+    auto* svc = ctx_.find_service<detail::tcp_service>();
+    stream_svc_ = svc ? dynamic_cast<select_tcp_service*>(svc) : nullptr;
 }
 
 inline select_tcp_acceptor_service::~select_tcp_acceptor_service() {}
-
-inline void
-select_tcp_acceptor_service::shutdown()
-{
-    std::lock_guard lock(state_->mutex_);
-
-    while (auto* impl = state_->impl_list_.pop_front())
-        impl->close_socket();
-
-    // Don't clear impl_ptrs_ here — same rationale as
-    // select_tcp_service::shutdown(). Let ~state_ release ptrs
-    // after scheduler shutdown has drained all queued ops.
-}
-
-inline io_object::implementation*
-select_tcp_acceptor_service::construct()
-{
-    auto impl = std::make_shared<select_tcp_acceptor>(*this);
-    auto* raw = impl.get();
-
-    std::lock_guard lock(state_->mutex_);
-    state_->impl_ptrs_.emplace(raw, std::move(impl));
-    state_->impl_list_.push_back(raw);
-
-    return raw;
-}
-
-inline void
-select_tcp_acceptor_service::destroy(io_object::implementation* impl)
-{
-    auto* select_impl = static_cast<select_tcp_acceptor*>(impl);
-    select_impl->close_socket();
-    std::lock_guard lock(state_->mutex_);
-    state_->impl_list_.remove(select_impl);
-    state_->impl_ptrs_.erase(select_impl);
-}
-
-inline void
-select_tcp_acceptor_service::close(io_object::handle& h)
-{
-    static_cast<select_tcp_acceptor*>(h.get())->close_socket();
-}
 
 inline std::error_code
 select_tcp_acceptor_service::open_acceptor_socket(
@@ -404,30 +354,6 @@ select_tcp_acceptor_service::listen_acceptor(
     tcp_acceptor::implementation& impl, int backlog)
 {
     return static_cast<select_tcp_acceptor*>(&impl)->do_listen(backlog);
-}
-
-inline void
-select_tcp_acceptor_service::post(scheduler_op* op)
-{
-    state_->sched_.post(op);
-}
-
-inline void
-select_tcp_acceptor_service::work_started() noexcept
-{
-    state_->sched_.work_started();
-}
-
-inline void
-select_tcp_acceptor_service::work_finished() noexcept
-{
-    state_->sched_.work_finished();
-}
-
-inline select_tcp_service*
-select_tcp_acceptor_service::tcp_service() const noexcept
-{
-    return tcp_svc_;
 }
 
 } // namespace boost::corosio::detail

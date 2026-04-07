@@ -1,0 +1,267 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Unix Domain Sockets
+
+Unix domain sockets provide inter-process communication (IPC) on the same
+machine without going through the TCP/IP network stack. They use filesystem
+paths instead of IP addresses and ports, offering lower latency and higher
+throughput than loopback TCP.
+
+[NOTE]
+====
+Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/local_stream_socket.hpp>
+#include <boost/corosio/local_stream_acceptor.hpp>
+#include <boost/corosio/local_datagram_socket.hpp>
+#include <boost/corosio/local_socket_pair.hpp>
+#include <boost/corosio/local_endpoint.hpp>
+#include <boost/capy/buffers.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+====
+
+== When to Use Unix Sockets
+
+Use Unix domain sockets instead of TCP when:
+
+* Both endpoints are on the same machine
+* You need lower latency (no TCP/IP stack overhead)
+* You need higher throughput for local communication
+* You want filesystem-based access control (file permissions on the socket path)
+
+Common use cases include database connections (PostgreSQL, MySQL, Redis),
+container networking, and microservice communication on a single host.
+
+== Socket Types
+
+Corosio provides two Unix socket types, mirroring the TCP/UDP split:
+
+[cols="1,1,2"]
+|===
+| Class | Protocol | Description
+
+| `local_stream_socket`
+| `SOCK_STREAM`
+| Reliable, ordered byte stream (like TCP). Supports connect/accept.
+
+| `local_datagram_socket`
+| `SOCK_DGRAM`
+| Message-oriented datagrams (like UDP). Preserves message boundaries.
+|===
+
+== Stream Sockets
+
+Stream sockets work like TCP: a server binds and listens on a path, clients
+connect, and both sides read and write byte streams.
+
+=== Server (Acceptor)
+
+[source,cpp]
+----
+capy::task<> server(corosio::io_context& ioc)
+{
+    corosio::local_stream_acceptor acc(ioc);
+    acc.open();
+
+    auto ec = acc.bind(corosio::local_endpoint("/tmp/my_app.sock"));
+    if (ec) co_return;
+
+    ec = acc.listen();
+    if (ec) co_return;
+
+    corosio::local_stream_socket peer(ioc);
+    auto [accept_ec] = co_await acc.accept(peer);
+    if (accept_ec) co_return;
+
+    // peer is now connected — read and write as with tcp_socket
+    char buf[1024];
+    auto [read_ec, n] = co_await peer.read_some(
+        capy::mutable_buffer(buf, sizeof(buf)));
+}
+----
+
+The acceptor does **not** automatically remove the socket file on close.
+You must `unlink()` the path before binding (if it exists) and after you
+are done:
+
+[source,cpp]
+----
+::unlink("/tmp/my_app.sock");  // remove stale socket
+acc.bind(corosio::local_endpoint("/tmp/my_app.sock"));
+----
+
+=== Client
+
+[source,cpp]
+----
+capy::task<> client(corosio::io_context& ioc)
+{
+    corosio::local_stream_socket s(ioc);
+
+    // connect() opens the socket automatically
+    auto [ec] = co_await s.connect(
+        corosio::local_endpoint("/tmp/my_app.sock"));
+    if (ec) co_return;
+
+    char const msg[] = "hello";
+    auto [wec, n] = co_await s.write_some(
+        capy::const_buffer(msg, sizeof(msg)));
+}
+----
+
+=== Socket Pairs
+
+For bidirectional IPC between a parent and child (or two coroutines),
+use `make_local_stream_pair()` which calls the `socketpair()` system call:
+
+[source,cpp]
+----
+auto [s1, s2] = corosio::make_local_stream_pair(ioc);
+
+// Data written to s1 can be read from s2, and vice versa.
+co_await s1.write_some(capy::const_buffer("ping", 4));
+
+char buf[16];
+auto [ec, n] = co_await s2.read_some(
+    capy::mutable_buffer(buf, sizeof(buf)));
+// buf contains "ping"
+----
+
+This is the fastest way to create a connected pair — it uses a single
+`socketpair()` syscall with no filesystem paths involved.
+
+== Datagram Sockets
+
+Datagram sockets preserve message boundaries. Each `send` delivers exactly
+one message that the receiver gets as a complete unit from `recv`.
+
+=== Connectionless Mode
+
+Both sides bind to paths, then use `send_to`/`recv_from`:
+
+[source,cpp]
+----
+corosio::local_datagram_socket s(ioc);
+s.open();
+s.bind(corosio::local_endpoint("/tmp/my_dgram.sock"));
+
+// Send to a specific peer
+co_await s.send_to(
+    capy::const_buffer("hello", 5),
+    corosio::local_endpoint("/tmp/peer.sock"));
+
+// Receive from any sender
+corosio::local_endpoint sender;
+auto [ec, n] = co_await s.recv_from(
+    capy::mutable_buffer(buf, sizeof(buf)), sender);
+----
+
+=== Connected Mode
+
+After calling `connect()`, use `send`/`recv` without specifying the peer:
+
+[source,cpp]
+----
+auto [s1, s2] = corosio::make_local_datagram_pair(ioc);
+
+co_await s1.send(capy::const_buffer("msg", 3));
+
+auto [ec, n] = co_await s2.recv(
+    capy::mutable_buffer(buf, sizeof(buf)));
+----
+
+== Local Endpoints
+
+Unix socket endpoints use filesystem paths instead of IP+port:
+
+[source,cpp]
+----
+// Create from a path
+corosio::local_endpoint ep("/tmp/my_app.sock");
+
+// Query the path
+std::string_view path = ep.path();
+
+// Check if empty (unbound)
+bool bound = !ep.empty();
+----
+
+The maximum path length is 107 bytes (the `sun_path` field in `sockaddr_un`
+minus the null terminator). Paths longer than this throw
+`std::errc::filename_too_long`.
+
+=== Abstract Sockets (Linux Only)
+
+On Linux, paths starting with a null byte (`'\0'`) create abstract sockets
+that exist in a kernel namespace rather than the filesystem. They don't leave
+socket files behind and don't need cleanup:
+
+[source,cpp]
+----
+// Abstract socket — no file created
+corosio::local_endpoint ep(std::string_view("\0/my_app", 8));
+assert(ep.is_abstract());
+----
+
+== Comparison with TCP
+
+[cols="1,1,1"]
+|===
+| Feature | TCP (`tcp_socket`) | Unix (`local_stream_socket`)
+
+| Addressing
+| IP address + port
+| Filesystem path
+
+| Scope
+| Network (any machine)
+| Local machine only
+
+| Latency
+| Higher (TCP/IP stack)
+| Lower (kernel shortcut)
+
+| Throughput
+| Limited by network stack
+| Higher for local IPC
+
+| Access control
+| Firewall rules
+| File permissions
+
+| DNS resolution
+| Yes (via `resolver`)
+| No (direct paths)
+
+| Platform
+| All platforms
+| POSIX only (Linux, macOS, BSD)
+|===
+
+== Platform Support
+
+Unix domain sockets are available on all POSIX platforms:
+
+* **Linux** — Full support including abstract sockets
+* **macOS** — Full support (no abstract sockets)
+* **FreeBSD** — Full support (no abstract sockets)
+
+Windows has limited AF_UNIX support (since Windows 10 1803) but Corosio
+does not currently support Unix sockets on Windows.
+
+== Next Steps
+
+* xref:4d.sockets.adoc[TCP Sockets] — TCP socket operations
+* xref:4e.tcp-acceptor.adoc[TCP Acceptors] — TCP listener operations
+* xref:4f.endpoints.adoc[IP Endpoints] — IP address and port endpoints

@@ -113,14 +113,15 @@ struct epoll_write_op final : reactor_write_op<epoll_op, epoll_write_policy>
 /** Provides accept4(SOCK_NONBLOCK|SOCK_CLOEXEC) with EINTR retry. */
 struct epoll_accept_policy
 {
-    static int do_accept(int fd, sockaddr_storage& peer) noexcept
+    static int do_accept(
+        int fd, sockaddr_storage& peer, socklen_t& addrlen_out) noexcept
     {
-        socklen_t addrlen = sizeof(peer);
+        addrlen_out = sizeof(peer);
         int new_fd;
         do
         {
             new_fd = ::accept4(
-                fd, reinterpret_cast<sockaddr*>(&peer), &addrlen,
+                fd, reinterpret_cast<sockaddr*>(&peer), &addrlen_out,
                 SOCK_NONBLOCK | SOCK_CLOEXEC);
         }
         while (new_fd < 0 && errno == EINTR);

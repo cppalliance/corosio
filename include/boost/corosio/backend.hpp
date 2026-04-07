@@ -33,6 +33,12 @@ class epoll_udp_socket;
 class epoll_udp_service;
 class epoll_tcp_acceptor;
 class epoll_tcp_acceptor_service;
+class epoll_local_stream_socket;
+class epoll_local_stream_service;
+class epoll_local_stream_acceptor;
+class epoll_local_stream_acceptor_service;
+class epoll_local_datagram_socket;
+class epoll_local_datagram_service;
 class epoll_scheduler;
 
 class posix_signal;
@@ -52,6 +58,13 @@ struct epoll_t
     using udp_service_type          = detail::epoll_udp_service;
     using tcp_acceptor_type         = detail::epoll_tcp_acceptor;
     using tcp_acceptor_service_type = detail::epoll_tcp_acceptor_service;
+
+    using local_stream_socket_type           = detail::epoll_local_stream_socket;
+    using local_stream_service_type          = detail::epoll_local_stream_service;
+    using local_stream_acceptor_type         = detail::epoll_local_stream_acceptor;
+    using local_stream_acceptor_service_type = detail::epoll_local_stream_acceptor_service;
+    using local_datagram_socket_type         = detail::epoll_local_datagram_socket;
+    using local_datagram_service_type        = detail::epoll_local_datagram_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
@@ -78,6 +91,12 @@ class select_udp_socket;
 class select_udp_service;
 class select_tcp_acceptor;
 class select_tcp_acceptor_service;
+class select_local_stream_socket;
+class select_local_stream_service;
+class select_local_stream_acceptor;
+class select_local_stream_acceptor_service;
+class select_local_datagram_socket;
+class select_local_datagram_service;
 class select_scheduler;
 
 class posix_signal;
@@ -97,6 +116,13 @@ struct select_t
     using udp_service_type          = detail::select_udp_service;
     using tcp_acceptor_type         = detail::select_tcp_acceptor;
     using tcp_acceptor_service_type = detail::select_tcp_acceptor_service;
+
+    using local_stream_socket_type           = detail::select_local_stream_socket;
+    using local_stream_service_type          = detail::select_local_stream_service;
+    using local_stream_acceptor_type         = detail::select_local_stream_acceptor;
+    using local_stream_acceptor_service_type = detail::select_local_stream_acceptor_service;
+    using local_datagram_socket_type         = detail::select_local_datagram_socket;
+    using local_datagram_service_type        = detail::select_local_datagram_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
@@ -123,6 +149,12 @@ class kqueue_udp_socket;
 class kqueue_udp_service;
 class kqueue_tcp_acceptor;
 class kqueue_tcp_acceptor_service;
+class kqueue_local_stream_socket;
+class kqueue_local_stream_service;
+class kqueue_local_stream_acceptor;
+class kqueue_local_stream_acceptor_service;
+class kqueue_local_datagram_socket;
+class kqueue_local_datagram_service;
 class kqueue_scheduler;
 
 class posix_signal;
@@ -142,6 +174,13 @@ struct kqueue_t
     using udp_service_type          = detail::kqueue_udp_service;
     using tcp_acceptor_type         = detail::kqueue_tcp_acceptor;
     using tcp_acceptor_service_type = detail::kqueue_tcp_acceptor_service;
+
+    using local_stream_socket_type           = detail::kqueue_local_stream_socket;
+    using local_stream_service_type          = detail::kqueue_local_stream_service;
+    using local_stream_acceptor_type         = detail::kqueue_local_stream_acceptor;
+    using local_stream_acceptor_service_type = detail::kqueue_local_stream_acceptor_service;
+    using local_datagram_socket_type         = detail::kqueue_local_datagram_socket;
+    using local_datagram_service_type        = detail::kqueue_local_datagram_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
@@ -171,6 +210,13 @@ class win_scheduler;
 class win_udp_socket;
 class win_udp_service;
 
+class win_local_stream_socket;
+class win_local_stream_service;
+class win_local_stream_acceptor;
+class win_local_stream_acceptor_service;
+class win_local_dgram_socket;
+class win_local_dgram_service;
+
 class win_signal;
 class win_signals;
 class win_resolver;
@@ -183,7 +229,12 @@ class win_random_access_file_service;
 
 } // namespace detail
 
-/// Backend tag for the Windows I/O Completion Ports multiplexer.
+/** Backend tag for the Windows I/O Completion Ports multiplexer.
+
+    Selects the IOCP-based reactor for all I/O services, including
+    TCP, UDP, Unix domain sockets (AF_UNIX), signals, and name
+    resolution.
+*/
 struct iocp_t
 {
     using scheduler_type            = detail::win_scheduler;
@@ -194,12 +245,29 @@ struct iocp_t
     using udp_socket_type           = detail::win_udp_socket;
     using udp_service_type          = detail::win_udp_service;
 
+    /// @name Unix domain socket types
+    /// @{
+    using local_stream_socket_type           = detail::win_local_stream_socket;
+    using local_stream_service_type          = detail::win_local_stream_service;
+    using local_stream_acceptor_type         = detail::win_local_stream_acceptor;
+    using local_stream_acceptor_service_type = detail::win_local_stream_acceptor_service;
+    using local_datagram_socket_type         = detail::win_local_dgram_socket;
+    using local_datagram_service_type        = detail::win_local_dgram_service;
+    /// @}
+
     using signal_type           = detail::win_signal;
     using signal_service_type   = detail::win_signals;
     using resolver_type         = detail::win_resolver;
     using resolver_service_type = detail::win_resolver_service;
 
-    /// Create the scheduler and services for this backend.
+    /** Create the scheduler and services for this backend.
+
+        @param ctx The execution context that owns the scheduler.
+        @param concurrency_hint Hint for the number of threads that
+            will call `run()`. Pass `1` for single-threaded mode.
+
+        @return Reference to the newly created scheduler.
+    */
     BOOST_COROSIO_DECL static detail::scheduler&
     construct(capy::execution_context&, unsigned concurrency_hint);
 };

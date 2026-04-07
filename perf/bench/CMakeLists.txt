@@ -29,7 +29,9 @@ add_executable(corosio_bench
     corosio/http_server_bench.cpp
     corosio/timer_bench.cpp
     corosio/accept_churn_bench.cpp
-    corosio/fan_out_bench.cpp)
+    corosio/fan_out_bench.cpp
+    corosio/local_socket_throughput_bench.cpp
+    corosio/local_socket_latency_bench.cpp)
 
 target_link_libraries(corosio_bench
     PRIVATE
@@ -60,7 +62,11 @@ if (TARGET Boost::asio)
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/fan_out_bench.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/timer_bench.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/accept_churn_bench.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/fan_out_bench.cpp)
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/fan_out_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/local_socket_throughput_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/local_socket_latency_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/local_socket_throughput_bench.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/local_socket_latency_bench.cpp)
     target_link_libraries(corosio_bench PRIVATE Boost::asio)
     target_compile_definitions(corosio_bench PRIVATE BOOST_COROSIO_BENCH_HAS_ASIO=1)
 endif ()

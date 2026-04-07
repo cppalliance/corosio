@@ -23,6 +23,17 @@
 
 namespace boost::corosio::detail {
 
+/* Map portable message_flags values to native MSG_* constants. */
+inline int
+to_native_msg_flags(int flags) noexcept
+{
+    int native = 0;
+    if (flags & 1) native |= MSG_PEEK;
+    if (flags & 2) native |= MSG_OOB;
+    if (flags & 4) native |= MSG_DONTROUTE;
+    return native;
+}
+
 /** CRTP base for reactor-backed datagram socket implementations.
 
     Inherits shared data members and cancel/close/register logic
@@ -38,6 +49,10 @@ namespace boost::corosio::detail {
     @tparam SendOp     The backend's connected send op type.
     @tparam RecvOp     The backend's connected recv op type.
     @tparam DescState  The backend's descriptor_state type.
+    @tparam ImplBase   The public vtable base
+                       (udp_socket::implementation or
+                        local_datagram_socket::implementation).
+    @tparam Endpoint   The endpoint type (endpoint or local_endpoint).
 */
 template<
     class Derived,
@@ -47,26 +62,30 @@ template<
     class RecvFromOp,
     class SendOp,
     class RecvOp,
-    class DescState>
+    class DescState,
+    class ImplBase = udp_socket::implementation,
+    class Endpoint = endpoint>
 class reactor_datagram_socket
     : public reactor_basic_socket<
           Derived,
-          udp_socket::implementation,
+          ImplBase,
           Service,
-          DescState>
+          DescState,
+          Endpoint>
 {
     using base_type = reactor_basic_socket<
         Derived,
-        udp_socket::implementation,
+        ImplBase,
         Service,
-        DescState>;
+        DescState,
+        Endpoint>;
     friend base_type;
     friend Derived;
 
     explicit reactor_datagram_socket(Service& svc) noexcept : base_type(svc) {}
 
 protected:
-    endpoint remote_endpoint_;
+    Endpoint remote_endpoint_;
 
 public:
     /// Pending connect operation slot.
@@ -87,16 +106,16 @@ public:
     ~reactor_datagram_socket() override = default;
 
     /// Return the cached remote endpoint.
-    endpoint remote_endpoint() const noexcept override
+    Endpoint remote_endpoint() const noexcept override
     {
         return remote_endpoint_;
     }
 
     /// Cache local and remote endpoints.
-    void set_endpoints(endpoint local, endpoint remote) noexcept
+    void set_endpoints(Endpoint local, Endpoint remote) noexcept
     {
-        this->local_endpoint_ = local;
-        remote_endpoint_      = remote;
+        this->local_endpoint_ = std::move(local);
+        remote_endpoint_      = std::move(remote);
     }
 
     /** Shared send_to dispatch.
@@ -109,7 +128,8 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         buffer_param,
-        endpoint,
+        Endpoint const&,
+        int flags,
         std::stop_token const&,
         std::error_code*,
         std::size_t*);
@@ -124,7 +144,8 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         buffer_param,
-        endpoint*,
+        Endpoint*,
+        int flags,
         std::stop_token const&,
         std::error_code*,
         std::size_t*);
@@ -138,7 +159,7 @@ public:
     std::coroutine_handle<> do_connect(
         std::coroutine_handle<>,
         capy::executor_ref,
-        endpoint,
+        Endpoint const&,
         std::stop_token const&,
         std::error_code*);
 
@@ -151,6 +172,7 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         buffer_param,
+        int flags,
         std::stop_token const&,
         std::error_code*,
         std::size_t*);
@@ -164,6 +186,7 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         buffer_param,
+        int flags,
         std::stop_token const&,
         std::error_code*,
         std::size_t*);
@@ -176,7 +199,42 @@ public:
     void do_close_socket() noexcept
     {
         base_type::do_close_socket();
-        remote_endpoint_ = endpoint{};
+        remote_endpoint_ = Endpoint{};
+    }
+
+    native_handle_type do_release_socket() noexcept
+    {
+        auto fd = base_type::do_release_socket();
+        remote_endpoint_ = Endpoint{};
+        return fd;
+    }
+
+    /** Shut down part or all of the full-duplex connection.
+
+        Not an override — concrete backends forward here.
+
+        @param what 0 = receive, 1 = send, 2 = both.
+    */
+    std::error_code do_shutdown(int what) noexcept
+    {
+        int how;
+        switch (what)
+        {
+        case 0:
+            how = SHUT_RD;
+            break;
+        case 1:
+            how = SHUT_WR;
+            break;
+        case 2:
+            how = SHUT_RDWR;
+            break;
+        default:
+            return make_err(EINVAL);
+        }
+        if (::shutdown(this->fd_, how) != 0)
+            return make_err(errno);
+        return {};
     }
 
 private:
@@ -245,7 +303,9 @@ template<
     class RecvFromOp,
     class SendOp,
     class RecvOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 std::coroutine_handle<>
 reactor_datagram_socket<
     Derived,
@@ -255,12 +315,15 @@ reactor_datagram_socket<
     RecvFromOp,
     SendOp,
     RecvOp,
-    DescState>::
+    DescState,
+    ImplBase,
+    Endpoint>::
     do_send_to(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
         buffer_param param,
-        endpoint dest,
+        Endpoint const& dest,
+        int flags,
         std::stop_token const& token,
         std::error_code* ec,
         std::size_t* bytes_out)
@@ -279,8 +342,9 @@ reactor_datagram_socket<
     }
 
     // Set up destination address
-    op.dest_len = to_sockaddr(dest, socket_family(this->fd_), op.dest_storage);
-    op.fd       = this->fd_;
+    op.dest_len  = to_sockaddr(dest, socket_family(this->fd_), op.dest_storage);
+    op.fd        = this->fd_;
+    op.msg_flags = to_native_msg_flags(flags);
 
     // Speculative sendmsg
     msghdr msg{};
@@ -290,9 +354,9 @@ reactor_datagram_socket<
     msg.msg_iovlen  = static_cast<std::size_t>(op.iovec_count);
 
 #ifdef MSG_NOSIGNAL
-    constexpr int send_flags = MSG_NOSIGNAL;
+    int send_flags = op.msg_flags | MSG_NOSIGNAL;
 #else
-    constexpr int send_flags = 0;
+    int send_flags = op.msg_flags;
 #endif
 
     ssize_t n;
@@ -349,7 +413,9 @@ template<
     class RecvFromOp,
     class SendOp,
     class RecvOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 std::coroutine_handle<>
 reactor_datagram_socket<
     Derived,
@@ -359,12 +425,15 @@ reactor_datagram_socket<
     RecvFromOp,
     SendOp,
     RecvOp,
-    DescState>::
+    DescState,
+    ImplBase,
+    Endpoint>::
     do_recv_from(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
         buffer_param param,
-        endpoint* source,
+        Endpoint* source,
+        int flags,
         std::stop_token const& token,
         std::error_code* ec,
         std::size_t* bytes_out)
@@ -397,6 +466,7 @@ reactor_datagram_socket<
 
     op.fd         = this->fd_;
     op.source_out = source;
+    op.msg_flags  = to_native_msg_flags(flags);
 
     // Speculative recvmsg
     msghdr msg{};
@@ -408,7 +478,7 @@ reactor_datagram_socket<
     ssize_t n;
     do
     {
-        n = ::recvmsg(this->fd_, &msg, 0);
+        n = ::recvmsg(this->fd_, &msg, op.msg_flags);
     }
     while (n < 0 && errno == EINTR);
 
@@ -416,13 +486,18 @@ reactor_datagram_socket<
     {
         int err    = (n < 0) ? errno : 0;
         auto bytes = (n > 0) ? static_cast<std::size_t>(n) : std::size_t(0);
+        if (n >= 0)
+            op.source_addrlen = msg.msg_namelen;
 
         if (this->svc_.scheduler().try_consume_inline_budget())
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
             if (source && !err && n >= 0)
-                *source = from_sockaddr(op.source_storage);
+                *source = from_sockaddr_as(
+                    op.source_storage,
+                    op.source_addrlen,
+                    Endpoint{});
             op.cont_op.cont.h = h;
             return dispatch_coro(ex, op.cont_op.cont);
         }
@@ -461,7 +536,9 @@ template<
     class RecvFromOp,
     class SendOp,
     class RecvOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 std::coroutine_handle<>
 reactor_datagram_socket<
     Derived,
@@ -471,11 +548,13 @@ reactor_datagram_socket<
     RecvFromOp,
     SendOp,
     RecvOp,
-    DescState>::
+    DescState,
+    ImplBase,
+    Endpoint>::
     do_connect(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
-        endpoint ep,
+        Endpoint const& ep,
         std::stop_token const& token,
         std::error_code* ec)
 {
@@ -493,7 +572,8 @@ reactor_datagram_socket<
         if (::getsockname(
                 this->fd_, reinterpret_cast<sockaddr*>(&local_storage),
                 &local_len) == 0)
-            this->local_endpoint_ = from_sockaddr(local_storage);
+            this->local_endpoint_ =
+                from_sockaddr_as(local_storage, local_len, Endpoint{});
         remote_endpoint_ = ep;
     }
 
@@ -545,7 +625,9 @@ template<
     class RecvFromOp,
     class SendOp,
     class RecvOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 std::coroutine_handle<>
 reactor_datagram_socket<
     Derived,
@@ -555,11 +637,14 @@ reactor_datagram_socket<
     RecvFromOp,
     SendOp,
     RecvOp,
-    DescState>::
+    DescState,
+    ImplBase,
+    Endpoint>::
     do_send(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
         buffer_param param,
+        int flags,
         std::stop_token const& token,
         std::error_code* ec,
         std::size_t* bytes_out)
@@ -576,7 +661,8 @@ reactor_datagram_socket<
         op.iovecs[i].iov_len  = bufs[i].size();
     }
 
-    op.fd = this->fd_;
+    op.fd        = this->fd_;
+    op.msg_flags = to_native_msg_flags(flags);
 
     // Speculative sendmsg with no destination (connected mode)
     msghdr msg{};
@@ -584,9 +670,9 @@ reactor_datagram_socket<
     msg.msg_iovlen = static_cast<std::size_t>(op.iovec_count);
 
 #ifdef MSG_NOSIGNAL
-    constexpr int send_flags = MSG_NOSIGNAL;
+    int send_flags = op.msg_flags | MSG_NOSIGNAL;
 #else
-    constexpr int send_flags = 0;
+    int send_flags = op.msg_flags;
 #endif
 
     ssize_t n;
@@ -643,7 +729,9 @@ template<
     class RecvFromOp,
     class SendOp,
     class RecvOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 std::coroutine_handle<>
 reactor_datagram_socket<
     Derived,
@@ -653,11 +741,14 @@ reactor_datagram_socket<
     RecvFromOp,
     SendOp,
     RecvOp,
-    DescState>::
+    DescState,
+    ImplBase,
+    Endpoint>::
     do_recv(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
         buffer_param param,
+        int flags,
         std::stop_token const& token,
         std::error_code* ec,
         std::size_t* bytes_out)
@@ -687,7 +778,8 @@ reactor_datagram_socket<
         op.iovecs[i].iov_len  = bufs[i].size();
     }
 
-    op.fd = this->fd_;
+    op.fd        = this->fd_;
+    op.msg_flags = to_native_msg_flags(flags);
 
     // Speculative recvmsg with no source (connected mode)
     msghdr msg{};
@@ -697,7 +789,7 @@ reactor_datagram_socket<
     ssize_t n;
     do
     {
-        n = ::recvmsg(this->fd_, &msg, 0);
+        n = ::recvmsg(this->fd_, &msg, op.msg_flags);
     }
     while (n < 0 && errno == EINTR);
 

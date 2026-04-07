@@ -35,6 +35,12 @@ bench::benchmark_suite make_accept_churn_suite();
 /// Create the fan-out/fan-in benchmark suite.
 bench::benchmark_suite make_fan_out_suite();
 
+/// Create the Unix socket throughput benchmark suite.
+bench::benchmark_suite make_local_socket_throughput_suite();
+
+/// Create the Unix socket latency benchmark suite.
+bench::benchmark_suite make_local_socket_latency_suite();
+
 } // namespace asio_callback_bench
 
 #endif

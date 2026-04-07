@@ -129,13 +129,16 @@ struct kqueue_write_op final : reactor_write_op<kqueue_op, kqueue_write_policy>
 */
 struct kqueue_accept_policy
 {
-    static int do_accept(int fd, sockaddr_storage& peer) noexcept
+    static int do_accept(
+        int fd, sockaddr_storage& peer, socklen_t& addrlen_out) noexcept
     {
+        addrlen_out = sizeof(peer);
         int new_fd;
         do
         {
-            socklen_t addrlen = sizeof(peer);
-            new_fd = ::accept(fd, reinterpret_cast<sockaddr*>(&peer), &addrlen);
+            addrlen_out = sizeof(peer);
+            new_fd = ::accept(
+                fd, reinterpret_cast<sockaddr*>(&peer), &addrlen_out);
         }
         while (new_fd < 0 && errno == EINTR);
 

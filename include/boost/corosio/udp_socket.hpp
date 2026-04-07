@@ -14,10 +14,12 @@
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
+#include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/message_flags.hpp>
 #include <boost/corosio/udp.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -99,6 +101,7 @@ public:
             @param ex Executor for dispatching the completion.
             @param buf The buffer data to send.
             @param dest The destination endpoint.
+            @param flags Platform message flags (e.g. `MSG_DONTWAIT`).
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -110,6 +113,7 @@ public:
             capy::executor_ref ex,
             buffer_param buf,
             endpoint dest,
+            int flags,
             std::stop_token token,
             std::error_code* ec,
             std::size_t* bytes_out) = 0;
@@ -120,6 +124,7 @@ public:
             @param ex Executor for dispatching the completion.
             @param buf The buffer to receive into.
             @param source Output endpoint for the sender's address.
+            @param flags Platform message flags (e.g. `MSG_PEEK`).
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -131,6 +136,7 @@ public:
             capy::executor_ref ex,
             buffer_param buf,
             endpoint* source,
+            int flags,
             std::stop_token token,
             std::error_code* ec,
             std::size_t* bytes_out) = 0;
@@ -200,6 +206,7 @@ public:
             @param h Coroutine handle to resume on completion.
             @param ex Executor for dispatching the completion.
             @param buf The buffer data to send.
+            @param flags Platform message flags (e.g. `MSG_DONTWAIT`).
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -210,6 +217,7 @@ public:
             std::coroutine_handle<> h,
             capy::executor_ref ex,
             buffer_param buf,
+            int flags,
             std::stop_token token,
             std::error_code* ec,
             std::size_t* bytes_out) = 0;
@@ -219,6 +227,7 @@ public:
             @param h Coroutine handle to resume on completion.
             @param ex Executor for dispatching the completion.
             @param buf The buffer to receive into.
+            @param flags Platform message flags (e.g. `MSG_PEEK`).
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -229,6 +238,7 @@ public:
             std::coroutine_handle<> h,
             capy::executor_ref ex,
             buffer_param buf,
+            int flags,
             std::stop_token token,
             std::error_code* ec,
             std::size_t* bytes_out) = 0;
@@ -240,201 +250,108 @@ public:
         to the backend implementation on suspension.
     */
     struct send_to_awaitable
+        : detail::bytes_op_base<send_to_awaitable>
     {
         udp_socket& s_;
         buffer_param buf_;
         endpoint dest_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_ = 0;
+        int flags_;
 
         send_to_awaitable(
-            udp_socket& s, buffer_param buf, endpoint dest) noexcept
-            : s_(s)
-            , buf_(buf)
-            , dest_(dest)
-        {
-        }
+            udp_socket& s, buffer_param buf,
+            endpoint dest, int flags = 0) noexcept
+            : s_(s), buf_(buf), dest_(dest), flags_(flags) {}
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return token_.stop_requested();
-        }
-
-        capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return s_.get().send_to(
-                h, env->executor, buf_, dest_, token_, &ec_, &bytes_);
+                h, ex, buf_, dest_, flags_, token_, &ec_, &bytes_);
         }
     };
 
     /** Represent the awaitable returned by @ref recv_from.
 
-        Captures the receive buffer and source endpoint reference,
-        then dispatches to the backend implementation on suspension.
+        Captures the source endpoint reference and buffer, then
+        dispatches to the backend implementation on suspension.
     */
     struct recv_from_awaitable
+        : detail::bytes_op_base<recv_from_awaitable>
     {
         udp_socket& s_;
         buffer_param buf_;
         endpoint& source_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_ = 0;
+        int flags_;
 
         recv_from_awaitable(
-            udp_socket& s, buffer_param buf, endpoint& source) noexcept
-            : s_(s)
-            , buf_(buf)
-            , source_(source)
-        {
-        }
+            udp_socket& s, buffer_param buf,
+            endpoint& source, int flags = 0) noexcept
+            : s_(s), buf_(buf), source_(source), flags_(flags) {}
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return token_.stop_requested();
-        }
-
-        capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return s_.get().recv_from(
-                h, env->executor, buf_, &source_, token_, &ec_, &bytes_);
+                h, ex, buf_, &source_, flags_, token_, &ec_, &bytes_);
         }
     };
 
-    /** Represent the awaitable returned by @ref connect.
-
-        Captures the target endpoint, then dispatches to the backend
-        implementation on suspension.
-    */
+    /// Represent the awaitable returned by @ref connect.
     struct connect_awaitable
+        : detail::void_op_base<connect_awaitable>
     {
         udp_socket& s_;
         endpoint endpoint_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
 
         connect_awaitable(udp_socket& s, endpoint ep) noexcept
-            : s_(s)
-            , endpoint_(ep)
-        {
-        }
+            : s_(s), endpoint_(ep) {}
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return token_.stop_requested();
-        }
-
-        capy::io_result<> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled)};
-            return {ec_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
-            return s_.get().connect(h, env->executor, endpoint_, token_, &ec_);
+            return s_.get().connect(h, ex, endpoint_, token_, &ec_);
         }
     };
 
-    /** Represent the awaitable returned by @ref send.
-
-        Captures the buffer, then dispatches to the backend
-        implementation on suspension. No endpoint argument
-        (uses the connected peer).
-    */
+    /// Represent the awaitable returned by @ref send.
     struct send_awaitable
+        : detail::bytes_op_base<send_awaitable>
     {
         udp_socket& s_;
         buffer_param buf_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_ = 0;
+        int flags_;
 
-        send_awaitable(udp_socket& s, buffer_param buf) noexcept
-            : s_(s)
-            , buf_(buf)
-        {
-        }
+        send_awaitable(
+            udp_socket& s, buffer_param buf,
+            int flags = 0) noexcept
+            : s_(s), buf_(buf), flags_(flags) {}
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return token_.stop_requested();
-        }
-
-        capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
-            return s_.get().send(h, env->executor, buf_, token_, &ec_, &bytes_);
+            return s_.get().send(
+                h, ex, buf_, flags_, token_, &ec_, &bytes_);
         }
     };
 
-    /** Represent the awaitable returned by @ref recv.
-
-        Captures the receive buffer, then dispatches to the backend
-        implementation on suspension. No source endpoint (connected
-        mode filters at the kernel level).
-    */
+    /// Represent the awaitable returned by @ref recv.
     struct recv_awaitable
+        : detail::bytes_op_base<recv_awaitable>
     {
         udp_socket& s_;
         buffer_param buf_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_ = 0;
+        int flags_;
 
-        recv_awaitable(udp_socket& s, buffer_param buf) noexcept
-            : s_(s)
-            , buf_(buf)
-        {
-        }
+        recv_awaitable(
+            udp_socket& s, buffer_param buf,
+            int flags = 0) noexcept
+            : s_(s), buf_(buf), flags_(flags) {}
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return token_.stop_requested();
-        }
-
-        capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
-            return s_.get().recv(h, env->executor, buf_, token_, &ec_, &bytes_);
+            return s_.get().recv(
+                h, ex, buf_, flags_, token_, &ec_, &bytes_);
         }
     };
 
@@ -601,6 +518,7 @@ public:
 
         @param buf The buffer containing data to send.
         @param dest The destination endpoint.
+        @param flags Message flags (e.g. message_flags::dont_route).
 
         @return An awaitable that completes with
             `io_result<std::size_t>`.
@@ -608,11 +526,22 @@ public:
         @throws std::logic_error if the socket is not open.
     */
     template<capy::ConstBufferSequence Buffers>
-    auto send_to(Buffers const& buf, endpoint dest)
+    auto send_to(
+        Buffers const& buf,
+        endpoint dest,
+        corosio::message_flags flags)
     {
         if (!is_open())
             detail::throw_logic_error("send_to: socket not open");
-        return send_to_awaitable(*this, buf, dest);
+        return send_to_awaitable(
+            *this, buf, dest, static_cast<int>(flags));
+    }
+
+    /// @overload
+    template<capy::ConstBufferSequence Buffers>
+    auto send_to(Buffers const& buf, endpoint dest)
+    {
+        return send_to(buf, dest, corosio::message_flags::none);
     }
 
     /** Receive a datagram and capture the sender's endpoint.
@@ -620,6 +549,7 @@ public:
         @param buf The buffer to receive data into.
         @param source Reference to an endpoint that will be set to
             the sender's address on successful completion.
+        @param flags Message flags (e.g. message_flags::peek).
 
         @return An awaitable that completes with
             `io_result<std::size_t>`.
@@ -627,11 +557,22 @@ public:
         @throws std::logic_error if the socket is not open.
     */
     template<capy::MutableBufferSequence Buffers>
-    auto recv_from(Buffers const& buf, endpoint& source)
+    auto recv_from(
+        Buffers const& buf,
+        endpoint& source,
+        corosio::message_flags flags)
     {
         if (!is_open())
             detail::throw_logic_error("recv_from: socket not open");
-        return recv_from_awaitable(*this, buf, source);
+        return recv_from_awaitable(
+            *this, buf, source, static_cast<int>(flags));
+    }
+
+    /// @overload
+    template<capy::MutableBufferSequence Buffers>
+    auto recv_from(Buffers const& buf, endpoint& source)
+    {
+        return recv_from(buf, source, corosio::message_flags::none);
     }
 
     /** Initiate an asynchronous connect to set the default peer.
@@ -656,6 +597,7 @@ public:
     /** Send a datagram to the connected peer.
 
         @param buf The buffer containing data to send.
+        @param flags Message flags.
 
         @return An awaitable that completes with
             `io_result<std::size_t>`.
@@ -663,16 +605,25 @@ public:
         @throws std::logic_error if the socket is not open.
     */
     template<capy::ConstBufferSequence Buffers>
-    auto send(Buffers const& buf)
+    auto send(Buffers const& buf, corosio::message_flags flags)
     {
         if (!is_open())
             detail::throw_logic_error("send: socket not open");
-        return send_awaitable(*this, buf);
+        return send_awaitable(
+            *this, buf, static_cast<int>(flags));
+    }
+
+    /// @overload
+    template<capy::ConstBufferSequence Buffers>
+    auto send(Buffers const& buf)
+    {
+        return send(buf, corosio::message_flags::none);
     }
 
     /** Receive a datagram from the connected peer.
 
         @param buf The buffer to receive data into.
+        @param flags Message flags (e.g. message_flags::peek).
 
         @return An awaitable that completes with
             `io_result<std::size_t>`.
@@ -680,11 +631,19 @@ public:
         @throws std::logic_error if the socket is not open.
     */
     template<capy::MutableBufferSequence Buffers>
-    auto recv(Buffers const& buf)
+    auto recv(Buffers const& buf, corosio::message_flags flags)
     {
         if (!is_open())
             detail::throw_logic_error("recv: socket not open");
-        return recv_awaitable(*this, buf);
+        return recv_awaitable(
+            *this, buf, static_cast<int>(flags));
+    }
+
+    /// @overload
+    template<capy::MutableBufferSequence Buffers>
+    auto recv(Buffers const& buf)
+    {
+        return recv(buf, corosio::message_flags::none);
     }
 
     /** Get the remote endpoint of the socket.

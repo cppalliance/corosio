@@ -71,6 +71,11 @@ public:
         void const* data,
         std::size_t size) noexcept override;
 
+    std::error_code shutdown(tcp_socket::shutdown_type what) noexcept override
+    {
+        return do_shutdown(static_cast<int>(what));
+    }
+
     void cancel() noexcept override;
     void close_socket() noexcept;
 };
