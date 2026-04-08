@@ -79,7 +79,8 @@ class posix_signal final
     posix_signal_service& svc_;
     signal_registration* signals_ = nullptr;
     signal_op pending_op_;
-    bool waiting_ = false;
+    bool waiting_   = false;
+    bool cancelled_ = false;
 
 public:
     explicit posix_signal(posix_signal_service& svc) noexcept;
