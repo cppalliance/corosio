@@ -264,6 +264,32 @@ struct signal_set_test
         BOOST_TEST(result_ec == capy::cond::canceled);
     }
 
+    void testCancelBeforeWait()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+
+        bool completed = false;
+        std::error_code result_ec;
+
+        auto wait_task = [](signal_set& s_ref, std::error_code& ec_out,
+                            bool& done_out) -> capy::task<> {
+            auto [ec, signum] = co_await s_ref.wait();
+            ec_out            = ec;
+            done_out          = true;
+            (void)signum;
+        };
+        capy::run_async(ioc.get_executor())(
+            wait_task(s, result_ec, completed));
+
+        // Cancel before io_context::run() — coroutine hasn't reached wait() yet
+        s.cancel();
+
+        ioc.run();
+        BOOST_TEST(completed);
+        BOOST_TEST(result_ec == capy::cond::canceled);
+    }
+
     void testCancelNoWaiters()
     {
         io_context ioc(Backend);
@@ -723,6 +749,7 @@ struct signal_set_test
 
         // Cancellation tests
         testCancel();
+        testCancelBeforeWait();
         testCancelNoWaiters();
         testCancelMultipleTimes();
 

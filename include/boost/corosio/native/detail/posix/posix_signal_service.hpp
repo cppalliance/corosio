@@ -641,6 +641,7 @@ posix_signal_service::cancel_wait(posix_signal& impl)
 
     {
         std::lock_guard lock(mutex_);
+        impl.cancelled_ = true;
         if (impl.waiting_)
         {
             was_waiting   = true;
@@ -666,6 +667,19 @@ posix_signal_service::start_wait(posix_signal& impl, signal_op* op)
 {
     {
         std::lock_guard lock(mutex_);
+
+        // Check if cancel() was called before this wait started
+        if (impl.cancelled_)
+        {
+            impl.cancelled_ = false;
+            if (op->ec_out)
+                *op->ec_out = make_error_code(capy::error::canceled);
+            if (op->signal_out)
+                *op->signal_out = 0;
+            op->cont_op.cont.h = op->h;
+            op->d.post(op->cont_op.cont);
+            return;
+        }
 
         // Check for queued signals first (signal arrived before wait started)
         signal_registration* reg = impl.signals_;

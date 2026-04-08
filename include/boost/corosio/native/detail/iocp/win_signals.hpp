@@ -598,6 +598,7 @@ win_signals::cancel_wait(win_signal& impl)
 
     {
         std::lock_guard<win_mutex> lock(mutex_);
+        impl.cancelled_ = true;
         if (impl.waiting_)
         {
             was_waiting   = true;
@@ -621,32 +622,53 @@ win_signals::cancel_wait(win_signal& impl)
 inline void
 win_signals::start_wait(win_signal& impl, signal_op* op)
 {
+    bool was_cancelled = false;
+
     {
         std::lock_guard<win_mutex> lock(mutex_);
 
-        // Check for queued signals first
-        signal_registration* reg = impl.signals_;
-        while (reg)
+        // Check if cancel() was called before this wait started
+        if (impl.cancelled_)
         {
-            if (reg->undelivered > 0)
-            {
-                --reg->undelivered;
-                op->signal_number = reg->signal_number;
-                op->svc           = nullptr; // No extra work_finished needed
-                // Post for immediate completion - post() handles work tracking
-                post(op);
-                return;
-            }
-            reg = reg->next_in_set;
+            was_cancelled   = true;
+            impl.cancelled_ = false;
+            if (op->ec_out)
+                *op->ec_out = make_error_code(capy::error::canceled);
+            if (op->signal_out)
+                *op->signal_out = 0;
+            op->cont_op.cont.h = op->h;
         }
+        else
+        {
+            // Check for queued signals first
+            signal_registration* reg = impl.signals_;
+            while (reg)
+            {
+                if (reg->undelivered > 0)
+                {
+                    --reg->undelivered;
+                    op->signal_number = reg->signal_number;
+                    op->svc           = nullptr; // No extra work_finished needed
+                    // Post for immediate completion - post() handles work tracking
+                    post(op);
+                    return;
+                }
+                reg = reg->next_in_set;
+            }
 
-        // No queued signals, wait for delivery
-        // We call work_started() to keep io_context alive while waiting.
-        // Set svc so signal_op::operator() will call work_finished().
-        impl.waiting_ = true;
-        op->svc       = this;
-        sched_.work_started();
+            // No queued signals, wait for delivery
+            // We call work_started() to keep io_context alive while waiting.
+            // Set svc so signal_op::operator() will call work_finished().
+            impl.waiting_ = true;
+            op->svc       = this;
+            sched_.work_started();
+        }
     }
+
+    // Dispatch outside the lock to avoid deadlock if the resumed
+    // coroutine re-enters cancel()/add()/remove()
+    if (was_cancelled)
+        dispatch_coro(op->d, op->cont_op.cont).resume();
 }
 
 inline void
