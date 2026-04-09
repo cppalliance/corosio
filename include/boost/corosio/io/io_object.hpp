@@ -199,7 +199,18 @@ protected:
     template<class Service>
     static handle create_handle(capy::execution_context& ctx)
     {
-        auto* svc = ctx.find_service<Service>();
+        Service* svc = nullptr;
+
+        // Prefer key_type lookup — stable across TUs even for template
+        // instantiations where type_id<T>() may differ per object file
+        // on platforms that don't merge inline-function statics (FreeBSD).
+        if constexpr (requires { typename Service::key_type; })
+            svc = static_cast<Service*>(
+                ctx.find_service<typename Service::key_type>());
+
+        if (!svc)
+            svc = ctx.find_service<Service>();
+
         if (!svc)
             detail::throw_logic_error(
                 "io_object::create_handle: service not installed");

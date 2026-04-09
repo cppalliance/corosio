@@ -148,6 +148,9 @@ public:
     using lock_type = mutex_type::scoped_lock;
     using event_type = conditionally_enabled_event;
 
+    /// Epoll and kqueue do not need write-direction notification.
+    static constexpr bool needs_write_notification = false;
+
     /// Post a coroutine for deferred execution.
     void post(std::coroutine_handle<> h) const override;
 

@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_IO_IO_WRITE_STREAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/capy/io_result.hpp>
@@ -46,38 +47,20 @@ protected:
     /// Awaitable for async write operations.
     template<class ConstBufferSequence>
     struct write_some_awaitable
+        : detail::bytes_op_base<write_some_awaitable<ConstBufferSequence>>
     {
         io_write_stream& ios_;
         ConstBufferSequence buffers_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_transferred_ = 0;
 
         write_some_awaitable(
             io_write_stream& ios, ConstBufferSequence buffers) noexcept
-            : ios_(ios)
-            , buffers_(std::move(buffers))
-        {
-        }
+            : ios_(ios), buffers_(std::move(buffers)) {}
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return token_.stop_requested();
-        }
-
-        capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_transferred_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return ios_.do_write_some(
-                h, env->executor, buffers_, token_, &ec_, &bytes_transferred_);
+                h, ex, buffers_, this->token_, &this->ec_, &this->bytes_);
         }
     };
 
@@ -122,6 +105,11 @@ public:
         completes.
 
         @param buffers The buffer sequence containing data to write.
+
+        @par Cancellation
+        Supports cancellation via the awaitable's stop_token or by
+        calling the owning stream's `cancel()` member. On cancellation,
+        yields `errc::operation_canceled`.
 
         @return An awaitable yielding `(error_code, std::size_t)`.
 

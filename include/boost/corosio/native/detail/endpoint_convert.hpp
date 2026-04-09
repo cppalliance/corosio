@@ -11,12 +11,14 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_ENDPOINT_CONVERT_HPP
 
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #include <cstring>
 
 #if BOOST_COROSIO_POSIX
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #else
@@ -226,6 +228,141 @@ socket_family(
         return AF_UNSPEC;
     return storage.ss_family;
 }
+
+//----------------------------------------------------------
+// local_endpoint (AF_UNIX) conversions
+//----------------------------------------------------------
+
+#if BOOST_COROSIO_POSIX
+
+/** Convert a local_endpoint to sockaddr_storage.
+
+    @param ep The local endpoint to convert.
+    @param storage Output parameter filled with the sockaddr_un.
+    @return The length of the filled sockaddr structure.
+*/
+inline socklen_t
+to_sockaddr(local_endpoint const& ep, sockaddr_storage& storage) noexcept
+{
+    std::memset(&storage, 0, sizeof(storage));
+    sockaddr_un sa{};
+    sa.sun_family = AF_UNIX;
+    auto path     = ep.path();
+    auto copy_len = (std::min)(path.size(), sizeof(sa.sun_path));
+    if (copy_len > 0)
+        std::memcpy(sa.sun_path, path.data(), copy_len);
+    std::memcpy(&storage, &sa, sizeof(sa));
+
+    if (ep.is_abstract())
+        return static_cast<socklen_t>(
+            offsetof(sockaddr_un, sun_path) + path.size());
+    return static_cast<socklen_t>(sizeof(sa));
+}
+
+/** Convert a local_endpoint to sockaddr_storage (family-aware overload).
+
+    The socket_family parameter is ignored for Unix sockets since
+    there is no dual-stack mapping.
+
+    @param ep The local endpoint to convert.
+    @param socket_family Ignored.
+    @param storage Output parameter filled with the sockaddr_un.
+    @return The length of the filled sockaddr structure.
+*/
+inline socklen_t
+to_sockaddr(
+    local_endpoint const& ep,
+    int /*socket_family*/,
+    sockaddr_storage& storage) noexcept
+{
+    return to_sockaddr(ep, storage);
+}
+
+/** Create a local_endpoint from sockaddr_storage.
+
+    @param storage The sockaddr_storage (must have ss_family == AF_UNIX).
+    @param len The address length returned by the kernel.
+    @return A local_endpoint with the path extracted from the
+        sockaddr_un, or an empty endpoint if the family is not AF_UNIX.
+*/
+inline local_endpoint
+from_sockaddr_local(
+    sockaddr_storage const& storage, socklen_t len) noexcept
+{
+    if (storage.ss_family != AF_UNIX)
+        return local_endpoint{};
+
+    sockaddr_un sa{};
+    auto bytes_copied =
+        (std::min)(static_cast<std::size_t>(len), sizeof(sa));
+    std::memcpy(&sa, &storage, bytes_copied);
+
+    // Derive path_len from bytes_copied (NOT len) so memchr and the
+    // string_view below can never read past sa.sun_path. The kernel
+    // can return an addrlen larger than sizeof(sockaddr_un) (e.g.,
+    // sizeof(sockaddr_storage) from a misbehaving caller); without
+    // clamping, the OOB read could expose adjacent stack bytes.
+    auto path_offset = offsetof(sockaddr_un, sun_path);
+    if (bytes_copied <= path_offset)
+        return local_endpoint{};
+
+    auto path_len = bytes_copied - path_offset;
+
+    // Non-abstract paths may be null-terminated by the kernel
+    if (path_len > 0 && sa.sun_path[0] != '\0')
+    {
+        auto* end = static_cast<char const*>(
+            std::memchr(sa.sun_path, '\0', path_len));
+        if (end)
+            path_len = static_cast<std::size_t>(end - sa.sun_path);
+    }
+
+    std::error_code ec;
+    local_endpoint ep(std::string_view(sa.sun_path, path_len), ec);
+    if (ec)
+        return local_endpoint{};
+    return ep;
+}
+
+#endif // BOOST_COROSIO_POSIX
+
+//----------------------------------------------------------
+// Tag-dispatch helpers for templatized reactor code.
+// Overload resolution selects the correct conversion based
+// on the Endpoint type.
+//----------------------------------------------------------
+
+/** Convert sockaddr_storage to an IP endpoint (tag overload).
+
+    @param storage The sockaddr_storage with fields in network byte order.
+    @param len The address length returned by the kernel.
+    @return An endpoint with address and port extracted from storage.
+*/
+inline endpoint
+from_sockaddr_as(
+    sockaddr_storage const& storage, socklen_t /*len*/, endpoint const&) noexcept
+{
+    return from_sockaddr(storage);
+}
+
+#if BOOST_COROSIO_POSIX
+
+/** Convert sockaddr_storage to a local_endpoint (tag overload).
+
+    @param storage The sockaddr_storage.
+    @param len The address length returned by the kernel.
+    @return A local_endpoint with path extracted from storage.
+*/
+inline local_endpoint
+from_sockaddr_as(
+    sockaddr_storage const& storage,
+    socklen_t len,
+    local_endpoint const&) noexcept
+{
+    return from_sockaddr_local(storage, len);
+}
+
+#endif // BOOST_COROSIO_POSIX
 
 } // namespace boost::corosio::detail
 

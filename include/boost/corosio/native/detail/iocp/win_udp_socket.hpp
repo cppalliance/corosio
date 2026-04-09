@@ -168,6 +168,7 @@ public:
         capy::executor_ref,
         buffer_param,
         endpoint,
+        int flags,
         std::stop_token,
         std::error_code*,
         std::size_t*);
@@ -177,6 +178,7 @@ public:
         capy::executor_ref,
         buffer_param,
         endpoint*,
+        int flags,
         std::stop_token,
         std::error_code*,
         std::size_t*);
@@ -192,6 +194,7 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         buffer_param,
+        int flags,
         std::stop_token,
         std::error_code*,
         std::size_t*);
@@ -200,6 +203,7 @@ public:
         std::coroutine_handle<>,
         capy::executor_ref,
         buffer_param,
+        int flags,
         std::stop_token,
         std::error_code*,
         std::size_t*);
@@ -241,6 +245,7 @@ public:
         capy::executor_ref d,
         buffer_param buf,
         endpoint dest,
+        int flags,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override;
@@ -250,6 +255,7 @@ public:
         capy::executor_ref d,
         buffer_param buf,
         endpoint* source,
+        int flags,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override;
@@ -265,6 +271,7 @@ public:
         std::coroutine_handle<> h,
         capy::executor_ref d,
         buffer_param buf,
+        int flags,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override;
@@ -273,6 +280,7 @@ public:
         std::coroutine_handle<> h,
         capy::executor_ref d,
         buffer_param buf,
+        int flags,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override;

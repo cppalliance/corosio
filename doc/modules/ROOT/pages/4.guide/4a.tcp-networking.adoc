@@ -473,7 +473,9 @@ UDP includes a checksum covering the header and data. The receiver verifies
 the checksum and discards corrupted packets. Unlike TCP, UDP doesn't
 retransmit—the data is simply lost.
 
-Corosio currently supports only TCP. UDP may be added in future versions.
+Corosio supports TCP, UDP, and Unix domain sockets. See
+xref:4p.unix-sockets.adoc[Unix Domain Sockets] for local inter-process
+communication without the TCP/IP stack overhead.
 
 == Ports and Sockets
 
@@ -699,10 +701,14 @@ listening socket.
 
 Corosio wraps the complexity of TCP programming in a coroutine-friendly API:
 
-* **socket** — Connect to servers, send and receive data
-* **tcp_acceptor** — Listen for and accept incoming connections
+* **tcp_socket** — Connect to servers, send and receive data over TCP
+* **udp_socket** — Send and receive datagrams over UDP
+* **tcp_acceptor** — Listen for and accept incoming TCP connections
+* **local_stream_socket** — Stream-oriented Unix domain sockets for local IPC
+* **local_datagram_socket** — Datagram-oriented Unix domain sockets for local IPC
 * **resolver** — Translate hostnames to IP addresses
-* **endpoint** — Represent addresses and ports
+* **endpoint** — Represent IP addresses and ports
+* **local_endpoint** — Represent Unix socket paths
 
 All operations are asynchronous and return awaitables. You don't manage raw
 socket handles or deal with platform-specific APIs directly.

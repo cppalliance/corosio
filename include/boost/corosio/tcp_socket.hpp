@@ -15,10 +15,12 @@
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
+#include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/io/io_stream.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/shutdown_type.hpp>
 #include <boost/corosio/tcp.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -76,13 +78,8 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL tcp_socket : public io_stream
 {
 public:
-    /** Different ways a socket may be shutdown. */
-    enum shutdown_type
-    {
-        shutdown_receive,
-        shutdown_send,
-        shutdown_both
-    };
+    using shutdown_type = corosio::shutdown_type;
+    using enum corosio::shutdown_type;
 
     /** Define backend hooks for TCP socket operations.
 
@@ -162,35 +159,18 @@ public:
 
     /// Represent the awaitable returned by @ref connect.
     struct connect_awaitable
+        : detail::void_op_base<connect_awaitable>
     {
         tcp_socket& s_;
         endpoint endpoint_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
 
         connect_awaitable(tcp_socket& s, endpoint ep) noexcept
-            : s_(s)
-            , endpoint_(ep)
-        {
-        }
+            : s_(s), endpoint_(ep) {}
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return token_.stop_requested();
-        }
-
-        capy::io_result<> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled)};
-            return {ec_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
-            return s_.get().connect(h, env->executor, endpoint_, token_, &ec_);
+            return s_.get().connect(h, ex, endpoint_, token_, &ec_);
         }
     };
 
@@ -416,11 +396,22 @@ public:
         @endcode
 
         Any error from the underlying system call is silently discarded
-        because it is unlikely to be helpful.
+        because it is unlikely to be helpful. To observe errors, use the
+        @ref shutdown(shutdown_type,std::error_code&) overload.
 
         @param what Determines what operations will no longer be allowed.
     */
     void shutdown(shutdown_type what);
+
+    /** Shut down part or all of the socket (non-throwing).
+
+        Same semantics as @ref shutdown(shutdown_type) but reports
+        syscall errors via @p ec instead of swallowing them.
+
+        @param what Determines what operations will no longer be allowed.
+        @param ec Set to the error code on failure, cleared on success.
+    */
+    void shutdown(shutdown_type what, std::error_code& ec) noexcept;
 
     /** Set a socket option.
 

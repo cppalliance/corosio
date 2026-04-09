@@ -69,6 +69,9 @@ struct select_descriptor_state;
 class BOOST_COROSIO_DECL select_scheduler final : public reactor_scheduler
 {
 public:
+    /// Select needs write-direction notification to rebuild fd_sets.
+    static constexpr bool needs_write_notification = true;
+
     /** Construct the scheduler.
 
         Creates a self-pipe for reactor interruption.

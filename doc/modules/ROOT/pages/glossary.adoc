@@ -148,6 +148,10 @@ Lazy::
 A coroutine or operation that doesn't start until explicitly triggered.
 `capy::task` is lazy—it starts when awaited.
 
+Local Endpoint::
+A filesystem path used as the address for a Unix domain socket. Represented
+by `corosio::local_endpoint`. See xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets].
+
 == M
 
 Mocket::
@@ -253,6 +257,14 @@ Cryptographic protocol for secure communication. See `corosio::wolfssl_stream`.
 Type Erasure::
 Hiding concrete types behind an abstract interface. Enables runtime
 polymorphism without templates.
+
+== U
+
+Unix Domain Socket::
+A socket that communicates between processes on the same machine using
+filesystem paths instead of IP addresses and ports. Available as stream
+(`local_stream_socket`) and datagram (`local_datagram_socket`) variants.
+See xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets].
 
 == W
 

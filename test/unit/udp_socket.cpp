@@ -811,6 +811,92 @@ struct udp_socket_test
         ioc.run();
     }
 
+    void testZeroLengthDatagram()
+    {
+        // A zero-length datagram is a legitimate UDP event and must
+        // NOT be reported as EOF (cond::eof). Regression test for the
+        // reactor backends, where reactor_dgram_recv_op previously
+        // inherited complete_io_op's stream-style "is_read_operation
+        // && bytes==0 -> EOF" mapping. IOCP was unaffected (its UDP
+        // recv ops never set is_read_), but this test runs across all
+        // backends to lock the contract in place.
+        //
+        // The recv and send run in parallel coroutines so the recv
+        // hits the reactor-parked path (EAGAIN -> register -> wake)
+        // rather than completing inline. The inline path bypasses
+        // complete_io_op and wouldn't exercise the bug.
+        io_context ioc(Backend);
+
+        udp_socket a(ioc);
+        udp_socket b(ioc);
+
+        // Bind both so connect(ep) works without auto-open picking an
+        // ephemeral that's hard to discover before the connect completes.
+        a.open();
+        b.open();
+        BOOST_TEST_EQ(a.bind(endpoint(ipv4_address::loopback(), 0)),
+                      std::error_code{});
+        BOOST_TEST_EQ(b.bind(endpoint(ipv4_address::loopback(), 0)),
+                      std::error_code{});
+        auto a_ep = a.local_endpoint();
+        auto b_ep = b.local_endpoint();
+
+        // Connect both directions synchronously before running the
+        // parallel send/recv tasks.
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(
+            [](udp_socket& s, endpoint dest) -> capy::task<> {
+                auto [ec] = co_await s.connect(dest);
+                BOOST_TEST_EQ(ec, std::error_code{});
+            }(a, b_ep));
+        capy::run_async(ex)(
+            [](udp_socket& s, endpoint dest) -> capy::task<> {
+                auto [ec] = co_await s.connect(dest);
+                BOOST_TEST_EQ(ec, std::error_code{});
+            }(b, a_ep));
+        ioc.run();
+        ioc.restart();
+
+        char buf[64] = {'\xCC'};
+        std::error_code send_ec, recv_ec;
+        std::size_t sent = 0, recvd = 0;
+        bool send_done = false, recv_done = false;
+
+        capy::run_async(ex)(
+            [](udp_socket& s, std::error_code& ec_out,
+               std::size_t& n_out, bool& done) -> capy::task<> {
+                auto [ec, n] =
+                    co_await s.send(capy::const_buffer(nullptr, 0));
+                ec_out = ec;
+                n_out  = n;
+                done   = true;
+            }(a, send_ec, sent, send_done));
+
+        capy::run_async(ex)(
+            [](udp_socket& s, char* data, std::size_t len,
+               std::error_code& ec_out, std::size_t& n_out,
+               bool& done) -> capy::task<> {
+                auto [ec, n] =
+                    co_await s.recv(capy::mutable_buffer(data, len));
+                ec_out = ec;
+                n_out  = n;
+                done   = true;
+            }(b, buf, sizeof(buf), recv_ec, recvd, recv_done));
+
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST_EQ(send_done, true);
+        BOOST_TEST_EQ(!send_ec, true);
+        BOOST_TEST_EQ(sent, 0u);
+
+        BOOST_TEST_EQ(recv_done, true);
+        // Critical: zero-length datagram is success, not EOF.
+        BOOST_TEST_EQ(!recv_ec, true);
+        BOOST_TEST(recv_ec != capy::cond::eof);
+        BOOST_TEST_EQ(recvd, 0u);
+    }
+
     void testCancelConnectedRecv()
     {
         io_context ioc(Backend);
@@ -939,6 +1025,7 @@ struct udp_socket_test
         testConnectAutoOpen();
         testSendRecvConnected();
         testSendRecvConnectedV6();
+        testZeroLengthDatagram();
         testCancelConnectedRecv();
         testMulticastLoopHops();
         testMulticastLoopHopsV6();

@@ -104,6 +104,14 @@ tcp_socket::shutdown(shutdown_type what)
     }
 }
 
+void
+tcp_socket::shutdown(shutdown_type what, std::error_code& ec) noexcept
+{
+    ec = {};
+    if (is_open())
+        ec = get().shutdown(what);
+}
+
 native_handle_type
 tcp_socket::native_handle() const noexcept
 {

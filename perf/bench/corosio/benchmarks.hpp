@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -62,6 +63,20 @@ bench::benchmark_suite make_accept_churn_suite();
 */
 template<auto Backend>
 bench::benchmark_suite make_fan_out_suite();
+
+/** Create the Unix socket throughput benchmark suite.
+
+    @tparam Backend A backend tag value (e.g., `epoll`).
+*/
+template<auto Backend>
+bench::benchmark_suite make_unix_socket_throughput_suite();
+
+/** Create the Unix socket latency benchmark suite.
+
+    @tparam Backend A backend tag value (e.g., `epoll`).
+*/
+template<auto Backend>
+bench::benchmark_suite make_unix_socket_latency_suite();
 
 } // namespace corosio_bench
 

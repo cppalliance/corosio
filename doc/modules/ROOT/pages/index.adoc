@@ -20,9 +20,12 @@ the _IoAwaitable_ protocol, ensuring your coroutines resume on the correct
 executor without manual dispatch.
 
 * **io_context** — Event loop for processing asynchronous operations
-* **socket** — Asynchronous TCP socket with connect, read, and write
+* **tcp_socket** — Asynchronous TCP socket with connect, read, and write
 * **tcp_acceptor** — TCP listener for accepting incoming connections
 * **tcp_server** — Server framework with worker pools
+* **udp_socket** — Asynchronous UDP socket for datagrams
+* **local_stream_socket** — Unix domain stream socket for local IPC
+* **local_datagram_socket** — Unix domain datagram socket for local IPC
 * **resolver** — Asynchronous DNS resolution
 * **timer** — Asynchronous timer for delays and timeouts
 * **signal_set** — Asynchronous signal handling
@@ -35,7 +38,7 @@ Corosio focuses on coroutine-first I/O primitives. It does not include:
 * General-purpose executor abstractions (use Boost.Capy)
 * The sender/receiver execution model (P2300)
 * HTTP, WebSocket, or other application protocols (use Boost.Http or Boost.Beast2)
-* UDP or other transport protocols (TCP only for now)
+* UDP multicast or raw sockets
 
 Corosio works with Boost.Capy for task management and execution contexts.
 
@@ -154,3 +157,4 @@ int main()
 * xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
 * xref:4.guide/4c.io-context.adoc[I/O Context] — Understand the event loop
 * xref:4.guide/4d.sockets.adoc[Sockets] — Learn socket operations in detail
+* xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets] — Local IPC with stream and datagram sockets

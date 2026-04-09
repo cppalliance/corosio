@@ -40,9 +40,9 @@ public:
         not bind or listen. Does not set SO_REUSEADDR.
 
         @param impl The acceptor implementation to open.
-        @param family Address family (e.g. `AF_INET`, `AF_INET6`).
-        @param type Socket type (e.g. `SOCK_STREAM`).
-        @param protocol Protocol number (e.g. `IPPROTO_TCP`).
+        @param family Internet address family (IPv4 or IPv6).
+        @param type Stream socket type.
+        @param protocol TCP protocol number.
         @return Error code on failure, empty on success.
     */
     virtual std::error_code open_acceptor_socket(

@@ -897,7 +897,10 @@ struct tcp_socket_test
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then shutdown send
             (void)co_await a.write_some(capy::const_buffer("hello", 5));
-            a.shutdown(tcp_socket::shutdown_send);
+            // Note: unqualified shutdown_send (not tcp_socket::shutdown_send)
+            // to work around a GCC 11 ICE in tsubst_copy when a class-template
+            // using-enum enumerator is referenced inside a lambda-coroutine.
+            a.shutdown(shutdown_send);
 
             // Read the data
             char buf[32] = {};
@@ -925,8 +928,8 @@ struct tcp_socket_test
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
-            // Shutdown receive on b
-            b.shutdown(tcp_socket::shutdown_receive);
+            // Shutdown receive on b (unqualified; see GCC 11 note above).
+            b.shutdown(shutdown_receive);
 
             // b can still send
             (void)co_await b.write_some(capy::const_buffer("from_b", 6));
@@ -949,10 +952,11 @@ struct tcp_socket_test
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-        // Shutdown on closed tcp_socket should not crash
-        sock.shutdown(tcp_socket::shutdown_send);
-        sock.shutdown(tcp_socket::shutdown_receive);
-        sock.shutdown(tcp_socket::shutdown_both);
+        // Shutdown on closed tcp_socket should not crash.
+        // Unqualified enumerators; see GCC 11 note above.
+        sock.shutdown(shutdown_send);
+        sock.shutdown(shutdown_receive);
+        sock.shutdown(shutdown_both);
     }
 
     void testShutdownBothSendDirection()
@@ -962,9 +966,9 @@ struct tcp_socket_test
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
-            // Write data then shutdown both
+            // Write data then shutdown both (unqualified; see GCC 11 note above).
             (void)co_await a.write_some(capy::const_buffer("goodbye", 7));
-            a.shutdown(tcp_socket::shutdown_both);
+            a.shutdown(shutdown_both);
 
             // Peer should receive the data
             char buf[32] = {};

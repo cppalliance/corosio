@@ -40,9 +40,9 @@ public:
         Creates a socket and associates it with the platform reactor.
 
         @param impl The socket implementation to open.
-        @param family Address family (e.g. `AF_INET`, `AF_INET6`).
-        @param type Socket type (`SOCK_DGRAM`).
-        @param protocol Protocol number (`IPPROTO_UDP`).
+        @param family Internet address family (IPv4 or IPv6).
+        @param type Datagram socket type.
+        @param protocol UDP protocol number.
         @return Error code on failure, empty on success.
     */
     virtual std::error_code open_datagram_socket(

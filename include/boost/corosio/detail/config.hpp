@@ -17,6 +17,27 @@
 #define BOOST_COROSIO_ASSERT(expr) assert(expr)
 #endif
 
+// Clang warning suppression helpers.
+// On clang these expand to _Pragma(); elsewhere they are empty.
+// Usage:
+//     BOOST_COROSIO_CLANG_WARNING_PUSH
+//     BOOST_COROSIO_CLANG_WARNING_DISABLE("-Winconsistent-missing-override")
+//     ...code...
+//     BOOST_COROSIO_CLANG_WARNING_POP
+#if defined(__clang__)
+#define BOOST_COROSIO_CLANG_PRAGMA_(x)      _Pragma(#x)
+#define BOOST_COROSIO_CLANG_WARNING_PUSH \
+    BOOST_COROSIO_CLANG_PRAGMA_(clang diagnostic push)
+#define BOOST_COROSIO_CLANG_WARNING_DISABLE(x) \
+    BOOST_COROSIO_CLANG_PRAGMA_(clang diagnostic ignored x)
+#define BOOST_COROSIO_CLANG_WARNING_POP \
+    BOOST_COROSIO_CLANG_PRAGMA_(clang diagnostic pop)
+#else
+#define BOOST_COROSIO_CLANG_WARNING_PUSH
+#define BOOST_COROSIO_CLANG_WARNING_DISABLE(x)
+#define BOOST_COROSIO_CLANG_WARNING_POP
+#endif
+
 // Symbol export/import for shared libraries
 #if defined(_WIN32) || defined(__CYGWIN__)
 #define BOOST_COROSIO_SYMBOL_EXPORT __declspec(dllexport)

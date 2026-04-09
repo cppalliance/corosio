@@ -743,7 +743,7 @@ class BOOST_COROSIO_DECL multicast_interface_v4
     alignas(4) unsigned char storage_[max_storage_]{};
 
 public:
-    /// Construct with default values (INADDR_ANY).
+    /// Construct with default values (wildcard interface).
     multicast_interface_v4() noexcept = default;
 
     /** Construct with an interface address.

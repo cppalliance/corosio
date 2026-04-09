@@ -63,13 +63,13 @@ public:
         return v6_;
     }
 
-    /// Return the address family (AF_INET or AF_INET6).
+    /// Return the internet address family (IPv4 or IPv6).
     int family() const noexcept;
 
-    /// Return the socket type (SOCK_STREAM).
+    /// Return the stream socket type.
     static int type() noexcept;
 
-    /// Return the IP protocol (IPPROTO_TCP).
+    /// Return the TCP protocol number.
     static int protocol() noexcept;
 
     /// The associated socket type.

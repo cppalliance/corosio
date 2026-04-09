@@ -39,15 +39,21 @@ namespace boost::corosio::detail {
     @tparam Op        The backend's base op type.
     @tparam AcceptOp  The backend's accept op type.
     @tparam DescState The backend's descriptor_state type.
+    @tparam ImplBase  The public vtable base
+                      (tcp_acceptor::implementation or
+                       local_stream_acceptor::implementation).
+    @tparam Endpoint  The endpoint type (endpoint or local_endpoint).
 */
 template<
     class Derived,
     class Service,
     class Op,
     class AcceptOp,
-    class DescState>
+    class DescState,
+    class ImplBase = tcp_acceptor::implementation,
+    class Endpoint = endpoint>
 class reactor_acceptor
-    : public tcp_acceptor::implementation
+    : public ImplBase
     , public std::enable_shared_from_this<Derived>
     , public intrusive_list<Derived>::node
 {
@@ -58,7 +64,7 @@ class reactor_acceptor
 protected:
     Service& svc_;
     int fd_ = -1;
-    endpoint local_endpoint_;
+    Endpoint local_endpoint_;
 
 public:
     /// Pending accept operation slot.
@@ -76,7 +82,7 @@ public:
     }
 
     /// Return the cached local endpoint.
-    endpoint local_endpoint() const noexcept override
+    Endpoint local_endpoint() const noexcept override
     {
         return local_endpoint_;
     }
@@ -113,9 +119,20 @@ public:
     }
 
     /// Cache the local endpoint.
-    void set_local_endpoint(endpoint ep) noexcept
+    void set_local_endpoint(Endpoint ep) noexcept
     {
-        local_endpoint_ = ep;
+        local_endpoint_ = std::move(ep);
+    }
+
+    /// Assign the fd and initialize descriptor state (acceptor: read_op only, no registration).
+    void init_acceptor_fd(int fd) noexcept
+    {
+        fd_ = fd;
+        desc_state_.fd = fd;
+        {
+            std::lock_guard lock(desc_state_.mutex);
+            desc_state_.read_op = nullptr;
+        }
     }
 
     /// Return a reference to the owning service.
@@ -123,6 +140,14 @@ public:
     {
         return svc_;
     }
+
+    // --- Virtual method overrides ---
+
+    void cancel() noexcept override { do_cancel(); }
+
+    void close_socket() noexcept { do_close_socket(); }
+
+    // --- End virtual overrides ---
 
     /** Cancel a single pending operation.
 
@@ -133,10 +158,7 @@ public:
     */
     void cancel_single_op(Op& op) noexcept;
 
-    /** Cancel the pending accept operation.
-
-        Invoked by the derived class's cancel() override.
-    */
+    /** Cancel the pending accept operation. */
     void do_cancel() noexcept;
 
     /** Close the acceptor and cancel pending operations.
@@ -147,6 +169,9 @@ public:
     */
     void do_close_socket() noexcept;
 
+    /** Release the acceptor without closing the fd. */
+    native_handle_type do_release_socket() noexcept;
+
     /** Bind the acceptor socket to an endpoint.
 
         Caches the resolved local endpoint (including ephemeral
@@ -155,7 +180,7 @@ public:
         @param ep The endpoint to bind to.
         @return The error code from bind(), or success.
     */
-    std::error_code do_bind(endpoint ep);
+    std::error_code do_bind(Endpoint const& ep);
 
     /** Start listening on the acceptor socket.
 
@@ -173,10 +198,12 @@ template<
     class Service,
     class Op,
     class AcceptOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 void
-reactor_acceptor<Derived, Service, Op, AcceptOp, DescState>::cancel_single_op(
-    Op& op) noexcept
+reactor_acceptor<Derived, Service, Op, AcceptOp, DescState, ImplBase, Endpoint>::
+    cancel_single_op(Op& op) noexcept
 {
     auto self = this->weak_from_this().lock();
     if (!self)
@@ -203,9 +230,11 @@ template<
     class Service,
     class Op,
     class AcceptOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 void
-reactor_acceptor<Derived, Service, Op, AcceptOp, DescState>::
+reactor_acceptor<Derived, Service, Op, AcceptOp, DescState, ImplBase, Endpoint>::
     do_cancel() noexcept
 {
     cancel_single_op(acc_);
@@ -216,9 +245,11 @@ template<
     class Service,
     class Op,
     class AcceptOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 void
-reactor_acceptor<Derived, Service, Op, AcceptOp, DescState>::
+reactor_acceptor<Derived, Service, Op, AcceptOp, DescState, ImplBase, Endpoint>::
     do_close_socket() noexcept
 {
     auto self = this->weak_from_this().lock();
@@ -256,7 +287,7 @@ reactor_acceptor<Derived, Service, Op, AcceptOp, DescState>::
     desc_state_.fd                = -1;
     desc_state_.registered_events = 0;
 
-    local_endpoint_ = endpoint{};
+    local_endpoint_ = Endpoint{};
 }
 
 template<
@@ -264,22 +295,77 @@ template<
     class Service,
     class Op,
     class AcceptOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
+native_handle_type
+reactor_acceptor<Derived, Service, Op, AcceptOp, DescState, ImplBase, Endpoint>::
+    do_release_socket() noexcept
+{
+    auto self = this->weak_from_this().lock();
+    if (self)
+    {
+        acc_.request_cancel();
+
+        reactor_op_base* claimed = nullptr;
+        {
+            std::lock_guard lock(desc_state_.mutex);
+            claimed = std::exchange(desc_state_.read_op, nullptr);
+            desc_state_.read_ready  = false;
+            desc_state_.write_ready = false;
+
+            if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
+                desc_state_.impl_ref_ = self;
+        }
+
+        if (claimed)
+        {
+            acc_.impl_ptr = self;
+            svc_.post(&acc_);
+            svc_.work_finished();
+        }
+    }
+
+    native_handle_type released = fd_;
+
+    if (fd_ >= 0)
+    {
+        if (desc_state_.registered_events != 0)
+            svc_.scheduler().deregister_descriptor(fd_);
+        fd_ = -1;
+    }
+
+    desc_state_.fd                = -1;
+    desc_state_.registered_events = 0;
+
+    local_endpoint_ = Endpoint{};
+
+    return released;
+}
+
+template<
+    class Derived,
+    class Service,
+    class Op,
+    class AcceptOp,
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 std::error_code
-reactor_acceptor<Derived, Service, Op, AcceptOp, DescState>::do_bind(
-    endpoint ep)
+reactor_acceptor<Derived, Service, Op, AcceptOp, DescState, ImplBase, Endpoint>::
+    do_bind(Endpoint const& ep)
 {
     sockaddr_storage storage{};
     socklen_t addrlen = to_sockaddr(ep, storage);
     if (::bind(fd_, reinterpret_cast<sockaddr*>(&storage), addrlen) < 0)
         return make_err(errno);
 
-    // Cache local endpoint (resolves ephemeral port)
+    // Cache local endpoint (resolves ephemeral port / path)
     sockaddr_storage local{};
     socklen_t local_len = sizeof(local);
     if (::getsockname(fd_, reinterpret_cast<sockaddr*>(&local), &local_len) ==
         0)
-        set_local_endpoint(from_sockaddr(local));
+        set_local_endpoint(from_sockaddr_as(local, local_len, Endpoint{}));
 
     return {};
 }
@@ -289,10 +375,12 @@ template<
     class Service,
     class Op,
     class AcceptOp,
-    class DescState>
+    class DescState,
+    class ImplBase,
+    class Endpoint>
 std::error_code
-reactor_acceptor<Derived, Service, Op, AcceptOp, DescState>::do_listen(
-    int backlog)
+reactor_acceptor<Derived, Service, Op, AcceptOp, DescState, ImplBase, Endpoint>::
+    do_listen(int backlog)
 {
     if (::listen(fd_, backlog) < 0)
         return make_err(errno);
