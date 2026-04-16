@@ -38,6 +38,8 @@ class reactor_socket_service : public ServiceBase
     friend Derived;
     using state_type = reactor_service_state<Scheduler, Impl>;
 
+protected:
+    // NOLINTNEXTLINE(bugprone-crtp-constructor-accessibility)
     explicit reactor_socket_service(capy::execution_context& ctx)
         : state_(
               std::make_unique<state_type>(

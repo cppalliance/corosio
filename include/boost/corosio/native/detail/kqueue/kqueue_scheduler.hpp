@@ -20,7 +20,7 @@
 
 #include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
 
-#include <boost/corosio/native/detail/kqueue/kqueue_op.hpp>
+#include <boost/corosio/native/detail/kqueue/kqueue_traits.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/posix/posix_resolver_service.hpp>
@@ -46,7 +46,6 @@
 namespace boost::corosio::detail {
 
 struct kqueue_op;
-struct descriptor_state;
 
 /** macOS/BSD scheduler using kqueue for I/O multiplexing.
 
@@ -126,14 +125,14 @@ public:
 
         Adds EVFILT_READ and EVFILT_WRITE (both EV_CLEAR) for @a fd
         and stores @a desc in the kevent udata field so that the
-        reactor can dispatch events to the correct descriptor_state.
+        reactor can dispatch events to the correct reactor_descriptor_state.
 
         @param fd The file descriptor to register.
-        @param desc Pointer to the caller-owned descriptor_state.
+        @param desc Pointer to the caller-owned reactor_descriptor_state.
 
         @throws std::system_error if kevent(EV_ADD) fails.
     */
-    void register_descriptor(int fd, descriptor_state* desc) const;
+    void register_descriptor(int fd, reactor_descriptor_state* desc) const;
 
     /** Deregister a persistently registered descriptor.
 
@@ -227,7 +226,7 @@ kqueue_scheduler::configure_reactor(
 }
 
 inline void
-kqueue_scheduler::register_descriptor(int fd, descriptor_state* desc) const
+kqueue_scheduler::register_descriptor(int fd, reactor_descriptor_state* desc) const
 {
     struct kevent changes[2];
     EV_SET(
@@ -240,7 +239,7 @@ kqueue_scheduler::register_descriptor(int fd, descriptor_state* desc) const
     if (::kevent(kq_fd_, changes, 2, nullptr, 0, nullptr) < 0)
         detail::throw_system_error(make_err(errno), "kevent (register)");
 
-    desc->registered_events = kqueue_event_read | kqueue_event_write;
+    desc->registered_events = reactor_event_read | reactor_event_write;
     desc->fd                = fd;
     desc->scheduler_        = this;
     desc->mutex.set_enabled(!single_threaded_);
@@ -349,26 +348,26 @@ kqueue_scheduler::run_task(
         }
 
         auto* desc =
-            static_cast<descriptor_state*>(event_buffer_[i].udata);
+            static_cast<reactor_descriptor_state*>(event_buffer_[i].udata);
         if (!desc)
             continue;
 
         std::uint32_t ready = 0;
 
         if (event_buffer_[i].filter == EVFILT_READ)
-            ready |= kqueue_event_read;
+            ready |= reactor_event_read;
         else if (event_buffer_[i].filter == EVFILT_WRITE)
-            ready |= kqueue_event_write;
+            ready |= reactor_event_write;
 
         if (event_buffer_[i].flags & EV_ERROR)
-            ready |= kqueue_event_error;
+            ready |= reactor_event_error;
 
         if (event_buffer_[i].flags & EV_EOF)
         {
             if (event_buffer_[i].filter == EVFILT_READ)
-                ready |= kqueue_event_read;
+                ready |= reactor_event_read;
             if (event_buffer_[i].fflags != 0)
-                ready |= kqueue_event_error;
+                ready |= reactor_event_error;
         }
 
         desc->add_ready_events(ready);

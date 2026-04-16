@@ -47,6 +47,8 @@ class reactor_acceptor_service : public ServiceBase
     friend Derived;
     using state_type = reactor_service_state<Scheduler, Impl>;
 
+protected:
+    // NOLINTNEXTLINE(bugprone-crtp-constructor-accessibility)
     explicit reactor_acceptor_service(capy::execution_context& ctx)
         : ctx_(ctx)
         , state_(

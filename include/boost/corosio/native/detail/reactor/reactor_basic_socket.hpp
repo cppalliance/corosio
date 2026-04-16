@@ -157,6 +157,20 @@ public:
         return {};
     }
 
+    /// Assign the fd, initialize descriptor state, and register with the reactor.
+    void init_and_register(int fd) noexcept
+    {
+        fd_ = fd;
+        desc_state_.fd = fd;
+        {
+            std::lock_guard lock(desc_state_.mutex);
+            desc_state_.read_op    = nullptr;
+            desc_state_.write_op   = nullptr;
+            desc_state_.connect_op = nullptr;
+        }
+        svc_.scheduler().register_descriptor(fd, &desc_state_);
+    }
+
     /** Register an op with the reactor.
 
         Handles cached edge events and deferred cancellation.
@@ -168,7 +182,8 @@ public:
         Op& op,
         reactor_op_base*& desc_slot,
         bool& ready_flag,
-        bool& cancel_flag) noexcept;
+        bool& cancel_flag,
+        bool is_write_direction = false) noexcept;
 
     /** Cancel a single pending operation.
 
@@ -216,7 +231,8 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::register_
     Op& op,
     reactor_op_base*& desc_slot,
     bool& ready_flag,
-    bool& cancel_flag) noexcept
+    bool& cancel_flag,
+    bool is_write_direction) noexcept
 {
     svc_.work_started();
 
@@ -245,6 +261,18 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::register_
     else
     {
         desc_slot = &op;
+
+        // Select must rebuild its fd_sets when a write-direction op
+        // is parked, so select() watches for writability. Compiled
+        // away to nothing for epoll and kqueue.
+        if constexpr (requires { Service::needs_write_notification; })
+        {
+            if constexpr (Service::needs_write_notification)
+            {
+                if (is_write_direction)
+                    svc_.scheduler().notify_reactor();
+            }
+        }
     }
 }
 
