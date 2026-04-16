@@ -78,6 +78,9 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL tcp_socket : public io_stream
 {
 public:
+    /// The endpoint type used by this socket.
+    using endpoint_type = corosio::endpoint;
+
     using shutdown_type = corosio::shutdown_type;
     using enum corosio::shutdown_type;
 
