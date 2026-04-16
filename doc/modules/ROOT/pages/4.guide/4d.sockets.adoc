@@ -136,6 +136,78 @@ For simpler code when errors are fatal:
 (co_await s.connect(endpoint)).value();  // Throws on error
 ----
 
+=== Range-Based Connect
+
+When connecting to a hostname, the resolver may return multiple endpoints
+(IPv4, IPv6, multiple A records). The free function `corosio::connect()` tries
+each in order, returning on the first success:
+
+[source,cpp]
+----
+#include <boost/corosio/connect.hpp>
+
+corosio::resolver r(ioc);
+auto [rec, results] = co_await r.resolve("www.boost.org", "80");
+if (rec)
+    co_return;
+
+corosio::tcp_socket s(ioc);
+auto [cec, ep] = co_await corosio::connect(s, results);
+if (cec)
+    co_return;
+// `ep` is the endpoint that accepted the connection.
+----
+
+Between attempts the socket is closed so the next `connect()` auto-opens with
+the correct address family. This lets a single call try IPv4 and IPv6
+candidates transparently.
+
+The signature is generic over any range whose elements convert to the
+socket's endpoint type:
+
+[source,cpp]
+----
+template<class Socket, std::ranges::input_range Range>
+    requires std::convertible_to<
+        std::ranges::range_reference_t<Range>,
+        typename Socket::endpoint_type>
+capy::task<capy::io_result<typename Socket::endpoint_type>>
+connect(Socket& s, Range endpoints);
+----
+
+On success, returns the connected endpoint. On all-fail, returns the error
+from the last attempt. On empty range (or when a connect condition rejects
+every candidate), returns `std::errc::no_such_device_or_address`.
+
+==== Filtering Candidates
+
+A second overload accepts a predicate invoked as `cond(last_ec, ep)` before
+each attempt. Returning `false` skips the candidate:
+
+[source,cpp]
+----
+auto [ec, ep] = co_await corosio::connect(
+    s,
+    results,
+    [](std::error_code const&, corosio::endpoint const& e) {
+        return e.is_v4();  // IPv4 only.
+    });
+----
+
+==== Iterator Overload
+
+An iterator-pair overload returns the iterator to the successful endpoint on
+success, or `end` on failure:
+
+[source,cpp]
+----
+auto [ec, it] = co_await corosio::connect(s, v.begin(), v.end());
+if (!ec)
+    std::cout << "connected to index " << (it - v.begin()) << "\n";
+----
+
+Both overloads accept an optional connect condition as a trailing argument.
+
 == Reading Data
 
 === read_some()
