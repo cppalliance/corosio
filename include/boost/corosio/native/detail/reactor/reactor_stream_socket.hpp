@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_STREAM_SOCKET_HPP
 
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/shutdown_type.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_basic_socket.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/capy/buffers.hpp>
@@ -66,6 +67,8 @@ class reactor_stream_socket
     friend base_type;
     friend Derived;
 
+protected:
+    // NOLINTNEXTLINE(bugprone-crtp-constructor-accessibility)
     explicit reactor_stream_socket(Service& svc) noexcept : base_type(svc) {}
 
 protected:
@@ -89,10 +92,60 @@ public:
         return remote_endpoint_;
     }
 
-    /** Shut down part or all of the full-duplex connection.
+    // --- Virtual method overrides (satisfy ImplBase pure virtuals) ---
 
-        Not an override — concrete backend classes forward their
-        ImplBase-typed shutdown() here.
+    std::coroutine_handle<> connect(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        Endpoint ep,
+        std::stop_token token,
+        std::error_code* ec) override
+    {
+        return do_connect(h, ex, ep, token, ec);
+    }
+
+    std::coroutine_handle<> read_some(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param param,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
+    {
+        return do_read_some(h, ex, param, token, ec, bytes_out);
+    }
+
+    std::coroutine_handle<> write_some(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param param,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
+    {
+        return do_write_some(h, ex, param, token, ec, bytes_out);
+    }
+
+    std::error_code
+    shutdown(corosio::shutdown_type what) noexcept override
+    {
+        return do_shutdown(static_cast<int>(what));
+    }
+
+    void cancel() noexcept override
+    {
+        this->do_cancel();
+    }
+
+    // --- End virtual overrides ---
+
+    /// Close the socket (non-virtual, called by the service).
+    void close_socket() noexcept
+    {
+        this->do_close_socket();
+    }
+
+    /** Shut down part or all of the full-duplex connection.
 
         @param what 0 = receive, 1 = send, 2 = both.
     */
@@ -292,7 +345,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, Impl
 
     this->register_op(
         op, this->desc_state_.connect_op, this->desc_state_.write_ready,
-        this->desc_state_.connect_cancel_pending);
+        this->desc_state_.connect_cancel_pending, true);
     return std::noop_coroutine();
 }
 
@@ -475,7 +528,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, Impl
 
     this->register_op(
         op, this->desc_state_.write_op, this->desc_state_.write_ready,
-        this->desc_state_.write_cancel_pending);
+        this->desc_state_.write_cancel_pending, true);
     return std::noop_coroutine();
 }
 

@@ -16,33 +16,15 @@
 #include <thread>
 
 #if BOOST_COROSIO_HAS_EPOLL
-#include <boost/corosio/native/detail/epoll/epoll_scheduler.hpp>
-#include <boost/corosio/native/detail/epoll/epoll_tcp_service.hpp>
-#include <boost/corosio/native/detail/epoll/epoll_tcp_acceptor_service.hpp>
-#include <boost/corosio/native/detail/epoll/epoll_udp_service.hpp>
-#include <boost/corosio/native/detail/epoll/epoll_local_stream_service.hpp>
-#include <boost/corosio/native/detail/epoll/epoll_local_stream_acceptor_service.hpp>
-#include <boost/corosio/native/detail/epoll/epoll_local_datagram_service.hpp>
+#include <boost/corosio/native/detail/epoll/epoll_types.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_SELECT
-#include <boost/corosio/native/detail/select/select_scheduler.hpp>
-#include <boost/corosio/native/detail/select/select_tcp_service.hpp>
-#include <boost/corosio/native/detail/select/select_tcp_acceptor_service.hpp>
-#include <boost/corosio/native/detail/select/select_udp_service.hpp>
-#include <boost/corosio/native/detail/select/select_local_stream_service.hpp>
-#include <boost/corosio/native/detail/select/select_local_stream_acceptor_service.hpp>
-#include <boost/corosio/native/detail/select/select_local_datagram_service.hpp>
+#include <boost/corosio/native/detail/select/select_types.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_KQUEUE
-#include <boost/corosio/native/detail/kqueue/kqueue_scheduler.hpp>
-#include <boost/corosio/native/detail/kqueue/kqueue_tcp_service.hpp>
-#include <boost/corosio/native/detail/kqueue/kqueue_tcp_acceptor_service.hpp>
-#include <boost/corosio/native/detail/kqueue/kqueue_udp_service.hpp>
-#include <boost/corosio/native/detail/kqueue/kqueue_local_stream_service.hpp>
-#include <boost/corosio/native/detail/kqueue/kqueue_local_stream_acceptor_service.hpp>
-#include <boost/corosio/native/detail/kqueue/kqueue_local_datagram_service.hpp>
+#include <boost/corosio/native/detail/kqueue/kqueue_types.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP

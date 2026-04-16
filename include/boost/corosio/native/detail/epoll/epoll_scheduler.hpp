@@ -19,7 +19,7 @@
 
 #include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
 
-#include <boost/corosio/native/detail/epoll/epoll_op.hpp>
+#include <boost/corosio/native/detail/epoll/epoll_traits.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/posix/posix_resolver_service.hpp>
@@ -42,9 +42,6 @@
 #include <unistd.h>
 
 namespace boost::corosio::detail {
-
-struct epoll_op;
-struct descriptor_state;
 
 /** Linux scheduler using epoll for I/O multiplexing.
 
@@ -109,13 +106,13 @@ public:
     /** Register a descriptor for persistent monitoring.
 
         The fd is registered once and stays registered until explicitly
-        deregistered. Events are dispatched via descriptor_state which
+        deregistered. Events are dispatched via reactor_descriptor_state which
         tracks pending read/write/connect operations.
 
         @param fd The file descriptor to register.
         @param desc Pointer to descriptor data (stored in epoll_event.data.ptr).
     */
-    void register_descriptor(int fd, descriptor_state* desc) const;
+    void register_descriptor(int fd, reactor_descriptor_state* desc) const;
 
     /** Deregister a persistently registered descriptor.
 
@@ -244,7 +241,7 @@ epoll_scheduler::configure_reactor(
 }
 
 inline void
-epoll_scheduler::register_descriptor(int fd, descriptor_state* desc) const
+epoll_scheduler::register_descriptor(int fd, reactor_descriptor_state* desc) const
 {
     epoll_event ev{};
     ev.events   = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLERR | EPOLLHUP;
@@ -373,7 +370,7 @@ epoll_scheduler::run_task(
         }
 
         auto* desc =
-            static_cast<descriptor_state*>(event_buffer_[i].data.ptr);
+            static_cast<reactor_descriptor_state*>(event_buffer_[i].data.ptr);
         desc->add_ready_events(event_buffer_[i].events);
 
         bool expected = false;

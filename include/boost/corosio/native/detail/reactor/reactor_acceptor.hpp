@@ -59,6 +59,8 @@ class reactor_acceptor
 {
     friend Derived;
 
+protected:
+    // NOLINTNEXTLINE(bugprone-crtp-constructor-accessibility)
     explicit reactor_acceptor(Service& svc) noexcept : svc_(svc) {}
 
 protected:
@@ -124,11 +126,27 @@ public:
         local_endpoint_ = std::move(ep);
     }
 
+    /// Assign the fd and initialize descriptor state for the acceptor.
+    void init_acceptor_fd(int fd) noexcept
+    {
+        fd_ = fd;
+        desc_state_.fd = fd;
+        {
+            std::lock_guard lock(desc_state_.mutex);
+            desc_state_.read_op = nullptr;
+        }
+    }
+
     /// Return a reference to the owning service.
     Service& service() noexcept
     {
         return svc_;
     }
+
+    void cancel() noexcept override { do_cancel(); }
+
+    /// Close the acceptor (non-virtual, called by the service).
+    void close_socket() noexcept { do_close_socket(); }
 
     /** Cancel a single pending operation.
 
@@ -139,10 +157,7 @@ public:
     */
     void cancel_single_op(Op& op) noexcept;
 
-    /** Cancel the pending accept operation.
-
-        Invoked by the derived class's cancel() override.
-    */
+    /** Cancel the pending accept operation. */
     void do_cancel() noexcept;
 
     /** Close the acceptor and cancel pending operations.

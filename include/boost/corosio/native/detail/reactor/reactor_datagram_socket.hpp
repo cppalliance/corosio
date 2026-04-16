@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_DATAGRAM_SOCKET_HPP
 
 #include <boost/corosio/udp_socket.hpp>
+#include <boost/corosio/shutdown_type.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_basic_socket.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/capy/buffers.hpp>
@@ -82,6 +83,8 @@ class reactor_datagram_socket
     friend base_type;
     friend Derived;
 
+protected:
+    // NOLINTNEXTLINE(bugprone-crtp-constructor-accessibility)
     explicit reactor_datagram_socket(Service& svc) noexcept : base_type(svc) {}
 
 protected:
@@ -109,6 +112,81 @@ public:
     Endpoint remote_endpoint() const noexcept override
     {
         return remote_endpoint_;
+    }
+
+    // --- Virtual method overrides (satisfy ImplBase pure virtuals) ---
+
+    std::coroutine_handle<> send_to(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buf,
+        Endpoint dest,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
+    {
+        return do_send_to(h, ex, buf, dest, flags, token, ec, bytes_out);
+    }
+
+    std::coroutine_handle<> recv_from(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buf,
+        Endpoint* source,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
+    {
+        return do_recv_from(h, ex, buf, source, flags, token, ec, bytes_out);
+    }
+
+    std::coroutine_handle<> connect(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        Endpoint ep,
+        std::stop_token token,
+        std::error_code* ec) override
+    {
+        return do_connect(h, ex, ep, token, ec);
+    }
+
+    std::coroutine_handle<> send(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buf,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
+    {
+        return do_send(h, ex, buf, flags, token, ec, bytes_out);
+    }
+
+    std::coroutine_handle<> recv(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buf,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
+    {
+        return do_recv(h, ex, buf, flags, token, ec, bytes_out);
+    }
+
+    void cancel() noexcept override
+    {
+        this->do_cancel();
+    }
+
+    // --- End virtual overrides ---
+
+    /// Close the socket (non-virtual, called by the service).
+    void close_socket() noexcept
+    {
+        do_close_socket();
     }
 
     /// Cache local and remote endpoints.
@@ -399,7 +477,7 @@ reactor_datagram_socket<
 
     this->register_op(
         op, this->desc_state_.write_op, this->desc_state_.write_ready,
-        this->desc_state_.write_cancel_pending);
+        this->desc_state_.write_cancel_pending, true);
     return std::noop_coroutine();
 }
 
@@ -715,7 +793,7 @@ reactor_datagram_socket<
 
     this->register_op(
         op, this->desc_state_.write_op, this->desc_state_.write_ready,
-        this->desc_state_.write_cancel_pending);
+        this->desc_state_.write_cancel_pending, true);
     return std::noop_coroutine();
 }
 

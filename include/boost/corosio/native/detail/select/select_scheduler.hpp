@@ -19,7 +19,7 @@
 
 #include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
 
-#include <boost/corosio/native/detail/select/select_op.hpp>
+#include <boost/corosio/native/detail/select/select_traits.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/posix/posix_resolver_service.hpp>
@@ -44,7 +44,6 @@
 namespace boost::corosio::detail {
 
 struct select_op;
-struct select_descriptor_state;
 
 /** POSIX scheduler using select() for I/O multiplexing.
 
@@ -109,7 +108,7 @@ public:
         @param fd The file descriptor to register.
         @param desc Pointer to descriptor state for this fd.
     */
-    void register_descriptor(int fd, select_descriptor_state* desc) const;
+    void register_descriptor(int fd, reactor_descriptor_state* desc) const;
 
     /** Deregister a persistently registered descriptor.
 
@@ -136,7 +135,7 @@ private:
     int pipe_fds_[2]; // [0]=read, [1]=write
 
     // Per-fd tracking for fd_set building
-    mutable std::unordered_map<int, select_descriptor_state*> registered_descs_;
+    mutable std::unordered_map<int, reactor_descriptor_state*> registered_descs_;
     mutable int max_fd_ = -1;
 };
 
@@ -206,7 +205,7 @@ select_scheduler::shutdown()
 
 inline void
 select_scheduler::register_descriptor(
-    int fd, select_descriptor_state* desc) const
+    int fd, reactor_descriptor_state* desc) const
 {
     if (fd < 0 || fd >= FD_SETSIZE)
         detail::throw_system_error(make_err(EINVAL), "select: fd out of range");
@@ -317,7 +316,7 @@ select_scheduler::run_task(
     struct fd_entry
     {
         int fd;
-        select_descriptor_state* desc;
+        reactor_descriptor_state* desc;
         bool needs_write;
     };
     fd_entry snapshot[FD_SETSIZE];
@@ -399,7 +398,7 @@ select_scheduler::run_task(
         for (int i = 0; i < snapshot_count; ++i)
         {
             int fd                        = snapshot[i].fd;
-            select_descriptor_state* desc = snapshot[i].desc;
+            reactor_descriptor_state* desc = snapshot[i].desc;
 
             std::uint32_t flags = 0;
             if (FD_ISSET(fd, &read_fds))

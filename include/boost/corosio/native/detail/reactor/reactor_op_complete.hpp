@@ -251,6 +251,37 @@ complete_accept_op(Op& op)
 
     @tparam Op The concrete datagram operation type.
     @param op The operation to complete.
+*/
+template<typename Op>
+void
+complete_datagram_op(Op& op)
+{
+    op.stop_cb.reset();
+    op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
+
+    if (op.cancelled.load(std::memory_order_acquire))
+        *op.ec_out = capy::error::canceled;
+    else if (op.errn != 0)
+        *op.ec_out = make_err(op.errn);
+    else
+        *op.ec_out = {};
+
+    *op.bytes_out = op.bytes_transferred;
+
+    op.cont_op.cont.h = op.h;
+    capy::executor_ref saved_ex(op.ex);
+    auto prevent = std::move(op.impl_ptr);
+    dispatch_coro(saved_ex, op.cont_op.cont).resume();
+}
+
+/** Complete a datagram operation with source endpoint capture.
+
+    For recv_from operations, writes the source endpoint from the
+    recorded sockaddr_storage into the caller's endpoint pointer.
+    Then resumes the caller via symmetric transfer.
+
+    @tparam Op The concrete datagram operation type.
+    @param op The operation to complete.
     @param source_out Optional pointer to store source endpoint
         (non-null for recv_from, null for send_to).
 */
