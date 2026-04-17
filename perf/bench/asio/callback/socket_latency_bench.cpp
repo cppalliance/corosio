@@ -13,6 +13,7 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
+#include <boost/asio/detail/concurrency_hint.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -201,6 +202,84 @@ bench_concurrent_latency(bench::state& state)
         s.close();
 }
 
+void
+bench_pingpong_latency_lockless(bench::state& state)
+{
+    auto message_size = static_cast<std::size_t>(state.range(0));
+    state.counters["message_size"] = static_cast<double>(message_size);
+
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
+    auto [client, server] = asio_bench::make_socket_pair(ioc);
+
+    pingpong_op op(client, server, message_size, state);
+
+    op.start();
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        state.stop();
+    });
+
+    perf::stopwatch sw;
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    client.close();
+    server.close();
+}
+
+void
+bench_concurrent_latency_lockless(bench::state& state)
+{
+    int num_pairs = static_cast<int>(state.range(0));
+    state.counters["num_pairs"] = num_pairs;
+
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
+
+    std::vector<tcp_socket> clients;
+    std::vector<tcp_socket> servers;
+
+    clients.reserve(num_pairs);
+    servers.reserve(num_pairs);
+
+    for (int i = 0; i < num_pairs; ++i)
+    {
+        auto [c, s] = asio_bench::make_socket_pair(ioc);
+        clients.push_back(std::move(c));
+        servers.push_back(std::move(s));
+    }
+
+    // Stable addresses needed for concurrent ops
+    std::vector<std::unique_ptr<pingpong_op>> ops;
+    ops.reserve(num_pairs);
+    for (int p = 0; p < num_pairs; ++p)
+    {
+        ops.push_back(
+            std::make_unique<pingpong_op>(
+                clients[p], servers[p], 64, state));
+        ops.back()->start();
+    }
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        state.stop();
+    });
+
+    perf::stopwatch sw;
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(sw.elapsed_seconds());
+
+    for (auto& c : clients)
+        c.close();
+    for (auto& s : servers)
+        s.close();
+}
+
 } // anonymous namespace
 
 bench::benchmark_suite
@@ -222,7 +301,11 @@ make_socket_latency_suite()
         })
         .add("pingpong", bench_pingpong_latency)
             .args({1, 64, 1024})
+        .add("pingpong_lockless", bench_pingpong_latency_lockless)
+            .args({1, 64, 1024})
         .add("concurrent", bench_concurrent_latency)
+            .args({1, 4, 16})
+        .add("concurrent_lockless", bench_concurrent_latency_lockless)
             .args({1, 4, 16});
 }
 

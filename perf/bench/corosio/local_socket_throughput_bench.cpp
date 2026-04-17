@@ -45,6 +45,7 @@ bench_unix_throughput(bench::state& state)
     std::vector<char> read_buf(chunk_size);
 
     std::atomic<bool> running{true};
+    int64_t total_bytes = 0;
 
     auto write_task = [&]() -> capy::task<> {
         while (running.load(std::memory_order_relaxed))
@@ -64,7 +65,7 @@ bench_unix_throughput(bench::state& state)
                 capy::mutable_buffer(read_buf.data(), read_buf.size()));
             if (ec || n == 0)
                 break;
-            state.add_bytes(static_cast<int64_t>(n));
+            total_bytes += static_cast<int64_t>(n);
         }
     };
 
@@ -83,6 +84,7 @@ bench_unix_throughput(bench::state& state)
     timer.join();
 
     state.set_elapsed(sw.elapsed_seconds());
+    state.add_bytes(total_bytes);
     writer.close();
     reader.close();
 }
@@ -101,6 +103,8 @@ bench_unix_bidirectional_throughput(bench::state& state)
     std::vector<char> buf2(chunk_size, 'b');
 
     std::atomic<bool> running{true};
+    int64_t read1_bytes = 0;
+    int64_t read2_bytes = 0;
 
     auto write1_task = [&]() -> capy::task<> {
         while (running.load(std::memory_order_relaxed))
@@ -121,7 +125,7 @@ bench_unix_bidirectional_throughput(bench::state& state)
                 capy::mutable_buffer(rbuf.data(), rbuf.size()));
             if (ec || n == 0)
                 break;
-            state.add_bytes(static_cast<int64_t>(n));
+            read1_bytes += static_cast<int64_t>(n);
         }
     };
 
@@ -144,7 +148,7 @@ bench_unix_bidirectional_throughput(bench::state& state)
                 capy::mutable_buffer(rbuf.data(), rbuf.size()));
             if (ec || n == 0)
                 break;
-            state.add_bytes(static_cast<int64_t>(n));
+            read2_bytes += static_cast<int64_t>(n);
         }
     };
 
@@ -165,6 +169,7 @@ bench_unix_bidirectional_throughput(bench::state& state)
     timer.join();
 
     state.set_elapsed(sw.elapsed_seconds());
+    state.add_bytes(read1_bytes + read2_bytes);
     sock1.close();
     sock2.close();
 }
@@ -185,6 +190,7 @@ bench_unix_throughput_lockless(bench::state& state)
     std::vector<char> read_buf(chunk_size);
 
     std::atomic<bool> running{true};
+    int64_t total_bytes = 0;
 
     auto write_task = [&]() -> capy::task<> {
         while (running.load(std::memory_order_relaxed))
@@ -204,7 +210,7 @@ bench_unix_throughput_lockless(bench::state& state)
                 capy::mutable_buffer(read_buf.data(), read_buf.size()));
             if (ec || n == 0)
                 break;
-            state.add_bytes(static_cast<int64_t>(n));
+            total_bytes += static_cast<int64_t>(n);
         }
     };
 
@@ -223,6 +229,7 @@ bench_unix_throughput_lockless(bench::state& state)
     timer.join();
 
     state.set_elapsed(sw.elapsed_seconds());
+    state.add_bytes(total_bytes);
     writer.close();
     reader.close();
 }
@@ -243,6 +250,8 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
     std::vector<char> buf2(chunk_size, 'b');
 
     std::atomic<bool> running{true};
+    int64_t read1_bytes = 0;
+    int64_t read2_bytes = 0;
 
     auto write1_task = [&]() -> capy::task<> {
         while (running.load(std::memory_order_relaxed))
@@ -263,7 +272,7 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
                 capy::mutable_buffer(rbuf.data(), rbuf.size()));
             if (ec || n == 0)
                 break;
-            state.add_bytes(static_cast<int64_t>(n));
+            read1_bytes += static_cast<int64_t>(n);
         }
     };
 
@@ -286,7 +295,7 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
                 capy::mutable_buffer(rbuf.data(), rbuf.size()));
             if (ec || n == 0)
                 break;
-            state.add_bytes(static_cast<int64_t>(n));
+            read2_bytes += static_cast<int64_t>(n);
         }
     };
 
@@ -307,6 +316,7 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
     timer.join();
 
     state.set_elapsed(sw.elapsed_seconds());
+    state.add_bytes(read1_bytes + read2_bytes);
     sock1.close();
     sock2.close();
 }

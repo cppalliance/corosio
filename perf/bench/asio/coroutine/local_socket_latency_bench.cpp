@@ -17,6 +17,7 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
+#include <boost/asio/detail/concurrency_hint.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -149,6 +150,88 @@ bench_concurrent_latency(bench::state& state)
         s.close();
 }
 
+void
+bench_pingpong_latency_lockless(bench::state& state)
+{
+    auto message_size = static_cast<std::size_t>(state.range(0));
+    state.counters["message_size"] = static_cast<double>(message_size);
+
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
+    auto [client, server] = make_local_socket_pair(ioc);
+
+    std::atomic<bool> running{true};
+
+    asio::co_spawn(
+        ioc,
+        pingpong_client_task(
+            client, server, message_size, running, state),
+        asio::detached);
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        running.store(false, std::memory_order_relaxed);
+    });
+
+    perf::stopwatch sw;
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    client.close();
+    server.close();
+}
+
+void
+bench_concurrent_latency_lockless(bench::state& state)
+{
+    int num_pairs = static_cast<int>(state.range(0));
+    state.counters["num_pairs"] = num_pairs;
+
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
+
+    std::vector<local_socket> clients;
+    std::vector<local_socket> servers;
+
+    clients.reserve(num_pairs);
+    servers.reserve(num_pairs);
+
+    for (int i = 0; i < num_pairs; ++i)
+    {
+        auto [c, s] = make_local_socket_pair(ioc);
+        clients.push_back(std::move(c));
+        servers.push_back(std::move(s));
+    }
+
+    std::atomic<bool> running{true};
+
+    for (int p = 0; p < num_pairs; ++p)
+    {
+        asio::co_spawn(
+            ioc,
+            pingpong_client_task(
+                clients[p], servers[p], 64, running, state),
+            asio::detached);
+    }
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        running.store(false, std::memory_order_relaxed);
+    });
+
+    perf::stopwatch sw;
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(sw.elapsed_seconds());
+
+    for (auto& c : clients)
+        c.close();
+    for (auto& s : servers)
+        s.close();
+}
+
 } // anonymous namespace
 
 bench::benchmark_suite
@@ -169,7 +252,11 @@ make_local_socket_latency_suite()
         })
         .add("pingpong", bench_pingpong_latency)
             .args({1, 64, 1024})
+        .add("pingpong_lockless", bench_pingpong_latency_lockless)
+            .args({1, 64, 1024})
         .add("concurrent", bench_concurrent_latency)
+            .args({1, 4, 16})
+        .add("concurrent_lockless", bench_concurrent_latency_lockless)
             .args({1, 4, 16});
 }
 
