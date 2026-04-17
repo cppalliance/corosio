@@ -238,18 +238,6 @@ bench::benchmark_suite
 make_local_socket_latency_suite()
 {
     return bench::benchmark_suite("local_socket_latency")
-        .set_warmup([] {
-            asio::io_context ioc;
-            auto [c, s]  = make_local_socket_pair(ioc);
-            char buf[64] = {};
-            for (int i = 0; i < 100; ++i)
-            {
-                asio::write(c, asio::buffer(buf));
-                asio::read(s, asio::buffer(buf));
-            }
-            c.close();
-            s.close();
-        })
         .add("pingpong", bench_pingpong_latency)
             .args({1, 64, 1024})
         .add("pingpong_lockless", bench_pingpong_latency_lockless)

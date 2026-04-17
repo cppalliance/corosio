@@ -338,30 +338,6 @@ make_http_server_suite()
 {
     using F = bench::bench_flags;
     return bench::benchmark_suite("http_server", F::needs_conntrack_drain)
-        .set_warmup([] {
-            asio::io_context ioc;
-            auto [c, s]   = asio_bench::make_socket_pair(ioc);
-            char buf[256] = {};
-            for (int i = 0; i < 10; ++i)
-            {
-                asio::write(
-                    c,
-                    asio::buffer(
-                        bench::http::small_request,
-                        bench::http::small_request_size));
-                asio::read(
-                    s, asio::buffer(buf, bench::http::small_request_size));
-                asio::write(
-                    s,
-                    asio::buffer(
-                        bench::http::small_response,
-                        bench::http::small_response_size));
-                asio::read(
-                    c, asio::buffer(buf, bench::http::small_response_size));
-            }
-            c.close();
-            s.close();
-        })
         .add("single_conn", bench_single_connection)
         .add("single_conn_lockless", bench_single_connection_lockless)
         .add("concurrent", bench_concurrent_connections)

@@ -252,29 +252,9 @@ template<auto Backend>
 bench::benchmark_suite
 make_socket_latency_suite()
 {
-    using F           = bench::bench_flags;
-    using socket_type = corosio::native_tcp_socket<Backend>;
+    using F = bench::bench_flags;
 
     return bench::benchmark_suite("socket_latency", F::needs_conntrack_drain)
-        .set_warmup([]{
-            corosio::native_io_context<Backend> ioc;
-            auto [c, s] = corosio::test::make_socket_pair<
-                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-            char buf[64] = {};
-            auto task    = [&]() -> capy::task<> {
-                for (int i = 0; i < 100; ++i)
-                {
-                    (void)co_await c.write_some(
-                        capy::const_buffer(buf, sizeof(buf)));
-                    (void)co_await s.read_some(
-                        capy::mutable_buffer(buf, sizeof(buf)));
-                }
-            };
-            capy::run_async(ioc.get_executor())(task());
-            ioc.run();
-            c.close();
-            s.close();
-        })
         .add("pingpong", bench_pingpong_latency<Backend>)
             .args({1, 64, 1024})
         .add("pingpong_lockless", bench_pingpong_latency_lockless<Backend>)

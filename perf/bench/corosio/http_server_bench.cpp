@@ -305,41 +305,9 @@ template<auto Backend>
 bench::benchmark_suite
 make_http_server_suite()
 {
-    using F           = bench::bench_flags;
-    using socket_type = corosio::native_tcp_socket<Backend>;
+    using F = bench::bench_flags;
 
     return bench::benchmark_suite("http_server", F::needs_conntrack_drain)
-        .set_warmup([]{
-            corosio::native_io_context<Backend> ioc;
-            auto [c, s] = corosio::test::make_socket_pair<
-                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-            char buf[256] = {};
-            auto task     = [&]() -> capy::task<> {
-                for (int i = 0; i < 10; ++i)
-                {
-                    (void)co_await capy::write(
-                        c,
-                        capy::const_buffer(
-                            bench::http::small_request,
-                            bench::http::small_request_size));
-                    (void)co_await s.read_some(
-                        capy::mutable_buffer(
-                            buf, bench::http::small_request_size));
-                    (void)co_await capy::write(
-                        s,
-                        capy::const_buffer(
-                            bench::http::small_response,
-                            bench::http::small_response_size));
-                    (void)co_await c.read_some(
-                        capy::mutable_buffer(
-                            buf, bench::http::small_response_size));
-                }
-            };
-            capy::run_async(ioc.get_executor())(task());
-            ioc.run();
-            c.close();
-            s.close();
-        })
         .add("single_conn", bench_single_connection<Backend>)
         .add("single_conn_lockless", bench_single_connection_lockless<Backend>)
         .add("concurrent", bench_concurrent_connections<Backend>)

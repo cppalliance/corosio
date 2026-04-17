@@ -330,14 +330,6 @@ make_io_context_suite()
 {
     using F = bench::bench_flags;
     return bench::benchmark_suite("io_context", F::is_microbenchmark)
-        .set_warmup([] {
-            corosio::native_io_context<Backend> ioc;
-            auto ex         = ioc.get_executor();
-            int64_t counter = 0;
-            for (int i = 0; i < 1000; ++i)
-                capy::run_async(ex)(increment_task(counter));
-            ioc.run();
-        })
         .add("single_threaded", bench_single_threaded_post<Backend>)
         .add("multithreaded", bench_multithreaded_scaling<Backend>)
             .args({8})

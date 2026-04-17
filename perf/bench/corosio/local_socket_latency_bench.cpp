@@ -233,24 +233,6 @@ make_local_socket_latency_suite()
     using F = bench::bench_flags;
 
     return bench::benchmark_suite("local_socket_latency", F::none)
-        .set_warmup([]{
-            corosio::native_io_context<Backend> ioc;
-            auto [c, s] = corosio::make_local_stream_pair(ioc);
-            char buf[64] = {};
-            auto task    = [&]() -> capy::task<> {
-                for (int i = 0; i < 100; ++i)
-                {
-                    (void)co_await c.write_some(
-                        capy::const_buffer(buf, sizeof(buf)));
-                    (void)co_await s.read_some(
-                        capy::mutable_buffer(buf, sizeof(buf)));
-                }
-            };
-            capy::run_async(ioc.get_executor())(task());
-            ioc.run();
-            c.close();
-            s.close();
-        })
         .add("pingpong", bench_unix_pingpong_latency<Backend>)
             .args({1, 64, 1024})
         .add("pingpong_lockless", bench_unix_pingpong_latency_lockless<Backend>)

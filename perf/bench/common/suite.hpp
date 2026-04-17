@@ -273,12 +273,10 @@ class benchmark_suite
     std::string library_;
     std::string category_;
     bench_flags flags_;
-    std::function<void()> warmup_;
     std::vector<suite_entry> entries_;
 
 public:
-    using bench_fn  = std::function<void(state&)>;
-    using warmup_fn = std::function<void()>;
+    using bench_fn = std::function<void(state&)>;
 
     explicit benchmark_suite(
         std::string category, bench_flags flags = bench_flags::none)
@@ -316,20 +314,12 @@ public:
         return *this;
     }
 
-    /// Set a warmup function that runs once before the first benchmark.
-    benchmark_suite& set_warmup(warmup_fn fn)
-    {
-        warmup_ = std::move(fn);
-        return *this;
-    }
-
     /// Set the library name (called by the runner).
     void set_library(std::string lib) { library_ = std::move(lib); }
 
     std::string const& library() const { return library_; }
     std::string const& category() const { return category_; }
     bench_flags flags() const { return flags_; }
-    warmup_fn const& warmup() const { return warmup_; }
     std::vector<suite_entry> const& entries() const { return entries_; }
 };
 
@@ -338,6 +328,7 @@ class benchmark_runner
 {
     std::string backend_;
     double duration_s_;
+    double warmup_duration_s_ = 0.0;
     std::vector<benchmark_suite> suites_;
     result_collector collector_;
 
@@ -349,6 +340,27 @@ public:
     {
         collector_.set_duration(duration_s);
     }
+
+    /** Set the per-benchmark warmup duration in seconds.
+
+        When greater than zero, every benchmark runs once with a throwaway
+        `state` for this duration before the real measurement. The warmup
+        exercises the exact code path being measured, priming kernel
+        buffers, allocator pools, CPU caches, and library-specific
+        dispatch paths. Results from the warmup run are discarded.
+
+        @par Rationale
+        A bench-specific lambda warmup primes the wrong paths if the
+        lambda uses a different I/O style than the benchmark (e.g. sync
+        I/O vs async). Self-warmup guarantees the primed code path is
+        the measured code path.
+    */
+    void set_warmup_duration(double seconds)
+    {
+        warmup_duration_s_ = seconds;
+    }
+
+    double warmup_duration() const { return warmup_duration_s_; }
 
     /// Add a suite to the runner.
     void add_suite(benchmark_suite suite)
@@ -426,28 +438,22 @@ public:
                 !explicit_cat && !enable_microbenchmarks)
                 continue;
 
-            bool warmup_done = false;
-
             for (auto const& entry : suite.entries())
             {
-                bool suite_drain = has_flag(
-                    suite.flags(), bench_flags::needs_conntrack_drain);
-                bool entry_drain = has_flag(
-                    entry.flags, bench_flags::needs_conntrack_drain);
+                bool needs_drain =
+                    has_flag(suite.flags(),
+                        bench_flags::needs_conntrack_drain) ||
+                    has_flag(entry.flags,
+                        bench_flags::needs_conntrack_drain);
 
                 if (entry.args.empty())
                 {
                     if (!want_bench(entry.name))
                         continue;
 
-                    run_warmup(suite, warmup_done);
-
-                    if (suite_drain || entry_drain)
-                        perf::await_conntrack_drain();
-
                     run_entry(
                         suite.library(), suite.category(),
-                        entry.name, entry.fn, {});
+                        entry.name, entry.fn, {}, needs_drain);
                 }
                 else
                 {
@@ -459,14 +465,9 @@ public:
                             !want_bench(full_name))
                             continue;
 
-                        run_warmup(suite, warmup_done);
-
-                        if (suite_drain || entry_drain)
-                            perf::await_conntrack_drain();
-
                         run_entry(
                             suite.library(), suite.category(),
-                            full_name, entry.fn, {v});
+                            full_name, entry.fn, {v}, needs_drain);
                     }
                 }
             }
@@ -480,21 +481,33 @@ public:
     }
 
 private:
-    void run_warmup(benchmark_suite const& suite, bool& done)
-    {
-        if (done || !suite.warmup())
-            return;
-        suite.warmup()();
-        done = true;
-    }
-
     void run_entry(
         std::string const& library,
         std::string const& category,
         std::string const& name,
         std::function<void(state&)> const& fn,
-        std::vector<int64_t> ranges)
+        std::vector<int64_t> ranges,
+        bool needs_drain)
     {
+        auto maybe_drain = [&] {
+            if (needs_drain)
+                perf::await_conntrack_drain();
+        };
+
+        // Self-warmup: run the benchmark with a throwaway state so the
+        // exact code path being measured is primed (kernel buffers,
+        // allocator pools, CPU caches, library dispatch). Drain again
+        // between warmup and real run to clear any socket state the
+        // warmup left behind.
+        if (warmup_duration_s_ > 0.0)
+        {
+            maybe_drain();
+            state warmup_st(warmup_duration_s_, ranges);
+            fn(warmup_st);
+        }
+
+        maybe_drain();
+
         std::string header;
         if (!library.empty())
             header += "(" + library + ") ";
