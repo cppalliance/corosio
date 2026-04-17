@@ -16,6 +16,7 @@
 #include <boost/asio/post.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
+#include <boost/asio/detail/concurrency_hint.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -162,6 +163,35 @@ void
 bench_sequential_churn(bench::state& state)
 {
     asio::io_context ioc;
+    auto acc = make_churn_acceptor( ioc );
+    auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
+
+    std::atomic<bool> running{true};
+
+    sequential_churn_op op{ioc, acc, ep, running, state.latency(),
+                           state.ops(), {}, {}, {}};
+
+    perf::stopwatch total_sw;
+
+    op.start();
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        running.store(false, std::memory_order_relaxed);
+        ioc.stop();
+    });
+
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(total_sw.elapsed_seconds());
+    acc.close();
+}
+
+void
+bench_sequential_churn_lockless(bench::state& state)
+{
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
     auto acc = make_churn_acceptor( ioc );
     auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
 
@@ -344,6 +374,39 @@ bench_burst_churn(bench::state& state)
     acc.close();
 }
 
+void
+bench_burst_churn_lockless(bench::state& state)
+{
+    int burst_size = static_cast<int>(state.range(0));
+    state.counters["burst_size"] = burst_size;
+
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
+    auto acc = make_churn_acceptor( ioc );
+    auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
+
+    std::atomic<bool> running{true};
+
+    burst_churn_op op{ioc,         acc,            ep, running, state.latency(),
+                      state.ops(), burst_size,     {}, {},      {},
+                      {}};
+
+    perf::stopwatch total_sw;
+
+    op.start();
+
+    std::thread stopper([&]() {
+        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        running.store(false, std::memory_order_relaxed);
+        ioc.stop();
+    });
+
+    ioc.run();
+    stopper.join();
+
+    state.set_elapsed(total_sw.elapsed_seconds());
+    acc.close();
+}
+
 } // anonymous namespace
 
 bench::benchmark_suite
@@ -352,9 +415,12 @@ make_accept_churn_suite()
     using F = bench::bench_flags;
     return bench::benchmark_suite("accept_churn", F::needs_conntrack_drain)
         .add("sequential", bench_sequential_churn)
+        .add("sequential_lockless", bench_sequential_churn_lockless)
         .add("concurrent", bench_concurrent_churn)
             .args({1, 4, 16})
         .add("burst", bench_burst_churn)
+            .args({10, 100})
+        .add("burst_lockless", bench_burst_churn_lockless)
             .args({10, 100});
 }
 

@@ -14,6 +14,7 @@
 #include <boost/asio/read.hpp>
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/write.hpp>
+#include <boost/asio/detail/concurrency_hint.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -158,6 +159,33 @@ void
 bench_single_connection(bench::state& state)
 {
     asio::io_context ioc;
+    auto [client, server] = asio_bench::make_socket_pair(ioc);
+
+    server_op sop{server, {}};
+    client_op cop{client, state, {}, {}};
+
+    sop.start();
+    cop.start();
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        state.stop();
+    });
+
+    perf::stopwatch sw;
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    client.close();
+    server.close();
+}
+
+void
+bench_single_connection_lockless(bench::state& state)
+{
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
     auto [client, server] = asio_bench::make_socket_pair(ioc);
 
     server_op sop{server, {}};
@@ -335,6 +363,7 @@ make_http_server_suite()
             s.close();
         })
         .add("single_conn", bench_single_connection)
+        .add("single_conn_lockless", bench_single_connection_lockless)
         .add("concurrent", bench_concurrent_connections)
             .args({1, 4, 16, 32})
         .add("multithread", bench_multithread)

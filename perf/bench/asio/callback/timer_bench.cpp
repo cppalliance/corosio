@@ -12,6 +12,7 @@
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/steady_timer.hpp>
+#include <boost/asio/detail/concurrency_hint.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -91,6 +92,63 @@ void
 bench_fire_rate(bench::state& state)
 {
     asio::io_context ioc;
+    std::atomic<bool> running{true};
+    int64_t counter = 0;
+
+    fire_rate_op op(ioc, running, counter);
+
+    perf::stopwatch sw;
+
+    op.start();
+
+    std::thread timer([&]() {
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
+        running.store(false, std::memory_order_relaxed);
+    });
+
+    ioc.run();
+    timer.join();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    state.add_items(counter);
+}
+
+void
+bench_schedule_cancel_lockless(bench::state& state)
+{
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
+    int64_t counter          = 0;
+    int constexpr batch_size = 1000;
+
+    perf::stopwatch sw;
+    auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::duration<double>(state.duration());
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        for (int i = 0; i < batch_size; ++i)
+        {
+            timer_type t(ioc.get_executor());
+            t.expires_after(std::chrono::hours(1));
+            t.cancel();
+            ++counter;
+        }
+
+        ioc.poll();
+        ioc.restart();
+    }
+
+    ioc.run();
+
+    state.set_elapsed(sw.elapsed_seconds());
+    state.add_items(counter);
+}
+
+void
+bench_fire_rate_lockless(bench::state& state)
+{
+    asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
     std::atomic<bool> running{true};
     int64_t counter = 0;
 
@@ -205,7 +263,9 @@ make_timer_suite()
 {
     return bench::benchmark_suite("timer")
         .add("schedule_cancel", bench_schedule_cancel)
+        .add("schedule_cancel_lockless", bench_schedule_cancel_lockless)
         .add("fire_rate", bench_fire_rate)
+        .add("fire_rate_lockless", bench_fire_rate_lockless)
         .add("concurrent", bench_concurrent_timers)
             .args({10, 100, 1000});
 }
