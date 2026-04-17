@@ -330,21 +330,6 @@ make_local_socket_throughput_suite()
     using F = bench::bench_flags;
 
     return bench::benchmark_suite("local_socket_throughput", F::none)
-        .set_warmup([]{
-            corosio::native_io_context<Backend> ioc;
-            auto [w, r] = corosio::make_local_stream_pair(ioc);
-            std::vector<char> buf(4096, 'w');
-            auto task = [&]() -> capy::task<> {
-                (void)co_await w.write_some(
-                    capy::const_buffer(buf.data(), buf.size()));
-                (void)co_await r.read_some(
-                    capy::mutable_buffer(buf.data(), buf.size()));
-            };
-            capy::run_async(ioc.get_executor())(task());
-            ioc.run();
-            w.close();
-            r.close();
-        })
         .add("unidirectional", bench_unix_throughput<Backend>)
             .range(1024, 1048576, 4)
         .add("unidirectional_lockless", bench_unix_throughput_lockless<Backend>)

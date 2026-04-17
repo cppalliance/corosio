@@ -377,15 +377,6 @@ bench::benchmark_suite
 make_local_socket_throughput_suite()
 {
     return bench::benchmark_suite("local_socket_throughput")
-        .set_warmup([] {
-            asio::io_context ioc;
-            auto [w, r] = make_local_socket_pair(ioc);
-            std::vector<char> buf(4096, 'w');
-            asio::write(w, asio::buffer(buf));
-            asio::read(r, asio::buffer(buf));
-            w.close();
-            r.close();
-        })
         .add("unidirectional", bench_throughput)
             .range(1024, 1048576, 4)
         .add("unidirectional_lockless", bench_throughput_lockless)

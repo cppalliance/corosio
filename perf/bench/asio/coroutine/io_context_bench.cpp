@@ -248,13 +248,6 @@ make_io_context_suite()
 {
     using F = bench::bench_flags;
     return bench::benchmark_suite("io_context", F::is_microbenchmark)
-        .set_warmup([] {
-            asio::io_context ioc;
-            int64_t counter = 0;
-            for (int i = 0; i < 1000; ++i)
-                asio::co_spawn(ioc, increment_task(counter), asio::detached);
-            ioc.run();
-        })
         .add("single_threaded", bench_single_threaded_post)
         .add("multithreaded", bench_multithreaded_scaling)
             .args({8})

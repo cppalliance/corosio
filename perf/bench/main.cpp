@@ -40,6 +40,10 @@ print_usage(char const* program_name)
                  "(prefix match)\n";
     std::cout << "  --duration <secs>   Duration per benchmark in seconds "
                  "(default: 3.0)\n";
+    std::cout << "  --warmup <secs>     Self-warmup duration per benchmark "
+                 "(default: 0,\n";
+    std::cout
+        << "                      disabled; try 0.5 for rigor)\n";
     std::cout << "  --output <file>     Write JSON results to file\n";
     std::cout << "  --enable-microbenchmarks\n";
     std::cout
@@ -123,6 +127,7 @@ main(int argc, char* argv[])
     char const* category_filter = nullptr;
     char const* bench_filter    = nullptr;
     double duration_s           = 3.0;
+    double warmup_duration_s    = 0.0;
     bool enable_microbenchmark  = false;
     bool list_mode              = false;
 
@@ -193,6 +198,23 @@ main(int argc, char* argv[])
                 return 1;
             }
         }
+        else if (std::strcmp(argv[i], "--warmup") == 0)
+        {
+            if (i + 1 < argc)
+            {
+                warmup_duration_s = std::atof(argv[++i]);
+                if (warmup_duration_s < 0.0)
+                {
+                    std::cerr << "Error: --warmup must be non-negative\n";
+                    return 1;
+                }
+            }
+            else
+            {
+                std::cerr << "Error: --warmup requires an argument\n";
+                return 1;
+            }
+        }
         else if (std::strcmp(argv[i], "--output") == 0)
         {
             if (i + 1 < argc)
@@ -259,6 +281,7 @@ main(int argc, char* argv[])
         [=]<class BackendTag>(
             perf::context_factory, BackendTag, char const* name) {
             bench::benchmark_runner runner(name, duration_s);
+            runner.set_warmup_duration(warmup_duration_s);
 
             if (want_corosio)
                 add_corosio_suites(runner, BackendTag{});
@@ -283,6 +306,10 @@ main(int argc, char* argv[])
                 std::cout << "Backend: " << name << "\n";
                 std::cout << "Duration: " << duration_s
                           << "s per benchmark\n";
+                std::cout << "Warmup: " << warmup_duration_s
+                          << "s per benchmark"
+                          << (warmup_duration_s <= 0.0 ? " (disabled)" : "")
+                          << "\n";
             }
 
             runner.run(category_filter, bench_filter, enable_microbenchmark);

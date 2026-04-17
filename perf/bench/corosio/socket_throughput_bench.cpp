@@ -493,26 +493,9 @@ template<auto Backend>
 bench::benchmark_suite
 make_socket_throughput_suite()
 {
-    using F      = bench::bench_flags;
-    using socket_type = corosio::native_tcp_socket<Backend>;
+    using F = bench::bench_flags;
 
     return bench::benchmark_suite("socket_throughput", F::needs_conntrack_drain)
-        .set_warmup([]{
-            corosio::native_io_context<Backend> ioc;
-            auto [w, r] = corosio::test::make_socket_pair<
-                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-            std::vector<char> buf(4096, 'w');
-            auto task = [&]() -> capy::task<> {
-                (void)co_await w.write_some(
-                    capy::const_buffer(buf.data(), buf.size()));
-                (void)co_await r.read_some(
-                    capy::mutable_buffer(buf.data(), buf.size()));
-            };
-            capy::run_async(ioc.get_executor())(task());
-            ioc.run();
-            w.close();
-            r.close();
-        })
         .add("unidirectional", bench_throughput<Backend>)
             .range(1024, 1048576, 4)
         .add("unidirectional_lockless", bench_throughput_lockless<Backend>)

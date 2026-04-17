@@ -390,15 +390,6 @@ make_socket_throughput_suite()
 {
     using F = bench::bench_flags;
     return bench::benchmark_suite("socket_throughput", F::needs_conntrack_drain)
-        .set_warmup([] {
-            asio::io_context ioc;
-            auto [w, r] = asio_bench::make_socket_pair(ioc);
-            std::vector<char> buf(4096, 'w');
-            asio::write(w, asio::buffer(buf));
-            asio::read(r, asio::buffer(buf));
-            w.close();
-            r.close();
-        })
         .add("unidirectional", bench_throughput)
             .range(1024, 1048576, 4)
         .add("unidirectional_lockless", bench_throughput_lockless)
