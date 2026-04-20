@@ -21,7 +21,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <memory>
 #include <thread>
 #include <vector>
 
@@ -81,34 +80,34 @@ bench_sequential_churn(bench::state& state)
             {
                 auto lp = state.lap();
 
-                auto client = std::make_unique<tcp_socket>(ioc);
-                auto server = std::make_unique<tcp_socket>(ioc);
+                tcp_socket client(ioc.get_executor());
+                tcp_socket server(ioc.get_executor());
                 boost::system::error_code ec;
-                ec = client->open(tcp::v4(), ec);
+                ec = client.open(tcp::v4(), ec);
                 if (ec)
                     continue;
-                configure_churn_socket(*client);
+                configure_churn_socket(client);
 
                 asio::co_spawn(
                     ioc,
                     [](tcp_socket& c, tcp::endpoint ep)
                         -> asio::awaitable<void, executor_type> {
                         co_await c.async_connect(ep, asio::deferred);
-                    }(*client, ep),
+                    }(client, ep),
                     asio::detached);
 
-                *server = co_await acc.async_accept(asio::deferred);
+                server = co_await acc.async_accept(asio::deferred);
 
                 char byte = 'X';
                 co_await asio::async_write(
-                    *client, asio::buffer(&byte, 1), asio::deferred);
+                    client, asio::buffer(&byte, 1), asio::deferred);
 
                 char recv = 0;
                 co_await asio::async_read(
-                    *server, asio::buffer(&recv, 1), asio::deferred);
+                    server, asio::buffer(&recv, 1), asio::deferred);
 
-                client->close();
-                server->close();
+                client.close();
+                server.close();
             }
         }
         catch (std::exception const&)
@@ -151,34 +150,34 @@ bench_sequential_churn_lockless(bench::state& state)
             {
                 auto lp = state.lap();
 
-                auto client = std::make_unique<tcp_socket>(ioc);
-                auto server = std::make_unique<tcp_socket>(ioc);
+                tcp_socket client(ioc.get_executor());
+                tcp_socket server(ioc.get_executor());
                 boost::system::error_code ec;
-                ec = client->open(tcp::v4(), ec);
+                ec = client.open(tcp::v4(), ec);
                 if (ec)
                     continue;
-                configure_churn_socket(*client);
+                configure_churn_socket(client);
 
                 asio::co_spawn(
                     ioc,
                     [](tcp_socket& c, tcp::endpoint ep)
                         -> asio::awaitable<void, executor_type> {
                         co_await c.async_connect(ep, asio::deferred);
-                    }(*client, ep),
+                    }(client, ep),
                     asio::detached);
 
-                *server = co_await acc.async_accept(asio::deferred);
+                server = co_await acc.async_accept(asio::deferred);
 
                 char byte = 'X';
                 co_await asio::async_write(
-                    *client, asio::buffer(&byte, 1), asio::deferred);
+                    client, asio::buffer(&byte, 1), asio::deferred);
 
                 char recv = 0;
                 co_await asio::async_read(
-                    *server, asio::buffer(&recv, 1), asio::deferred);
+                    server, asio::buffer(&recv, 1), asio::deferred);
 
-                client->close();
-                server->close();
+                client.close();
+                server.close();
             }
         }
         catch (std::exception const&)
@@ -230,34 +229,34 @@ bench_concurrent_churn(bench::state& state)
             {
                 auto lp = state.lap();
 
-                auto client = std::make_unique<tcp_socket>(ioc);
-                auto server = std::make_unique<tcp_socket>(ioc);
+                tcp_socket client(ioc.get_executor());
+                tcp_socket server(ioc.get_executor());
                 boost::system::error_code ec;
-                ec = client->open(tcp::v4(), ec);
+                ec = client.open(tcp::v4(), ec);
                 if (ec)
                     continue;
-                configure_churn_socket(*client);
+                configure_churn_socket(client);
 
                 asio::co_spawn(
                     ioc,
                     [](tcp_socket& c, tcp::endpoint ep)
                         -> asio::awaitable<void, executor_type> {
                         co_await c.async_connect(ep, asio::deferred);
-                    }(*client, ep),
+                    }(client, ep),
                     asio::detached);
 
-                *server = co_await acc.async_accept(asio::deferred);
+                server = co_await acc.async_accept(asio::deferred);
 
                 char byte = 'X';
                 co_await asio::async_write(
-                    *client, asio::buffer(&byte, 1), asio::deferred);
+                    client, asio::buffer(&byte, 1), asio::deferred);
 
                 char recv = 0;
                 co_await asio::async_read(
-                    *server, asio::buffer(&recv, 1), asio::deferred);
+                    server, asio::buffer(&recv, 1), asio::deferred);
 
-                client->close();
-                server->close();
+                client.close();
+                server.close();
             }
         }
         catch (std::exception const&)
@@ -306,7 +305,7 @@ bench_burst_churn(bench::state& state)
             {
                 auto lp = state.lap();
 
-                std::vector<std::unique_ptr<tcp_socket>> clients;
+                std::vector<tcp_socket> clients;
                 std::vector<tcp_socket> servers;
                 clients.reserve(burst_size);
                 servers.reserve(burst_size);
@@ -314,16 +313,16 @@ bench_burst_churn(bench::state& state)
                 bool open_ok = true;
                 for (int i = 0; i < burst_size; ++i)
                 {
-                    clients.push_back(std::make_unique<tcp_socket>(ioc));
+                    clients.emplace_back(ioc.get_executor());
                     boost::system::error_code ec;
-                    ec = clients.back()->open(tcp::v4(), ec);
+                    ec = clients.back().open(tcp::v4(), ec);
                     if (ec)
                     {
                         clients.clear();
                         open_ok = false;
                         break;
                     }
-                    configure_churn_socket(*clients.back());
+                    configure_churn_socket(clients.back());
                 }
                 if (!open_ok)
                     continue;
@@ -335,7 +334,7 @@ bench_burst_churn(bench::state& state)
                         [](tcp_socket& c, tcp::endpoint ep)
                             -> asio::awaitable<void, executor_type> {
                             co_await c.async_connect(ep, asio::deferred);
-                        }(*clients[i], ep),
+                        }(clients[i], ep),
                         asio::detached);
                 }
 
@@ -346,7 +345,7 @@ bench_burst_churn(bench::state& state)
                 }
 
                 for (auto& c : clients)
-                    c->close();
+                    c.close();
                 for (auto& s : servers)
                     s.close();
             }
@@ -394,7 +393,7 @@ bench_burst_churn_lockless(bench::state& state)
             {
                 auto lp = state.lap();
 
-                std::vector<std::unique_ptr<tcp_socket>> clients;
+                std::vector<tcp_socket> clients;
                 std::vector<tcp_socket> servers;
                 clients.reserve(burst_size);
                 servers.reserve(burst_size);
@@ -402,16 +401,16 @@ bench_burst_churn_lockless(bench::state& state)
                 bool open_ok = true;
                 for (int i = 0; i < burst_size; ++i)
                 {
-                    clients.push_back(std::make_unique<tcp_socket>(ioc));
+                    clients.emplace_back(ioc.get_executor());
                     boost::system::error_code ec;
-                    ec = clients.back()->open(tcp::v4(), ec);
+                    ec = clients.back().open(tcp::v4(), ec);
                     if (ec)
                     {
                         clients.clear();
                         open_ok = false;
                         break;
                     }
-                    configure_churn_socket(*clients.back());
+                    configure_churn_socket(clients.back());
                 }
                 if (!open_ok)
                     continue;
@@ -423,7 +422,7 @@ bench_burst_churn_lockless(bench::state& state)
                         [](tcp_socket& c, tcp::endpoint ep)
                             -> asio::awaitable<void, executor_type> {
                             co_await c.async_connect(ep, asio::deferred);
-                        }(*clients[i], ep),
+                        }(clients[i], ep),
                         asio::detached);
                 }
 
@@ -434,7 +433,7 @@ bench_burst_churn_lockless(bench::state& state)
                 }
 
                 for (auto& c : clients)
-                    c->close();
+                    c.close();
                 for (auto& s : servers)
                     s.close();
             }
