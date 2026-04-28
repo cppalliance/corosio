@@ -1,0 +1,375 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= UDP Sockets
+
+UDP is a connectionless, message-oriented transport. Each `send` produces
+exactly one datagram, and each `recv` consumes exactly one datagram. There
+is no handshake, no acknowledgment, and no ordering guarantee.
+
+For the protocol-level fundamentals (header layout, fragmentation, when to
+choose UDP over TCP), see xref:2.networking-tutorial/2g.udp.adoc[UDP: Fast,
+Simple, Unreliable]. This page covers the Corosio API: `udp_socket`, the
+`udp` protocol tag, and the operations they support.
+
+[NOTE]
+====
+Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/udp_socket.hpp>
+#include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/socket_option.hpp>
+#include <boost/capy/buffers.hpp>
+#include <boost/capy/task.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+====
+
+== The udp Protocol Tag
+
+`corosio::udp` identifies the address family used to open a socket. The two
+factory functions `udp::v4()` and `udp::v6()` return the IPv4 and IPv6 forms:
+
+[source,cpp]
+----
+corosio::udp_socket sock(ioc);
+sock.open(corosio::udp::v4());   // SOCK_DGRAM, AF_INET
+// or
+sock.open(corosio::udp::v6());   // SOCK_DGRAM, AF_INET6
+----
+
+`open()` defaults to `udp::v4()` when no protocol is supplied. The tag is also
+used by `connect()` to pick a family automatically when the socket is not yet
+open — see xref:#connected-mode[Connected Mode] below.
+
+== Opening and Binding
+
+A socket must be open before any I/O. To receive datagrams it must also be
+bound to a local endpoint:
+
+[source,cpp]
+----
+corosio::udp_socket sock(ioc);
+sock.open(corosio::udp::v4());
+
+auto ec = sock.bind(
+    corosio::endpoint(corosio::ipv4_address::any(), 9000));
+if (ec) /* handle bind failure */;
+----
+
+`bind()` returns `std::error_code` rather than throwing — port-already-in-use
+is a routine outcome you typically want to react to.
+
+To bind on the wildcard address (accept datagrams on any local interface),
+use `ipv4_address::any()` or `ipv6_address::any()`. To restrict to loopback,
+use `::loopback()`.
+
+Senders that never need to receive replies on a known port may skip `bind()`;
+the kernel assigns an ephemeral port on the first `send_to`.
+
+== Connectionless Mode
+
+The default mode. Each datagram carries an explicit destination, and each
+receive captures the sender's address.
+
+=== Sending
+
+[source,cpp]
+----
+char const msg[] = "hello";
+corosio::endpoint dest(corosio::ipv4_address::loopback(), 9000);
+
+auto [ec, n] = co_await sock.send_to(
+    capy::const_buffer(msg, sizeof(msg)), dest);
+----
+
+`send_to` either delivers the entire datagram to the network or fails — there
+is no partial send for UDP. On success `n` equals the buffer size; on failure
+`ec` carries the reason.
+
+=== Receiving
+
+`recv_from` writes the datagram into the buffer and stores the sender's
+address in the endpoint reference you pass in:
+
+[source,cpp]
+----
+char buf[1500];
+corosio::endpoint sender;
+
+auto [ec, n] = co_await sock.recv_from(
+    capy::mutable_buffer(buf, sizeof(buf)), sender);
+if (!ec)
+{
+    // buf[0..n) holds the datagram; sender holds the source address.
+}
+----
+
+If the buffer is smaller than the incoming datagram, the excess is silently
+discarded. Size your buffer for the largest datagram you expect — 1500 bytes
+covers a typical Ethernet MTU; 65535 covers any IPv4/IPv6 datagram.
+
+=== A Minimal Echo Server
+
+[source,cpp]
+----
+capy::task<> echo(corosio::io_context& ioc)
+{
+    corosio::udp_socket sock(ioc);
+    sock.open(corosio::udp::v4());
+    auto ec = sock.bind(
+        corosio::endpoint(corosio::ipv4_address::any(), 9000));
+    if (ec) co_return;
+
+    char buf[1500];
+    for (;;)
+    {
+        corosio::endpoint sender;
+        auto [rec, n] = co_await sock.recv_from(
+            capy::mutable_buffer(buf, sizeof(buf)), sender);
+        if (rec) co_return;
+
+        co_await sock.send_to(
+            capy::const_buffer(buf, n), sender);
+    }
+}
+----
+
+Notice that one socket serves every client. UDP has no per-connection state,
+so there is no acceptor and no peer socket to manage.
+
+[#connected-mode]
+== Connected Mode
+
+`connect()` does not perform a handshake — it sets a default peer in the
+kernel. Datagrams from any other source are filtered out, and `send`/`recv`
+become available without endpoint arguments:
+
+[source,cpp]
+----
+corosio::udp_socket sock(ioc);
+auto [cec] = co_await sock.connect(
+    corosio::endpoint(corosio::ipv4_address::loopback(), 9000));
+if (cec) co_return;
+
+co_await sock.send(capy::const_buffer("ping", 4));
+
+char buf[64];
+auto [rec, n] = co_await sock.recv(
+    capy::mutable_buffer(buf, sizeof(buf)));
+----
+
+If the socket is not yet open when `connect()` is called, it is opened
+automatically using the address family of the destination endpoint. This
+makes a connect-then-send client a two-line affair.
+
+You can call `connect()` again at any time to switch peers, or call it with
+an unspecified endpoint (`AF_UNSPEC`) on platforms that support it to
+dissolve the association.
+
+Connected mode is useful for two reasons:
+
+* **Filtering** — the kernel drops stray datagrams from unrelated senders
+  before your code sees them, which simplifies request/response clients.
+* **ICMP error reporting** — when a peer is unreachable, the kernel surfaces
+  the resulting ICMP error on a subsequent `send` or `recv` instead of
+  silently discarding it.
+
+== Message Flags
+
+`send_to`, `recv_from`, `send`, and `recv` accept an optional
+`corosio::message_flags`:
+
+[cols="1,3"]
+|===
+| Flag | Effect
+
+| `peek`
+| Return data without removing it from the receive queue. The next `recv`
+  returns the same datagram.
+
+| `out_of_band`
+| Send/receive out-of-band data (rarely used with UDP).
+
+| `do_not_route`
+| Bypass routing tables; deliver only on directly attached interfaces.
+|===
+
+[source,cpp]
+----
+auto [ec, n] = co_await sock.recv_from(
+    capy::mutable_buffer(buf, sizeof(buf)), sender,
+    corosio::message_flags::peek);
+----
+
+== Socket Options
+
+Options are set with the typed wrappers in `<boost/corosio/socket_option.hpp>`:
+
+[source,cpp]
+----
+sock.set_option(corosio::socket_option::reuse_address(true));
+sock.set_option(corosio::socket_option::broadcast(true));
+sock.set_option(corosio::socket_option::receive_buffer_size(1 << 20));
+
+auto bcast = sock.get_option<corosio::socket_option::broadcast>();
+----
+
+Options commonly relevant to UDP:
+
+[cols="1,2"]
+|===
+| Option | When to set
+
+| `reuse_address`
+| Multiple sockets on the same address (e.g., a reload swap, or several
+  receivers in the same multicast group).
+
+| `broadcast`
+| Required before sending to a broadcast address such as
+  `255.255.255.255`. Off by default.
+
+| `receive_buffer_size` / `send_buffer_size`
+| Tune the kernel's per-socket queues. UDP datagrams are dropped when the
+  receive queue is full — bursts of inbound traffic argue for a larger
+  receive buffer.
+
+| `v6_only`
+| On an IPv6 socket, refuse IPv4-mapped addresses. Off by default on most
+  platforms; enable for IPv6-only services.
+|===
+
+See xref:4d.sockets.adoc[Sockets] for the full list of generic socket
+options.
+
+== Multicast
+
+To send multicast datagrams, open a UDP socket and write to a multicast
+address. To receive them, bind to the multicast port and join the group:
+
+[source,cpp]
+----
+corosio::udp_socket sock(ioc);
+sock.open(corosio::udp::v4());
+sock.set_option(corosio::socket_option::reuse_address(true));
+
+auto ec = sock.bind(
+    corosio::endpoint(corosio::ipv4_address::any(), 30001));
+if (ec) co_return;
+
+sock.set_option(corosio::socket_option::join_group_v4(
+    corosio::ipv4_address("239.255.0.1")));
+----
+
+Related options:
+
+[cols="1,2"]
+|===
+| Option | Purpose
+
+| `join_group_v4` / `leave_group_v4`
+| Subscribe to or unsubscribe from an IPv4 multicast group.
+
+| `join_group_v6` / `leave_group_v6`
+| IPv6 equivalents.
+
+| `multicast_loop_v4` / `multicast_loop_v6`
+| Enable or disable receiving your own outgoing multicast.
+
+| `multicast_hops_v4` / `multicast_hops_v6`
+| Set the multicast TTL (IPv4) / hop limit (IPv6). Default is `1` —
+  datagrams stay on the local subnet unless you raise it.
+
+| `multicast_interface_v6`
+| Choose the outgoing interface for IPv6 multicast.
+|===
+
+== Cancellation
+
+`cancel()` aborts every operation in flight on the socket. They complete
+with `errc::operation_canceled`:
+
+[source,cpp]
+----
+sock.cancel();
+----
+
+Coroutine-scoped cancellation flows through the awaiting task's environment.
+Run the task with a `std::stop_token`, and any UDP operation it awaits
+completes with the canceled error when stop is requested:
+
+[source,cpp]
+----
+std::stop_source ss;
+capy::run_async(ioc.get_executor(), ss.get_token())(my_task());
+// ...
+ss.request_stop();   // unblocks any in-flight recv_from inside my_task
+----
+
+For portable error comparison, check against `capy::cond::canceled` rather
+than a platform-specific `errc` value. See
+xref:4m.error-handling.adoc[Error Handling].
+
+== Concurrent Operations
+
+A `udp_socket` permits one outstanding send and one outstanding receive at
+a time. Two simultaneous `recv_from` calls on the same socket are not
+supported. This is enough for the common pattern of a single coroutine that
+alternates send and receive, or a pair of coroutines where one drives
+outbound traffic and the other drains the receive queue.
+
+For higher concurrency, use multiple sockets — UDP has no per-connection
+cost in the kernel, so a server can run several receivers in parallel.
+
+== Comparison with TCP
+
+[cols="1,1,1"]
+|===
+| Aspect | `tcp_socket` | `udp_socket`
+
+| Model
+| Reliable byte stream
+| Unreliable datagrams
+
+| Message boundaries
+| Not preserved
+| Preserved (one `recv` = one datagram)
+
+| Setup
+| Three-way handshake before I/O
+| `open` + optional `bind`; no handshake
+
+| Server topology
+| One acceptor, one socket per peer
+| One socket serves all peers
+
+| Per-peer state
+| Kernel tracks each connection
+| Application's responsibility
+
+| Loss recovery
+| Automatic
+| Application's responsibility
+
+| Multicast / broadcast
+| Not supported
+| Supported
+|===
+
+== Next Steps
+
+* xref:2.networking-tutorial/2g.udp.adoc[UDP: Fast, Simple, Unreliable] —
+  protocol-level background
+* xref:4d.sockets.adoc[Sockets] — generic socket options and lifetime rules
+* xref:4f.endpoints.adoc[Endpoints] — IP address and port construction
+* xref:4m.error-handling.adoc[Error Handling] — the `io_result` pattern
