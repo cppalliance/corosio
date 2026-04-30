@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -9,4 +10,38 @@
 
 = Testing
 
-Asynchronous I/O code is notoriously difficult to test. Real network operations introduce latency, non-determinism, and dependencies on external services—all of which make tests slow and fragile. Corosio provides test utilities that replace live networking with controllable, deterministic substitutes. You can stage data for reads, verify what your code writes, and inject errors at precise points—all without opening a single network connection. This section covers the tools and patterns that make thorough testing of I/O code practical and repeatable.
+Asynchronous I/O code is notoriously difficult to test. Real network
+operations introduce latency, non-determinism, and dependencies on
+external services — all of which make tests slow and fragile. Corosio
+provides test utilities that replace live networking with controllable,
+deterministic substitutes. You can stage data for reads, verify what
+your code writes, and force short reads or writes — all without opening
+a single network connection. This section covers the tools and patterns
+that make thorough testing of I/O code practical and repeatable.
+
+== What's in this section
+
+* xref:5a.mocket.adoc[Mock Sockets] — `mocket`, `make_mocket_pair`, and
+  the staging API for byte-level deterministic tests.
+* xref:5b.socket-pair.adoc[Socket Pairs] — `make_socket_pair` for tests
+  that need real socket semantics (TLS, `set_option`, `shutdown`, true
+  EOF).
+* xref:5c.patterns.adoc[Testing Patterns] — recipes that combine the two
+  facilities.
+
+== Choosing the right tool
+
+[cols="1,1"]
+|===
+| Goal | Use
+
+| Byte-level expectations, staged responses, no real network
+| `mocket`
+
+| Real socket semantics — TLS handshake, `SO_*` options, shutdown
+ordering, EOF
+| `socket_pair`
+
+| Combine the two (e.g., framing on top of TLS over a real socket)
+| See xref:5c.patterns.adoc[Patterns]
+|===
