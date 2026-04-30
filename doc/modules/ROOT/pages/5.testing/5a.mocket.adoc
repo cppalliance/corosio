@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -9,9 +10,10 @@
 
 = Mock Sockets
 
-The `mocket` class provides mock sockets for testing I/O code without
-actual network operations. Mockets let you stage data for reading and
-verify expected writes.
+The `mocket` class is a testable wrapper around a `tcp_socket` that lets
+you stage bytes for reads and assert on bytes written, without giving up
+real socket semantics when you don't need them. Mockets are the main tool
+for byte-level deterministic tests of corosio I/O code.
 
 [NOTE]
 ====
@@ -19,7 +21,6 @@ Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/test/mocket.hpp>
-#include <boost/capy/test/fuse.hpp>
 
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
@@ -28,235 +29,178 @@ namespace capy = boost::capy;
 
 == Overview
 
-Mockets are testable socket-like objects:
+`basic_mocket<Socket>` holds a `Socket` member and forwards `read_some` /
+`write_some` to it, with two pre-stages:
 
-[source,cpp]
-----
-// Create connected pair
-capy::test::fuse f;
-auto [client, server] = corosio::test::make_mockets(ioc, f);
+* If the *provide* buffer has bytes, reads consume them first.
+* If the *expect* buffer has bytes, writes are validated against them
+  before passing through.
 
-// Stage data on server for client to read
-server.provide("Hello from server");
-
-// Stage expected data that client should write
-client.expect("Hello from client");
-
-// Now run your code that uses client/server as io_stream&
-----
+Once both buffers are empty, I/O passes through to the underlying socket
+unchanged. The default alias is `using mocket = basic_mocket<>;`, which
+uses `tcp_socket`.
 
 == Creating Mockets
 
-Mockets are created in connected pairs:
+Mockets are created paired with a peer socket, connected via loopback:
 
 [source,cpp]
 ----
 corosio::io_context ioc;
-capy::test::fuse f;
 
-auto [m1, m2] = corosio::test::make_mockets(ioc, f);
+auto [m, peer] = corosio::test::make_mocket_pair(ioc);
 ----
 
-The pair is connected via loopback TCP sockets. Data written to one can
-be read from the other, plus you can use the staging/expectation API.
+`make_mocket_pair` returns `std::pair<basic_mocket<Socket>, Socket>`. The
+first element is the mocket (test-instrumented). The second is the peer
+(a plain `Socket`). Both are open and immediately usable.
 
 == Staging Data for Reads
 
-Use `provide()` to stage data that the _peer_ will read:
+Use `provide()` to stage bytes that the mocket itself will hand back from
+`read_some`:
 
 [source,cpp]
 ----
-// On server: stage data for client to read
-server.provide("HTTP/1.1 200 OK\r\n\r\nHello");
+m.provide("HTTP/1.1 200 OK\r\n\r\nHello");
 
-// Now when client reads, it gets this data
-auto [ec, n] = co_await client.read_some(buffer);
-// buffer contains "HTTP/1.1 200 OK\r\n\r\nHello"
+auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
+    char buf[64] = {};
+    auto [ec, n] = co_await m_ref.read_some(capy::make_buffer(buf));
+    // buf[0..n] == "HTTP/1.1 200 OK\r\n\r\nHello"
+};
 ----
 
-Multiple `provide()` calls append data:
-
-[source,cpp]
-----
-server.provide("Part 1");
-server.provide("Part 2");
-// Client sees "Part 1Part 2"
-----
+Multiple `provide()` calls append. Reads consume from the front of the
+buffer; once empty, subsequent reads pass through to the underlying
+socket.
 
 == Setting Write Expectations
 
-Use `expect()` to verify what the caller writes:
+Use `expect()` to declare bytes that the code under test must write next:
 
 [source,cpp]
 ----
-// Client should send this exact data
-client.expect("GET / HTTP/1.1\r\n\r\n");
+m.expect("GET / HTTP/1.1\r\n\r\n");
 
-// Now client writes
-co_await corosio::write(client, request_buffer);
-
-// If written data doesn't match, fuse fails
+auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
+    auto [ec, n] = co_await m_ref.write_some(
+        capy::const_buffer("GET / HTTP/1.1\r\n\r\n", 18));
+    // ec is empty; n == 18
+};
 ----
 
-=== How Matching Works
+`write_some` matches the leading bytes of the buffer sequence against the
+expect buffer. If they match, the matched prefix is consumed; if they
+don't, `write_some` returns `capy::error::test_failure` and writes zero
+bytes. Once the expect buffer is empty, subsequent writes pass through.
 
-When you write to a mocket with expectations:
+== Chunked I/O
 
-1. Written data is compared against the expect buffer
-2. If it matches, the expect buffer is consumed
-3. If it doesn't match, `fuse.fail()` is called
+`make_mocket_pair` accepts `max_read_size` and `max_write_size` to cap
+the bytes a single `read_some` / `write_some` will deliver. This is the
+right tool for forcing your code's read/write loops to handle short
+transfers:
 
-After the expect buffer is exhausted, writes pass through to the real socket.
+[source,cpp]
+----
+// max_read_size = 4, max_write_size = 3 force short transfers.
+auto [m, peer] = corosio::test::make_mocket_pair(ioc, {}, 4, 3);
+
+m.provide("0123456789");
+m.expect("abcdef");
+
+auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
+    char buf[16] = {};
+    auto [rec, rn] = co_await m_ref.read_some(capy::make_buffer(buf));
+    // rn == 4 ("0123")
+
+    auto [wec, wn] = co_await m_ref.write_some(
+        capy::const_buffer("abcdef", 6));
+    // wn == 3 (matched "abc")
+};
+----
+
+A value of `0` for either size parameter throws `std::logic_error` from
+the constructor. The default is `std::size_t(-1)` (unlimited).
 
 == Closing and Verification
 
-Use `close()` to verify all expectations were met:
+`close()` shuts the underlying socket and verifies that both staging
+buffers are empty:
 
 [source,cpp]
 ----
-auto ec = client.close();
-if (ec)
-    std::cerr << "Test failed: " << ec.message() << "\n";
-----
-
-The `close()` method:
-
-1. Closes the underlying socket
-2. Checks that `provide()` buffer is empty (all data read)
-3. Checks that `expect()` buffer is empty (all expected data written)
-4. Returns error and calls `fuse.fail()` if verification fails
-
-== The Fuse
-
-Mockets work with `capy::test::fuse` for error injection:
-
-[source,cpp]
-----
-capy::test::fuse f;
-auto [m1, m2] = corosio::test::make_mockets(ioc, f);
-
-// The first mocket (m1) calls f.maybe_fail() on operations
-// This enables systematic error injection testing
-----
-
-The second mocket (m2) doesn't call `maybe_fail()`, allowing asymmetric
-testing.
-
-== Complete Example
-
-[source,cpp]
-----
-#include <boost/corosio/test/mocket.hpp>
-#include <boost/capy/test/fuse.hpp>
-
-capy::task<void> test_http_client()
+auto ec = m.close();
+if (ec == capy::error::test_failure)
 {
-    corosio::io_context ioc;
-    capy::test::fuse f;
-
-    auto [client, server] = corosio::test::make_mockets(ioc, f);
-
-    // Client should send this request
-    client.expect(
-        "GET / HTTP/1.1\r\n"
-        "Host: example.com\r\n"
-        "\r\n");
-
-    // Server will respond with this
-    server.provide(
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Length: 5\r\n"
-        "\r\n"
-        "Hello");
-
-    // Run the code under test
-    co_await my_http_get(client, "example.com", "/");
-
-    // Verify expectations
-    auto ec1 = client.close();
-    auto ec2 = server.close();
-
-    if (ec1 || ec2)
-        throw std::runtime_error("Test failed");
+    // Either provide() data was never read,
+    // or expect() data was never written.
 }
 ----
 
-== Testing with io_stream Reference
+Always call `close()` at the end of a test that uses `provide` / `expect`
+and assert that the result is empty. This is what catches "the test
+passed because the code under test did nothing."
 
-Since mocket inherits from `io_stream`, you can pass it to code expecting
-streams:
+== Templated over Socket
+
+`basic_mocket` is a template; the default alias only specializes it for
+`tcp_socket`. For backend-specific tests (`native_tcp_socket<Backend>`,
+etc.), name the specialization explicitly:
 
 [source,cpp]
 ----
-// Your production code
-capy::task<void> send_message(corosio::io_stream& stream, std::string msg)
-{
-    co_await corosio::write(
-        stream, capy::const_buffer(msg.data(), msg.size()));
-}
+using socket_type   = corosio::native_tcp_socket<backend>;
+using acceptor_type = corosio::native_tcp_acceptor<backend>;
+using mocket_type   = corosio::test::basic_mocket<socket_type>;
 
-// Test code
-capy::task<void> test_send_message()
-{
-    auto [client, server] = make_mockets(ioc, f);
+corosio::io_context ioc(backend);
 
-    client.expect("Hello, World!");
-
-    co_await send_message(client, "Hello, World!");
-
-    auto ec = client.close();
-    assert(!ec);
-}
+auto [m, peer] =
+    corosio::test::make_mocket_pair<socket_type, acceptor_type>(ioc);
 ----
+
+== Underlying Socket Access
+
+`socket()` returns a reference to the wrapped `Socket`. This is how you
+stack other streams (TLS, framing) on top of a mocket:
+
+[source,cpp]
+----
+auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+
+corosio::tcp_socket& under = m.socket();
+// Pass `under` into a TLS stream, a custom framing layer, etc.
+----
+
+See xref:5c.patterns.adoc[Testing Patterns] for a TLS-over-mocket
+example.
 
 == Thread Safety
 
-Mockets are NOT thread-safe:
-
-* Use from a single thread only
-* All coroutines must be suspended when calling `expect()` or `provide()`
-* Designed for single-threaded, deterministic testing
+* Use a mocket from a single thread only.
+* All coroutines using the mocket must be suspended when calling
+  `provide()` or `expect()`.
+* Designed for single-threaded, deterministic testing.
 
 == Limitations
 
-* Data staging is one-way (provide on one side, read on the other)
-* No simulation of partial writes or network delays
-* Connection errors must be injected via fuse
-
-== Use Cases
-
-=== Unit Testing Protocol Code
-
-[source,cpp]
-----
-// Test that your protocol parser handles responses correctly
-server.provide("200 OK\r\nContent-Type: text/html\r\n\r\n<html>...</html>");
-co_await my_protocol_read(client);
-// Verify parsed result
-----
-
-=== Verifying Request Format
-
-[source,cpp]
-----
-// Ensure your code sends correctly formatted requests
-client.expect("POST /api/v1/users HTTP/1.1\r\n...");
-co_await my_api_call(client, user_data);
-----
-
-=== Integration Testing Without Network
-
-[source,cpp]
-----
-// Test client-server interaction without actual networking
-server.provide(server_response);
-client.expect(client_request);
-
-co_await run_client(client);
-co_await run_server(server);
-----
+* `provide` / `expect` are byte sequences only; there is no out-of-band
+  signal for "now produce EOF" or "now fail" beyond the matching
+  semantics described above.
+* No simulation of network delay; for that, run code under a stop_token
+  with a timer.
+* Connection-establishment errors are not simulated — the pair always
+  comes back open.
 
 == Next Steps
 
-* xref:../4.guide/4d.sockets.adoc[Sockets Guide] — The socket interface mockets implement
-* xref:../4.guide/4m.error-handling.adoc[Error Handling] — Testing error paths
+* xref:5b.socket-pair.adoc[Socket Pairs] — when you need real socket
+  semantics instead of staged bytes.
+* xref:5c.patterns.adoc[Testing Patterns] — recipes that combine mocket,
+  socket_pair, and chunked I/O.
+* xref:../4.guide/4d.sockets.adoc[Sockets Guide] — the underlying socket
+  interface.
+* xref:../4.guide/4m.error-handling.adoc[Error Handling] — testing error
+  paths.

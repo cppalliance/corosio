@@ -40,6 +40,8 @@
 ** xref:4.guide/4q.udp.adoc[UDP Sockets]
 * xref:5.testing/5.intro.adoc[Testing]
 ** xref:5.testing/5a.mocket.adoc[Mock Sockets]
+** xref:5.testing/5b.socket-pair.adoc[Socket Pairs]
+** xref:5.testing/5c.patterns.adoc[Testing Patterns]
 * xref:benchmark-report.adoc[Benchmarks]
 * xref:glossary.adoc[Glossary]
 * xref:quick-start.adoc[Quick Start]

@@ -1,0 +1,145 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Socket Pairs
+
+`make_socket_pair` creates two `tcp_socket` objects connected via
+loopback TCP. Use it when a test needs real socket semantics — TLS
+handshakes, `set_option`, `shutdown` ordering, true EOF — that the
+byte-level staging in xref:5a.mocket.adoc[`mocket`] cannot reproduce.
+
+[NOTE]
+====
+Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/test/socket_pair.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+====
+
+== Overview
+
+[source,cpp]
+----
+template<class Socket   = corosio::tcp_socket,
+         class Acceptor = corosio::tcp_acceptor,
+         bool Linger    = true>
+std::pair<Socket, Socket>
+make_socket_pair(corosio::io_context& ctx);
+----
+
+The function:
+
+. Opens an acceptor on `ipv4_address::loopback():0` with `SO_REUSEADDR`.
+. Accepts on one side while connecting on the other.
+. Runs the I/O context to completion, then restarts it.
+. Returns the connected pair.
+
+Both sockets come back `is_open()` and ready to use.
+
+If bind, listen, accept, or connect fails, `make_socket_pair` throws
+`std::runtime_error` with the underlying `error_code::message()`
+appended.
+
+== Round Trip
+
+[source,cpp]
+----
+corosio::io_context ioc;
+
+auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+
+auto task = [](corosio::tcp_socket& a, corosio::tcp_socket& b)
+    -> capy::task<> {
+    co_await a.write_some(capy::const_buffer("ping", 4));
+
+    char buf[8] = {};
+    auto [ec, n] = co_await b.read_some(capy::make_buffer(buf));
+    // buf[0..n] == "ping"
+};
+capy::run_async(ioc.get_executor())(task(s1, s2));
+ioc.run();
+----
+
+== The `Linger` Template Parameter
+
+When `Linger` is `true` (the default), `make_socket_pair` sets
+`SO_LINGER(true, 0)` on both ends after the connection is established.
+This makes `close()` send `RST` instead of going through the normal
+`FIN`/`ACK` shutdown, so test sockets release immediately and stress
+runs don't accumulate `TIME_WAIT` entries.
+
+Set `Linger` to `false` only when a test specifically exercises graceful
+shutdown:
+
+[source,cpp]
+----
+auto [s1, s2] = corosio::test::make_socket_pair<
+    corosio::tcp_socket,
+    corosio::tcp_acceptor,
+    /*Linger=*/false>(ioc);
+----
+
+== When to Use vs. `mocket`
+
+[cols="1,1,1"]
+|===
+| Need | mocket | socket_pair
+
+| Byte-level expectations on writes
+| ✓
+|
+
+| Staged canned bytes for reads
+| ✓
+|
+
+| Forced short reads / short writes
+| ✓ (`max_read_size` / `max_write_size`)
+|
+
+| Real `set_option`, `shutdown`, EOF
+|
+| ✓
+
+| TLS handshake on a real socket
+|
+| ✓
+
+| Stress / soak tests
+|
+| ✓
+|===
+
+For tests that need byte-level determinism *and* a real socket
+underneath (e.g., framing on top of TLS), see the layering recipe in
+xref:5c.patterns.adoc[Testing Patterns].
+
+== Caveats
+
+* Opens real loopback file descriptors. Visible to local network tools
+  and subject to the host's TCP stack.
+* Slower than `mocket` for byte-level assertions.
+* Timing is not deterministic; use stop_tokens or timers for cancellation
+  paths.
+* On Linux, `SO_LINGER(true, 0)` causes `close()` to send `RST`, which
+  may surface as `cond::connection_reset` on the other end depending on
+  the order of operations. If a test asserts on a clean shutdown
+  sequence, set `Linger=false`.
+
+== Next Steps
+
+* xref:5a.mocket.adoc[Mock Sockets] — for byte-level deterministic
+  tests.
+* xref:5c.patterns.adoc[Testing Patterns] — recipes that combine both.
+* xref:../4.guide/4l.tls.adoc[TLS Encryption] — common consumer of
+  `make_socket_pair`.

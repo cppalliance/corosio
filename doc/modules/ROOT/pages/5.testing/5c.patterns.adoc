@@ -1,0 +1,156 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Testing Patterns
+
+This page collects recipes that combine xref:5a.mocket.adoc[`mocket`]
+and xref:5b.socket-pair.adoc[`make_socket_pair`] in realistic test
+scenarios. Each recipe is a small standalone block; copy and adapt.
+
+[NOTE]
+====
+Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/test/mocket.hpp>
+#include <boost/corosio/test/socket_pair.hpp>
+
+namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+----
+====
+
+== Verifying Request Format
+
+When a function under test must emit an exact byte sequence, stage it
+with `expect()` and assert on `close()` at the end:
+
+[source,cpp]
+----
+corosio::io_context ioc;
+auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+
+m.expect("GET /api/v1/users HTTP/1.1\r\n\r\n");
+
+auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
+    co_await my_http_get(m_ref, "/api/v1/users");
+};
+capy::run_async(ioc.get_executor())(task(m));
+ioc.run();
+
+auto ec = m.close();   // !ec means everything was written
+----
+
+== Staging Server Responses
+
+When a function under test must consume canned bytes, stage them with
+`provide()` and run the consumer:
+
+[source,cpp]
+----
+m.provide(
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Length: 5\r\n"
+    "\r\n"
+    "Hello");
+
+auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
+    auto response = co_await my_http_read(m_ref);
+    // assert on parsed response
+};
+----
+
+== Simulating Chunked / Partial I/O
+
+Most read loops are wrong because they assume `read_some` delivers as
+much as the kernel had. Force short reads to flush out that bug:
+
+[source,cpp]
+----
+auto [m, peer] = corosio::test::make_mocket_pair(ioc, {}, /*max_read_size=*/4);
+
+m.provide("ABCDEFGH");
+
+auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
+    std::string acc;
+    char buf[16];
+    for (int i = 0; i < 2; ++i)
+    {
+        auto [ec, n] = co_await m_ref.read_some(capy::make_buffer(buf));
+        acc.append(buf, n);   // n == 4 each time
+    }
+};
+----
+
+The same applies to `max_write_size` for write-loop testing.
+
+== Layering Streams on a Mocket
+
+`m.socket()` returns the underlying `tcp_socket`. Stack any stream that
+wraps a TCP socket on top of it; the staging buffers still apply at the
+TCP layer, with the higher-level stream's wire format flowing through:
+
+[source,cpp]
+----
+auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+
+// Pass m.socket() into a TLS stream or other layer in production code:
+corosio::tcp_socket& under = m.socket();
+// e.g., openssl_stream<corosio::tcp_socket*> tls(&under, tls_ctx);
+----
+
+This is the right tool when the bytes you want to stage are below a
+higher-level protocol.
+
+== End-to-End with Real Sockets
+
+When fidelity matters more than determinism — for example, exercising
+`shutdown()` ordering, real `set_option` paths, or TLS handshakes — use
+`make_socket_pair`:
+
+[source,cpp]
+----
+corosio::io_context ioc;
+auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+
+auto task = [](corosio::tcp_socket& a, corosio::tcp_socket& b)
+    -> capy::task<> {
+    auto [wec, wn] =
+        co_await a.write_some(capy::const_buffer("payload", 7));
+
+    char buf[16] = {};
+    auto [ec, n] = co_await b.read_some(capy::make_buffer(buf));
+    // buf[0..n] == "payload"
+};
+capy::run_async(ioc.get_executor())(task(s1, s2));
+ioc.run();
+----
+
+== Deterministic Close-Verification
+
+Always call `close()` on the mocket at the end of a test that uses
+`provide` / `expect`, and assert the result is empty:
+
+[source,cpp]
+----
+auto ec = m.close();
+// ec == capy::error::test_failure means leftover provide() data was
+// never read, or expect() data was never written. Either way, the test
+// would have passed silently without this check.
+----
+
+This is the line that catches "the test passed because the code under
+test silently did nothing." Treat it as a test-suite convention.
+
+== See Also
+
+* xref:5a.mocket.adoc[Mock Sockets]
+* xref:5b.socket-pair.adoc[Socket Pairs]
+* xref:../4.guide/4d.sockets.adoc[Sockets Guide]
+* xref:../4.guide/4l.tls.adoc[TLS Encryption]
