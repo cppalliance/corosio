@@ -413,10 +413,9 @@ reactor_scheduler::configure_reactor(
         max_events > static_cast<unsigned>(std::numeric_limits<int>::max()))
         throw std::out_of_range(
             "max_events_per_poll must be in [1, INT_MAX]");
-    if (budget_max < 1 ||
-        budget_max > static_cast<unsigned>(std::numeric_limits<int>::max()))
+    if (budget_max > static_cast<unsigned>(std::numeric_limits<int>::max()))
         throw std::out_of_range(
-            "inline_budget_max must be in [1, INT_MAX]");
+            "inline_budget_max must be in [0, INT_MAX]");
 
     // Clamp initial and unassisted to budget_max.
     if (budget_init > budget_max)
@@ -433,6 +432,10 @@ reactor_scheduler::configure_reactor(
 inline void
 reactor_scheduler::reset_inline_budget() const noexcept
 {
+    // When budget is disabled (max==0), all paths below would no-op
+    // (inline_budget stays 0). Skip the TLS lookup entirely.
+    if (inline_budget_max_ == 0)
+        return;
     if (auto* ctx = reactor_find_context(this))
     {
         // Cap when no other thread absorbed queued work
@@ -444,10 +447,11 @@ reactor_scheduler::reset_inline_budget() const noexcept
                 static_cast<int>(unassisted_budget_);
             return;
         }
-        // Ramp up when previous cycle fully consumed budget
+        // Ramp up when previous cycle fully consumed budget.
+        // max(1, ...) ensures the doubling escapes zero.
         if (ctx->inline_budget == 0)
             ctx->inline_budget_max = (std::min)(
-                ctx->inline_budget_max * 2,
+                (std::max)(1, ctx->inline_budget_max) * 2,
                 static_cast<int>(inline_budget_max_));
         else if (ctx->inline_budget < ctx->inline_budget_max)
             ctx->inline_budget_max =
@@ -459,6 +463,8 @@ reactor_scheduler::reset_inline_budget() const noexcept
 inline bool
 reactor_scheduler::try_consume_inline_budget() const noexcept
 {
+    if (inline_budget_max_ == 0)
+        return false;
     if (auto* ctx = reactor_find_context(this))
     {
         if (ctx->inline_budget > 0)

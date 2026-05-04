@@ -168,7 +168,7 @@ bench_pingpong_latency_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     auto [client, server] = corosio::test::make_socket_pair<
         socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
 
@@ -204,7 +204,7 @@ bench_concurrent_latency_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
 
     std::vector<socket_type> clients;
     std::vector<socket_type> servers;

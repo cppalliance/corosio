@@ -183,7 +183,7 @@ bench_unix_throughput_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     auto [writer, reader] = corosio::make_local_stream_pair(ioc);
 
     std::vector<char> write_buf(chunk_size, 'x');
@@ -243,7 +243,7 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     auto [sock1, sock2] = corosio::make_local_stream_pair(ioc);
 
     std::vector<char> buf1(chunk_size, 'a');

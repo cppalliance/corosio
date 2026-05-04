@@ -156,7 +156,7 @@ bench_single_connection_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     auto [client, server] = corosio::test::make_socket_pair<
         socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
 

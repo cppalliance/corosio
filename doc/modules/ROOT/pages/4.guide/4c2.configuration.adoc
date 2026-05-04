@@ -110,6 +110,19 @@ a re-queue through the scheduler.
 * *Single-threaded contexts*:
   `unassisted_budget` caps the budget when only one thread is
   running the event loop, preserving fairness.
+* *Disable the fast path entirely*: set all three options to 0 to
+  force a re-queue on every completion (useful as a baseline or
+  when a workload is dominated by cross-thread work-stealing).
+
+[NOTE]
+====
+When `io_context` is constructed with `concurrency_hint > 1` and all
+three budget fields are at their defaults `(2, 16, 4)`, the
+constructor overrides them to `(0, 0, 0)`.  Multi-thread workloads
+benefit from cross-thread work-stealing, which "post-everything"
+mode enables.  Setting any budget field to a non-default value
+disables the override.
+====
 
 === IOCP Timeout (`gqcs_timeout_ms`)
 
