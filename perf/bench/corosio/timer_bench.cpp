@@ -112,7 +112,7 @@ bench_schedule_cancel_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     int64_t counter          = 0;
     int constexpr batch_size = 1000;
 
@@ -148,7 +148,7 @@ bench_fire_rate_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     std::atomic<bool> running{true};
     int64_t counter = 0;
 

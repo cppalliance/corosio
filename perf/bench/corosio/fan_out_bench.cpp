@@ -337,7 +337,7 @@ bench_fork_join_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
 
     std::vector<socket_type> clients;
     std::vector<socket_type> servers;
@@ -414,7 +414,7 @@ bench_nested_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
 
     std::vector<socket_type> clients;
     std::vector<socket_type> servers;
@@ -509,7 +509,7 @@ bench_concurrent_parents_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
 
     std::vector<socket_type> clients;
     std::vector<socket_type> servers;

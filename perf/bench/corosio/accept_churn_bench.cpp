@@ -133,7 +133,7 @@ bench_sequential_churn_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     acceptor_type acc(ioc);
     acc.open();
     acc.set_option(corosio::native_socket_option::reuse_address(true));
@@ -398,7 +398,7 @@ bench_burst_churn_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     acceptor_type acc(ioc);
     acc.open();
     acc.set_option(corosio::native_socket_option::reuse_address(true));

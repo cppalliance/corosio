@@ -12,6 +12,7 @@
 #include <boost/corosio/backend.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 
+#include <algorithm>
 #include <stdexcept>
 #include <thread>
 
@@ -141,19 +142,48 @@ pre_create_services(
 }
 
 // Apply runtime tuning to the scheduler after construction.
+//
+// Concurrency-hint heuristic for budget defaults: when the io_context is
+// constructed with concurrency_hint > 1 AND the user has not customized
+// the budget settings (i.e. they remain at the struct defaults), we
+// disable the inline-completion fast path. Multi-thread workloads
+// benefit from "always-post" because cross-thread work-stealing wins
+// over chained dispatch on the originating thread. Single-thread (or
+// any custom budget) keeps the user/library setting unchanged.
 void
 apply_scheduler_options(
     detail::scheduler& sched,
-    io_context_options const& opts)
+    io_context_options const& opts,
+    unsigned concurrency_hint)
 {
 #if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || BOOST_COROSIO_HAS_SELECT
+    // Detect "user kept the defaults" by comparing all three to the
+    // io_context_options-defined struct defaults.
+    io_context_options defaults;
+    bool budget_at_defaults =
+        opts.inline_budget_initial == defaults.inline_budget_initial &&
+        opts.inline_budget_max == defaults.inline_budget_max &&
+        opts.unassisted_budget == defaults.unassisted_budget;
+
+    unsigned init = opts.inline_budget_initial;
+    unsigned max  = opts.inline_budget_max;
+    unsigned ua   = opts.unassisted_budget;
+
+    if (budget_at_defaults && concurrency_hint > 1)
+    {
+        // Multi-thread default: disable budget (post-everything).
+        init = 0;
+        max  = 0;
+        ua   = 0;
+    }
+
     auto& reactor =
         static_cast<detail::reactor_scheduler&>(sched);
     reactor.configure_reactor(
         opts.max_events_per_poll,
-        opts.inline_budget_initial,
-        opts.inline_budget_max,
-        opts.unassisted_budget);
+        init,
+        max,
+        ua);
     if (opts.single_threaded)
         reactor.configure_single_threaded(true);
 #endif
@@ -183,25 +213,40 @@ construct_default(capy::execution_context& ctx, unsigned concurrency_hint)
 #endif
 }
 
+// Tie concurrency_hint == 1 to single_threaded (asio precedent).
+io_context_options
+normalize_options(io_context_options opts, unsigned concurrency_hint)
+{
+    if (concurrency_hint == 1)
+        opts.single_threaded = true;
+    return opts;
+}
+
 } // anonymous namespace
 
-io_context::io_context() : io_context(std::thread::hardware_concurrency()) {}
+io_context::io_context()
+    : io_context(std::max(2u, std::thread::hardware_concurrency()))
+{
+}
 
 io_context::io_context(unsigned concurrency_hint)
     : capy::execution_context(this)
     , sched_(&construct_default(*this, concurrency_hint))
 {
+    if (concurrency_hint == 1)
+        configure_single_threaded_();
 }
 
 io_context::io_context(
-    io_context_options const& opts,
+    io_context_options const& opts_in,
     unsigned concurrency_hint)
     : capy::execution_context(this)
     , sched_(nullptr)
 {
+    auto opts = normalize_options(opts_in, concurrency_hint);
     pre_create_services(*this, opts);
     sched_ = &construct_default(*this, concurrency_hint);
-    apply_scheduler_options(*sched_, opts);
+    apply_scheduler_options(*sched_, opts, concurrency_hint);
 }
 
 void
@@ -211,9 +256,25 @@ io_context::apply_options_pre_(io_context_options const& opts)
 }
 
 void
-io_context::apply_options_post_(io_context_options const& opts)
+io_context::apply_options_post_(
+    io_context_options const& opts_in,
+    unsigned concurrency_hint)
 {
-    apply_scheduler_options(*sched_, opts);
+    auto opts = normalize_options(opts_in, concurrency_hint);
+    apply_scheduler_options(*sched_, opts, concurrency_hint);
+}
+
+void
+io_context::configure_single_threaded_()
+{
+#if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || BOOST_COROSIO_HAS_SELECT
+    static_cast<detail::reactor_scheduler&>(*sched_)
+        .configure_single_threaded(true);
+#endif
+#if BOOST_COROSIO_HAS_IOCP
+    static_cast<detail::win_scheduler&>(*sched_)
+        .configure_single_threaded(true);
+#endif
 }
 
 io_context::~io_context()

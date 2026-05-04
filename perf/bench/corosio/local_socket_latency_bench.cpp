@@ -155,7 +155,7 @@ bench_unix_pingpong_latency_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     auto [client, server] = corosio::make_local_stream_pair(ioc);
 
     capy::run_async(ioc.get_executor())(
@@ -185,7 +185,7 @@ bench_unix_concurrent_latency_lockless(bench::state& state)
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
 
     std::vector<corosio::local_stream_socket> clients;
     std::vector<corosio::local_stream_socket> servers;

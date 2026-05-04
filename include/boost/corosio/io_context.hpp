@@ -64,6 +64,13 @@ struct io_context_options
         After a posted handler executes, the reactor grants this
         many speculative inline completions before forcing a
         re-queue. Applies to reactor backends only.
+
+        @note Constructing an `io_context` with `concurrency_hint > 1`
+            and all three budget fields at their defaults overrides
+            them to disable inline completion (post-everything mode),
+            since multi-thread workloads benefit from cross-thread
+            work-stealing. Setting any budget field to a non-default
+            value disables the override.
     */
     unsigned inline_budget_initial = 2;
 
@@ -112,6 +119,11 @@ struct io_context_options
         - DNS resolution returns `operation_not_supported`.
         - POSIX file I/O returns `operation_not_supported`.
         - Signal sets should not be shared across contexts.
+
+        @note Constructing an `io_context` with `concurrency_hint == 1`
+            automatically enables single-threaded mode regardless of
+            this field's value, matching asio's convention. To opt out,
+            pass `concurrency_hint > 1`.
     */
     bool single_threaded = false;
 };
@@ -158,7 +170,12 @@ class BOOST_COROSIO_DECL io_context : public capy::execution_context
     void apply_options_pre_(io_context_options const& opts);
 
     /// Apply runtime tuning to the scheduler (after construct).
-    void apply_options_post_(io_context_options const& opts);
+    void apply_options_post_(
+        io_context_options const& opts,
+        unsigned concurrency_hint);
+
+    /// Switch the scheduler to single-threaded (lockless) mode.
+    void configure_single_threaded_();
 
 protected:
     detail::timer_service* timer_svc_ = nullptr;
@@ -168,7 +185,14 @@ public:
     /** The executor type for this context. */
     class executor_type;
 
-    /** Construct with default concurrency and platform backend. */
+    /** Construct with default concurrency and platform backend.
+
+        Uses `std::thread::hardware_concurrency()` clamped to a minimum
+        of 2 as the concurrency hint, so the default constructor never
+        silently engages single-threaded mode (see
+        @ref io_context_options::single_threaded). Pass an explicit
+        `concurrency_hint == 1` to opt into single-threaded mode.
+    */
     io_context();
 
     /** Construct with a concurrency hint and platform backend.
@@ -206,6 +230,8 @@ public:
     {
         (void)backend;
         sched_ = &Backend::construct(*this, concurrency_hint);
+        if (concurrency_hint == 1)
+            configure_single_threaded_();
     }
 
     /** Construct with an explicit backend tag and runtime options.
@@ -229,7 +255,7 @@ public:
         (void)backend;
         apply_options_pre_(opts);
         sched_ = &Backend::construct(*this, concurrency_hint);
-        apply_options_post_(opts);
+        apply_options_post_(opts, concurrency_hint);
     }
 
     ~io_context();

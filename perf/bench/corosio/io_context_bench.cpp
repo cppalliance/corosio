@@ -265,7 +265,7 @@ bench_single_threaded_lockless(bench::state& state)
     corosio::io_context_options opts;
     opts.single_threaded = true;
 
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     auto ex                  = ioc.get_executor();
     int64_t counter          = 0;
     int constexpr batch_size = 1000;
@@ -299,7 +299,7 @@ bench_interleaved_lockless(bench::state& state)
 
     int handlers_per_iteration = 100;
 
-    corosio::native_io_context<Backend> ioc(opts);
+    corosio::native_io_context<Backend> ioc(opts, 1);
     auto ex         = ioc.get_executor();
     int64_t counter = 0;
 
