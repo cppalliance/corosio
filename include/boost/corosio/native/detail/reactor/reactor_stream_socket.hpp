@@ -394,13 +394,25 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, Impl
         op.iovecs[i].iov_len  = bufs[i].size();
     }
 
-    // Speculative read
+    // Speculative read; for the single-buffer case use recv() so the
+    // kernel skips the readv iov_iter setup.
     ssize_t n;
-    do
+    if (op.iovec_count == 1)
     {
-        n = ::readv(this->fd_, op.iovecs, op.iovec_count);
+        do
+        {
+            n = ::recv(this->fd_, bufs[0].data(), bufs[0].size(), 0);
+        }
+        while (n < 0 && errno == EINTR);
     }
-    while (n < 0 && errno == EINTR);
+    else
+    {
+        do
+        {
+            n = ::readv(this->fd_, op.iovecs, op.iovec_count);
+        }
+        while (n < 0 && errno == EINTR);
+    }
 
     if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
     {
@@ -490,9 +502,20 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, Impl
         op.iovecs[i].iov_len  = bufs[i].size();
     }
 
-    // Speculative write via backend-specific write policy
-    ssize_t n =
-        WriteOp::write_policy::write(this->fd_, op.iovecs, op.iovec_count);
+    // Speculative write; the single-buffer case dispatches to a
+    // backend-specific fast path so the kernel skips msghdr/iov_iter
+    // setup (and so each backend can pick the right SIGPIPE strategy).
+    ssize_t n;
+    if (op.iovec_count == 1)
+    {
+        n = WriteOp::write_policy::write_one(
+            this->fd_, bufs[0].data(), bufs[0].size());
+    }
+    else
+    {
+        n = WriteOp::write_policy::write(
+            this->fd_, op.iovecs, op.iovec_count);
+    }
 
     if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
     {

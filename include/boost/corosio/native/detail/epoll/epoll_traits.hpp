@@ -74,6 +74,18 @@ struct epoll_traits
             while (n < 0 && errno == EINTR);
             return n;
         }
+
+        static ssize_t write_one(
+            int fd, void const* data, std::size_t size) noexcept
+        {
+            ssize_t n;
+            do
+            {
+                n = ::send(fd, data, size, MSG_NOSIGNAL);
+            }
+            while (n < 0 && errno == EINTR);
+            return n;
+        }
     };
 
     struct accept_policy
