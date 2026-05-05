@@ -110,6 +110,21 @@ struct kqueue_traits
             while (n < 0 && errno == EINTR);
             return n;
         }
+
+        // Single-buffer fast path. macOS lacks MSG_NOSIGNAL; SIGPIPE is
+        // suppressed by the mandatory SO_NOSIGPIPE set in accept_policy
+        // and set_fd_options, so plain write() is safe here.
+        static ssize_t write_one(
+            int fd, void const* data, std::size_t size) noexcept
+        {
+            ssize_t n;
+            do
+            {
+                n = ::write(fd, data, size);
+            }
+            while (n < 0 && errno == EINTR);
+            return n;
+        }
     };
 
     struct accept_policy

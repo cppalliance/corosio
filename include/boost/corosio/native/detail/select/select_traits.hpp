@@ -84,6 +84,26 @@ struct select_traits
             while (n < 0 && errno == EINTR);
             return n;
         }
+
+        // Single-buffer fast path. Where MSG_NOSIGNAL exists we use
+        // send() to suppress SIGPIPE inline; otherwise fall back to
+        // write() and rely on the SO_NOSIGPIPE set in accept_policy
+        // and set_fd_options.
+        static ssize_t write_one(
+            int fd, void const* data, std::size_t size) noexcept
+        {
+            ssize_t n;
+            do
+            {
+#ifdef MSG_NOSIGNAL
+                n = ::send(fd, data, size, MSG_NOSIGNAL);
+#else
+                n = ::write(fd, data, size);
+#endif
+            }
+            while (n < 0 && errno == EINTR);
+            return n;
+        }
     };
 
     struct accept_policy
