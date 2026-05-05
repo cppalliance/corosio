@@ -101,10 +101,10 @@
       "is_earliest": true
     },
     {
-      "version": "14.42",
+      "version": "14.44",
       "cxxstd": "20",
       "latest_cxxstd": "20",
-      "runs_on": "windows-2025",
+      "runs_on": "windows-2022",
       "b2_toolset": "msvc-14.4",
       "generator": "Visual Studio 17 2022",
       "is_latest": true
