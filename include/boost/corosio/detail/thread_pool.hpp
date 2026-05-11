@@ -13,8 +13,10 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/test/thread_name.hpp>
 
 #include <condition_variable>
+#include <cstdio>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -81,7 +83,7 @@ class thread_pool final : public capy::execution_context::service
     std::vector<std::thread> threads_;
     bool shutdown_ = false;
 
-    void worker_loop();
+    void worker_loop(unsigned index);
 
 public:
     using key_type = thread_pool;
@@ -110,7 +112,7 @@ public:
         try
         {
             for (unsigned i = 0; i < num_threads; ++i)
-                threads_.emplace_back([this] { worker_loop(); });
+                threads_.emplace_back([this, i] { worker_loop(i + 1); });
         }
         catch (...)
         {
@@ -145,8 +147,14 @@ public:
 };
 
 inline void
-thread_pool::worker_loop()
+thread_pool::worker_loop(unsigned index)
 {
+    // Name format chosen to fit Linux's 15-char pthread limit:
+    // "tpool-svc-" (10) + up to 4 digit index leaves "tpool-svc-9999".
+    char name[16];
+    std::snprintf(name, sizeof(name), "tpool-svc-%u", index);
+    capy::set_current_thread_name(name);
+
     for (;;)
     {
         pool_work_item* w;
