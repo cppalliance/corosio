@@ -9,7 +9,7 @@
 
 #include <boost/corosio/wolfssl_stream.hpp>
 #include <boost/corosio/detail/config.hpp>
-#include <boost/capy/buffers/buffer_array.hpp>
+#include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/ex/async_mutex.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/write.hpp>
@@ -442,7 +442,7 @@ struct wolfssl_stream::impl
     // Inner coroutines for TLS read/write operations
 
     capy::io_task<std::size_t>
-    do_read_some(capy::mutable_buffer_array<capy::detail::max_iovec_> buffers)
+    do_read_some(capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
     {
         std::error_code ec;
         std::size_t total_read = 0;
@@ -570,7 +570,7 @@ struct wolfssl_stream::impl
     }
 
     capy::io_task<std::size_t>
-    do_write_some(capy::const_buffer_array<capy::detail::max_iovec_> buffers)
+    do_write_some(capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
     {
         std::error_code ec;
         std::size_t total_written = 0;
@@ -1046,14 +1046,14 @@ wolfssl_stream::operator=(wolfssl_stream&& other) noexcept
 
 capy::io_task<std::size_t>
 wolfssl_stream::do_read_some(
-    capy::mutable_buffer_array<capy::detail::max_iovec_> buffers)
+    capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
 {
     co_return co_await impl_->do_read_some(buffers);
 }
 
 capy::io_task<std::size_t>
 wolfssl_stream::do_write_some(
-    capy::const_buffer_array<capy::detail::max_iovec_> buffers)
+    capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
 {
     co_return co_await impl_->do_write_some(buffers);
 }
