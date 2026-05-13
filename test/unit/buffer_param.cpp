@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/corosio/detail/buffer_param.hpp>
 
-#include <boost/capy/buffers/buffer_pair.hpp>
+
 #include <span>
 #include <array>
 
@@ -62,7 +62,7 @@ struct buffer_param_test
     {
         char const data1[] = "Hello";
         char const data2[] = "World";
-        capy::const_buffer_pair cbp{
+        std::array<capy::const_buffer, 2> cbp{
             {capy::const_buffer(data1, 5), capy::const_buffer(data2, 5)}};
         check_copy(cbp, {{data1, 5}, {data2, 5}});
     }
@@ -71,7 +71,7 @@ struct buffer_param_test
     {
         char data1[] = "Hello";
         char data2[] = "World";
-        capy::mutable_buffer_pair mbp{
+        std::array<capy::mutable_buffer, 2> mbp{
             {capy::mutable_buffer(data1, 5), capy::mutable_buffer(data2, 5)}};
         check_copy(mbp, {{data1, 5}, {data2, 5}});
     }
@@ -162,7 +162,7 @@ struct buffer_param_test
         // Buffer pair with both zero-byte buffers
         char const data1[] = "Hello";
         char const data2[] = "World";
-        capy::const_buffer_pair cbp{
+        std::array<capy::const_buffer, 2> cbp{
             {capy::const_buffer(data1, 0), capy::const_buffer(data2, 0)}};
         check_empty(cbp);
     }
@@ -185,7 +185,7 @@ struct buffer_param_test
         // Zero-size buffer is skipped
         char const data1[] = "Hello";
         char const data2[] = "World";
-        capy::const_buffer_pair cbp{
+        std::array<capy::const_buffer, 2> cbp{
             {capy::const_buffer(data1, 0), capy::const_buffer(data2, 5)}};
         check_copy(cbp, {{data2, 5}});
     }
@@ -203,7 +203,7 @@ struct buffer_param_test
         // Mutable buffer pair with zero-byte buffers
         char data1[] = "Hello";
         char data2[] = "World";
-        capy::mutable_buffer_pair mbp{
+        std::array<capy::mutable_buffer, 2> mbp{
             {capy::mutable_buffer(data1, 0), capy::mutable_buffer(data2, 0)}};
         check_empty(mbp);
     }
