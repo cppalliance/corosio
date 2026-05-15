@@ -12,8 +12,10 @@
 
 #include <boost/corosio/backend.hpp>
 #include <boost/corosio/cancel.hpp>
+#include <boost/corosio/connect.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/file_base.hpp>
+#include <boost/corosio/host_name.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
