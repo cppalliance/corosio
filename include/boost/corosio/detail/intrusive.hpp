@@ -63,6 +63,12 @@ public:
         return head_ == nullptr;
     }
 
+    /// Peek at the head element without removing it.
+    T* front() const noexcept
+    {
+        return head_;
+    }
+
     void push_back(T* w) noexcept
     {
         auto* n = static_cast<node*>(w);

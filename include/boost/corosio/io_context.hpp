@@ -126,6 +126,43 @@ struct io_context_options
             pass `concurrency_hint > 1`.
     */
     bool single_threaded = false;
+
+    /** Enable IORING_SETUP_SQPOLL on the io_uring backend.
+
+        With SQPOLL, the kernel forks a thread that busy-polls the
+        submission ring; submission becomes a userspace-only memory
+        store, eliminating the io_uring_enter syscall on the submit
+        path. Most useful for sustained traffic. Idle thread parks
+        after `sq_thread_idle_ms` of no activity.
+
+        Independent of `single_threaded`. Default: off.
+
+        Ignored on non-io_uring backends.
+    */
+    bool enable_sqpoll = false;
+
+    /** SQ-poll idle timeout in milliseconds.
+
+        After this many ms of no submissions, the kernel polling
+        thread sleeps; next submit re-wakes it via SQ_WAKEUP. 0
+        means use the kernel default (1ms). Recommended for bursty
+        workloads: 100-1000ms (avoids park/unpark thrash).
+
+        Ignored unless `enable_sqpoll` is true. Ignored on
+        non-io_uring backends.
+    */
+    unsigned sq_thread_idle_ms = 0;
+
+    /** Pin the SQ-poll kernel thread to this CPU.
+
+        -1 means do not pin (kernel scheduler picks). Pinning off
+        the dispatch core is recommended on latency-sensitive
+        deployments to avoid cache contention.
+
+        Ignored unless `enable_sqpoll` is true. Ignored on
+        non-io_uring backends.
+    */
+    int sq_thread_cpu = -1;
 };
 
 namespace detail {

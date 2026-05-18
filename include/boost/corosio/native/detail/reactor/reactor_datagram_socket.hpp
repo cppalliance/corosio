@@ -15,6 +15,7 @@
 #include <boost/corosio/wait_type.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_basic_socket.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
+#include <boost/corosio/native/detail/msg_flags.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/capy/buffers.hpp>
 
@@ -25,17 +26,6 @@
 #include <sys/uio.h>
 
 namespace boost::corosio::detail {
-
-/* Map portable message_flags values to native MSG_* constants. */
-inline int
-to_native_msg_flags(int flags) noexcept
-{
-    int native = 0;
-    if (flags & 1) native |= MSG_PEEK;
-    if (flags & 2) native |= MSG_OOB;
-    if (flags & 4) native |= MSG_DONTROUTE;
-    return native;
-}
 
 /** CRTP base for reactor-backed datagram socket implementations.
 

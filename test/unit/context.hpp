@@ -67,10 +67,20 @@
 #define COROSIO_TEST_SELECT_(impl, name)
 #endif
 
+#if BOOST_COROSIO_HAS_IO_URING
+#define COROSIO_TEST_IO_URING_(impl, name)         \
+    struct impl##_io_uring : impl<io_uring>        \
+    {};                                            \
+    TEST_SUITE(impl##_io_uring, name ".io_uring");
+#else
+#define COROSIO_TEST_IO_URING_(impl, name)
+#endif
+
 #define COROSIO_BACKEND_TESTS(impl, name) \
     COROSIO_TEST_IOCP_(impl, name)        \
     COROSIO_TEST_EPOLL_(impl, name)       \
     COROSIO_TEST_KQUEUE_(impl, name)      \
-    COROSIO_TEST_SELECT_(impl, name)
+    COROSIO_TEST_SELECT_(impl, name)      \
+    COROSIO_TEST_IO_URING_(impl, name)
 
 #endif
