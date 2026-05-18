@@ -29,6 +29,10 @@
 #if BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #endif
+
+#if BOOST_COROSIO_HAS_IO_URING
+#include <boost/corosio/native/detail/io_uring/io_uring_scheduler.hpp>
+#endif
 #endif // !BOOST_COROSIO_MRDOCS
 
 namespace boost::corosio {

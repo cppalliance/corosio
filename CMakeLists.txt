@@ -64,6 +64,12 @@ target_link_libraries(boost_corosio
         Boost::capy
         Threads::Threads
         $<$<PLATFORM_ID:Windows>:ws2_32>)
+if(BOOST_COROSIO_HAVE_LIBURING)
+    target_link_libraries(boost_corosio PRIVATE liburing::liburing)
+    target_compile_definitions(boost_corosio PUBLIC BOOST_COROSIO_HAVE_LIBURING=1)
+else()
+    target_compile_definitions(boost_corosio PUBLIC BOOST_COROSIO_HAVE_LIBURING=0)
+endif()
 target_compile_definitions(boost_corosio
     PUBLIC
         BOOST_COROSIO_NO_LIB

@@ -32,6 +32,21 @@ macro(corosio_resolve_deps)
     endif()
 
     find_package(Threads REQUIRED)
+
+    # liburing 2.5+ for the optional io_uring backend on Linux.
+    # Missing or older liburing → io_uring backend is disabled at compile time.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        find_package(liburing 2.5 QUIET)
+        if(liburing_FOUND)
+            message(STATUS "Building with liburing ${liburing_VERSION} — io_uring backend enabled")
+            set(BOOST_COROSIO_HAVE_LIBURING 1)
+        else()
+            message(STATUS "liburing 2.5+ not found — io_uring backend disabled")
+            set(BOOST_COROSIO_HAVE_LIBURING 0)
+        endif()
+    else()
+        set(BOOST_COROSIO_HAVE_LIBURING 0)
+    endif()
 endmacro()
 
 # corosio_setup_mrdocs()

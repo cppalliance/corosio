@@ -224,6 +224,64 @@ inline constexpr kqueue_t kqueue{};
 
 #endif // BOOST_COROSIO_HAS_KQUEUE
 
+#if BOOST_COROSIO_HAS_IO_URING
+
+namespace detail {
+
+class io_uring_tcp_socket;
+class io_uring_tcp_service;
+class io_uring_udp_socket;
+class io_uring_udp_service;
+class io_uring_tcp_acceptor;
+class io_uring_tcp_acceptor_service;
+class io_uring_local_stream_socket;
+class io_uring_local_stream_service;
+class io_uring_local_stream_acceptor;
+class io_uring_local_stream_acceptor_service;
+class io_uring_local_datagram_socket;
+class io_uring_local_datagram_service;
+class io_uring_scheduler;
+
+class posix_signal;
+class posix_signal_service;
+class posix_resolver;
+class posix_resolver_service;
+
+} // namespace detail
+
+/// Backend tag for the Linux io_uring proactor.
+struct io_uring_t
+{
+    using scheduler_type            = detail::io_uring_scheduler;
+    using tcp_socket_type           = detail::io_uring_tcp_socket;
+    using tcp_service_type          = detail::io_uring_tcp_service;
+    using udp_socket_type           = detail::io_uring_udp_socket;
+    using udp_service_type          = detail::io_uring_udp_service;
+    using tcp_acceptor_type         = detail::io_uring_tcp_acceptor;
+    using tcp_acceptor_service_type = detail::io_uring_tcp_acceptor_service;
+
+    using local_stream_socket_type           = detail::io_uring_local_stream_socket;
+    using local_stream_service_type          = detail::io_uring_local_stream_service;
+    using local_stream_acceptor_type         = detail::io_uring_local_stream_acceptor;
+    using local_stream_acceptor_service_type = detail::io_uring_local_stream_acceptor_service;
+    using local_datagram_socket_type         = detail::io_uring_local_datagram_socket;
+    using local_datagram_service_type        = detail::io_uring_local_datagram_service;
+
+    using signal_type           = detail::posix_signal;
+    using signal_service_type   = detail::posix_signal_service;
+    using resolver_type         = detail::posix_resolver;
+    using resolver_service_type = detail::posix_resolver_service;
+
+    /// Create the scheduler and services for this backend.
+    BOOST_COROSIO_DECL static detail::scheduler&
+    construct(capy::execution_context&, unsigned concurrency_hint);
+};
+
+/// Tag value for selecting the io_uring backend.
+inline constexpr io_uring_t io_uring{};
+
+#endif // BOOST_COROSIO_HAS_IO_URING
+
 #if BOOST_COROSIO_HAS_IOCP
 
 namespace detail {
