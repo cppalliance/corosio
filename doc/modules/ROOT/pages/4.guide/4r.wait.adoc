@@ -1,0 +1,148 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Readiness Wait
+
+The `wait()` method on every socket and acceptor suspends until the
+underlying file descriptor becomes ready in a chosen direction, without
+transferring any bytes. Use it to integrate with C libraries that own
+the I/O on a nonblocking file descriptor and only need notification
+that data is available or that the descriptor is writable.
+
+[NOTE]
+====
+Code snippets assume:
+[source,cpp]
+----
+#include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/wait_type.hpp>
+
+namespace corosio = boost::corosio;
+----
+====
+
+== Overview
+
+Three directions are exposed via the `wait_type` enum:
+
+[source,cpp]
+----
+enum class wait_type { read, write, error };
+----
+
+The awaitable yields an `error_code` with no `bytes_transferred`. On
+success the socket is observed to be ready; no data has been consumed
+from it.
+
+[source,cpp]
+----
+auto [ec] = co_await sock.wait(corosio::wait_type::read);
+if (!ec) {
+    // sock is readable: a subsequent read_some will return data
+    // without blocking.
+}
+----
+
+== Wrapping a Nonblocking C API
+
+The original motivation is libraries such as libssh and libpq that
+manage their own buffers on an `O_NONBLOCK` fd. They need a "tell me
+when the fd is ready" primitive that does not steal bytes from the
+stream.
+
+The typical pattern:
+
+[source,cpp]
+----
+// pq is some PG connection holding a nonblocking socket fd.
+corosio::tcp_socket sock = adopt_fd(ioc, PQsocket(pq));
+
+while (PQisBusy(pq)) {
+    auto [ec] = co_await sock.wait(corosio::wait_type::read);
+    if (ec) co_return ec;
+    if (PQconsumeInput(pq) == 0)
+        co_return last_pq_error(pq);
+}
+----
+
+Because `wait()` does not call `recv()`, the C library's next
+`PQconsumeInput` (or equivalent) sees all the data the kernel has
+delivered.
+
+== Acceptors
+
+`tcp_acceptor` and `local_stream_acceptor` expose the same `wait()`.
+For `wait_type::read`, completion signals that a connection is pending
+on the listen socket. A subsequent `accept()` will succeed without
+blocking:
+
+[source,cpp]
+----
+auto [wec] = co_await acceptor.wait(corosio::wait_type::read);
+if (wec) co_return;
+
+corosio::tcp_socket peer(ioc);
+auto [aec] = co_await acceptor.accept(peer);
+----
+
+This is useful when application-level conditions must be checked
+before consuming the next connection (rate limiting, backpressure
+signaling) without holding an `accept()` call open.
+
+== Cancellation
+
+`wait()` honors the stop token of its `co_await` environment and the
+`socket.cancel()` / `acceptor.cancel()` non-virtuals, completing with
+`capy::cond::canceled`:
+
+[source,cpp]
+----
+auto waiter = [&]() -> capy::task<> {
+    auto [ec] = co_await sock.wait(corosio::wait_type::read);
+    // ec == capy::cond::canceled if sock.cancel() was invoked
+};
+----
+
+`cancel_after()` composes with `wait()` the same way it does with the
+other socket operations.
+
+== `wait_type::write` Semantics
+
+`wait(wait_type::write)` always completes immediately with success on
+a connected socket. This matches asio's behavior on the IOCP backend
+and gives a consistent contract across all corosio backends. The
+intended use is: "I want to know I can write now," not "I want to
+park until the send buffer drains after backpressure."
+
+Backpressure on the send path is already surfaced by `write_some()`
+returning fewer bytes than requested (or `EAGAIN`-equivalent
+behavior); use that signal rather than `wait(wait_type::write)` to
+react to a full send buffer.
+
+== Backend Notes
+
+On Linux (epoll) and BSD/macOS (kqueue) the read and error waits
+register interest in the fd's read or error event without performing
+any I/O syscall. On the select backend the same registration
+semantics apply through the select-loop's fd sets. Write waits
+short-circuit and never enter the reactor (see above).
+
+On Windows (IOCP), stream-socket `wait_read` uses a zero-byte
+`WSARecv`: the kernel signals completion when data is available
+without consuming bytes. All other waits (datagram-read,
+acceptor-read, error-wait) route through an auxiliary `WSAPoll`-based
+reactor that runs on a dedicated thread and bridges into the IOCP
+via `PostQueuedCompletionStatus`. The public API is uniform across
+platforms.
+
+== See Also
+
+* xref:4d.sockets.adoc[Sockets]
+* xref:4e.tcp-acceptor.adoc[Acceptors]
+* xref:4q.udp.adoc[UDP Sockets]

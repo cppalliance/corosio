@@ -61,6 +61,15 @@ struct reactor_descriptor_state : scheduler_op
     /// Pending connect operation (guarded by `mutex`).
     reactor_op_base* connect_op = nullptr;
 
+    /// Pending wait-for-read operation (guarded by `mutex`).
+    reactor_op_base* wait_read_op = nullptr;
+
+    /// Pending wait-for-write operation (guarded by `mutex`).
+    reactor_op_base* wait_write_op = nullptr;
+
+    /// Pending wait-for-error operation (guarded by `mutex`).
+    reactor_op_base* wait_error_op = nullptr;
+
     /// True if a read edge event arrived before an op was registered.
     bool read_ready = false;
 
@@ -75,6 +84,15 @@ struct reactor_descriptor_state : scheduler_op
 
     /// Deferred connect cancellation (IOCP-style cancel semantics).
     bool connect_cancel_pending = false;
+
+    /// Deferred wait-read cancellation (IOCP-style cancel semantics).
+    bool wait_read_cancel_pending = false;
+
+    /// Deferred wait-write cancellation (IOCP-style cancel semantics).
+    bool wait_write_cancel_pending = false;
+
+    /// Deferred wait-error cancellation (IOCP-style cancel semantics).
+    bool wait_error_cancel_pending = false;
 
     /// Event mask set during registration (no mutex needed).
     std::uint32_t registered_events = 0;
@@ -185,6 +203,13 @@ reactor_descriptor_state::invoke_deferred_io()
             {
                 read_ready = true;
             }
+
+            // Complete any parked wait-for-read regardless of read_op presence.
+            if (wait_read_op)
+            {
+                wait_read_op->complete(err, 0);
+                local_ops.push(std::exchange(wait_read_op, nullptr));
+            }
         }
         if (ev & reactor_event_write)
         {
@@ -219,6 +244,22 @@ reactor_descriptor_state::invoke_deferred_io()
             }
             if (!had_write_op)
                 write_ready = true;
+
+            // Complete any parked wait-for-write regardless of write_op presence.
+            if (wait_write_op)
+            {
+                wait_write_op->complete(err, 0);
+                local_ops.push(std::exchange(wait_write_op, nullptr));
+            }
+        }
+        // Complete a parked wait-for-error on any error condition.
+        if ((ev & reactor_event_error) || err)
+        {
+            if (wait_error_op)
+            {
+                wait_error_op->complete(err, 0);
+                local_ops.push(std::exchange(wait_error_op, nullptr));
+            }
         }
         if (err)
         {
@@ -236,6 +277,16 @@ reactor_descriptor_state::invoke_deferred_io()
             {
                 connect_op->complete(err, 0);
                 local_ops.push(std::exchange(connect_op, nullptr));
+            }
+            if (wait_read_op)
+            {
+                wait_read_op->complete(err, 0);
+                local_ops.push(std::exchange(wait_read_op, nullptr));
+            }
+            if (wait_write_op)
+            {
+                wait_write_op->complete(err, 0);
+                local_ops.push(std::exchange(wait_write_op, nullptr));
             }
         }
     }

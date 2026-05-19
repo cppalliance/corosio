@@ -22,6 +22,7 @@
 #include <boost/corosio/local_datagram.hpp>
 #include <boost/corosio/message_flags.hpp>
 #include <boost/corosio/shutdown_type.hpp>
+#include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -204,6 +205,27 @@ public:
             std::error_code* ec,
             std::size_t* bytes_out) = 0;
 
+        /** Initiate an asynchronous wait for socket readiness.
+
+            Completes when the socket becomes ready for the
+            specified direction, or an error condition is
+            reported. No bytes are transferred.
+
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param w The direction to wait on.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+
+            @return Coroutine handle to resume immediately.
+        */
+        virtual std::coroutine_handle<> wait(
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
+            wait_type w,
+            std::stop_token token,
+            std::error_code* ec) = 0;
+
         /// Shut down part or all of the socket.
         virtual std::error_code shutdown(shutdown_type what) noexcept = 0;
 
@@ -343,6 +365,23 @@ public:
         {
             return s_.get().connect(
                 h, ex, endpoint_, token_, &ec_);
+        }
+    };
+
+    /// Represent the awaitable returned by @ref wait.
+    struct wait_awaitable
+        : detail::void_op_base<wait_awaitable>
+    {
+        local_datagram_socket& s_;
+        wait_type w_;
+
+        wait_awaitable(local_datagram_socket& s, wait_type w) noexcept
+            : s_(s), w_(w) {}
+
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
+        {
+            return s_.get().wait(h, ex, w_, token_, &ec_);
         }
     };
 
@@ -526,6 +565,25 @@ public:
         if (!is_open())
             open();
         return connect_awaitable(*this, ep);
+    }
+
+    /** Wait for the socket to become ready in a given direction.
+
+        Suspends until the socket is ready for the requested
+        direction, or an error condition is reported. No bytes
+        are transferred.
+
+        @param w The wait direction (read, write, or error).
+
+        @return An awaitable that completes with `io_result<>`.
+
+        @par Preconditions
+        The socket must be open. This socket must outlive the
+        returned awaitable.
+    */
+    [[nodiscard]] auto wait(wait_type w)
+    {
+        return wait_awaitable(*this, w);
     }
 
     /** Send a datagram to the specified destination.

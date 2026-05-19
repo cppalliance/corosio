@@ -88,6 +88,38 @@ complete_dgram_recv_op(Op& op)
     dispatch_coro(saved_ex, op.cont_op.cont).resume();
 }
 
+/** Complete a wait operation.
+
+    Wait operations report only an error_code — no bytes_transferred,
+    no EOF translation. Used for socket and acceptor wait() awaitables;
+    picks the impl pointer set by start() to reach the scheduler.
+
+    @tparam Op The concrete wait operation type.
+    @param op The operation to complete.
+*/
+template<typename Op>
+void
+complete_wait_op(Op& op)
+{
+    op.stop_cb.reset();
+    if (op.socket_impl_)
+        op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
+    else
+        op.acceptor_impl_->desc_state_.scheduler_->reset_inline_budget();
+
+    if (op.cancelled.load(std::memory_order_acquire))
+        *op.ec_out = capy::error::canceled;
+    else if (op.errn != 0)
+        *op.ec_out = make_err(op.errn);
+    else
+        *op.ec_out = {};
+
+    op.cont_op.cont.h = op.h;
+    capy::executor_ref saved_ex(op.ex);
+    auto prevent = std::move(op.impl_ptr);
+    dispatch_coro(saved_ex, op.cont_op.cont).resume();
+}
+
 /** Complete a connect operation with endpoint caching.
 
     On success, queries the local endpoint via getsockname and

@@ -12,7 +12,9 @@
 
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/shutdown_type.hpp>
+#include <boost/corosio/wait_type.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_basic_socket.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/capy/buffers.hpp>
 
@@ -28,13 +30,14 @@ namespace boost::corosio::detail {
 
     Inherits shared data members and cancel/close/register logic
     from reactor_basic_socket. Adds the stream-specific remote
-    endpoint, shutdown, and I/O dispatch (connect, read, write).
+    endpoint, shutdown, and I/O dispatch (connect, read, write, wait).
 
     @tparam Derived   The concrete socket type (CRTP).
     @tparam Service   The backend's socket service type.
     @tparam ConnOp    The backend's connect op type.
     @tparam ReadOp    The backend's read op type.
     @tparam WriteOp   The backend's write op type.
+    @tparam WaitOp    The backend's wait op type.
     @tparam DescState The backend's descriptor_state type.
     @tparam ImplBase  The public vtable base
                       (tcp_socket::implementation or
@@ -47,6 +50,7 @@ template<
     class ConnOp,
     class ReadOp,
     class WriteOp,
+    class WaitOp,
     class DescState,
     class ImplBase = tcp_socket::implementation,
     class Endpoint = endpoint>
@@ -64,6 +68,9 @@ class reactor_stream_socket
         Service,
         DescState,
         Endpoint>;
+    using self_type = reactor_stream_socket<
+        Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp,
+        DescState, ImplBase, Endpoint>;
     friend base_type;
     friend Derived;
 
@@ -83,6 +90,15 @@ public:
 
     /// Pending write operation slot.
     WriteOp wr_;
+
+    /// Pending wait-for-read operation slot.
+    WaitOp wait_rd_;
+
+    /// Pending wait-for-write operation slot.
+    WaitOp wait_wr_;
+
+    /// Pending wait-for-error operation slot.
+    WaitOp wait_er_;
 
     ~reactor_stream_socket() override = default;
 
@@ -124,6 +140,16 @@ public:
         std::size_t* bytes_out) override
     {
         return do_write_some(h, ex, param, token, ec, bytes_out);
+    }
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        wait_type w,
+        std::stop_token token,
+        std::error_code* ec) override
+    {
+        return do_wait(h, ex, w, token, ec);
     }
 
     std::error_code
@@ -219,6 +245,19 @@ public:
         std::error_code*,
         std::size_t*);
 
+    /** Shared readiness-wait dispatch.
+
+        Registers a wait op for the requested direction. Does not
+        perform any I/O syscall — completion is signalled when the
+        reactor delivers the matching edge event.
+    */
+    std::coroutine_handle<> do_wait(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        wait_type,
+        std::stop_token const&,
+        std::error_code*);
+
     /** Close the socket and cancel pending operations.
 
         Extends the base do_close_socket() to also reset
@@ -242,6 +281,12 @@ private:
             return &this->desc_state_.read_op;
         if (&op == static_cast<void*>(&wr_))
             return &this->desc_state_.write_op;
+        if (&op == static_cast<void*>(&wait_rd_))
+            return &this->desc_state_.wait_read_op;
+        if (&op == static_cast<void*>(&wait_wr_))
+            return &this->desc_state_.wait_write_op;
+        if (&op == static_cast<void*>(&wait_er_))
+            return &this->desc_state_.wait_error_op;
         return nullptr;
     }
 
@@ -254,6 +299,12 @@ private:
             return &this->desc_state_.read_cancel_pending;
         if (&op == static_cast<void*>(&wr_))
             return &this->desc_state_.write_cancel_pending;
+        if (&op == static_cast<void*>(&wait_rd_))
+            return &this->desc_state_.wait_read_cancel_pending;
+        if (&op == static_cast<void*>(&wait_wr_))
+            return &this->desc_state_.wait_write_cancel_pending;
+        if (&op == static_cast<void*>(&wait_er_))
+            return &this->desc_state_.wait_error_cancel_pending;
         return nullptr;
     }
 
@@ -263,6 +314,9 @@ private:
         fn(conn_);
         fn(rd_);
         fn(wr_);
+        fn(wait_rd_);
+        fn(wait_wr_);
+        fn(wait_er_);
     }
 
     template<class Fn>
@@ -271,6 +325,9 @@ private:
         fn(conn_, this->desc_state_.connect_op);
         fn(rd_, this->desc_state_.read_op);
         fn(wr_, this->desc_state_.write_op);
+        fn(wait_rd_, this->desc_state_.wait_read_op);
+        fn(wait_wr_, this->desc_state_.wait_write_op);
+        fn(wait_er_, this->desc_state_.wait_error_op);
     }
 };
 
@@ -280,11 +337,12 @@ template<
     class ConnOp,
     class ReadOp,
     class WriteOp,
+    class WaitOp,
     class DescState,
     class ImplBase,
     class Endpoint>
 std::coroutine_handle<>
-reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, ImplBase, Endpoint>::
+reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescState, ImplBase, Endpoint>::
     do_connect(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -355,11 +413,12 @@ template<
     class ConnOp,
     class ReadOp,
     class WriteOp,
+    class WaitOp,
     class DescState,
     class ImplBase,
     class Endpoint>
 std::coroutine_handle<>
-reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, ImplBase, Endpoint>::
+reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescState, ImplBase, Endpoint>::
     do_read_some(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -463,11 +522,12 @@ template<
     class ConnOp,
     class ReadOp,
     class WriteOp,
+    class WaitOp,
     class DescState,
     class ImplBase,
     class Endpoint>
 std::coroutine_handle<>
-reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, ImplBase, Endpoint>::
+reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescState, ImplBase, Endpoint>::
     do_write_some(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -552,6 +612,93 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, DescState, Impl
     this->register_op(
         op, this->desc_state_.write_op, this->desc_state_.write_ready,
         this->desc_state_.write_cancel_pending, true);
+    return std::noop_coroutine();
+}
+
+template<
+    class Derived,
+    class Service,
+    class ConnOp,
+    class ReadOp,
+    class WriteOp,
+    class WaitOp,
+    class DescState,
+    class ImplBase,
+    class Endpoint>
+std::coroutine_handle<>
+reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescState, ImplBase, Endpoint>::
+    do_wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        wait_type w,
+        std::stop_token const& token,
+        std::error_code* ec)
+{
+    // wait_type::write completes immediately on a connected socket,
+    // matching asio's behavior on IOCP. Corosio's reactor backends use
+    // edge-triggered EPOLLOUT, which would never fire on an already-
+    // writable socket; an immediate completion is also a more useful
+    // contract than parking until a non-writable -> writable transition.
+    if (w == wait_type::write)
+    {
+        auto& op = wait_wr_;
+        if (this->svc_.scheduler().try_consume_inline_budget())
+        {
+            *ec               = std::error_code{};
+            op.cont_op.cont.h = h;
+            return dispatch_coro(ex, op.cont_op.cont);
+        }
+        op.reset();
+        op.wait_event = reactor_event_write;
+        op.h          = h;
+        op.ex         = ex;
+        op.ec_out     = ec;
+        op.fd         = this->fd_;
+        op.start(token, static_cast<Derived*>(this));
+        op.impl_ptr = this->shared_from_this();
+        op.complete(0, 0);
+        this->svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
+    // Pick refs up-front to avoid duplicating the register_op call.
+    WaitOp* op_ptr;
+    reactor_op_base** desc_slot_ptr;
+    bool* ready_flag_ptr;
+    bool* cancel_flag_ptr;
+    std::uint32_t event;
+
+    bool dummy_ready = false; // placeholder for error waits (no cached edge)
+
+    if (w == wait_type::read)
+    {
+        op_ptr          = &wait_rd_;
+        desc_slot_ptr   = &this->desc_state_.wait_read_op;
+        ready_flag_ptr  = &this->desc_state_.read_ready;
+        cancel_flag_ptr = &this->desc_state_.wait_read_cancel_pending;
+        event           = reactor_event_read;
+    }
+    else // wait_type::error
+    {
+        op_ptr          = &wait_er_;
+        desc_slot_ptr   = &this->desc_state_.wait_error_op;
+        ready_flag_ptr  = &dummy_ready;
+        cancel_flag_ptr = &this->desc_state_.wait_error_cancel_pending;
+        event           = reactor_event_error;
+    }
+
+    auto& op = *op_ptr;
+    op.reset();
+    op.wait_event = event;
+    op.h          = h;
+    op.ex         = ex;
+    op.ec_out     = ec;
+    op.fd         = this->fd_;
+    op.start(token, static_cast<Derived*>(this));
+    op.impl_ptr = this->shared_from_this();
+
+    this->register_op(op, *desc_slot_ptr, *ready_flag_ptr, *cancel_flag_ptr,
+                      false);
     return std::noop_coroutine();
 }
 

@@ -104,6 +104,12 @@ public:
     void work_started() noexcept;
     void work_finished() noexcept;
 
+    /** Return the owning IOCP scheduler. */
+    win_scheduler& scheduler() noexcept
+    {
+        return sched_;
+    }
+
 private:
     friend class win_local_stream_acceptor_service;
 
@@ -138,6 +144,14 @@ inline local_stream_read_op::local_stream_read_op(
 }
 
 inline local_stream_write_op::local_stream_write_op(
+    win_local_stream_socket_internal& internal_) noexcept
+    : overlapped_op(&do_complete)
+    , internal(internal_)
+{
+    cancel_func_ = &do_cancel_impl;
+}
+
+inline local_stream_wait_op::local_stream_wait_op(
     win_local_stream_socket_internal& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
@@ -183,6 +197,19 @@ local_stream_write_op::do_cancel_impl(overlapped_op* base) noexcept
         ::CancelIoEx(
             reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
     }
+}
+
+inline void
+local_stream_wait_op::do_cancel_impl(overlapped_op* base) noexcept
+{
+    auto* op = static_cast<local_stream_wait_op*>(base);
+    op->cancelled.store(true, std::memory_order_release);
+    if (op->internal.is_open())
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+    }
+    op->internal.svc_.scheduler().cancel_wait_if_constructed(op);
 }
 
 // ============================================================
@@ -278,6 +305,30 @@ local_stream_write_op::do_complete(
 }
 
 // ============================================================
+// wait_op completion handler
+// ============================================================
+
+inline void
+local_stream_wait_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
+{
+    auto* op = static_cast<local_stream_wait_op*>(base);
+
+    if (!owner)
+    {
+        op->cleanup_only();
+        op->internal_ptr.reset();
+        return;
+    }
+
+    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    op->invoke_handler();
+}
+
+// ============================================================
 // win_local_stream_socket_internal
 // ============================================================
 
@@ -287,6 +338,7 @@ inline win_local_stream_socket_internal::win_local_stream_socket_internal(
     , conn_(*this)
     , rd_(*this)
     , wr_(*this)
+    , wt_(*this)
 {
 }
 
@@ -525,6 +577,66 @@ win_local_stream_socket_internal::write_some(
     return std::noop_coroutine();
 }
 
+inline std::coroutine_handle<>
+win_local_stream_socket_internal::wait(
+    std::coroutine_handle<> h,
+    capy::executor_ref d,
+    wait_type w,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    wt_.internal_ptr = shared_from_this();
+
+    auto& op = wt_;
+    op.reset();
+    op.h            = h;
+    op.ex           = d;
+    op.ec_out       = ec;
+    op.bytes_out    = nullptr;
+    op.empty_buffer = true;
+    op.start(token);
+
+    svc_.work_started();
+
+    if (w == wait_type::write)
+    {
+        svc_.on_completion(&op, 0, 0);
+        return std::noop_coroutine();
+    }
+
+    if (w == wait_type::read)
+    {
+        // Zero-byte WSARecv — completes when data is available
+        // without consuming any bytes.
+        op.wsabuf = WSABUF{0, nullptr};
+        op.flags  = 0;
+
+        int result = ::WSARecv(
+            socket_, &op.wsabuf, 1, nullptr, &op.flags, &op, nullptr);
+
+        if (result == SOCKET_ERROR)
+        {
+            DWORD err = ::WSAGetLastError();
+            if (err != WSA_IO_PENDING)
+            {
+                svc_.on_completion(&op, err, 0);
+                return std::noop_coroutine();
+            }
+        }
+
+        svc_.on_pending(&op);
+
+        if (op.cancelled.load(std::memory_order_acquire))
+            ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
+        return std::noop_coroutine();
+    }
+
+    // wait_type::error: route through the auxiliary select reactor.
+    svc_.scheduler().wait_reactor().register_wait(socket_, w, &op);
+    return std::noop_coroutine();
+}
+
 inline void
 win_local_stream_socket_internal::cancel() noexcept
 {
@@ -536,11 +648,16 @@ win_local_stream_socket_internal::cancel() noexcept
     conn_.request_cancel();
     rd_.request_cancel();
     wr_.request_cancel();
+    wt_.request_cancel();
+    svc_.scheduler().cancel_wait_if_constructed(&wt_);
 }
 
 inline void
 win_local_stream_socket_internal::close_socket() noexcept
 {
+    wt_.request_cancel();
+    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+
     if (socket_ != INVALID_SOCKET)
     {
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
@@ -605,6 +722,17 @@ win_local_stream_socket::write_some(
     std::size_t* bytes)
 {
     return internal_->write_some(h, d, buf, token, ec, bytes);
+}
+
+inline std::coroutine_handle<>
+win_local_stream_socket::wait(
+    std::coroutine_handle<> h,
+    capy::executor_ref d,
+    wait_type w,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    return internal_->wait(h, d, w, token, ec);
 }
 
 inline std::error_code

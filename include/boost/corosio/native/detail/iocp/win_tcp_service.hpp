@@ -172,6 +172,12 @@ public:
     /** Notify scheduler that I/O work completed. */
     void work_finished() noexcept;
 
+    /** Return the owning IOCP scheduler. */
+    win_scheduler& scheduler() noexcept
+    {
+        return sched_;
+    }
+
 private:
     friend class win_tcp_acceptor_service;
 

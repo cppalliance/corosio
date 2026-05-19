@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <mutex>
 
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
@@ -46,6 +47,7 @@ namespace boost::corosio::detail {
 // Forward declarations
 struct overlapped_op;
 class win_timers;
+class win_wait_reactor;
 
 class BOOST_COROSIO_DECL win_scheduler final
     : public scheduler
@@ -129,6 +131,31 @@ private:
     mutable win_mutex dispatch_mutex_;
     mutable op_queue completed_ops_;
     std::unique_ptr<win_timers> timers_;
+    std::unique_ptr<win_wait_reactor> wait_reactor_;
+    std::once_flag wait_reactor_once_;
+    std::atomic<bool> wait_reactor_ready_{false};
+
+public:
+    /** Auxiliary select-based reactor for IOCP wait operations.
+
+        Lazily created on first access; lives for the lifetime of the
+        scheduler and is stopped+joined in ~win_scheduler. Used by
+        socket and acceptor wait() implementations whose readiness
+        cannot be expressed natively in IOCP (datagram-read,
+        acceptor-read, error-wait).
+    */
+    win_wait_reactor& wait_reactor();
+
+    /** Cancel a parked wait op only if the reactor exists.
+
+        Safe to call from any thread. If no wait op has ever been
+        registered, the reactor was never constructed, so there is
+        nothing to cancel and we avoid spinning up a thread + wakeup
+        socketpair on the cancel path. Acquire/release pairs with the
+        store in wait_reactor() so reads see a fully-constructed
+        reactor when the flag is true.
+    */
+    void cancel_wait_if_constructed(overlapped_op* op) noexcept;
 };
 
 /*
@@ -206,67 +233,9 @@ inline win_scheduler::win_scheduler(
     ctx.make_service<win_resolver_service>(*this);
 }
 
-inline win_scheduler::~win_scheduler()
-{
-    if (iocp_ != nullptr)
-        ::CloseHandle(iocp_);
-}
-
-inline void
-win_scheduler::shutdown()
-{
-    if (timers_)
-        timers_->stop();
-
-    // Drain timer heap before the work-counting loop. The timer_service
-    // was registered after this scheduler (nested make_service from our
-    // constructor), so execution_context::shutdown() calls us first.
-    // Asio avoids this by owning timer queues directly inside the
-    // scheduler; we bridge the gap by shutting down the timer service
-    // early. The subsequent call from execution_context is a no-op.
-    if (timer_svc_)
-        timer_svc_->shutdown();
-
-    while (::InterlockedExchangeAdd(&outstanding_work_, 0) > 0)
-    {
-        op_queue ops;
-        {
-            std::lock_guard<win_mutex> lock(dispatch_mutex_);
-            ops.splice(completed_ops_);
-        }
-
-        if (!ops.empty())
-        {
-            while (auto* h = ops.pop())
-            {
-                ::InterlockedDecrement(&outstanding_work_);
-                h->destroy();
-            }
-        }
-        else
-        {
-            DWORD bytes;
-            ULONG_PTR key;
-            LPOVERLAPPED overlapped;
-            ::GetQueuedCompletionStatus(
-                iocp_, &bytes, &key, &overlapped, gqcs_timeout_ms_);
-            if (overlapped)
-            {
-                ::InterlockedDecrement(&outstanding_work_);
-                if (key == key_posted)
-                {
-                    auto* op = reinterpret_cast<scheduler_op*>(overlapped);
-                    op->destroy();
-                }
-                else
-                {
-                    auto* op = overlapped_to_op(overlapped);
-                    op->destroy();
-                }
-            }
-        }
-    }
-}
+// ~win_scheduler() and shutdown() are defined at the bottom of this
+// header so the unique_ptr<win_wait_reactor>'s deleter and
+// wait_reactor_->stop() see the type complete.
 
 inline void
 win_scheduler::post(std::coroutine_handle<> h) const
@@ -688,6 +657,114 @@ win_scheduler::update_timeout()
 {
     if (timer_svc_ && timers_)
         timers_->update_timeout(timer_svc_->nearest_expiry());
+}
+
+} // namespace boost::corosio::detail
+
+// Defer including the auxiliary wait reactor until the scheduler is
+// fully defined, since the reactor's inline methods call back into
+// win_scheduler. This also gives the dtor and wait_reactor() below a
+// complete win_wait_reactor type for unique_ptr destruction and
+// lazy construction.
+//
+// The macro lets win_wait_reactor.hpp diagnose direct inclusion
+// (which would land it here with win_scheduler still incomplete).
+#define BOOST_COROSIO_DETAIL_IOCP_WIN_SCHEDULER_BODY_DONE
+#include <boost/corosio/native/detail/iocp/win_wait_reactor.hpp>
+
+namespace boost::corosio::detail {
+
+inline void
+win_scheduler::shutdown()
+{
+    if (timers_)
+        timers_->stop();
+
+    // Drain timer heap before the work-counting loop. The timer_service
+    // was registered after this scheduler (nested make_service from our
+    // constructor), so execution_context::shutdown() calls us first.
+    // Asio avoids this by owning timer queues directly inside the
+    // scheduler; we bridge the gap by shutting down the timer service
+    // early. The subsequent call from execution_context is a no-op.
+    if (timer_svc_)
+        timer_svc_->shutdown();
+
+    // Same problem for the auxiliary wait reactor: ops parked in it
+    // hold work_started credit. Stop the reactor early so its loop
+    // drains them as cancelled and the work counter can reach zero.
+    if (wait_reactor_ready_.load(std::memory_order_acquire))
+        wait_reactor_->stop();
+
+    while (::InterlockedExchangeAdd(&outstanding_work_, 0) > 0)
+    {
+        op_queue ops;
+        {
+            std::lock_guard<win_mutex> lock(dispatch_mutex_);
+            ops.splice(completed_ops_);
+        }
+
+        if (!ops.empty())
+        {
+            while (auto* h = ops.pop())
+            {
+                ::InterlockedDecrement(&outstanding_work_);
+                h->destroy();
+            }
+        }
+        else
+        {
+            DWORD bytes;
+            ULONG_PTR key;
+            LPOVERLAPPED overlapped;
+            ::GetQueuedCompletionStatus(
+                iocp_, &bytes, &key, &overlapped, gqcs_timeout_ms_);
+            if (overlapped)
+            {
+                ::InterlockedDecrement(&outstanding_work_);
+                if (key == key_posted)
+                {
+                    auto* op = reinterpret_cast<scheduler_op*>(overlapped);
+                    op->destroy();
+                }
+                else
+                {
+                    auto* op = overlapped_to_op(overlapped);
+                    op->destroy();
+                }
+            }
+        }
+    }
+}
+
+inline win_scheduler::~win_scheduler()
+{
+    if (wait_reactor_)
+        wait_reactor_->stop();
+    wait_reactor_.reset();
+
+    if (iocp_ != nullptr)
+        ::CloseHandle(iocp_);
+}
+
+inline win_wait_reactor&
+win_scheduler::wait_reactor()
+{
+    // Lazy thread-safe init: multiple IOCP workers may race the first
+    // wait() call. wait_reactor_ready_ is set with release ordering
+    // after construction so cancel_wait_if_constructed can safely
+    // observe the reactor without forcing construction itself.
+    std::call_once(wait_reactor_once_, [this] {
+        wait_reactor_ = std::make_unique<win_wait_reactor>(*this);
+        wait_reactor_ready_.store(true, std::memory_order_release);
+    });
+    return *wait_reactor_;
+}
+
+inline void
+win_scheduler::cancel_wait_if_constructed(overlapped_op* op) noexcept
+{
+    if (wait_reactor_ready_.load(std::memory_order_acquire))
+        wait_reactor_->cancel_wait(op);
 }
 
 } // namespace boost::corosio::detail

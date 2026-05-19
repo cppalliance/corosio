@@ -17,6 +17,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
@@ -88,6 +89,32 @@ struct write_op : overlapped_op
     explicit write_op(win_tcp_socket_internal& internal_) noexcept;
 };
 
+/** Readiness-wait operation state.
+
+    Completion conveys an error_code only (no bytes_transferred).
+    wait_type::read posts a zero-byte WSARecv: the kernel signals
+    completion when data arrives without consuming it.
+    wait_type::write short-circuits through the scheduler queue.
+    wait_type::error parks the op in the auxiliary select reactor
+    until the kernel reports an error condition.
+*/
+struct wait_op : overlapped_op
+{
+    WSABUF wsabuf{};
+    DWORD flags = 0;
+    win_tcp_socket_internal& internal;
+    std::shared_ptr<win_tcp_socket_internal> internal_ptr;
+
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t bytes,
+        std::uint32_t error);
+    static void do_cancel_impl(overlapped_op* op) noexcept;
+
+    explicit wait_op(win_tcp_socket_internal& internal_) noexcept;
+};
+
 /** Internal socket state for IOCP-based I/O.
 
     This class contains the actual state for a single socket, including
@@ -105,11 +132,13 @@ class win_tcp_socket_internal
     friend struct read_op;
     friend struct write_op;
     friend struct connect_op;
+    friend struct wait_op;
 
     win_tcp_service& svc_;
     connect_op conn_;
     read_op rd_;
     write_op wr_;
+    wait_op wt_;
     SOCKET socket_ = INVALID_SOCKET;
     int family_    = AF_UNSPEC;
 
@@ -139,6 +168,13 @@ public:
         std::stop_token,
         std::error_code*,
         std::size_t*);
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        wait_type,
+        std::stop_token,
+        std::error_code*);
 
     SOCKET native_handle() const noexcept;
     endpoint local_endpoint() const noexcept;
@@ -194,6 +230,13 @@ public:
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override;
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref d,
+        wait_type w,
+        std::stop_token token,
+        std::error_code* ec) override;
 
     std::error_code shutdown(tcp_socket::shutdown_type what) noexcept override;
 

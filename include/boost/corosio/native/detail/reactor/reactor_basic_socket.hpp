@@ -57,10 +57,10 @@ class reactor_basic_socket
 {
     friend Derived;
 
-    template<class, class, class, class, class, class, class, class>
+    template<class, class, class, class, class, class, class, class, class>
     friend class reactor_stream_socket;
 
-    template<class, class, class, class, class, class, class, class, class, class>
+    template<class, class, class, class, class, class, class, class, class, class, class>
     friend class reactor_datagram_socket;
 
     explicit reactor_basic_socket(Service& svc) noexcept : svc_(svc) {}
@@ -333,8 +333,8 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
         reactor_op_base* op   = nullptr;
         reactor_op_base* base = nullptr;
     };
-    // Max 3 ops (conn, rd, wr)
-    claimed_entry claimed[3];
+    // Max 8 ops: conn, rd, wr, wait_rd, wait_wr, wait_er, recv_rd, send_wr
+    claimed_entry claimed[8];
     int count = 0;
 
     {
@@ -373,7 +373,7 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
         {
             reactor_op_base* base = nullptr;
         };
-        claimed_entry claimed[3];
+        claimed_entry claimed[8];
         int count = 0;
 
         {
@@ -389,9 +389,12 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
                 });
             desc_state_.read_ready             = false;
             desc_state_.write_ready            = false;
-            desc_state_.read_cancel_pending    = false;
-            desc_state_.write_cancel_pending   = false;
-            desc_state_.connect_cancel_pending = false;
+            desc_state_.read_cancel_pending       = false;
+            desc_state_.write_cancel_pending      = false;
+            desc_state_.connect_cancel_pending    = false;
+            desc_state_.wait_read_cancel_pending  = false;
+            desc_state_.wait_write_cancel_pending = false;
+            desc_state_.wait_error_cancel_pending = false;
 
             if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
                 desc_state_.impl_ref_ = self;
@@ -436,7 +439,7 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
         {
             reactor_op_base* base = nullptr;
         };
-        claimed_entry claimed[3];
+        claimed_entry claimed[8];
         int count = 0;
 
         {
@@ -452,9 +455,12 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
                 });
             desc_state_.read_ready             = false;
             desc_state_.write_ready            = false;
-            desc_state_.read_cancel_pending    = false;
-            desc_state_.write_cancel_pending   = false;
-            desc_state_.connect_cancel_pending = false;
+            desc_state_.read_cancel_pending       = false;
+            desc_state_.write_cancel_pending      = false;
+            desc_state_.connect_cancel_pending    = false;
+            desc_state_.wait_read_cancel_pending  = false;
+            desc_state_.wait_write_cancel_pending = false;
+            desc_state_.wait_error_cancel_pending = false;
 
             if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
                 desc_state_.impl_ref_ = self;

@@ -61,6 +61,7 @@ class reactor_stream_socket_impl
           reactor_stream_connect_op<Traits, Derived, AcceptorType, Endpoint>,
           reactor_stream_read_op<Traits, Derived, AcceptorType, Endpoint>,
           reactor_stream_write_op<Traits, Derived, AcceptorType, Endpoint>,
+          reactor_stream_wait_op<Traits, Derived, AcceptorType, Endpoint>,
           typename Traits::desc_state_type,
           ImplBase,
           Endpoint>
@@ -121,6 +122,7 @@ class reactor_dgram_socket_impl
           reactor_dgram_recv_from_op<Traits, Derived, AcceptorType, Endpoint>,
           reactor_dgram_send_op<Traits, Derived, AcceptorType, Endpoint>,
           reactor_dgram_recv_op<Traits, Derived, AcceptorType, Endpoint>,
+          reactor_dgram_wait_op<Traits, Derived, AcceptorType, Endpoint>,
           typename Traits::desc_state_type,
           ImplBase,
           Endpoint>
@@ -160,6 +162,7 @@ class reactor_acceptor_impl
           Service,
           reactor_stream_base_op<Traits, SocketFinal, Derived, Endpoint>,
           reactor_stream_accept_op<Traits, SocketFinal, Derived, Endpoint>,
+          reactor_stream_wait_op<Traits, SocketFinal, Derived, Endpoint>,
           typename Traits::desc_state_type,
           AccImplBase,
           Endpoint>
