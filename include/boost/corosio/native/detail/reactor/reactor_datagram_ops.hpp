@@ -71,6 +71,14 @@ struct reactor_dgram_recv_op final
     void operator()() override;
 };
 
+template<class Traits, class Socket, class DummyAcc, class Endpoint>
+struct reactor_dgram_wait_op final
+    : reactor_wait_op<
+          reactor_dgram_base_op<Traits, Socket, DummyAcc, Endpoint>>
+{
+    void operator()() override;
+};
+
 // --- Deferred implementations ---
 
 template<class Traits, class Socket, class DummyAcc, class Endpoint>
@@ -110,6 +118,13 @@ reactor_dgram_recv_op<Traits, Socket, DummyAcc, Endpoint>::operator()()
 {
     // Datagram completion: zero-length datagrams are valid, not EOF.
     complete_datagram_op(*this);
+}
+
+template<class Traits, class Socket, class DummyAcc, class Endpoint>
+void
+reactor_dgram_wait_op<Traits, Socket, DummyAcc, Endpoint>::operator()()
+{
+    complete_wait_op(*this);
 }
 
 } // namespace boost::corosio::detail

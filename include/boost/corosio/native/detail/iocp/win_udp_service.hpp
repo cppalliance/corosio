@@ -79,6 +79,12 @@ public:
     void work_started() noexcept;
     void work_finished() noexcept;
 
+    /** Return the owning IOCP scheduler. */
+    win_scheduler& scheduler() noexcept
+    {
+        return sched_;
+    }
+
 private:
     win_scheduler& sched_;
     win_mutex mutex_;
@@ -119,6 +125,13 @@ inline udp_send_op::udp_send_op(win_udp_socket_internal& internal_) noexcept
 }
 
 inline udp_recv_op::udp_recv_op(win_udp_socket_internal& internal_) noexcept
+    : overlapped_op(&do_complete)
+    , internal(internal_)
+{
+    cancel_func_ = &do_cancel_impl;
+}
+
+inline udp_wait_op::udp_wait_op(win_udp_socket_internal& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
@@ -236,6 +249,19 @@ udp_recv_op::do_cancel_impl(overlapped_op* base) noexcept
     }
 }
 
+inline void
+udp_wait_op::do_cancel_impl(overlapped_op* base) noexcept
+{
+    auto* op = static_cast<udp_wait_op*>(base);
+    op->cancelled.store(true, std::memory_order_release);
+    if (op->internal.is_open())
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+    }
+    op->internal.svc_.scheduler().cancel_wait_if_constructed(op);
+}
+
 // Connected-mode completion handlers
 
 inline void
@@ -312,6 +338,26 @@ udp_recv_op::do_complete(
     op->invoke_handler();
 }
 
+inline void
+udp_wait_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
+{
+    auto* op = static_cast<udp_wait_op*>(base);
+
+    if (!owner)
+    {
+        op->cleanup_only();
+        op->internal_ptr.reset();
+        return;
+    }
+
+    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    op->invoke_handler();
+}
+
 // win_udp_socket_internal
 
 inline win_udp_socket_internal::win_udp_socket_internal(
@@ -322,6 +368,7 @@ inline win_udp_socket_internal::win_udp_socket_internal(
     , conn_(*this)
     , send_wr_(*this)
     , recv_rd_(*this)
+    , wt_(*this)
 {
 }
 
@@ -640,6 +687,41 @@ win_udp_socket_internal::recv(
     return std::noop_coroutine();
 }
 
+inline std::coroutine_handle<>
+win_udp_socket_internal::wait(
+    std::coroutine_handle<> h,
+    capy::executor_ref d,
+    wait_type w,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    wt_.internal_ptr = shared_from_this();
+
+    auto& op = wt_;
+    op.reset();
+    op.h         = h;
+    op.ex        = d;
+    op.ec_out    = ec;
+    op.bytes_out = nullptr;
+    op.start(token);
+
+    svc_.work_started();
+
+    if (w == wait_type::write)
+    {
+        svc_.on_completion(&op, 0, 0);
+        return std::noop_coroutine();
+    }
+
+    // Datagram wait_read and wait_error route through the auxiliary
+    // select reactor: there's no IOCP-native primitive for "datagram
+    // readable without dequeuing the message" (zero-byte WSARecvFrom
+    // would discard the next datagram), and wait_error needs the
+    // reactor for the kernel-error signal in any case.
+    svc_.scheduler().wait_reactor().register_wait(socket_, w, &op);
+    return std::noop_coroutine();
+}
+
 inline void
 win_udp_socket_internal::cancel() noexcept
 {
@@ -653,11 +735,16 @@ win_udp_socket_internal::cancel() noexcept
     conn_.request_cancel();
     send_wr_.request_cancel();
     recv_rd_.request_cancel();
+    wt_.request_cancel();
+    svc_.scheduler().cancel_wait_if_constructed(&wt_);
 }
 
 inline void
 win_udp_socket_internal::close_socket() noexcept
 {
+    wt_.request_cancel();
+    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+
     if (socket_ != INVALID_SOCKET)
     {
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
@@ -752,6 +839,17 @@ win_udp_socket::recv(
     std::size_t* bytes)
 {
     return internal_->recv(h, d, buf, flags, token, ec, bytes);
+}
+
+inline std::coroutine_handle<>
+win_udp_socket::wait(
+    std::coroutine_handle<> h,
+    capy::executor_ref d,
+    wait_type w,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    return internal_->wait(h, d, w, token, ec);
 }
 
 inline native_handle_type

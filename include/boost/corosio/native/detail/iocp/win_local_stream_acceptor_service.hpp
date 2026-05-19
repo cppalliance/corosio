@@ -90,6 +90,28 @@ local_stream_accept_op::do_cancel_impl(overlapped_op* base) noexcept
     }
 }
 
+inline local_stream_acceptor_wait_op::local_stream_acceptor_wait_op() noexcept
+    : overlapped_op(&do_complete)
+{
+    cancel_func_ = &do_cancel_impl;
+}
+
+inline void
+local_stream_acceptor_wait_op::do_cancel_impl(overlapped_op* base) noexcept
+{
+    auto* op = static_cast<local_stream_acceptor_wait_op*>(base);
+    op->cancelled.store(true, std::memory_order_release);
+    if (op->listen_socket != INVALID_SOCKET)
+    {
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->listen_socket), op);
+    }
+    if (op->acceptor_ptr)
+    {
+        op->acceptor_ptr->socket_service().scheduler()
+            .cancel_wait_if_constructed(op);
+    }
+}
+
 // accept_op completion handler
 
 inline void
@@ -191,6 +213,26 @@ local_stream_accept_op::do_complete(
     dispatch_coro(saved_ex, op->cont_op.cont).resume();
 }
 
+inline void
+local_stream_acceptor_wait_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
+{
+    auto* op = static_cast<local_stream_acceptor_wait_op*>(base);
+
+    if (!owner)
+    {
+        op->cleanup_only();
+        op->acceptor_ptr.reset();
+        return;
+    }
+
+    auto prevent_premature_destruction = std::move(op->acceptor_ptr);
+    op->invoke_handler();
+}
+
 // ============================================================
 // win_local_stream_acceptor_internal
 // ============================================================
@@ -243,11 +285,49 @@ win_local_stream_acceptor_internal::cancel() noexcept
     if (socket_ != INVALID_SOCKET)
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
     acc_.request_cancel();
+    wt_.request_cancel();
+    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+}
+
+inline std::coroutine_handle<>
+win_local_stream_acceptor_internal::wait(
+    std::coroutine_handle<> h,
+    capy::executor_ref d,
+    wait_type w,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    wt_.acceptor_ptr  = shared_from_this();
+    wt_.listen_socket = socket_;
+
+    auto& op = wt_;
+    op.reset();
+    op.h         = h;
+    op.ex        = d;
+    op.ec_out    = ec;
+    op.bytes_out = nullptr;
+    op.start(token);
+
+    svc_.work_started();
+
+    if (w == wait_type::write)
+    {
+        svc_.on_completion(&op, 0, 0);
+        return std::noop_coroutine();
+    }
+
+    // wait_type::read and wait_type::error route through the auxiliary
+    // select reactor.
+    svc_.scheduler().wait_reactor().register_wait(socket_, w, &op);
+    return std::noop_coroutine();
 }
 
 inline void
 win_local_stream_acceptor_internal::close_socket() noexcept
 {
+    wt_.request_cancel();
+    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+
     if (socket_ != INVALID_SOCKET)
     {
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
@@ -385,6 +465,17 @@ win_local_stream_acceptor::accept(
     io_object::implementation** impl_out)
 {
     return internal_->accept(h, d, token, ec, impl_out);
+}
+
+inline std::coroutine_handle<>
+win_local_stream_acceptor::wait(
+    std::coroutine_handle<> h,
+    capy::executor_ref d,
+    wait_type w,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    return internal_->wait(h, d, w, token, ec);
 }
 
 inline corosio::local_endpoint

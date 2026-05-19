@@ -13,6 +13,8 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/detail/op_base.hpp>
+#include <boost/corosio/wait_type.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/endpoint.hpp>
@@ -80,6 +82,22 @@ namespace boost::corosio {
 */
 class BOOST_COROSIO_DECL tcp_acceptor : public io_object
 {
+    struct wait_awaitable
+        : detail::void_op_base<wait_awaitable>
+    {
+        tcp_acceptor& acc_;
+        wait_type w_;
+
+        wait_awaitable(tcp_acceptor& acc, wait_type w) noexcept
+            : acc_(acc), w_(w) {}
+
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
+        {
+            return acc_.get().wait(h, ex, w_, token_, &ec_);
+        }
+    };
+
     struct accept_awaitable
     {
         tcp_acceptor& acc_;
@@ -331,6 +349,29 @@ public:
         return accept_awaitable(*this, peer);
     }
 
+    /** Wait for an incoming connection or readiness condition.
+
+        Suspends until the listen socket is ready in the
+        requested direction, or an error condition is reported.
+        For `wait_type::read`, completion signals that a
+        subsequent @ref accept will succeed without blocking.
+        No connection is consumed.
+
+        @param w The wait direction.
+
+        @return An awaitable that completes with `io_result<>`.
+
+        @par Preconditions
+        The acceptor must be listening. This acceptor must
+        outlive the returned awaitable.
+    */
+    [[nodiscard]] auto wait(wait_type w)
+    {
+        if (!is_open())
+            detail::throw_logic_error("wait: acceptor not listening");
+        return wait_awaitable(*this, w);
+    }
+
     /** Cancel any pending asynchronous operations.
 
         All outstanding operations complete with `errc::operation_canceled`.
@@ -431,6 +472,20 @@ public:
             std::stop_token,
             std::error_code*,
             io_object::implementation**) = 0;
+
+        /** Initiate an asynchronous wait for acceptor readiness.
+
+            Completes when the listen socket becomes ready for
+            the specified direction (typically `wait_type::read`
+            for an incoming connection), or an error condition is
+            reported. No connection is consumed.
+        */
+        virtual std::coroutine_handle<> wait(
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
+            wait_type w,
+            std::stop_token token,
+            std::error_code* ec) = 0;
 
         /// Returns the cached local endpoint.
         virtual endpoint local_endpoint() const noexcept = 0;

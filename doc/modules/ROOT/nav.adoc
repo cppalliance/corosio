@@ -38,6 +38,7 @@
 ** xref:4.guide/4o.file-io.adoc[File I/O]
 ** xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets]
 ** xref:4.guide/4q.udp.adoc[UDP Sockets]
+** xref:4.guide/4r.wait.adoc[Readiness Wait]
 * xref:5.testing/5.intro.adoc[Testing]
 ** xref:5.testing/5a.mocket.adoc[Mock Sockets]
 ** xref:5.testing/5b.socket-pair.adoc[Socket Pairs]

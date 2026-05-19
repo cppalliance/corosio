@@ -173,6 +173,46 @@ struct reactor_connect_op : Base
     }
 };
 
+/** Readiness-only wait operation.
+
+    Does not perform any I/O syscall. Completion is signalled by
+    the reactor delivering the requested edge event; reactor_descriptor_state
+    calls complete() directly and never invokes perform_io().
+
+    @tparam Base The backend's base op type.
+*/
+template<class Base>
+struct reactor_wait_op : Base
+{
+    /* Mirror of reactor_event_read from reactor_descriptor_state.hpp.
+       Including that header from here would create an include cycle
+       (descriptor_state -> reactor_op_base; reactor_op -> reactor_op_base),
+       so we carry the value locally. Both must stay in sync. */
+    static constexpr std::uint32_t read_event = 0x001;
+
+    /// Which event bit this wait targets (reactor_event_read/write/error).
+    std::uint32_t wait_event = 0;
+
+    void reset() noexcept
+    {
+        Base::reset();
+        wait_event = 0;
+    }
+
+    bool is_read_operation() const noexcept override
+    {
+        return wait_event == read_event;
+    }
+
+    /* perform_io() should never be called for a wait op — readiness
+       IS the completion. Overridden here to satisfy the virtual and
+       produce a safe result if called defensively. */
+    void perform_io() noexcept override
+    {
+        this->complete(0, 0);
+    }
+};
+
 /** Shared scatter-read operation.
 
     Uses readv() with an EINTR retry loop.

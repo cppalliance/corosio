@@ -16,6 +16,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
+#include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
@@ -90,6 +91,25 @@ struct local_stream_write_op : overlapped_op
         win_local_stream_socket_internal& internal_) noexcept;
 };
 
+/** Readiness-wait operation state for local stream sockets. */
+struct local_stream_wait_op : overlapped_op
+{
+    WSABUF wsabuf{};
+    DWORD flags = 0;
+    win_local_stream_socket_internal& internal;
+    std::shared_ptr<win_local_stream_socket_internal> internal_ptr;
+
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t bytes,
+        std::uint32_t error);
+    static void do_cancel_impl(overlapped_op* op) noexcept;
+
+    explicit local_stream_wait_op(
+        win_local_stream_socket_internal& internal_) noexcept;
+};
+
 /* Internal socket state for IOCP local stream I/O.
 
    Holds the native SOCKET handle, cached endpoints, and
@@ -106,11 +126,13 @@ class win_local_stream_socket_internal
     friend struct local_stream_read_op;
     friend struct local_stream_write_op;
     friend struct local_stream_connect_op;
+    friend struct local_stream_wait_op;
 
     win_local_stream_service& svc_;
     local_stream_connect_op conn_;
     local_stream_read_op rd_;
     local_stream_write_op wr_;
+    local_stream_wait_op wt_;
     SOCKET socket_ = INVALID_SOCKET;
 
 public:
@@ -140,6 +162,13 @@ public:
         std::stop_token,
         std::error_code*,
         std::size_t*);
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        wait_type,
+        std::stop_token,
+        std::error_code*);
 
     SOCKET native_handle() const noexcept;
     corosio::local_endpoint local_endpoint() const noexcept;
@@ -197,6 +226,13 @@ public:
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override;
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref d,
+        wait_type w,
+        std::stop_token token,
+        std::error_code* ec) override;
 
     std::error_code shutdown(
         local_stream_socket::shutdown_type what) noexcept override;

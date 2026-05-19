@@ -71,6 +71,14 @@ struct reactor_stream_accept_op final
     void operator()() override;
 };
 
+template<class Traits, class Socket, class Acceptor, class Endpoint>
+struct reactor_stream_wait_op final
+    : reactor_wait_op<
+          reactor_stream_base_op<Traits, Socket, Acceptor, Endpoint>>
+{
+    void operator()() override;
+};
+
 // --- Deferred implementations (instantiated when Socket/Acceptor are complete) ---
 
 template<class Traits, class Socket, class Acceptor, class Endpoint>
@@ -104,6 +112,13 @@ void
 reactor_stream_accept_op<Traits, Socket, Acceptor, Endpoint>::operator()()
 {
     complete_accept_op<Socket>(*this);
+}
+
+template<class Traits, class Socket, class Acceptor, class Endpoint>
+void
+reactor_stream_wait_op<Traits, Socket, Acceptor, Endpoint>::operator()()
+{
+    complete_wait_op(*this);
 }
 
 } // namespace boost::corosio::detail

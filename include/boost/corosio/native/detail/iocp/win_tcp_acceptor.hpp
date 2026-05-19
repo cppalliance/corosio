@@ -16,6 +16,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
@@ -54,6 +55,22 @@ struct accept_op : overlapped_op
     accept_op() noexcept;
 };
 
+/** Readiness-wait operation state for an acceptor. */
+struct acceptor_wait_op : overlapped_op
+{
+    std::shared_ptr<win_tcp_acceptor_internal> acceptor_ptr;
+    SOCKET listen_socket = INVALID_SOCKET;
+
+    static void do_complete(
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t bytes,
+        std::uint32_t error);
+    static void do_cancel_impl(overlapped_op* op) noexcept;
+
+    acceptor_wait_op() noexcept;
+};
+
 /** Internal acceptor state for IOCP-based I/O.
 
     This class contains the actual state for a listening socket, including
@@ -82,6 +99,13 @@ public:
         std::error_code*,
         io_object::implementation**);
 
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<>,
+        capy::executor_ref,
+        wait_type,
+        std::stop_token,
+        std::error_code*);
+
     SOCKET native_handle() const noexcept;
     endpoint local_endpoint() const noexcept;
     bool is_open() const noexcept;
@@ -90,6 +114,7 @@ public:
     void set_local_endpoint(endpoint ep) noexcept;
 
     accept_op acc_;
+    acceptor_wait_op wt_;
 
 private:
     win_tcp_service& svc_;
@@ -122,6 +147,13 @@ public:
         std::stop_token token,
         std::error_code* ec,
         io_object::implementation** impl_out) override;
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref d,
+        wait_type w,
+        std::stop_token token,
+        std::error_code* ec) override;
 
     endpoint local_endpoint() const noexcept override;
     bool is_open() const noexcept override;

@@ -94,7 +94,20 @@ inline write_op::write_op(win_tcp_socket_internal& internal_) noexcept
     cancel_func_ = &do_cancel_impl;
 }
 
+inline wait_op::wait_op(win_tcp_socket_internal& internal_) noexcept
+    : overlapped_op(&do_complete)
+    , internal(internal_)
+{
+    cancel_func_ = &do_cancel_impl;
+}
+
 inline accept_op::accept_op() noexcept : overlapped_op(&do_complete)
+{
+    cancel_func_ = &do_cancel_impl;
+}
+
+inline acceptor_wait_op::acceptor_wait_op() noexcept
+    : overlapped_op(&do_complete)
 {
     cancel_func_ = &do_cancel_impl;
 }
@@ -137,12 +150,48 @@ write_op::do_cancel_impl(overlapped_op* base) noexcept
 }
 
 inline void
+wait_op::do_cancel_impl(overlapped_op* base) noexcept
+{
+    auto* op = static_cast<wait_op*>(base);
+    op->cancelled.store(true, std::memory_order_release);
+    // Best-effort cancel of any pending zero-byte WSARecv issued for
+    // wait_type::read. ERROR_NOT_FOUND when nothing overlapped is
+    // pending is harmless.
+    if (op->internal.is_open())
+    {
+        ::CancelIoEx(
+            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+    }
+    // wait_type::error parks the op in the auxiliary select reactor;
+    // wake it so the reactor can post a cancelled completion. No-op
+    // if the reactor was never constructed (e.g. zero-byte WSARecv
+    // path was the only thing this socket ever did).
+    op->internal.svc_.scheduler().cancel_wait_if_constructed(op);
+}
+
+inline void
 accept_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<accept_op*>(base);
     if (op->listen_socket != INVALID_SOCKET)
     {
         ::CancelIoEx(reinterpret_cast<HANDLE>(op->listen_socket), op);
+    }
+}
+
+inline void
+acceptor_wait_op::do_cancel_impl(overlapped_op* base) noexcept
+{
+    auto* op = static_cast<acceptor_wait_op*>(base);
+    op->cancelled.store(true, std::memory_order_release);
+    if (op->listen_socket != INVALID_SOCKET)
+    {
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->listen_socket), op);
+    }
+    if (op->acceptor_ptr)
+    {
+        op->acceptor_ptr->socket_service().scheduler()
+            .cancel_wait_if_constructed(op);
     }
 }
 
@@ -245,6 +294,28 @@ accept_op::do_complete(
     dispatch_coro(saved_ex, op->cont_op.cont).resume();
 }
 
+// acceptor_wait_op completion handler
+
+inline void
+acceptor_wait_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
+{
+    auto* op = static_cast<acceptor_wait_op*>(base);
+
+    if (!owner)
+    {
+        op->cleanup_only();
+        op->acceptor_ptr.reset();
+        return;
+    }
+
+    auto prevent_premature_destruction = std::move(op->acceptor_ptr);
+    op->invoke_handler();
+}
+
 // connect_op completion handler
 
 inline void
@@ -330,6 +401,28 @@ write_op::do_complete(
     op->invoke_handler();
 }
 
+// wait_op completion handler
+
+inline void
+wait_op::do_complete(
+    void* owner,
+    scheduler_op* base,
+    std::uint32_t /*bytes*/,
+    std::uint32_t /*error*/)
+{
+    auto* op = static_cast<wait_op*>(base);
+
+    if (!owner)
+    {
+        op->cleanup_only();
+        op->internal_ptr.reset();
+        return;
+    }
+
+    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    op->invoke_handler();
+}
+
 // win_tcp_socket_internal
 
 inline win_tcp_socket_internal::win_tcp_socket_internal(win_tcp_service& svc) noexcept
@@ -337,6 +430,7 @@ inline win_tcp_socket_internal::win_tcp_socket_internal(win_tcp_service& svc) no
     , conn_(*this)
     , rd_(*this)
     , wr_(*this)
+    , wt_(*this)
 {
 }
 
@@ -593,6 +687,71 @@ win_tcp_socket_internal::write_some(
     return std::noop_coroutine();
 }
 
+inline std::coroutine_handle<>
+win_tcp_socket_internal::wait(
+    std::coroutine_handle<> h,
+    capy::executor_ref d,
+    wait_type w,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    wt_.internal_ptr = shared_from_this();
+
+    auto& op = wt_;
+    op.reset();
+    op.h            = h;
+    op.ex           = d;
+    op.ec_out       = ec;
+    op.bytes_out    = nullptr;
+    op.empty_buffer = true; // skip EOF translation in invoke_handler
+    op.start(token);
+
+    svc_.work_started();
+
+    if (w == wait_type::write)
+    {
+        // Match asio's IOCP behavior and corosio's reactor contract:
+        // wait_type::write completes immediately on a connected socket.
+        svc_.on_completion(&op, 0, 0);
+        return std::noop_coroutine();
+    }
+
+    if (w == wait_type::read)
+    {
+        // Zero-byte WSARecv: kernel signals completion when data is
+        // available without consuming any bytes from the stream. This
+        // is the documented Winsock pattern for "is the socket
+        // readable" notifications.
+        op.wsabuf = WSABUF{0, nullptr};
+        op.flags  = 0;
+
+        int result = ::WSARecv(
+            socket_, &op.wsabuf, 1, nullptr, &op.flags, &op, nullptr);
+
+        if (result == SOCKET_ERROR)
+        {
+            DWORD err = ::WSAGetLastError();
+            if (err != WSA_IO_PENDING)
+            {
+                svc_.on_completion(&op, err, 0);
+                return std::noop_coroutine();
+            }
+        }
+
+        svc_.on_pending(&op);
+
+        // Re-check cancellation after I/O is pending.
+        if (op.cancelled.load(std::memory_order_acquire))
+            ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
+        return std::noop_coroutine();
+    }
+
+    // wait_type::error: route through the auxiliary select reactor.
+    svc_.scheduler().wait_reactor().register_wait(socket_, w, &op);
+    return std::noop_coroutine();
+}
+
 inline void
 win_tcp_socket_internal::cancel() noexcept
 {
@@ -604,11 +763,25 @@ win_tcp_socket_internal::cancel() noexcept
     conn_.request_cancel();
     rd_.request_cancel();
     wr_.request_cancel();
+    wt_.request_cancel();
+    // CancelIoEx covers overlapped I/O on the socket but cannot reach
+    // a wait op parked in the auxiliary reactor (no overlapped is
+    // outstanding). Route through the reactor explicitly. Safe no-op
+    // if the reactor was never constructed.
+    svc_.scheduler().cancel_wait_if_constructed(&wt_);
 }
 
 inline void
 win_tcp_socket_internal::close_socket() noexcept
 {
+    // Tear down any aux-reactor-parked wait op before closing the
+    // SOCKET handle. Otherwise the reactor would keep polling a
+    // dangling fd (and on a Winsock SOCKET-id reuse the wrong fd
+    // could be polled briefly). The cancel happens-before the
+    // closesocket below.
+    wt_.request_cancel();
+    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+
     if (socket_ != INVALID_SOCKET)
     {
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
@@ -674,6 +847,17 @@ win_tcp_socket::write_some(
     std::size_t* bytes)
 {
     return internal_->write_some(h, d, buf, token, ec, bytes);
+}
+
+inline std::coroutine_handle<>
+win_tcp_socket::wait(
+    std::coroutine_handle<> h,
+    capy::executor_ref d,
+    wait_type w,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    return internal_->wait(h, d, w, token, ec);
 }
 
 inline std::error_code
@@ -1204,6 +1388,39 @@ win_tcp_acceptor_internal::accept(
     return std::noop_coroutine();
 }
 
+inline std::coroutine_handle<>
+win_tcp_acceptor_internal::wait(
+    std::coroutine_handle<> h,
+    capy::executor_ref d,
+    wait_type w,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    wt_.acceptor_ptr  = shared_from_this();
+    wt_.listen_socket = socket_;
+
+    auto& op = wt_;
+    op.reset();
+    op.h         = h;
+    op.ex        = d;
+    op.ec_out    = ec;
+    op.bytes_out = nullptr;
+    op.start(token);
+
+    svc_.work_started();
+
+    if (w == wait_type::write)
+    {
+        svc_.on_completion(&op, 0, 0);
+        return std::noop_coroutine();
+    }
+
+    // wait_type::read (incoming connection ready) and wait_type::error
+    // on the listen socket route through the auxiliary select reactor.
+    svc_.scheduler().wait_reactor().register_wait(socket_, w, &op);
+    return std::noop_coroutine();
+}
+
 inline void
 win_tcp_acceptor_internal::cancel() noexcept
 {
@@ -1213,11 +1430,17 @@ win_tcp_acceptor_internal::cancel() noexcept
     }
 
     acc_.request_cancel();
+    wt_.request_cancel();
+    svc_.scheduler().cancel_wait_if_constructed(&wt_);
 }
 
 inline void
 win_tcp_acceptor_internal::close_socket() noexcept
 {
+    // Tear down any aux-reactor-parked wait op first.
+    wt_.request_cancel();
+    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+
     if (socket_ != INVALID_SOCKET)
     {
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
@@ -1256,6 +1479,17 @@ win_tcp_acceptor::accept(
     io_object::implementation** impl_out)
 {
     return internal_->accept(h, d, token, ec, impl_out);
+}
+
+inline std::coroutine_handle<>
+win_tcp_acceptor::wait(
+    std::coroutine_handle<> h,
+    capy::executor_ref d,
+    wait_type w,
+    std::stop_token token,
+    std::error_code* ec)
+{
+    return internal_->wait(h, d, w, token, ec);
 }
 
 inline endpoint
