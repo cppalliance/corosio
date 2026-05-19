@@ -10,13 +10,10 @@
 // Test that header file is self-contained.
 #include <boost/corosio/local_stream_socket.hpp>
 
-#include <boost/corosio/detail/platform.hpp>
-
-#if BOOST_COROSIO_POSIX
-
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_socket_pair.hpp>
+#include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>
@@ -27,12 +24,18 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_POSIX
+#include <unistd.h>
+#else
+#include <boost/corosio/native/detail/iocp/win_windows.hpp>
+#endif
+
 #include <compare>
 #include <cstring>
 #include <sstream>
 #include <string>
-
-#include <unistd.h>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -43,29 +46,6 @@ namespace boost::corosio {
 
 static_assert(capy::ReadStream<local_stream_socket>);
 static_assert(capy::WriteStream<local_stream_socket>);
-
-namespace {
-
-std::string
-make_temp_socket_path()
-{
-    char tmpl[] = "/tmp/corosio_test_XXXXXX";
-    if (!::mkdtemp(tmpl))
-        throw std::runtime_error("mkdtemp failed");
-    std::string path(tmpl);
-    path += "/sock";
-    return path;
-}
-
-void
-cleanup_path(std::string const& path)
-{
-    ::unlink(path.c_str());
-    auto dir = path.substr(0, path.rfind('/'));
-    ::rmdir(dir.c_str());
-}
-
-} // namespace
 
 template<auto Backend>
 struct local_stream_socket_test
@@ -105,7 +85,8 @@ struct local_stream_socket_test
     {
         io_context ioc(Backend);
         auto ex   = ioc.get_executor();
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         local_stream_acceptor acc(ioc);
         acc.open();
@@ -140,7 +121,6 @@ struct local_stream_socket_test
         ioc.run();
         ioc.restart();
 
-        cleanup_path(path);
 
         BOOST_TEST_EQ(accept_done, true);
         BOOST_TEST_EQ(!accept_ec, true);
@@ -154,7 +134,8 @@ struct local_stream_socket_test
     {
         io_context ioc(Backend);
         auto ex   = ioc.get_executor();
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         local_stream_acceptor acc(ioc);
         acc.open();
@@ -191,7 +172,6 @@ struct local_stream_socket_test
         ioc.run();
         ioc.restart();
 
-        cleanup_path(path);
 
         BOOST_TEST_EQ(accept_done, true);
         BOOST_TEST_EQ(!accept_ec, true);
@@ -256,10 +236,12 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(s2.is_open(), true);
     }
 
+#if BOOST_COROSIO_POSIX
     void testUnlinkExisting()
     {
         io_context ioc(Backend);
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         // First bind creates the socket file
         {
@@ -286,7 +268,6 @@ struct local_stream_socket_test
             BOOST_TEST_EQ(!ec, true);
         }
 
-        cleanup_path(path);
     }
 
     void testUnlinkNonexistent()
@@ -294,7 +275,8 @@ struct local_stream_socket_test
         // unlink_existing on a path that doesn't exist should
         // succeed (unlink silently fails with ENOENT).
         io_context ioc(Backend);
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         local_stream_acceptor acc(ioc);
         acc.open();
@@ -302,8 +284,8 @@ struct local_stream_socket_test
             local_endpoint(path), bind_option::unlink_existing);
         BOOST_TEST_EQ(!ec, true);
 
-        cleanup_path(path);
     }
+#endif
 
     void testEndpointOrdering()
     {
@@ -344,8 +326,10 @@ struct local_stream_socket_test
         testMoveAccept();
         testReadWrite();
         testSocketPair();
+#if BOOST_COROSIO_POSIX
         testUnlinkExisting();
         testUnlinkNonexistent();
+#endif
         testEndpointOrdering();
         testEndpointStreamOutput();
         testAvailable();
@@ -386,14 +370,21 @@ struct local_stream_socket_test
 
         BOOST_TEST_EQ(s1.is_open(), true);
 
-        int fd = s1.release();
-        BOOST_TEST_EQ(fd >= 0, true);
+        auto handle = s1.release();
         BOOST_TEST_EQ(s1.is_open(), false);
 
-        // The released fd is still valid -- write through it
+        // The released handle is still valid -- write through it
         char const msg[] = "released";
-        BOOST_TEST_EQ(::write(fd, msg, std::strlen(msg)) > 0, true);
-        ::close(fd);
+#if BOOST_COROSIO_HAS_IOCP
+        BOOST_TEST_EQ(
+            ::send(static_cast<SOCKET>(handle),
+                   msg, static_cast<int>(std::strlen(msg)), 0) > 0, true);
+        ::closesocket(static_cast<SOCKET>(handle));
+#else
+        BOOST_TEST_EQ(handle >= 0, true);
+        BOOST_TEST_EQ(::write(handle, msg, std::strlen(msg)) > 0, true);
+        ::close(handle);
+#endif
     }
 
     void testEndpointStreamOutput()
@@ -429,9 +420,3 @@ COROSIO_BACKEND_TESTS(
     local_stream_socket_test, "boost.corosio.local_stream_socket")
 
 } // namespace boost::corosio
-
-#else // !BOOST_COROSIO_POSIX
-
-// Empty on non-POSIX platforms
-
-#endif

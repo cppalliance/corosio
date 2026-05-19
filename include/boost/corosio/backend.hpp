@@ -214,8 +214,6 @@ class win_local_stream_socket;
 class win_local_stream_service;
 class win_local_stream_acceptor;
 class win_local_stream_acceptor_service;
-class win_local_dgram_socket;
-class win_local_dgram_service;
 
 class win_signal;
 class win_signals;
@@ -251,8 +249,6 @@ struct iocp_t
     using local_stream_service_type          = detail::win_local_stream_service;
     using local_stream_acceptor_type         = detail::win_local_stream_acceptor;
     using local_stream_acceptor_service_type = detail::win_local_stream_acceptor_service;
-    using local_datagram_socket_type         = detail::win_local_dgram_socket;
-    using local_datagram_service_type        = detail::win_local_dgram_service;
     /// @}
 
     using signal_type           = detail::win_signal;

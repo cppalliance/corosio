@@ -16,6 +16,7 @@
 
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_socket_pair.hpp>
+#include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -23,36 +24,10 @@
 #include <cstring>
 #include <string>
 
-#include <sys/un.h>
-#include <unistd.h>
-
 #include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
-
-namespace {
-
-std::string
-make_temp_socket_path()
-{
-    char tmpl[] = "/tmp/corosio_test_XXXXXX";
-    if (!::mkdtemp(tmpl))
-        throw std::runtime_error("mkdtemp failed");
-    std::string path(tmpl);
-    path += "/sock";
-    return path;
-}
-
-void
-cleanup_path(std::string const& path)
-{
-    ::unlink(path.c_str());
-    auto dir = path.substr(0, path.rfind('/'));
-    ::rmdir(dir.c_str());
-}
-
-} // namespace
 
 template<auto Backend>
 struct local_datagram_socket_test
@@ -141,11 +116,11 @@ struct local_datagram_socket_test
         local_datagram_socket sock(ioc);
         sock.open();
 
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
         auto ec   = sock.bind(local_endpoint(path));
         BOOST_TEST_EQ(!ec, true);
 
-        cleanup_path(path);
     }
 
     void testSendToRecvFrom()
@@ -153,8 +128,10 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
-        auto path1 = make_temp_socket_path();
-        auto path2 = make_temp_socket_path();
+        test::temp_socket_dir tmp1;
+        test::temp_socket_dir tmp2;
+        auto path1 = tmp1.path();
+        auto path2 = tmp2.path();
 
         local_datagram_socket s1(ioc);
         local_datagram_socket s2(ioc);
@@ -212,8 +189,6 @@ struct local_datagram_socket_test
         // Source endpoint should be the sender's bound path
         BOOST_TEST_EQ(source.path(), path1);
 
-        cleanup_path(path1);
-        cleanup_path(path2);
     }
 
     void testBindFailure()
@@ -440,8 +415,10 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
-        auto path1 = make_temp_socket_path();
-        auto path2 = make_temp_socket_path();
+        test::temp_socket_dir tmp1;
+        test::temp_socket_dir tmp2;
+        auto path1 = tmp1.path();
+        auto path2 = tmp2.path();
 
         local_datagram_socket s1(ioc);
         local_datagram_socket s2(ioc);
@@ -520,8 +497,6 @@ struct local_datagram_socket_test
         BOOST_TEST_EQ(src1.path(), path1);
         BOOST_TEST_EQ(src2.path(), path1);
 
-        cleanup_path(path1);
-        cleanup_path(path2);
     }
 
     void run()

@@ -12,6 +12,9 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_POSIX
+
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/detail/op_base.hpp>
@@ -55,6 +58,10 @@ namespace boost::corosio {
         then use send()/recv() without endpoint arguments. The
         kernel filters incoming datagrams to those from the
         connected peer.
+
+    @note Not available on Windows. Windows does not support
+        AF_UNIX datagram sockets (SOCK_DGRAM). Attempting to
+        open this socket on Windows will fail.
 
     @par Cancellation
     All asynchronous operations support cancellation through
@@ -870,5 +877,7 @@ private:
 };
 
 } // namespace boost::corosio
+
+#endif // BOOST_COROSIO_POSIX
 
 #endif // BOOST_COROSIO_LOCAL_DATAGRAM_SOCKET_HPP
