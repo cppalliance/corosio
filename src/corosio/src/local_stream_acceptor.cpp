@@ -16,6 +16,14 @@
 
 #if BOOST_COROSIO_POSIX
 #include <unistd.h>
+#else
+// Windows: AF_UNIX socket files are reparse points with tag
+// IO_REPARSE_TAG_AF_UNIX. DeleteFileA reliably removes them;
+// std::filesystem::remove via libstdc++/MS STL was observed to
+// silently leave them in place on at least some Windows hosts,
+// so call the Win32 API directly.
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #endif
 
 namespace boost::corosio {
@@ -51,22 +59,20 @@ local_stream_acceptor::bind(corosio::local_endpoint ep, bind_option opt)
     if (!is_open())
         detail::throw_logic_error("bind: acceptor not open");
 
-#if BOOST_COROSIO_POSIX
     if (opt == bind_option::unlink_existing &&
         !ep.empty() && !ep.is_abstract())
     {
-        // Best-effort removal; ENOENT is fine.
+        // Best-effort removal; missing file is fine.
         auto p = ep.path();
-        // path() is not null-terminated for the fixed buffer,
-        // so copy to a local array for unlink.
         char buf[local_endpoint::max_path_length + 1];
         std::memcpy(buf, p.data(), p.size());
         buf[p.size()] = '\0';
+#if BOOST_COROSIO_POSIX
         ::unlink(buf);
-    }
 #else
-    (void)opt;
+        ::DeleteFileA(buf);
 #endif
+    }
 
     auto& svc =
         static_cast<detail::local_stream_acceptor_service&>(h_.service());

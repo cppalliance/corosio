@@ -1101,18 +1101,6 @@ win_tcp_service::native_handle() const noexcept
     return iocp_;
 }
 
-inline LPFN_CONNECTEX
-win_tcp_service::connect_ex() const noexcept
-{
-    return connect_ex_;
-}
-
-inline LPFN_ACCEPTEX
-win_tcp_service::accept_ex() const noexcept
-{
-    return accept_ex_;
-}
-
 inline void
 win_tcp_service::post(overlapped_op* op)
 {

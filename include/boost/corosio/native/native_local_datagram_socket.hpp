@@ -7,10 +7,10 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_NATIVE_UDP_SOCKET_HPP
-#define BOOST_COROSIO_NATIVE_NATIVE_UDP_SOCKET_HPP
+#ifndef BOOST_COROSIO_NATIVE_NATIVE_LOCAL_DATAGRAM_SOCKET_HPP
+#define BOOST_COROSIO_NATIVE_NATIVE_LOCAL_DATAGRAM_SOCKET_HPP
 
-#include <boost/corosio/udp_socket.hpp>
+#include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/backend.hpp>
 
 #ifndef BOOST_COROSIO_MRDOCS
@@ -27,56 +27,57 @@
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP
-#include <boost/corosio/native/detail/iocp/win_udp_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_local_dgram_service.hpp>
 #endif
 #endif // !BOOST_COROSIO_MRDOCS
 
 namespace boost::corosio {
 
-/** An asynchronous UDP socket with devirtualized I/O operations.
+/** An asynchronous Unix datagram socket with devirtualized I/O.
 
-    This class template inherits from @ref udp_socket and shadows
-    the async operations (`send_to`, `recv_from`, `connect`, `send`,
-    `recv`) with versions that call the backend implementation
-    directly, allowing the compiler to inline through the entire
-    call chain.
+    This class template inherits from @ref local_datagram_socket
+    and shadows the async operations (`send_to`, `recv_from`,
+    `connect`, `send`, `recv`) with versions that call the backend
+    implementation directly, allowing the compiler to inline
+    through the entire call chain.
 
     Non-async operations (`open`, `close`, `cancel`, `bind`,
     socket options) remain unchanged and dispatch through the
     compiled library.
 
-    A `native_udp_socket` IS-A `udp_socket` and can be passed to
-    any function expecting `udp_socket&`, in which case virtual
-    dispatch is used transparently.
+    A `native_local_datagram_socket` IS-A `local_datagram_socket`
+    and can be passed to any function expecting
+    `local_datagram_socket&`, in which case virtual dispatch is
+    used transparently.
 
-    @tparam Backend A backend tag value (e.g., `epoll`)
-        whose type provides the concrete implementation types.
+    @tparam Backend A backend tag value (e.g., `epoll`) whose type
+        provides the concrete implementation types.
 
     @par Thread Safety
-    Same as @ref udp_socket.
+    Same as @ref local_datagram_socket.
 
     @par Example
     @code
-    #include <boost/corosio/native/native_udp_socket.hpp>
+    #include <boost/corosio/native/native_local_datagram_socket.hpp>
 
     native_io_context<epoll> ctx;
-    native_udp_socket<epoll> s(ctx);
+    native_local_datagram_socket<epoll> s(ctx);
     s.open();
-    s.bind(endpoint(ipv4_address::any(), 9000));
+    s.bind(local_endpoint("/tmp/recv.sock"));
     char buf[1024];
-    endpoint sender;
+    local_endpoint sender;
     auto [ec, n] = co_await s.recv_from(
         capy::mutable_buffer(buf, sizeof(buf)), sender);
     @endcode
 
-    @see udp_socket, epoll_t
+    @see local_datagram_socket, epoll_t, iocp_t
 */
 template<auto Backend>
-class native_udp_socket : public udp_socket
+class native_local_datagram_socket : public local_datagram_socket
 {
     using backend_type = decltype(Backend);
-    using impl_type    = typename backend_type::udp_socket_type;
-    using service_type = typename backend_type::udp_service_type;
+    using impl_type    = typename backend_type::local_datagram_socket_type;
+    using service_type = typename backend_type::local_datagram_service_type;
 
     impl_type& get_impl() noexcept
     {
@@ -86,18 +87,18 @@ class native_udp_socket : public udp_socket
     template<class ConstBufferSequence>
     struct native_send_to_awaitable
     {
-        native_udp_socket& self_;
+        native_local_datagram_socket& self_;
         ConstBufferSequence buffers_;
-        endpoint dest_;
+        corosio::local_endpoint dest_;
         int flags_;
         std::stop_token token_;
         mutable std::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
 
         native_send_to_awaitable(
-            native_udp_socket& self,
+            native_local_datagram_socket& self,
             ConstBufferSequence buffers,
-            endpoint dest,
+            corosio::local_endpoint dest,
             int flags) noexcept
             : self_(self)
             , buffers_(std::move(buffers))
@@ -131,18 +132,18 @@ class native_udp_socket : public udp_socket
     template<class MutableBufferSequence>
     struct native_recv_from_awaitable
     {
-        native_udp_socket& self_;
+        native_local_datagram_socket& self_;
         MutableBufferSequence buffers_;
-        endpoint& source_;
+        corosio::local_endpoint& source_;
         int flags_;
         std::stop_token token_;
         mutable std::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
 
         native_recv_from_awaitable(
-            native_udp_socket& self,
+            native_local_datagram_socket& self,
             MutableBufferSequence buffers,
-            endpoint& source,
+            corosio::local_endpoint& source,
             int flags) noexcept
             : self_(self)
             , buffers_(std::move(buffers))
@@ -175,12 +176,13 @@ class native_udp_socket : public udp_socket
 
     struct native_wait_awaitable
     {
-        native_udp_socket& self_;
+        native_local_datagram_socket& self_;
         wait_type w_;
         std::stop_token token_;
         mutable std::error_code ec_;
 
-        native_wait_awaitable(native_udp_socket& self, wait_type w) noexcept
+        native_wait_awaitable(
+            native_local_datagram_socket& self, wait_type w) noexcept
             : self_(self)
             , w_(w)
         {
@@ -209,12 +211,14 @@ class native_udp_socket : public udp_socket
 
     struct native_connect_awaitable
     {
-        native_udp_socket& self_;
-        endpoint endpoint_;
+        native_local_datagram_socket& self_;
+        corosio::local_endpoint endpoint_;
         std::stop_token token_;
         mutable std::error_code ec_;
 
-        native_connect_awaitable(native_udp_socket& self, endpoint ep) noexcept
+        native_connect_awaitable(
+            native_local_datagram_socket& self,
+            corosio::local_endpoint ep) noexcept
             : self_(self)
             , endpoint_(ep)
         {
@@ -244,7 +248,7 @@ class native_udp_socket : public udp_socket
     template<class ConstBufferSequence>
     struct native_send_awaitable
     {
-        native_udp_socket& self_;
+        native_local_datagram_socket& self_;
         ConstBufferSequence buffers_;
         int flags_;
         std::stop_token token_;
@@ -252,7 +256,7 @@ class native_udp_socket : public udp_socket
         mutable std::size_t bytes_transferred_ = 0;
 
         native_send_awaitable(
-            native_udp_socket& self,
+            native_local_datagram_socket& self,
             ConstBufferSequence buffers,
             int flags) noexcept
             : self_(self)
@@ -286,7 +290,7 @@ class native_udp_socket : public udp_socket
     template<class MutableBufferSequence>
     struct native_recv_awaitable
     {
-        native_udp_socket& self_;
+        native_local_datagram_socket& self_;
         MutableBufferSequence buffers_;
         int flags_;
         std::stop_token token_;
@@ -294,7 +298,7 @@ class native_udp_socket : public udp_socket
         mutable std::size_t bytes_transferred_ = 0;
 
         native_recv_awaitable(
-            native_udp_socket& self,
+            native_local_datagram_socket& self,
             MutableBufferSequence buffers,
             int flags) noexcept
             : self_(self)
@@ -326,50 +330,50 @@ class native_udp_socket : public udp_socket
     };
 
 public:
-    /** Construct a native UDP socket from an execution context.
+    /** Construct a native socket from an execution context.
 
         @param ctx The execution context that will own this socket.
     */
-    explicit native_udp_socket(capy::execution_context& ctx)
-        : udp_socket(create_handle<service_type>(ctx))
+    explicit native_local_datagram_socket(capy::execution_context& ctx)
+        : local_datagram_socket(create_handle<service_type>(ctx))
     {
     }
 
-    /** Construct a native UDP socket from an executor.
+    /** Construct a native socket from an executor.
 
         @param ex The executor whose context will own the socket.
     */
     template<class Ex>
-        requires(!std::same_as<std::remove_cvref_t<Ex>, native_udp_socket>) &&
+        requires(!std::same_as<
+                 std::remove_cvref_t<Ex>,
+                 native_local_datagram_socket>) &&
         capy::Executor<Ex>
-    explicit native_udp_socket(Ex const& ex) : native_udp_socket(ex.context())
+    explicit native_local_datagram_socket(Ex const& ex)
+        : native_local_datagram_socket(ex.context())
     {
     }
 
     /// Move construct.
-    native_udp_socket(native_udp_socket&&) noexcept = default;
+    native_local_datagram_socket(native_local_datagram_socket&&) noexcept =
+        default;
 
     /// Move assign.
-    native_udp_socket& operator=(native_udp_socket&&) noexcept = default;
+    native_local_datagram_socket&
+    operator=(native_local_datagram_socket&&) noexcept = default;
 
-    native_udp_socket(native_udp_socket const&)            = delete;
-    native_udp_socket& operator=(native_udp_socket const&) = delete;
+    native_local_datagram_socket(native_local_datagram_socket const&) = delete;
+    native_local_datagram_socket&
+    operator=(native_local_datagram_socket const&) = delete;
 
     /** Send a datagram to the specified destination.
 
         Calls the backend implementation directly, bypassing virtual
-        dispatch. Otherwise identical to @ref udp_socket::send_to.
-
-        @param buffers The buffer sequence containing data to send.
-        @param dest The destination endpoint.
-        @param flags Message flags.
-
-        @return An awaitable yielding `(error_code, std::size_t)`.
+        dispatch. Otherwise identical to @ref local_datagram_socket::send_to.
     */
     template<capy::ConstBufferSequence CB>
     auto send_to(
         CB const& buffers,
-        endpoint dest,
+        corosio::local_endpoint dest,
         corosio::message_flags flags)
     {
         if (!is_open())
@@ -380,7 +384,7 @@ public:
 
     /// @overload
     template<capy::ConstBufferSequence CB>
-    auto send_to(CB const& buffers, endpoint dest)
+    auto send_to(CB const& buffers, corosio::local_endpoint dest)
     {
         return send_to(buffers, dest, corosio::message_flags::none);
     }
@@ -388,19 +392,12 @@ public:
     /** Receive a datagram and capture the sender's endpoint.
 
         Calls the backend implementation directly, bypassing virtual
-        dispatch. Otherwise identical to @ref udp_socket::recv_from.
-
-        @param buffers The buffer sequence to receive data into.
-        @param source Reference to an endpoint that will be set to
-            the sender's address on successful completion.
-        @param flags Message flags (e.g. message_flags::peek).
-
-        @return An awaitable yielding `(error_code, std::size_t)`.
+        dispatch. Otherwise identical to @ref local_datagram_socket::recv_from.
     */
     template<capy::MutableBufferSequence MB>
     auto recv_from(
         MB const& buffers,
-        endpoint& source,
+        corosio::local_endpoint& source,
         corosio::message_flags flags)
     {
         if (!is_open())
@@ -411,7 +408,7 @@ public:
 
     /// @overload
     template<capy::MutableBufferSequence MB>
-    auto recv_from(MB const& buffers, endpoint& source)
+    auto recv_from(MB const& buffers, corosio::local_endpoint& source)
     {
         return recv_from(buffers, source, corosio::message_flags::none);
     }
@@ -419,36 +416,21 @@ public:
     /** Asynchronously connect to set the default peer.
 
         Calls the backend implementation directly, bypassing virtual
-        dispatch. Otherwise identical to @ref udp_socket::connect.
+        dispatch. Otherwise identical to @ref local_datagram_socket::connect.
 
-        If the socket is not already open, it is opened automatically
-        using the address family of @p ep.
-
-        @param ep The remote endpoint to connect to.
-
-        @return An awaitable yielding `io_result<>`.
-
-        @throws std::system_error if the socket needs to be opened
-            and the open fails.
+        If the socket is not already open, it is opened automatically.
     */
-    auto connect(endpoint ep)
+    auto connect(corosio::local_endpoint ep)
     {
         if (!is_open())
-            open(ep.is_v6() ? udp::v6() : udp::v4());
+            open();
         return native_connect_awaitable(*this, ep);
     }
 
     /** Send a datagram to the connected peer.
 
         Calls the backend implementation directly, bypassing virtual
-        dispatch. Otherwise identical to @ref udp_socket::send.
-
-        @param buffers The buffer sequence containing data to send.
-        @param flags Message flags.
-
-        @return An awaitable yielding `(error_code, std::size_t)`.
-
-        @throws std::logic_error if the socket is not open.
+        dispatch. Otherwise identical to @ref local_datagram_socket::send.
     */
     template<capy::ConstBufferSequence CB>
     auto send(CB const& buffers, corosio::message_flags flags)
@@ -469,14 +451,7 @@ public:
     /** Receive a datagram from the connected peer.
 
         Calls the backend implementation directly, bypassing virtual
-        dispatch. Otherwise identical to @ref udp_socket::recv.
-
-        @param buffers The buffer sequence to receive data into.
-        @param flags Message flags (e.g. message_flags::peek).
-
-        @return An awaitable yielding `(error_code, std::size_t)`.
-
-        @throws std::logic_error if the socket is not open.
+        dispatch. Otherwise identical to @ref local_datagram_socket::recv.
     */
     template<capy::MutableBufferSequence MB>
     auto recv(MB const& buffers, corosio::message_flags flags)
@@ -497,7 +472,7 @@ public:
     /** Asynchronously wait for the socket to be ready.
 
         Calls the backend implementation directly, bypassing virtual
-        dispatch. Otherwise identical to @ref udp_socket::wait.
+        dispatch. Otherwise identical to @ref local_datagram_socket::wait.
 
         @param w The wait direction (read, write, or error).
 
@@ -511,4 +486,4 @@ public:
 
 } // namespace boost::corosio
 
-#endif // BOOST_COROSIO_NATIVE_NATIVE_UDP_SOCKET_HPP
+#endif // BOOST_COROSIO_NATIVE_NATIVE_LOCAL_DATAGRAM_SOCKET_HPP

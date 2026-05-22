@@ -11,6 +11,8 @@
 #include <boost/corosio/native/native_io_context.hpp>
 
 #include <csignal>
+#include <type_traits>
+#include <utility>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -20,6 +22,12 @@ namespace boost::corosio {
 template<auto Backend>
 struct native_signal_set_test
 {
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_signal_set<Backend>&>().wait()),
+            decltype(std::declval<io_signal_set&>().wait())>,
+        "native_signal_set::wait must shadow io_signal_set::wait");
+
     void testSignalSetConstruct()
     {
         io_context ctx(Backend);

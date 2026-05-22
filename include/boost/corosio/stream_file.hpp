@@ -252,6 +252,13 @@ public:
     seek(std::int64_t offset,
          file_base::seek_basis origin = file_base::seek_set);
 
+protected:
+    /// Default-construct (for derived types that initialize io_object directly).
+    stream_file() noexcept = default;
+
+    /// Construct from a pre-built handle (for native_stream_file).
+    explicit stream_file(handle h) noexcept : io_object(std::move(h)) {}
+
 private:
     inline implementation& get() const noexcept
     {

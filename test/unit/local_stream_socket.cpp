@@ -11,9 +11,6 @@
 #include <boost/corosio/local_stream_socket.hpp>
 
 #include <boost/corosio/detail/platform.hpp>
-
-#if BOOST_COROSIO_POSIX
-
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_socket_pair.hpp>
@@ -32,9 +29,12 @@
 #include <sstream>
 #include <string>
 
+#if BOOST_COROSIO_POSIX
 #include <unistd.h>
+#endif
 
 #include "context.hpp"
+#include "local_temp.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -44,28 +44,8 @@ namespace boost::corosio {
 static_assert(capy::ReadStream<local_stream_socket>);
 static_assert(capy::WriteStream<local_stream_socket>);
 
-namespace {
-
-std::string
-make_temp_socket_path()
-{
-    char tmpl[] = "/tmp/corosio_test_XXXXXX";
-    if (!::mkdtemp(tmpl))
-        throw std::runtime_error("mkdtemp failed");
-    std::string path(tmpl);
-    path += "/sock";
-    return path;
-}
-
-void
-cleanup_path(std::string const& path)
-{
-    ::unlink(path.c_str());
-    auto dir = path.substr(0, path.rfind('/'));
-    ::rmdir(dir.c_str());
-}
-
-} // namespace
+using test::make_temp_socket_path;
+using test::cleanup_temp_socket;
 
 template<auto Backend>
 struct local_stream_socket_test
@@ -140,7 +120,7 @@ struct local_stream_socket_test
         ioc.run();
         ioc.restart();
 
-        cleanup_path(path);
+        cleanup_temp_socket(path);
 
         BOOST_TEST_EQ(accept_done, true);
         BOOST_TEST_EQ(!accept_ec, true);
@@ -191,7 +171,7 @@ struct local_stream_socket_test
         ioc.run();
         ioc.restart();
 
-        cleanup_path(path);
+        cleanup_temp_socket(path);
 
         BOOST_TEST_EQ(accept_done, true);
         BOOST_TEST_EQ(!accept_ec, true);
@@ -200,6 +180,8 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(!connect_ec, true);
     }
 
+#if BOOST_COROSIO_POSIX
+    // Uses make_local_stream_pair, which is socketpair-based and POSIX-only.
     void testReadWrite()
     {
         io_context ioc(Backend);
@@ -255,6 +237,7 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(s1.is_open(), true);
         BOOST_TEST_EQ(s2.is_open(), true);
     }
+#endif // BOOST_COROSIO_POSIX
 
     void testUnlinkExisting()
     {
@@ -286,7 +269,7 @@ struct local_stream_socket_test
             BOOST_TEST_EQ(!ec, true);
         }
 
-        cleanup_path(path);
+        cleanup_temp_socket(path);
     }
 
     void testUnlinkNonexistent()
@@ -302,7 +285,7 @@ struct local_stream_socket_test
             local_endpoint(path), bind_option::unlink_existing);
         BOOST_TEST_EQ(!ec, true);
 
-        cleanup_path(path);
+        cleanup_temp_socket(path);
     }
 
     void testEndpointOrdering()
@@ -342,16 +325,22 @@ struct local_stream_socket_test
         testMove();
         testConnectAccept();
         testMoveAccept();
+#if BOOST_COROSIO_POSIX
         testReadWrite();
         testSocketPair();
+#endif
         testUnlinkExisting();
         testUnlinkNonexistent();
         testEndpointOrdering();
         testEndpointStreamOutput();
+#if BOOST_COROSIO_POSIX
         testAvailable();
         testRelease();
+#endif
     }
 
+#if BOOST_COROSIO_POSIX
+    // Uses make_local_stream_pair, which is socketpair-based and POSIX-only.
     void testAvailable()
     {
         io_context ioc(Backend);
@@ -378,7 +367,13 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(done, true);
         BOOST_TEST_EQ(s2.available(), std::strlen(msg));
     }
+#endif // BOOST_COROSIO_POSIX
 
+#if BOOST_COROSIO_POSIX
+    // Exercises raw POSIX fd ops (::write, ::close) on the released
+    // descriptor. The released-handle semantics are tested via the
+    // platform helpers; skipped on Windows because the analogous
+    // path needs send/closesocket and isn't yet factored.
     void testRelease()
     {
         io_context ioc(Backend);
@@ -395,6 +390,7 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(::write(fd, msg, std::strlen(msg)) > 0, true);
         ::close(fd);
     }
+#endif
 
     void testEndpointStreamOutput()
     {
@@ -429,9 +425,3 @@ COROSIO_BACKEND_TESTS(
     local_stream_socket_test, "boost.corosio.local_stream_socket")
 
 } // namespace boost::corosio
-
-#else // !BOOST_COROSIO_POSIX
-
-// Empty on non-POSIX platforms
-
-#endif

@@ -18,6 +18,8 @@
 #include <boost/capy/task.hpp>
 
 #include <cstring>
+#include <type_traits>
+#include <utility>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -27,6 +29,52 @@ namespace boost::corosio {
 template<auto Backend>
 struct native_udp_socket_test
 {
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_udp_socket<Backend>&>().send_to(
+                std::declval<capy::const_buffer>(),
+                std::declval<endpoint>())),
+            decltype(std::declval<udp_socket&>().send_to(
+                std::declval<capy::const_buffer>(),
+                std::declval<endpoint>()))>,
+        "native_udp_socket::send_to must shadow udp_socket::send_to");
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_udp_socket<Backend>&>().recv_from(
+                std::declval<capy::mutable_buffer>(),
+                std::declval<endpoint&>())),
+            decltype(std::declval<udp_socket&>().recv_from(
+                std::declval<capy::mutable_buffer>(),
+                std::declval<endpoint&>()))>,
+        "native_udp_socket::recv_from must shadow udp_socket::recv_from");
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_udp_socket<Backend>&>().connect(
+                std::declval<endpoint>())),
+            decltype(std::declval<udp_socket&>().connect(
+                std::declval<endpoint>()))>,
+        "native_udp_socket::connect must shadow udp_socket::connect");
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_udp_socket<Backend>&>().send(
+                std::declval<capy::const_buffer>())),
+            decltype(std::declval<udp_socket&>().send(
+                std::declval<capy::const_buffer>()))>,
+        "native_udp_socket::send must shadow udp_socket::send");
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_udp_socket<Backend>&>().recv(
+                std::declval<capy::mutable_buffer>())),
+            decltype(std::declval<udp_socket&>().recv(
+                std::declval<capy::mutable_buffer>()))>,
+        "native_udp_socket::recv must shadow udp_socket::recv");
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_udp_socket<Backend>&>().wait(
+                wait_type::read)),
+            decltype(std::declval<udp_socket&>().wait(wait_type::read))>,
+        "native_udp_socket::wait must shadow udp_socket::wait");
+
     void testConstruct()
     {
         io_context ctx(Backend);
@@ -179,6 +227,85 @@ struct native_udp_socket_test
         ioc.run();
     }
 
+    void testSendRecvConnected()
+    {
+        io_context ioc(Backend);
+
+        native_udp_socket<Backend> a(ioc);
+        native_udp_socket<Backend> b(ioc);
+
+        b.open();
+        auto ec = b.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST_EQ(ec, std::error_code{});
+        auto b_ep = b.local_endpoint();
+
+        auto task = [](native_udp_socket<Backend>& a,
+                       native_udp_socket<Backend>& b,
+                       endpoint dest) -> capy::task<> {
+            auto [ec1] = co_await a.connect(dest);
+            BOOST_TEST_EQ(ec1, std::error_code{});
+            BOOST_TEST(a.is_open());
+
+            char const msg[] = "native connected";
+            auto [ec2, n2] =
+                co_await a.send(capy::const_buffer(msg, sizeof(msg)));
+            BOOST_TEST_EQ(ec2, std::error_code{});
+            BOOST_TEST_EQ(n2, sizeof(msg));
+
+            char buf[64] = {};
+            endpoint source;
+            auto [ec3, n3] = co_await b.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            BOOST_TEST_EQ(ec3, std::error_code{});
+            BOOST_TEST_EQ(n3, sizeof(msg));
+            BOOST_TEST_EQ(std::strcmp(buf, "native connected"), 0);
+
+            auto [ec4] = co_await b.connect(source);
+            BOOST_TEST_EQ(ec4, std::error_code{});
+
+            char const reply[] = "native reply";
+            auto [ec5, n5] =
+                co_await b.send(capy::const_buffer(reply, sizeof(reply)));
+            BOOST_TEST_EQ(ec5, std::error_code{});
+
+            char buf2[64] = {};
+            auto [ec6, n6] =
+                co_await a.recv(capy::mutable_buffer(buf2, sizeof(buf2)));
+            BOOST_TEST_EQ(ec6, std::error_code{});
+            BOOST_TEST_EQ(n6, sizeof(reply));
+            BOOST_TEST_EQ(std::strcmp(buf2, "native reply"), 0);
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(task(a, b, b_ep));
+        ioc.run();
+    }
+
+    void testConnectAutoOpen()
+    {
+        io_context ioc(Backend);
+
+        native_udp_socket<Backend> receiver(ioc);
+        receiver.open();
+        auto ec = receiver.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST_EQ(ec, std::error_code{});
+        auto recv_ep = receiver.local_endpoint();
+
+        native_udp_socket<Backend> sender(ioc);
+        BOOST_TEST_EQ(sender.is_open(), false);
+
+        auto task = [](native_udp_socket<Backend>& s,
+                       endpoint dest) -> capy::task<> {
+            auto [ec] = co_await s.connect(dest);
+            BOOST_TEST_EQ(ec, std::error_code{});
+            BOOST_TEST(s.is_open());
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(task(sender, recv_ep));
+        ioc.run();
+    }
+
     void testVirtualDispatchFallback()
     {
         // Verify that calling through udp_socket& uses virtual dispatch
@@ -217,15 +344,59 @@ struct native_udp_socket_test
         ioc.run();
     }
 
+    // Exercise the shadowed wait() awaitable: wait_type::read on a
+    // bound UDP socket resolves when a datagram arrives from a peer.
+    void testWait()
+    {
+        io_context ioc(Backend);
+        auto       ex = ioc.get_executor();
+
+        native_udp_socket<Backend> recv(ioc);
+        recv.open(udp::v4());
+        auto bec = recv.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!bec);
+        auto port = recv.local_endpoint().port();
+
+        native_udp_socket<Backend> send(ioc);
+        send.open(udp::v4());
+
+        std::error_code wait_ec;
+        bool            wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await recv.wait(wait_type::read);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        auto sender = [&]() -> capy::task<> {
+            char dg[1]   = {'X'};
+            auto [ec, n] = co_await send.send_to(
+                capy::const_buffer(dg, sizeof(dg)),
+                endpoint(ipv4_address::loopback(), port));
+            (void)ec;
+            (void)n;
+        };
+
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(sender());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!wait_ec);
+    }
+
     void run()
     {
         testConstruct();
         testMoveConstruct();
         testPolymorphicSlice();
         testSendRecvLoopback();
+        testSendRecvConnected();
+        testConnectAutoOpen();
         testCancelRecv();
         testCloseWhileRecving();
         testVirtualDispatchFallback();
+        testWait();
     }
 };
 

@@ -152,10 +152,16 @@ public:
     void* native_handle() const noexcept;
 
     /** Return the ConnectEx function pointer. */
-    LPFN_CONNECTEX connect_ex() const noexcept;
+    LPFN_CONNECTEX connect_ex() const noexcept
+    {
+        return connect_ex_;
+    }
 
     /** Return the AcceptEx function pointer. */
-    LPFN_ACCEPTEX accept_ex() const noexcept;
+    LPFN_ACCEPTEX accept_ex() const noexcept
+    {
+        return accept_ex_;
+    }
 
     /** Post an overlapped operation for completion. */
     void post(overlapped_op* op);

@@ -361,6 +361,10 @@ public:
     */
     void assign(native_handle_type handle);
 
+protected:
+    /// Construct from a pre-built handle (for native_random_access_file).
+    explicit random_access_file(handle h) noexcept : io_object(std::move(h)) {}
+
 private:
     inline implementation& get() const noexcept
     {

@@ -45,6 +45,10 @@ class posix_signal;
 class posix_signal_service;
 class posix_resolver;
 class posix_resolver_service;
+class posix_stream_file;
+class posix_stream_file_service;
+class posix_random_access_file;
+class posix_random_access_file_service;
 
 } // namespace detail
 
@@ -70,6 +74,11 @@ struct epoll_t
     using signal_service_type   = detail::posix_signal_service;
     using resolver_type         = detail::posix_resolver;
     using resolver_service_type = detail::posix_resolver_service;
+
+    using stream_file_type                  = detail::posix_stream_file;
+    using stream_file_service_type          = detail::posix_stream_file_service;
+    using random_access_file_type           = detail::posix_random_access_file;
+    using random_access_file_service_type   = detail::posix_random_access_file_service;
 
     /// Create the scheduler and services for this backend.
     BOOST_COROSIO_DECL static detail::scheduler&
@@ -103,6 +112,10 @@ class posix_signal;
 class posix_signal_service;
 class posix_resolver;
 class posix_resolver_service;
+class posix_stream_file;
+class posix_stream_file_service;
+class posix_random_access_file;
+class posix_random_access_file_service;
 
 } // namespace detail
 
@@ -128,6 +141,11 @@ struct select_t
     using signal_service_type   = detail::posix_signal_service;
     using resolver_type         = detail::posix_resolver;
     using resolver_service_type = detail::posix_resolver_service;
+
+    using stream_file_type                  = detail::posix_stream_file;
+    using stream_file_service_type          = detail::posix_stream_file_service;
+    using random_access_file_type           = detail::posix_random_access_file;
+    using random_access_file_service_type   = detail::posix_random_access_file_service;
 
     /// Create the scheduler and services for this backend.
     BOOST_COROSIO_DECL static detail::scheduler&
@@ -161,6 +179,10 @@ class posix_signal;
 class posix_signal_service;
 class posix_resolver;
 class posix_resolver_service;
+class posix_stream_file;
+class posix_stream_file_service;
+class posix_random_access_file;
+class posix_random_access_file_service;
 
 } // namespace detail
 
@@ -186,6 +208,11 @@ struct kqueue_t
     using signal_service_type   = detail::posix_signal_service;
     using resolver_type         = detail::posix_resolver;
     using resolver_service_type = detail::posix_resolver_service;
+
+    using stream_file_type                  = detail::posix_stream_file;
+    using stream_file_service_type          = detail::posix_stream_file_service;
+    using random_access_file_type           = detail::posix_random_access_file;
+    using random_access_file_service_type   = detail::posix_random_access_file_service;
 
     /// Create the scheduler and services for this backend.
     BOOST_COROSIO_DECL static detail::scheduler&
@@ -259,6 +286,11 @@ struct iocp_t
     using signal_service_type   = detail::win_signals;
     using resolver_type         = detail::win_resolver;
     using resolver_service_type = detail::win_resolver_service;
+
+    using stream_file_type                = detail::win_stream_file;
+    using stream_file_service_type        = detail::win_file_service;
+    using random_access_file_type         = detail::win_random_access_file;
+    using random_access_file_service_type = detail::win_random_access_file_service;
 
     /** Create the scheduler and services for this backend.
 

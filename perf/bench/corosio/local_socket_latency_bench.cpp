@@ -15,7 +15,9 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
-#include <boost/corosio/local_socket_pair.hpp>
+#include <boost/corosio/native/native_local_stream_acceptor.hpp>
+#include <boost/corosio/native/native_local_stream_socket.hpp>
+#include <boost/corosio/test/local_socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/read.hpp>
@@ -36,8 +38,8 @@ namespace {
 template<auto Backend>
 capy::task<>
 unix_pingpong_client_task(
-    corosio::local_stream_socket& client,
-    corosio::local_stream_socket& server,
+    corosio::native_local_stream_socket<Backend>& client,
+    corosio::native_local_stream_socket<Backend>& server,
     std::size_t message_size,
     bench::state& state)
 {
@@ -76,11 +78,15 @@ template<auto Backend>
 void
 bench_unix_pingpong_latency(bench::state& state)
 {
+    using socket_type   = corosio::native_local_stream_socket<Backend>;
+    using acceptor_type = corosio::native_local_stream_acceptor<Backend>;
+
     auto message_size = static_cast<std::size_t>(state.range(0));
     state.counters["message_size"] = static_cast<double>(message_size);
 
     corosio::native_io_context<Backend> ioc;
-    auto [client, server] = corosio::make_local_stream_pair(ioc);
+    auto [client, server] =
+        corosio::test::make_local_stream_pair<socket_type, acceptor_type>(ioc);
 
     capy::run_async(ioc.get_executor())(
         unix_pingpong_client_task<Backend>(client, server, message_size, state));
@@ -104,20 +110,25 @@ template<auto Backend>
 void
 bench_unix_concurrent_latency(bench::state& state)
 {
+    using socket_type   = corosio::native_local_stream_socket<Backend>;
+    using acceptor_type = corosio::native_local_stream_acceptor<Backend>;
+
     int num_pairs = static_cast<int>(state.range(0));
     state.counters["num_pairs"] = num_pairs;
 
     corosio::native_io_context<Backend> ioc;
 
-    std::vector<corosio::local_stream_socket> clients;
-    std::vector<corosio::local_stream_socket> servers;
+    std::vector<socket_type> clients;
+    std::vector<socket_type> servers;
 
     clients.reserve(num_pairs);
     servers.reserve(num_pairs);
 
     for (int i = 0; i < num_pairs; ++i)
     {
-        auto [c, s] = corosio::make_local_stream_pair(ioc);
+        auto [c, s] =
+            corosio::test::make_local_stream_pair<socket_type, acceptor_type>(
+                ioc);
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }
@@ -150,13 +161,17 @@ template<auto Backend>
 void
 bench_unix_pingpong_latency_lockless(bench::state& state)
 {
+    using socket_type   = corosio::native_local_stream_socket<Backend>;
+    using acceptor_type = corosio::native_local_stream_acceptor<Backend>;
+
     auto message_size = static_cast<std::size_t>(state.range(0));
     state.counters["message_size"] = static_cast<double>(message_size);
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
     corosio::native_io_context<Backend> ioc(opts, 1);
-    auto [client, server] = corosio::make_local_stream_pair(ioc);
+    auto [client, server] =
+        corosio::test::make_local_stream_pair<socket_type, acceptor_type>(ioc);
 
     capy::run_async(ioc.get_executor())(
         unix_pingpong_client_task<Backend>(client, server, message_size, state));
@@ -180,6 +195,9 @@ template<auto Backend>
 void
 bench_unix_concurrent_latency_lockless(bench::state& state)
 {
+    using socket_type   = corosio::native_local_stream_socket<Backend>;
+    using acceptor_type = corosio::native_local_stream_acceptor<Backend>;
+
     int num_pairs = static_cast<int>(state.range(0));
     state.counters["num_pairs"] = num_pairs;
 
@@ -187,15 +205,17 @@ bench_unix_concurrent_latency_lockless(bench::state& state)
     opts.single_threaded = true;
     corosio::native_io_context<Backend> ioc(opts, 1);
 
-    std::vector<corosio::local_stream_socket> clients;
-    std::vector<corosio::local_stream_socket> servers;
+    std::vector<socket_type> clients;
+    std::vector<socket_type> servers;
 
     clients.reserve(num_pairs);
     servers.reserve(num_pairs);
 
     for (int i = 0; i < num_pairs; ++i)
     {
-        auto [c, s] = corosio::make_local_stream_pair(ioc);
+        auto [c, s] =
+            corosio::test::make_local_stream_pair<socket_type, acceptor_type>(
+                ioc);
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }

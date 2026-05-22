@@ -65,6 +65,40 @@ class native_tcp_acceptor : public tcp_acceptor
         return *static_cast<impl_type*>(h_.get());
     }
 
+    struct native_wait_awaitable
+    {
+        native_tcp_acceptor& acc_;
+        wait_type w_;
+        std::stop_token token_;
+        mutable std::error_code ec_;
+
+        native_wait_awaitable(native_tcp_acceptor& acc, wait_type w) noexcept
+            : acc_(acc)
+            , w_(w)
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return token_.stop_requested();
+        }
+
+        capy::io_result<> await_resume() const noexcept
+        {
+            if (token_.stop_requested())
+                return {make_error_code(std::errc::operation_canceled)};
+            return {ec_};
+        }
+
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
+        {
+            token_ = env->stop_token;
+            return acc_.get_impl().wait(
+                h, env->executor, w_, token_, &ec_);
+        }
+    };
+
     struct native_accept_awaitable
     {
         native_tcp_acceptor& acc_;
@@ -168,6 +202,20 @@ public:
         if (!is_open())
             detail::throw_logic_error("accept: acceptor not listening");
         return native_accept_awaitable(*this, peer);
+    }
+
+    /** Asynchronously wait for the acceptor to be ready.
+
+        Calls the backend implementation directly, bypassing virtual
+        dispatch. Otherwise identical to @ref tcp_acceptor::wait.
+
+        @param w The wait direction (typically `wait_type::read`).
+
+        @return An awaitable yielding `io_result<>`.
+    */
+    [[nodiscard]] auto wait(wait_type w)
+    {
+        return native_wait_awaitable(*this, w);
     }
 };
 
