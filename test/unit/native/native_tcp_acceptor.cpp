@@ -8,8 +8,16 @@
 //
 
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
+#include <boost/corosio/native/native_tcp_socket.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/native/native_socket_option.hpp>
+
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/task.hpp>
+
+#include <system_error>
+#include <type_traits>
+#include <utility>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -19,6 +27,20 @@ namespace boost::corosio {
 template<auto Backend>
 struct native_tcp_acceptor_test
 {
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_tcp_acceptor<Backend>&>().accept(
+                std::declval<tcp_socket&>())),
+            decltype(std::declval<tcp_acceptor&>().accept(
+                std::declval<tcp_socket&>()))>,
+        "native_tcp_acceptor::accept must shadow tcp_acceptor::accept");
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_tcp_acceptor<Backend>&>().wait(
+                wait_type::read)),
+            decltype(std::declval<tcp_acceptor&>().wait(wait_type::read))>,
+        "native_tcp_acceptor::wait must shadow tcp_acceptor::wait");
+
     void testAcceptorConstruct()
     {
         io_context ctx(Backend);
@@ -57,11 +79,53 @@ struct native_tcp_acceptor_test
         BOOST_TEST(base.is_open());
     }
 
+    // Exercise the shadowed wait() awaitable: wait_type::read on a
+    // listening acceptor resolves when a connection arrives.
+    void testWait()
+    {
+        io_context ioc(Backend);
+        auto       ex = ioc.get_executor();
+
+        native_tcp_acceptor<Backend> acc(ioc);
+        acc.open();
+        acc.set_option(native_socket_option::reuse_address(true));
+        auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!bec);
+        auto lec = acc.listen();
+        BOOST_TEST(!lec);
+        auto port = acc.local_endpoint().port();
+
+        native_tcp_socket<Backend> client(ioc);
+        client.open();
+
+        std::error_code wait_ec;
+        bool            wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await acc.wait(wait_type::read);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        auto connector = [&]() -> capy::task<> {
+            auto [ec] = co_await client.connect(
+                endpoint(ipv4_address::loopback(), port));
+            (void)ec;
+        };
+
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(connector());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!wait_ec);
+    }
+
     void run()
     {
         testAcceptorConstruct();
         testAcceptorMoveConstruct();
         testAcceptorPolymorphicSlice();
+        testWait();
     }
 };
 

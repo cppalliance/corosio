@@ -17,6 +17,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/local_stream_service.hpp>
 
+#include <boost/corosio/native/detail/iocp/win_local_stream_acceptor.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_socket.hpp>
 #include <boost/corosio/native/detail/iocp/win_tcp_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>

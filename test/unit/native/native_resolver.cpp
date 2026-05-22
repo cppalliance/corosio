@@ -13,6 +13,10 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <string_view>
+#include <type_traits>
+#include <utility>
+
 #include "context.hpp"
 #include "test_suite.hpp"
 
@@ -21,6 +25,25 @@ namespace boost::corosio {
 template<auto Backend>
 struct native_resolver_test
 {
+    // resolve(host, service) - forward resolution
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_resolver<Backend>&>().resolve(
+                std::declval<std::string_view>(),
+                std::declval<std::string_view>())),
+            decltype(std::declval<resolver&>().resolve(
+                std::declval<std::string_view>(),
+                std::declval<std::string_view>()))>,
+        "native_resolver::resolve(host, service) must shadow resolver::resolve");
+    // resolve(endpoint) - reverse resolution
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_resolver<Backend>&>().resolve(
+                std::declval<endpoint const&>())),
+            decltype(std::declval<resolver&>().resolve(
+                std::declval<endpoint const&>()))>,
+        "native_resolver::resolve(endpoint) must shadow resolver::resolve");
+
     void testResolverConstruct()
     {
         io_context ctx(Backend);

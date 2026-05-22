@@ -7,10 +7,10 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_NATIVE_TCP_SOCKET_HPP
-#define BOOST_COROSIO_NATIVE_NATIVE_TCP_SOCKET_HPP
+#ifndef BOOST_COROSIO_NATIVE_NATIVE_LOCAL_STREAM_SOCKET_HPP
+#define BOOST_COROSIO_NATIVE_NATIVE_LOCAL_STREAM_SOCKET_HPP
 
-#include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/backend.hpp>
 
 #ifndef BOOST_COROSIO_MRDOCS
@@ -27,52 +27,52 @@
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP
-#include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_local_stream_service.hpp>
 #endif
 #endif // !BOOST_COROSIO_MRDOCS
 
 namespace boost::corosio {
 
-/** An asynchronous TCP socket with devirtualized I/O operations.
+/** An asynchronous Unix stream socket with devirtualized I/O operations.
 
-    This class template inherits from @ref tcp_socket and shadows
-    the async operations (`read_some`, `write_some`, `connect`) with
-    versions that call the backend implementation directly, allowing
-    the compiler to inline through the entire call chain.
+    This class template inherits from @ref local_stream_socket and
+    shadows the async operations (`read_some`, `write_some`,
+    `connect`) with versions that call the backend implementation
+    directly, allowing the compiler to inline through the entire
+    call chain.
 
     Non-async operations (`open`, `close`, `cancel`, socket options)
     remain unchanged and dispatch through the compiled library.
 
-    A `native_tcp_socket` IS-A `tcp_socket` and can be passed to
-    any function expecting `tcp_socket&` or `io_stream&`, in which
-    case virtual dispatch is used transparently.
+    A `native_local_stream_socket` IS-A `local_stream_socket` and
+    can be passed to any function expecting `local_stream_socket&`
+    or `io_stream&`, in which case virtual dispatch is used
+    transparently.
 
-    @tparam Backend A backend tag value (e.g., `epoll`,
-        `iocp`) whose type provides the concrete implementation
-        types.
+    @tparam Backend A backend tag value (e.g., `epoll`) whose type
+        provides the concrete implementation types.
 
     @par Thread Safety
-    Same as @ref tcp_socket.
+    Same as @ref local_stream_socket.
 
     @par Example
     @code
-    #include <boost/corosio/native/native_tcp_socket.hpp>
+    #include <boost/corosio/native/native_local_stream_socket.hpp>
 
     native_io_context<epoll> ctx;
-    native_tcp_socket<epoll> s(ctx);
+    native_local_stream_socket<epoll> s(ctx);
     s.open();
-    auto [ec] = co_await s.connect(ep);
-    auto [ec2, n] = co_await s.read_some(buf);
+    auto [ec] = co_await s.connect(local_endpoint("/tmp/my.sock"));
     @endcode
 
-    @see tcp_socket, epoll_t, iocp_t
+    @see local_stream_socket, epoll_t, iocp_t
 */
 template<auto Backend>
-class native_tcp_socket : public tcp_socket
+class native_local_stream_socket : public local_stream_socket
 {
     using backend_type = decltype(Backend);
-    using impl_type    = typename backend_type::tcp_socket_type;
-    using service_type = typename backend_type::tcp_service_type;
+    using impl_type    = typename backend_type::local_stream_socket_type;
+    using service_type = typename backend_type::local_stream_service_type;
 
     impl_type& get_impl() noexcept
     {
@@ -82,14 +82,15 @@ class native_tcp_socket : public tcp_socket
     template<class MutableBufferSequence>
     struct native_read_awaitable
     {
-        native_tcp_socket& self_;
+        native_local_stream_socket& self_;
         MutableBufferSequence buffers_;
         std::stop_token token_;
         mutable std::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
 
         native_read_awaitable(
-            native_tcp_socket& self, MutableBufferSequence buffers) noexcept
+            native_local_stream_socket& self,
+            MutableBufferSequence buffers) noexcept
             : self_(self)
             , buffers_(std::move(buffers))
         {
@@ -119,14 +120,15 @@ class native_tcp_socket : public tcp_socket
     template<class ConstBufferSequence>
     struct native_write_awaitable
     {
-        native_tcp_socket& self_;
+        native_local_stream_socket& self_;
         ConstBufferSequence buffers_;
         std::stop_token token_;
         mutable std::error_code ec_;
         mutable std::size_t bytes_transferred_ = 0;
 
         native_write_awaitable(
-            native_tcp_socket& self, ConstBufferSequence buffers) noexcept
+            native_local_stream_socket& self,
+            ConstBufferSequence buffers) noexcept
             : self_(self)
             , buffers_(std::move(buffers))
         {
@@ -155,12 +157,13 @@ class native_tcp_socket : public tcp_socket
 
     struct native_wait_awaitable
     {
-        native_tcp_socket& self_;
+        native_local_stream_socket& self_;
         wait_type w_;
         std::stop_token token_;
         mutable std::error_code ec_;
 
-        native_wait_awaitable(native_tcp_socket& self, wait_type w) noexcept
+        native_wait_awaitable(
+            native_local_stream_socket& self, wait_type w) noexcept
             : self_(self)
             , w_(w)
         {
@@ -189,12 +192,14 @@ class native_tcp_socket : public tcp_socket
 
     struct native_connect_awaitable
     {
-        native_tcp_socket& self_;
-        endpoint endpoint_;
+        native_local_stream_socket& self_;
+        corosio::local_endpoint endpoint_;
         std::stop_token token_;
         mutable std::error_code ec_;
 
-        native_connect_awaitable(native_tcp_socket& self, endpoint ep) noexcept
+        native_connect_awaitable(
+            native_local_stream_socket& self,
+            corosio::local_endpoint ep) noexcept
             : self_(self)
             , endpoint_(ep)
         {
@@ -226,7 +231,7 @@ public:
 
         @param ctx The execution context that will own this socket.
     */
-    explicit native_tcp_socket(capy::execution_context& ctx)
+    explicit native_local_stream_socket(capy::execution_context& ctx)
         : io_object(create_handle<service_type>(ctx))
     {
     }
@@ -236,39 +241,25 @@ public:
         @param ex The executor whose context will own the socket.
     */
     template<class Ex>
-        requires(!std::same_as<std::remove_cvref_t<Ex>, native_tcp_socket>) &&
+        requires(!std::same_as<
+                 std::remove_cvref_t<Ex>,
+                 native_local_stream_socket>) &&
         capy::Executor<Ex>
-    explicit native_tcp_socket(Ex const& ex) : native_tcp_socket(ex.context())
+    explicit native_local_stream_socket(Ex const& ex)
+        : native_local_stream_socket(ex.context())
     {
     }
 
-    /** Move construct.
+    /// Move construct.
+    native_local_stream_socket(native_local_stream_socket&&) noexcept = default;
 
-        @param other The socket to move from.
+    /// Move assign.
+    native_local_stream_socket&
+    operator=(native_local_stream_socket&&) noexcept = default;
 
-        @pre No awaitables returned by @p other's methods exist.
-        @pre @p other is not referenced as a peer in any outstanding
-            accept awaitable.
-        @pre The execution context associated with @p other must
-            outlive this socket.
-    */
-    native_tcp_socket(native_tcp_socket&&) noexcept = default;
-
-    /** Move assign.
-
-        @param other The socket to move from.
-
-        @pre No awaitables returned by either `*this` or @p other's
-            methods exist.
-        @pre Neither `*this` nor @p other is referenced as a peer in
-            any outstanding accept awaitable.
-        @pre The execution context associated with @p other must
-            outlive this socket.
-    */
-    native_tcp_socket& operator=(native_tcp_socket&&) noexcept = default;
-
-    native_tcp_socket(native_tcp_socket const&)            = delete;
-    native_tcp_socket& operator=(native_tcp_socket const&) = delete;
+    native_local_stream_socket(native_local_stream_socket const&) = delete;
+    native_local_stream_socket&
+    operator=(native_local_stream_socket const&) = delete;
 
     /** Asynchronously read data from the socket.
 
@@ -278,10 +269,6 @@ public:
         @param buffers The buffer sequence to read into.
 
         @return An awaitable yielding `(error_code, std::size_t)`.
-
-        This socket must outlive the returned awaitable. The memory
-        referenced by @p buffers must remain valid until the operation
-        completes.
     */
     template<capy::MutableBufferSequence MB>
     auto read_some(MB const& buffers)
@@ -297,10 +284,6 @@ public:
         @param buffers The buffer sequence to write from.
 
         @return An awaitable yielding `(error_code, std::size_t)`.
-
-        This socket must outlive the returned awaitable. The memory
-        referenced by @p buffers must remain valid until the operation
-        completes.
     */
     template<capy::ConstBufferSequence CB>
     auto write_some(CB const& buffers)
@@ -311,27 +294,28 @@ public:
     /** Asynchronously connect to a remote endpoint.
 
         Calls the backend implementation directly, bypassing virtual
-        dispatch. Otherwise identical to @ref tcp_socket::connect.
+        dispatch. Otherwise identical to @ref local_stream_socket::connect.
 
-        @param ep The remote endpoint to connect to.
+        If the socket is not already open, it is opened automatically.
+
+        @param ep The local endpoint (path) to connect to.
 
         @return An awaitable yielding `io_result<>`.
 
-        @throws std::logic_error if the socket is not open.
-
-        This socket must outlive the returned awaitable.
+        @throws std::system_error if the socket needs to be opened
+            and the open fails.
     */
-    auto connect(endpoint ep)
+    auto connect(corosio::local_endpoint ep)
     {
         if (!is_open())
-            detail::throw_logic_error("connect: socket not open");
+            open();
         return native_connect_awaitable(*this, ep);
     }
 
     /** Asynchronously wait for the socket to be ready.
 
         Calls the backend implementation directly, bypassing virtual
-        dispatch. Otherwise identical to @ref tcp_socket::wait.
+        dispatch. Otherwise identical to @ref local_stream_socket::wait.
 
         @param w The wait direction (read, write, or error).
 
@@ -345,4 +329,4 @@ public:
 
 } // namespace boost::corosio
 
-#endif
+#endif // BOOST_COROSIO_NATIVE_NATIVE_LOCAL_STREAM_SOCKET_HPP

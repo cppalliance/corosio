@@ -12,6 +12,10 @@
 
 #include <boost/corosio/detail/platform.hpp>
 
+// AF_UNIX SOCK_DGRAM is POSIX-only in practice. Windows added AF_UNIX
+// in Win10 1803 but never SOCK_DGRAM over it, so WSASocket fails on
+// the very first open() and every test in this file would throw.
+// Keep the entire suite POSIX-gated until Windows kernel support lands.
 #if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/local_endpoint.hpp>
@@ -23,36 +27,14 @@
 #include <cstring>
 #include <string>
 
-#include <sys/un.h>
-#include <unistd.h>
-
 #include "context.hpp"
+#include "local_temp.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
 
-namespace {
-
-std::string
-make_temp_socket_path()
-{
-    char tmpl[] = "/tmp/corosio_test_XXXXXX";
-    if (!::mkdtemp(tmpl))
-        throw std::runtime_error("mkdtemp failed");
-    std::string path(tmpl);
-    path += "/sock";
-    return path;
-}
-
-void
-cleanup_path(std::string const& path)
-{
-    ::unlink(path.c_str());
-    auto dir = path.substr(0, path.rfind('/'));
-    ::rmdir(dir.c_str());
-}
-
-} // namespace
+using test::make_temp_socket_path;
+using test::cleanup_temp_socket;
 
 template<auto Backend>
 struct local_datagram_socket_test
@@ -145,7 +127,7 @@ struct local_datagram_socket_test
         auto ec   = sock.bind(local_endpoint(path));
         BOOST_TEST_EQ(!ec, true);
 
-        cleanup_path(path);
+        cleanup_temp_socket(path);
     }
 
     void testSendToRecvFrom()
@@ -212,8 +194,8 @@ struct local_datagram_socket_test
         // Source endpoint should be the sender's bound path
         BOOST_TEST_EQ(source.path(), path1);
 
-        cleanup_path(path1);
-        cleanup_path(path2);
+        cleanup_temp_socket(path1);
+        cleanup_temp_socket(path2);
     }
 
     void testBindFailure()
@@ -520,8 +502,8 @@ struct local_datagram_socket_test
         BOOST_TEST_EQ(src1.path(), path1);
         BOOST_TEST_EQ(src2.path(), path1);
 
-        cleanup_path(path1);
-        cleanup_path(path2);
+        cleanup_temp_socket(path1);
+        cleanup_temp_socket(path2);
     }
 
     void run()
@@ -547,8 +529,4 @@ COROSIO_BACKEND_TESTS(
 
 } // namespace boost::corosio
 
-#else // !BOOST_COROSIO_POSIX
-
-// Empty on non-POSIX platforms
-
-#endif
+#endif // BOOST_COROSIO_POSIX

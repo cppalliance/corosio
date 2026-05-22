@@ -15,7 +15,9 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
-#include <boost/corosio/local_socket_pair.hpp>
+#include <boost/corosio/native/native_local_stream_acceptor.hpp>
+#include <boost/corosio/native/native_local_stream_socket.hpp>
+#include <boost/corosio/test/local_socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -35,11 +37,15 @@ template<auto Backend>
 void
 bench_unix_throughput(bench::state& state)
 {
+    using socket_type   = corosio::native_local_stream_socket<Backend>;
+    using acceptor_type = corosio::native_local_stream_acceptor<Backend>;
+
     auto chunk_size = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::native_io_context<Backend> ioc;
-    auto [writer, reader] = corosio::make_local_stream_pair(ioc);
+    auto [writer, reader] =
+        corosio::test::make_local_stream_pair<socket_type, acceptor_type>(ioc);
 
     std::vector<char> write_buf(chunk_size, 'x');
     std::vector<char> read_buf(chunk_size);
@@ -93,11 +99,15 @@ template<auto Backend>
 void
 bench_unix_bidirectional_throughput(bench::state& state)
 {
+    using socket_type   = corosio::native_local_stream_socket<Backend>;
+    using acceptor_type = corosio::native_local_stream_acceptor<Backend>;
+
     auto chunk_size = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::native_io_context<Backend> ioc;
-    auto [sock1, sock2] = corosio::make_local_stream_pair(ioc);
+    auto [sock1, sock2] =
+        corosio::test::make_local_stream_pair<socket_type, acceptor_type>(ioc);
 
     std::vector<char> buf1(chunk_size, 'a');
     std::vector<char> buf2(chunk_size, 'b');
@@ -178,13 +188,17 @@ template<auto Backend>
 void
 bench_unix_throughput_lockless(bench::state& state)
 {
+    using socket_type   = corosio::native_local_stream_socket<Backend>;
+    using acceptor_type = corosio::native_local_stream_acceptor<Backend>;
+
     auto chunk_size = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
     corosio::native_io_context<Backend> ioc(opts, 1);
-    auto [writer, reader] = corosio::make_local_stream_pair(ioc);
+    auto [writer, reader] =
+        corosio::test::make_local_stream_pair<socket_type, acceptor_type>(ioc);
 
     std::vector<char> write_buf(chunk_size, 'x');
     std::vector<char> read_buf(chunk_size);
@@ -238,13 +252,17 @@ template<auto Backend>
 void
 bench_unix_bidirectional_throughput_lockless(bench::state& state)
 {
+    using socket_type   = corosio::native_local_stream_socket<Backend>;
+    using acceptor_type = corosio::native_local_stream_acceptor<Backend>;
+
     auto chunk_size = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::io_context_options opts;
     opts.single_threaded = true;
     corosio::native_io_context<Backend> ioc(opts, 1);
-    auto [sock1, sock2] = corosio::make_local_stream_pair(ioc);
+    auto [sock1, sock2] =
+        corosio::test::make_local_stream_pair<socket_type, acceptor_type>(ioc);
 
     std::vector<char> buf1(chunk_size, 'a');
     std::vector<char> buf2(chunk_size, 'b');

@@ -14,6 +14,8 @@
 #include <boost/capy/task.hpp>
 
 #include <chrono>
+#include <type_traits>
+#include <utility>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -23,6 +25,12 @@ namespace boost::corosio {
 template<auto Backend>
 struct native_timer_test
 {
+    static_assert(
+        !std::is_same_v<
+            decltype(std::declval<native_timer<Backend>&>().wait()),
+            decltype(std::declval<io_timer&>().wait())>,
+        "native_timer::wait must shadow io_timer::wait");
+
     void testTimerConstruct()
     {
         io_context ctx(Backend);
