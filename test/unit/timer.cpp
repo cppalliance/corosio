@@ -743,13 +743,11 @@ struct timer_test
     {
         io_context ioc(Backend);
         timer t(ioc);
-        timer delay(ioc);
 
         bool w1 = false, w2 = false;
         std::error_code ec1, ec2;
 
         t.expires_after(std::chrono::seconds(60));
-        delay.expires_after(std::chrono::milliseconds(10));
 
         auto wait_task = [](timer& t_ref, std::error_code& ec_out,
                             bool& done) -> capy::task<> {
@@ -758,18 +756,19 @@ struct timer_test
             done      = true;
         };
 
-        std::size_t expires_count = 0;
-        auto reset_task = [&](timer& delay_ref, timer& t_ref) -> capy::task<> {
-            (void)co_await delay_ref.wait();
-            expires_count = t_ref.expires_at(
-                timer::clock_type::now() + std::chrono::seconds(30));
-        };
-
         capy::run_async(ioc.get_executor())(wait_task(t, ec1, w1));
         capy::run_async(ioc.get_executor())(wait_task(t, ec2, w2));
-        capy::run_async(ioc.get_executor())(reset_task(delay, t));
 
-        ioc.run_for(std::chrono::milliseconds(100));
+        // Drain so both waiters suspend on t.wait() and register.
+        while (ioc.poll() > 0)
+            ;
+
+        auto expires_count = t.expires_at(
+            timer::clock_type::now() + std::chrono::seconds(30));
+
+        // Drain so the canceled completions reach the coroutines.
+        while (ioc.poll() > 0)
+            ;
 
         BOOST_TEST_EQ(expires_count, 2u);
         BOOST_TEST(w1);
@@ -782,13 +781,11 @@ struct timer_test
     {
         io_context ioc(Backend);
         timer t(ioc);
-        timer delay(ioc);
 
         bool w1 = false, w2 = false;
         std::error_code ec1, ec2;
 
         t.expires_after(std::chrono::seconds(60));
-        delay.expires_after(std::chrono::milliseconds(10));
 
         auto wait_task = [](timer& t_ref, std::error_code& ec_out,
                             bool& done) -> capy::task<> {
@@ -797,17 +794,18 @@ struct timer_test
             done      = true;
         };
 
-        std::size_t expires_count = 0;
-        auto reset_task = [&](timer& delay_ref, timer& t_ref) -> capy::task<> {
-            (void)co_await delay_ref.wait();
-            expires_count = t_ref.expires_after(std::chrono::seconds(30));
-        };
-
         capy::run_async(ioc.get_executor())(wait_task(t, ec1, w1));
         capy::run_async(ioc.get_executor())(wait_task(t, ec2, w2));
-        capy::run_async(ioc.get_executor())(reset_task(delay, t));
 
-        ioc.run_for(std::chrono::milliseconds(100));
+        // Drain so both waiters suspend on t.wait() and register.
+        while (ioc.poll() > 0)
+            ;
+
+        auto expires_count = t.expires_after(std::chrono::seconds(30));
+
+        // Drain so the canceled completions reach the coroutines.
+        while (ioc.poll() > 0)
+            ;
 
         BOOST_TEST_EQ(expires_count, 2u);
         BOOST_TEST(w1);
