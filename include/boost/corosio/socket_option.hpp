@@ -172,6 +172,131 @@ public:
     }
 };
 
+/** Base class for concrete boolean socket options with single-byte storage.
+
+    Some BSD-derived kernels (macOS, FreeBSD) require certain IPv4 multicast
+    options (`IP_MULTICAST_LOOP`) to be set with a one-byte value and return
+    `EINVAL` for the four-byte form that Linux accepts. This base provides
+    `unsigned char` storage so the same options work on every platform.
+*/
+class byte_boolean_option
+{
+    unsigned char value_ = 0;
+
+public:
+    /// Construct with default value (disabled).
+    byte_boolean_option() = default;
+
+    /** Construct with an explicit value.
+
+        @param v `true` to enable the option, `false` to disable.
+    */
+    explicit byte_boolean_option(bool v) noexcept : value_(v ? 1 : 0) {}
+
+    /// Assign a new value.
+    byte_boolean_option& operator=(bool v) noexcept
+    {
+        value_ = v ? 1 : 0;
+        return *this;
+    }
+
+    /// Return the option value.
+    bool value() const noexcept
+    {
+        return value_ != 0;
+    }
+
+    /// Return the option value.
+    explicit operator bool() const noexcept
+    {
+        return value_ != 0;
+    }
+
+    /// Return the negated option value.
+    bool operator!() const noexcept
+    {
+        return value_ == 0;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return &value_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
+
+    /// Storage is already one byte; no normalization needed.
+    void resize(std::size_t) noexcept {}
+};
+
+/** Base class for concrete integer socket options with single-byte storage.
+
+    Same rationale as `byte_boolean_option`: BSD-derived kernels require
+    `IP_MULTICAST_TTL` to be set with a one-byte value. Linux accepts
+    one-byte too, so single-byte storage is portable.
+*/
+class byte_integer_option
+{
+    unsigned char value_ = 0;
+
+public:
+    /// Construct with default value (zero).
+    byte_integer_option() = default;
+
+    /** Construct with an explicit value.
+
+        @param v The option value; truncated to one byte.
+    */
+    explicit byte_integer_option(int v) noexcept
+        : value_(static_cast<unsigned char>(v))
+    {}
+
+    /// Assign a new value; truncated to one byte.
+    byte_integer_option& operator=(int v) noexcept
+    {
+        value_ = static_cast<unsigned char>(v);
+        return *this;
+    }
+
+    /// Return the option value.
+    int value() const noexcept
+    {
+        return value_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void* data() noexcept
+    {
+        return &value_;
+    }
+
+    /// Return a pointer to the underlying storage.
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
+
+    /// Return the size of the underlying storage.
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
+
+    /// Storage is already one byte; no normalization needed.
+    void resize(std::size_t) noexcept {}
+};
+
 /** Disable Nagle's algorithm (TCP_NODELAY).
 
     @par Example
@@ -430,16 +555,19 @@ public:
 
 /** Enable loopback of outgoing multicast on IPv4 (IP_MULTICAST_LOOP).
 
+    Uses single-byte storage because BSD-derived kernels (macOS, FreeBSD)
+    reject the four-byte form with `EINVAL`. Linux accepts either size.
+
     @par Example
     @code
     sock.set_option( socket_option::multicast_loop_v4( true ) );
     @endcode
 */
-class BOOST_COROSIO_DECL multicast_loop_v4 : public boolean_option
+class BOOST_COROSIO_DECL multicast_loop_v4 : public byte_boolean_option
 {
 public:
-    using boolean_option::boolean_option;
-    using boolean_option::operator=;
+    using byte_boolean_option::byte_boolean_option;
+    using byte_boolean_option::operator=;
 
     /// Return the protocol level.
     static int level() noexcept;
@@ -470,16 +598,20 @@ public:
 
 /** Set the multicast TTL for IPv4 (IP_MULTICAST_TTL).
 
+    Uses single-byte storage because BSD-derived kernels (macOS, FreeBSD)
+    reject the four-byte form with `EINVAL`. Linux accepts either size.
+    Values are truncated to the 0–255 range.
+
     @par Example
     @code
     sock.set_option( socket_option::multicast_hops_v4( 4 ) );
     @endcode
 */
-class BOOST_COROSIO_DECL multicast_hops_v4 : public integer_option
+class BOOST_COROSIO_DECL multicast_hops_v4 : public byte_integer_option
 {
 public:
-    using integer_option::integer_option;
-    using integer_option::operator=;
+    using byte_integer_option::byte_integer_option;
+    using byte_integer_option::operator=;
 
     /// Return the protocol level.
     static int level() noexcept;

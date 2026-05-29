@@ -248,6 +248,16 @@ inline void
 win_wait_reactor::register_wait(
     SOCKET fd, wait_type w, overlapped_op* op)
 {
+    // If the op was already cancelled (e.g. pre-cancelled stop_token
+    // fired synchronously before this call), complete immediately
+    // instead of registering.  Otherwise the reactor would park the
+    // op forever because the earlier cancel_wait() found nothing to
+    // cancel in registered_.
+    if (op->cancelled.load(std::memory_order_acquire))
+    {
+        sched_.on_completion(op, 0, 0);
+        return;
+    }
     {
         std::lock_guard lock(mutex_);
         pending_register_.push_back(entry{fd, w, op});
