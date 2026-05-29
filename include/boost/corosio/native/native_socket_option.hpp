@@ -248,6 +248,86 @@ public:
     }
 };
 
+/** A boolean socket option with single-byte storage.
+
+    Some BSD-derived kernels (macOS, FreeBSD) require certain IPv4 multicast
+    options (`IP_MULTICAST_LOOP`) to be set with a one-byte value and return
+    `EINVAL` for the four-byte form that Linux accepts. This template
+    provides `unsigned char` storage so the option works on every platform.
+
+    @tparam Level The protocol level.
+    @tparam Name The option name.
+*/
+template<int Level, int Name>
+class byte_boolean
+{
+    unsigned char value_ = 0;
+
+public:
+    byte_boolean() = default;
+
+    explicit byte_boolean(bool v) noexcept : value_(v ? 1 : 0) {}
+
+    byte_boolean& operator=(bool v) noexcept
+    {
+        value_ = v ? 1 : 0;
+        return *this;
+    }
+
+    bool value() const noexcept { return value_ != 0; }
+    explicit operator bool() const noexcept { return value_ != 0; }
+    bool operator!() const noexcept { return value_ == 0; }
+
+    static constexpr int level() noexcept { return Level; }
+    static constexpr int name() noexcept { return Name; }
+
+    void* data() noexcept { return &value_; }
+    void const* data() const noexcept { return &value_; }
+    std::size_t size() const noexcept { return sizeof(value_); }
+
+    void resize(std::size_t) noexcept {}
+};
+
+/** An integer socket option with single-byte storage.
+
+    Same rationale as `byte_boolean`: BSD-derived kernels require
+    `IP_MULTICAST_TTL` to be set with a one-byte value. Linux accepts
+    one byte too, so single-byte storage is portable. Values are
+    truncated to the 0–255 range.
+
+    @tparam Level The protocol level.
+    @tparam Name The option name.
+*/
+template<int Level, int Name>
+class byte_integer
+{
+    unsigned char value_ = 0;
+
+public:
+    byte_integer() = default;
+
+    explicit byte_integer(int v) noexcept
+        : value_(static_cast<unsigned char>(v))
+    {}
+
+    byte_integer& operator=(int v) noexcept
+    {
+        value_ = static_cast<unsigned char>(v);
+        return *this;
+    }
+
+    int value() const noexcept { return value_; }
+
+    static constexpr int level() noexcept { return Level; }
+    static constexpr int name() noexcept { return Name; }
+
+    void* data() noexcept { return &value_; }
+    void const* data() const noexcept { return &value_; }
+    std::size_t size() const noexcept { return sizeof(value_); }
+
+    void resize(std::size_t) noexcept {}
+};
+
 /** The SO_LINGER socket option (native variant).
 
     Controls behavior when closing a socket with unsent data.
@@ -375,13 +455,13 @@ using reuse_port = boolean<SOL_SOCKET, SO_REUSEPORT>;
 #endif
 
 /// Enable loopback of outgoing multicast on IPv4 (IP_MULTICAST_LOOP).
-using multicast_loop_v4 = boolean<IPPROTO_IP, IP_MULTICAST_LOOP>;
+using multicast_loop_v4 = byte_boolean<IPPROTO_IP, IP_MULTICAST_LOOP>;
 
 /// Enable loopback of outgoing multicast on IPv6 (IPV6_MULTICAST_LOOP).
 using multicast_loop_v6 = boolean<IPPROTO_IPV6, IPV6_MULTICAST_LOOP>;
 
 /// Set the multicast TTL for IPv4 (IP_MULTICAST_TTL).
-using multicast_hops_v4 = integer<IPPROTO_IP, IP_MULTICAST_TTL>;
+using multicast_hops_v4 = byte_integer<IPPROTO_IP, IP_MULTICAST_TTL>;
 
 /// Set the multicast hop limit for IPv6 (IPV6_MULTICAST_HOPS).
 using multicast_hops_v6 = integer<IPPROTO_IPV6, IPV6_MULTICAST_HOPS>;

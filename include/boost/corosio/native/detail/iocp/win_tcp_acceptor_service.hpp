@@ -1373,6 +1373,14 @@ win_tcp_acceptor_internal::accept(
     }
 
     svc_.on_pending(&op);
+
+    // If the stop_token was already cancelled when start() was called,
+    // the CancelIoEx in the canceller fired before AcceptEx was
+    // submitted and had no effect.  Re-issue now that the I/O is
+    // pending so the completion posts with ERROR_OPERATION_ABORTED.
+    if (op.cancelled.load(std::memory_order_acquire))
+        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
     return std::noop_coroutine();
 }
 

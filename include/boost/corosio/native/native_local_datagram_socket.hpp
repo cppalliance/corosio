@@ -10,6 +10,10 @@
 #ifndef BOOST_COROSIO_NATIVE_NATIVE_LOCAL_DATAGRAM_SOCKET_HPP
 #define BOOST_COROSIO_NATIVE_NATIVE_LOCAL_DATAGRAM_SOCKET_HPP
 
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_POSIX
+
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/backend.hpp>
 
@@ -24,10 +28,6 @@
 
 #if BOOST_COROSIO_HAS_KQUEUE
 #include <boost/corosio/native/detail/kqueue/kqueue_types.hpp>
-#endif
-
-#if BOOST_COROSIO_HAS_IOCP
-#include <boost/corosio/native/detail/iocp/win_local_dgram_service.hpp>
 #endif
 #endif // !BOOST_COROSIO_MRDOCS
 
@@ -485,5 +485,7 @@ public:
 };
 
 } // namespace boost::corosio
+
+#endif // BOOST_COROSIO_POSIX
 
 #endif // BOOST_COROSIO_NATIVE_NATIVE_LOCAL_DATAGRAM_SOCKET_HPP

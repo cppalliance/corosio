@@ -495,7 +495,7 @@ win_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
 inline win_resolver_service::win_resolver_service(
     capy::execution_context& ctx, scheduler& sched)
     : sched_(sched)
-    , pool_(ctx.make_service<thread_pool>())
+    , pool_(ctx.use_service<thread_pool>())
 {
 }
 
