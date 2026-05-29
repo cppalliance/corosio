@@ -11,6 +11,9 @@
 #define BOOST_COROSIO_LOCAL_DATAGRAM_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_POSIX
 
 namespace boost::corosio {
 
@@ -24,6 +27,9 @@ class local_datagram_socket;
     The family(), type(), and protocol() members are implemented
     in the compiled library to avoid exposing platform socket
     headers.
+
+    @note Not available on Windows. Windows does not support
+        AF_UNIX datagram sockets (SOCK_DGRAM).
 
     @see local_datagram_socket
 */
@@ -44,5 +50,7 @@ public:
 };
 
 } // namespace boost::corosio
+
+#endif // BOOST_COROSIO_POSIX
 
 #endif // BOOST_COROSIO_LOCAL_DATAGRAM_HPP

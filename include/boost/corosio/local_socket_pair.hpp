@@ -12,11 +12,11 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
+#include <boost/corosio/local_stream_socket.hpp>
 
 #if BOOST_COROSIO_POSIX
-
-#include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/local_datagram_socket.hpp>
+#endif
 
 #include <utility>
 
@@ -26,9 +26,10 @@ class io_context;
 
 /** Create a connected pair of local stream sockets.
 
-    Uses socketpair(AF_UNIX, SOCK_STREAM) to create two
-    pre-connected sockets. Data written to one can be read
-    from the other.
+    On POSIX, uses socketpair(AF_UNIX, SOCK_STREAM). On Windows,
+    emulates socketpair by creating a temporary listener, connecting,
+    and accepting. Data written to one socket can be read from the
+    other.
 
     @param ctx The I/O context for the sockets.
 
@@ -39,10 +40,14 @@ class io_context;
 BOOST_COROSIO_DECL std::pair<local_stream_socket, local_stream_socket>
 make_local_stream_pair(io_context& ctx);
 
+#if BOOST_COROSIO_POSIX
 /** Create a connected pair of local datagram sockets.
 
     Uses socketpair(AF_UNIX, SOCK_DGRAM) to create two
     pre-connected sockets.
+
+    @note Not available on Windows. Windows does not support
+        AF_UNIX datagram sockets.
 
     @param ctx The I/O context for the sockets.
 
@@ -52,9 +57,8 @@ make_local_stream_pair(io_context& ctx);
 */
 BOOST_COROSIO_DECL std::pair<local_datagram_socket, local_datagram_socket>
 make_local_datagram_pair(io_context& ctx);
+#endif
 
 } // namespace boost::corosio
-
-#endif // BOOST_COROSIO_POSIX
 
 #endif // BOOST_COROSIO_LOCAL_SOCKET_PAIR_HPP

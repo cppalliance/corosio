@@ -131,4 +131,129 @@ make_local_datagram_pair(io_context& ctx)
 
 } // namespace boost::corosio
 
-#endif // BOOST_COROSIO_POSIX
+#elif BOOST_COROSIO_HAS_IOCP
+
+// Windows: emulate socketpair(AF_UNIX, SOCK_STREAM) via a temporary
+// listener socket.  Create a listening socket bound to a unique temp
+// path, connect a client, accept the peer, then close the listener
+// and remove the temp path.
+
+#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/test/temp_path.hpp>
+#include <boost/corosio/local_endpoint.hpp>
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <WinSock2.h>
+
+#include <system_error>
+#include <utility>
+
+namespace boost::corosio {
+
+namespace {
+
+std::error_code
+make_wsa_error()
+{
+    return std::error_code(::WSAGetLastError(), std::system_category());
+}
+
+} // namespace
+
+std::pair<local_stream_socket, local_stream_socket>
+make_local_stream_pair(io_context& ctx)
+{
+    // Create a unique temp directory + path for the listener.
+    test::temp_socket_dir tmp;
+    auto path = tmp.path();
+    local_endpoint ep(path);
+
+    // Build the sockaddr.
+    sockaddr_storage storage{};
+    socklen_t addrlen = detail::to_sockaddr(ep, storage);
+
+    // Create listener socket.
+    SOCKET listener = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (listener == INVALID_SOCKET)
+        throw std::system_error(make_wsa_error(), "socket(listener)");
+
+    // bind + listen
+    if (::bind(listener, reinterpret_cast<sockaddr*>(&storage),
+               static_cast<int>(addrlen)) == SOCKET_ERROR)
+    {
+        auto ec = make_wsa_error();
+        ::closesocket(listener);
+        throw std::system_error(ec, "bind(listener)");
+    }
+
+    if (::listen(listener, 1) == SOCKET_ERROR)
+    {
+        auto ec = make_wsa_error();
+        ::closesocket(listener);
+        throw std::system_error(ec, "listen");
+    }
+
+    // Create client socket and connect.
+    SOCKET client = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (client == INVALID_SOCKET)
+    {
+        auto ec = make_wsa_error();
+        ::closesocket(listener);
+        throw std::system_error(ec, "socket(client)");
+    }
+
+    if (::connect(client, reinterpret_cast<sockaddr*>(&storage),
+                  static_cast<int>(addrlen)) == SOCKET_ERROR)
+    {
+        auto ec = make_wsa_error();
+        ::closesocket(client);
+        ::closesocket(listener);
+        throw std::system_error(ec, "connect");
+    }
+
+    // Accept the peer.
+    SOCKET server = ::accept(listener, nullptr, nullptr);
+    if (server == INVALID_SOCKET)
+    {
+        auto ec = make_wsa_error();
+        ::closesocket(client);
+        ::closesocket(listener);
+        throw std::system_error(ec, "accept");
+    }
+
+    // Listener is no longer needed.
+    ::closesocket(listener);
+
+    // Wrap the raw SOCKETs into local_stream_socket objects.
+    // assign() registers the handle with the IOCP port.
+    try
+    {
+        local_stream_socket s1(ctx);
+        local_stream_socket s2(ctx);
+
+        s1.assign(static_cast<native_handle_type>(client));
+        client = INVALID_SOCKET;
+        s2.assign(static_cast<native_handle_type>(server));
+        server = INVALID_SOCKET;
+
+        return {std::move(s1), std::move(s2)};
+    }
+    catch (...)
+    {
+        if (client != INVALID_SOCKET)
+            ::closesocket(client);
+        if (server != INVALID_SOCKET)
+            ::closesocket(server);
+        throw;
+    }
+}
+
+} // namespace boost::corosio
+
+#endif // BOOST_COROSIO_HAS_IOCP

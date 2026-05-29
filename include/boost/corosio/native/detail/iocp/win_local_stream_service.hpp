@@ -936,10 +936,26 @@ win_local_stream_service::open_socket(
 
 inline std::error_code
 win_local_stream_service::assign_socket(
-    local_stream_socket::implementation& /*impl*/, native_handle_type /*fd*/)
+    local_stream_socket::implementation& impl, native_handle_type fd)
 {
-    // socketpair / assign is POSIX-only
-    return std::make_error_code(std::errc::operation_not_supported);
+    auto& wrapper = static_cast<win_local_stream_socket&>(impl);
+    auto& internal = *wrapper.get_internal();
+
+    internal.close_socket();
+
+    SOCKET sock = static_cast<SOCKET>(fd);
+
+    HANDLE result = ::CreateIoCompletionPort(
+        reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
+
+    if (result == nullptr)
+    {
+        DWORD dwError = ::GetLastError();
+        return make_err(dwError);
+    }
+
+    internal.socket_ = sock;
+    return {};
 }
 
 inline std::error_code

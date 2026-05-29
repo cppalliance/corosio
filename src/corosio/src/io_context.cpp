@@ -33,7 +33,6 @@
 #include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_udp_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_acceptor_service.hpp>
-#include <boost/corosio/native/detail/iocp/win_local_dgram_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_signals.hpp>
 #include <boost/corosio/native/detail/iocp/win_file_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_random_access_file_service.hpp>
@@ -108,7 +107,6 @@ iocp_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
     auto& local_svc =
         ctx.make_service<detail::win_local_stream_service>(tcp_svc);
     ctx.make_service<detail::win_local_stream_acceptor_service>(local_svc);
-    ctx.make_service<detail::win_local_dgram_service>();
     ctx.make_service<detail::win_signals>();
     ctx.make_service<detail::win_file_service>();
     ctx.make_service<detail::win_random_access_file_service>();
