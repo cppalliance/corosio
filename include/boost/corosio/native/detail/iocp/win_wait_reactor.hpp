@@ -326,10 +326,17 @@ win_wait_reactor::run()
         for (auto& e : registered_)
             pollfds.push_back({e.fd, events_for_wait(e.w), 0});
 
+        // Bounded timeout rather than infinite: this is a safety net
+        // against a lost self-pipe wakeup (e.g. a failed/coalesced
+        // send in wake_self leaving wake_pending_ stuck true). On
+        // timeout the loop re-drains pending_register_/pending_cancel_
+        // and re-checks stop_, so a missed wakeup costs at most one
+        // poll interval of latency instead of a permanent hang. This
+        // mirrors the 500 ms GQCS safety timeout in win_scheduler.
         int n = ::WSAPoll(
             pollfds.data(),
             static_cast<ULONG>(pollfds.size()),
-            -1 /* infinite */);
+            500 /* ms */);
         if (n == SOCKET_ERROR)
             break;
 
