@@ -18,9 +18,9 @@
 // Keep the entire suite POSIX-gated until Windows kernel support lands.
 #if BOOST_COROSIO_POSIX
 
+#include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/timer.hpp>
-#include <boost/corosio/test/local_socket_pair.hpp>
 #include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -39,8 +39,6 @@
 #include "test_suite.hpp"
 
 namespace boost::corosio {
-
-using test::make_local_datagram_pair;
 
 template<auto Backend>
 struct local_datagram_socket_test
@@ -79,7 +77,9 @@ struct local_datagram_socket_test
     void testSendRecvConnected()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         auto ex = ioc.get_executor();
 
@@ -216,7 +216,9 @@ struct local_datagram_socket_test
     void testDatagramBoundary()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
         auto ex = ioc.get_executor();
 
         // Send two messages of different sizes, verify they
@@ -361,7 +363,9 @@ struct local_datagram_socket_test
     void testRecvPeek()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
         auto ex = ioc.get_executor();
 
         // Send a message, peek at it, then consume it.
@@ -570,7 +574,9 @@ struct local_datagram_socket_test
     void testShutdown()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         // Throwing overload (best-effort, may report ENOTCONN).
         s1.shutdown(shutdown_send);
@@ -635,7 +641,9 @@ struct local_datagram_socket_test
     void testAvailable()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         // Send a datagram, then check available on the receive side
         auto ex = ioc.get_executor();
@@ -676,7 +684,9 @@ struct local_datagram_socket_test
     void testRelease()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
         (void)s2;
         BOOST_TEST(s1.is_open());
 
@@ -743,7 +753,9 @@ struct local_datagram_socket_test
     void testCancelPendingRecv()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
         (void)s1;
 
         auto ex = ioc.get_executor();

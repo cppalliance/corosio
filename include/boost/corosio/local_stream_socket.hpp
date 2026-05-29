@@ -470,7 +470,7 @@ public:
 
         The socket must not already be open. The fd is adopted
         and registered with the platform reactor. Used by
-        make_local_stream_pair() to wrap socketpair() fds.
+        connect_pair() to wrap socketpair() fds.
 
         @param fd The file descriptor to adopt. Must be a valid,
             open, non-blocking Unix stream socket.
