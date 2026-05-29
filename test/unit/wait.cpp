@@ -10,8 +10,9 @@
 // Test that header is self-contained.
 #include <boost/corosio/wait_type.hpp>
 
-#include <boost/corosio/detail/platform.hpp>
-
+#include <boost/corosio/local_endpoint.hpp>
+#include <boost/corosio/local_stream_acceptor.hpp>
+#include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
@@ -20,6 +21,7 @@
 #include <boost/corosio/udp_socket.hpp>
 
 #include <boost/corosio/test/socket_pair.hpp>
+#include <boost/corosio/test/temp_path.hpp>
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -32,46 +34,10 @@
 #include <string_view>
 #include <system_error>
 
-#if BOOST_COROSIO_POSIX
-#include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/local_stream_acceptor.hpp>
-#include <boost/corosio/local_stream_socket.hpp>
-
-#include <stdexcept>
-#include <string>
-
-#include <unistd.h>
-#endif
-
 #include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
-
-#if BOOST_COROSIO_POSIX
-namespace {
-
-std::string
-make_temp_socket_path()
-{
-    char tmpl[] = "/tmp/corosio_wait_XXXXXX";
-    if (!::mkdtemp(tmpl))
-        throw std::runtime_error("mkdtemp failed");
-    std::string path(tmpl);
-    path += "/sock";
-    return path;
-}
-
-void
-cleanup_path(std::string const& path)
-{
-    ::unlink(path.c_str());
-    auto dir = path.substr(0, path.rfind('/'));
-    ::rmdir(dir.c_str());
-}
-
-} // namespace
-#endif
 
 template<auto Backend>
 struct wait_test
@@ -144,13 +110,13 @@ struct wait_test
         BOOST_TEST(!wait_ec);
     }
 
-#if BOOST_COROSIO_POSIX
     // local_stream_socket wait_read fires when the peer writes.
     void testWaitOnLocalStream()
     {
         io_context ioc(Backend);
         auto ex   = ioc.get_executor();
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         local_stream_acceptor acc(ioc);
         acc.open();
@@ -196,12 +162,9 @@ struct wait_test
         capy::run_async(ex)(writer());
         ioc.run();
 
-        cleanup_path(path);
-
         BOOST_TEST(wait_done);
         BOOST_TEST(!wait_ec);
     }
-#endif // BOOST_COROSIO_POSIX
 
     // Cancellation via socket.cancel() yields operation_canceled.
     void testCancellation()
@@ -360,9 +323,7 @@ struct wait_test
     {
         testWaitReadAndNoConsume();
         testWaitWriteImmediate();
-#if BOOST_COROSIO_POSIX
         testWaitOnLocalStream();
-#endif
         testCancellation();
         testAcceptorWait();
         testWaitOnUdp();

@@ -18,24 +18,21 @@
 
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/local_endpoint.hpp>
+#include <boost/corosio/test/temp_path.hpp>
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
 #include <cstring>
-#include <string>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
 #include "context.hpp"
-#include "local_temp.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
-
-using test::make_temp_socket_path;
-using test::cleanup_temp_socket;
 
 template<auto Backend>
 struct native_local_datagram_socket_test
@@ -118,8 +115,10 @@ struct native_local_datagram_socket_test
     void testSendToRecvFrom()
     {
         io_context ioc(Backend);
-        auto path1 = make_temp_socket_path();
-        auto path2 = make_temp_socket_path();
+        test::temp_socket_dir tmp1;
+        test::temp_socket_dir tmp2;
+        auto path1 = tmp1.path();
+        auto path2 = tmp2.path();
 
         native_local_datagram_socket<Backend> sender(ioc);
         native_local_datagram_socket<Backend> receiver(ioc);
@@ -153,16 +152,15 @@ struct native_local_datagram_socket_test
         auto ex = ioc.get_executor();
         capy::run_async(ex)(task(sender, receiver, local_endpoint(path2)));
         ioc.run();
-
-        cleanup_temp_socket(path1);
-        cleanup_temp_socket(path2);
     }
 
     void testSendRecvConnected()
     {
         io_context ioc(Backend);
-        auto path_a = make_temp_socket_path();
-        auto path_b = make_temp_socket_path();
+        test::temp_socket_dir tmp_a;
+        test::temp_socket_dir tmp_b;
+        auto path_a = tmp_a.path();
+        auto path_b = tmp_b.path();
 
         native_local_datagram_socket<Backend> a(ioc);
         native_local_datagram_socket<Backend> b(ioc);
@@ -202,16 +200,15 @@ struct native_local_datagram_socket_test
         capy::run_async(ex)(task(
             a, b, local_endpoint(path_b), local_endpoint(path_a)));
         ioc.run();
-
-        cleanup_temp_socket(path_a);
-        cleanup_temp_socket(path_b);
     }
 
     void testVirtualDispatchFallback()
     {
         io_context ioc(Backend);
-        auto path1 = make_temp_socket_path();
-        auto path2 = make_temp_socket_path();
+        test::temp_socket_dir tmp1;
+        test::temp_socket_dir tmp2;
+        auto path1 = tmp1.path();
+        auto path2 = tmp2.path();
 
         native_local_datagram_socket<Backend> sender(ioc);
         native_local_datagram_socket<Backend> receiver(ioc);
@@ -244,9 +241,6 @@ struct native_local_datagram_socket_test
         auto ex = ioc.get_executor();
         capy::run_async(ex)(task(s_ref, r_ref, local_endpoint(path2)));
         ioc.run();
-
-        cleanup_temp_socket(path1);
-        cleanup_temp_socket(path2);
     }
 
     // Exercise the shadowed wait() awaitable: wait_type::read on a
@@ -255,7 +249,8 @@ struct native_local_datagram_socket_test
     {
         io_context ioc(Backend);
         auto       ex      = ioc.get_executor();
-        auto       rx_path = test::make_temp_socket_path();
+        test::temp_socket_dir rx_tmp;
+        auto       rx_path = rx_tmp.path();
 
         native_local_datagram_socket<Backend> recv(ioc);
         recv.open();
@@ -286,10 +281,95 @@ struct native_local_datagram_socket_test
         capy::run_async(ex)(sender());
         ioc.run();
 
-        test::cleanup_temp_socket(rx_path);
-
         BOOST_TEST(wait_done);
         BOOST_TEST(!wait_ec);
+    }
+
+    void testSendOnClosedThrows()
+    {
+        io_context ioc(Backend);
+        native_local_datagram_socket<Backend> s(ioc);
+        char const m[] = "x";
+
+        bool caught_send = false;
+        try
+        {
+            (void)s.send(capy::const_buffer(m, 1));
+        }
+        catch (std::logic_error const&)
+        {
+            caught_send = true;
+        }
+        BOOST_TEST(caught_send);
+
+        bool caught_send_to = false;
+        try
+        {
+            (void)s.send_to(
+                capy::const_buffer(m, 1), local_endpoint("/tmp/x"));
+        }
+        catch (std::logic_error const&)
+        {
+            caught_send_to = true;
+        }
+        BOOST_TEST(caught_send_to);
+
+        char buf[1];
+        bool caught_recv = false;
+        try
+        {
+            (void)s.recv(capy::mutable_buffer(buf, 1));
+        }
+        catch (std::logic_error const&)
+        {
+            caught_recv = true;
+        }
+        BOOST_TEST(caught_recv);
+
+        local_endpoint src;
+        bool caught_recv_from = false;
+        try
+        {
+            (void)s.recv_from(capy::mutable_buffer(buf, 1), src);
+        }
+        catch (std::logic_error const&)
+        {
+            caught_recv_from = true;
+        }
+        BOOST_TEST(caught_recv_from);
+    }
+
+    void testConnectAutoOpens()
+    {
+        // connect() on a closed socket should auto-open then attempt to
+        // connect. We aim it at a path that does not exist so the
+        // connect itself yields an error, but the auto-open branch
+        // is exercised.
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        // temp dir exists, but the socket file inside it does not
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+
+        native_local_datagram_socket<Backend> s(ioc);
+        BOOST_TEST_EQ(s.is_open(), false);
+
+        std::error_code result_ec;
+        bool done = false;
+
+        capy::run_async(ex)(
+            [](native_local_datagram_socket<Backend>& sock,
+               local_endpoint ep,
+               std::error_code& ec_out, bool& d) -> capy::task<> {
+                auto [ec] = co_await sock.connect(ep);
+                ec_out = ec;
+                d      = true;
+            }(s, local_endpoint(path), result_ec, done));
+
+        ioc.run();
+        BOOST_TEST(done);
+        // socket was opened by the connect() call
+        BOOST_TEST(s.is_open());
     }
 
     void run()
@@ -301,6 +381,8 @@ struct native_local_datagram_socket_test
         testSendRecvConnected();
         testVirtualDispatchFallback();
         testWait();
+        testSendOnClosedThrows();
+        testConnectAutoOpens();
     }
 };
 

@@ -7,6 +7,7 @@
 # Official repository: https://github.com/cppalliance/corosio
 #
 
+import os ;
 import testing ;
 
 project boost/corosio/test/unit
@@ -17,12 +18,20 @@ project boost/corosio/test/unit
       <include>../../../capy/extra/test_suite
       <include>.
       <include>../..
+      <target-os>windows:<define>_WIN32_WINNT=0x0602
     ;
 
-# Non-TLS tests
-for local f in [ glob *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp ] [ glob test/*.cpp ]
+# Non-TLS tests (recurses into test/, native/, etc.)
+for local f in [ glob-tree-ex . : *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp iocp_shutdown.cpp ]
 {
     run $(f) ;
+}
+
+# IOCP-specific native tests (Windows host only; skip on other hosts to
+# avoid triggering a cross-compile attempt).
+if [ os.name ] = NT
+{
+    run native/iocp/iocp_shutdown.cpp ;
 }
 
 # OpenSSL tests - always link against boost_corosio_openssl

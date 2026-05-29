@@ -19,6 +19,12 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#ifndef _WIN32
+// For the SO_REUSEPORT guard around testReusePort. The corosio public
+// option header is platform-agnostic and does not expose this macro.
+#include <sys/socket.h>
+#endif
+
 #include "context.hpp"
 #include "test_suite.hpp"
 
@@ -608,6 +614,44 @@ struct tcp_acceptor_test
         acc.close();
     }
 
+    void testListenClosedThrows()
+    {
+        // listen() on a closed acceptor throws std::logic_error.
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        bool caught = false;
+        try
+        {
+            auto ec = acc.listen();
+            (void)ec;
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testClosedAcceptorAccessors()
+    {
+        // cancel() and local_endpoint() on a closed acceptor must
+        // return without throwing (early return on !is_open()).
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        BOOST_TEST_EQ(acc.is_open(), false);
+
+        acc.cancel();
+        BOOST_TEST_EQ(acc.is_open(), false);
+
+        BOOST_TEST(acc.local_endpoint() == endpoint{});
+
+        // close() on a closed acceptor is a no-op.
+        acc.close();
+        BOOST_TEST_EQ(acc.is_open(), false);
+    }
+
     void run()
     {
         testConstruction();
@@ -643,6 +687,8 @@ struct tcp_acceptor_test
         testBindClosedAcceptorThrows();
         testBindAddressInUse();
         testBindError();
+        testListenClosedThrows();
+        testClosedAcceptorAccessors();
     }
 };
 

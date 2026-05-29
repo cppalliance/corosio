@@ -56,6 +56,26 @@ struct wolfssl_stream_test
         BOOST_TEST(stream.name() == "wolfssl");
     }
 
+    /** Exercise next_layer() accessors (const and non-const). */
+    void testNextLayer()
+    {
+        using namespace test;
+
+        io_context ioc;
+        auto ctx = make_client_context();
+        tcp_socket sock(ioc);
+        wolfssl_stream stream(&sock, ctx);
+
+        capy::any_stream& mutable_next = stream.next_layer();
+        (void)mutable_next;
+
+        wolfssl_stream const& cref = stream;
+        capy::any_stream const& const_next = cref.next_layer();
+        (void)const_next;
+
+        BOOST_TEST(&mutable_next == &const_next);
+    }
+
     /** Test certificate chain validation (WolfSSL-specific).
 
         WolfSSL has limited certificate chain support compared to OpenSSL.
@@ -112,6 +132,7 @@ struct wolfssl_stream_test
 
         testCertificateChain();
         testName();
+        testNextLayer();
     }
 };
 

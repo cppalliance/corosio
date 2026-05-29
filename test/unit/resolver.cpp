@@ -18,8 +18,11 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/timer.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
+
+#include <stop_token>
 
 #include "test_suite.hpp"
 
@@ -324,6 +327,138 @@ struct resolver_test
         BOOST_TEST(result_ec); // Should have an error
     }
 
+    void testResolveSingleThreadedNotSupported()
+    {
+        // Single-threaded contexts disable the resolver thread pool and
+        // surface operation_not_supported instead of dispatching work.
+        io_context ioc(1);
+        resolver r(ioc);
+
+        bool completed = false;
+        std::error_code result_ec;
+
+        auto task = [](resolver& r_ref,
+                       std::error_code& ec_out, bool& done) -> capy::task<> {
+            auto [ec, res] = co_await r_ref.resolve("localhost", "80");
+            ec_out = ec;
+            done   = true;
+            (void)res;
+        };
+        capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
+        ioc.run();
+
+        BOOST_TEST(completed);
+        // Reactor backends disable the resolver thread pool in
+        // single-threaded mode and return operation_not_supported.
+        // IOCP uses an async native resolver that works regardless.
+#if BOOST_COROSIO_POSIX
+        BOOST_TEST(result_ec == std::errc::operation_not_supported);
+#else
+        BOOST_TEST(!result_ec);
+#endif
+    }
+
+    void testReverseResolveSingleThreadedNotSupported()
+    {
+        io_context ioc(1);
+        resolver r(ioc);
+
+        bool completed = false;
+        std::error_code result_ec;
+
+        auto task = [](resolver& r_ref,
+                       std::error_code& ec_out, bool& done) -> capy::task<> {
+            endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
+            auto [ec, res] = co_await r_ref.resolve(ep);
+            ec_out = ec;
+            done   = true;
+            (void)res;
+        };
+        capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
+        ioc.run();
+
+        BOOST_TEST(completed);
+#if BOOST_COROSIO_POSIX
+        BOOST_TEST(result_ec == std::errc::operation_not_supported);
+#else
+        BOOST_TEST(!result_ec);
+#endif
+    }
+
+    void testResolveInvalidFlagsCombination()
+    {
+        // numeric_service with a non-numeric service should produce EAI_NONAME
+        // or similar — exercises the make_gai_error mapping path.
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        std::error_code result_ec;
+
+        auto task = [](resolver& r_ref,
+                       std::error_code& ec_out, bool& done) -> capy::task<> {
+            auto [ec, res] = co_await r_ref.resolve(
+                "127.0.0.1", "not-a-real-service",
+                resolve_flags::numeric_host | resolve_flags::numeric_service);
+            ec_out = ec;
+            done   = true;
+            (void)res;
+        };
+        capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(result_ec);
+    }
+
+    void testResolveWithVariedFlags()
+    {
+        // Exercise flags_to_hints for AI_PASSIVE / AI_ADDRCONFIG / AI_V4MAPPED
+        // / AI_ALL paths. Resolution itself need not succeed; the only
+        // requirement is the flag mapping be reached.
+        io_context ioc;
+        resolver r(ioc);
+
+        auto task = [](resolver& r_ref) -> capy::task<> {
+            auto flags = resolve_flags::passive |
+                resolve_flags::address_configured |
+                resolve_flags::v4_mapped | resolve_flags::all_matching;
+            auto [ec, res] = co_await r_ref.resolve("127.0.0.1", "80", flags);
+            (void)ec;
+            (void)res;
+        };
+        capy::run_async(ioc.get_executor())(task(r));
+        ioc.run();
+        BOOST_TEST_PASS();
+    }
+
+    void testReverseResolveDatagramFlag()
+    {
+        // Exercises flags_to_ni_flags NI_DGRAM branch.
+        io_context ioc;
+        resolver r(ioc);
+
+        std::error_code result_ec;
+        reverse_resolver_result result;
+
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       reverse_resolver_result& res_out) -> capy::task<> {
+            endpoint ep(ipv4_address({127, 0, 0, 1}), 53);
+            auto [ec, res] = co_await r_ref.resolve(
+                ep,
+                reverse_flags::numeric_host |
+                    reverse_flags::numeric_service |
+                    reverse_flags::datagram_service);
+            ec_out  = ec;
+            res_out = std::move(res);
+        };
+        capy::run_async(ioc.get_executor())(task(r, result_ec, result));
+        ioc.run();
+
+        BOOST_TEST(!result_ec);
+        BOOST_TEST_EQ(result.host_name(), "127.0.0.1");
+    }
+
     // Cancellation tests
 
     void testCancel()
@@ -365,6 +500,66 @@ struct resolver_test
         r.cancel();
 
         BOOST_TEST_PASS();
+    }
+
+    void testResolveStopTokenCancellation()
+    {
+        // Pre-stopped token: the stop_callback fires inside start()
+        // and routes through the canceller's operator()() path.
+        io_context ioc;
+        resolver r(ioc);
+
+        std::stop_source stop_src;
+        stop_src.request_stop();
+
+        bool completed = false;
+        std::error_code result_ec;
+
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       bool& done) -> capy::task<> {
+            auto [ec, res] = co_await r_ref.resolve("localhost", "80");
+            ec_out = ec;
+            done   = true;
+            (void)res;
+        };
+        capy::run_async(ioc.get_executor(), stop_src.get_token())(
+            task(r, result_ec, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        // The token may be observed either by the stop_callback
+        // (canceller path) or via the worker's cancelled check —
+        // either way we get a canceled error code.
+        BOOST_TEST(result_ec == capy::cond::canceled);
+    }
+
+    void testReverseResolveStopTokenCancellation()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        std::stop_source stop_src;
+        stop_src.request_stop();
+
+        bool completed = false;
+        std::error_code result_ec;
+
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       bool& done) -> capy::task<> {
+            endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
+            auto [ec, res] = co_await r_ref.resolve(ep);
+            ec_out = ec;
+            done   = true;
+            (void)res;
+        };
+        capy::run_async(ioc.get_executor(), stop_src.get_token())(
+            task(r, result_ec, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(result_ec == capy::cond::canceled);
     }
 
     // Sequential resolution tests
@@ -882,10 +1077,17 @@ struct resolver_test
         // Error handling
         testResolveInvalidHost();
         testResolveInvalidNumericHost();
+        testResolveInvalidFlagsCombination();
+        testResolveWithVariedFlags();
+        testResolveSingleThreadedNotSupported();
+        testReverseResolveSingleThreadedNotSupported();
+        testReverseResolveDatagramFlag();
 
         // Cancellation
         testCancel();
         testCancelNoOperation();
+        testResolveStopTokenCancellation();
+        testReverseResolveStopTokenCancellation();
 
         // Sequential resolves
         testSequentialResolves();

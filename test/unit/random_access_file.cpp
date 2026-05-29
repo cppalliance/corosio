@@ -355,7 +355,7 @@ struct random_access_file_test
                        int& count_out) -> capy::task<> {
             char buf[4];
 
-            for (int i = 0; i < 4; ++i)
+            for (std::uint64_t i = 0; i < 4; ++i)
             {
                 auto [ec, n] = co_await f_ref.read_some_at(
                     i * 4, capy::mutable_buffer(buf, 4));
@@ -383,6 +383,48 @@ struct random_access_file_test
         f.cancel();
 
         BOOST_TEST_PASS();
+    }
+
+    void testCancelOnClosedFile()
+    {
+        io_context ioc;
+        random_access_file f(ioc);
+
+        // cancel() on a closed file is a no-op (early return).
+        f.cancel();
+        BOOST_TEST(!f.is_open());
+    }
+
+    void testNativeHandleClosedAndOpen()
+    {
+        temp_file tmp("raf_nh_", "x");
+        io_context ioc;
+        random_access_file f(ioc);
+
+#if BOOST_COROSIO_HAS_IOCP
+        auto const invalid = static_cast<native_handle_type>(~0ull);
+#else
+        auto const invalid = static_cast<native_handle_type>(-1);
+#endif
+        BOOST_TEST(f.native_handle() == invalid);
+
+        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(f.native_handle() != invalid);
+    }
+
+    void testOpenReplacesExisting()
+    {
+        temp_file tmp1("raf_replace_a_", "first");
+        temp_file tmp2("raf_replace_b_", "second");
+        io_context ioc;
+        random_access_file f(ioc);
+
+        f.open(tmp1.path, file_base::read_only);
+        BOOST_TEST(f.is_open());
+
+        // Reopen on an already-open file closes the previous handle.
+        f.open(tmp2.path, file_base::read_only);
+        BOOST_TEST(f.is_open());
     }
 
     // Sync data
@@ -536,10 +578,10 @@ struct random_access_file_test
     void testManyConcurrentOps()
     {
         // Stress test: 100 concurrent reads
-        constexpr int num_ops = 100;
-        constexpr int block_sz = 4;
+        constexpr std::size_t num_ops = 100;
+        constexpr std::size_t block_sz = 4;
         std::string data(num_ops * block_sz, 'X');
-        for (int i = 0; i < num_ops; ++i)
+        for (std::size_t i = 0; i < num_ops; ++i)
             std::memset(data.data() + i * block_sz,
                         'A' + (i % 26), block_sz);
 
@@ -558,12 +600,12 @@ struct random_access_file_test
                 off, capy::mutable_buffer(buf, block_sz));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, static_cast<std::size_t>(block_sz));
-            for (int i = 0; i < block_sz; ++i)
+            for (std::size_t i = 0; i < block_sz; ++i)
                 BOOST_TEST_EQ(buf[i], expected);
             ++count;
         };
 
-        for (int i = 0; i < num_ops; ++i)
+        for (std::size_t i = 0; i < num_ops; ++i)
         {
             capy::run_async(ioc.get_executor())(
                 reader(f, i * block_sz,
@@ -597,6 +639,9 @@ struct random_access_file_test
         testSequentialReads();
 
         testCancelNoOperation();
+        testCancelOnClosedFile();
+        testNativeHandleClosedAndOpen();
+        testOpenReplacesExisting();
         testSyncData();
 
         testConcurrentReads();
@@ -608,6 +653,12 @@ struct random_access_file_test
         testRelease();
         testAssign();
         testClosedFileThrows();
+        testOpenSyncAllOnWrite();
+        testOpenExclusiveExistingFails();
+        testOpenExclusiveNewFile();
+        testEmptyBufferReadWrite();
+        testReadAtPastEofErrorPath();
+        testCancelInflightOperation();
         testCancelWithStoppedToken();
     }
 
@@ -631,6 +682,160 @@ struct random_access_file_test
         expect_throw([&] { f.sync_data(); });
         expect_throw([&] { f.sync_all(); });
         expect_throw([&] { f.release(); });
+    }
+
+    // Open flag variants
+
+    void testOpenSyncAllOnWrite()
+    {
+        // Exercises the O_SYNC mapping in posix_random_access_file::open_file.
+        temp_file tmp("raf_sync_open_");
+        io_context ioc;
+        random_access_file f(ioc);
+
+        f.open(tmp.path,
+               file_base::write_only | file_base::create
+                   | file_base::truncate | file_base::sync_all_on_write);
+        BOOST_TEST(f.is_open());
+
+        bool done = false;
+        auto task = [](random_access_file& f_ref,
+                       bool& d) -> capy::task<> {
+            auto [ec, n] = co_await f_ref.write_some_at(
+                0, capy::const_buffer("synced", 6));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 6u);
+            d = true;
+        };
+        capy::run_async(ioc.get_executor())(task(f, done));
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    void testOpenExclusiveExistingFails()
+    {
+        // create|exclusive on an existing file maps to O_EXCL and
+        // surfaces EEXIST.
+        temp_file tmp("raf_excl_", "x");
+        io_context ioc;
+        random_access_file f(ioc);
+
+        bool threw = false;
+        try
+        {
+            f.open(tmp.path,
+                   file_base::write_only | file_base::create
+                       | file_base::exclusive);
+        }
+        catch (std::system_error const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(threw);
+        BOOST_TEST(!f.is_open());
+    }
+
+    void testOpenExclusiveNewFile()
+    {
+        // create|exclusive on a new file path succeeds and exercises
+        // the O_EXCL flag mapping.
+        temp_file tmp("raf_excl_new_"); // no contents, file does not exist
+        io_context ioc;
+        random_access_file f(ioc);
+
+        f.open(tmp.path,
+               file_base::write_only | file_base::create
+                   | file_base::exclusive);
+        BOOST_TEST(f.is_open());
+        f.close();
+    }
+
+    void testEmptyBufferReadWrite()
+    {
+        // Zero-byte read/write short-circuits before the pool dispatch
+        // (early return at the top of read_some_at/write_some_at).
+        temp_file tmp("raf_empty_", "hi");
+        io_context ioc;
+        random_access_file f(ioc);
+
+        f.open(tmp.path, file_base::read_write);
+
+        bool done = false;
+        auto task = [](random_access_file& f_ref, bool& d) -> capy::task<> {
+            auto [rec, rn] = co_await f_ref.read_some_at(
+                0, capy::mutable_buffer(nullptr, 0));
+            BOOST_TEST(!rec);
+            BOOST_TEST_EQ(rn, 0u);
+
+            auto [wec, wn] = co_await f_ref.write_some_at(
+                0, capy::const_buffer(nullptr, 0));
+            BOOST_TEST(!wec);
+            BOOST_TEST_EQ(wn, 0u);
+            d = true;
+        };
+        capy::run_async(ioc.get_executor())(task(f, done));
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    void testCancelInflightOperation()
+    {
+        // Launch many concurrent reads, then call cancel() to mark the
+        // outstanding_ops_ list. Exercises the for_each callback that
+        // stamps each op's cancelled flag.
+        std::string data(std::size_t{64} * 1024, 'X');
+        temp_file tmp("raf_cancel_inflight_", data);
+        io_context ioc;
+        random_access_file f(ioc);
+
+        f.open(tmp.path, file_base::read_only);
+
+        constexpr std::uint64_t num_ops = 16;
+        std::atomic<int> completed{0};
+
+        auto reader = [](random_access_file* f, std::uint64_t off,
+                         std::atomic<int>* c) -> capy::task<> {
+            char buf[1024];
+            auto [ec, n] =
+                co_await f->read_some_at(off, capy::mutable_buffer(buf, 1024));
+            (void)ec;
+            (void)n;
+            c->fetch_add(1);
+        };
+
+        for (std::uint64_t i = 0; i < num_ops; ++i)
+            capy::run_async(ioc.get_executor())(reader(&f, i * 1024, &completed));
+
+        // Immediately cancel before any op can complete.
+        f.cancel();
+
+        ioc.run();
+
+        BOOST_TEST_EQ(completed.load(), num_ops);
+    }
+
+    void testReadAtPastEofErrorPath()
+    {
+        // Reading past end returns eof error code via the op-completion
+        // bytes_transferred==0 branch (different from explicit EOF earlier).
+        temp_file tmp("raf_pasteof_", "abc");
+        io_context ioc;
+        random_access_file f(ioc);
+
+        f.open(tmp.path, file_base::read_only);
+
+        bool done = false;
+        auto task = [](random_access_file& f_ref, bool& d) -> capy::task<> {
+            char buf[16];
+            auto [ec, n] = co_await f_ref.read_some_at(
+                1000, capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(ec); // EOF or io error - non-zero size, zero read
+            BOOST_TEST_EQ(n, 0u);
+            d = true;
+        };
+        capy::run_async(ioc.get_executor())(task(f, done));
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     // Cancellation

@@ -144,6 +144,115 @@ struct udp_socket_test
         BOOST_TEST(caught);
     }
 
+    void testSetOptionClosedThrows()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        bool caught = false;
+        try
+        {
+            sock.set_option(socket_option::broadcast(true));
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testGetOptionClosedThrows()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        bool caught = false;
+        try
+        {
+            (void)sock.get_option<socket_option::broadcast>();
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testSendToClosedThrows()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        char const msg[] = "x";
+        bool caught      = false;
+        try
+        {
+            (void)sock.send_to(
+                capy::const_buffer(msg, sizeof(msg)),
+                endpoint(ipv4_address::loopback(), 1));
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testRecvFromClosedThrows()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        char buf[16];
+        endpoint src;
+        bool caught = false;
+        try
+        {
+            (void)sock.recv_from(capy::mutable_buffer(buf, sizeof(buf)), src);
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testSendClosedThrows()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        char const msg[] = "x";
+        bool caught      = false;
+        try
+        {
+            (void)sock.send(capy::const_buffer(msg, sizeof(msg)));
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testRecvClosedThrows()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        char buf[16];
+        bool caught = false;
+        try
+        {
+            (void)sock.recv(capy::mutable_buffer(buf, sizeof(buf)));
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
     void testBindAddressInUse()
     {
         io_context ioc(Backend);
@@ -161,6 +270,50 @@ struct udp_socket_test
 
         sock1.close();
         sock2.close();
+    }
+
+    void testClosedAccessorsReturnDefaults()
+    {
+        // Accessors on a closed socket must not throw and must
+        // return sentinel/default values.
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        BOOST_TEST_EQ(sock.is_open(), false);
+#if BOOST_COROSIO_HAS_IOCP
+        auto const invalid = static_cast<native_handle_type>(~0ull);
+#else
+        auto const invalid = static_cast<native_handle_type>(-1);
+#endif
+        BOOST_TEST_EQ(sock.native_handle(), invalid);
+        BOOST_TEST(sock.local_endpoint() == endpoint{});
+        BOOST_TEST(sock.remote_endpoint() == endpoint{});
+
+        // cancel() on a closed socket is a no-op (early return).
+        sock.cancel();
+        BOOST_TEST_EQ(sock.is_open(), false);
+
+        // close() on a closed socket is a no-op (early return).
+        sock.close();
+        BOOST_TEST_EQ(sock.is_open(), false);
+    }
+
+    void testOpenIdempotent()
+    {
+        // Re-opening an already-open socket returns without re-creating
+        // the underlying handle (early return at the head of open()).
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        sock.open();
+        BOOST_TEST(sock.is_open());
+        auto nh = sock.native_handle();
+
+        sock.open();
+        BOOST_TEST(sock.is_open());
+        BOOST_TEST_EQ(sock.native_handle(), nh);
+
+        sock.close();
     }
 
     void testBindNonLocalAddress()
@@ -870,7 +1023,8 @@ struct udp_socket_test
         BOOST_TEST_EQ(ec, std::error_code{});
         auto recv_ep = receiver.local_endpoint();
 
-        // Join may fail in CI environments without multicast routing
+        // Join may fail with an environment-specific error in CI
+        // without multicast routing; skip the rest of the test.
         try
         {
             receiver.set_option(
@@ -912,6 +1066,160 @@ struct udp_socket_test
         sender.close();
     }
 
+    // Multicast set_option tests below accept any std::system_error.
+    // Multicast routing is environment-specific: we've observed at
+    // least EADDRNOTAVAIL (Linux containers), EINVAL (BSD strict
+    // RFC 3493 reading), and ENODEV (interface-scoped without scope id)
+    // across CI runs. The library code path is exercised either way;
+    // these tests are for coverage of set_option, not for asserting
+    // that the kernel completes the request.
+
+    void testMulticastLeaveV4()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open();
+
+        try
+        {
+            sock.set_option(
+                socket_option::join_group_v4(ipv4_address("239.255.0.2")));
+            sock.set_option(
+                socket_option::leave_group_v4(ipv4_address("239.255.0.2")));
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        sock.close();
+    }
+
+    void testMulticastJoinLeaveV6()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open(udp::v6());
+
+        try
+        {
+            sock.set_option(
+                socket_option::join_group_v6(ipv6_address("ff02::1")));
+            sock.set_option(
+                socket_option::leave_group_v6(ipv6_address("ff02::1")));
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        sock.close();
+    }
+
+    void testMulticastInterfaceV4()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open();
+
+        try
+        {
+            sock.set_option(
+                socket_option::multicast_interface_v4(ipv4_address::any()));
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        sock.close();
+    }
+
+    void testMulticastInterfaceV6()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open(udp::v6());
+
+        try
+        {
+            sock.set_option(socket_option::multicast_interface_v6(0));
+            auto opt = sock.get_option<socket_option::multicast_interface_v6>();
+            BOOST_TEST_EQ(opt.value(), 0);
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        sock.close();
+    }
+
+    void testBufferSizeBoundary()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open();
+
+        // Linux clamps SO_RCVBUF=0 to a minimum and reports success;
+        // BSD platforms (macOS, FreeBSD) reject 0 with EINVAL.
+        try
+        {
+            sock.set_option(socket_option::receive_buffer_size(0));
+            int rcv =
+                sock.get_option<socket_option::receive_buffer_size>().value();
+            // Linux clamps to a minimum > 0; Windows allows 0.
+            BOOST_TEST(rcv >= 0);
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        try
+        {
+            sock.set_option(socket_option::send_buffer_size(0));
+            int snd =
+                sock.get_option<socket_option::send_buffer_size>().value();
+            // Linux clamps to a minimum > 0; Windows allows 0.
+            BOOST_TEST(snd >= 0);
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        // Large value: set succeeds on every platform, but the kernel
+        // may clamp to net.core.rmem_max (often a few hundred KiB in
+        // constrained containers). Only assert non-zero.
+        sock.set_option(socket_option::receive_buffer_size(1024 * 1024));
+        int rcv = sock.get_option<socket_option::receive_buffer_size>().value();
+        BOOST_TEST(rcv > 0);
+
+        sock.close();
+    }
+
+    void testWrongProtocolNoDelayOnUdp()
+    {
+        // TCP_NODELAY is meaningful only on TCP; setting on UDP must error.
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open();
+
+        bool caught = false;
+        try
+        {
+            sock.set_option(socket_option::no_delay(true));
+        }
+        catch (std::system_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+
+        sock.close();
+    }
+
     void run()
     {
         testConstruction();
@@ -922,8 +1230,16 @@ struct udp_socket_test
         testBind();
         testBindV6();
         testBindClosedSocketThrows();
+        testSetOptionClosedThrows();
+        testGetOptionClosedThrows();
+        testSendToClosedThrows();
+        testRecvFromClosedThrows();
+        testSendClosedThrows();
+        testRecvClosedThrows();
         testBindAddressInUse();
         testBindNonLocalAddress();
+        testClosedAccessorsReturnDefaults();
+        testOpenIdempotent();
         testSetOption();
         testSendRecvLoopback();
         testSendRecvV6Loopback();
@@ -943,6 +1259,12 @@ struct udp_socket_test
         testMulticastLoopHops();
         testMulticastLoopHopsV6();
         testMulticastJoinV4();
+        testMulticastLeaveV4();
+        testMulticastJoinLeaveV6();
+        testMulticastInterfaceV4();
+        testMulticastInterfaceV6();
+        testBufferSizeBoundary();
+        testWrongProtocolNoDelayOnUdp();
     }
 };
 

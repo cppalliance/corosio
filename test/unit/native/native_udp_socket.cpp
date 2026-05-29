@@ -9,6 +9,7 @@
 
 #include <boost/corosio/native/native_udp_socket.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
+#include <boost/corosio/native/native_socket_option.hpp>
 #include <boost/corosio/native/native_udp.hpp>
 #include <boost/corosio/timer.hpp>
 
@@ -21,7 +22,6 @@
 #include <type_traits>
 #include <utility>
 
-#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -385,6 +385,171 @@ struct native_udp_socket_test
         BOOST_TEST(!wait_ec);
     }
 
+    // Exercise the inline native_socket_option types on a UDP socket.
+    // The public socket_option:: variants are tested elsewhere; this
+    // hits the templated boolean<>/integer<> instantiations and the
+    // multicast option storage classes without library indirection.
+    void testNativeSocketOptions()
+    {
+        io_context ioc(Backend);
+        native_udp_socket<Backend> sock(ioc);
+        sock.open();
+
+        sock.set_option(native_socket_option::broadcast(true));
+        auto bc =
+            sock.template get_option<native_socket_option::broadcast>();
+        BOOST_TEST(bc.value());
+
+        sock.set_option(native_socket_option::receive_buffer_size(32768));
+        auto rb = sock.template get_option<
+            native_socket_option::receive_buffer_size>();
+        BOOST_TEST(rb.value() > 0);
+
+        sock.set_option(native_socket_option::send_buffer_size(32768));
+        auto sb = sock.template get_option<
+            native_socket_option::send_buffer_size>();
+        BOOST_TEST(sb.value() > 0);
+
+        sock.set_option(native_socket_option::multicast_loop_v4(true));
+        auto ml = sock.template get_option<
+            native_socket_option::multicast_loop_v4>();
+        BOOST_TEST(ml.value());
+
+        sock.set_option(native_socket_option::multicast_hops_v4(4));
+        auto mh = sock.template get_option<
+            native_socket_option::multicast_hops_v4>();
+        BOOST_TEST_EQ(mh.value(), 4);
+
+        // Multicast configuration is environment-specific; the option
+        // type's storage and the library set_option path are exercised
+        // regardless of whether the kernel completes the request.
+        try
+        {
+            sock.set_option(native_socket_option::multicast_interface_v4(
+                ipv4_address::any()));
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        // Default-constructed variants exercise the no-arg constructors.
+        native_socket_option::multicast_interface_v4 mif4;
+        BOOST_TEST_EQ(mif4.size(), sizeof(struct in_addr));
+        BOOST_TEST(mif4.data() != nullptr);
+        BOOST_TEST_EQ(mif4.level(), IPPROTO_IP);
+        BOOST_TEST_EQ(mif4.name(), IP_MULTICAST_IF);
+
+        sock.close();
+    }
+
+    void testNativeMulticastV4Groups()
+    {
+        io_context ioc(Backend);
+        native_udp_socket<Backend> sock(ioc);
+        sock.open();
+
+        try
+        {
+            sock.set_option(native_socket_option::join_group_v4(
+                ipv4_address("239.255.0.3")));
+            sock.set_option(native_socket_option::leave_group_v4(
+                ipv4_address("239.255.0.3")));
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        // Default-constructed forms — verifies no-arg ctor coverage.
+        native_socket_option::join_group_v4 jg;
+        BOOST_TEST_EQ(jg.size(), sizeof(struct ip_mreq));
+        BOOST_TEST(jg.data() != nullptr);
+        BOOST_TEST_EQ(jg.level(), IPPROTO_IP);
+        BOOST_TEST_EQ(jg.name(), IP_ADD_MEMBERSHIP);
+
+        native_socket_option::leave_group_v4 lg;
+        BOOST_TEST_EQ(lg.size(), sizeof(struct ip_mreq));
+        BOOST_TEST(lg.data() != nullptr);
+        BOOST_TEST_EQ(lg.level(), IPPROTO_IP);
+        BOOST_TEST_EQ(lg.name(), IP_DROP_MEMBERSHIP);
+
+        sock.close();
+    }
+
+    void testNativeMulticastV6Groups()
+    {
+        io_context ioc(Backend);
+        native_udp_socket<Backend> sock(ioc);
+        sock.open(udp::v6());
+
+        sock.set_option(native_socket_option::multicast_loop_v6(true));
+        sock.set_option(native_socket_option::multicast_hops_v6(4));
+
+        try
+        {
+            sock.set_option(native_socket_option::multicast_interface_v6(0));
+            auto mif6 = sock.template get_option<
+                native_socket_option::multicast_interface_v6>();
+            BOOST_TEST_EQ(mif6.value(), 0);
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        try
+        {
+            sock.set_option(native_socket_option::join_group_v6(
+                ipv6_address("ff02::1")));
+            sock.set_option(native_socket_option::leave_group_v6(
+                ipv6_address("ff02::1")));
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        // Default-constructed forms — verifies no-arg ctor coverage.
+        native_socket_option::join_group_v6 jg;
+        BOOST_TEST_EQ(jg.size(), sizeof(struct ipv6_mreq));
+        BOOST_TEST(jg.data() != nullptr);
+        BOOST_TEST_EQ(jg.level(), IPPROTO_IPV6);
+        BOOST_TEST_EQ(jg.name(), IPV6_JOIN_GROUP);
+
+        native_socket_option::leave_group_v6 lg;
+        BOOST_TEST_EQ(lg.size(), sizeof(struct ipv6_mreq));
+        BOOST_TEST(lg.data() != nullptr);
+        BOOST_TEST_EQ(lg.level(), IPPROTO_IPV6);
+        BOOST_TEST_EQ(lg.name(), IPV6_LEAVE_GROUP);
+
+        sock.close();
+    }
+
+    void testNativeLinger()
+    {
+        // Exercises native_socket_option::linger (default + member setters).
+        native_socket_option::linger lg;
+        BOOST_TEST(!lg.enabled());
+        BOOST_TEST_EQ(lg.timeout(), 0);
+        BOOST_TEST_EQ(lg.size(), sizeof(::linger));
+        BOOST_TEST(lg.data() != nullptr);
+
+        native_socket_option::linger const& clg = lg;
+        BOOST_TEST(clg.data() != nullptr);
+
+        lg.enabled(true);
+        lg.timeout(7);
+        BOOST_TEST(lg.enabled());
+        BOOST_TEST_EQ(lg.timeout(), 7);
+        BOOST_TEST_EQ(lg.level(), SOL_SOCKET);
+        BOOST_TEST_EQ(lg.name(), SO_LINGER);
+
+        native_socket_option::linger lg2(true, 3);
+        BOOST_TEST(lg2.enabled());
+        BOOST_TEST_EQ(lg2.timeout(), 3);
+    }
+
     void run()
     {
         testConstruct();
@@ -397,6 +562,10 @@ struct native_udp_socket_test
         testCloseWhileRecving();
         testVirtualDispatchFallback();
         testWait();
+        testNativeSocketOptions();
+        testNativeMulticastV4Groups();
+        testNativeMulticastV6Groups();
+        testNativeLinger();
     }
 };
 

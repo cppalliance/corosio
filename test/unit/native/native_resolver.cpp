@@ -10,14 +10,19 @@
 #include <boost/corosio/native/native_resolver.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
 
+#include <boost/corosio/detail/platform.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
-#include "context.hpp"
+#if BOOST_COROSIO_POSIX
+#include <netdb.h>
+#endif
+
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -89,6 +94,48 @@ struct native_resolver_test
         testResolverPolymorphicSlice();
     }
 };
+
+#if BOOST_COROSIO_POSIX
+// Direct coverage of make_gai_error switch arms. Real getaddrinfo()
+// implementations rarely return anything but EAI_NONAME for synthetic
+// inputs, so we drive the helper directly.
+struct posix_resolver_gai_error_test
+{
+    static void check_mapped(int gai_err, std::errc expected)
+    {
+        auto ec = detail::posix_resolver_detail::make_gai_error(gai_err);
+        BOOST_TEST(ec == expected);
+    }
+
+    void testEachArm()
+    {
+        check_mapped(EAI_AGAIN, std::errc::resource_unavailable_try_again);
+        check_mapped(EAI_BADFLAGS, std::errc::invalid_argument);
+        check_mapped(EAI_FAIL, std::errc::io_error);
+        check_mapped(EAI_FAMILY, std::errc::address_family_not_supported);
+        check_mapped(EAI_MEMORY, std::errc::not_enough_memory);
+        check_mapped(EAI_SERVICE, std::errc::invalid_argument);
+        check_mapped(EAI_SOCKTYPE, std::errc::not_supported);
+
+        // EAI_SYSTEM reads errno; force a known value first.
+        errno = EINVAL;
+        auto sys_ec = detail::posix_resolver_detail::make_gai_error(EAI_SYSTEM);
+        BOOST_TEST(sys_ec == std::errc::invalid_argument);
+
+        // Default arm: unknown gai value falls through to io_error.
+        check_mapped(9999, std::errc::io_error);
+    }
+
+    void run()
+    {
+        testEachArm();
+    }
+};
+
+TEST_SUITE(
+    posix_resolver_gai_error_test,
+    "boost.corosio.native.resolver.posix.make_gai_error");
+#endif
 
 #if BOOST_COROSIO_HAS_EPOLL
 struct native_resolver_test_epoll : native_resolver_test<epoll>
