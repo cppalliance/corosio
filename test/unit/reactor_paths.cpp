@@ -42,7 +42,6 @@
 #if BOOST_COROSIO_POSIX
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/local_socket_pair.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 
@@ -50,10 +49,17 @@
 #include <unistd.h>
 #endif
 
+#include <boost/corosio/test/local_socket_pair.hpp>
+
 #include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
+
+using test::make_local_stream_pair;
+#if BOOST_COROSIO_POSIX
+using test::make_local_datagram_pair;
+#endif
 
 template<auto Backend>
 struct reactor_paths_test

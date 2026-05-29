@@ -12,7 +12,7 @@
 
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/local_socket_pair.hpp>
+#include <boost/corosio/test/local_socket_pair.hpp>
 #include <boost/corosio/timer.hpp>
 #include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
@@ -45,6 +45,8 @@
 #include "test_suite.hpp"
 
 namespace boost::corosio {
+
+using test::make_local_stream_pair;
 
 // Verify local_stream_socket satisfies stream concepts
 
