@@ -22,7 +22,7 @@ Code snippets assume:
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_datagram_socket.hpp>
-#include <boost/corosio/local_socket_pair.hpp>
+#include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/capy/buffers.hpp>
 
@@ -123,11 +123,15 @@ capy::task<> client(corosio::io_context& ioc)
 === Socket Pairs
 
 For bidirectional IPC between a parent and child (or two coroutines),
-use `make_local_stream_pair()` which calls the `socketpair()` system call:
+use `connect_pair()`. On POSIX it uses a single `socketpair()` syscall;
+on Windows it performs a private bind/listen/accept/connect rendezvous
+on a worker thread.
 
 [source,cpp]
 ----
-auto [s1, s2] = corosio::make_local_stream_pair(ioc);
+corosio::local_stream_socket s1(ioc), s2(ioc);
+if (auto ec = corosio::connect_pair(s1, s2))
+    throw std::system_error(ec, "connect_pair");
 
 // Data written to s1 can be read from s2, and vice versa.
 co_await s1.write_some(capy::const_buffer("ping", 4));
@@ -137,9 +141,6 @@ auto [ec, n] = co_await s2.read_some(
     capy::mutable_buffer(buf, sizeof(buf)));
 // buf contains "ping"
 ----
-
-This is the fastest way to create a connected pair — it uses a single
-`socketpair()` syscall with no filesystem paths involved.
 
 == Datagram Sockets
 
@@ -173,7 +174,9 @@ After calling `connect()`, use `send`/`recv` without specifying the peer:
 
 [source,cpp]
 ----
-auto [s1, s2] = corosio::make_local_datagram_pair(ioc);
+corosio::local_datagram_socket s1(ioc), s2(ioc);
+if (auto ec = corosio::connect_pair(s1, s2))
+    throw std::system_error(ec, "connect_pair");
 
 co_await s1.send(capy::const_buffer("msg", 3));
 

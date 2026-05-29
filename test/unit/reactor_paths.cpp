@@ -49,17 +49,12 @@
 #include <unistd.h>
 #endif
 
-#include <boost/corosio/test/local_socket_pair.hpp>
+#include <boost/corosio/local_connect_pair.hpp>
 
 #include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
-
-using test::make_local_stream_pair;
-#if BOOST_COROSIO_POSIX
-using test::make_local_datagram_pair;
-#endif
 
 template<auto Backend>
 struct reactor_paths_test
@@ -1179,7 +1174,9 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = make_local_stream_pair(ioc);
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -1209,7 +1206,9 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = make_local_stream_pair(ioc);
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -1232,7 +1231,9 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = make_local_stream_pair(ioc);
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         constexpr std::string_view payload = "local-scatter-read-payload";
         char a[6] = {};
@@ -1275,7 +1276,9 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = make_local_stream_pair(ioc);
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         constexpr std::string_view part1 = "aaa-";
         constexpr std::string_view part2 = "bbb-";
@@ -1315,7 +1318,9 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -1345,7 +1350,9 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -1368,7 +1375,9 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         std::error_code recv_ec;
         std::size_t recv_n = 1;
@@ -1391,7 +1400,9 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         std::error_code send_ec;
         std::size_t send_n = 1;
@@ -1416,7 +1427,9 @@ struct reactor_paths_test
     void testLocalDgramShutdownBoth()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         std::error_code ec;
         auto task = [&]() -> capy::task<> {
@@ -1432,7 +1445,9 @@ struct reactor_paths_test
     void testLocalDgramShutdownReceive()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_datagram_pair(ioc);
+        local_datagram_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         std::error_code ec;
         auto task = [&]() -> capy::task<> {

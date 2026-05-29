@@ -10,9 +10,9 @@
 // Test that header file is self-contained.
 #include <boost/corosio/local_stream_socket.hpp>
 
+#include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/test/local_socket_pair.hpp>
 #include <boost/corosio/timer.hpp>
 #include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
@@ -45,8 +45,6 @@
 #include "test_suite.hpp"
 
 namespace boost::corosio {
-
-using test::make_local_stream_pair;
 
 // Verify local_stream_socket satisfies stream concepts
 
@@ -185,11 +183,12 @@ struct local_stream_socket_test
     }
 
 #if BOOST_COROSIO_POSIX
-    // Uses make_local_stream_pair, which is socketpair-based and POSIX-only.
     void testReadWrite()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_stream_pair(ioc);
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         auto ex = ioc.get_executor();
 
@@ -236,7 +235,9 @@ struct local_stream_socket_test
     void testSocketPair()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_stream_pair(ioc);
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         BOOST_TEST_EQ(s1.is_open(), true);
         BOOST_TEST_EQ(s2.is_open(), true);
@@ -427,7 +428,9 @@ struct local_stream_socket_test
     void testShutdown()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_stream_pair(ioc);
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         // Throwing overload (best-effort)
         s1.shutdown(shutdown_send);
@@ -786,11 +789,12 @@ struct local_stream_socket_test
     }
 
 #if BOOST_COROSIO_POSIX
-    // Uses make_local_stream_pair, which is socketpair-based and POSIX-only.
     void testAvailable()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_stream_pair(ioc);
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         // Nothing written yet
         BOOST_TEST_EQ(s2.available(), std::size_t(0));
@@ -823,7 +827,9 @@ struct local_stream_socket_test
     void testRelease()
     {
         io_context ioc(Backend);
-        auto [s1, s2] = make_local_stream_pair(ioc);
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
 
         BOOST_TEST_EQ(s1.is_open(), true);
 

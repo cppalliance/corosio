@@ -31,6 +31,7 @@
 #include <boost/corosio/timer.hpp>
 #include <boost/corosio/udp_socket.hpp>
 
+#include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_stream.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
