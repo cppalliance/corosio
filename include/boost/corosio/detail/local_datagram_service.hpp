@@ -11,6 +11,10 @@
 #define BOOST_COROSIO_DETAIL_LOCAL_DATAGRAM_SERVICE_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_POSIX
+
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -89,5 +93,7 @@ protected:
 };
 
 } // namespace boost::corosio::detail
+
+#endif // BOOST_COROSIO_POSIX
 
 #endif // BOOST_COROSIO_DETAIL_LOCAL_DATAGRAM_SERVICE_HPP

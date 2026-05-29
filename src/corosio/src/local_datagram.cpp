@@ -11,35 +11,22 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_POSIX
+
 #include <sys/socket.h>
 #include <sys/un.h>
-#elif BOOST_COROSIO_HAS_IOCP
-#include <WinSock2.h>
-#ifndef AF_UNIX
-#define AF_UNIX 1
-#endif
-#endif
 
 namespace boost::corosio {
 
 int
 local_datagram::family() noexcept
 {
-#if BOOST_COROSIO_POSIX || BOOST_COROSIO_HAS_IOCP
     return AF_UNIX;
-#else
-    return 0;
-#endif
 }
 
 int
 local_datagram::type() noexcept
 {
-#if BOOST_COROSIO_POSIX || BOOST_COROSIO_HAS_IOCP
     return SOCK_DGRAM;
-#else
-    return 0;
-#endif
 }
 
 int
@@ -49,3 +36,5 @@ local_datagram::protocol() noexcept
 }
 
 } // namespace boost::corosio
+
+#endif // BOOST_COROSIO_POSIX

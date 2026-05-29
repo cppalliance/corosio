@@ -9,17 +9,13 @@
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_POSIX || BOOST_COROSIO_HAS_IOCP
+#if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/local_datagram_service.hpp>
 
-#if BOOST_COROSIO_POSIX
 #include <sys/ioctl.h>
-#elif BOOST_COROSIO_HAS_IOCP
-#include <boost/corosio/native/detail/iocp/win_windows.hpp>
-#endif
 
 namespace boost::corosio {
 
@@ -113,11 +109,7 @@ native_handle_type
 local_datagram_socket::native_handle() const noexcept
 {
     if (!is_open())
-#if BOOST_COROSIO_HAS_IOCP
-        return ~native_handle_type(0);
-#else
         return -1;
-#endif
     return get().native_handle();
 }
 
@@ -134,22 +126,12 @@ local_datagram_socket::available() const
 {
     if (!is_open())
         detail::throw_logic_error("available: socket not open");
-#if BOOST_COROSIO_HAS_IOCP
-    u_long value = 0;
-    if (::ioctlsocket(
-            static_cast<SOCKET>(native_handle()), FIONREAD, &value) != 0)
-        detail::throw_system_error(
-            std::error_code(::WSAGetLastError(), std::system_category()),
-            "local_datagram_socket::available");
-    return static_cast<std::size_t>(value);
-#else
     int value = 0;
     if (::ioctl(native_handle(), FIONREAD, &value) < 0)
         detail::throw_system_error(
             std::error_code(errno, std::system_category()),
             "local_datagram_socket::available");
     return static_cast<std::size_t>(value);
-#endif
 }
 
 local_endpoint
@@ -170,4 +152,4 @@ local_datagram_socket::remote_endpoint() const noexcept
 
 } // namespace boost::corosio
 
-#endif // BOOST_COROSIO_POSIX || BOOST_COROSIO_HAS_IOCP
+#endif // BOOST_COROSIO_POSIX

@@ -155,7 +155,7 @@
       "latest_cxxstd": "20",
       "cxx": "g++",
       "cc": "gcc",
-      "runs_on": "windows-2022",
+      "runs_on": "windows-2025",
       "b2_toolset": "gcc",
       "generator": "MinGW Makefiles",
       "shared": false,

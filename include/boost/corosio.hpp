@@ -35,9 +35,15 @@
 #include <boost/corosio/local_stream.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
+#include <boost/corosio/local_socket_pair.hpp>
+
+// local_datagram.hpp and local_datagram_socket.hpp are POSIX-only;
+// Windows does not support AF_UNIX datagram sockets (SOCK_DGRAM).
+#include <boost/corosio/detail/platform.hpp>
+#if BOOST_COROSIO_POSIX
 #include <boost/corosio/local_datagram.hpp>
 #include <boost/corosio/local_datagram_socket.hpp>
-#include <boost/corosio/local_socket_pair.hpp>
+#endif
 
 #include <boost/corosio/tls_context.hpp>
 #include <boost/corosio/openssl_stream.hpp>
