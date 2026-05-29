@@ -19,8 +19,8 @@
 #if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/local_socket_pair.hpp>
 #include <boost/corosio/timer.hpp>
+#include <boost/corosio/test/local_socket_pair.hpp>
 #include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -39,6 +39,8 @@
 #include "test_suite.hpp"
 
 namespace boost::corosio {
+
+using test::make_local_datagram_pair;
 
 template<auto Backend>
 struct local_datagram_socket_test

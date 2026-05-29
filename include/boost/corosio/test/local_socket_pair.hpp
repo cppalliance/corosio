@@ -10,10 +10,16 @@
 #ifndef BOOST_COROSIO_TEST_LOCAL_SOCKET_PAIR_HPP
 #define BOOST_COROSIO_TEST_LOCAL_SOCKET_PAIR_HPP
 
+#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
+
+#if BOOST_COROSIO_POSIX
+#include <boost/corosio/local_datagram_socket.hpp>
+#endif
+
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -29,11 +35,10 @@ namespace boost::corosio::test {
 
 /** Create a connected pair of AF_UNIX stream sockets via bind+accept+connect.
 
-    Unlike the library-side @ref make_local_stream_pair (POSIX-only,
-    socketpair-based), this helper drives the public acceptor API so
-    it can produce native template wrappers like
-    `native_local_stream_socket<Backend>` — the path benchmarks need
-    to exercise the shadowed read_some/write_some/connect ops.
+    Drives the public acceptor API so it can produce either concrete
+    `local_stream_socket` or native template wrappers like
+    `native_local_stream_socket<Backend>` for tests and benchmarks
+    that need to exercise the shadowed read_some/write_some/connect ops.
 
     @tparam Socket   Concrete or native local stream socket type.
     @tparam Acceptor Matching acceptor type.
@@ -136,6 +141,92 @@ make_local_stream_pair(io_context& ctx)
 
     return {std::move(s1), std::move(s2)};
 }
+
+#if BOOST_COROSIO_POSIX
+
+/** Create a connected pair of AF_UNIX datagram sockets via bind+connect.
+
+    POSIX-only — Windows does not support AF_UNIX SOCK_DGRAM. Each
+    socket binds an abstract or filesystem path and connects to the
+    other, producing a symmetric pair suitable for testing
+    `send`/`recv` and the connected `recv_from` path.
+
+    @param ctx I/O context backing both sockets.
+
+    @return Connected pair `{a, b}` where each side's `send` reaches
+        the other's `recv`.
+*/
+inline std::pair<local_datagram_socket, local_datagram_socket>
+make_local_datagram_pair(io_context& ctx)
+{
+    namespace fs = std::filesystem;
+
+    static std::random_device rd;
+    static std::mt19937_64    gen{rd()};
+
+    auto pick_path = []() {
+        for (int attempt = 0; attempt < 16; ++attempt)
+        {
+            std::string name = "co_dpair_";
+            name += std::to_string(gen());
+            auto candidate = fs::temp_directory_path() / name;
+            std::error_code ec;
+            if (fs::create_directory(candidate, ec))
+                return (candidate / "s").string();
+        }
+        throw std::runtime_error("make_local_datagram_pair: temp path failed");
+    };
+
+    auto path_a = pick_path();
+    auto path_b = pick_path();
+
+    local_datagram_socket a(ctx);
+    local_datagram_socket b(ctx);
+    a.open();
+    b.open();
+
+    if (auto ec = a.bind(local_endpoint(path_a)))
+        throw std::runtime_error(
+            "local_datagram_pair bind a failed: " + ec.message());
+    if (auto ec = b.bind(local_endpoint(path_b)))
+        throw std::runtime_error(
+            "local_datagram_pair bind b failed: " + ec.message());
+
+    std::error_code ec_a, ec_b;
+    bool done_a = false, done_b = false;
+
+    capy::run_async(ctx.get_executor())(
+        [](local_datagram_socket& s, local_endpoint ep,
+           std::error_code& ec_out, bool& done_out) -> capy::task<> {
+            auto [ec] = co_await s.connect(ep);
+            ec_out    = ec;
+            done_out  = true;
+        }(a, local_endpoint(path_b), ec_a, done_a));
+
+    capy::run_async(ctx.get_executor())(
+        [](local_datagram_socket& s, local_endpoint ep,
+           std::error_code& ec_out, bool& done_out) -> capy::task<> {
+            auto [ec] = co_await s.connect(ep);
+            ec_out    = ec;
+            done_out  = true;
+        }(b, local_endpoint(path_a), ec_b, done_b));
+
+    ctx.run();
+    ctx.restart();
+
+    std::error_code rm_ec;
+    fs::remove(fs::path(path_a), rm_ec);
+    fs::remove(fs::path(path_a).parent_path(), rm_ec);
+    fs::remove(fs::path(path_b), rm_ec);
+    fs::remove(fs::path(path_b).parent_path(), rm_ec);
+
+    if (!done_a || ec_a || !done_b || ec_b)
+        throw std::runtime_error("local_datagram_pair connect failed");
+
+    return {std::move(a), std::move(b)};
+}
+
+#endif // BOOST_COROSIO_POSIX
 
 } // namespace boost::corosio::test
 
