@@ -10,6 +10,7 @@
 #include <boost/corosio/native/native_tcp_socket.hpp>
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
+#include <boost/corosio/native/native_socket_option.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 
 #include <boost/capy/buffers.hpp>
@@ -20,7 +21,6 @@
 #include <type_traits>
 #include <utility>
 
-#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -124,12 +124,43 @@ struct native_tcp_socket_test
         BOOST_TEST(!wait_ec);
     }
 
+    // Exercise inline native_socket_option types on a TCP socket so the
+    // boolean<IPPROTO_TCP, TCP_NODELAY> instantiation is fully hit.
+    void testNativeNoDelay()
+    {
+        io_context ctx(Backend);
+        native_tcp_socket<Backend> s(ctx);
+        s.open();
+
+        s.set_option(native_socket_option::no_delay(true));
+        auto nd = s.template get_option<native_socket_option::no_delay>();
+        BOOST_TEST(nd.value());
+
+        s.set_option(native_socket_option::no_delay(false));
+        nd = s.template get_option<native_socket_option::no_delay>();
+        BOOST_TEST(!nd.value());
+
+        // Cover member accessors on the inline boolean<>.
+        native_socket_option::no_delay direct(true);
+        BOOST_TEST(direct.value());
+        BOOST_TEST_EQ(direct.size(), sizeof(int));
+        BOOST_TEST(direct.data() != nullptr);
+        BOOST_TEST_EQ(direct.level(), IPPROTO_TCP);
+        BOOST_TEST_EQ(direct.name(), TCP_NODELAY);
+
+        native_socket_option::no_delay const& cd = direct;
+        BOOST_TEST(cd.data() != nullptr);
+
+        s.close();
+    }
+
     void run()
     {
         testSocketConstruct();
         testSocketMoveConstruct();
         testSocketPolymorphicSlice();
         testWait();
+        testNativeNoDelay();
     }
 };
 

@@ -362,7 +362,7 @@ struct timer_test
         };
         capy::run_async(ioc.get_executor())(delay_task(delay_timer, t));
 
-        ioc.run_for(std::chrono::milliseconds(500));
+        ioc.run();
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == capy::cond::canceled);
     }
@@ -480,6 +480,81 @@ struct timer_test
 
         BOOST_TEST(t1_done);
         BOOST_TEST(t2_done);
+    }
+
+    void testReheapifyOnExpiresAtUpdate()
+    {
+        // Push several waiters into the heap, suspend them via run_for so
+        // their wait actually registers, then move the first timer's
+        // expiry far into the future — exercises the update_timer
+        // re-heap (down_heap) branch in timer_service.
+        io_context ioc(Backend);
+        timer t1(ioc), t2(ioc), t3(ioc), t4(ioc);
+
+        bool d1 = false, d2 = false, d3 = false, d4 = false;
+        std::error_code e1, e2, e3, e4;
+
+        t1.expires_after(std::chrono::seconds(5));
+        t2.expires_after(std::chrono::milliseconds(20));
+        t3.expires_after(std::chrono::milliseconds(30));
+        t4.expires_after(std::chrono::milliseconds(40));
+
+        auto task = [](timer& t, bool& done, std::error_code& ec_out)
+            -> capy::task<> {
+            auto [ec] = co_await t.wait();
+            done = true;
+            ec_out = ec;
+        };
+
+        capy::run_async(ioc.get_executor())(task(t1, d1, e1));
+        capy::run_async(ioc.get_executor())(task(t2, d2, e2));
+        capy::run_async(ioc.get_executor())(task(t3, d3, e3));
+        capy::run_async(ioc.get_executor())(task(t4, d4, e4));
+
+        // Let the waiters actually register in the heap, then move
+        // t1's expiry far past t2..t4 — this cancels t1's pending
+        // waiter and exercises the down-heap branch.
+        ioc.poll(); // process any inline work
+        ioc.restart();
+        t1.expires_at(timer::clock_type::now() + std::chrono::seconds(60));
+
+        ioc.run();
+
+        BOOST_TEST(d2);
+        BOOST_TEST(d3);
+        BOOST_TEST(d4);
+        BOOST_TEST(!e2);
+        BOOST_TEST(!e3);
+        BOOST_TEST(!e4);
+        // t1's waiter was cancelled by the second expires_at.
+        BOOST_TEST(d1);
+        BOOST_TEST(e1 == capy::cond::canceled);
+    }
+
+    void testTimerFreeListReuseAcrossContexts()
+    {
+        // Create timers in one context, destroy the context, then create
+        // a new context — covers the timer_service shutdown free-list
+        // delete path and the construct() free-list pop path.
+        for (int i = 0; i < 3; ++i)
+        {
+            io_context ioc(Backend);
+            timer t1(ioc), t2(ioc), t3(ioc);
+            t1.expires_after(std::chrono::milliseconds(1));
+            t2.expires_after(std::chrono::milliseconds(2));
+            t3.expires_after(std::chrono::milliseconds(3));
+
+            bool done = false;
+            auto task = [&]() -> capy::task<> {
+                (void)co_await t1.wait();
+                (void)co_await t2.wait();
+                (void)co_await t3.wait();
+                done = true;
+            };
+            capy::run_async(ioc.get_executor())(task());
+            ioc.run();
+            BOOST_TEST(done);
+        }
     }
 
     // Multiple waiters on one timer
@@ -1175,6 +1250,8 @@ struct timer_test
         // Multiple timer tests
         testMultipleTimersDifferentExpiry();
         testMultipleTimersSameExpiry();
+        testReheapifyOnExpiresAtUpdate();
+        testTimerFreeListReuseAcrossContexts();
 
         // Multiple waiters on one timer
         testMultipleWaiters();

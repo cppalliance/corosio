@@ -20,21 +20,25 @@
 
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_socket_pair.hpp>
+#include <boost/corosio/timer.hpp>
+#include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <chrono>
 #include <cstring>
+#include <stdexcept>
 #include <string>
+#include <system_error>
+
+#include <unistd.h>
 
 #include "context.hpp"
-#include "local_temp.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
-
-using test::make_temp_socket_path;
-using test::cleanup_temp_socket;
 
 template<auto Backend>
 struct local_datagram_socket_test
@@ -123,11 +127,10 @@ struct local_datagram_socket_test
         local_datagram_socket sock(ioc);
         sock.open();
 
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
         auto ec   = sock.bind(local_endpoint(path));
         BOOST_TEST_EQ(!ec, true);
-
-        cleanup_temp_socket(path);
     }
 
     void testSendToRecvFrom()
@@ -135,8 +138,10 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
-        auto path1 = make_temp_socket_path();
-        auto path2 = make_temp_socket_path();
+        test::temp_socket_dir tmp1;
+        test::temp_socket_dir tmp2;
+        auto path1 = tmp1.path();
+        auto path2 = tmp2.path();
 
         local_datagram_socket s1(ioc);
         local_datagram_socket s2(ioc);
@@ -193,9 +198,6 @@ struct local_datagram_socket_test
 
         // Source endpoint should be the sender's bound path
         BOOST_TEST_EQ(source.path(), path1);
-
-        cleanup_temp_socket(path1);
-        cleanup_temp_socket(path2);
     }
 
     void testBindFailure()
@@ -422,8 +424,10 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
-        auto path1 = make_temp_socket_path();
-        auto path2 = make_temp_socket_path();
+        test::temp_socket_dir tmp1;
+        test::temp_socket_dir tmp2;
+        auto path1 = tmp1.path();
+        auto path2 = tmp2.path();
 
         local_datagram_socket s1(ioc);
         local_datagram_socket s2(ioc);
@@ -501,9 +505,272 @@ struct local_datagram_socket_test
         // Source should be the sender's bound path
         BOOST_TEST_EQ(src1.path(), path1);
         BOOST_TEST_EQ(src2.path(), path1);
+    }
 
-        cleanup_temp_socket(path1);
-        cleanup_temp_socket(path2);
+    void testMoveAssign()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket s1(ioc);
+        local_datagram_socket s2(ioc);
+        s1.open();
+        BOOST_TEST_EQ(s1.is_open(), true);
+
+        s2 = std::move(s1);
+        BOOST_TEST_EQ(s2.is_open(), true);
+        BOOST_TEST_EQ(s1.is_open(), false);
+    }
+
+    void testCancelOnClosed()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+
+        // cancel() on a closed socket is a no-op (early return).
+        sock.cancel();
+        BOOST_TEST_EQ(sock.is_open(), false);
+    }
+
+    void testNativeHandleClosed()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+
+        BOOST_TEST_EQ(sock.native_handle() < 0, true);
+
+        sock.open();
+        BOOST_TEST(sock.native_handle() >= 0);
+    }
+
+    void testEndpointsClosed()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+
+        BOOST_TEST_EQ(sock.local_endpoint().empty(), true);
+        BOOST_TEST_EQ(sock.remote_endpoint().empty(), true);
+    }
+
+    void testEndpointsBound()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+        sock.open();
+
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+        auto ec   = sock.bind(local_endpoint(path));
+        BOOST_TEST_EQ(!ec, true);
+
+        BOOST_TEST_EQ(sock.local_endpoint().path(), path);
+        BOOST_TEST_EQ(sock.remote_endpoint().empty(), true);
+    }
+
+    void testShutdown()
+    {
+        io_context ioc(Backend);
+        auto [s1, s2] = make_local_datagram_pair(ioc);
+
+        // Throwing overload (best-effort, may report ENOTCONN).
+        s1.shutdown(shutdown_send);
+
+        // Non-throwing overload
+        std::error_code ec;
+        s2.shutdown(shutdown_send, ec);
+
+        // Closed-socket no-ops
+        local_datagram_socket closed(ioc);
+        closed.shutdown(shutdown_send);
+
+        std::error_code ec2;
+        closed.shutdown(shutdown_send, ec2);
+        BOOST_TEST_EQ(!ec2, true);
+    }
+
+    void testBindClosedThrows()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        BOOST_TEST_THROWS(sock.bind(local_endpoint("/tmp/never")),
+                          std::logic_error);
+    }
+
+    void testReleaseClosedThrows()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+
+        bool caught = false;
+        try
+        {
+            (void)sock.release();
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testAvailableClosedThrows()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+
+        bool caught = false;
+        try
+        {
+            (void)sock.available();
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testAvailable()
+    {
+        io_context ioc(Backend);
+        auto [s1, s2] = make_local_datagram_pair(ioc);
+
+        // Send a datagram, then check available on the receive side
+        auto ex = ioc.get_executor();
+        char const msg[] = "hello";
+        bool done = false;
+        capy::run_async(ex)(
+            [](local_datagram_socket& s, char const* m, std::size_t n,
+               bool& d) -> capy::task<> {
+                (void)co_await s.send(capy::const_buffer(m, n));
+                d = true;
+            }(s1, msg, std::strlen(msg), done));
+
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST(done);
+        BOOST_TEST(s2.available() >= std::strlen(msg));
+    }
+
+    void testAssignAlreadyOpenThrows()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+        sock.open();
+
+        bool caught = false;
+        try
+        {
+            sock.assign(-1);
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testRelease()
+    {
+        io_context ioc(Backend);
+        auto [s1, s2] = make_local_datagram_pair(ioc);
+        (void)s2;
+        BOOST_TEST(s1.is_open());
+
+        int fd = s1.release();
+        BOOST_TEST(fd >= 0);
+        BOOST_TEST_EQ(s1.is_open(), false);
+        ::close(fd);
+    }
+
+    void testSendOnClosedThrows()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+        char const m[] = "x";
+
+        bool caught_send = false;
+        try
+        {
+            (void)sock.send(capy::const_buffer(m, 1));
+        }
+        catch (std::logic_error const&)
+        {
+            caught_send = true;
+        }
+        BOOST_TEST(caught_send);
+
+        bool caught_send_to = false;
+        try
+        {
+            (void)sock.send_to(
+                capy::const_buffer(m, 1), local_endpoint("/tmp/x"));
+        }
+        catch (std::logic_error const&)
+        {
+            caught_send_to = true;
+        }
+        BOOST_TEST(caught_send_to);
+
+        char buf[1];
+        bool caught_recv = false;
+        try
+        {
+            (void)sock.recv(capy::mutable_buffer(buf, 1));
+        }
+        catch (std::logic_error const&)
+        {
+            caught_recv = true;
+        }
+        BOOST_TEST(caught_recv);
+
+        local_endpoint src;
+        bool caught_recv_from = false;
+        try
+        {
+            (void)sock.recv_from(capy::mutable_buffer(buf, 1), src);
+        }
+        catch (std::logic_error const&)
+        {
+            caught_recv_from = true;
+        }
+        BOOST_TEST(caught_recv_from);
+    }
+
+    void testCancelPendingRecv()
+    {
+        io_context ioc(Backend);
+        auto [s1, s2] = make_local_datagram_pair(ioc);
+        (void)s1;
+
+        auto ex = ioc.get_executor();
+        std::error_code recv_ec;
+        bool recv_done = false;
+
+        capy::run_async(ex)(
+            [](local_datagram_socket& s,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                char buf[8];
+                auto [ec, n] = co_await s.recv(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+                (void)n;
+                ec_out = ec;
+                done   = true;
+            }(s2, recv_ec, recv_done));
+
+        auto canceller = [&]() -> capy::task<> {
+            timer t(ioc);
+            t.expires_after(std::chrono::milliseconds(20));
+            (void)co_await t.wait();
+            s2.cancel();
+        };
+        capy::run_async(ex)(canceller());
+
+        ioc.run();
+
+        BOOST_TEST(recv_done);
+        BOOST_TEST(recv_ec == capy::cond::canceled);
     }
 
     void run()
@@ -511,6 +778,20 @@ struct local_datagram_socket_test
         testConstruction();
         testOpen();
         testMove();
+        testMoveAssign();
+        testCancelOnClosed();
+        testNativeHandleClosed();
+        testEndpointsClosed();
+        testEndpointsBound();
+        testShutdown();
+        testBindClosedThrows();
+        testReleaseClosedThrows();
+        testAvailableClosedThrows();
+        testAvailable();
+        testAssignAlreadyOpenThrows();
+        testRelease();
+        testSendOnClosedThrows();
+        testCancelPendingRecv();
         testSendRecvConnected();
         testExplicitBind();
         testSendToRecvFrom();

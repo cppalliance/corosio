@@ -10,6 +10,8 @@
 // Test that header file is self-contained.
 #include <boost/corosio/io_context.hpp>
 
+#include <boost/corosio/detail/continuation_op.hpp>
+
 #include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -251,6 +253,49 @@ struct io_context_test
             io_context ioc(1);
             BOOST_TEST(!ioc.stopped());
         }
+    }
+
+    void testConstructionWithOptions()
+    {
+        // Tune reactor budgets (POSIX) and IOCP gqcs timeout so the
+        // option-applying constructor path exercises non-default values.
+        io_context_options opts;
+        opts.max_events_per_poll   = 256;
+        opts.inline_budget_initial = 4;
+        opts.inline_budget_max     = 32;
+        opts.unassisted_budget     = 8;
+        opts.gqcs_timeout_ms       = 250;
+
+        io_context ioc(opts, 2);
+        BOOST_TEST(!ioc.stopped());
+
+        // Single-arg constructor with options + default concurrency
+        io_context ioc2(opts);
+        BOOST_TEST(!ioc2.stopped());
+    }
+
+    void testConstructionWithThreadPoolSize()
+    {
+        io_context_options opts;
+        opts.thread_pool_size = 4;
+        io_context ioc(opts, 2);
+        BOOST_TEST(!ioc.stopped());
+    }
+
+    void testConstructionSingleThreaded()
+    {
+        // concurrency_hint == 1 enables single-threaded mode automatically.
+        io_context_options opts;
+        opts.single_threaded = true;
+        io_context ioc(opts, 1);
+        BOOST_TEST(!ioc.stopped());
+
+        int counter = 0;
+        auto ex     = ioc.get_executor();
+        post_coro(ex, make_coro(counter));
+        std::size_t n = ioc.run();
+        BOOST_TEST(n == 1);
+        BOOST_TEST(counter == 1);
     }
 
     void testGetExecutor()
@@ -642,9 +687,95 @@ struct io_context_test
         BOOST_TEST_EQ(destroyed, 3);
     }
 
+    // Exercises continuation_op::destroy() — invoked when shutdown drains
+    // queued continuation_op posts. The tagged-post path through
+    // executor::post(capy::continuation&) routes to scheduler::post(scheduler_op*)
+    // which enqueues without heap allocation; on shutdown the queue is drained
+    // and destroy() must release each continuation's coroutine frame.
+    void testContinuationOpDestroyOnShutdown()
+    {
+        int destroyed = 0;
+
+        // Allocate the continuation_ops outside the io_context scope so the
+        // ops outlive the scheduler that points at them.
+        detail::continuation_op op1;
+        detail::continuation_op op2;
+        op1.cont.h = make_destroy_coro(destroyed);
+        op2.cont.h = make_destroy_coro(destroyed);
+
+        {
+            io_context ioc;
+            auto ex = ioc.get_executor();
+
+            ex.post(op1.cont);
+            ex.post(op2.cont);
+
+            // io_context destructor drains scheduler queue and calls
+            // continuation_op::destroy() on each.
+        }
+
+        BOOST_TEST_EQ(destroyed, 2);
+    }
+
+    // Exercises the `rel_time > 1s` clamp branch in run_one_until.
+    // With no work and a deadline >1s in the future, the inner loop
+    // iterates with rel_time clamped to 1s before returning 0.
+    void testRunOneUntilLongDeadlineNoWork()
+    {
+        io_context ioc;
+
+        // Deadline >1s but tiny outstanding work so wait_one is not
+        // entered: scheduler is empty, wait_one immediately stops and
+        // returns 0. The outer run_one_until loop still enters with
+        // rel_time > 1s, hitting the clamp branch.
+        auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        std::size_t n = ioc.run_one_until(deadline);
+        BOOST_TEST(n == 0);
+        BOOST_TEST(ioc.stopped());
+    }
+
+    // MT-mode test that exercises conditionally_enabled_event::wait_for()
+    // and cross-thread notify_one(). A work guard keeps run_for inside its
+    // wait_for; main posts 8 handlers from a different thread, each of
+    // which triggers notify_one. Main polls counter until all handlers
+    // have run, then releases the work guard so run_for exits. The
+    // assertion depends only on the completed work, not on wall-clock
+    // timing.
+    void testMultithreadedNotifyAndWaitFor()
+    {
+        io_context ioc; // default hint => MT mode
+        auto ex = ioc.get_executor();
+        std::atomic<int> counter{0};
+
+        // Work guard prevents run_for from short-circuiting on an
+        // empty queue before main posts any work.
+        ex.on_work_started();
+
+        std::thread runner([&]() {
+            // 5s ceiling is a safety net only; we release the guard
+            // below as soon as work is drained.
+            (void)ioc.run_for(std::chrono::seconds(5));
+        });
+
+        for (int i = 0; i < 8; ++i)
+            post_coro(ex, make_atomic_coro(counter));
+
+        while (counter.load() < 8)
+            std::this_thread::yield();
+
+        ex.on_work_finished();
+        runner.join();
+
+        BOOST_TEST_EQ(counter.load(), 8);
+    }
+
     void run()
     {
         testConstruction();
+        testConstructionWithOptions();
+        testConstructionWithThreadPoolSize();
+        testConstructionSingleThreaded();
         testGetExecutor();
         testRun();
         testRunOne();
@@ -653,14 +784,17 @@ struct io_context_test
         testStopAndRestart();
         testRunOneFor();
         testRunOneUntil();
+        testRunOneUntilLongDeadlineNoWork();
         testRunFor();
         testRunForWithOutstandingWork();
         testRunOneForWithOutstandingWork();
         testExecutorRunningInThisThread();
         testMultithreaded();
         testMultithreadedStress();
+        testMultithreadedNotifyAndWaitFor();
         testWhenAllSetEvent();
         testShutdownDestroysPostedCoroutineFrames();
+        testContinuationOpDestroyOnShutdown();
     }
 };
 
@@ -686,9 +820,24 @@ struct io_context_shutdown_test
         BOOST_TEST_EQ(destroyed, 3);
     }
 
+    void testConstructionWithBackendAndOptions()
+    {
+        // Exercises the templated io_context(Backend, options, hint)
+        // constructor that runs apply_options_pre_/_post_.
+        io_context_options opts;
+        opts.max_events_per_poll   = 64;
+        opts.inline_budget_initial = 4;
+        opts.inline_budget_max     = 16;
+        opts.unassisted_budget     = 4;
+
+        io_context ioc(Backend, opts, 2);
+        BOOST_TEST(!ioc.stopped());
+    }
+
     void run()
     {
         testShutdownDestroysPostedCoroutineFrames();
+        testConstructionWithBackendAndOptions();
     }
 };
 

@@ -12,23 +12,21 @@
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/native/native_local_stream_acceptor.hpp>
 #include <boost/corosio/local_endpoint.hpp>
+#include <boost/corosio/test/temp_path.hpp>
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
 
 #include "context.hpp"
-#include "local_temp.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
-
-using test::make_temp_socket_path;
-using test::cleanup_temp_socket;
 
 template<auto Backend>
 struct native_local_stream_socket_test
@@ -111,7 +109,8 @@ struct native_local_stream_socket_test
     void testConnectAcceptReadWrite()
     {
         io_context ioc(Backend);
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
         acc.open();
@@ -152,14 +151,13 @@ struct native_local_stream_socket_test
         capy::run_async(ex)(acceptor_task(acc, server));
         capy::run_async(ex)(client_task(client, local_endpoint(path)));
         ioc.run();
-
-        cleanup_temp_socket(path);
     }
 
     void testMoveAccept()
     {
         io_context ioc(Backend);
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
         acc.open();
@@ -199,14 +197,13 @@ struct native_local_stream_socket_test
         capy::run_async(ex)(acceptor_task(acc));
         capy::run_async(ex)(client_task(client, local_endpoint(path)));
         ioc.run();
-
-        cleanup_temp_socket(path);
     }
 
     void testVirtualDispatchFallback()
     {
         io_context ioc(Backend);
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
         acc.open();
@@ -248,8 +245,6 @@ struct native_local_stream_socket_test
         capy::run_async(ex)(acceptor_task(acc_ref, server_ref));
         capy::run_async(ex)(client_task(client_ref, local_endpoint(path)));
         ioc.run();
-
-        cleanup_temp_socket(path);
     }
 
     // Exercise the shadowed wait() awaitable on the socket: a
@@ -259,7 +254,8 @@ struct native_local_stream_socket_test
     {
         io_context ioc(Backend);
         auto       ex   = ioc.get_executor();
-        auto       path = test::make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto       path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
         acc.open();
@@ -295,8 +291,6 @@ struct native_local_stream_socket_test
         capy::run_async(ex)(waiter());
         ioc.run();
 
-        test::cleanup_temp_socket(path);
-
         BOOST_TEST(wait_done);
         BOOST_TEST(!wait_ec);
     }
@@ -307,7 +301,8 @@ struct native_local_stream_socket_test
     {
         io_context ioc(Backend);
         auto       ex   = ioc.get_executor();
-        auto       path = test::make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto       path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
         acc.open();
@@ -334,10 +329,65 @@ struct native_local_stream_socket_test
         capy::run_async(ex)(connect_task());
         ioc.run();
 
-        test::cleanup_temp_socket(path);
-
         BOOST_TEST(wait_done);
         BOOST_TEST(!wait_ec);
+    }
+
+    void testAcceptOnClosedThrows()
+    {
+        io_context ioc(Backend);
+        native_local_stream_acceptor<Backend> acc(ioc);
+        native_local_stream_socket<Backend> peer(ioc);
+
+        bool caught_peer = false;
+        try
+        {
+            (void)acc.accept(peer);
+        }
+        catch (std::logic_error const&)
+        {
+            caught_peer = true;
+        }
+        BOOST_TEST(caught_peer);
+
+        bool caught_move = false;
+        try
+        {
+            (void)acc.accept();
+        }
+        catch (std::logic_error const&)
+        {
+            caught_move = true;
+        }
+        BOOST_TEST(caught_move);
+    }
+
+    void testConnectAutoOpens()
+    {
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        // temp dir exists, but the socket file inside it does not
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+
+        native_local_stream_socket<Backend> s(ioc);
+        BOOST_TEST_EQ(s.is_open(), false);
+
+        std::error_code result_ec;
+        bool done = false;
+
+        capy::run_async(ex)(
+            [](native_local_stream_socket<Backend>& sock,
+               local_endpoint ep,
+               std::error_code& ec_out, bool& d) -> capy::task<> {
+                auto [ec] = co_await sock.connect(ep);
+                ec_out = ec;
+                d      = true;
+            }(s, local_endpoint(path), result_ec, done));
+
+        ioc.run();
+        BOOST_TEST(done);
+        BOOST_TEST(s.is_open());
     }
 
     void run()
@@ -350,6 +400,8 @@ struct native_local_stream_socket_test
         testVirtualDispatchFallback();
         testSocketWait();
         testAcceptorWait();
+        testAcceptOnClosedThrows();
+        testConnectAutoOpens();
     }
 };
 

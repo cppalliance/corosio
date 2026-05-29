@@ -14,7 +14,6 @@
 
 #include <chrono>
 
-#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -86,14 +85,84 @@ struct native_io_context_test
         BOOST_TEST(done);
     }
 
+    void testIoContextConstructWithOptions()
+    {
+        io_context_options opts;
+        opts.max_events_per_poll   = 64;
+        opts.inline_budget_initial = 4;
+        opts.inline_budget_max     = 16;
+        opts.unassisted_budget     = 4;
+
+        native_io_context<Backend> ctx(opts, 2);
+        BOOST_TEST(!ctx.stopped());
+    }
+
+    void testIoContextRun()
+    {
+        native_io_context<Backend> ctx;
+        auto ex = ctx.get_executor();
+
+        bool done = false;
+        auto task = [](bool& done_out) -> capy::task<> {
+            done_out = true;
+            co_return;
+        };
+        capy::run_async(ex)(task(done));
+
+        auto n = ctx.run();
+        BOOST_TEST(n > 0u);
+        BOOST_TEST(done);
+    }
+
+    // Exercises the `rel_time > 1s` clamp branch in
+    // native_io_context::run_one_until. With no outstanding work, the
+    // scheduler stops immediately and returns 0 — the loop still entered
+    // with rel_time > 1s, hitting the clamp.
+    void testIoContextRunOneUntilLongDeadlineNoWork()
+    {
+        native_io_context<Backend> ctx;
+        auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        auto n = ctx.run_one_until(deadline);
+        BOOST_TEST(n == 0u);
+        BOOST_TEST(ctx.stopped());
+    }
+
+    // Exercises the post-loop `return 0` after run_one_until times out.
+    // Outstanding work keeps the scheduler alive; the inner wait_one
+    // returns 0 each iteration until the deadline passes.
+    void testIoContextRunForWithOutstandingWork()
+    {
+        native_io_context<Backend> ctx;
+        auto ex = ctx.get_executor();
+
+        ex.on_work_started();
+
+        auto start    = std::chrono::steady_clock::now();
+        std::size_t n = ctx.run_for(std::chrono::milliseconds(50));
+        auto elapsed  = std::chrono::steady_clock::now() - start;
+
+        BOOST_TEST(n == 0u);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
+                      .count();
+        BOOST_TEST(ms >= 30);
+        BOOST_TEST(ms < 1000);
+
+        ex.on_work_finished();
+    }
+
     void run()
     {
         testIoContextConstruct();
         testIoContextConstructHint();
+        testIoContextConstructWithOptions();
         testIoContextPolymorphicSlice();
         testIoContextPoll();
         testIoContextStopRestart();
+        testIoContextRun();
         testIoContextRunFor();
+        testIoContextRunOneUntilLongDeadlineNoWork();
+        testIoContextRunForWithOutstandingWork();
     }
 };
 

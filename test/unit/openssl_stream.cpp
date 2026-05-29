@@ -54,6 +54,28 @@ struct openssl_stream_test
         BOOST_TEST(stream.name() == "openssl");
     }
 
+    /** Exercise next_layer() accessors (const and non-const). */
+    void testNextLayer()
+    {
+        using namespace test;
+
+        io_context ioc;
+        auto ctx = make_anon_context();
+        tcp_socket sock(ioc);
+        openssl_stream stream(&sock, ctx);
+
+        // Non-const overload via mutable stream.
+        capy::any_stream& mutable_next = stream.next_layer();
+        (void)mutable_next;
+
+        // Const overload via reference to const.
+        openssl_stream const& cref = stream;
+        capy::any_stream const& const_next = cref.next_layer();
+        (void)const_next;
+
+        BOOST_TEST(&mutable_next == &const_next);
+    }
+
     /** Test certificate chain validation (OpenSSL-specific).
 
         OpenSSL supports sending full certificate chains via
@@ -103,6 +125,7 @@ struct openssl_stream_test
 
         testCertificateChain();
         testName();
+        testNextLayer();
     }
 };
 

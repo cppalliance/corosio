@@ -451,6 +451,384 @@ struct tcp_server_test
         BOOST_TEST(acc.is_open());
     }
 
+    void testMoveConstruct()
+    {
+        // Verify the noexcept move constructor leaves the source empty
+        // and the destination with the original state.
+        io_context ioc;
+        test_server src(ioc);
+        auto ec = src.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto port = src.local_endpoint().port();
+        BOOST_TEST(port != 0);
+
+        test_server dst(std::move(src));
+
+        // Destination retains the bound port; source local_endpoint
+        // becomes default-constructed (impl moved out).
+        BOOST_TEST_EQ(dst.local_endpoint().port(), port);
+    }
+
+    void testMoveAssign()
+    {
+        // Move-assign discards the existing impl_ and adopts the source.
+        io_context ioc;
+        test_server a(ioc);
+        test_server b(ioc);
+
+        auto ec = a.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto port_a = a.local_endpoint().port();
+
+        ec = b.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+
+        b = std::move(a);
+        BOOST_TEST_EQ(b.local_endpoint().port(), port_a);
+    }
+
+    void testLauncherDtorReturnsWorker()
+    {
+        // worker_base::run() never invokes the launcher; the launcher
+        // destructor must return the worker to the idle pool via
+        // push_sync. After stop() the accept loop completes cleanly.
+        io_context ioc;
+
+        class no_launch_worker : public tcp_server::worker_base
+        {
+            corosio::tcp_socket sock_;
+
+        public:
+            std::atomic<int>* run_count = nullptr;
+
+            no_launch_worker(io_context& ctx, std::atomic<int>* c)
+                : sock_(ctx), run_count(c)
+            {
+            }
+
+            corosio::tcp_socket& socket() override { return sock_; }
+
+            void run(tcp_server::launcher) override
+            {
+                // Drop launcher without invoking it. Its destructor
+                // must push the worker back to the idle pool.
+                run_count->fetch_add(1);
+                sock_.close();
+            }
+        };
+
+        std::atomic<int> run_count{0};
+
+        class drop_server : public tcp_server
+        {
+        public:
+            drop_server(io_context& ctx, std::atomic<int>* c)
+                : tcp_server(ctx, ctx.get_executor())
+            {
+                std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+                v.push_back(std::make_unique<no_launch_worker>(ctx, c));
+                set_workers(std::move(v));
+            }
+        };
+
+        drop_server srv(ioc, &run_count);
+        auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto port = srv.local_endpoint().port();
+
+        srv.start();
+
+        // Two clients exercise the worker pool: the worker is dropped
+        // back to idle by ~launcher() between connections.
+        auto driver = [](io_context* ioc, std::uint16_t port,
+                         drop_server* srv) -> capy::task<> {
+            for (int i = 0; i < 2; ++i)
+            {
+                tcp_socket client(*ioc);
+                client.open();
+                auto [cec] = co_await client.connect(
+                    endpoint(ipv4_address::loopback(), port));
+                (void)cec;
+                client.close();
+                timer t(*ioc);
+                t.expires_after(std::chrono::milliseconds(20));
+                (void)co_await t.wait();
+            }
+            srv->stop();
+        }(&ioc, port, &srv);
+
+        capy::run_async(ioc.get_executor())(std::move(driver));
+        ioc.run();
+        srv.join();
+
+        BOOST_TEST(run_count.load() >= 1);
+    }
+
+    void testMultipleActiveConnections()
+    {
+        // Multiple concurrent connections exercise the active list's
+        // doubly-linked-list bookkeeping (push_back/remove with prev/next).
+        io_context ioc;
+
+        // Worker that holds the connection open until told to release.
+        class slow_worker : public tcp_server::worker_base
+        {
+            io_context& ctx_;
+            corosio::tcp_socket sock_;
+
+        public:
+            explicit slow_worker(io_context& ctx) : ctx_(ctx), sock_(ctx) {}
+
+            corosio::tcp_socket& socket() override { return sock_; }
+
+            void run(tcp_server::launcher launch) override
+            {
+                launch(
+                    ctx_.get_executor(),
+                    [](io_context* ctx,
+                       corosio::tcp_socket* s) -> capy::task<> {
+                        // Block on read until the client disconnects.
+                        char buf[64];
+                        auto [ec, n] = co_await s->read_some(
+                            capy::mutable_buffer(buf, sizeof(buf)));
+                        (void)ec;
+                        (void)n;
+                        s->close();
+                        (void)ctx;
+                    }(&ctx_, &sock_));
+            }
+        };
+
+        class multi_server : public tcp_server
+        {
+        public:
+            explicit multi_server(io_context& ctx)
+                : tcp_server(ctx, ctx.get_executor())
+            {
+                std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+                v.reserve(4);
+                for (int i = 0; i < 4; ++i)
+                    v.push_back(std::make_unique<slow_worker>(ctx));
+                set_workers(std::move(v));
+            }
+        };
+
+        multi_server srv(ioc);
+        auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto port = srv.local_endpoint().port();
+
+        srv.start();
+
+        std::atomic<int> connected{0};
+
+        // Open 3 simultaneous connections to push three workers into
+        // the active list, then disconnect them in reverse order so
+        // both endpoints (head/tail/middle) of active_remove are taken.
+        auto driver = [](io_context* ioc, std::uint16_t port,
+                         std::atomic<int>* connected,
+                         multi_server* srv) -> capy::task<> {
+            tcp_socket c1(*ioc), c2(*ioc), c3(*ioc);
+            c1.open(); c2.open(); c3.open();
+
+            auto [e1] = co_await c1.connect(
+                endpoint(ipv4_address::loopback(), port));
+            if (!e1) connected->fetch_add(1);
+            auto [e2] = co_await c2.connect(
+                endpoint(ipv4_address::loopback(), port));
+            if (!e2) connected->fetch_add(1);
+            auto [e3] = co_await c3.connect(
+                endpoint(ipv4_address::loopback(), port));
+            if (!e3) connected->fetch_add(1);
+
+            // Give the server time to register the connections.
+            timer t(*ioc);
+            t.expires_after(std::chrono::milliseconds(50));
+            (void)co_await t.wait();
+
+            // Disconnect middle first, then tail, then head:
+            // exercises remove from each list position.
+            c2.close();
+            timer t1(*ioc); t1.expires_after(std::chrono::milliseconds(20));
+            (void)co_await t1.wait();
+            c3.close();
+            timer t2(*ioc); t2.expires_after(std::chrono::milliseconds(20));
+            (void)co_await t2.wait();
+            c1.close();
+            timer t3(*ioc); t3.expires_after(std::chrono::milliseconds(20));
+            (void)co_await t3.wait();
+
+            srv->stop();
+        }(&ioc, port, &connected, &srv);
+
+        capy::run_async(ioc.get_executor())(std::move(driver));
+        ioc.run();
+        srv.join();
+
+        BOOST_TEST(connected.load() >= 1);
+    }
+
+    void testLauncherDoubleInvokeThrows()
+    {
+        // The second invocation of a launcher must throw logic_error.
+        // We accept the connection but invoke launch twice inside run().
+        io_context ioc;
+
+        class throwing_worker : public tcp_server::worker_base
+        {
+            io_context& ctx_;
+            corosio::tcp_socket sock_;
+
+        public:
+            std::atomic<bool>* threw = nullptr;
+
+            throwing_worker(io_context& ctx, std::atomic<bool>* t)
+                : ctx_(ctx), sock_(ctx), threw(t)
+            {
+            }
+
+            corosio::tcp_socket& socket() override { return sock_; }
+
+            void run(tcp_server::launcher launch) override
+            {
+                launch(
+                    ctx_.get_executor(),
+                    [](corosio::tcp_socket* s) -> capy::task<> {
+                        s->close();
+                        co_return;
+                    }(&sock_));
+
+                // Second invocation must throw std::logic_error.
+                try
+                {
+                    launch(
+                        ctx_.get_executor(),
+                        [](corosio::tcp_socket*) -> capy::task<> {
+                            co_return;
+                        }(&sock_));
+                }
+                catch (std::logic_error const&)
+                {
+                    threw->store(true);
+                }
+            }
+        };
+
+        std::atomic<bool> launcher_threw{false};
+
+        class one_worker_server : public tcp_server
+        {
+        public:
+            one_worker_server(io_context& ctx, std::atomic<bool>* t)
+                : tcp_server(ctx, ctx.get_executor())
+            {
+                std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+                v.push_back(std::make_unique<throwing_worker>(ctx, t));
+                set_workers(std::move(v));
+            }
+        };
+
+        one_worker_server srv(ioc, &launcher_threw);
+        auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto port = srv.local_endpoint().port();
+
+        srv.start();
+
+        auto client_task = [](io_context* ioc, std::uint16_t port,
+                              one_worker_server* srv) -> capy::task<> {
+            tcp_socket client(*ioc);
+            client.open();
+            auto [cec] = co_await client.connect(
+                endpoint(ipv4_address::loopback(), port));
+            (void)cec;
+            client.close();
+
+            // Give server time to handle the connection, then stop.
+            timer t(*ioc);
+            t.expires_after(std::chrono::milliseconds(50));
+            (void)co_await t.wait();
+            srv->stop();
+        }(&ioc, port, &srv);
+
+        capy::run_async(ioc.get_executor())(std::move(client_task));
+        ioc.run();
+        srv.join();
+
+        BOOST_TEST(launcher_threw.load());
+    }
+
+    void testLocalEndpointOutOfRange()
+    {
+        // Index past the bound-ports list returns a default endpoint.
+        io_context ioc;
+        test_server srv(ioc);
+        auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+
+        BOOST_TEST(srv.local_endpoint(0).port() != 0);
+        BOOST_TEST(srv.local_endpoint(99) == endpoint{});
+    }
+
+    void testWaitersWakeOnWorkerReturn()
+    {
+        // With one worker handling two sequential connections, the
+        // second accept loop iteration must wait for the worker to
+        // return (exercises pop_awaitable suspend / push_awaitable wake).
+        io_context ioc;
+
+        class one_worker_server : public tcp_server
+        {
+        public:
+            explicit one_worker_server(io_context& ctx)
+                : tcp_server(ctx, ctx.get_executor())
+            {
+                set_workers(make_test_workers(ctx, 1));
+            }
+        };
+
+        one_worker_server srv(ioc);
+        auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto port = srv.local_endpoint().port();
+
+        std::atomic<int> echoed{0};
+
+        srv.start();
+
+        auto driver = [](io_context* ioc, std::uint16_t port,
+                         std::atomic<int>* echoed,
+                         one_worker_server* srv) -> capy::task<> {
+            for (int i = 0; i < 2; ++i)
+            {
+                tcp_socket client(*ioc);
+                client.open();
+                auto [cec] = co_await client.connect(
+                    endpoint(ipv4_address::loopback(), port));
+                if (cec)
+                    continue;
+                char msg[] = "ab";
+                auto [wec, wn] =
+                    co_await client.write_some(capy::const_buffer(msg, 2));
+                if (wec)
+                    continue;
+                char buf[4];
+                auto [rec, rn] = co_await client.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+                if (!rec && rn == 2)
+                    echoed->fetch_add(1);
+                client.close();
+            }
+            srv->stop();
+        }(&ioc, port, &echoed, &srv);
+
+        capy::run_async(ioc.get_executor())(std::move(driver));
+        ioc.run();
+        srv.join();
+
+        BOOST_TEST_EQ(echoed.load(), 2);
+    }
+
     void run()
     {
         testStopServer();
@@ -465,6 +843,13 @@ struct tcp_server_test
         testBindErrorNonLocalAcceptor();
         testBindErrorNonLocalAddress();
         testRelistenAfterClose();
+        testMoveConstruct();
+        testMoveAssign();
+        testLocalEndpointOutOfRange();
+        testWaitersWakeOnWorkerReturn();
+        testLauncherDoubleInvokeThrows();
+        testLauncherDtorReturnsWorker();
+        testMultipleActiveConnections();
     }
 };
 

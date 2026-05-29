@@ -100,6 +100,47 @@ struct tcp_socket_test
         sock.close();
     }
 
+    void testOpenWhenAlreadyOpen()
+    {
+        io_context ioc(Backend);
+        tcp_socket sock(ioc);
+
+        sock.open();
+        BOOST_TEST(sock.is_open());
+
+        // Second open() on an already-open socket is a no-op.
+        sock.open();
+        BOOST_TEST(sock.is_open());
+    }
+
+    void testCancelOnClosedSocket()
+    {
+        io_context ioc(Backend);
+        tcp_socket sock(ioc);
+
+        // cancel() on a closed socket is a no-op (early return).
+        sock.cancel();
+        BOOST_TEST(!sock.is_open());
+    }
+
+    void testNativeHandleClosedAndOpen()
+    {
+        io_context ioc(Backend);
+        tcp_socket sock(ioc);
+
+#if BOOST_COROSIO_HAS_IOCP
+        auto const invalid = static_cast<native_handle_type>(~0ull);
+#else
+        auto const invalid = static_cast<native_handle_type>(-1);
+#endif
+        // Closed: returns the platform sentinel.
+        BOOST_TEST(sock.native_handle() == invalid);
+
+        sock.open();
+        BOOST_TEST(sock.native_handle() != invalid);
+        sock.close();
+    }
+
     void testBindThenConnect()
     {
         io_context ioc(Backend);
@@ -1593,6 +1634,9 @@ struct tcp_socket_test
     {
         testConstruction();
         testOpen();
+        testOpenWhenAlreadyOpen();
+        testCancelOnClosedSocket();
+        testNativeHandleClosedAndOpen();
         testBind();
         testBindThenConnect();
         testBindV6();

@@ -127,6 +127,26 @@ struct signal_set_test
         BOOST_TEST(!!result);
     }
 
+    void testAddInvalidLargeSignal()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc);
+
+        // A signal number above the service's table size returns
+        // invalid_argument.
+        auto result = s.add(100000);
+        BOOST_TEST(!!result);
+    }
+
+    void testRemoveInvalidSignal()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc);
+
+        auto result = s.remove(-1);
+        BOOST_TEST(!!result);
+    }
+
     void testRemove()
     {
         io_context ioc(Backend);
@@ -307,6 +327,51 @@ struct signal_set_test
         s.cancel();
         s.cancel();
         s.cancel();
+        BOOST_TEST_PASS();
+    }
+
+    void testWaitWithPreStoppedToken()
+    {
+        // A wait() under a stop_token that's already in the requested state
+        // completes with capy::error::canceled via the stop_requested branch.
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+
+        std::stop_source src;
+        src.request_stop();
+
+        bool completed = false;
+        std::error_code result_ec;
+
+        auto wait_task = [&]() -> capy::task<> {
+            auto [ec, signum] = co_await s.wait();
+            result_ec = ec;
+            completed = true;
+            (void)signum;
+        };
+        capy::run_async(ioc.get_executor(), src.get_token())(wait_task());
+
+        ioc.run();
+        BOOST_TEST(completed);
+        BOOST_TEST(result_ec == capy::cond::canceled);
+    }
+
+    void testShutdownWithPendingSignalSet()
+    {
+        // Construct a signal_set that owns a signal registration, then let
+        // the io_context shutdown drain the impl_list (covers shutdown
+        // loop deleting registrations).
+        int destroyed = 0;
+        (void)destroyed;
+
+        {
+            io_context ioc(Backend);
+            signal_set s(ioc, SIGINT, SIGTERM);
+            (void)s;
+            // No run() — drop directly into io_context destruction so the
+            // service's shutdown path walks impl_list_ and frees both
+            // signal_registration nodes.
+        }
         BOOST_TEST_PASS();
     }
 
@@ -738,6 +803,8 @@ struct signal_set_test
         testAdd();
         testAddDuplicate();
         testAddInvalidSignal();
+        testAddInvalidLargeSignal();
+        testRemoveInvalidSignal();
         testRemove();
         testRemoveNotPresent();
         testClear();
@@ -752,6 +819,8 @@ struct signal_set_test
         testCancelBeforeWait();
         testCancelNoWaiters();
         testCancelMultipleTimes();
+        testWaitWithPreStoppedToken();
+        testShutdownWithPendingSignalSet();
 
         // Multiple signal set tests
         testMultipleSignalSetsOnSameSignal();

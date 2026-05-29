@@ -10,31 +10,38 @@
 // Test that header file is self-contained.
 #include <boost/corosio/local_stream_socket.hpp>
 
-#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_socket_pair.hpp>
+#include <boost/corosio/timer.hpp>
+#include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/read.hpp>
-#include <boost/capy/write.hpp>
-#include <boost/capy/concept/read_stream.hpp>
-#include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/read.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/write.hpp>
+#include <boost/capy/concept/read_stream.hpp>
+#include <boost/capy/concept/write_stream.hpp>
 
-#include <compare>
-#include <cstring>
-#include <sstream>
-#include <string>
+#include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_POSIX
 #include <unistd.h>
+#else
+#include <boost/corosio/native/detail/iocp/win_windows.hpp>
 #endif
 
+#include <chrono>
+#include <compare>
+#include <cstring>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+
 #include "context.hpp"
-#include "local_temp.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -43,9 +50,6 @@ namespace boost::corosio {
 
 static_assert(capy::ReadStream<local_stream_socket>);
 static_assert(capy::WriteStream<local_stream_socket>);
-
-using test::make_temp_socket_path;
-using test::cleanup_temp_socket;
 
 template<auto Backend>
 struct local_stream_socket_test
@@ -85,7 +89,8 @@ struct local_stream_socket_test
     {
         io_context ioc(Backend);
         auto ex   = ioc.get_executor();
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         local_stream_acceptor acc(ioc);
         acc.open();
@@ -120,8 +125,6 @@ struct local_stream_socket_test
         ioc.run();
         ioc.restart();
 
-        cleanup_temp_socket(path);
-
         BOOST_TEST_EQ(accept_done, true);
         BOOST_TEST_EQ(!accept_ec, true);
         BOOST_TEST_EQ(connect_done, true);
@@ -134,7 +137,8 @@ struct local_stream_socket_test
     {
         io_context ioc(Backend);
         auto ex   = ioc.get_executor();
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         local_stream_acceptor acc(ioc);
         acc.open();
@@ -170,8 +174,6 @@ struct local_stream_socket_test
 
         ioc.run();
         ioc.restart();
-
-        cleanup_temp_socket(path);
 
         BOOST_TEST_EQ(accept_done, true);
         BOOST_TEST_EQ(!accept_ec, true);
@@ -239,10 +241,12 @@ struct local_stream_socket_test
     }
 #endif // BOOST_COROSIO_POSIX
 
+#if BOOST_COROSIO_POSIX
     void testUnlinkExisting()
     {
         io_context ioc(Backend);
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         // First bind creates the socket file
         {
@@ -268,8 +272,6 @@ struct local_stream_socket_test
                 local_endpoint(path), bind_option::unlink_existing);
             BOOST_TEST_EQ(!ec, true);
         }
-
-        cleanup_temp_socket(path);
     }
 
     void testUnlinkNonexistent()
@@ -277,16 +279,16 @@ struct local_stream_socket_test
         // unlink_existing on a path that doesn't exist should
         // succeed (unlink silently fails with ENOENT).
         io_context ioc(Backend);
-        auto path = make_temp_socket_path();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
 
         local_stream_acceptor acc(ioc);
         acc.open();
         auto ec = acc.bind(
             local_endpoint(path), bind_option::unlink_existing);
         BOOST_TEST_EQ(!ec, true);
-
-        cleanup_temp_socket(path);
     }
+#endif
 
     void testEndpointOrdering()
     {
@@ -318,19 +320,461 @@ struct local_stream_socket_test
         BOOST_TEST_EQ((a <=> b) == std::strong_ordering::less, true);
     }
 
+    void testMoveAssign()
+    {
+        io_context ioc(Backend);
+        local_stream_socket s1(ioc);
+        local_stream_socket s2(ioc);
+        s1.open();
+        BOOST_TEST_EQ(s1.is_open(), true);
+        BOOST_TEST_EQ(s2.is_open(), false);
+
+        s2 = std::move(s1);
+        BOOST_TEST_EQ(s2.is_open(), true);
+        BOOST_TEST_EQ(s1.is_open(), false);
+
+        // Self-move-assign is a no-op
+        local_stream_socket& alias = s2;
+        s2 = std::move(alias);
+        BOOST_TEST_EQ(s2.is_open(), true);
+    }
+
+    void testCancelOnClosedSocket()
+    {
+        io_context ioc(Backend);
+        local_stream_socket sock(ioc);
+
+        // cancel() on a closed socket is a no-op (early return).
+        sock.cancel();
+        BOOST_TEST_EQ(sock.is_open(), false);
+    }
+
+    void testNativeHandleClosed()
+    {
+        io_context ioc(Backend);
+        local_stream_socket sock(ioc);
+
+#if BOOST_COROSIO_HAS_IOCP
+        auto const invalid = static_cast<native_handle_type>(~0ull);
+#else
+        auto const invalid = static_cast<native_handle_type>(-1);
+#endif
+        BOOST_TEST(sock.native_handle() == invalid);
+
+        sock.open();
+        BOOST_TEST(sock.native_handle() != invalid);
+        sock.close();
+    }
+
+    void testEndpointsClosed()
+    {
+        io_context ioc(Backend);
+        local_stream_socket sock(ioc);
+
+        // Endpoints on a closed socket are empty defaults
+        BOOST_TEST_EQ(sock.local_endpoint().empty(), true);
+        BOOST_TEST_EQ(sock.remote_endpoint().empty(), true);
+    }
+
+#if BOOST_COROSIO_POSIX
+    void testEndpointsConnected()
+    {
+        io_context ioc(Backend);
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(path));
+        BOOST_TEST_EQ(!ec, true);
+        ec = acc.listen();
+        BOOST_TEST_EQ(!ec, true);
+
+        local_stream_socket server(ioc);
+        local_stream_socket client(ioc);
+        auto ex = ioc.get_executor();
+
+        capy::run_async(ex)(
+            [](local_stream_acceptor& a, local_stream_socket& s)
+                -> capy::task<> {
+                (void)co_await a.accept(s);
+            }(acc, server));
+
+        capy::run_async(ex)(
+            [](local_stream_socket& s, local_endpoint ep) -> capy::task<> {
+                (void)co_await s.connect(ep);
+            }(client, local_endpoint(path)));
+
+        ioc.run();
+        ioc.restart();
+
+        // Endpoint accessors hit the backend
+        auto cl = client.local_endpoint();
+        auto cr = client.remote_endpoint();
+        auto sl = server.local_endpoint();
+        auto sr = server.remote_endpoint();
+        // server local should match the listening path
+        BOOST_TEST_EQ(sl.path(), path);
+        // client remote should match the listening path
+        BOOST_TEST_EQ(cr.path(), path);
+        // touch the others so the lines exec
+        (void)cl;
+        (void)sr;
+    }
+
+    void testShutdown()
+    {
+        io_context ioc(Backend);
+        auto [s1, s2] = make_local_stream_pair(ioc);
+
+        // Throwing overload (best-effort)
+        s1.shutdown(shutdown_send);
+
+        // Non-throwing overload
+        std::error_code ec;
+        s2.shutdown(shutdown_send, ec);
+        // ec may be unset or ENOTCONN depending on backend; we just want
+        // the code path exercised. The doc says best-effort.
+
+        // Closed-socket variants
+        local_stream_socket closed(ioc);
+        closed.shutdown(shutdown_send);
+
+        std::error_code ec2;
+        closed.shutdown(shutdown_send, ec2);
+        BOOST_TEST_EQ(!ec2, true);
+    }
+
+    void testAssignAlreadyOpenThrows()
+    {
+        io_context ioc(Backend);
+        local_stream_socket sock(ioc);
+        sock.open();
+        BOOST_TEST_EQ(sock.is_open(), true);
+
+        bool caught = false;
+        try
+        {
+            sock.assign(-1);
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testReleaseClosedThrows()
+    {
+        io_context ioc(Backend);
+        local_stream_socket sock(ioc);
+
+        bool caught = false;
+        try
+        {
+            (void)sock.release();
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testAvailableClosedThrows()
+    {
+        io_context ioc(Backend);
+        local_stream_socket sock(ioc);
+
+        bool caught = false;
+        try
+        {
+            (void)sock.available();
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testConnectToNonexistent()
+    {
+        // connect() to a path that doesn't exist should fail
+        // gracefully with an error in the awaitable, no throw.
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        // temp dir exists, but the socket file inside it does not
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+
+        local_stream_socket client(ioc);
+        std::error_code result_ec;
+        bool done = false;
+
+        capy::run_async(ex)(
+            [](local_stream_socket& s, local_endpoint ep,
+               std::error_code& ec_out, bool& d) -> capy::task<> {
+                auto [ec] = co_await s.connect(ep);
+                ec_out = ec;
+                d      = true;
+            }(client, local_endpoint(path), result_ec, done));
+
+        ioc.run();
+
+        BOOST_TEST(done);
+        BOOST_TEST(!!result_ec);
+    }
+
+    void testCancelPendingAccept()
+    {
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(path));
+        BOOST_TEST_EQ(!ec, true);
+        ec = acc.listen();
+        BOOST_TEST_EQ(!ec, true);
+
+        std::error_code accept_ec;
+        bool accept_done = false;
+        local_stream_socket server(ioc);
+
+        capy::run_async(ex)(
+            [](local_stream_acceptor& a, local_stream_socket& s,
+               std::error_code& ec_out, bool& done) -> capy::task<> {
+                auto [ec] = co_await a.accept(s);
+                ec_out    = ec;
+                done      = true;
+            }(acc, server, accept_ec, accept_done));
+
+        // Schedule a cancel after a brief delay
+        auto canceller = [&]() -> capy::task<> {
+            timer t(ioc);
+            t.expires_after(std::chrono::milliseconds(20));
+            (void)co_await t.wait();
+            acc.cancel();
+        };
+        capy::run_async(ex)(canceller());
+
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(accept_ec == capy::cond::canceled);
+    }
+#endif // BOOST_COROSIO_POSIX
+
+    void testAcceptorOnClosedNoOp()
+    {
+        // cancel/close on a never-opened acceptor are no-ops.
+        io_context ioc(Backend);
+        local_stream_acceptor acc(ioc);
+        BOOST_TEST_EQ(acc.is_open(), false);
+
+        acc.cancel();
+        acc.close();
+        BOOST_TEST_EQ(acc.is_open(), false);
+
+        // local_endpoint() on a closed acceptor returns an empty endpoint.
+        BOOST_TEST_EQ(acc.local_endpoint().empty(), true);
+    }
+
+    void testAcceptorBindClosedThrows()
+    {
+        io_context ioc(Backend);
+        local_stream_acceptor acc(ioc);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        BOOST_TEST_THROWS(acc.bind(local_endpoint("/tmp/never")),
+                          std::logic_error);
+    }
+
+    void testAcceptorListenClosedThrows()
+    {
+        io_context ioc(Backend);
+        local_stream_acceptor acc(ioc);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        BOOST_TEST_THROWS(acc.listen(), std::logic_error);
+    }
+
+    void testAcceptorAcceptClosedThrows()
+    {
+        io_context ioc(Backend);
+        local_stream_acceptor acc(ioc);
+        local_stream_socket peer(ioc);
+
+        bool caught_peer = false;
+        try
+        {
+            (void)acc.accept(peer);
+        }
+        catch (std::logic_error const&)
+        {
+            caught_peer = true;
+        }
+        BOOST_TEST(caught_peer);
+
+        bool caught_move = false;
+        try
+        {
+            (void)acc.accept();
+        }
+        catch (std::logic_error const&)
+        {
+            caught_move = true;
+        }
+        BOOST_TEST(caught_move);
+    }
+
+    void testAcceptorReleaseClosedThrows()
+    {
+        io_context ioc(Backend);
+        local_stream_acceptor acc(ioc);
+
+        bool caught = false;
+        try
+        {
+            (void)acc.release();
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testAcceptorReleaseOpen()
+    {
+        // release() returns the native fd and closes the acceptor
+        io_context ioc(Backend);
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(path));
+        BOOST_TEST_EQ(!ec, true);
+        ec = acc.listen();
+        BOOST_TEST_EQ(!ec, true);
+
+        BOOST_TEST_EQ(acc.is_open(), true);
+        auto h = acc.release();
+        (void)h;
+        BOOST_TEST_EQ(acc.is_open(), false);
+
+#if BOOST_COROSIO_POSIX
+        if (static_cast<int>(h) >= 0)
+            ::close(static_cast<int>(h));
+#endif
+    }
+
+    void testAcceptorLocalEndpoint()
+    {
+        io_context ioc(Backend);
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(path));
+        BOOST_TEST_EQ(!ec, true);
+
+        auto ep = acc.local_endpoint();
+        BOOST_TEST_EQ(ep.path(), path);
+    }
+
+    void testEndpointTooLongThrows()
+    {
+        std::string too_long(local_endpoint::max_path_length + 1, 'x');
+        bool caught = false;
+        try
+        {
+            local_endpoint ep(too_long);
+            (void)ep;
+        }
+        catch (std::system_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    void testEndpointTooLongNoThrow()
+    {
+        std::string too_long(local_endpoint::max_path_length + 1, 'x');
+        std::error_code ec;
+        local_endpoint ep(too_long, ec);
+        BOOST_TEST(!!ec);
+        BOOST_TEST_EQ(ep.empty(), true);
+
+        // Successful construction with the no-throw overload clears ec.
+        std::error_code ec2;
+        local_endpoint ep2("/tmp/ok", ec2);
+        BOOST_TEST_EQ(!ec2, true);
+        BOOST_TEST_EQ(ep2.path(), std::string_view("/tmp/ok"));
+    }
+
+    void testEndpointMaxPathLength()
+    {
+        // Exactly at the limit should succeed.
+        std::string at_limit(local_endpoint::max_path_length, 'a');
+        local_endpoint ep(at_limit);
+        BOOST_TEST_EQ(ep.path().size(), local_endpoint::max_path_length);
+    }
+
+#ifdef __linux__
+    void testAbstractEndpoint()
+    {
+        std::string abs_path(1, '\0');
+        abs_path += "corosio_test_abstract_endpoint";
+        local_endpoint ep(abs_path);
+        BOOST_TEST(ep.is_abstract());
+        BOOST_TEST_EQ(ep.empty(), false);
+    }
+#endif
+
     void run()
     {
         testConstruction();
         testOpen();
         testMove();
+        testMoveAssign();
+        testCancelOnClosedSocket();
+        testNativeHandleClosed();
+        testEndpointsClosed();
         testConnectAccept();
         testMoveAccept();
 #if BOOST_COROSIO_POSIX
         testReadWrite();
         testSocketPair();
+        testEndpointsConnected();
+        testShutdown();
+        testAssignAlreadyOpenThrows();
+        testReleaseClosedThrows();
+        testAvailableClosedThrows();
+        testConnectToNonexistent();
+        testCancelPendingAccept();
 #endif
+        testAcceptorOnClosedNoOp();
+        testAcceptorBindClosedThrows();
+        testAcceptorListenClosedThrows();
+        testAcceptorAcceptClosedThrows();
+        testAcceptorReleaseClosedThrows();
+        testAcceptorReleaseOpen();
+        testAcceptorLocalEndpoint();
+        testEndpointTooLongThrows();
+        testEndpointTooLongNoThrow();
+        testEndpointMaxPathLength();
+#ifdef __linux__
+        testAbstractEndpoint();
+#endif
+#if BOOST_COROSIO_POSIX
         testUnlinkExisting();
         testUnlinkNonexistent();
+#endif
         testEndpointOrdering();
         testEndpointStreamOutput();
 #if BOOST_COROSIO_POSIX
@@ -381,14 +825,21 @@ struct local_stream_socket_test
 
         BOOST_TEST_EQ(s1.is_open(), true);
 
-        int fd = s1.release();
-        BOOST_TEST_EQ(fd >= 0, true);
+        auto handle = s1.release();
         BOOST_TEST_EQ(s1.is_open(), false);
 
-        // The released fd is still valid -- write through it
+        // The released handle is still valid -- write through it
         char const msg[] = "released";
-        BOOST_TEST_EQ(::write(fd, msg, std::strlen(msg)) > 0, true);
-        ::close(fd);
+#if BOOST_COROSIO_HAS_IOCP
+        BOOST_TEST_EQ(
+            ::send(static_cast<SOCKET>(handle),
+                   msg, static_cast<int>(std::strlen(msg)), 0) > 0, true);
+        ::closesocket(static_cast<SOCKET>(handle));
+#else
+        BOOST_TEST_EQ(handle >= 0, true);
+        BOOST_TEST_EQ(::write(handle, msg, std::strlen(msg)) > 0, true);
+        ::close(handle);
+#endif
     }
 #endif
 

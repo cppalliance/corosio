@@ -19,7 +19,6 @@
 #include <type_traits>
 #include <utility>
 
-#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -120,12 +119,32 @@ struct native_tcp_acceptor_test
         BOOST_TEST(!wait_ec);
     }
 
+#ifdef SO_REUSEPORT
+    void testNativeReusePort()
+    {
+        io_context ctx(Backend);
+        native_tcp_acceptor<Backend> acc(ctx);
+        acc.open();
+
+        acc.set_option(native_socket_option::reuse_address(true));
+        acc.set_option(native_socket_option::reuse_port(true));
+        auto rp =
+            acc.template get_option<native_socket_option::reuse_port>();
+        BOOST_TEST(rp.value());
+
+        acc.close();
+    }
+#endif
+
     void run()
     {
         testAcceptorConstruct();
         testAcceptorMoveConstruct();
         testAcceptorPolymorphicSlice();
         testWait();
+#ifdef SO_REUSEPORT
+        testNativeReusePort();
+#endif
     }
 };
 

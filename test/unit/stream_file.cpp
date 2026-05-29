@@ -185,6 +185,31 @@ struct stream_file_test
         BOOST_TEST(threw);
     }
 
+    void testOpenSyncAllOnWrite()
+    {
+        // Exercises the O_SYNC mapping in posix_stream_file::open_file.
+        temp_file tmp("sf_sync_open_");
+        io_context ioc;
+        stream_file f(ioc);
+
+        f.open(tmp.path,
+               file_base::write_only | file_base::create
+                   | file_base::truncate | file_base::sync_all_on_write);
+        BOOST_TEST(f.is_open());
+
+        bool done = false;
+        auto task = [](stream_file& f_ref, bool& d) -> capy::task<> {
+            auto [ec, n] =
+                co_await f_ref.write_some(capy::const_buffer("synced", 6));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 6u);
+            d = true;
+        };
+        capy::run_async(ioc.get_executor())(task(f, done));
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     // File metadata
 
     void testSize()
@@ -422,6 +447,119 @@ struct stream_file_test
         BOOST_TEST_PASS();
     }
 
+    void testCancelOnClosedFile()
+    {
+        io_context ioc;
+        stream_file f(ioc);
+
+        // cancel() on a closed file is a no-op (early return).
+        f.cancel();
+        BOOST_TEST(!f.is_open());
+    }
+
+    void testNativeHandleClosedAndOpen()
+    {
+        temp_file tmp("sf_nh_", "x");
+        io_context ioc;
+        stream_file f(ioc);
+
+#if BOOST_COROSIO_HAS_IOCP
+        auto const invalid = static_cast<native_handle_type>(~0ull);
+#else
+        auto const invalid = static_cast<native_handle_type>(-1);
+#endif
+        // Closed: returns the platform sentinel.
+        BOOST_TEST(f.native_handle() == invalid);
+
+        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(f.native_handle() != invalid);
+    }
+
+    void testOpenReplacesExisting()
+    {
+        temp_file tmp1("sf_replace_a_", "first");
+        temp_file tmp2("sf_replace_b_", "second");
+        io_context ioc;
+        stream_file f(ioc);
+
+        f.open(tmp1.path, file_base::read_only);
+        BOOST_TEST(f.is_open());
+
+        // Reopen on an already-open file closes the previous handle.
+        f.open(tmp2.path, file_base::read_only);
+        BOOST_TEST(f.is_open());
+    }
+
+#if BOOST_COROSIO_POSIX
+    void testOpenSingleThreadedNotSupported()
+    {
+        // POSIX file I/O requires the shared thread pool; in single-threaded
+        // mode the service short-circuits with operation_not_supported.
+        temp_file tmp("sf_st_", "data");
+        io_context ioc(1);
+        stream_file f(ioc);
+
+        bool caught = false;
+        try
+        {
+            f.open(tmp.path, file_base::read_only);
+        }
+        catch (std::system_error const& e)
+        {
+            caught = (e.code() == std::errc::operation_not_supported);
+        }
+        BOOST_TEST(caught);
+    }
+#endif
+
+    void testReadEmptyBuffer()
+    {
+        // Zero-byte read should short-circuit to completion via the
+        // empty-iovec fast path in read_some.
+        temp_file tmp("sf_read0_", "hello");
+        io_context ioc;
+        stream_file f(ioc);
+
+        f.open(tmp.path, file_base::read_only);
+
+        bool completed = false;
+
+        auto task = [](stream_file& f_ref, bool& done) -> capy::task<> {
+            char b;
+            auto [ec, n] = co_await f_ref.read_some(capy::mutable_buffer(&b, 0));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 0u);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task(f, completed));
+        ioc.run();
+        BOOST_TEST(completed);
+    }
+
+    void testWriteEmptyBuffer()
+    {
+        // Same empty-iovec fast path for write_some.
+        temp_file tmp("sf_write0_");
+        io_context ioc;
+        stream_file f(ioc);
+
+        f.open(tmp.path,
+               file_base::write_only | file_base::create | file_base::truncate);
+
+        bool completed = false;
+
+        auto task = [](stream_file& f_ref, bool& done) -> capy::task<> {
+            char const b = 'x';
+            auto [ec, n] = co_await f_ref.write_some(capy::const_buffer(&b, 0));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 0u);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task(f, completed));
+        ioc.run();
+        BOOST_TEST(completed);
+    }
+
     // Open flags
 
     void testTruncate()
@@ -641,6 +779,7 @@ struct stream_file_test
         testOpenCreateWrite();
         testOpenNonexistent();
         testOpenExclusive();
+        testOpenSyncAllOnWrite();
 
         testSize();
         testResize();
@@ -654,6 +793,14 @@ struct stream_file_test
         testSyncData();
         testSyncAll();
         testCancelNoOperation();
+        testCancelOnClosedFile();
+        testNativeHandleClosedAndOpen();
+        testOpenReplacesExisting();
+        testReadEmptyBuffer();
+        testWriteEmptyBuffer();
+#if BOOST_COROSIO_POSIX
+        testOpenSingleThreadedNotSupported();
+#endif
         testTruncate();
 
         testAppendMode();

@@ -147,6 +147,47 @@ struct ipv6_address_test
         BOOST_TEST_EQ(sv, "::1");
     }
 
+    void testToBufferTooSmallThrows()
+    {
+        // to_buffer must throw length_error when the buffer is smaller
+        // than max_str_len, even if the formatted address would fit.
+        char small[4];
+        BOOST_TEST_THROWS(
+            ipv6_address::loopback().to_buffer(small, sizeof(small)),
+            std::length_error);
+    }
+
+    void testToStringHexWidths()
+    {
+        // Exercise each print_hex width branch (4, 3, 2, 1 hex digit).
+        // 4 digits: 0xabcd, 3 digits: 0x0bcd, 2 digits: 0x00bc, 1 digit: 0x000b.
+        ipv6_address::bytes_type b{
+            {0xab, 0xcd, 0x0b, 0xcd, 0x00, 0xbc, 0x00, 0x0b,
+             0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0}};
+        ipv6_address a(b);
+        BOOST_TEST_EQ(a.to_string(), "abcd:bcd:bc:b:1234:5678:9abc:def0");
+    }
+
+    void testParseEndsWithDoubleColon()
+    {
+        // "1::" — '::' at the end requires the "ends in ::" hex break path.
+        ipv6_address addr;
+        auto ec = parse_ipv6_address("1::", addr);
+        BOOST_TEST(!ec);
+        BOOST_TEST_EQ(addr.to_string(), "1::");
+    }
+
+    void testParseInvalidIPv4Suffix()
+    {
+        ipv6_address addr;
+        // "::1.2.3" — IPv4 portion incomplete.
+        BOOST_TEST(parse_ipv6_address("::1.2.3", addr));
+        // "::g.0.0.0" — non-numeric hex.
+        BOOST_TEST(parse_ipv6_address("::g.0.0.0", addr));
+        // "1:2:3:4:5:6.7.8.9" — IPv4 with no '::' but not enough h16 groups.
+        BOOST_TEST(parse_ipv6_address("1:2:3:4:5:6.7.8.9", addr));
+    }
+
     void testPredicates()
     {
         // Unspecified
@@ -202,8 +243,12 @@ struct ipv6_address_test
     {
         testConstruction();
         testParse();
+        testParseEndsWithDoubleColon();
+        testParseInvalidIPv4Suffix();
         testToString();
+        testToStringHexWidths();
         testToBuffer();
+        testToBufferTooSmallThrows();
         testPredicates();
         testComparison();
         testOstream();
