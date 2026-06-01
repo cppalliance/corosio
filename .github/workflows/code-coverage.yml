@@ -26,6 +26,7 @@ on:
     paths:
       - 'src/**'
       - 'include/**'
+      - 'test/**'
       - '.github/workflows/code-coverage.yml'
   workflow_dispatch:
 
