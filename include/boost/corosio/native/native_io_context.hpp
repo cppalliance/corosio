@@ -191,10 +191,13 @@ public:
     run_one_until(std::chrono::time_point<Clock, Duration> const& abs_time)
     {
         typename Clock::time_point now = Clock::now();
-        while (now < abs_time)
+        for (;;)
         {
             auto rel_time = abs_time - now;
-            if (rel_time > std::chrono::seconds(1))
+            using rel_type = decltype(rel_time);
+            if (rel_time < rel_type::zero())
+                rel_time = rel_type::zero();
+            else if (rel_time > std::chrono::seconds(1))
                 rel_time = std::chrono::seconds(1);
 
             std::size_t s = sched().wait_one(
@@ -207,8 +210,9 @@ public:
                 return s;
 
             now = Clock::now();
+            if (now >= abs_time)
+                return 0;
         }
-        return 0;
     }
 
     /** Process all ready work items without blocking.
