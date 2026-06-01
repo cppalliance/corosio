@@ -81,11 +81,17 @@ public:
 
     ~temp_socket_dir() noexcept
     {
-        if (!dir_.empty())
-        {
-            std::error_code ec;
-            std::filesystem::remove_all(dir_, ec);
-        }
+        if (dir_.empty())
+            return;
+
+        std::error_code ec;
+
+        // Unlink the socket file with C's std::remove from <cstdio>
+        // (deletes by name, no open) before remove_all, whose
+        // symlink_status opens AF_UNIX socket files via CreateFileW and
+        // hangs on Windows.
+        std::remove(path().c_str());
+        std::filesystem::remove_all(dir_, ec);
     }
 
     temp_socket_dir(temp_socket_dir const&)            = delete;
