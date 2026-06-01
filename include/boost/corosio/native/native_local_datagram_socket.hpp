@@ -29,6 +29,10 @@
 #if BOOST_COROSIO_HAS_KQUEUE
 #include <boost/corosio/native/detail/kqueue/kqueue_types.hpp>
 #endif
+
+#if BOOST_COROSIO_HAS_IO_URING
+#include <boost/corosio/native/detail/io_uring/io_uring_types.hpp>
+#endif
 #endif // !BOOST_COROSIO_MRDOCS
 
 namespace boost::corosio {

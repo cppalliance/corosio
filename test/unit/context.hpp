@@ -83,4 +83,14 @@
     COROSIO_TEST_SELECT_(impl, name)      \
     COROSIO_TEST_IO_URING_(impl, name)
 
+// Reactor-only test registration. Use this in test files that exercise
+// reactor-backend code paths (e.g. EPOLLOUT-rearm under small SO_SNDBUF
+// pressure) where the io_uring proactor's behavior is not equivalent
+// and the test's timing assumptions break — see test/unit/reactor_paths.cpp
+// for the motivating case.
+#define COROSIO_REACTOR_BACKEND_TESTS(impl, name) \
+    COROSIO_TEST_EPOLL_(impl, name)               \
+    COROSIO_TEST_KQUEUE_(impl, name)              \
+    COROSIO_TEST_SELECT_(impl, name)
+
 #endif

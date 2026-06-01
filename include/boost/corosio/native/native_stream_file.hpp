@@ -19,6 +19,10 @@
 #include <boost/corosio/native/detail/posix/posix_stream_file_service.hpp>
 #endif
 
+#if BOOST_COROSIO_HAS_IO_URING
+#include <boost/corosio/native/detail/io_uring/io_uring_stream_file.hpp>
+#endif
+
 #if BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/native/detail/iocp/win_file_service.hpp>
 #endif

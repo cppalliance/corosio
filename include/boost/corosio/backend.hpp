@@ -240,6 +240,10 @@ class io_uring_local_stream_acceptor;
 class io_uring_local_stream_acceptor_service;
 class io_uring_local_datagram_socket;
 class io_uring_local_datagram_service;
+class io_uring_stream_file;
+class io_uring_stream_file_service;
+class io_uring_random_access_file;
+class io_uring_random_access_file_service;
 class io_uring_scheduler;
 
 class posix_signal;
@@ -271,6 +275,11 @@ struct io_uring_t
     using signal_service_type   = detail::posix_signal_service;
     using resolver_type         = detail::posix_resolver;
     using resolver_service_type = detail::posix_resolver_service;
+
+    using stream_file_type                = detail::io_uring_stream_file;
+    using stream_file_service_type        = detail::io_uring_stream_file_service;
+    using random_access_file_type         = detail::io_uring_random_access_file;
+    using random_access_file_service_type = detail::io_uring_random_access_file_service;
 
     /// Create the scheduler and services for this backend.
     BOOST_COROSIO_DECL static detail::scheduler&
