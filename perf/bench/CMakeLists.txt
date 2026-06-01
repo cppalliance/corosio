@@ -69,4 +69,29 @@ if (TARGET Boost::asio)
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/local_socket_latency_bench.cpp)
     target_link_libraries(corosio_bench PRIVATE Boost::asio)
     target_compile_definitions(corosio_bench PRIVATE BOOST_COROSIO_BENCH_HAS_ASIO=1)
+
+    # Choose the asio reactor implementation for the asio bench variants.
+    # ON  -> asio uses io_uring (apples-to-apples for corosio io_uring benches).
+    # OFF -> asio uses its default reactor (epoll on Linux).
+    # Reconfigure with -DBOOST_COROSIO_BENCH_ASIO_IO_URING=OFF to switch.
+    # Corosio sources don't include <boost/asio.hpp>, so the target-wide
+    # defines don't affect them.
+    option(BOOST_COROSIO_BENCH_ASIO_IO_URING
+        "Build asio bench variants against io_uring (requires liburing)"
+        ON)
+    if (BOOST_COROSIO_BENCH_ASIO_IO_URING)
+        if (TARGET liburing::liburing)
+            target_compile_definitions(corosio_bench PRIVATE
+                BOOST_ASIO_HAS_IO_URING=1
+                BOOST_ASIO_DISABLE_EPOLL=1)
+            target_link_libraries(corosio_bench PRIVATE liburing::liburing)
+            message(STATUS "asio bench: using io_uring reactor")
+        else ()
+            message(STATUS
+                "asio bench: BOOST_COROSIO_BENCH_ASIO_IO_URING=ON but "
+                "liburing not found; falling back to epoll")
+        endif ()
+    else ()
+        message(STATUS "asio bench: using default (epoll) reactor")
+    endif ()
 endif ()

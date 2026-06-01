@@ -130,8 +130,23 @@ struct uring_read_op : io_uring_op
     static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_read_op*>(base);
-        ::io_uring_prep_readv(
-            sqe, self->fd, self->iovecs, self->iovec_count, 0);
+        // Single-buffer fast path: IORING_OP_RECV with a flat
+        // (buffer, length) skips the iovec-array indirection that
+        // IORING_OP_READV pays. For multi-iovec scatter reads, fall
+        // back to readv.
+        if (self->iovec_count == 1)
+        {
+            ::io_uring_prep_recv(
+                sqe, self->fd,
+                self->iovecs[0].iov_base,
+                self->iovecs[0].iov_len,
+                0);
+        }
+        else
+        {
+            ::io_uring_prep_readv(
+                sqe, self->fd, self->iovecs, self->iovec_count, 0);
+        }
     }
 
     static void do_cqe(
@@ -237,8 +252,22 @@ struct uring_write_op : io_uring_op
     static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_write_op*>(base);
-        ::io_uring_prep_sendmsg(
-            sqe, self->fd, &self->msg, MSG_NOSIGNAL);
+        // Single-buffer fast path: IORING_OP_SEND with MSG_NOSIGNAL
+        // skips the msghdr indirection that IORING_OP_SENDMSG pays.
+        // For multi-iovec scatter writes, fall back to sendmsg.
+        if (self->iovec_count == 1)
+        {
+            ::io_uring_prep_send(
+                sqe, self->fd,
+                self->iovecs[0].iov_base,
+                self->iovecs[0].iov_len,
+                MSG_NOSIGNAL);
+        }
+        else
+        {
+            ::io_uring_prep_sendmsg(
+                sqe, self->fd, &self->msg, MSG_NOSIGNAL);
+        }
     }
 
     static void do_cqe(
@@ -445,6 +474,10 @@ io_uring_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
 
         op->prep_func(op, sqe);
         ::io_uring_sqe_set_data(sqe, op);
+        // Count this op against the in-flight gate in do_one: it
+        // expects exactly one F_MORE-less CQE per submitted SQE
+        // (multishot ops decrement only on the terminal CQE).
+        sched.inflight_inc();
         // Release pairs with the acquire in io_uring_op::request_cancel:
         // a stop_token firing after we release the mutex will see
         // sqe_set==true and submit a cancel-by-user_data SQE.
