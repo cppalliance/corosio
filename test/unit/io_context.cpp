@@ -481,6 +481,28 @@ struct io_context_test
         BOOST_TEST(counter == 1);
     }
 
+    void testRunOneUntilExpiredDeadlineStops()
+    {
+        // An already-elapsed deadline with no work must still stop the
+        // context: run_one_until has to call wait_one at least once. This
+        // is the deterministic form of a valgrind/CI flake where the thread
+        // is preempted past the deadline before the first loop check, so
+        // wait_one (which holds the "no work -> stop" logic) was skipped.
+        io_context ioc;
+
+        auto past =
+            std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+        std::size_t n = ioc.run_one_until(past);
+        BOOST_TEST(n == 0);
+        BOOST_TEST(ioc.stopped());
+
+        // run_for with an already-elapsed deadline (run_until -> run_one_until)
+        ioc.restart();
+        n = ioc.run_for(std::chrono::milliseconds(-1));
+        BOOST_TEST(n == 0);
+        BOOST_TEST(ioc.stopped());
+    }
+
     void testRunFor()
     {
         io_context ioc;
@@ -784,6 +806,7 @@ struct io_context_test
         testStopAndRestart();
         testRunOneFor();
         testRunOneUntil();
+        testRunOneUntilExpiredDeadlineStops();
         testRunOneUntilLongDeadlineNoWork();
         testRunFor();
         testRunForWithOutstandingWork();

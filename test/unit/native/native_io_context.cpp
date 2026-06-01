@@ -151,6 +151,20 @@ struct native_io_context_test
         ex.on_work_finished();
     }
 
+    // An already-elapsed deadline with no work must still stop the context.
+    // run_one_until has to call wait_one (which holds the "no work -> stop"
+    // logic) at least once; the deterministic form of a valgrind/CI flake
+    // where preemption pushes now past the deadline before the first check.
+    void testIoContextRunOneUntilExpiredDeadlineStops()
+    {
+        native_io_context<Backend> ctx;
+        auto past =
+            std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+        auto n = ctx.run_one_until(past);
+        BOOST_TEST(n == 0u);
+        BOOST_TEST(ctx.stopped());
+    }
+
     void run()
     {
         testIoContextConstruct();
@@ -162,6 +176,7 @@ struct native_io_context_test
         testIoContextRun();
         testIoContextRunFor();
         testIoContextRunOneUntilLongDeadlineNoWork();
+        testIoContextRunOneUntilExpiredDeadlineStops();
         testIoContextRunForWithOutstandingWork();
     }
 };
