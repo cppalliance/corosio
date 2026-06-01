@@ -107,6 +107,7 @@ class BOOST_COROSIO_DECL io_uring_tcp_socket final
     uring_read_op    rd_;
     uring_write_op   wr_;
     uring_connect_op conn_;
+    uring_wait_op    wait_op_;
 
     mutable detail::speculative_state spec_;
 
@@ -346,6 +347,33 @@ public:
             return std::noop_coroutine();
         }
         io_uring_submit_op(*sched_, &conn_);
+        return std::noop_coroutine();
+    }
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref      ex,
+        wait_type               w,
+        std::stop_token         token,
+        std::error_code*        ec) override
+    {
+        int poll_flags = 0;
+        switch (w)
+        {
+            case wait_type::read:  poll_flags = POLLIN;  break;
+            case wait_type::write: poll_flags = POLLOUT; break;
+            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+        }
+        wait_op_.prepare(h, ex, ec, fd_, sched_,
+            shared_from_this(), poll_flags, token);
+        sched_->work_started();
+        if (wait_op_.cancelled.load(std::memory_order_acquire))
+        {
+            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            sched_->push_completed_locked(&wait_op_);
+            return std::noop_coroutine();
+        }
+        io_uring_submit_op(*sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -635,6 +663,11 @@ class BOOST_COROSIO_DECL io_uring_tcp_acceptor final
         endpoint,
         io_uring_tcp_service>;
 
+    // Readiness-wait slot. The multishot accept op delivers accepted
+    // fds, but `wait()` reports raw poll readiness on the listening fd
+    // without consuming a connection — see the wait() override.
+    uring_wait_op wait_op_;
+
 public:
     explicit io_uring_tcp_acceptor(
         io_uring_tcp_acceptor_service&,
@@ -651,6 +684,33 @@ public:
         io_object::implementation** impl_out) override
     {
         base_type::dispatch_or_queue(h, ex, std::move(token), ec, impl_out);
+        return std::noop_coroutine();
+    }
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref      ex,
+        wait_type               w,
+        std::stop_token         token,
+        std::error_code*        ec) override
+    {
+        int poll_flags = 0;
+        switch (w)
+        {
+            case wait_type::read:  poll_flags = POLLIN;  break;
+            case wait_type::write: poll_flags = POLLOUT; break;
+            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+        }
+        wait_op_.prepare(h, ex, ec, this->fd_, this->sched_,
+            this->shared_from_this(), poll_flags, token);
+        this->sched_->work_started();
+        if (wait_op_.cancelled.load(std::memory_order_acquire))
+        {
+            io_uring_scheduler::lock_type lock(this->sched_->dispatch_mutex());
+            this->sched_->push_completed_locked(&wait_op_);
+            return std::noop_coroutine();
+        }
+        io_uring_submit_op(*this->sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -878,6 +938,7 @@ class BOOST_COROSIO_DECL io_uring_local_stream_socket final
     uring_read_op          rd_;
     uring_write_op         wr_;
     uring_local_connect_op conn_;
+    uring_wait_op          wait_op_;
 
     mutable detail::speculative_state spec_;
 
@@ -1115,6 +1176,33 @@ public:
             return std::noop_coroutine();
         }
         io_uring_submit_op(*sched_, &conn_);
+        return std::noop_coroutine();
+    }
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref      ex,
+        wait_type               w,
+        std::stop_token         token,
+        std::error_code*        ec) override
+    {
+        int poll_flags = 0;
+        switch (w)
+        {
+            case wait_type::read:  poll_flags = POLLIN;  break;
+            case wait_type::write: poll_flags = POLLOUT; break;
+            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+        }
+        wait_op_.prepare(h, ex, ec, fd_, sched_,
+            shared_from_this(), poll_flags, token);
+        sched_->work_started();
+        if (wait_op_.cancelled.load(std::memory_order_acquire))
+        {
+            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            sched_->push_completed_locked(&wait_op_);
+            return std::noop_coroutine();
+        }
+        io_uring_submit_op(*sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -1391,6 +1479,9 @@ class BOOST_COROSIO_DECL io_uring_local_stream_acceptor final
         corosio::local_endpoint,
         io_uring_local_stream_service>;
 
+    // Readiness-wait slot. See io_uring_tcp_acceptor::wait_op_.
+    uring_wait_op wait_op_;
+
 public:
     explicit io_uring_local_stream_acceptor(
         io_uring_local_stream_acceptor_service&,
@@ -1407,6 +1498,33 @@ public:
         io_object::implementation** impl_out) override
     {
         base_type::dispatch_or_queue(h, ex, std::move(token), ec, impl_out);
+        return std::noop_coroutine();
+    }
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref      ex,
+        wait_type               w,
+        std::stop_token         token,
+        std::error_code*        ec) override
+    {
+        int poll_flags = 0;
+        switch (w)
+        {
+            case wait_type::read:  poll_flags = POLLIN;  break;
+            case wait_type::write: poll_flags = POLLOUT; break;
+            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+        }
+        wait_op_.prepare(h, ex, ec, this->fd_, this->sched_,
+            this->shared_from_this(), poll_flags, token);
+        this->sched_->work_started();
+        if (wait_op_.cancelled.load(std::memory_order_acquire))
+        {
+            io_uring_scheduler::lock_type lock(this->sched_->dispatch_mutex());
+            this->sched_->push_completed_locked(&wait_op_);
+            return std::noop_coroutine();
+        }
+        io_uring_submit_op(*this->sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -1634,6 +1752,7 @@ class BOOST_COROSIO_DECL io_uring_udp_socket final
     uring_connect_op    conn_;
     uring_dgram_send_op send_;
     uring_dgram_recv_op recv_;
+    uring_wait_op       wait_op_;
 
     mutable detail::speculative_state spec_;
 
@@ -1760,6 +1879,33 @@ public:
             return std::noop_coroutine();
         }
         io_uring_submit_op(*sched_, &conn_);
+        return std::noop_coroutine();
+    }
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref      ex,
+        wait_type               w,
+        std::stop_token         token,
+        std::error_code*        ec) override
+    {
+        int poll_flags = 0;
+        switch (w)
+        {
+            case wait_type::read:  poll_flags = POLLIN;  break;
+            case wait_type::write: poll_flags = POLLOUT; break;
+            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+        }
+        wait_op_.prepare(h, ex, ec, fd_, sched_,
+            shared_from_this(), poll_flags, token);
+        sched_->work_started();
+        if (wait_op_.cancelled.load(std::memory_order_acquire))
+        {
+            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            sched_->push_completed_locked(&wait_op_);
+            return std::noop_coroutine();
+        }
+        io_uring_submit_op(*sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -2199,6 +2345,7 @@ class BOOST_COROSIO_DECL io_uring_local_datagram_socket final
     uring_local_connect_op conn_;
     uring_dgram_send_op    send_;
     uring_dgram_recv_op    recv_;
+    uring_wait_op          wait_op_;
 
     mutable detail::speculative_state spec_;
 
@@ -2325,6 +2472,33 @@ public:
             return std::noop_coroutine();
         }
         io_uring_submit_op(*sched_, &conn_);
+        return std::noop_coroutine();
+    }
+
+    std::coroutine_handle<> wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref      ex,
+        wait_type               w,
+        std::stop_token         token,
+        std::error_code*        ec) override
+    {
+        int poll_flags = 0;
+        switch (w)
+        {
+            case wait_type::read:  poll_flags = POLLIN;  break;
+            case wait_type::write: poll_flags = POLLOUT; break;
+            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+        }
+        wait_op_.prepare(h, ex, ec, fd_, sched_,
+            shared_from_this(), poll_flags, token);
+        sched_->work_started();
+        if (wait_op_.cancelled.load(std::memory_order_acquire))
+        {
+            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            sched_->push_completed_locked(&wait_op_);
+            return std::noop_coroutine();
+        }
+        io_uring_submit_op(*sched_, &wait_op_);
         return std::noop_coroutine();
     }
 

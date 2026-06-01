@@ -1509,6 +1509,14 @@ struct reactor_paths_test
     }
 };
 
-COROSIO_BACKEND_TESTS(reactor_paths_test, "boost.corosio.reactor_paths")
+// Reactor-only: io_uring is excluded because the testWriteEAGAIN
+// pattern (SO_SNDBUF=1024 forced, 256KB transfer) interacts poorly
+// with io_uring's POLLOUT-rearm cycle on TCP loopback — the same
+// pattern in a minimal liburing reproducer takes ~15s where epoll
+// finishes in <1s, which exceeds reasonable ctest timeouts. The
+// code paths this file covers (reactor descriptor_state branches)
+// don't exist in the io_uring proactor, so io_uring coverage isn't
+// lost. See the note on COROSIO_REACTOR_BACKEND_TESTS in context.hpp.
+COROSIO_REACTOR_BACKEND_TESTS(reactor_paths_test, "boost.corosio.reactor_paths")
 
 } // namespace boost::corosio

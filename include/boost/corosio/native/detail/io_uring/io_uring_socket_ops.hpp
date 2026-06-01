@@ -30,6 +30,7 @@
 #include <system_error>
 
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 
@@ -495,6 +496,97 @@ io_uring_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
         sched.post(&sched.submit_op_ref());
     }
 }
+
+/** Readiness wait via `IORING_OP_POLL_ADD`.
+
+    Used to implement the `wait()` virtual for socket and acceptor
+    implementations. The op submits a one-shot poll on `fd` for the
+    requested set of poll flags (POLLIN / POLLOUT / POLLPRI|POLLERR|
+    POLLHUP) and reports completion without transferring any data.
+
+    The CQE's `res` carries the actual revents, but we surface only
+    success/cancel/error on `*ec_out` — callers of `wait()` just need
+    a readiness signal, not the specific event mask.
+*/
+struct uring_wait_op : io_uring_op
+{
+    int fd         = -1;
+    int poll_flags = 0;
+
+    uring_wait_op() noexcept
+        : io_uring_op(&do_handler, &do_cqe, &do_prep)
+    {}
+
+    /** Reset and initialize for a new submission. */
+    void prepare(
+        std::coroutine_handle<>  handle,
+        capy::executor_ref       executor,
+        std::error_code*         ec,
+        int                      file_descriptor,
+        io_uring_scheduler*      scheduler,
+        std::shared_ptr<void>    impl,
+        int                      flags,
+        std::stop_token const&   token) noexcept
+    {
+        h          = handle;
+        ex         = executor;
+        ec_out     = ec;
+        bytes_out  = nullptr;
+        fd         = file_descriptor;
+        sched_     = scheduler;
+        impl_ptr   = std::move(impl);
+        poll_flags = flags;
+        res        = 0;
+        cqe_flags  = 0;
+        start(token);
+    }
+
+    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    {
+        auto* self = static_cast<uring_wait_op*>(base);
+        ::io_uring_prep_poll_add(sqe, self->fd, self->poll_flags);
+    }
+
+    static void do_cqe(
+        io_uring_op* base, int res, unsigned flags,
+        op_queue& local) noexcept
+    {
+        auto* self      = static_cast<uring_wait_op*>(base);
+        self->res       = res;
+        self->cqe_flags = flags;
+        local.push(self);
+    }
+
+    static void do_handler(
+        void* owner, scheduler_op* base,
+        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+    {
+        auto* self = static_cast<uring_wait_op*>(base);
+        self->stop_cb.reset();
+
+        if (owner == nullptr)
+        {
+            // Shutdown drain: break the impl_ptr cycle.
+            auto suicide = std::move(self->impl_ptr);
+            return;
+        }
+
+        if (self->ec_out)
+        {
+            if (self->cancelled.load(std::memory_order_acquire))
+                *self->ec_out = capy::error::canceled;
+            else if (self->res < 0)
+                *self->ec_out = make_err(-self->res);
+            else
+                *self->ec_out = {};
+        }
+
+        self->cont_op.cont.h = self->h;
+        auto next = dispatch_coro(self->ex, self->cont_op.cont);
+        auto suicide = std::move(self->impl_ptr);
+        next.resume();
+    }
+};
 
 /** Non-blocking connect for Unix domain sockets via `IORING_OP_CONNECT`.
 
