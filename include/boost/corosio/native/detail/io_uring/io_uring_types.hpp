@@ -85,7 +85,19 @@ class BOOST_COROSIO_DECL io_uring_tcp_socket final
     io_uring_scheduler*   sched_  = nullptr;
     io_uring_tcp_service* svc_    = nullptr;
 
-    endpoint local_endpoint_;
+    mutable endpoint local_endpoint_;
+    // Three-state machine for the local endpoint:
+    //   unresolved    — never set; accessor returns default endpoint
+    //                   (open-but-unbound socket, failed-connect, etc.)
+    //   lazy_pending  — set by adopt_fd to signal "this socket has an
+    //                   authoritative local endpoint that hasn't been
+    //                   fetched yet"; accessor will getsockname on
+    //                   first read
+    //   resolved      — local_endpoint_ is authoritative; accessor
+    //                   returns the cached value
+    enum class endpoint_state : int { unresolved, lazy_pending, resolved };
+    mutable std::atomic<endpoint_state> local_endpoint_state_
+        { endpoint_state::unresolved };
     endpoint remote_endpoint_;
 
     // Per-fd op slots — embedded to eliminate per-call heap allocation.
@@ -152,6 +164,12 @@ public:
             {
                 have_sync_res = true;
                 if (n < 0) err = errno;
+                // Speculative read produced a definitive answer (data
+                // or non-EAGAIN error); reset the failure streak so a
+                // burst of past EAGAINs doesn't latch perma-off when
+                // the workload is in fact speculation-friendly.
+                if (n >= 0)
+                    spec_.on_read_success();
             }
             else
             {
@@ -379,6 +397,26 @@ public:
 
     endpoint local_endpoint() const noexcept override
     {
+        // Lazy resolution: only fire the getsockname syscall when
+        // adopt_fd marked the endpoint as "lazy_pending". For
+        // unbound/disconnected sockets the state remains unresolved
+        // and the accessor returns the default endpoint without a
+        // syscall. The mutable update races benignly with concurrent
+        // readers — both threads would compute the same value from
+        // the same fd.
+        if (local_endpoint_state_.load(std::memory_order_acquire)
+            == endpoint_state::lazy_pending
+            && fd_ >= 0)
+        {
+            sockaddr_storage local{};
+            socklen_t len = sizeof(local);
+            if (::getsockname(
+                    fd_,
+                    reinterpret_cast<sockaddr*>(&local), &len) == 0)
+                local_endpoint_ = sockaddr_to_endpoint(local);
+            local_endpoint_state_.store(
+                endpoint_state::resolved, std::memory_order_release);
+        }
         return local_endpoint_;
     }
 
@@ -528,6 +566,9 @@ public:
                 sock.fd_,
                 reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             sock.local_endpoint_ = sockaddr_to_endpoint(local);
+        sock.local_endpoint_state_.store(
+            io_uring_tcp_socket::endpoint_state::resolved,
+            std::memory_order_release);
         return {};
     }
 
@@ -546,11 +587,13 @@ public:
         auto p = std::make_shared<io_uring_tcp_socket>(*this, *sched_);
         p->fd_              = fd;
         p->remote_endpoint_ = peer;
-
-        sockaddr_storage local{};
-        socklen_t len = sizeof(local);
-        if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &len) == 0)
-            p->local_endpoint_ = sockaddr_to_endpoint(local);
+        // Mark the local endpoint as authoritative-but-unresolved.
+        // The accessor will fetch it via getsockname on first call.
+        // Accept-heavy workloads that never query the local endpoint
+        // skip the syscall entirely.
+        p->local_endpoint_state_.store(
+            io_uring_tcp_socket::endpoint_state::lazy_pending,
+            std::memory_order_release);
 
         std::lock_guard lk(mutex_);
         auto* raw = p.get();
@@ -890,6 +933,12 @@ public:
             {
                 have_sync_res = true;
                 if (n < 0) err = errno;
+                // Speculative read produced a definitive answer (data
+                // or non-EAGAIN error); reset the failure streak so a
+                // burst of past EAGAINs doesn't latch perma-off when
+                // the workload is in fact speculation-friendly.
+                if (n >= 0)
+                    spec_.on_read_success();
             }
             else
             {

@@ -143,6 +143,15 @@ public:
         return submit_op_;
     }
 
+    /// Increment the io_uring in-flight counter. Callers prep an SQE
+    /// whose CQE will require IORING_ENTER_GETEVENTS to surface under
+    /// DEFER_TASKRUN. Excluded: the wakeup-eventfd multishot SQE, whose
+    /// progress doesn't depend on userspace getevents.
+    void inflight_inc() const noexcept
+    {
+        io_uring_inflight_.fetch_add(1, std::memory_order_release);
+    }
+
     /// Initialize the io_uring ring on first access. Idempotent.
     void lazy_init_ring() const;
 
@@ -279,7 +288,24 @@ private:
     mutable mutex_type                ring_mutex_{true};
     mutable event_type                cond_{true};
     mutable op_queue                  completed_ops_;
-    mutable std::atomic<std::int64_t> outstanding_work_{0};
+    // outstanding_work_ and io_uring_inflight_ are both atomic
+    // counters updated at high frequency on different paths:
+    //   - outstanding_work_ : every work_started / work_finished call,
+    //                         including timers, posts, and SQE submits.
+    //   - io_uring_inflight_ : only SQE submit + non-F_MORE CQE consume.
+    // Under multi-thread workloads the threads tend to update these
+    // from different code paths; placing them on the same cache line
+    // would cause false sharing and unnecessary cache-line ping-pong.
+    // Hold each on its own line.
+    alignas(64) mutable std::atomic<std::int64_t> outstanding_work_{0};
+    // Count of io_uring SQEs in flight whose completion requires user-
+    // space to enter the kernel via IORING_ENTER_GETEVENTS for task
+    // work to progress under IORING_SETUP_DEFER_TASKRUN. Excludes the
+    // wakeup-eventfd multishot poll (registered in lazy_init_ring), and
+    // is updated by io_uring_submit_op and by process_completions on
+    // each non-F_MORE, non-eventfd CQE. Used by do_one to skip the
+    // ring pump when there is no io_uring work pending.
+    alignas(64) mutable std::atomic<std::int64_t> io_uring_inflight_{0};
     std::atomic<bool>                 stopped_{false};
     // Leader-follower flag: true while a thread is blocked in
     // io_uring_submit_and_wait_timeout. Protected by dispatch_mutex_.
@@ -846,12 +872,49 @@ io_uring_scheduler::do_one(long timeout_us)
     // never gets drained and the bench spins. submit_and_get_events
     // (not plain submit) is required because IORING_SETUP_DEFER_TASKRUN
     // gates task work on IORING_ENTER_GETEVENTS.
+    //
+    // Gate the kernel pump on there being io_uring-specific work. The
+    // check is performed under ring_mutex_ so a concurrent cross-thread
+    // submitter cannot prep an SQE that we then race past — both this
+    // path and io_uring_submit_op acquire ring_mutex_ before touching
+    // the ring. When all three sources are empty (no io_uring ops in
+    // flight needing DEFER_TASKRUN GETEVENTS, no userspace-pending
+    // SQEs, no kernel-ready CQEs) a kernel entry would have no work —
+    // saves ~8 pp of cycles on the no-I/O microbenchmark
+    // (io_context:single_threaded). We deliberately do NOT include
+    // outstanding_work_ here, because that counter mixes coroutine
+    // posts (in completed_ops_) with io_uring work — IOCTX has many
+    // coroutine posts and no io_uring work, and the kernel pump there
+    // is pure overhead.
     if (ring_inited_)
     {
         lock_type ring_lock(ring_mutex_);
-        ::io_uring_submit_and_get_events(&ring_);
-        process_completions();
+        if (io_uring_inflight_.load(std::memory_order_acquire) != 0
+            || ::io_uring_sq_ready(&ring_) != 0
+            || ::io_uring_cq_ready(&ring_) != 0)
+        {
+            ::io_uring_submit_and_get_events(&ring_);
+            process_completions();
+        }
     }
+
+    // Drain expired timers eagerly, for the same reason the kernel CQE
+    // pump runs unconditionally above: when completed_ops_ stays non-
+    // empty (e.g. continuous loopback I/O whose CQEs land in the top-
+    // of-do_one process_completions call), the leader-wait branch
+    // below — the only other place process_expired() runs — is never
+    // reached. Without this, stopper-timer-based shutdowns (and any
+    // other timer dependent on a busy I/O loop yielding) deadlock.
+    //
+    // empty() is a single relaxed-acquire atomic load on
+    // timer_service::cached_nearest_ns_ (lock-free, no clock_gettime).
+    // Skipping process_expired() when no timer is registered avoids the
+    // mutex + clock_gettime hot-path cost that dominates IOCTX cycles
+    // (~25 pp on io_context:single_threaded). When a timer IS
+    // registered the call runs exactly as before, preserving the
+    // deadlock fix this guard was originally written to address.
+    if (!timer_svc_->empty())
+        timer_svc_->process_expired();
 
     lock_type lock(dispatch_mutex_);
     for (;;)
@@ -987,7 +1050,8 @@ io_uring_scheduler::do_one(long timeout_us)
                 make_err(-rc), "io_uring_wait_cqe_timeout");
         }
 
-        timer_svc_->process_expired();
+        if (!timer_svc_->empty())
+            timer_svc_->process_expired();
 
         lock.lock();
         task_running_ = false;
@@ -1013,12 +1077,16 @@ io_uring_scheduler::process_completions()
     // after the loop so do_one dispatches them one at a time.
     op_queue local_ops;
 
+    std::int64_t inflight_dec = 0;
     io_uring_for_each_cqe(&ring_, head, cqe)
     {
         void* ud = io_uring_cqe_get_data(cqe);
         if (ud == nullptr)
         {
-            // Wakeup eventfd CQE: drain the eventfd byte.
+            // Wakeup eventfd CQE: drain the eventfd byte. Not counted
+            // by io_uring_inflight_; we never incremented for the
+            // wakeup multishot SQE (its progress doesn't depend on
+            // userspace getevents).
             drain_wakeup_eventfd();
             // If multishot terminated (kernel dropped under memory
             // pressure or similar), re-arm. Each CQE except the last
@@ -1043,14 +1111,24 @@ io_uring_scheduler::process_completions()
         {
             // CQE for an ASYNC_CANCEL op — ignore; the actual op's
             // CQE arrives separately and is dispatched via cqe_func.
+            // Cancels are one-shot, no F_MORE, decrement inflight.
+            ++inflight_dec;
         }
         else
         {
             auto* iop = static_cast<io_uring_op*>(ud);
             (*iop->cqe_func)(iop, cqe->res, cqe->flags, local_ops);
+            // Decrement inflight on the terminal CQE only — multishot
+            // ops (acceptor) hold the SQE alive across F_MORE CQEs and
+            // free it only when F_MORE is cleared.
+            if ((cqe->flags & IORING_CQE_F_MORE) == 0)
+                ++inflight_dec;
         }
         ++consumed;
     }
+    if (inflight_dec)
+        io_uring_inflight_.fetch_sub(
+            inflight_dec, std::memory_order_acq_rel);
 
     if (consumed)
         io_uring_cq_advance(&ring_, consumed);
@@ -1107,6 +1185,7 @@ io_uring_scheduler::submit_cancel_by_user_data(io_uring_op* target) noexcept
 
     io_uring_prep_cancel(sqe, target, 0);
     io_uring_sqe_set_data(sqe, &cancel_sentinel_);
+    inflight_inc();
 }
 
 inline void
@@ -1126,6 +1205,7 @@ io_uring_scheduler::submit_cancel_by_fd(int fd) noexcept
 
     io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
     io_uring_sqe_set_data(sqe, &cancel_sentinel_);
+    inflight_inc();
 }
 
 inline void
@@ -1155,6 +1235,7 @@ io_uring_scheduler::cancel_and_flush(int fd) noexcept
     {
         io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
         io_uring_sqe_set_data(sqe, &cancel_sentinel_);
+        inflight_inc();
     }
     // Flush while fd is still open so the kernel resolves the file
     // from the fd number before the caller closes and recycles it.
@@ -1178,6 +1259,7 @@ io_uring_scheduler::drain_cqes_for(io_uring_op* target) noexcept
         {
             io_uring_prep_cancel(sqe, target, 0);
             io_uring_sqe_set_data(sqe, &cancel_sentinel_);
+            inflight_inc();
         }
         io_uring_submit(&ring_);
     }
