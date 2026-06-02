@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/corosio/endpoint.hpp>
 
+#include <map>
 #include <system_error>
 
 #include "test_suite.hpp"
@@ -252,6 +253,72 @@ struct endpoint_parse_test
         check_invalid("[::1]:65536");
     }
 
+    void testEquality()
+    {
+        endpoint a(ipv4_address::loopback(), 80);
+        endpoint b(ipv4_address::loopback(), 80);
+        endpoint c(ipv4_address::loopback(), 81);
+        endpoint d(ipv6_address::loopback(), 80);
+
+        BOOST_TEST(a == b);
+        BOOST_TEST(!(a != b));
+        BOOST_TEST(a != c);
+        BOOST_TEST(a != d); // same port, different family
+    }
+
+    void testOrdering()
+    {
+        // Family is the primary key: IPv4 sorts before IPv6.
+        endpoint v4_high(ipv4_address::broadcast(), 65535);
+        endpoint v6_low(ipv6_address::any(), 0);
+        BOOST_TEST(v4_high < v6_low);
+        BOOST_TEST(v6_low > v4_high);
+
+        // Within a family, address outranks port.
+        endpoint a(ipv4_address::any(), 65535);     // 0.0.0.0:65535
+        endpoint b(ipv4_address::loopback(), 0);    // 127.0.0.1:0
+        BOOST_TEST(a < b);
+        BOOST_TEST(b > a);
+
+        // Equal address: port breaks the tie.
+        endpoint p80(ipv4_address::loopback(), 80);
+        endpoint p443(ipv4_address::loopback(), 443);
+        BOOST_TEST(p80 < p443);
+        BOOST_TEST(p80 <= p443);
+        BOOST_TEST(p443 >= p80);
+
+        // Consistency with operator==: equal compares equivalent.
+        endpoint e1(ipv4_address::loopback(), 80);
+        endpoint e2(ipv4_address::loopback(), 80);
+        BOOST_TEST((e1 <=> e2) == std::strong_ordering::equal);
+        BOOST_TEST(!(e1 < e2));
+        BOOST_TEST(!(e1 > e2));
+
+        // IPv6 addresses order by their byte representation.
+        endpoint v6a(ipv6_address::any(), 0);
+        endpoint v6b(ipv6_address::loopback(), 0);
+        BOOST_TEST(v6a < v6b);
+    }
+
+    void testOrderedMapKey()
+    {
+        std::map<endpoint, int> sessions;
+        sessions[endpoint(ipv4_address::loopback(), 80)] = 1;
+        sessions[endpoint(ipv6_address::loopback(), 80)] = 2;
+        sessions[endpoint(ipv4_address::loopback(), 443)] = 3;
+
+        BOOST_TEST_EQ(sessions.size(), 3u);
+        BOOST_TEST_EQ(sessions[endpoint(ipv4_address::loopback(), 80)], 1);
+
+        auto it = sessions.find(endpoint(ipv6_address::loopback(), 80));
+        BOOST_TEST(it != sessions.end());
+        BOOST_TEST_EQ(it->second, 2);
+
+        // IPv4 keys precede the IPv6 key in iteration order.
+        BOOST_TEST(sessions.begin()->first.is_v4());
+        BOOST_TEST(sessions.rbegin()->first.is_v6());
+    }
+
     void run()
     {
         testConstructFromEndpointAndPort();
@@ -263,6 +330,9 @@ struct endpoint_parse_test
         testParseIPv6NoPort();
         testParseIPv6Bracketed();
         testParseInvalid();
+        testEquality();
+        testOrdering();
+        testOrderedMapKey();
     }
 };
 
