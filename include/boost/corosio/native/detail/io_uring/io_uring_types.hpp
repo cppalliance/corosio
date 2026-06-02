@@ -683,7 +683,7 @@ public:
         std::error_code*            ec,
         io_object::implementation** impl_out) override
     {
-        base_type::dispatch_or_queue(h, ex, std::move(token), ec, impl_out);
+        base_type::dispatch_or_queue(h, ex, token, ec, impl_out);
         return std::noop_coroutine();
     }
 
@@ -1497,7 +1497,7 @@ public:
         std::error_code*            ec,
         io_object::implementation** impl_out) override
     {
-        base_type::dispatch_or_queue(h, ex, std::move(token), ec, impl_out);
+        base_type::dispatch_or_queue(h, ex, token, ec, impl_out);
         return std::noop_coroutine();
     }
 
@@ -1532,9 +1532,22 @@ public:
     // but not in tcp_acceptor::implementation, so the base does not cover it.
     native_handle_type release_socket() noexcept override
     {
-        int fd = fd_;
-        fd_ = -1;
-        local_endpoint_ = corosio::local_endpoint{};
+        // Mirror the service close() path: cancel the multishot SQE and
+        // break the multi_op_ -> impl_ptr (shared_ptr<this>) cycle that
+        // start_multishot established. Without this, the cycle keeps the
+        // acceptor and its multi_op_ alive after the caller takes the fd,
+        // which LeakSanitizer reports on process exit. Caller still owns
+        // the returned fd, so we do NOT ::close it here.
+        if (this->fd_ >= 0)
+        {
+            this->sched_->cancel_and_flush(this->fd_);
+            this->drain_waiters_only();
+            if (this->multi_op_)
+                this->multi_op_->impl_ptr.reset();
+        }
+        int fd = this->fd_;
+        this->fd_ = -1;
+        this->local_endpoint_ = corosio::local_endpoint{};
         return fd;
     }
 
@@ -1794,7 +1807,7 @@ public:
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(dest, addr);
         return submit_send(h, ex, buf, len, addr, flags,
-            std::move(token), ec, bytes_out);
+            token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv_from(
@@ -1808,7 +1821,7 @@ public:
         std::size_t*            bytes_out) override
     {
         return submit_recv(h, ex, buf, source != nullptr, source, flags,
-            std::move(token), ec, bytes_out);
+            token, ec, bytes_out);
     }
 
     std::coroutine_handle<> send(
@@ -1822,7 +1835,7 @@ public:
     {
         sockaddr_storage empty{};
         return submit_send(h, ex, buf, 0, empty, flags,
-            std::move(token), ec, bytes_out);
+            token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv(
@@ -1835,7 +1848,7 @@ public:
         std::size_t*            bytes_out) override
     {
         return submit_recv(h, ex, buf, false, nullptr, flags,
-            std::move(token), ec, bytes_out);
+            token, ec, bytes_out);
     }
 
     std::coroutine_handle<> connect(
@@ -1966,7 +1979,7 @@ private:
         socklen_t                      dest_len,
         sockaddr_storage const&        dest_storage,
         int                            flags,
-        std::stop_token                token,
+        std::stop_token const&         token,
         std::error_code*               ec,
         std::size_t*                   bytes)
     {
@@ -2055,7 +2068,7 @@ private:
         bool                     want_source,
         corosio::endpoint*       source_out,
         int                      flags,
-        std::stop_token          token,
+        std::stop_token const&   token,
         std::error_code*         ec,
         std::size_t*             bytes)
     {
@@ -2387,7 +2400,7 @@ public:
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(dest, addr);
         return submit_send(h, ex, buf, len, addr, flags,
-            std::move(token), ec, bytes_out);
+            token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv_from(
@@ -2401,7 +2414,7 @@ public:
         std::size_t*               bytes_out) override
     {
         return submit_recv(h, ex, buf, source != nullptr, source, flags,
-            std::move(token), ec, bytes_out);
+            token, ec, bytes_out);
     }
 
     std::coroutine_handle<> send(
@@ -2415,7 +2428,7 @@ public:
     {
         sockaddr_storage empty{};
         return submit_send(h, ex, buf, 0, empty, flags,
-            std::move(token), ec, bytes_out);
+            token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv(
@@ -2428,7 +2441,7 @@ public:
         std::size_t*            bytes_out) override
     {
         return submit_recv(h, ex, buf, false, nullptr, flags,
-            std::move(token), ec, bytes_out);
+            token, ec, bytes_out);
     }
 
     std::coroutine_handle<> connect(
@@ -2592,7 +2605,7 @@ private:
         socklen_t                      dest_len,
         sockaddr_storage const&        dest_storage,
         int                            flags,
-        std::stop_token                token,
+        std::stop_token const&         token,
         std::error_code*               ec,
         std::size_t*                   bytes)
     {
@@ -2681,7 +2694,7 @@ private:
         bool                       want_source,
         corosio::local_endpoint*   source_out,
         int                        flags,
-        std::stop_token            token,
+        std::stop_token const&     token,
         std::error_code*           ec,
         std::size_t*               bytes)
     {

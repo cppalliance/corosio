@@ -10,13 +10,12 @@
 # Find liburing via pkg-config and expose an imported target liburing::liburing.
 # Sets: liburing_FOUND, liburing_VERSION
 
-# Note: this Find module is intentionally NOT installed alongside
-# boost_corosio-config.cmake. The liburing target is linked PRIVATE
-# (see CMakeLists.txt) and the BOOST_COROSIO_HAVE_LIBURING macro
-# carries no link obligation, so consumers do not need to find liburing.
-# If io_uring types are ever exposed in public headers, register this
-# file in corosio_install() and add find_dependency(liburing) to the
-# package config template (see how WolfSSL is handled).
+# The liburing target is linked PUBLIC (see CMakeLists.txt) because the
+# io_uring scheduler/op headers are reached from public native_*.hpp
+# tag-dispatch wrappers and contain inline calls into liburing. The
+# imported target is marked IMPORTED_GLOBAL so it propagates out of any
+# add_subdirectory() scope into the consuming parent project, matching
+# how the PUBLIC link interface is observed there.
 
 find_package(PkgConfig QUIET)
 
@@ -28,6 +27,8 @@ if(PkgConfig_FOUND)
 
         if(NOT TARGET liburing::liburing)
             add_library(liburing::liburing INTERFACE IMPORTED)
+            set_target_properties(liburing::liburing
+                PROPERTIES IMPORTED_GLOBAL TRUE)
             target_include_directories(liburing::liburing
                 INTERFACE ${_liburing_INCLUDE_DIRS})
             target_link_libraries(liburing::liburing

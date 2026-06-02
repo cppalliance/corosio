@@ -21,6 +21,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -164,31 +165,6 @@ struct native_tcp_socket_test
     }
 };
 
-#if BOOST_COROSIO_HAS_EPOLL
-struct native_tcp_socket_test_epoll : native_tcp_socket_test<epoll>
-{};
-TEST_SUITE(
-    native_tcp_socket_test_epoll, "boost.corosio.native.tcp_socket.epoll");
-#endif
-
-#if BOOST_COROSIO_HAS_SELECT
-struct native_tcp_socket_test_select : native_tcp_socket_test<select>
-{};
-TEST_SUITE(
-    native_tcp_socket_test_select, "boost.corosio.native.tcp_socket.select");
-#endif
-
-#if BOOST_COROSIO_HAS_KQUEUE
-struct native_tcp_socket_test_kqueue : native_tcp_socket_test<kqueue>
-{};
-TEST_SUITE(
-    native_tcp_socket_test_kqueue, "boost.corosio.native.tcp_socket.kqueue");
-#endif
-
-#if BOOST_COROSIO_HAS_IOCP
-struct native_tcp_socket_test_iocp : native_tcp_socket_test<iocp>
-{};
-TEST_SUITE(native_tcp_socket_test_iocp, "boost.corosio.native.tcp_socket.iocp");
-#endif
+COROSIO_BACKEND_TESTS(native_tcp_socket_test, "boost.corosio.native.tcp_socket")
 
 } // namespace boost::corosio

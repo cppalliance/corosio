@@ -22,6 +22,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -569,31 +570,6 @@ struct native_udp_socket_test
     }
 };
 
-#if BOOST_COROSIO_HAS_EPOLL
-struct native_udp_socket_test_epoll : native_udp_socket_test<epoll>
-{};
-TEST_SUITE(
-    native_udp_socket_test_epoll, "boost.corosio.native.udp_socket.epoll");
-#endif
-
-#if BOOST_COROSIO_HAS_SELECT
-struct native_udp_socket_test_select : native_udp_socket_test<select>
-{};
-TEST_SUITE(
-    native_udp_socket_test_select, "boost.corosio.native.udp_socket.select");
-#endif
-
-#if BOOST_COROSIO_HAS_KQUEUE
-struct native_udp_socket_test_kqueue : native_udp_socket_test<kqueue>
-{};
-TEST_SUITE(
-    native_udp_socket_test_kqueue, "boost.corosio.native.udp_socket.kqueue");
-#endif
-
-#if BOOST_COROSIO_HAS_IOCP
-struct native_udp_socket_test_iocp : native_udp_socket_test<iocp>
-{};
-TEST_SUITE(native_udp_socket_test_iocp, "boost.corosio.native.udp_socket.iocp");
-#endif
+COROSIO_BACKEND_TESTS(native_udp_socket_test, "boost.corosio.native.udp_socket")
 
 } // namespace boost::corosio

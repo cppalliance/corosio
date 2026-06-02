@@ -92,6 +92,7 @@ jobs:
             ${{ matrix.install }}
             build-essential
             libssl-dev
+            liburing-dev
             curl zip unzip tar pkg-config
 
       - name: Clone Capy

@@ -75,6 +75,14 @@ struct BOOST_COROSIO_DECL scheduler
 
     /// Run at most one ready handler without blocking.
     virtual std::size_t poll_one() = 0;
+
+    /// True if the scheduler is configured for single-threaded use.
+    /// Default false; overridden by backends that support the mode.
+    virtual bool is_single_threaded() const noexcept { return false; }
+
+    /// Enable or disable single-threaded mode. Default no-op for
+    /// backends that don't support the mode.
+    virtual void configure_single_threaded(bool) noexcept {}
 };
 
 } // namespace boost::corosio::detail

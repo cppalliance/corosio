@@ -23,6 +23,7 @@
 #include <netdb.h>
 #endif
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -137,28 +138,6 @@ TEST_SUITE(
     "boost.corosio.native.resolver.posix.make_gai_error");
 #endif
 
-#if BOOST_COROSIO_HAS_EPOLL
-struct native_resolver_test_epoll : native_resolver_test<epoll>
-{};
-TEST_SUITE(native_resolver_test_epoll, "boost.corosio.native.resolver.epoll");
-#endif
-
-#if BOOST_COROSIO_HAS_SELECT
-struct native_resolver_test_select : native_resolver_test<select>
-{};
-TEST_SUITE(native_resolver_test_select, "boost.corosio.native.resolver.select");
-#endif
-
-#if BOOST_COROSIO_HAS_KQUEUE
-struct native_resolver_test_kqueue : native_resolver_test<kqueue>
-{};
-TEST_SUITE(native_resolver_test_kqueue, "boost.corosio.native.resolver.kqueue");
-#endif
-
-#if BOOST_COROSIO_HAS_IOCP
-struct native_resolver_test_iocp : native_resolver_test<iocp>
-{};
-TEST_SUITE(native_resolver_test_iocp, "boost.corosio.native.resolver.iocp");
-#endif
+COROSIO_BACKEND_TESTS(native_resolver_test, "boost.corosio.native.resolver")
 
 } // namespace boost::corosio

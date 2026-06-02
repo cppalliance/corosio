@@ -65,7 +65,22 @@ target_link_libraries(boost_corosio
         Threads::Threads
         $<$<PLATFORM_ID:Windows>:ws2_32>)
 if(BOOST_COROSIO_HAVE_LIBURING)
-    target_link_libraries(boost_corosio PRIVATE liburing::liburing)
+    # PUBLIC because the io_uring scheduler/op headers are reached from
+    # public native_*.hpp tag-dispatch wrappers and contain inline calls
+    # to io_uring_submit / io_uring_wait_cqe_timeout / ... — consumers
+    # that include those wrappers must link liburing too.
+    #
+    # Split BUILD vs INSTALL interface: use the imported target during
+    # build (brings include dirs + correct library path), but emit a
+    # raw -luring for install consumers. The boost_install superproject
+    # path generates its package config from a hard-coded dependency
+    # whitelist (BoostInstall.cmake) that does not know about liburing,
+    # so an INSTALL_INTERFACE reference to liburing::liburing leaves
+    # the consumer with an undefined target. Raw -luring matches asio's
+    # approach and works as long as liburing-dev is on the system.
+    target_link_libraries(boost_corosio PUBLIC
+        $<BUILD_INTERFACE:liburing::liburing>
+        $<INSTALL_INTERFACE:uring>)
     target_compile_definitions(boost_corosio PUBLIC BOOST_COROSIO_HAVE_LIBURING=1)
 else()
     target_compile_definitions(boost_corosio PUBLIC BOOST_COROSIO_HAVE_LIBURING=0)

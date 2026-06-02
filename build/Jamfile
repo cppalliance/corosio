@@ -9,6 +9,7 @@
 
 import ac ;
 import config : requires ;
+import os ;
 
 constant c20-requires :
     [ requires
@@ -32,6 +33,31 @@ project boost/corosio
 lib ws2_32 ;
 lib crypt32 ;
 
+# liburing (Linux io_uring proactor). Gated on host OS = Linux because
+# io_uring is a Linux-only kernel facility; on other hosts the probe
+# would fail noisily (searched-lib uring can't resolve -luring) and
+# abort Jamfile parsing. When the host is Linux, check-target-builds
+# runs a tiny probe (build/has_liburing.cpp) to detect liburing-dev,
+# mirroring the CMake auto-detect behavior. Probe failure => io_uring
+# backend disabled at compile time via BOOST_COROSIO_HAVE_LIBURING=0.
+if [ os.name ] = LINUX
+{
+    searched-lib uring : : <link>shared ;
+
+    exe has_liburing : build/has_liburing.cpp uring ;
+    explicit has_liburing ;
+
+    constant liburing-requirements :
+        [ check-target-builds has_liburing
+            : <define>BOOST_COROSIO_HAVE_LIBURING=1 <library>uring
+            : <define>BOOST_COROSIO_HAVE_LIBURING=0 ]
+        ;
+}
+else
+{
+    constant liburing-requirements : <define>BOOST_COROSIO_HAVE_LIBURING=0 ;
+}
+
 alias corosio_sources : [ glob-tree-ex src/corosio/src : *.cpp ] ;
 
 lib boost_corosio
@@ -42,10 +68,12 @@ lib boost_corosio
     <target-os>windows:<define>_WIN32_WINNT=0x0602
     <include>../include
     <include>../src/corosio
+    $(liburing-requirements)
   : usage-requirements
     <library>/boost/capy//boost_capy
     <target-os>windows:<library>ws2_32
     <include>../include
+    $(liburing-requirements)
   ;
 
 # OpenSSL
