@@ -81,7 +81,7 @@ public:
         std::filesystem::path const& path,
         file_base::flags mode) override
     {
-        if (static_cast<reactor_scheduler const*>(sched_)->is_single_threaded())
+        if (sched_->is_single_threaded())
             return std::make_error_code(std::errc::operation_not_supported);
         return static_cast<posix_random_access_file&>(impl).open_file(
             path, mode);

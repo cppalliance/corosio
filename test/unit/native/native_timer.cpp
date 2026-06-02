@@ -112,28 +112,6 @@ struct native_timer_test
     }
 };
 
-#if BOOST_COROSIO_HAS_EPOLL
-struct native_timer_test_epoll : native_timer_test<epoll>
-{};
-TEST_SUITE(native_timer_test_epoll, "boost.corosio.native.timer.epoll");
-#endif
-
-#if BOOST_COROSIO_HAS_SELECT
-struct native_timer_test_select : native_timer_test<select>
-{};
-TEST_SUITE(native_timer_test_select, "boost.corosio.native.timer.select");
-#endif
-
-#if BOOST_COROSIO_HAS_KQUEUE
-struct native_timer_test_kqueue : native_timer_test<kqueue>
-{};
-TEST_SUITE(native_timer_test_kqueue, "boost.corosio.native.timer.kqueue");
-#endif
-
-#if BOOST_COROSIO_HAS_IOCP
-struct native_timer_test_iocp : native_timer_test<iocp>
-{};
-TEST_SUITE(native_timer_test_iocp, "boost.corosio.native.timer.iocp");
-#endif
+COROSIO_BACKEND_TESTS(native_timer_test, "boost.corosio.native.timer")
 
 } // namespace boost::corosio

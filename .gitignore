@@ -4,6 +4,7 @@
 /build/*
 !/build/Jamfile
 !/build/wolfssl.jam
+!/build/has_liburing.cpp
 /out/
 /CMakeUserPresets.json
 /tmpclaude-*-cwd

@@ -200,6 +200,10 @@ function(corosio_install)
                 list(APPEND _corosio_config_files
                     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindWolfSSL.cmake)
             endif()
+            if(liburing_FOUND)
+                list(APPEND _corosio_config_files
+                    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Findliburing.cmake)
+            endif()
             install(FILES ${_corosio_config_files}
                 DESTINATION ${BOOST_COROSIO_INSTALL_CMAKEDIR})
         else()

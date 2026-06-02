@@ -312,14 +312,11 @@ io_context::apply_options_post_(
 void
 io_context::configure_single_threaded_()
 {
-#if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || BOOST_COROSIO_HAS_SELECT
-    static_cast<detail::reactor_scheduler&>(*sched_)
-        .configure_single_threaded(true);
-#endif
-#if BOOST_COROSIO_HAS_IOCP
-    static_cast<detail::win_scheduler&>(*sched_)
-        .configure_single_threaded(true);
-#endif
+    // Dispatched through the scheduler base's virtual override; avoids
+    // unsafe downcasts when the active backend is io_uring rather than
+    // reactor (on Linux both BOOST_COROSIO_HAS_EPOLL and the io_uring
+    // backend may be enabled simultaneously).
+    sched_->configure_single_threaded(true);
 }
 
 io_context::~io_context()

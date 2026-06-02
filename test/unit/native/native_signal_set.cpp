@@ -64,31 +64,6 @@ struct native_signal_set_test
     }
 };
 
-#if BOOST_COROSIO_HAS_EPOLL
-struct native_signal_set_test_epoll : native_signal_set_test<epoll>
-{};
-TEST_SUITE(
-    native_signal_set_test_epoll, "boost.corosio.native.signal_set.epoll");
-#endif
-
-#if BOOST_COROSIO_HAS_SELECT
-struct native_signal_set_test_select : native_signal_set_test<select>
-{};
-TEST_SUITE(
-    native_signal_set_test_select, "boost.corosio.native.signal_set.select");
-#endif
-
-#if BOOST_COROSIO_HAS_KQUEUE
-struct native_signal_set_test_kqueue : native_signal_set_test<kqueue>
-{};
-TEST_SUITE(
-    native_signal_set_test_kqueue, "boost.corosio.native.signal_set.kqueue");
-#endif
-
-#if BOOST_COROSIO_HAS_IOCP
-struct native_signal_set_test_iocp : native_signal_set_test<iocp>
-{};
-TEST_SUITE(native_signal_set_test_iocp, "boost.corosio.native.signal_set.iocp");
-#endif
+COROSIO_BACKEND_TESTS(native_signal_set_test, "boost.corosio.native.signal_set")
 
 } // namespace boost::corosio

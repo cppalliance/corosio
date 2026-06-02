@@ -62,6 +62,9 @@ jobs:
       - name: Install Python packages
         run: pip install gcovr
 
+      - name: Install liburing
+        run: sudo apt-get update && sudo apt-get install -y liburing-dev
+
       - name: Checkout ci-automation
         uses: actions/checkout@v6
         with:

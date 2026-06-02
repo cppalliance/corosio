@@ -88,28 +88,6 @@ struct native_io_test
     }
 };
 
-#if BOOST_COROSIO_HAS_EPOLL
-struct native_io_test_epoll : native_io_test<epoll>
-{};
-TEST_SUITE(native_io_test_epoll, "boost.corosio.native.io.epoll");
-#endif
-
-#if BOOST_COROSIO_HAS_SELECT
-struct native_io_test_select : native_io_test<select>
-{};
-TEST_SUITE(native_io_test_select, "boost.corosio.native.io.select");
-#endif
-
-#if BOOST_COROSIO_HAS_KQUEUE
-struct native_io_test_kqueue : native_io_test<kqueue>
-{};
-TEST_SUITE(native_io_test_kqueue, "boost.corosio.native.io.kqueue");
-#endif
-
-#if BOOST_COROSIO_HAS_IOCP
-struct native_io_test_iocp : native_io_test<iocp>
-{};
-TEST_SUITE(native_io_test_iocp, "boost.corosio.native.io.iocp");
-#endif
+COROSIO_BACKEND_TESTS(native_io_test, "boost.corosio.native.io")
 
 } // namespace boost::corosio

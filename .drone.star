@@ -31,6 +31,12 @@ def main(ctx):
         docs=False,
         coverage=False,
         cache_dir='cache')
+    # Note: liburing-dev is not added to generate()'s package list.
+    # generate() emits jobs on Ubuntu focal (which has no liburing-dev
+    # package at all) and jammy (liburing 2.1, which our probe rejects
+    # for being too old). Either way io_uring stays disabled, so the
+    # install would just fail focal. The manual jobs below that target
+    # noble (24.04) explicitly install liburing-dev where it works.
 
     # macOS: generate() skips apple-clang when cxx_range='>=20' because
     # ci-automation's compiler_supports() doesn't list C++20 for apple-clang
@@ -67,7 +73,7 @@ def main(ctx):
 
     # Jobs not covered by generate()
     jobs += [
-        linux_cxx("Valgrind", "clang++-17", packages="clang-17 libc6-dbg libstdc++-12-dev",
+        linux_cxx("Valgrind", "clang++-17", packages="clang-17 libc6-dbg libstdc++-12-dev liburing-dev",
             llvm_os="jammy", llvm_ver="17",
             buildscript="drone", buildtype="valgrind",
             image="cppalliance/droneubuntu2204:1",
@@ -82,6 +88,15 @@ def main(ctx):
             },
             globalenv=globalenv),
 
+        # Note: no liburing-dev on the Drone cmake jobs even though the
+        # noble image has 2.5+. Docker's default seccomp profile blocks
+        # the io_uring_setup syscall (post-CVE hardening), so io_uring
+        # tests would compile in but abort at runtime with EPERM
+        # ('io_uring_queue_init_params: Operation not permitted').
+        # Without liburing-dev the CMake probe disables the backend and
+        # the cmake-mainproject/subdirectory jobs exercise epoll only.
+        # io_uring runtime coverage is provided by the GitHub Actions
+        # Linux jobs, which run on unrestricted GitHub-hosted runners.
         linux_cxx("cmake-mainproject", "g++-13", packages="g++-13",
             image="cppalliance/droneubuntu2404:1",
             buildtype="cmake-mainproject", buildscript="drone",

@@ -70,8 +70,7 @@ public:
     /** Return true if single-threaded mode is active. */
     bool single_threaded() const noexcept
     {
-        return static_cast<reactor_scheduler const*>(sched_)
-            ->is_single_threaded();
+        return sched_->is_single_threaded();
     }
 
 private:

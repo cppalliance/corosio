@@ -255,7 +255,7 @@ public:
     }
 
     /// Return true if single-threaded (lockless) mode is active.
-    bool is_single_threaded() const noexcept
+    bool is_single_threaded() const noexcept override
     {
         return single_threaded_;
     }
@@ -266,7 +266,7 @@ public:
         operations become no-ops. Cross-thread post() is
         undefined behavior.
     */
-    void configure_single_threaded(bool v) noexcept
+    void configure_single_threaded(bool v) noexcept override
     {
         single_threaded_ = v;
         mutex_.set_enabled(!v);

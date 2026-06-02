@@ -13,5 +13,10 @@ if(@WolfSSL_FOUND@)
     find_dependency(WolfSSL)
 endif()
 
+if(@liburing_FOUND@)
+    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+    find_dependency(liburing 2.5)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/boost_corosio-targets.cmake")
 check_required_components(boost_corosio)

@@ -232,7 +232,7 @@ public:
     }
 
     /// Single-threaded mode toggle (matches reactor_scheduler API).
-    void configure_single_threaded(bool v) noexcept
+    void configure_single_threaded(bool v) noexcept override
     {
         single_threaded_ = v;
         dispatch_mutex_.set_enabled(!v);
@@ -266,7 +266,7 @@ public:
     }
 
     /// Return true if single-threaded (lockless) mode is active.
-    bool is_single_threaded() const noexcept { return single_threaded_; }
+    bool is_single_threaded() const noexcept override { return single_threaded_; }
 
 private:
     // ring_ + wakeup_eventfd_ are mutable so lazy_init_ring() (called

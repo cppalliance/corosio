@@ -81,12 +81,18 @@ protected:
     std::unique_ptr<uring_multi_accept_op>       multi_op_;
     bool                                         closing_ = false;
 
-public:
+private:
+    // CRTP ctor private + Derived friended so the base cannot be
+    // constructed except as a CRTP base of Derived
+    // (clang-tidy bugprone-crtp-constructor-accessibility).
+    friend Derived;
     io_uring_multishot_acceptor_base(
         io_uring_scheduler& sched, PeerService& peer_svc) noexcept
         : sched_(&sched)
         , peer_service_(&peer_svc)
     {}
+
+public:
 
     ~io_uring_multishot_acceptor_base() override
     {
@@ -97,20 +103,24 @@ public:
         if (fd_ >= 0)
         {
             sched_->submit_cancel_by_fd(fd_);
-            // Drain parked fds — no waiter will consume them now.
-            intrusive_list<ready_fd_node> drained;
-            {
-                std::lock_guard lk(mutex_);
-                while (auto* r = ready_fds_.pop_front())
-                    drained.push_back(r);
-            }
-            while (auto* r = drained.pop_front())
-            {
-                ::close(r->fd);
-                delete r;
-            }
             ::close(fd_);
             fd_ = -1;
+        }
+
+        // Drain parked accepted-connection fds unconditionally. These are
+        // distinct from the listener fd and can be present even when the
+        // service close() path already closed and cleared fd_ — that path
+        // does not touch ready_fds_, so the drain must run here.
+        intrusive_list<ready_fd_node> drained;
+        {
+            std::lock_guard lk(mutex_);
+            while (auto* r = ready_fds_.pop_front())
+                drained.push_back(r);
+        }
+        while (auto* r = drained.pop_front())
+        {
+            ::close(r->fd);
+            delete r;
         }
 
         // Break the multi_op_ → impl_ptr (shared_ptr<this>) cycle and
@@ -159,6 +169,7 @@ public:
         while (auto* w = drained.pop_front())
         {
             w->stop_cb.reset();
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept destructor path: OOM => std::terminate is the intended behavior
             auto* op = new uring_accept_op();
             op->h        = w->h;
             op->ex       = w->ex;
@@ -227,7 +238,7 @@ public:
     void dispatch_or_queue(
         std::coroutine_handle<>     h,
         capy::executor_ref          ex,
-        std::stop_token             token,
+        std::stop_token const&      token,
         std::error_code*            ec,
         io_object::implementation** impl_out)
     {
@@ -313,6 +324,7 @@ public:
             if (closing_) return;  // on_accept_cqe_impl will drain with closing_ set
             waiters_.remove(w);
         }
+        // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — stop-token callback: noexcept, OOM => std::terminate is the intended behavior
         auto* op = new uring_accept_op();
         op->h        = w->h;
         op->ex       = w->ex;
@@ -370,6 +382,7 @@ protected:
                 }
                 else if (new_fd >= 0)
                 {
+                    // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler: noexcept, OOM => std::terminate is the intended behavior
                     auto* node     = new ready_fd_node{};
                     node->fd       = new_fd;
                     node->peer     = multi_op_->peer_storage;
@@ -379,6 +392,7 @@ protected:
             }
             else if (new_fd >= 0)
             {
+                // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler: noexcept, OOM => std::terminate is the intended behavior
                 auto* node      = new ready_fd_node{};
                 node->fd        = new_fd;
                 node->peer      = multi_op_->peer_storage;
@@ -390,6 +404,7 @@ protected:
         if (matched)
         {
             matched->stop_cb.reset();
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler: noexcept, OOM => std::terminate is the intended behavior
             auto* op         = new uring_accept_op();
             op->h            = matched->h;
             op->ex           = matched->ex;
@@ -415,6 +430,7 @@ protected:
         while (auto* w = closing_waiters.pop_front())
         {
             w->stop_cb.reset();
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler shutdown path: noexcept, OOM => std::terminate is the intended behavior
             auto* op = new uring_accept_op();
             op->h        = w->h;
             op->ex       = w->ex;
@@ -449,6 +465,7 @@ protected:
 
                 void destroy() override { delete this; }
             };
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler re-arm: noexcept, OOM => std::terminate is the intended behavior
             sched_->post(new rearm_op(this->shared_from_this()));
         }
     }
