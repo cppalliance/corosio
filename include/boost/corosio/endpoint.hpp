@@ -15,6 +15,7 @@
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
 
+#include <compare>
 #include <cstdint>
 #include <string_view>
 #include <system_error>
@@ -209,13 +210,36 @@ public:
             return a.v6_address_ == b.v6_address_;
     }
 
-    /** Compare endpoints for inequality.
+    /** Order two endpoints.
 
-        @return `true` if endpoints differ.
+        Establishes a strict total ordering consistent with
+        @ref operator==: equal endpoints compare equivalent.
+        Endpoints are ordered first by address family (IPv4
+        before IPv6), then by address value, then by port. This
+        makes `endpoint` usable as a key in ordered containers
+        such as `std::map` and `std::set`.
+
+        @return The relative order of @p a and @p b.
     */
-    friend bool operator!=(endpoint const& a, endpoint const& b) noexcept
+    friend std::strong_ordering
+    operator<=>(endpoint const& a, endpoint const& b) noexcept
     {
-        return !(a == b);
+        if (a.is_v4_ != b.is_v4_)
+            return a.is_v4_ ? std::strong_ordering::less
+                            : std::strong_ordering::greater;
+        if (a.is_v4_)
+        {
+            if (auto c = a.v4_address_.to_uint() <=> b.v4_address_.to_uint();
+                c != 0)
+                return c;
+        }
+        else
+        {
+            if (auto c = a.v6_address_.to_bytes() <=> b.v6_address_.to_bytes();
+                c != 0)
+                return c;
+        }
+        return a.port_ <=> b.port_;
     }
 };
 
