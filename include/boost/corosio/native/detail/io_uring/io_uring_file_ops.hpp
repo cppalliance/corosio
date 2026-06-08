@@ -16,6 +16,7 @@
 
 #include <boost/corosio/native/detail/io_uring/io_uring_op.hpp>
 #include <boost/corosio/native/detail/io_uring/io_uring_socket_ops.hpp>
+#include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 
 #include <cstdint>
@@ -136,17 +137,17 @@ struct uring_file_read_op : uring_file_read_op_base
         std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_file_read_op*>(base);
-        self->stop_cb.reset();
-
-        if (owner == nullptr)
-        {
-            auto suicide = std::move(self->impl_ptr);
+        if (coro_drain_if_shutdown(owner, self))
             return;
-        }
 
-        auto next = finish(self);
-        auto suicide = std::move(self->impl_ptr);
-        next.resume();
+        if (self->sched_)
+            self->sched_->reset_inline_budget();
+
+        uring_set_result(self, /*is_read=*/true, self->empty_buffer);
+        if (self->bytes_out)
+            *self->bytes_out =
+                self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u;
+        coro_resume(self);
     }
 };
 
@@ -273,17 +274,17 @@ struct uring_file_write_op : uring_file_write_op_base
         std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_file_write_op*>(base);
-        self->stop_cb.reset();
-
-        if (owner == nullptr)
-        {
-            auto suicide = std::move(self->impl_ptr);
+        if (coro_drain_if_shutdown(owner, self))
             return;
-        }
 
-        auto next = finish(self);
-        auto suicide = std::move(self->impl_ptr);
-        next.resume();
+        if (self->sched_)
+            self->sched_->reset_inline_budget();
+
+        uring_set_result(self, /*is_read=*/false, self->empty_buffer);
+        if (self->bytes_out)
+            *self->bytes_out =
+                self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u;
+        coro_resume(self);
     }
 };
 

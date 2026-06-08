@@ -50,41 +50,18 @@ namespace boost::corosio::detail {
 template<class Socket, class Acceptor>
 struct reactor_op : reactor_op_base
 {
-    /// Stop-token callback that invokes cancel() on the target op.
-    struct canceller
-    {
-        reactor_op* op;
-        void operator()() const noexcept
-        {
-            op->cancel();
-        }
-    };
-
-    /// Caller's coroutine handle to resume on completion.
-    std::coroutine_handle<> h;
-
-    /// Scheduler-ready continuation for executor dispatch/post (wraps h).
-    detail::continuation_op cont_op;
-
-    /// Executor for dispatching the completion.
-    capy::executor_ref ex;
-
-    /// Output pointer for the error code.
-    std::error_code* ec_out = nullptr;
-
-    /// Output pointer for bytes transferred.
-    std::size_t* bytes_out = nullptr;
+    // The op envelope — coroutine handle h, cont_op, executor ex, ec_out,
+    // bytes_out, cancelled, stop_cb (+ its canceller), impl_ptr — lives in
+    // coro_op (via reactor_op_base) and is shared with io_uring/IOCP.
+    // reactor_op adds only the reactor-specific routing state below.
 
     /// File descriptor this operation targets.
     int fd = -1;
 
-    /// Stop-token callback registration.
-    std::optional<std::stop_callback<canceller>> stop_cb;
-
-    /// Owning socket impl (for stop_token cancellation).
+    /// Owning socket impl (for stop_token cancellation routing).
     Socket* socket_impl_ = nullptr;
 
-    /// Owning acceptor impl (for stop_token cancellation).
+    /// Owning acceptor impl (for stop_token cancellation routing).
     Acceptor* acceptor_impl_ = nullptr;
 
     reactor_op() = default;
@@ -110,6 +87,13 @@ struct reactor_op : reactor_op_base
     /// Cancel this operation via the owning impl.
     virtual void cancel() noexcept = 0;
 
+    /// coro_op cancellation hook (fired by the shared canceller when the
+    /// stop_token requests cancellation): route to the impl-specific cancel().
+    void on_cancel() noexcept override
+    {
+        cancel();
+    }
+
     /// Destroy without invoking.
     void destroy() override
     {
@@ -120,25 +104,17 @@ struct reactor_op : reactor_op_base
     /// Arm the stop-token callback for a socket operation.
     void start(std::stop_token const& token, Socket* impl)
     {
-        cancelled.store(false, std::memory_order_release);
-        stop_cb.reset();
         socket_impl_   = impl;
         acceptor_impl_ = nullptr;
-
-        if (token.stop_possible())
-            stop_cb.emplace(token, canceller{this});
+        coro_op::start(token);
     }
 
     /// Arm the stop-token callback for an acceptor operation.
     void start(std::stop_token const& token, Acceptor* impl)
     {
-        cancelled.store(false, std::memory_order_release);
-        stop_cb.reset();
         socket_impl_   = nullptr;
         acceptor_impl_ = impl;
-
-        if (token.stop_possible())
-            stop_cb.emplace(token, canceller{this});
+        coro_op::start(token);
     }
 };
 

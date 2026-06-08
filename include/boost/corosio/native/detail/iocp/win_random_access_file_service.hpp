@@ -163,7 +163,7 @@ raf_concurrent_op::do_complete(
             *op->ec_out = capy::error::canceled;
         else if (op->dwError != 0)
             *op->ec_out = make_err(op->dwError);
-        else if (op->is_read_ && op->bytes_transferred == 0 && !op->empty_buffer)
+        else if (op->is_read && op->bytes_transferred == 0 && !op->empty_buffer)
             *op->ec_out = capy::error::eof;
         else
             *op->ec_out = {};
@@ -317,7 +317,7 @@ win_random_access_file_internal::read_some_at(
     op->file_ref = shared_from_this();
 
     op->reset();
-    op->is_read_  = true;
+    op->is_read  = true;
     op->h         = h;
     op->ex        = ex;
     op->ec_out    = ec;
@@ -386,7 +386,7 @@ win_random_access_file_internal::write_some_at(
     op->file_ref = shared_from_this();
 
     op->reset();
-    op->is_read_  = false;
+    op->is_read  = false;
     op->h         = h;
     op->ex        = ex;
     op->ec_out    = ec;

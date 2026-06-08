@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_OP_COMPLETE_HPP
 
 #include <boost/corosio/detail/dispatch_coro.hpp>
+#include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/io/io_object.hpp>
@@ -41,21 +42,19 @@ complete_io_op(Op& op)
     op.stop_cb.reset();
     op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
 
-    if (op.cancelled.load(std::memory_order_acquire))
-        *op.ec_out = capy::error::canceled;
-    else if (op.errn != 0)
-        *op.ec_out = make_err(op.errn);
-    else if (op.is_read_operation() && op.bytes_transferred == 0)
-        *op.ec_out = capy::error::eof;
-    else
-        *op.ec_out = {};
+    // is_read_operation() already folds in the empty-buffer case (it
+    // returns false for a zero-length read), so empty_buffer stays false
+    // here and the shared EOF test reduces to the reactor's original
+    // `is_read && bytes == 0`.
+    decode_io_result(
+        op.ec_out,
+        op.cancelled.load(std::memory_order_acquire),
+        op.errn != 0 ? make_err(op.errn) : std::error_code{},
+        op.is_read_operation(), op.bytes_transferred, /*empty_buffer=*/false);
 
     *op.bytes_out = op.bytes_transferred;
 
-    op.cont_op.cont.h = op.h;
-    capy::executor_ref saved_ex(op.ex);
-    auto prevent = std::move(op.impl_ptr);
-    dispatch_coro(saved_ex, op.cont_op.cont).resume();
+    coro_resume(&op);
 }
 
 /** Complete a datagram recv operation (connected mode).
@@ -73,19 +72,16 @@ complete_dgram_recv_op(Op& op)
     op.stop_cb.reset();
     op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
 
-    if (op.cancelled.load(std::memory_order_acquire))
-        *op.ec_out = capy::error::canceled;
-    else if (op.errn != 0)
-        *op.ec_out = make_err(op.errn);
-    else
-        *op.ec_out = {};
+    // No EOF: a zero-length datagram is valid (success with 0 bytes).
+    decode_io_result(
+        op.ec_out,
+        op.cancelled.load(std::memory_order_acquire),
+        op.errn != 0 ? make_err(op.errn) : std::error_code{},
+        /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
     *op.bytes_out = op.bytes_transferred;
 
-    op.cont_op.cont.h = op.h;
-    capy::executor_ref saved_ex(op.ex);
-    auto prevent = std::move(op.impl_ptr);
-    dispatch_coro(saved_ex, op.cont_op.cont).resume();
+    coro_resume(&op);
 }
 
 /** Complete a wait operation.
@@ -107,17 +103,14 @@ complete_wait_op(Op& op)
     else
         op.acceptor_impl_->desc_state_.scheduler_->reset_inline_budget();
 
-    if (op.cancelled.load(std::memory_order_acquire))
-        *op.ec_out = capy::error::canceled;
-    else if (op.errn != 0)
-        *op.ec_out = make_err(op.errn);
-    else
-        *op.ec_out = {};
+    // Wait reports only success/cancel/error — no bytes, no EOF.
+    decode_io_result(
+        op.ec_out,
+        op.cancelled.load(std::memory_order_acquire),
+        op.errn != 0 ? make_err(op.errn) : std::error_code{},
+        /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
-    op.cont_op.cont.h = op.h;
-    capy::executor_ref saved_ex(op.ex);
-    auto prevent = std::move(op.impl_ptr);
-    dispatch_coro(saved_ex, op.cont_op.cont).resume();
+    coro_resume(&op);
 }
 
 /** Complete a connect operation with endpoint caching.
@@ -153,17 +146,13 @@ complete_connect_op(Op& op)
         op.socket_impl_->set_endpoints(local_ep, op.target_endpoint);
     }
 
-    if (op.cancelled.load(std::memory_order_acquire))
-        *op.ec_out = capy::error::canceled;
-    else if (op.errn != 0)
-        *op.ec_out = make_err(op.errn);
-    else
-        *op.ec_out = {};
+    decode_io_result(
+        op.ec_out,
+        op.cancelled.load(std::memory_order_acquire),
+        op.errn != 0 ? make_err(op.errn) : std::error_code{},
+        /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
-    op.cont_op.cont.h = op.h;
-    capy::executor_ref saved_ex(op.ex);
-    auto prevent = std::move(op.impl_ptr);
-    dispatch_coro(saved_ex, op.cont_op.cont).resume();
+    coro_resume(&op);
 }
 
 /** Construct and register a peer socket from an accepted fd.
@@ -243,12 +232,11 @@ complete_accept_op(Op& op)
     bool success =
         (op.errn == 0 && !op.cancelled.load(std::memory_order_acquire));
 
-    if (op.cancelled.load(std::memory_order_acquire))
-        *op.ec_out = capy::error::canceled;
-    else if (op.errn != 0)
-        *op.ec_out = make_err(op.errn);
-    else
-        *op.ec_out = {};
+    decode_io_result(
+        op.ec_out,
+        op.cancelled.load(std::memory_order_acquire),
+        op.errn != 0 ? make_err(op.errn) : std::error_code{},
+        /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
     if (success && op.accepted_fd >= 0 && op.acceptor_impl_)
     {
@@ -269,10 +257,7 @@ complete_accept_op(Op& op)
             *op.impl_out = nullptr;
     }
 
-    op.cont_op.cont.h = op.h;
-    capy::executor_ref saved_ex(op.ex);
-    auto prevent = std::move(op.impl_ptr);
-    dispatch_coro(saved_ex, op.cont_op.cont).resume();
+    coro_resume(&op);
 }
 
 /** Complete a datagram operation (send_to or recv_from).
@@ -291,19 +276,16 @@ complete_datagram_op(Op& op)
     op.stop_cb.reset();
     op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
 
-    if (op.cancelled.load(std::memory_order_acquire))
-        *op.ec_out = capy::error::canceled;
-    else if (op.errn != 0)
-        *op.ec_out = make_err(op.errn);
-    else
-        *op.ec_out = {};
+    // No EOF: a zero-length datagram is valid (success with 0 bytes).
+    decode_io_result(
+        op.ec_out,
+        op.cancelled.load(std::memory_order_acquire),
+        op.errn != 0 ? make_err(op.errn) : std::error_code{},
+        /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
     *op.bytes_out = op.bytes_transferred;
 
-    op.cont_op.cont.h = op.h;
-    capy::executor_ref saved_ex(op.ex);
-    auto prevent = std::move(op.impl_ptr);
-    dispatch_coro(saved_ex, op.cont_op.cont).resume();
+    coro_resume(&op);
 }
 
 /** Complete a datagram operation with source endpoint capture.
@@ -324,12 +306,12 @@ complete_datagram_op(Op& op, Endpoint* source_out)
     op.stop_cb.reset();
     op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
 
-    if (op.cancelled.load(std::memory_order_acquire))
-        *op.ec_out = capy::error::canceled;
-    else if (op.errn != 0)
-        *op.ec_out = make_err(op.errn);
-    else
-        *op.ec_out = {};
+    // No EOF: a zero-length datagram is valid (success with 0 bytes).
+    decode_io_result(
+        op.ec_out,
+        op.cancelled.load(std::memory_order_acquire),
+        op.errn != 0 ? make_err(op.errn) : std::error_code{},
+        /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
     *op.bytes_out = op.bytes_transferred;
 
@@ -340,10 +322,7 @@ complete_datagram_op(Op& op, Endpoint* source_out)
             op.source_addrlen,
             Endpoint{});
 
-    op.cont_op.cont.h = op.h;
-    capy::executor_ref saved_ex(op.ex);
-    auto prevent = std::move(op.impl_ptr);
-    dispatch_coro(saved_ex, op.cont_op.cont).resume();
+    coro_resume(&op);
 }
 
 } // namespace boost::corosio::detail
