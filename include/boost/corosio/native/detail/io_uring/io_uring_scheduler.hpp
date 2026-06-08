@@ -1209,9 +1209,9 @@ io_uring_scheduler::submit_cancel_by_fd(int fd) noexcept
 }
 
 inline void
-io_uring_op::request_cancel() noexcept
+io_uring_op::on_cancel() noexcept
 {
-    cancelled.store(true, std::memory_order_release);
+    request_cancel();   // coro_op: records the cancellation (sets the flag)
     // Skip the cancel SQE if we never linked an SQE to this op — the
     // bypass path in the caller will see cancelled=true and complete
     // synchronously without a kernel round-trip.

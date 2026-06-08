@@ -17,6 +17,7 @@
 #include <boost/corosio/detail/random_access_file_service.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/io_uring/io_uring_file_ops.hpp>
+#include <boost/corosio/native/detail/io_uring/io_uring_file_service_base.hpp>
 #include <boost/corosio/native/detail/io_uring/io_uring_scheduler.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/random_access_file.hpp>
@@ -277,50 +278,24 @@ io_uring_random_access_file::write_some_at(
     by `io_uring_t::construct`.
 */
 class BOOST_COROSIO_DECL io_uring_random_access_file_service final
-    : public random_access_file_service
+    : public io_uring_file_service_base<
+          io_uring_random_access_file_service,
+          random_access_file_service,
+          io_uring_random_access_file>
 {
+    using base_service = io_uring_file_service_base<
+        io_uring_random_access_file_service,
+        random_access_file_service,
+        io_uring_random_access_file>;
+
 public:
     explicit io_uring_random_access_file_service(
         capy::execution_context& /*ctx*/, io_uring_scheduler& sched)
-        : sched_(&sched)
+        : base_service(sched)
     {}
 
-    ~io_uring_random_access_file_service() override = default;
-
-    io_uring_random_access_file_service(
-        io_uring_random_access_file_service const&)            = delete;
-    io_uring_random_access_file_service& operator=(
-        io_uring_random_access_file_service const&)            = delete;
-
-    io_object::implementation* construct() override
-    {
-        auto ptr   = std::make_shared<io_uring_random_access_file>(
-            *sched_);
-        auto* impl = ptr.get();
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            file_list_.push_back(impl);
-            file_ptrs_[impl] = std::move(ptr);
-        }
-        return impl;
-    }
-
-    void destroy(io_object::implementation* p) override
-    {
-        // close_file() already does cancel_and_flush(fd_) before
-        // ::close — calling cancel() too would queue a redundant
-        // cancel-by-fd SQE that finds nothing.
-        auto& impl = static_cast<io_uring_random_access_file&>(*p);
-        impl.close_file();
-        destroy_impl(impl);
-    }
-
-    void close(io_object::handle& h) override
-    {
-        if (h.get())
-            static_cast<io_uring_random_access_file&>(
-                *h.get()).close_file();
-    }
+    // construct / destroy / close / shutdown / scheduler() are inherited
+    // from io_uring_file_service_base.
 
     std::error_code open_file(
         random_access_file::implementation& impl,
@@ -330,32 +305,6 @@ public:
         return static_cast<io_uring_random_access_file&>(impl).open_file(
             path, mode);
     }
-
-    void shutdown() override
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (auto* impl = file_list_.pop_front(); impl != nullptr;
-             impl       = file_list_.pop_front())
-        {
-            impl->close_file();
-        }
-        file_ptrs_.clear();
-    }
-
-private:
-    void destroy_impl(io_uring_random_access_file& impl)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        file_list_.remove(&impl);
-        file_ptrs_.erase(&impl);
-    }
-
-    io_uring_scheduler*                              sched_;
-    std::mutex                                       mutex_;
-    intrusive_list<io_uring_random_access_file>      file_list_;
-    std::unordered_map<
-        io_uring_random_access_file*,
-        std::shared_ptr<io_uring_random_access_file>> file_ptrs_;
 };
 
 } // namespace boost::corosio::detail

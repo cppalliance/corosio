@@ -22,6 +22,8 @@
 #include <boost/corosio/native/detail/io_uring/io_uring_scheduler.hpp>
 #include <boost/corosio/native/detail/io_uring/io_uring_multishot_acceptor.hpp>
 #include <boost/corosio/native/detail/io_uring/io_uring_socket_ops.hpp>
+#include <boost/corosio/native/detail/io_uring/io_uring_socket_service_base.hpp>
+#include <boost/corosio/native/detail/native_socket_base.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/msg_flags.hpp>
 #include <boost/corosio/detail/local_datagram_service.hpp>
@@ -75,17 +77,20 @@ class io_uring_local_datagram_service;
     the same type in flight simultaneously.
 */
 class BOOST_COROSIO_DECL io_uring_tcp_socket final
-    : public tcp_socket::implementation
-    , public std::enable_shared_from_this<io_uring_tcp_socket>
+    : public native_socket_base<
+          io_uring_tcp_socket, tcp_socket::implementation, endpoint>
 {
     friend io_uring_tcp_service;
 
-    int                   fd_     = -1;
     int                   family_ = AF_UNSPEC;  // cached at open_socket
     io_uring_scheduler*   sched_  = nullptr;
     io_uring_tcp_service* svc_    = nullptr;
 
-    mutable endpoint local_endpoint_;
+    // fd_ and local_endpoint_ are provided by native_socket_base (the
+    // readiness/completion-agnostic socket base shared with the reactor
+    // sockets). native_handle()/is_open()/set_option()/get_option() come
+    // from there too; local_endpoint() is overridden below for lazy
+    // getsockname resolution.
     // Three-state machine for the local endpoint:
     //   unresolved    — never set; accessor returns default endpoint
     //                   (open-but-unbound socket, failed-connect, etc.)
@@ -182,17 +187,10 @@ public:
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec)
-                {
-                    if (stop_now)
-                        *ec = capy::error::canceled;
-                    else if (err)
-                        *ec = make_err(err);
-                    else if (n == 0 && !empty_buf)
-                        *ec = capy::error::eof;
-                    else
-                        *ec = {};
-                }
+                decode_io_result(
+                    ec, stop_now, err ? make_err(err) : std::error_code{},
+                    /*is_read=*/true,
+                    n < 0 ? 0u : static_cast<std::size_t>(n), empty_buf);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 rd_.cont_op.cont.h = h;
@@ -266,10 +264,9 @@ public:
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec)
-                    *ec = stop_now ? capy::error::canceled
-                          : err   ? make_err(err)
-                                  : std::error_code{};
+                decode_io_result(
+                    ec, stop_now, err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 wr_.cont_op.cont.h = h;
@@ -384,10 +381,8 @@ public:
         return {};
     }
 
-    native_handle_type native_handle() const noexcept override
-    {
-        return fd_;
-    }
+    // native_handle() / set_option() / get_option() are inherited from
+    // native_socket_base.
 
     void cancel() noexcept override
     {
@@ -395,32 +390,22 @@ public:
             sched_->submit_cancel_by_fd(fd_);
     }
 
-    std::error_code set_option(
-        int         level,
-        int         optname,
-        void const* data,
-        std::size_t size) noexcept override
+    /// Cancel in-flight ops, close the fd, and reset cached endpoints.
+    /// Called by the service on close()/teardown. cancel_and_flush submits
+    /// the cancel SQE while the fd is still open so IORING_ASYNC_CANCEL_FD
+    /// resolves before the fd number can be recycled.
+    void close_socket() noexcept
     {
-        if (::setsockopt(
-                fd_, level, optname,
-                reinterpret_cast<char const*>(data),
-                static_cast<socklen_t>(size)) != 0)
-            return make_err(errno);
-        return {};
-    }
-
-    std::error_code get_option(
-        int         level,
-        int         optname,
-        void*       data,
-        std::size_t* size) const noexcept override
-    {
-        socklen_t len = static_cast<socklen_t>(*size);
-        if (::getsockopt(fd_, level, optname,
-                reinterpret_cast<char*>(data), &len) != 0)
-            return make_err(errno);
-        *size = static_cast<std::size_t>(len);
-        return {};
+        if (fd_ >= 0)
+        {
+            sched_->cancel_and_flush(fd_);
+            ::close(fd_);
+            fd_ = -1;
+        }
+        local_endpoint_  = endpoint{};
+        remote_endpoint_ = endpoint{};
+        local_endpoint_state_.store(
+            endpoint_state::unresolved, std::memory_order_release);
     }
 
     endpoint local_endpoint() const noexcept override
@@ -468,8 +453,12 @@ public:
     All public member functions are thread-safe.
 */
 class BOOST_COROSIO_DECL io_uring_tcp_service final
-    : public tcp_service
+    : public io_uring_socket_service_base<
+          io_uring_tcp_service, tcp_service, io_uring_tcp_socket>
 {
+    using base_service = io_uring_socket_service_base<
+        io_uring_tcp_service, tcp_service, io_uring_tcp_socket>;
+
 public:
     /// Identifies this service for `execution_context` lookup.
     using key_type = tcp_service;
@@ -480,59 +469,11 @@ public:
             must already be registered.
     */
     explicit io_uring_tcp_service(capy::execution_context& ctx)
-        : sched_(&ctx.use_service<io_uring_scheduler>())
+        : base_service(ctx)
     {}
 
-    void shutdown() override
-    {
-        std::vector<std::shared_ptr<io_uring_tcp_socket>> live;
-        {
-            std::lock_guard lk(mutex_);
-            live.reserve(impls_.size());
-            for (auto& [_, p] : impls_)
-                live.push_back(p);
-        }
-        // Cancel without the lock held to avoid inversion if cancel()
-        // ever needs to re-enter the service.
-        for (auto& p : live)
-            p->cancel();
-    }
-
-    io_object::implementation* construct() override
-    {
-        auto p   = std::make_shared<io_uring_tcp_socket>(*this, *sched_);
-        auto* raw = p.get();
-        std::lock_guard lk(mutex_);
-        impls_.emplace(raw, std::move(p));
-        return raw;
-    }
-
-    void destroy(io_object::implementation* p) override
-    {
-        if (!p)
-            return;
-        std::lock_guard lk(mutex_);
-        impls_.erase(static_cast<io_uring_tcp_socket*>(p));
-    }
-
-    // Close the fd eagerly when tcp_socket::close() is called, before
-    // destroy() drops the shared_ptr and the destructor runs.
-    void close(io_object::handle& h) override
-    {
-        auto* sock = static_cast<io_uring_tcp_socket*>(h.get());
-        if (sock && sock->fd_ >= 0)
-        {
-            // Cancel pending SQEs before closing. The cancel SQE must
-            // be submitted to the kernel while the fd is still open;
-            // otherwise IORING_ASYNC_CANCEL_FD resolves to the wrong
-            // file if the fd number is immediately recycled.
-            sched_->cancel_and_flush(sock->fd_);
-            ::close(sock->fd_);
-            sock->fd_              = -1;
-            sock->local_endpoint_  = endpoint{};
-            sock->remote_endpoint_ = endpoint{};
-        }
-    }
+    // construct / destroy / shutdown / close / scheduler() are inherited
+    // from io_uring_socket_service_base. The methods below are TCP-specific.
 
     /** Open a socket fd and associate it with an impl.
 
@@ -623,20 +564,8 @@ public:
             io_uring_tcp_socket::endpoint_state::lazy_pending,
             std::memory_order_release);
 
-        std::lock_guard lk(mutex_);
-        auto* raw = p.get();
-        impls_.emplace(raw, std::move(p));
-        return raw;
+        return this->register_impl(std::move(p));
     }
-
-    /// Return the scheduler used by sockets created by this service.
-    io_uring_scheduler& scheduler() noexcept { return *sched_; }
-
-private:
-    io_uring_scheduler*  sched_;
-    std::mutex           mutex_;
-    std::unordered_map<io_uring_tcp_socket*,
-                       std::shared_ptr<io_uring_tcp_socket>> impls_;
 };
 
 /** TCP acceptor implementation for io_uring.
@@ -921,16 +850,18 @@ private:
     the same type in flight simultaneously.
 */
 class BOOST_COROSIO_DECL io_uring_local_stream_socket final
-    : public local_stream_socket::implementation
-    , public std::enable_shared_from_this<io_uring_local_stream_socket>
+    : public native_socket_base<
+          io_uring_local_stream_socket,
+          local_stream_socket::implementation,
+          corosio::local_endpoint>
 {
     friend io_uring_local_stream_service;
 
-    int                           fd_    = -1;
     io_uring_scheduler*           sched_ = nullptr;
     io_uring_local_stream_service* svc_  = nullptr;
 
-    corosio::local_endpoint local_endpoint_;
+    // fd_ and local_endpoint_ live in native_socket_base, which also
+    // provides native_handle/is_open/set_option/get_option/local_endpoint.
     corosio::local_endpoint remote_endpoint_;
 
     // Per-fd op slots — embedded to eliminate per-call heap allocation.
@@ -1011,17 +942,10 @@ public:
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec)
-                {
-                    if (stop_now)
-                        *ec = capy::error::canceled;
-                    else if (err)
-                        *ec = make_err(err);
-                    else if (n == 0 && !empty_buf)
-                        *ec = capy::error::eof;
-                    else
-                        *ec = {};
-                }
+                decode_io_result(
+                    ec, stop_now, err ? make_err(err) : std::error_code{},
+                    /*is_read=*/true,
+                    n < 0 ? 0u : static_cast<std::size_t>(n), empty_buf);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 rd_.cont_op.cont.h = h;
@@ -1095,10 +1019,9 @@ public:
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec)
-                    *ec = stop_now ? capy::error::canceled
-                          : err   ? make_err(err)
-                                  : std::error_code{};
+                decode_io_result(
+                    ec, stop_now, err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 wr_.cont_op.cont.h = h;
@@ -1213,10 +1136,8 @@ public:
         return {};
     }
 
-    native_handle_type native_handle() const noexcept override
-    {
-        return fd_;
-    }
+    // native_handle / is_open / set_option / get_option / local_endpoint
+    // are inherited from native_socket_base.
 
     native_handle_type release_socket() noexcept override
     {
@@ -1233,37 +1154,18 @@ public:
             sched_->submit_cancel_by_fd(fd_);
     }
 
-    std::error_code set_option(
-        int         level,
-        int         optname,
-        void const* data,
-        std::size_t size) noexcept override
+    /// Cancel in-flight ops, close the fd, and reset cached endpoints.
+    /// Called by the service on close()/teardown.
+    void close_socket() noexcept
     {
-        if (::setsockopt(
-                fd_, level, optname,
-                reinterpret_cast<char const*>(data),
-                static_cast<socklen_t>(size)) != 0)
-            return make_err(errno);
-        return {};
-    }
-
-    std::error_code get_option(
-        int         level,
-        int         optname,
-        void*       data,
-        std::size_t* size) const noexcept override
-    {
-        socklen_t len = static_cast<socklen_t>(*size);
-        if (::getsockopt(fd_, level, optname,
-                reinterpret_cast<char*>(data), &len) != 0)
-            return make_err(errno);
-        *size = static_cast<std::size_t>(len);
-        return {};
-    }
-
-    corosio::local_endpoint local_endpoint() const noexcept override
-    {
-        return local_endpoint_;
+        if (fd_ >= 0)
+        {
+            sched_->cancel_and_flush(fd_);
+            ::close(fd_);
+            fd_ = -1;
+        }
+        local_endpoint_  = corosio::local_endpoint{};
+        remote_endpoint_ = corosio::local_endpoint{};
     }
 
     corosio::local_endpoint remote_endpoint() const noexcept override
@@ -1287,8 +1189,14 @@ public:
     All public member functions are thread-safe.
 */
 class BOOST_COROSIO_DECL io_uring_local_stream_service final
-    : public local_stream_service
+    : public io_uring_socket_service_base<
+          io_uring_local_stream_service, local_stream_service,
+          io_uring_local_stream_socket>
 {
+    using base_service = io_uring_socket_service_base<
+        io_uring_local_stream_service, local_stream_service,
+        io_uring_local_stream_socket>;
+
 public:
     /// Identifies this service for `execution_context` lookup.
     using key_type = local_stream_service;
@@ -1299,59 +1207,11 @@ public:
             must already be registered.
     */
     explicit io_uring_local_stream_service(capy::execution_context& ctx)
-        : sched_(&ctx.use_service<io_uring_scheduler>())
+        : base_service(ctx)
     {}
 
-    void shutdown() override
-    {
-        std::vector<std::shared_ptr<io_uring_local_stream_socket>> live;
-        {
-            std::lock_guard lk(mutex_);
-            live.reserve(impls_.size());
-            for (auto& [_, p] : impls_)
-                live.push_back(p);
-        }
-        // Cancel without the lock held to avoid inversion if cancel()
-        // ever needs to re-enter the service.
-        for (auto& p : live)
-            p->cancel();
-    }
-
-    io_object::implementation* construct() override
-    {
-        auto p   = std::make_shared<io_uring_local_stream_socket>(*this, *sched_);
-        auto* raw = p.get();
-        std::lock_guard lk(mutex_);
-        impls_.emplace(raw, std::move(p));
-        return raw;
-    }
-
-    void destroy(io_object::implementation* p) override
-    {
-        if (!p)
-            return;
-        std::lock_guard lk(mutex_);
-        impls_.erase(static_cast<io_uring_local_stream_socket*>(p));
-    }
-
-    // Close the fd eagerly when local_stream_socket::close() is called,
-    // before destroy() drops the shared_ptr and the destructor runs.
-    void close(io_object::handle& h) override
-    {
-        auto* sock = static_cast<io_uring_local_stream_socket*>(h.get());
-        if (sock && sock->fd_ >= 0)
-        {
-            // Cancel pending SQEs before closing. The cancel SQE must
-            // be submitted to the kernel while the fd is still open;
-            // otherwise IORING_ASYNC_CANCEL_FD resolves to the wrong
-            // file if the fd number is immediately recycled.
-            sched_->cancel_and_flush(sock->fd_);
-            ::close(sock->fd_);
-            sock->fd_              = -1;
-            sock->local_endpoint_  = corosio::local_endpoint{};
-            sock->remote_endpoint_ = corosio::local_endpoint{};
-        }
-    }
+    // construct / destroy / shutdown / close / scheduler() are inherited
+    // from io_uring_socket_service_base.
 
     /** Open an AF_UNIX stream socket and associate it with an impl.
 
@@ -1439,20 +1299,8 @@ public:
         if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &len) == 0)
             p->local_endpoint_ = sockaddr_to_local_endpoint(local, len);
 
-        std::lock_guard lk(mutex_);
-        auto* raw = p.get();
-        impls_.emplace(raw, std::move(p));
-        return raw;
+        return this->register_impl(std::move(p));
     }
-
-    /// Return the scheduler used by sockets created by this service.
-    io_uring_scheduler& scheduler() noexcept { return *sched_; }
-
-private:
-    io_uring_scheduler*  sched_;
-    std::mutex           mutex_;
-    std::unordered_map<io_uring_local_stream_socket*,
-                       std::shared_ptr<io_uring_local_stream_socket>> impls_;
 };
 
 /** Local-stream (Unix domain) acceptor for io_uring.
@@ -1747,17 +1595,17 @@ private:
     simultaneously, but two sends or two recvs must not overlap.
 */
 class BOOST_COROSIO_DECL io_uring_udp_socket final
-    : public udp_socket::implementation
-    , public std::enable_shared_from_this<io_uring_udp_socket>
+    : public native_socket_base<
+          io_uring_udp_socket, udp_socket::implementation, corosio::endpoint>
 {
     friend io_uring_udp_service;
 
-    int                    fd_     = -1;
     int                    family_ = AF_UNSPEC;  // cached at open_socket
     io_uring_scheduler*    sched_  = nullptr;
     io_uring_udp_service*  svc_    = nullptr;
 
-    corosio::endpoint local_endpoint_;
+    // fd_ and local_endpoint_ live in native_socket_base, which also
+    // provides native_handle/is_open/set_option/get_option/local_endpoint.
     corosio::endpoint remote_endpoint_;
 
     // Per-fd op slots — embedded to eliminate per-call heap allocation.
@@ -1922,10 +1770,8 @@ public:
         return std::noop_coroutine();
     }
 
-    native_handle_type native_handle() const noexcept override
-    {
-        return fd_;
-    }
+    // native_handle / is_open / set_option / get_option / local_endpoint
+    // are inherited from native_socket_base.
 
     void cancel() noexcept override
     {
@@ -1933,37 +1779,18 @@ public:
             sched_->submit_cancel_by_fd(fd_);
     }
 
-    std::error_code set_option(
-        int         level,
-        int         optname,
-        void const* data,
-        std::size_t size) noexcept override
+    /// Cancel in-flight ops, close the fd, and reset cached endpoints.
+    /// Called by the service on close()/teardown.
+    void close_socket() noexcept
     {
-        if (::setsockopt(
-                fd_, level, optname,
-                reinterpret_cast<char const*>(data),
-                static_cast<socklen_t>(size)) != 0)
-            return make_err(errno);
-        return {};
-    }
-
-    std::error_code get_option(
-        int          level,
-        int          optname,
-        void*        data,
-        std::size_t* size) const noexcept override
-    {
-        socklen_t len = static_cast<socklen_t>(*size);
-        if (::getsockopt(fd_, level, optname,
-                reinterpret_cast<char*>(data), &len) != 0)
-            return make_err(errno);
-        *size = static_cast<std::size_t>(len);
-        return {};
-    }
-
-    endpoint local_endpoint() const noexcept override
-    {
-        return local_endpoint_;
+        if (fd_ >= 0)
+        {
+            sched_->cancel_and_flush(fd_);
+            ::close(fd_);
+            fd_ = -1;
+        }
+        local_endpoint_  = endpoint{};
+        remote_endpoint_ = endpoint{};
     }
 
     endpoint remote_endpoint() const noexcept override
@@ -2023,10 +1850,9 @@ private:
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec)
-                    *ec = stop_now ? capy::error::canceled
-                          : err   ? make_err(err)
-                                  : std::error_code{};
+                decode_io_result(
+                    ec, stop_now, err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 send_.cont_op.cont.h = h;
@@ -2114,10 +1940,9 @@ private:
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec)
-                    *ec = stop_now ? capy::error::canceled
-                          : err   ? make_err(err)
-                                  : std::error_code{};
+                decode_io_result(
+                    ec, stop_now, err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 if (n >= 0 && want_source && source_out && !empty_buf)
@@ -2190,8 +2015,12 @@ private:
     All public member functions are thread-safe.
 */
 class BOOST_COROSIO_DECL io_uring_udp_service final
-    : public udp_service
+    : public io_uring_socket_service_base<
+          io_uring_udp_service, udp_service, io_uring_udp_socket>
 {
+    using base_service = io_uring_socket_service_base<
+        io_uring_udp_service, udp_service, io_uring_udp_socket>;
+
 public:
     /// Identifies this service for `execution_context` lookup.
     using key_type = udp_service;
@@ -2202,57 +2031,11 @@ public:
             must already be registered.
     */
     explicit io_uring_udp_service(capy::execution_context& ctx)
-        : sched_(&ctx.use_service<io_uring_scheduler>())
+        : base_service(ctx)
     {}
 
-    void shutdown() override
-    {
-        std::vector<std::shared_ptr<io_uring_udp_socket>> live;
-        {
-            std::lock_guard lk(mutex_);
-            live.reserve(impls_.size());
-            for (auto& [_, p] : impls_)
-                live.push_back(p);
-        }
-        // Cancel without the lock held to avoid inversion if cancel()
-        // ever needs to re-enter the service.
-        for (auto& p : live)
-            p->cancel();
-    }
-
-    io_object::implementation* construct() override
-    {
-        auto p   = std::make_shared<io_uring_udp_socket>(*this, *sched_);
-        auto* raw = p.get();
-        std::lock_guard lk(mutex_);
-        impls_.emplace(raw, std::move(p));
-        return raw;
-    }
-
-    void destroy(io_object::implementation* p) override
-    {
-        if (!p)
-            return;
-        std::lock_guard lk(mutex_);
-        impls_.erase(static_cast<io_uring_udp_socket*>(p));
-    }
-
-    // Close the fd eagerly when udp_socket::close() is called, before
-    // destroy() drops the shared_ptr and the destructor runs.
-    void close(io_object::handle& h) override
-    {
-        auto* sock = static_cast<io_uring_udp_socket*>(h.get());
-        if (sock && sock->fd_ >= 0)
-        {
-            // Cancel pending SQEs before closing so the kernel resolves
-            // the fd number while it is still valid.
-            sched_->cancel_and_flush(sock->fd_);
-            ::close(sock->fd_);
-            sock->fd_              = -1;
-            sock->local_endpoint_  = endpoint{};
-            sock->remote_endpoint_ = endpoint{};
-        }
-    }
+    // construct / destroy / shutdown / close / scheduler() are inherited
+    // from io_uring_socket_service_base.
 
     /** Open a datagram socket and associate it with an impl.
 
@@ -2313,15 +2096,6 @@ public:
             sock.local_endpoint_ = sockaddr_to_endpoint(local);
         return {};
     }
-
-    /// Return the scheduler used by sockets created by this service.
-    io_uring_scheduler& scheduler() noexcept { return *sched_; }
-
-private:
-    io_uring_scheduler*  sched_;
-    std::mutex           mutex_;
-    std::unordered_map<io_uring_udp_socket*,
-                       std::shared_ptr<io_uring_udp_socket>> impls_;
 };
 
 /** Unix domain datagram socket implementation for io_uring.
@@ -2341,16 +2115,18 @@ private:
     simultaneously, but two sends or two recvs must not overlap.
 */
 class BOOST_COROSIO_DECL io_uring_local_datagram_socket final
-    : public local_datagram_socket::implementation
-    , public std::enable_shared_from_this<io_uring_local_datagram_socket>
+    : public native_socket_base<
+          io_uring_local_datagram_socket,
+          local_datagram_socket::implementation,
+          corosio::local_endpoint>
 {
     friend io_uring_local_datagram_service;
 
-    int                              fd_    = -1;
     io_uring_scheduler*              sched_ = nullptr;
     io_uring_local_datagram_service* svc_   = nullptr;
 
-    corosio::local_endpoint local_endpoint_;
+    // fd_ and local_endpoint_ live in native_socket_base, which also
+    // provides native_handle/is_open/set_option/get_option/local_endpoint.
     corosio::local_endpoint remote_endpoint_;
 
     // Per-fd op slots — embedded to eliminate per-call heap allocation.
@@ -2523,10 +2299,8 @@ public:
         return {};
     }
 
-    native_handle_type native_handle() const noexcept override
-    {
-        return fd_;
-    }
+    // native_handle / is_open / set_option / get_option / local_endpoint
+    // are inherited from native_socket_base.
 
     native_handle_type release_socket() noexcept override
     {
@@ -2543,37 +2317,18 @@ public:
             sched_->submit_cancel_by_fd(fd_);
     }
 
-    std::error_code set_option(
-        int         level,
-        int         optname,
-        void const* data,
-        std::size_t size) noexcept override
+    /// Cancel in-flight ops, close the fd, and reset cached endpoints.
+    /// Called by the service on close()/teardown.
+    void close_socket() noexcept
     {
-        if (::setsockopt(
-                fd_, level, optname,
-                reinterpret_cast<char const*>(data),
-                static_cast<socklen_t>(size)) != 0)
-            return make_err(errno);
-        return {};
-    }
-
-    std::error_code get_option(
-        int          level,
-        int          optname,
-        void*        data,
-        std::size_t* size) const noexcept override
-    {
-        socklen_t len = static_cast<socklen_t>(*size);
-        if (::getsockopt(fd_, level, optname,
-                reinterpret_cast<char*>(data), &len) != 0)
-            return make_err(errno);
-        *size = static_cast<std::size_t>(len);
-        return {};
-    }
-
-    corosio::local_endpoint local_endpoint() const noexcept override
-    {
-        return local_endpoint_;
+        if (fd_ >= 0)
+        {
+            sched_->cancel_and_flush(fd_);
+            ::close(fd_);
+            fd_ = -1;
+        }
+        local_endpoint_  = corosio::local_endpoint{};
+        remote_endpoint_ = corosio::local_endpoint{};
     }
 
     corosio::local_endpoint remote_endpoint() const noexcept override
@@ -2649,10 +2404,9 @@ private:
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec)
-                    *ec = stop_now ? capy::error::canceled
-                          : err   ? make_err(err)
-                                  : std::error_code{};
+                decode_io_result(
+                    ec, stop_now, err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 send_.cont_op.cont.h = h;
@@ -2740,10 +2494,9 @@ private:
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec)
-                    *ec = stop_now ? capy::error::canceled
-                          : err   ? make_err(err)
-                                  : std::error_code{};
+                decode_io_result(
+                    ec, stop_now, err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 if (n >= 0 && want_source && source_out && !empty_buf)
@@ -2816,8 +2569,14 @@ private:
     All public member functions are thread-safe.
 */
 class BOOST_COROSIO_DECL io_uring_local_datagram_service final
-    : public local_datagram_service
+    : public io_uring_socket_service_base<
+          io_uring_local_datagram_service, local_datagram_service,
+          io_uring_local_datagram_socket>
 {
+    using base_service = io_uring_socket_service_base<
+        io_uring_local_datagram_service, local_datagram_service,
+        io_uring_local_datagram_socket>;
+
 public:
     /// Identifies this service for `execution_context` lookup.
     using key_type = local_datagram_service;
@@ -2828,58 +2587,11 @@ public:
             must already be registered.
     */
     explicit io_uring_local_datagram_service(capy::execution_context& ctx)
-        : sched_(&ctx.use_service<io_uring_scheduler>())
+        : base_service(ctx)
     {}
 
-    void shutdown() override
-    {
-        std::vector<std::shared_ptr<io_uring_local_datagram_socket>> live;
-        {
-            std::lock_guard lk(mutex_);
-            live.reserve(impls_.size());
-            for (auto& [_, p] : impls_)
-                live.push_back(p);
-        }
-        // Cancel without the lock held to avoid inversion if cancel()
-        // ever needs to re-enter the service.
-        for (auto& p : live)
-            p->cancel();
-    }
-
-    io_object::implementation* construct() override
-    {
-        auto p   = std::make_shared<io_uring_local_datagram_socket>(
-            *this, *sched_);
-        auto* raw = p.get();
-        std::lock_guard lk(mutex_);
-        impls_.emplace(raw, std::move(p));
-        return raw;
-    }
-
-    void destroy(io_object::implementation* p) override
-    {
-        if (!p)
-            return;
-        std::lock_guard lk(mutex_);
-        impls_.erase(static_cast<io_uring_local_datagram_socket*>(p));
-    }
-
-    // Close the fd eagerly when local_datagram_socket::close() is called,
-    // before destroy() drops the shared_ptr and the destructor runs.
-    void close(io_object::handle& h) override
-    {
-        auto* sock = static_cast<io_uring_local_datagram_socket*>(h.get());
-        if (sock && sock->fd_ >= 0)
-        {
-            // Cancel pending SQEs before closing so the kernel resolves
-            // the fd number while it is still valid.
-            sched_->cancel_and_flush(sock->fd_);
-            ::close(sock->fd_);
-            sock->fd_              = -1;
-            sock->local_endpoint_  = corosio::local_endpoint{};
-            sock->remote_endpoint_ = corosio::local_endpoint{};
-        }
-    }
+    // construct / destroy / shutdown / close / scheduler() are inherited
+    // from io_uring_socket_service_base.
 
     /** Open an AF_UNIX datagram socket and associate it with an impl.
 
@@ -2971,15 +2683,6 @@ public:
             sock.local_endpoint_ = sockaddr_to_local_endpoint(local, local_len);
         return {};
     }
-
-    /// Return the scheduler used by sockets created by this service.
-    io_uring_scheduler& scheduler() noexcept { return *sched_; }
-
-private:
-    io_uring_scheduler*  sched_;
-    std::mutex           mutex_;
-    std::unordered_map<io_uring_local_datagram_socket*,
-                       std::shared_ptr<io_uring_local_datagram_socket>> impls_;
 };
 
 } // namespace boost::corosio::detail

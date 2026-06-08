@@ -471,7 +471,7 @@ win_local_stream_socket_internal::read_some(
 
     auto& op = rd_;
     op.reset();
-    op.is_read_  = true;
+    op.is_read  = true;
     op.h         = h;
     op.ex        = d;
     op.ec_out    = ec;

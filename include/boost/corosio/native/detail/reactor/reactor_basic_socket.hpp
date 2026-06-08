@@ -13,6 +13,7 @@
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/native/detail/native_socket_base.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_op_base.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
@@ -51,8 +52,7 @@ template<
     class DescState,
     class Endpoint = endpoint>
 class reactor_basic_socket
-    : public ImplBase
-    , public std::enable_shared_from_this<Derived>
+    : public native_socket_base<Derived, ImplBase, Endpoint>
     , public intrusive_list<Derived>::node
 {
     friend Derived;
@@ -66,96 +66,22 @@ class reactor_basic_socket
     explicit reactor_basic_socket(Service& svc) noexcept : svc_(svc) {}
 
 protected:
+    // fd_ / local_endpoint_ and the synchronous accessors (native_handle,
+    // is_open, set_option/get_option, set_socket/set_local_endpoint, do_bind)
+    // live in native_socket_base — the readiness/completion-agnostic base
+    // shared with io_uring's sockets. The using-declarations make the
+    // inherited members visible to this template's own unqualified
+    // references below (two-phase lookup).
+    using native_socket_base<Derived, ImplBase, Endpoint>::fd_;
+    using native_socket_base<Derived, ImplBase, Endpoint>::local_endpoint_;
+
     Service& svc_;
-    int fd_ = -1;
-    Endpoint local_endpoint_;
 
 public:
     /// Per-descriptor state for persistent reactor registration.
     DescState desc_state_;
 
     ~reactor_basic_socket() override = default;
-
-    /// Return the underlying file descriptor.
-    native_handle_type native_handle() const noexcept override
-    {
-        return fd_;
-    }
-
-    /// Return the cached local endpoint.
-    Endpoint local_endpoint() const noexcept override
-    {
-        return local_endpoint_;
-    }
-
-    /// Return true if the socket has an open file descriptor.
-    bool is_open() const noexcept
-    {
-        return fd_ >= 0;
-    }
-
-    /// Set a socket option.
-    std::error_code set_option(
-        int level,
-        int optname,
-        void const* data,
-        std::size_t size) noexcept override
-    {
-        if (::setsockopt(
-                fd_, level, optname, data, static_cast<socklen_t>(size)) != 0)
-            return make_err(errno);
-        return {};
-    }
-
-    /// Get a socket option.
-    std::error_code
-    get_option(int level, int optname, void* data, std::size_t* size)
-        const noexcept override
-    {
-        socklen_t len = static_cast<socklen_t>(*size);
-        if (::getsockopt(fd_, level, optname, data, &len) != 0)
-            return make_err(errno);
-        *size = static_cast<std::size_t>(len);
-        return {};
-    }
-
-    /// Assign the file descriptor.
-    void set_socket(int fd) noexcept
-    {
-        fd_ = fd;
-    }
-
-    /// Cache the local endpoint.
-    void set_local_endpoint(Endpoint ep) noexcept
-    {
-        local_endpoint_ = ep;
-    }
-
-    /** Bind the socket to a local endpoint.
-
-        Calls ::bind() and caches the resulting local endpoint
-        via getsockname().
-
-        @param ep The endpoint to bind to.
-        @return Error code on failure, empty on success.
-    */
-    std::error_code do_bind(Endpoint const& ep) noexcept
-    {
-        sockaddr_storage storage{};
-        socklen_t addrlen = to_sockaddr(ep, socket_family(fd_), storage);
-        if (::bind(fd_, reinterpret_cast<sockaddr*>(&storage), addrlen) != 0)
-            return make_err(errno);
-
-        sockaddr_storage local_storage{};
-        socklen_t local_len = sizeof(local_storage);
-        if (::getsockname(
-                fd_, reinterpret_cast<sockaddr*>(&local_storage), &local_len) ==
-            0)
-            local_endpoint_ =
-                from_sockaddr_as(local_storage, local_len, Endpoint{});
-
-        return {};
-    }
 
     /// Assign the fd, initialize descriptor state, and register with the reactor.
     void init_and_register(int fd) noexcept
