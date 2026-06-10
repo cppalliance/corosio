@@ -22,14 +22,18 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <stop_token>
 #include <string>
+#include <system_error>
+#include <type_traits>
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -75,13 +79,14 @@ struct temp_file
 
 } // namespace
 
+template<auto Backend>
 struct stream_file_test
 {
     // Construction and move semantics
 
     void testConstruction()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         BOOST_TEST(!f.is_open());
@@ -90,7 +95,7 @@ struct stream_file_test
 
     void testConstructionFromExecutor()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc.get_executor());
 
         BOOST_TEST(!f.is_open());
@@ -99,7 +104,7 @@ struct stream_file_test
 
     void testMoveConstruct()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f1(ioc);
         stream_file f2(std::move(f1));
 
@@ -108,7 +113,7 @@ struct stream_file_test
 
     void testMoveAssign()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f1(ioc);
         stream_file f2(ioc);
 
@@ -121,7 +126,7 @@ struct stream_file_test
     void testOpenReadOnly()
     {
         temp_file tmp("sf_open_ro_", "hello");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -134,7 +139,7 @@ struct stream_file_test
     void testOpenCreateWrite()
     {
         temp_file tmp("sf_open_cw_");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::write_only | file_base::create);
@@ -147,7 +152,7 @@ struct stream_file_test
 
     void testOpenNonexistent()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         bool threw = false;
@@ -167,7 +172,7 @@ struct stream_file_test
     void testOpenExclusive()
     {
         temp_file tmp("sf_excl_", "existing");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         // Opening with create|exclusive on an existing file should fail
@@ -189,7 +194,7 @@ struct stream_file_test
     {
         // Exercises the O_SYNC mapping in posix_stream_file::open_file.
         temp_file tmp("sf_sync_open_");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path,
@@ -216,7 +221,7 @@ struct stream_file_test
     {
         std::string data = "hello world";
         temp_file tmp("sf_size_", data);
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -226,18 +231,32 @@ struct stream_file_test
     void testResize()
     {
         temp_file tmp("sf_resize_", "hello world");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_write);
         f.resize(5);
         BOOST_TEST_EQ(f.size(), 5u);
+
+#if BOOST_COROSIO_POSIX
+        // Larger than off_t can represent: rejected with EOVERFLOW.
+        bool caught = false;
+        try
+        {
+            f.resize((std::numeric_limits<std::uint64_t>::max)());
+        }
+        catch (std::system_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+#endif
     }
 
     void testSeek()
     {
         temp_file tmp("sf_seek_", "0123456789");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -258,7 +277,7 @@ struct stream_file_test
     {
         std::string data = "hello world";
         temp_file tmp("sf_read_", data);
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -291,7 +310,7 @@ struct stream_file_test
     void testReadEOF()
     {
         temp_file tmp("sf_eof_", "hi");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -324,7 +343,7 @@ struct stream_file_test
     void testWriteSome()
     {
         temp_file tmp("sf_write_");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path,
@@ -361,7 +380,7 @@ struct stream_file_test
     void testSequentialReadWrite()
     {
         temp_file tmp("sf_seqrw_");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path,
@@ -411,7 +430,7 @@ struct stream_file_test
     void testSyncData()
     {
         temp_file tmp("sf_sync_");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path,
@@ -438,7 +457,7 @@ struct stream_file_test
     void testCancelNoOperation()
     {
         temp_file tmp("sf_cancel_", "data");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -449,7 +468,7 @@ struct stream_file_test
 
     void testCancelOnClosedFile()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         // cancel() on a closed file is a no-op (early return).
@@ -460,7 +479,7 @@ struct stream_file_test
     void testNativeHandleClosedAndOpen()
     {
         temp_file tmp("sf_nh_", "x");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -479,7 +498,7 @@ struct stream_file_test
     {
         temp_file tmp1("sf_replace_a_", "first");
         temp_file tmp2("sf_replace_b_", "second");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp1.path, file_base::read_only);
@@ -493,10 +512,17 @@ struct stream_file_test
 #if BOOST_COROSIO_POSIX
     void testOpenSingleThreadedNotSupported()
     {
+#if BOOST_COROSIO_HAS_IO_URING
+        // io_uring performs file I/O through the ring itself, so the
+        // single-threaded restriction below does not apply.
+        if constexpr (std::is_same_v<
+                std::remove_const_t<decltype(Backend)>, io_uring_t>)
+            return;
+#endif
         // POSIX file I/O requires the shared thread pool; in single-threaded
         // mode the service short-circuits with operation_not_supported.
         temp_file tmp("sf_st_", "data");
-        io_context ioc(1);
+        io_context ioc(Backend, 1);
         stream_file f(ioc);
 
         bool caught = false;
@@ -517,7 +543,7 @@ struct stream_file_test
         // Zero-byte read should short-circuit to completion via the
         // empty-iovec fast path in read_some.
         temp_file tmp("sf_read0_", "hello");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -540,7 +566,7 @@ struct stream_file_test
     {
         // Same empty-iovec fast path for write_some.
         temp_file tmp("sf_write0_");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path,
@@ -565,7 +591,7 @@ struct stream_file_test
     void testTruncate()
     {
         temp_file tmp("sf_trunc_", "original data here");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::write_only | file_base::truncate);
@@ -577,7 +603,7 @@ struct stream_file_test
     void testAppendMode()
     {
         temp_file tmp("sf_append_", "hello");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path,
@@ -612,7 +638,7 @@ struct stream_file_test
     void testSyncAll()
     {
         temp_file tmp("sf_syncall_");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path,
@@ -639,7 +665,7 @@ struct stream_file_test
     void testRelease()
     {
         temp_file tmp("sf_release_", "hello");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -692,7 +718,7 @@ struct stream_file_test
         auto raw_handle = fd;
 #endif
 
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
         f.assign(raw_handle);
         BOOST_TEST(f.is_open());
@@ -719,7 +745,7 @@ struct stream_file_test
 
     void testClosedFileThrows()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
         BOOST_TEST(!f.is_open());
 
@@ -744,7 +770,7 @@ struct stream_file_test
     void testSeekNegativeThrows()
     {
         temp_file tmp("sf_seekneg_", "0123456789");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -816,7 +842,7 @@ struct stream_file_test
     void testCancelWithStoppedToken()
     {
         temp_file tmp("sf_cancel_tok_", "hello world");
-        io_context ioc;
+        io_context ioc(Backend);
         stream_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -848,6 +874,6 @@ struct stream_file_test
     }
 };
 
-TEST_SUITE(stream_file_test, "boost.corosio.stream_file");
+COROSIO_BACKEND_TESTS(stream_file_test, "boost.corosio.stream_file")
 
 } // namespace boost::corosio
