@@ -22,14 +22,17 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <stop_token>
 #include <string>
+#include <system_error>
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -73,13 +76,14 @@ struct temp_file
 
 } // namespace
 
+template<auto Backend>
 struct random_access_file_test
 {
     // Construction
 
     void testConstruction()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         BOOST_TEST(!f.is_open());
@@ -88,7 +92,7 @@ struct random_access_file_test
 
     void testConstructionFromExecutor()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc.get_executor());
 
         BOOST_TEST(!f.is_open());
@@ -97,7 +101,7 @@ struct random_access_file_test
 
     void testMoveConstruct()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f1(ioc);
         random_access_file f2(std::move(f1));
 
@@ -109,7 +113,7 @@ struct random_access_file_test
     void testOpenReadOnly()
     {
         temp_file tmp("raf_open_ro_", "hello");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -121,7 +125,7 @@ struct random_access_file_test
 
     void testOpenNonexistent()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         bool threw = false;
@@ -143,7 +147,7 @@ struct random_access_file_test
     {
         std::string data = "0123456789";
         temp_file tmp("raf_size_", data);
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -153,12 +157,26 @@ struct random_access_file_test
     void testResize()
     {
         temp_file tmp("raf_resize_", "0123456789");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_write);
         f.resize(5);
         BOOST_TEST_EQ(f.size(), 5u);
+
+#if BOOST_COROSIO_POSIX
+        // Larger than off_t can represent: rejected with EOVERFLOW.
+        bool caught = false;
+        try
+        {
+            f.resize((std::numeric_limits<std::uint64_t>::max)());
+        }
+        catch (std::system_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+#endif
     }
 
     // Async read at offset
@@ -167,7 +185,7 @@ struct random_access_file_test
     {
         std::string data = "ABCDEFGHIJ";
         temp_file tmp("raf_read_", data);
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -196,7 +214,7 @@ struct random_access_file_test
     {
         std::string data = "hello world";
         temp_file tmp("raf_read0_", data);
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -223,7 +241,7 @@ struct random_access_file_test
     void testReadSomeAtEOF()
     {
         temp_file tmp("raf_eof_", "hi");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -250,7 +268,7 @@ struct random_access_file_test
     void testWriteSomeAt()
     {
         temp_file tmp("raf_write_");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path,
@@ -284,7 +302,7 @@ struct random_access_file_test
     void testWriteAndReadAtDifferentOffsets()
     {
         temp_file tmp("raf_wroff_");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path,
@@ -344,7 +362,7 @@ struct random_access_file_test
     {
         std::string data = "0123456789ABCDEF";
         temp_file tmp("raf_seqrd_", data);
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -376,7 +394,7 @@ struct random_access_file_test
     void testCancelNoOperation()
     {
         temp_file tmp("raf_cancel_", "data");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -387,7 +405,7 @@ struct random_access_file_test
 
     void testCancelOnClosedFile()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         // cancel() on a closed file is a no-op (early return).
@@ -398,7 +416,7 @@ struct random_access_file_test
     void testNativeHandleClosedAndOpen()
     {
         temp_file tmp("raf_nh_", "x");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -416,7 +434,7 @@ struct random_access_file_test
     {
         temp_file tmp1("raf_replace_a_", "first");
         temp_file tmp2("raf_replace_b_", "second");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp1.path, file_base::read_only);
@@ -432,7 +450,7 @@ struct random_access_file_test
     void testSyncData()
     {
         temp_file tmp("raf_sync_");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path,
@@ -462,7 +480,7 @@ struct random_access_file_test
         // 4 coroutines reading different offsets of the same file
         std::string data = "AAAABBBBCCCCDDDD";
         temp_file tmp("raf_conc_rd_", data);
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -496,7 +514,7 @@ struct random_access_file_test
     {
         // 4 coroutines writing non-overlapping offsets
         temp_file tmp("raf_conc_wr_");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path,
@@ -539,7 +557,7 @@ struct random_access_file_test
         // Simultaneous read and write at different offsets
         std::string data = "0123456789ABCDEF";
         temp_file tmp("raf_conc_rw_", data);
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_write);
@@ -586,7 +604,7 @@ struct random_access_file_test
                         'A' + (i % 26), block_sz);
 
         temp_file tmp("raf_many_", data);
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -666,7 +684,7 @@ struct random_access_file_test
 
     void testClosedFileThrows()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
         BOOST_TEST(!f.is_open());
 
@@ -690,7 +708,7 @@ struct random_access_file_test
     {
         // Exercises the O_SYNC mapping in posix_random_access_file::open_file.
         temp_file tmp("raf_sync_open_");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path,
@@ -717,7 +735,7 @@ struct random_access_file_test
         // create|exclusive on an existing file maps to O_EXCL and
         // surfaces EEXIST.
         temp_file tmp("raf_excl_", "x");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         bool threw = false;
@@ -740,7 +758,7 @@ struct random_access_file_test
         // create|exclusive on a new file path succeeds and exercises
         // the O_EXCL flag mapping.
         temp_file tmp("raf_excl_new_"); // no contents, file does not exist
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path,
@@ -755,7 +773,7 @@ struct random_access_file_test
         // Zero-byte read/write short-circuits before the pool dispatch
         // (early return at the top of read_some_at/write_some_at).
         temp_file tmp("raf_empty_", "hi");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_write);
@@ -785,7 +803,7 @@ struct random_access_file_test
         // stamps each op's cancelled flag.
         std::string data(std::size_t{64} * 1024, 'X');
         temp_file tmp("raf_cancel_inflight_", data);
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -819,7 +837,7 @@ struct random_access_file_test
         // Reading past end returns eof error code via the op-completion
         // bytes_transferred==0 branch (different from explicit EOF earlier).
         temp_file tmp("raf_pasteof_", "abc");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -843,7 +861,7 @@ struct random_access_file_test
     void testCancelWithStoppedToken()
     {
         temp_file tmp("raf_cancel_tok_", "hello world");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -877,7 +895,7 @@ struct random_access_file_test
     void testSyncAll()
     {
         temp_file tmp("raf_syncall_");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path,
@@ -905,7 +923,7 @@ struct random_access_file_test
     void testRelease()
     {
         temp_file tmp("raf_release_", "hello");
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
 
         f.open(tmp.path, file_base::read_only);
@@ -968,7 +986,7 @@ struct random_access_file_test
         auto raw_handle = fd;
 #endif
 
-        io_context ioc;
+        io_context ioc(Backend);
         random_access_file f(ioc);
         f.assign(raw_handle);
         BOOST_TEST(f.is_open());
@@ -993,6 +1011,6 @@ struct random_access_file_test
     }
 };
 
-TEST_SUITE(random_access_file_test, "boost.corosio.random_access_file");
+COROSIO_BACKEND_TESTS(random_access_file_test, "boost.corosio.random_access_file")
 
 } // namespace boost::corosio
