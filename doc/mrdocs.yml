@@ -26,4 +26,7 @@ multipage: true
 # use-system-libc: true
 # use-system-stdlib: true
 
+# Sorting
+sort-members-relational-last: false
+
 cmake: '-DCMAKE_CXX_STANDARD=20 -DBOOST_COROSIO_MRDOCS_BUILD=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF'
