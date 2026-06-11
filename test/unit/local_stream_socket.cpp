@@ -916,7 +916,10 @@ struct local_stream_socket_test
         testStopTokenAccept();
         testAcceptPendingConnection();
         testAcceptWithoutListen();
+#if !COROSIO_TEST_HAS_ASAN
+        // Abandons a parked coroutine frame by design; see context.hpp.
         testDestroyWithParkedAccept();
+#endif
 #endif
         testAcceptorOnClosedNoOp();
         testAcceptorBindClosedThrows();

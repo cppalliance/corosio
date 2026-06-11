@@ -20,12 +20,25 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <random>
+#include <atomic>
 #include <string>
 #include <system_error>
 
 namespace boost::corosio {
 
 namespace {
+
+// Unique across concurrently running per-backend test processes;
+// unseeded std::rand() yields the same sequence in every process.
+inline std::string
+unique_path_suffix()
+{
+    static unsigned const seed = std::random_device{}();
+    static std::atomic<unsigned> counter{0};
+    return std::to_string(seed) + "_"
+        + std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
+}
 
 // RAII helper that creates a temp file with given contents and removes it.
 struct temp_file
@@ -35,7 +48,7 @@ struct temp_file
     temp_file(std::string_view prefix, std::string_view contents)
     {
         path = std::filesystem::temp_directory_path()
-             / (std::string(prefix) + std::to_string(std::rand()));
+             / (std::string(prefix) + unique_path_suffix());
         std::ofstream ofs(path, std::ios::binary);
         ofs.write(contents.data(), static_cast<std::streamsize>(contents.size()));
     }
