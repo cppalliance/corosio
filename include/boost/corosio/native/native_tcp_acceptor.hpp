@@ -141,6 +141,44 @@ class native_tcp_acceptor : public tcp_acceptor
         }
     };
 
+    struct native_accept_value_awaitable
+    {
+        native_tcp_acceptor& acc_;
+        tcp_socket peer_;
+        std::stop_token token_;
+        mutable std::error_code ec_;
+        mutable io_object::implementation* peer_impl_ = nullptr;
+
+        explicit native_accept_value_awaitable(native_tcp_acceptor& acc)
+            : acc_(acc)
+            , peer_(acc.context())
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return token_.stop_requested();
+        }
+
+        capy::io_result<tcp_socket> await_resume() noexcept
+        {
+            if (token_.stop_requested())
+                return {make_error_code(std::errc::operation_canceled),
+                        std::move(peer_)};
+            if (!ec_ && peer_impl_)
+                acc_.reset_peer_impl(peer_, peer_impl_);
+            return {ec_, std::move(peer_)};
+        }
+
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
+        {
+            token_ = env->stop_token;
+            return acc_.get_impl().accept(
+                h, env->executor, token_, &ec_, &peer_impl_);
+        }
+    };
+
 public:
     /** Construct a native acceptor from an execution context.
 
@@ -206,6 +244,24 @@ public:
         if (!is_open())
             detail::throw_logic_error("accept: acceptor not listening");
         return native_accept_awaitable(*this, peer);
+    }
+
+    /** Asynchronously accept an incoming connection, returning the peer.
+
+        Calls the backend implementation directly, bypassing virtual
+        dispatch. Otherwise identical to @ref tcp_acceptor::accept().
+
+        @return An awaitable yielding `io_result<tcp_socket>`.
+
+        @throws std::logic_error if the acceptor is not listening.
+
+        This acceptor must outlive the returned awaitable.
+    */
+    auto accept()
+    {
+        if (!is_open())
+            detail::throw_logic_error("accept: acceptor not listening");
+        return native_accept_value_awaitable(*this);
     }
 
     /** Asynchronously wait for the acceptor to be ready.

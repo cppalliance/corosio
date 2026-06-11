@@ -36,6 +36,11 @@ struct native_tcp_acceptor_test
         "native_tcp_acceptor::accept must shadow tcp_acceptor::accept");
     static_assert(
         !std::is_same_v<
+            decltype(std::declval<native_tcp_acceptor<Backend>&>().accept()),
+            decltype(std::declval<tcp_acceptor&>().accept())>,
+        "native_tcp_acceptor::accept() must shadow tcp_acceptor::accept()");
+    static_assert(
+        !std::is_same_v<
             decltype(std::declval<native_tcp_acceptor<Backend>&>().wait(
                 wait_type::read)),
             decltype(std::declval<tcp_acceptor&>().wait(wait_type::read))>,
@@ -120,6 +125,51 @@ struct native_tcp_acceptor_test
         BOOST_TEST(!wait_ec);
     }
 
+    // Exercise the shadowed returning accept() awaitable on the
+    // devirtualized path: it yields a connected peer socket.
+    void testNativeAcceptReturning()
+    {
+        io_context ioc(Backend);
+        auto       ex = ioc.get_executor();
+
+        native_tcp_acceptor<Backend> acc(ioc);
+        acc.open();
+        acc.set_option(native_socket_option::reuse_address(true));
+        auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!bec);
+        auto lec = acc.listen();
+        BOOST_TEST(!lec);
+        auto port = acc.local_endpoint().port();
+
+        native_tcp_socket<Backend> client(ioc);
+        client.open();
+
+        std::error_code accept_ec;
+        bool            accept_done = false;
+        bool            peer_connected = false;
+
+        auto acceptor = [&]() -> capy::task<> {
+            auto [ec, peer] = co_await acc.accept();
+            accept_ec       = ec;
+            if (!ec)
+                peer_connected = peer.remote_endpoint().port() != 0;
+            accept_done = true;
+        };
+        auto connector = [&]() -> capy::task<> {
+            auto [ec] = co_await client.connect(
+                endpoint(ipv4_address::loopback(), port));
+            (void)ec;
+        };
+
+        capy::run_async(ex)(acceptor());
+        capy::run_async(ex)(connector());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(!accept_ec);
+        BOOST_TEST(peer_connected);
+    }
+
 #ifdef SO_REUSEPORT
     void testNativeReusePort()
     {
@@ -143,6 +193,7 @@ struct native_tcp_acceptor_test
         testAcceptorMoveConstruct();
         testAcceptorPolymorphicSlice();
         testWait();
+        testNativeAcceptReturning();
 #ifdef SO_REUSEPORT
         testNativeReusePort();
 #endif

@@ -287,6 +287,64 @@ struct tcp_acceptor_test
         acc.close();
     }
 
+    void testAcceptReturning()
+    {
+        // Returning overload: accept() yields the peer socket directly,
+        // associated with the acceptor's execution context.
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+        acc.open(tcp::v6());
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto port = acc.local_endpoint().port();
+
+        tcp_socket client(ioc);
+
+        bool accept_done    = false;
+        bool connect_done   = false;
+        bool peer_local_v6  = false;
+        bool peer_remote_v6 = false;
+        std::error_code accept_ec, connect_ec;
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(
+            [](tcp_acceptor& a, std::error_code& ec_out, bool& done,
+               bool& local_v6, bool& remote_v6) -> capy::task<> {
+                auto [ec, peer] = co_await a.accept();
+                ec_out          = ec;
+                if (!ec)
+                {
+                    local_v6  = peer.local_endpoint().is_v6();
+                    remote_v6 = peer.remote_endpoint().is_v6();
+                }
+                done = true;
+            }(acc, accept_ec, accept_done, peer_local_v6, peer_remote_v6));
+
+        capy::run_async(ex)(
+            [](tcp_socket& s, endpoint ep, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
+                auto [ec] = co_await s.connect(ep);
+                ec_out    = ec;
+                done      = true;
+            }(client, endpoint(ipv6_address::loopback(), port), connect_ec,
+                           connect_done));
+
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(!accept_ec);
+        BOOST_TEST(connect_done);
+        BOOST_TEST(!connect_ec);
+        BOOST_TEST(peer_local_v6);
+        BOOST_TEST(peer_remote_v6);
+
+        client.close();
+        acc.close();
+    }
+
     void testDualStackAccept()
     {
         io_context ioc(Backend);
@@ -666,6 +724,7 @@ struct tcp_acceptor_test
         // IPv6
         testListenV6();
         testAcceptV6();
+        testAcceptReturning();
 
         // Dual-stack
         testDualStackAccept();

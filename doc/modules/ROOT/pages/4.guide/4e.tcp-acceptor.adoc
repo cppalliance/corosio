@@ -137,6 +137,19 @@ connection on `peer` is closed first.
 The operation is asynchronous—your coroutine suspends until a connection
 arrives or an error occurs.
 
+There is also a returning overload that constructs the peer socket for you,
+associated with the acceptor's execution context:
+
+[source,cpp]
+----
+auto [ec, peer] = co_await acc.accept();
+----
+
+Prefer the returning overload for the common case: it is simpler and guarantees
+the acceptor and socket use the same `io_context`. Use the 
+`accept(tcp_socket&)` form when you pre-allocate or recycle sockets and want to
+manage their lifetime yourself.
+
 === Errors
 
 Common accept errors:
@@ -158,7 +171,8 @@ Common accept errors:
 === Preconditions
 
 * The tcp_acceptor must be listening (`is_open() == true`)
-* The peer socket must be associated with the same execution context
+* For `accept(tcp_socket&)`, the peer socket must be associated with the same
+  execution context as the acceptor (the returning overload guarantees this)
 
 == Cancellation
 

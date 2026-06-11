@@ -136,6 +136,45 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
         }
     };
 
+    struct accept_value_awaitable
+    {
+        tcp_acceptor& acc_;
+        tcp_socket peer_;
+        std::stop_token token_;
+        mutable std::error_code ec_;
+        mutable io_object::implementation* peer_impl_ = nullptr;
+
+        explicit accept_value_awaitable(tcp_acceptor& acc)
+            : acc_(acc)
+            , peer_(acc.context())
+        {
+        }
+
+        bool await_ready() const noexcept
+        {
+            return token_.stop_requested();
+        }
+
+        capy::io_result<tcp_socket> await_resume() noexcept
+        {
+            if (token_.stop_requested())
+                return {make_error_code(std::errc::operation_canceled),
+                        std::move(peer_)};
+
+            if (!ec_ && peer_impl_)
+                peer_.h_.reset(peer_impl_);
+            return {ec_, std::move(peer_)};
+        }
+
+        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+            -> std::coroutine_handle<>
+        {
+            token_ = env->stop_token;
+            return acc_.get().accept(
+                h, env->executor, token_, &ec_, &peer_impl_);
+        }
+    };
+
 public:
     /** Destructor.
 
@@ -341,12 +380,56 @@ public:
             // Use peer socket
         }
         @endcode
+
+        @see accept()
     */
     auto accept(tcp_socket& peer)
     {
         if (!is_open())
             detail::throw_logic_error("accept: acceptor not listening");
         return accept_awaitable(*this, peer);
+    }
+
+    /** Initiate an asynchronous accept operation, returning the peer.
+
+        Accepts an incoming connection and returns a newly constructed
+        socket for it, associated with this acceptor's execution context.
+        The acceptor must be listening before calling this function.
+
+        The caller does not pre-construct the peer socket; the returned
+        socket shares this acceptor's execution context.
+
+        The operation supports cancellation via `std::stop_token` through
+        the affine awaitable protocol. If the associated stop token is
+        triggered, the operation completes immediately with
+        `errc::operation_canceled`.
+
+        @return An awaitable that completes with `io_result<tcp_socket>`.
+            On success the payload is the connected peer socket; on failure
+            (including cancellation) the error code is set and the payload
+            socket is unconnected. Errors include:
+            - operation_canceled: Cancelled via stop_token or cancel().
+                Check `ec == cond::canceled` for portable comparison.
+
+        @par Preconditions
+        The acceptor must be listening (`is_open() == true`). This acceptor
+        must outlive the returned awaitable.
+
+        @par Example
+        @code
+        auto [ec, peer] = co_await acc.accept();
+        if (!ec) {
+            // peer is a connected socket
+        }
+        @endcode
+
+        @see accept(tcp_socket&)
+    */
+    auto accept()
+    {
+        if (!is_open())
+            detail::throw_logic_error("accept: acceptor not listening");
+        return accept_value_awaitable(*this);
     }
 
     /** Wait for an incoming connection or readiness condition.
