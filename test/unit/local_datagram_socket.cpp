@@ -296,11 +296,19 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
-        // Abstract socket: null byte prefix, no filesystem entry
+        // Abstract socket: null byte prefix, no filesystem entry. The
+        // abstract namespace is global per network namespace, so the
+        // .epoll/.select/.io_uring variants -- separate processes run
+        // concurrently by `ctest --parallel` -- must not share a name, or
+        // they race to bind it and the loser gets EADDRINUSE. The pid makes
+        // each process's names unique; abstract names are released on close,
+        // so a reused pid from an exited run cannot clash.
+        auto const tag =
+            "corosio_test_abstract_dgram_" + std::to_string(::getpid());
         std::string abs_path1(1, '\0');
-        abs_path1 += "corosio_test_abstract_dgram_1";
+        abs_path1 += tag + "_1";
         std::string abs_path2(1, '\0');
-        abs_path2 += "corosio_test_abstract_dgram_2";
+        abs_path2 += tag + "_2";
 
         local_datagram_socket s1(ioc);
         local_datagram_socket s2(ioc);
