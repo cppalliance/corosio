@@ -19,10 +19,17 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <chrono>
+#include <stop_token>
+
 #ifndef _WIN32
 // For the SO_REUSEPORT guard around testReusePort. The corosio public
 // option header is platform-agnostic and does not expose this macro.
+// netinet/in.h and unistd.h support the raw-socket backlog setup in
+// testAcceptPendingConnection.
+#include <netinet/in.h>
 #include <sys/socket.h>
+#include <unistd.h>
 #endif
 
 #include "context.hpp"
@@ -710,6 +717,152 @@ struct tcp_acceptor_test
         BOOST_TEST_EQ(acc.is_open(), false);
     }
 
+    // Stop-token cancel of a parked accept. Unlike testCancelAccept
+    // (acceptor-wide cancel()), this routes through the per-waiter
+    // stop callback.
+    void testStopTokenAccept()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        std::stop_source ss;
+        tcp_socket peer(ioc);
+        std::error_code accept_ec;
+        bool accept_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [aec]  = co_await acc.accept(peer);
+            accept_ec   = aec;
+            accept_done = true;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            timer t(ioc);
+            t.expires_after(std::chrono::milliseconds(20));
+            (void)co_await t.wait();
+            ss.request_stop();
+        };
+
+        capy::run_async(ex, ss.get_token())(waiter());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(accept_ec == capy::cond::canceled);
+    }
+
+#ifndef _WIN32
+    // Accept a connection that is already queued in the listen backlog
+    // before the io_context ever runs. The accept can then complete on
+    // the immediate path instead of parking a waiter.
+    void testAcceptPendingConnection()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto port = acc.local_endpoint().port();
+
+        // Raw blocking connect: completes via the kernel's listen
+        // backlog without the io_context running.
+        int cfd = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(cfd >= 0);
+        sockaddr_in sa{};
+        sa.sin_family      = AF_INET;
+        sa.sin_port        = htons(port);
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        int crc = ::connect(
+            cfd, reinterpret_cast<sockaddr const*>(&sa), sizeof(sa));
+        BOOST_TEST_EQ(crc, 0);
+
+        tcp_socket peer(ioc);
+        std::error_code accept_ec;
+        bool accept_done = false;
+
+        auto acceptor_task = [&]() -> capy::task<> {
+            auto [aec]  = co_await acc.accept(peer);
+            accept_ec   = aec;
+            accept_done = true;
+        };
+        capy::run_async(ex)(acceptor_task());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(!accept_ec);
+        BOOST_TEST(peer.is_open());
+        ::close(cfd);
+    }
+
+    // accept() on an open, bound, but non-listening socket fails with
+    // a system error instead of hanging.
+    void testAcceptWithoutListen()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+
+        tcp_socket peer(ioc);
+        std::error_code accept_ec;
+        bool accept_done = false;
+
+        auto acceptor_task = [&]() -> capy::task<> {
+            auto [aec]  = co_await acc.accept(peer);
+            accept_ec   = aec;
+            accept_done = true;
+        };
+        capy::run_async(ex)(acceptor_task());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        // Exact errno is platform-dependent (EINVAL on Linux); only
+        // require that an error is reported.
+        BOOST_TEST(accept_ec);
+        BOOST_TEST(!peer.is_open());
+    }
+
+    // Destroy the io_context with an accept still parked; service
+    // shutdown must release the waiter without resuming it.
+    void testDestroyWithParkedAccept()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        tcp_socket peer(ioc);
+
+        auto acceptor_task = [&]() -> capy::task<> {
+            (void)co_await acc.accept(peer);
+        };
+        capy::run_async(ex)(acceptor_task());
+
+        // Run the coroutine to its parked suspension point only, then
+        // fall off the end of the scope with the accept outstanding.
+        (void)ioc.run_one();
+        BOOST_TEST_PASS();
+    }
+#endif
+
     void run()
     {
         testConstruction();
@@ -748,6 +901,14 @@ struct tcp_acceptor_test
         testBindError();
         testListenClosedThrows();
         testClosedAcceptorAccessors();
+
+        // Waiter lifecycle
+        testStopTokenAccept();
+#ifndef _WIN32
+        testAcceptPendingConnection();
+        testAcceptWithoutListen();
+        testDestroyWithParkedAccept();
+#endif
     }
 };
 

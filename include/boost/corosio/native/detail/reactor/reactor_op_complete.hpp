@@ -100,8 +100,8 @@ complete_wait_op(Op& op)
     op.stop_cb.reset();
     if (op.socket_impl_)
         op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
-    else
-        op.acceptor_impl_->desc_state_.scheduler_->reset_inline_budget();
+    else if (auto* sched = op.acceptor_impl_->desc_state_.scheduler_)
+        sched->reset_inline_budget();
 
     // Wait reports only success/cancel/error — no bytes, no EOF.
     decode_io_result(
@@ -227,7 +227,8 @@ void
 complete_accept_op(Op& op)
 {
     op.stop_cb.reset();
-    op.acceptor_impl_->desc_state_.scheduler_->reset_inline_budget();
+    if (auto* sched = op.acceptor_impl_->desc_state_.scheduler_)
+        sched->reset_inline_budget();
 
     bool success =
         (op.errn == 0 && !op.cancelled.load(std::memory_order_acquire));

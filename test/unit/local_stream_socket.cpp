@@ -28,10 +28,14 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_POSIX
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #else
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 #endif
+
+#include <stop_token>
 
 #include <chrono>
 #include <compare>
@@ -571,6 +575,153 @@ struct local_stream_socket_test
         BOOST_TEST(accept_done);
         BOOST_TEST(accept_ec == capy::cond::canceled);
     }
+
+    // Stop-token cancel of a parked accept. Unlike
+    // testCancelPendingAccept (acceptor-wide cancel()), this routes
+    // through the per-waiter stop callback.
+    void testStopTokenAccept()
+    {
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        test::temp_socket_dir tmp;
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(tmp.path()));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        std::stop_source ss;
+        local_stream_socket server(ioc);
+        std::error_code accept_ec;
+        bool accept_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [aec]  = co_await acc.accept(server);
+            accept_ec   = aec;
+            accept_done = true;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            timer t(ioc);
+            t.expires_after(std::chrono::milliseconds(20));
+            (void)co_await t.wait();
+            ss.request_stop();
+        };
+
+        capy::run_async(ex, ss.get_token())(waiter());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(accept_ec == capy::cond::canceled);
+    }
+
+    // Accept a connection that is already queued in the listen backlog
+    // before the io_context ever runs. The accept can then complete on
+    // the immediate path instead of parking a waiter.
+    void testAcceptPendingConnection()
+    {
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(path));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        // Raw blocking connect: completes via the kernel's listen
+        // backlog without the io_context running.
+        int cfd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+        BOOST_TEST(cfd >= 0);
+        sockaddr_un sa{};
+        sa.sun_family = AF_UNIX;
+        std::strncpy(sa.sun_path, path.c_str(), sizeof(sa.sun_path) - 1);
+        int crc = ::connect(
+            cfd, reinterpret_cast<sockaddr const*>(&sa), sizeof(sa));
+        BOOST_TEST_EQ(crc, 0);
+
+        local_stream_socket server(ioc);
+        std::error_code accept_ec;
+        bool accept_done = false;
+
+        auto acceptor_task = [&]() -> capy::task<> {
+            auto [aec]  = co_await acc.accept(server);
+            accept_ec   = aec;
+            accept_done = true;
+        };
+        capy::run_async(ex)(acceptor_task());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(!accept_ec);
+        BOOST_TEST(server.is_open());
+        ::close(cfd);
+    }
+
+    // accept() on an open, bound, but non-listening socket fails with
+    // a system error instead of hanging.
+    void testAcceptWithoutListen()
+    {
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        test::temp_socket_dir tmp;
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(tmp.path()));
+        BOOST_TEST(!ec);
+
+        local_stream_socket server(ioc);
+        std::error_code accept_ec;
+        bool accept_done = false;
+
+        auto acceptor_task = [&]() -> capy::task<> {
+            auto [aec]  = co_await acc.accept(server);
+            accept_ec   = aec;
+            accept_done = true;
+        };
+        capy::run_async(ex)(acceptor_task());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        // Exact errno is platform-dependent (EINVAL on Linux); only
+        // require that an error is reported.
+        BOOST_TEST(accept_ec);
+        BOOST_TEST(!server.is_open());
+    }
+
+    // Destroy the io_context with an accept still parked; service
+    // shutdown must release the waiter without resuming it.
+    void testDestroyWithParkedAccept()
+    {
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        test::temp_socket_dir tmp;
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(tmp.path()));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        local_stream_socket server(ioc);
+
+        auto acceptor_task = [&]() -> capy::task<> {
+            (void)co_await acc.accept(server);
+        };
+        capy::run_async(ex)(acceptor_task());
+
+        // Run the coroutine to its parked suspension point only, then
+        // fall off the end of the scope with the accept outstanding.
+        (void)ioc.run_one();
+        BOOST_TEST_PASS();
+    }
 #endif // BOOST_COROSIO_POSIX
 
     void testAcceptorOnClosedNoOp()
@@ -762,6 +913,10 @@ struct local_stream_socket_test
         testAvailableClosedThrows();
         testConnectToNonexistent();
         testCancelPendingAccept();
+        testStopTokenAccept();
+        testAcceptPendingConnection();
+        testAcceptWithoutListen();
+        testDestroyWithParkedAccept();
 #endif
         testAcceptorOnClosedNoOp();
         testAcceptorBindClosedThrows();
