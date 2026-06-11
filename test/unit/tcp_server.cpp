@@ -19,10 +19,10 @@
 
 #include <atomic>
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
-namespace {
 
 class test_worker : public tcp_server::worker_base
 {
@@ -71,13 +71,13 @@ public:
     }
 };
 
-} // namespace
 
+template<auto Backend>
 struct tcp_server_test
 {
     void testStopServer()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         test_server srv(ioc);
 
         // Bind to ephemeral port
@@ -113,7 +113,7 @@ struct tcp_server_test
 
     void testStopWithActiveConnection()
     {
-        io_context ioc;
+        io_context ioc(Backend);
 
         test_server srv(ioc);
         auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
@@ -170,7 +170,7 @@ struct tcp_server_test
 
     void testStartIdempotent()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         test_server srv(ioc);
 
         auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
@@ -193,7 +193,7 @@ struct tcp_server_test
 
     void testStopIdempotent()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         test_server srv(ioc);
 
         auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
@@ -217,7 +217,7 @@ struct tcp_server_test
 
     void testStopWithoutStart()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         test_server srv(ioc);
 
         auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
@@ -232,7 +232,7 @@ struct tcp_server_test
         // Test the "stop the world" pattern:
         // start -> run -> stop -> run (drain) -> join -> restart
 
-        io_context ioc;
+        io_context ioc(Backend);
 
         test_server srv(ioc);
         auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
@@ -326,7 +326,7 @@ struct tcp_server_test
     void testStartWithoutJoinThrows()
     {
         // Deterministic test: start() throws if previous session not joined
-        io_context ioc;
+        io_context ioc(Backend);
         test_server srv(ioc);
 
         auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
@@ -365,7 +365,7 @@ struct tcp_server_test
 
     void testListenErrorCode()
     {
-        io_context ioc;
+        io_context ioc(Backend);
 
         // Test success case
         tcp_acceptor acc1(ioc);
@@ -393,7 +393,7 @@ struct tcp_server_test
 
     void testBindSuccess()
     {
-        io_context ioc;
+        io_context ioc(Backend);
 
         // Test that tcp_server::bind returns no error and doesn't throw
         test_server srv(ioc);
@@ -403,7 +403,7 @@ struct tcp_server_test
 
     void testBindErrorNonLocalAcceptor()
     {
-        io_context ioc;
+        io_context ioc(Backend);
 
         // Binding to a non-local IP address should fail with
         // "can't assign requested address" (EADDRNOTAVAIL) on all platforms.
@@ -418,7 +418,7 @@ struct tcp_server_test
 
     void testBindErrorNonLocalAddress()
     {
-        io_context ioc;
+        io_context ioc(Backend);
 
         // tcp_server::bind should return an error for non-local address
         test_server srv(ioc);
@@ -428,7 +428,7 @@ struct tcp_server_test
 
     void testRelistenAfterClose()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
         // First listen
@@ -455,7 +455,7 @@ struct tcp_server_test
     {
         // Verify the noexcept move constructor leaves the source empty
         // and the destination with the original state.
-        io_context ioc;
+        io_context ioc(Backend);
         test_server src(ioc);
         auto ec = src.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -472,7 +472,7 @@ struct tcp_server_test
     void testMoveAssign()
     {
         // Move-assign discards the existing impl_ and adopts the source.
-        io_context ioc;
+        io_context ioc(Backend);
         test_server a(ioc);
         test_server b(ioc);
 
@@ -492,7 +492,7 @@ struct tcp_server_test
         // worker_base::run() never invokes the launcher; the launcher
         // destructor must return the worker to the idle pool via
         // push_sync. After stop() the accept loop completes cleanly.
-        io_context ioc;
+        io_context ioc(Backend);
 
         class no_launch_worker : public tcp_server::worker_base
         {
@@ -568,7 +568,7 @@ struct tcp_server_test
     {
         // Multiple concurrent connections exercise the active list's
         // doubly-linked-list bookkeeping (push_back/remove with prev/next).
-        io_context ioc;
+        io_context ioc(Backend);
 
         // Worker that holds the connection open until told to release.
         class slow_worker : public tcp_server::worker_base
@@ -672,7 +672,7 @@ struct tcp_server_test
     {
         // The second invocation of a launcher must throw logic_error.
         // We accept the connection but invoke launch twice inside run().
-        io_context ioc;
+        io_context ioc(Backend);
 
         class throwing_worker : public tcp_server::worker_base
         {
@@ -761,7 +761,7 @@ struct tcp_server_test
     void testLocalEndpointOutOfRange()
     {
         // Index past the bound-ports list returns a default endpoint.
-        io_context ioc;
+        io_context ioc(Backend);
         test_server srv(ioc);
         auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -775,7 +775,7 @@ struct tcp_server_test
         // With one worker handling two sequential connections, the
         // second accept loop iteration must wait for the worker to
         // return (exercises pop_awaitable suspend / push_awaitable wake).
-        io_context ioc;
+        io_context ioc(Backend);
 
         class one_worker_server : public tcp_server
         {
@@ -853,6 +853,6 @@ struct tcp_server_test
     }
 };
 
-TEST_SUITE(tcp_server_test, "boost.corosio.tcp_server");
+COROSIO_BACKEND_TESTS(tcp_server_test, "boost.corosio.tcp_server")
 
 } // namespace boost::corosio
