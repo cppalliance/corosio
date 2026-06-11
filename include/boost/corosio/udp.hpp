@@ -22,10 +22,11 @@ class udp_socket;
     (IPv4 or IPv6). It is used to parameterize `udp_socket::open()`
     calls with a self-documenting type.
 
-    The `family()`, `type()`, and `protocol()` members are
-    implemented in the compiled library to avoid exposing
-    platform socket headers. For an inline variant that includes
-    platform headers, use @ref native_udp.
+    The `family()`, `type()`, and `protocol()` members return the
+    three integers passed to the operating system's `socket()`
+    call. Their values are platform-defined constants taken from
+    the system socket headers. For an inline variant that includes
+    those headers, use @ref native_udp.
 
     @par Example
     @code
@@ -69,7 +70,7 @@ public:
     /// Return the IP protocol (IPPROTO_UDP).
     static int protocol() noexcept;
 
-    /// The associated socket type.
+    /// The socket type to use with this protocol, @ref udp_socket.
     using socket = udp_socket;
 
     /// Test for equality.

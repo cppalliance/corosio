@@ -23,10 +23,11 @@ class tcp_acceptor;
     (IPv4 or IPv6). It is used to parameterize socket and acceptor
     `open()` calls with a self-documenting type.
 
-    The `family()`, `type()`, and `protocol()` members are
-    implemented in the compiled library to avoid exposing
-    platform socket headers. For an inline variant that includes
-    platform headers, use @ref native_tcp.
+    The `family()`, `type()`, and `protocol()` members return the
+    three integers passed to the operating system's `socket()`
+    call. Their values are platform-defined constants taken from
+    the system socket headers. For an inline variant that includes
+    those headers, use @ref native_tcp.
 
     @par Example
     @code
@@ -72,10 +73,10 @@ public:
     /// Return the IP protocol (IPPROTO_TCP).
     static int protocol() noexcept;
 
-    /// The associated socket type.
+    /// The socket type to use with this protocol, @ref tcp_socket.
     using socket = tcp_socket;
 
-    /// The associated acceptor type.
+    /// The acceptor type to use with this protocol, @ref tcp_acceptor.
     using acceptor = tcp_acceptor;
 
     /// Test for equality.
