@@ -93,4 +93,20 @@
     COROSIO_TEST_KQUEUE_(impl, name)              \
     COROSIO_TEST_SELECT_(impl, name)
 
+// Tests that destroy the io_context with ops still parked abandon the
+// suspended coroutine frames: op destroy() must not resume or destroy
+// them (resuming runs user code during teardown; destroying recurses
+// through the promise destructor). LeakSanitizer rightly reports those
+// frames, so such tests are skipped under ASAN.
+#if defined(__SANITIZE_ADDRESS__)
+#define COROSIO_TEST_HAS_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define COROSIO_TEST_HAS_ASAN 1
+#endif
+#endif
+#ifndef COROSIO_TEST_HAS_ASAN
+#define COROSIO_TEST_HAS_ASAN 0
+#endif
+
 #endif

@@ -1666,7 +1666,10 @@ struct reactor_paths_test
         testLocalDgramShutdownReceive();
         testStopTokenLocalStreamRead();
         testLocalStreamWriteEAGAIN();
+#if !COROSIO_TEST_HAS_ASAN
+        // Abandons parked coroutine frames by design; see context.hpp.
         testShutdownWithParkedOps();
+#endif
 #endif
     }
 };
