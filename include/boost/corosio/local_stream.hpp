@@ -23,9 +23,10 @@ class local_stream_acceptor;
     socket and acceptor open() calls with a self-documenting
     type.
 
-    The family(), type(), and protocol() members are implemented
-    in the compiled library to avoid exposing platform socket
-    headers.
+    The family(), type(), and protocol() members return the
+    three integers passed to the operating system's socket()
+    call. Their values are platform-defined constants taken from
+    the system socket headers.
 
     @par Example
     @code
@@ -38,19 +39,25 @@ class local_stream_acceptor;
 class BOOST_COROSIO_DECL local_stream
 {
 public:
-    /// Return the address family (AF_UNIX).
+    /// Return the address family, the platform's `AF_UNIX` constant.
     static int family() noexcept;
 
-    /// Return the socket type (SOCK_STREAM).
+    /// Return the socket type, the platform's `SOCK_STREAM` constant.
     static int type() noexcept;
 
-    /// Return the protocol (0).
+    /** Return the protocol number, always `0`.
+
+        A value of `0` directs the operating system to select the
+        default protocol for an `AF_UNIX` `SOCK_STREAM` socket. It
+        is not an index into a list of protocols: Unix domain
+        stream sockets have only one, so `0` is the sole valid value.
+    */
     static int protocol() noexcept;
 
-    /// The associated socket type.
+    /// The socket type to use with this protocol, @ref local_stream_socket.
     using socket = local_stream_socket;
 
-    /// The associated acceptor type.
+    /// The acceptor type to use with this protocol, @ref local_stream_acceptor.
     using acceptor = local_stream_acceptor;
 };
 
