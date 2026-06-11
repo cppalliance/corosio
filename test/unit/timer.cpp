@@ -633,14 +633,12 @@ struct timer_test
     {
         io_context ioc(Backend);
         timer t(ioc);
-        timer delay(ioc);
 
         std::stop_source stop_src;
         bool w1 = false, w2 = false;
         std::error_code ec1, ec2;
 
         t.expires_after(std::chrono::milliseconds(500));
-        delay.expires_after(std::chrono::milliseconds(10));
 
         // w1 has a stop_token — will be cancelled individually
         auto wait_task = [&]() -> capy::task<> {
@@ -656,9 +654,16 @@ struct timer_test
             w2        = true;
         };
 
+        // Cancel w1 once both waiters are registered. Posting through the
+        // executor (rather than racing a wall-clock delay timer against t's
+        // expiry) makes the ordering deterministic: run_async queues the
+        // tasks, and the IOCP/reactor loop drains posted completions in FIFO
+        // order, so both wait tasks run and suspend on t before this task
+        // calls request_stop(). t's deadline is far enough out that w2 then
+        // completes via a normal expiry afterwards.
         auto cancel_one = [&]() -> capy::task<> {
-            (void)co_await delay.wait();
             stop_src.request_stop();
+            co_return;
         };
 
         capy::run_async(ioc.get_executor(), stop_src.get_token())(wait_task());
