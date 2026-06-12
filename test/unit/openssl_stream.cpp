@@ -118,6 +118,10 @@ struct openssl_stream_test
         test::testSni(make_stream);
         test::testSniCallback(make_stream);
         test::testMtls(make_stream);
+        test::testMoveSemantics(make_stream);
+        test::testAbruptClose(make_stream);
+        test::testEncryptedKey(make_stream);
+        test::testInvalidContextHandshake(make_stream);
 
         test::testReset(make_stream, cert_modes);
         test::testResetViaHandshake(make_stream, cert_modes);

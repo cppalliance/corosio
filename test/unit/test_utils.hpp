@@ -624,6 +624,67 @@ make_wrong_ca_context()
     return ctx;
 }
 
+/** server_key_pem encrypted with AES-128-CBC (traditional PEM).
+    Passphrase: "test-password"
+    Command:
+      openssl rsa -traditional -in server_key.pem -aes128 -passout pass:test-password
+*/
+inline constexpr char const* encrypted_server_key_pem =
+    "-----BEGIN RSA PRIVATE KEY-----\n"
+    "Proc-Type: 4,ENCRYPTED\n"
+    "DEK-Info: AES-128-CBC,8042604E303B1469DCCA597EA6555AA9\n"
+    "\n"
+    "c6KSpVasopI6/gsa+NOVnOsMGJG8Y1emu3J4aLsCoYkHWQT7axL/ZLTH7AjRn4Sj\n"
+    "HD+gP/4QA6UMdVqShesc4zd1bEhq2RV3yir6ast6IfXB3zpq4ggK2cLMYYOo4VwF\n"
+    "jKP4XTN8KL3xLQssWdahPsPnkFBR0M/VCo6YCpuZi8zc5iAOHzkGVXf3rCkRORtO\n"
+    "5qssbqV33FzwHPeH0PuKWZxcApYfLSRA7vt/bqIxg49WhXGJMhkv4qFpSoaiZ5Tc\n"
+    "HlNLfrTbG+A0zUh6f3Oeqm6F95LP7yi2TGxM7oGiJtkwksWoEvS4d9p+NmRNKr0i\n"
+    "gZJjOUKq9oxPzFdcRS1H7AkDjraw3q1NTxrcFlXbjtxDm9t6GkLuwXfUz0n31IL9\n"
+    "/jQX3/N3eVKp8mHMRWmdtllmK0/XeYBH5A4MKpBz4/smuDoStMsmezP4+0qYyE2H\n"
+    "YUHaTlTrJQBG/BpIJmJk7BfzqGoTg3dgSNxMc1gYpCwcK0X/w+6HzEOtMjGWGhv1\n"
+    "Cbq03wMH8BLdIFMNRpnN0cLUBJItnn58AxDg0JsIii7jxEpAVVpl3tTC5Lk3q97k\n"
+    "15fpGhMKya8iZ0EFs6jdjuJoGNl7+KnMoet0cQ1CyV5uSzus6qBdz6ATHsF8KTRj\n"
+    "xNCXc1cbEt8A2soazFBUVeN1MQFt5yTKLCEz1Sb4M9Wn3IT07JUpWjGZLIrz9KWe\n"
+    "JU2oKjSxQmKbAPmpRRe84MR5O8qCytCAstR/GG+qU1HZsW/bgB/2RTY7kcTeOpke\n"
+    "/jw2iZUygNkXgCiik+LqwAbchkVw6ImRYCTdaXfq+bFwV+2JBUMfotCgxawFVaDc\n"
+    "EdEF18g01II/xxr9HGA6hCJioP4curRiJNeqqs0S+4nJAxv8IiesdbmzbxBzAPql\n"
+    "bzcfmrMH2qrDEJg1NiPaMODwfcdpgfjE5yMewI+nCRuOWSVPzk092zmPI9qv1xFK\n"
+    "B+76CzH88yGESip3x2Zsce1FB/HV2CBcvzjIkkMtHdFzpXidg0bS7vDG4WTyGdti\n"
+    "9z3K31rD0qi6IRtQlLiHZIaKhSMNqPnfePRCru0S4rHWGcVtdrsKaHL201meLSPi\n"
+    "Iw82DRbNVs/lLPGtMJ0DzKbJvTMWFoC0zZ/nIaRa2hi7nd/Ig0oD19cVIkB4IWPp\n"
+    "tuR53NZs9EsEqjNnNmn5ftdTAO8P50EulaaPjJggIF59C9u74hhgI+UvMrnOhq0C\n"
+    "nlyfUgl6nS0WgBc+rtCdB59xppPobefyZ06Rud4QFJmz/wdazXzuimPCkpNDv/8t\n"
+    "lbS952xleT2dYawtho4K+ZMV6q2SFfjAXZjhy/fbVP1vqqXOZPeEC4n070ITifHO\n"
+    "GN/5evJpcYxohXB2paKkwHWeN9oaolBXBpW5zZKNacEcu/uFWjN8UYuxO/9/Wls7\n"
+    "yimyYsmoYtbxVTH5H+UE4TlaIhGXy46VzYRkEYx43m7laIPdyyctQV4cb7Xec9ZS\n"
+    "o/UWTdrl/e0k0UoftWRH4a5RCubDQ21khoyTabVSfiJY48GEAUExGItiG6C7KZ/S\n"
+    "xXW6nBG4TmkXJYEwVNJfVygvVDjFPrHtKhFLHs7nsigDK0jNvTbAXNhhCrSMkLC8\n"
+    "-----END RSA PRIVATE KEY-----\n";
+
+/// Passphrase matching `encrypted_server_key_pem`.
+inline constexpr char const* encrypted_key_password = "test-password";
+
+/** Create a server context whose key needs the password callback. */
+inline tls_context
+make_encrypted_key_server_context(bool& callback_invoked)
+{
+    tls_context ctx;
+    ctx.use_certificate(
+        server_cert_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_password_callback(
+        [&callback_invoked](std::size_t, tls_password_purpose) {
+            callback_invoked = true;
+            return std::string(encrypted_key_password);
+        });
+    ctx.use_private_key(
+        encrypted_server_key_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    ctx.set_verify_mode(
+        tls_verify_mode::none); // NOLINT(bugprone-unused-return-value)
+    return ctx;
+}
+
 /** Create a context that requires peer verification but has no cert. */
 inline tls_context
 make_verify_no_cert_context()

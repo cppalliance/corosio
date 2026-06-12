@@ -36,8 +36,8 @@
 
     Data Flow (using BIO pairs)
     ---------------------------
-    App -> SSL_write -> int_bio_ -> BIO_read(ext_bio_) -> out_buf_ -> s_.write_some -> Network
-    App <- SSL_read  <- int_bio_ <- BIO_write(ext_bio_) <- in_buf_ <- s_.read_some  <- Network
+    App -> SSL_write -> int_bio_ -> BIO_read(ext_bio_) -> out_buf_ -> s_->write_some -> Network
+    App <- SSL_read  <- int_bio_ <- BIO_write(ext_bio_) <- in_buf_ <- s_->read_some  <- Network
 
     WANT_READ / WANT_WRITE Pattern
     ------------------------------
@@ -46,8 +46,8 @@
 
       1. Call SSL_read or SSL_write
       2. Check for pending output in ext_bio_ via BIO_ctrl_pending
-      3. If output pending: write to network via s_.write_some
-      4. If SSL_ERROR_WANT_READ: read from network into ext_bio_ via s_.read_some + BIO_write
+      3. If output pending: write to network via s_->write_some
+      4. If SSL_ERROR_WANT_READ: read from network into ext_bio_ via s_->read_some + BIO_write
       5. Loop back to step 1
 
     Renegotiation causes cross-direction I/O: SSL_read may need to write
@@ -311,7 +311,7 @@ get_openssl_context(tls_context_data const& cd)
 
 struct openssl_stream::impl
 {
-    capy::any_stream& s_;
+    capy::any_stream* s_;
     tls_context ctx_;
     SSL* ssl_     = nullptr;
     BIO* ext_bio_ = nullptr;
@@ -322,7 +322,7 @@ struct openssl_stream::impl
 
     capy::async_mutex io_cm_;
 
-    impl(capy::any_stream& s, tls_context ctx) : s_(s), ctx_(std::move(ctx))
+    impl(capy::any_stream& s, tls_context ctx) : s_(&s), ctx_(std::move(ctx))
     {
         in_buf_.resize(default_buffer_size);
         out_buf_.resize(default_buffer_size);
@@ -379,7 +379,7 @@ struct openssl_stream::impl
                     co_return lec;
                 capy::async_mutex::lock_guard io_guard(&io_cm_);
                 auto [ec, n] = co_await capy::write(
-                    s_, capy::const_buffer(out_buf_.data(), got));
+                    *s_, capy::const_buffer(out_buf_.data(), got));
                 if (ec)
                     co_return ec;
             }
@@ -393,7 +393,7 @@ struct openssl_stream::impl
         if (lec)
             co_return lec;
         capy::async_mutex::lock_guard io_guard(&io_cm_);
-        auto [ec, n] = co_await s_.read_some(
+        auto [ec, n] = co_await s_->read_some(
             capy::mutable_buffer(in_buf_.data(), in_buf_.size()));
         if (ec)
             co_return ec;
@@ -738,6 +738,8 @@ openssl_stream::openssl_stream(openssl_stream&& other) noexcept
     , impl_(other.impl_)
 {
     other.impl_ = nullptr;
+    if (impl_)
+        impl_->s_ = &stream_;
 }
 
 openssl_stream&
@@ -749,6 +751,8 @@ openssl_stream::operator=(openssl_stream&& other) noexcept
         stream_     = std::move(other.stream_);
         impl_       = other.impl_;
         other.impl_ = nullptr;
+        if (impl_)
+            impl_->s_ = &stream_;
     }
     return *this;
 }
