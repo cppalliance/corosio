@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -161,7 +162,7 @@ posix_resolver_detail::convert_results(
         }
     }
 
-    return resolver_results(std::move(entries));
+    return entries;
 }
 
 inline std::error_code

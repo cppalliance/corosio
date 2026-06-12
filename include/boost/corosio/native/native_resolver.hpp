@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -191,6 +192,9 @@ public:
         @param service The service name or port string.
 
         @return An awaitable yielding `io_result<resolver_results>`.
+
+        @note `resolver_results` is an alias for `std::vector<resolver_entry>`;
+            copying it deep-copies every entry. See @ref resolver::resolve.
     */
     auto resolve(std::string_view host, std::string_view service)
     {
