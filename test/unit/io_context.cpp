@@ -238,6 +238,25 @@ post_coro(io_context::executor_type& ex, std::coroutine_handle<> h)
     ex.post(h);
 }
 
+inline capy::task<capy::io_result<>>
+set_event_task(capy::async_event& evt)
+{
+    evt.set();
+    co_return capy::io_result<>{std::error_code{}};
+}
+
+inline capy::task<void>
+when_all_set_event_main(bool& finished)
+{
+    capy::async_event evt;
+    auto [ec, a, b] = co_await capy::when_all(evt.wait(), set_event_task(evt));
+    (void)a;
+    (void)b;
+    BOOST_TEST(!ec);
+    finished = true;
+}
+
+template<auto Backend>
 struct io_context_test
 {
     void testConstruction()
@@ -278,7 +297,7 @@ struct io_context_test
     {
         io_context_options opts;
         opts.thread_pool_size = 4;
-        io_context ioc(opts, 2);
+        io_context ioc(Backend, opts, 2);
         BOOST_TEST(!ioc.stopped());
     }
 
@@ -287,7 +306,7 @@ struct io_context_test
         // concurrency_hint == 1 enables single-threaded mode automatically.
         io_context_options opts;
         opts.single_threaded = true;
-        io_context ioc(opts, 1);
+        io_context ioc(Backend, opts, 1);
         BOOST_TEST(!ioc.stopped());
 
         int counter = 0;
@@ -300,7 +319,7 @@ struct io_context_test
 
     void testGetExecutor()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
         // Executor should be valid
@@ -310,7 +329,7 @@ struct io_context_test
 
     void testRun()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex     = ioc.get_executor();
         int counter = 0;
 
@@ -327,7 +346,7 @@ struct io_context_test
 
     void testRunOne()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex     = ioc.get_executor();
         int counter = 0;
 
@@ -349,7 +368,7 @@ struct io_context_test
 
     void testPoll()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex     = ioc.get_executor();
         int counter = 0;
 
@@ -373,7 +392,7 @@ struct io_context_test
 
     void testPollOne()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex     = ioc.get_executor();
         int counter = 0;
 
@@ -405,7 +424,7 @@ struct io_context_test
 
     void testStopAndRestart()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex     = ioc.get_executor();
         int counter = 0;
 
@@ -435,7 +454,7 @@ struct io_context_test
 
     void testRunOneFor()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex     = ioc.get_executor();
         int counter = 0;
 
@@ -457,7 +476,7 @@ struct io_context_test
 
     void testRunOneUntil()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex     = ioc.get_executor();
         int counter = 0;
 
@@ -488,7 +507,7 @@ struct io_context_test
         // is the deterministic form of a valgrind/CI flake where the thread
         // is preempted past the deadline before the first loop check, so
         // wait_one (which holds the "no work -> stop" logic) was skipped.
-        io_context ioc;
+        io_context ioc(Backend);
 
         auto past =
             std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
@@ -505,7 +524,7 @@ struct io_context_test
 
     void testRunFor()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex     = ioc.get_executor();
         int counter = 0;
 
@@ -532,7 +551,7 @@ struct io_context_test
 
     void testRunForWithOutstandingWork()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
         // Simulate persistent outstanding work (like a listening acceptor)
@@ -555,7 +574,7 @@ struct io_context_test
 
     void testRunOneForWithOutstandingWork()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
         ex.on_work_started();
@@ -576,7 +595,7 @@ struct io_context_test
 
     void testExecutorRunningInThisThread()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
         // Not running yet - should return false
@@ -592,7 +611,7 @@ struct io_context_test
 
     void testMultithreaded()
     {
-        io_context ioc;
+        io_context ioc(Backend);
         auto ex = ioc.get_executor();
         std::atomic<int> counter{0};
         constexpr int num_threads         = 4;
@@ -636,7 +655,7 @@ struct io_context_test
 
         for (int iter = 0; iter < iterations; ++iter)
         {
-            io_context ioc;
+            io_context ioc(Backend);
             auto ex = ioc.get_executor();
             std::atomic<int> counter{0};
 
@@ -664,22 +683,6 @@ struct io_context_test
         }
     }
 
-    static capy::task<capy::io_result<>> set_event_task(capy::async_event& evt)
-    {
-        evt.set();
-        co_return capy::io_result<>{{}};
-    }
-
-    static capy::task<void> when_all_set_event_main(bool& finished)
-    {
-        capy::async_event evt;
-        auto [ec, a, b] = co_await capy::when_all(evt.wait(), set_event_task(evt));
-        (void)a;
-        (void)b;
-        BOOST_TEST(!ec);
-        finished = true;
-    }
-
     void testWhenAllSetEvent()
     {
         io_context ctx;
@@ -696,7 +699,7 @@ struct io_context_test
         int destroyed = 0;
 
         {
-            io_context ioc;
+            io_context ioc(Backend);
             auto ex = ioc.get_executor();
 
             post_coro(ex, make_destroy_coro(destroyed));
@@ -726,7 +729,7 @@ struct io_context_test
         op2.cont.h = make_destroy_coro(destroyed);
 
         {
-            io_context ioc;
+            io_context ioc(Backend);
             auto ex = ioc.get_executor();
 
             ex.post(op1.cont);
@@ -744,7 +747,7 @@ struct io_context_test
     // iterates with rel_time clamped to 1s before returning 0.
     void testRunOneUntilLongDeadlineNoWork()
     {
-        io_context ioc;
+        io_context ioc(Backend);
 
         // Deadline >1s but tiny outstanding work so wait_one is not
         // entered: scheduler is empty, wait_one immediately stops and
@@ -766,7 +769,7 @@ struct io_context_test
     // timing.
     void testMultithreadedNotifyAndWaitFor()
     {
-        io_context ioc; // default hint => MT mode
+        io_context ioc(Backend); // default hint => MT mode
         auto ex = ioc.get_executor();
         std::atomic<int> counter{0};
 
@@ -821,7 +824,7 @@ struct io_context_test
     }
 };
 
-TEST_SUITE(io_context_test, "boost.corosio.io_context");
+COROSIO_BACKEND_TESTS(io_context_test, "boost.corosio.io_context")
 
 // Backend-parameterized tests for shutdown paths that differ per backend
 template<auto Backend>

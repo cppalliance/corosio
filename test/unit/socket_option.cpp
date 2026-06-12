@@ -114,6 +114,42 @@ struct socket_option_test
         sock.close();
     }
 
+    // The byte-sized IPv4 multicast options exercise the option
+    // resize() normalization for getsockopt writing a single byte.
+    void testMulticastOptions()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open(udp::v4());
+
+        sock.set_option(socket_option::multicast_loop_v4(false));
+        BOOST_TEST(
+            !sock.get_option<socket_option::multicast_loop_v4>().value());
+        sock.set_option(socket_option::multicast_loop_v4(true));
+        BOOST_TEST(
+            sock.get_option<socket_option::multicast_loop_v4>().value());
+
+        sock.set_option(socket_option::multicast_hops_v4(5));
+        BOOST_TEST_EQ(
+            sock.get_option<socket_option::multicast_hops_v4>().value(), 5);
+
+        sock.close();
+    }
+
+    void testV6Only()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        sock.open(udp::v6());
+
+        sock.set_option(socket_option::v6_only(true));
+        BOOST_TEST(sock.get_option<socket_option::v6_only>().value());
+        sock.set_option(socket_option::v6_only(false));
+        BOOST_TEST(!sock.get_option<socket_option::v6_only>().value());
+
+        sock.close();
+    }
+
     void testClosedSocketThrows()
     {
         io_context ioc(Backend);
@@ -209,6 +245,8 @@ struct socket_option_test
         testTcpOptions();
         testTcpLocalEndpoint();
         testUdpOptions();
+        testMulticastOptions();
+        testV6Only();
         testClosedSocketThrows();
         testInvalidOptionReportsError();
 #if BOOST_COROSIO_POSIX

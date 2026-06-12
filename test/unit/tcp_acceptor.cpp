@@ -14,12 +14,14 @@
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp.hpp>
 #include <boost/corosio/timer.hpp>
+#include <boost/corosio/wait_type.hpp>
 
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
 #include <chrono>
+#include <stdexcept>
 #include <stop_token>
 
 #ifndef _WIN32
@@ -717,6 +719,32 @@ struct tcp_acceptor_test
         BOOST_TEST_EQ(acc.is_open(), false);
     }
 
+    // accept()/wait() on a closed acceptor must throw rather than
+    // initiate an operation on an invalid handle.
+    void testClosedAcceptorOpsThrow()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+        tcp_socket peer(ioc);
+
+        auto expect_throw = [](auto fn) {
+            bool threw = false;
+            try
+            {
+                fn();
+            }
+            catch (std::logic_error const&)
+            {
+                threw = true;
+            }
+            BOOST_TEST(threw);
+        };
+
+        expect_throw([&] { (void)acc.accept(peer); });
+        expect_throw([&] { (void)acc.accept(); });
+        expect_throw([&] { (void)acc.wait(wait_type::read); });
+    }
+
     // Stop-token cancel of a parked accept. Unlike testCancelAccept
     // (acceptor-wide cancel()), this routes through the per-waiter
     // stop callback.
@@ -901,6 +929,7 @@ struct tcp_acceptor_test
         testBindError();
         testListenClosedThrows();
         testClosedAcceptorAccessors();
+        testClosedAcceptorOpsThrow();
 
         // Waiter lifecycle
         testStopTokenAccept();
