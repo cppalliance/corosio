@@ -447,6 +447,278 @@ testSniCallback(StreamFactory make_stream)
         run_tls_test_fail(
             ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
+
+    // Client sends no SNI: the server callback is never consulted and
+    // the handshake still succeeds (no-acknowledgement, not an error).
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+
+        bool invoked    = false;
+        auto server_ctx = make_server_context();
+        server_ctx.set_servername_callback(
+            [&invoked](std::string_view) -> bool {
+                invoked = true;
+                return true;
+            });
+
+        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+        BOOST_TEST(!invoked);
+    }
+}
+
+/** Test move construction and move assignment of a live stream.
+
+    The moved-into stream must keep working after a completed
+    handshake; the moved-from stream must be safely destroyable.
+*/
+template<typename StreamFactory>
+void
+testMoveSemantics(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+    auto client_ctx = make_client_context();
+    auto server_ctx = make_server_context();
+
+    auto client_pre = make_stream(m1, client_ctx);
+    auto client_orig{std::move(client_pre)};
+    auto server       = make_stream(m2, server_ctx);
+    using stream_type = std::remove_reference_t<decltype(server)>;
+
+    auto client_hs = [&]() -> capy::task<> {
+        auto [ec] = co_await client_orig.handshake(stream_type::client);
+        BOOST_TEST(!ec);
+    };
+    auto server_hs = [&]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(stream_type::server);
+        BOOST_TEST(!ec);
+    };
+    capy::run_async(ioc.get_executor())(client_hs());
+    capy::run_async(ioc.get_executor())(server_hs());
+    ioc.run();
+    ioc.restart();
+
+    // Move-construct from the handshaked stream, then move-assign
+    // over a freshly constructed target (its impl must be released).
+    auto client_moved = std::move(client_orig);
+    auto client       = make_stream(m1, client_ctx);
+    client            = std::move(client_moved);
+
+    bool write_done = false, read_done = false;
+    auto writer = [&]() -> capy::task<> {
+        auto [ec, n] = co_await client.write_some(
+            capy::const_buffer("moved", 5));
+        BOOST_TEST(!ec);
+        BOOST_TEST_EQ(n, 5u);
+        write_done = true;
+    };
+    auto reader = [&]() -> capy::task<> {
+        char buf[16];
+        auto [ec, n] = co_await server.read_some(
+            capy::mutable_buffer(buf, sizeof(buf)));
+        BOOST_TEST(!ec);
+        BOOST_TEST_EQ(n, 5u);
+        read_done = true;
+    };
+    capy::run_async(ioc.get_executor())(writer());
+    capy::run_async(ioc.get_executor())(reader());
+    ioc.run();
+
+    BOOST_TEST(write_done);
+    BOOST_TEST(read_done);
+}
+
+/** Test reads and shutdown after the peer vanishes without close_notify.
+
+    The transport closing under an established TLS session must surface
+    `stream_truncated` to a pending read, and a subsequent shutdown()
+    must complete instead of hanging.
+*/
+template<typename StreamFactory>
+void
+testAbruptClose(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+    auto client_ctx = make_client_context();
+    auto server_ctx = make_server_context();
+
+    auto client       = make_stream(m1, client_ctx);
+    auto server       = make_stream(m2, server_ctx);
+    using stream_type = std::remove_reference_t<decltype(server)>;
+
+    auto client_hs = [&]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(stream_type::client);
+        BOOST_TEST(!ec);
+    };
+    auto server_hs = [&]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(stream_type::server);
+        BOOST_TEST(!ec);
+    };
+    capy::run_async(ioc.get_executor())(client_hs());
+    capy::run_async(ioc.get_executor())(server_hs());
+    ioc.run();
+    ioc.restart();
+
+    // Server's transport disappears without a TLS shutdown.
+    m2.close();
+
+    bool read_done = false;
+    std::error_code read_ec;
+    auto reader = [&]() -> capy::task<> {
+        char buf[16];
+        auto [ec, n] = co_await client.read_some(
+            capy::mutable_buffer(buf, sizeof(buf)));
+        (void)n;
+        read_ec   = ec;
+        read_done = true;
+    };
+    capy::run_async(ioc.get_executor())(reader());
+    ioc.run();
+    ioc.restart();
+
+    BOOST_TEST(read_done);
+    BOOST_TEST(read_ec == capy::error::stream_truncated);
+
+    // Shutdown must complete; the missing close_notify reply is
+    // normalized, not reported as a transport error.
+    bool shutdown_done = false;
+    auto closer = [&]() -> capy::task<> {
+        (void)co_await client.shutdown();
+        shutdown_done = true;
+    };
+    capy::run_async(ioc.get_executor())(closer());
+    ioc.run();
+
+    BOOST_TEST(shutdown_done);
+}
+
+/** Test handshaking with a password-protected server key.
+
+    The server private key is encrypted; loading it must route through
+    the context's password callback.
+
+    @param expect_success Whether the handshake must succeed. Pass
+        `false` for TLS builds whose encrypted-key support is a
+        compile-time feature (wolfSSL): the key-loading path and the
+        password callback still run, but the handshake may fail
+        cleanly instead of completing.
+*/
+template<typename StreamFactory>
+void
+testEncryptedKey(StreamFactory make_stream, bool expect_success = true)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+    auto client_ctx       = make_client_context();
+    bool callback_invoked = false;
+    auto server_ctx = make_encrypted_key_server_context(callback_invoked);
+
+    auto client       = make_stream(m1, client_ctx);
+    auto server       = make_stream(m2, server_ctx);
+    using stream_type = std::remove_reference_t<decltype(server)>;
+
+    bool client_done = false, server_done = false;
+    bool failsafe_hit = false;
+    std::error_code client_ec, server_ec;
+
+    // If the TLS build cannot decrypt the key the handshake stalls
+    // with both sides waiting; tear the transport down instead of
+    // hanging the suite.
+    timer failsafe(ioc);
+    failsafe.expires_after(std::chrono::seconds(5));
+
+    auto client_hs = [&]() -> capy::task<> {
+        auto [ec]   = co_await client.handshake(stream_type::client);
+        client_ec   = ec;
+        client_done = true;
+        if (server_done)
+            failsafe.cancel();
+    };
+    auto server_hs = [&]() -> capy::task<> {
+        auto [ec]   = co_await server.handshake(stream_type::server);
+        server_ec   = ec;
+        server_done = true;
+        if (client_done)
+            failsafe.cancel();
+    };
+    auto failsafe_task = [&]() -> capy::task<> {
+        auto [ec] = co_await failsafe.wait();
+        if (!ec)
+        {
+            failsafe_hit = true;
+            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close(); // NOLINT(bugprone-unused-return-value)
+        }
+    };
+    capy::run_async(ioc.get_executor())(client_hs());
+    capy::run_async(ioc.get_executor())(server_hs());
+    capy::run_async(ioc.get_executor())(failsafe_task());
+    ioc.run();
+
+    BOOST_TEST(client_done);
+    BOOST_TEST(server_done);
+    BOOST_TEST(callback_invoked);
+    if (expect_success)
+    {
+        BOOST_TEST(!failsafe_hit);
+        BOOST_TEST(!client_ec);
+        BOOST_TEST(!server_ec);
+    }
+}
+
+/** Test that a context with unparseable credentials fails the
+    handshake with an error instead of crashing or hanging.
+*/
+template<typename StreamFactory>
+void
+testInvalidContextHandshake(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+    auto client_ctx = make_client_context();
+
+    tls_context server_ctx;
+    // NOLINTNEXTLINE(bugprone-unused-return-value)
+    server_ctx.use_certificate("not a certificate", tls_file_format::pem);
+    // NOLINTNEXTLINE(bugprone-unused-return-value)
+    server_ctx.use_private_key("not a key", tls_file_format::pem);
+    // NOLINTNEXTLINE(bugprone-unused-return-value)
+    server_ctx.set_verify_mode(tls_verify_mode::none);
+
+    auto client       = make_stream(m1, client_ctx);
+    auto server       = make_stream(m2, server_ctx);
+    using stream_type = std::remove_reference_t<decltype(server)>;
+
+    bool client_done = false, server_done = false;
+    std::error_code client_ec, server_ec;
+
+    auto client_hs = [&]() -> capy::task<> {
+        auto [ec]   = co_await client.handshake(stream_type::client);
+        client_ec   = ec;
+        client_done = true;
+        // Unblock the server if it is still waiting on the transport.
+        m1.close(); // NOLINT(bugprone-unused-return-value)
+    };
+    auto server_hs = [&]() -> capy::task<> {
+        auto [ec]   = co_await server.handshake(stream_type::server);
+        server_ec   = ec;
+        server_done = true;
+        m2.close(); // NOLINT(bugprone-unused-return-value)
+    };
+    capy::run_async(ioc.get_executor())(client_hs());
+    capy::run_async(ioc.get_executor())(server_hs());
+    ioc.run();
+
+    BOOST_TEST(client_done);
+    BOOST_TEST(server_done);
+    // At least one side must report the failure.
+    BOOST_TEST(!!client_ec || !!server_ec);
 }
 
 /** Test mutual TLS (mTLS). */

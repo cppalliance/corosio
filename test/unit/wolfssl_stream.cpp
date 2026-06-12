@@ -125,6 +125,12 @@ struct wolfssl_stream_test
         test::testSni(make_stream);
         test::testSniCallback(make_stream);
         test::testMtls(make_stream);
+        test::testMoveSemantics(make_stream);
+        test::testAbruptClose(make_stream);
+        // Encrypted-key decryption is a compile-time wolfSSL feature;
+        // require only that the load path runs and fails cleanly.
+        test::testEncryptedKey(make_stream, /*expect_success=*/false);
+        test::testInvalidContextHandshake(make_stream);
 
         test::testReset(make_stream, cert_modes);
         test::testResetViaHandshake(make_stream, cert_modes);

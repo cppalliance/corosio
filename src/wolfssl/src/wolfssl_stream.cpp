@@ -37,8 +37,8 @@
 
     Data Flow
     ---------
-    App -> wolfSSL_write -> send_callback -> out_buf_ -> s_.write_some -> Network
-    App <- wolfSSL_read  <- recv_callback <- in_buf_  <- s_.read_some  <- Network
+    App -> wolfSSL_write -> send_callback -> out_buf_ -> s_->write_some -> Network
+    App <- wolfSSL_read  <- recv_callback <- in_buf_  <- s_->read_some  <- Network
 
     WANT_READ / WANT_WRITE Pattern
     ------------------------------
@@ -49,7 +49,7 @@
       2. If data available: return it immediately
       3. If not: return WOLFSSL_CBIO_ERR_WANT_READ or WANT_WRITE
       4. wolfSSL_read/write returns WOLFSSL_ERROR_WANT_*
-      5. Our coroutine does async I/O: co_await s_.read_some() or write_some()
+      5. Our coroutine does async I/O: co_await s_->read_some() or write_some()
       6. Loop back to step 1
 
     Renegotiation causes cross-direction I/O: SSL_read may need to write
@@ -300,7 +300,7 @@ get_wolfssl_native_context(tls_context_data const& cd)
 
 struct wolfssl_stream::impl
 {
-    capy::any_stream& s_;
+    capy::any_stream* s_;
     tls_context ctx_;
     WOLFSSL* ssl_ = nullptr;
     bool used_    = false;
@@ -336,7 +336,7 @@ struct wolfssl_stream::impl
     // Renegotiation can cause both TLS read/write to access the socket
     capy::async_mutex io_cm_;
 
-    impl(capy::any_stream& s, tls_context ctx) : s_(s), ctx_(std::move(ctx))
+    impl(capy::any_stream& s, tls_context ctx) : s_(&s), ctx_(std::move(ctx))
     {
         read_in_buf_.resize(default_buffer_size);
         read_out_buf_.resize(default_buffer_size);
@@ -501,7 +501,7 @@ struct wolfssl_stream::impl
                             co_return {lec, total_read};
                         }
                         capy::async_mutex::lock_guard io_guard(&io_cm_);
-                        auto [rec, rn] = co_await s_.read_some(rbuf);
+                        auto [rec, rn] = co_await s_->read_some(rbuf);
                         if (rec)
                         {
                             if (rec == make_error_code(capy::error::eof))
@@ -535,7 +535,7 @@ struct wolfssl_stream::impl
                             }
                             capy::async_mutex::lock_guard io_guard(&io_cm_);
                             auto [wec, wn] = co_await capy::write(
-                                s_,
+                                *s_,
                                 capy::const_buffer(
                                     read_out_buf_.data(), read_out_len_));
                             read_out_len_ = 0;
@@ -614,7 +614,7 @@ struct wolfssl_stream::impl
                             }
                             capy::async_mutex::lock_guard io_guard(&io_cm_);
                             auto [wec, wn] = co_await capy::write(
-                                s_,
+                                *s_,
                                 capy::const_buffer(
                                     write_out_buf_.data(), write_out_len_));
                             write_out_len_ = 0;
@@ -644,7 +644,7 @@ struct wolfssl_stream::impl
                             }
                             capy::async_mutex::lock_guard io_guard(&io_cm_);
                             auto [wec, wn] = co_await capy::write(
-                                s_,
+                                *s_,
                                 capy::const_buffer(
                                     write_out_buf_.data(), write_out_len_));
                             write_out_len_ = 0;
@@ -673,7 +673,7 @@ struct wolfssl_stream::impl
                             co_return {lec, total_written};
                         }
                         capy::async_mutex::lock_guard io_guard(&io_cm_);
-                        auto [rec, rn] = co_await s_.read_some(rbuf);
+                        auto [rec, rn] = co_await s_->read_some(rbuf);
                         if (rec)
                         {
                             current_op_ = nullptr;
@@ -742,7 +742,7 @@ struct wolfssl_stream::impl
                     }
                     capy::async_mutex::lock_guard io_guard(&io_cm_);
                     auto [wec, wn] = co_await capy::write(
-                        s_,
+                        *s_,
                         capy::const_buffer(
                             read_out_buf_.data(), read_out_len_));
                     read_out_len_ = 0;
@@ -768,7 +768,7 @@ struct wolfssl_stream::impl
                         }
                         capy::async_mutex::lock_guard io_guard(&io_cm_);
                         auto [wec, wn] = co_await capy::write(
-                            s_,
+                            *s_,
                             capy::const_buffer(
                                 read_out_buf_.data(), read_out_len_));
                         read_out_len_ = 0;
@@ -794,7 +794,7 @@ struct wolfssl_stream::impl
                         break;
                     }
                     capy::async_mutex::lock_guard io_guard(&io_cm_);
-                    auto [rec, rn] = co_await s_.read_some(rbuf);
+                    auto [rec, rn] = co_await s_->read_some(rbuf);
                     if (rec)
                     {
                         ec = rec;
@@ -814,7 +814,7 @@ struct wolfssl_stream::impl
                         }
                         capy::async_mutex::lock_guard io_guard(&io_cm_);
                         auto [wec, wn] = co_await capy::write(
-                            s_,
+                            *s_,
                             capy::const_buffer(
                                 read_out_buf_.data(), read_out_len_));
                         read_out_len_ = 0;
@@ -870,7 +870,7 @@ struct wolfssl_stream::impl
                     }
                     capy::async_mutex::lock_guard io_guard(&io_cm_);
                     auto [wec, wn] = co_await capy::write(
-                        s_,
+                        *s_,
                         capy::const_buffer(
                             read_out_buf_.data(), read_out_len_));
                     read_out_len_ = 0;
@@ -892,7 +892,7 @@ struct wolfssl_stream::impl
                     }
                     capy::async_mutex::lock_guard io_guard(&io_cm_);
                     auto [wec, wn] = co_await capy::write(
-                        s_,
+                        *s_,
                         capy::const_buffer(
                             read_out_buf_.data(), read_out_len_));
                     read_out_len_ = 0;
@@ -918,7 +918,7 @@ struct wolfssl_stream::impl
                         break;
                     }
                     capy::async_mutex::lock_guard io_guard(&io_cm_);
-                    auto [rec, rn] = co_await s_.read_some(rbuf);
+                    auto [rec, rn] = co_await s_->read_some(rbuf);
                     if (rec)
                         break; // EOF or socket error during shutdown read - acceptable
                     read_in_len_ += rn;
@@ -1029,6 +1029,8 @@ wolfssl_stream::wolfssl_stream(wolfssl_stream&& other) noexcept
     , impl_(other.impl_)
 {
     other.impl_ = nullptr;
+    if (impl_)
+        impl_->s_ = &stream_;
 }
 
 wolfssl_stream&
@@ -1040,6 +1042,8 @@ wolfssl_stream::operator=(wolfssl_stream&& other) noexcept
         stream_     = std::move(other.stream_);
         impl_       = other.impl_;
         other.impl_ = nullptr;
+        if (impl_)
+            impl_->s_ = &stream_;
     }
     return *this;
 }
