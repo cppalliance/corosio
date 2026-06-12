@@ -1458,6 +1458,165 @@ struct reactor_paths_test
         ioc.run();
         BOOST_TEST(!ec);
     }
+
+    // Stop-token cancel of a parked local-stream read. Routes through
+    // the local stream reactor_op::on_cancel -> cancel_single_op.
+    void testStopTokenLocalStreamRead()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
+
+        std::stop_source ss;
+        std::error_code read_ec;
+        bool read_done = false;
+        char buf[16];
+
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] = co_await s1.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            (void)n;
+            read_ec   = ec;
+            read_done = true;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            timer t(ioc);
+            t.expires_after(std::chrono::milliseconds(20));
+            (void)co_await t.wait();
+            ss.request_stop();
+        };
+
+        capy::run_async(ex, ss.get_token())(reader());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+
+        BOOST_TEST(read_done);
+        BOOST_TEST(read_ec == capy::cond::canceled);
+    }
+
+    // Local-stream variant of testWriteEAGAIN; covers the local
+    // reactor_write_op::perform_io deferred completion.
+    void testLocalStreamWriteEAGAIN()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
+
+        s1.set_option(socket_option::send_buffer_size(1024));
+        s2.set_option(socket_option::receive_buffer_size(1024));
+
+        constexpr std::size_t total = std::size_t{256} * 1024; // 256 KiB
+        std::vector<char> payload(total, 'L');
+
+        std::error_code write_ec;
+        std::size_t bytes_written = 0;
+        std::error_code read_ec;
+        std::size_t bytes_read = 0;
+
+        auto writer = [&]() -> capy::task<> {
+            std::size_t off = 0;
+            while (off < payload.size())
+            {
+                auto [ec, n] = co_await s1.write_some(
+                    capy::const_buffer(
+                        payload.data() + off, payload.size() - off));
+                if (ec)
+                {
+                    write_ec = ec;
+                    co_return;
+                }
+                off += n;
+                bytes_written = off;
+            }
+        };
+        auto reader = [&]() -> capy::task<> {
+            std::vector<char> buf(4096);
+            while (bytes_read < total)
+            {
+                auto [ec, n] = co_await s2.read_some(
+                    capy::mutable_buffer(buf.data(), buf.size()));
+                if (ec)
+                {
+                    read_ec = ec;
+                    co_return;
+                }
+                if (n == 0)
+                    co_return;
+                bytes_read += n;
+            }
+        };
+
+        capy::run_async(ex)(writer());
+        capy::run_async(ex)(reader());
+        ioc.run();
+
+        BOOST_TEST(!write_ec);
+        BOOST_TEST_EQ(bytes_written, total);
+        BOOST_TEST(!read_ec);
+        BOOST_TEST_EQ(bytes_read, total);
+    }
+
+    // Park a read on every reactor socket type, then destroy the
+    // io_context without completing them. Socket close cancels the
+    // parked op and the scheduler drain destroys it without resuming
+    // its coroutine (reactor_op::destroy).
+    void testShutdownWithParkedOps()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        auto [t1, t2] =
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+
+        udp_socket u1(ioc);
+        u1.open(udp::v4());
+        auto bec = u1.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!bec);
+
+        local_stream_socket ls1(ioc), ls2(ioc);
+        if (auto ec = connect_pair(ls1, ls2))
+            throw std::system_error(ec, "connect_pair");
+
+        local_datagram_socket ld1(ioc), ld2(ioc);
+        if (auto ec = connect_pair(ld1, ld2))
+            throw std::system_error(ec, "connect_pair");
+
+        char buf[16];
+        endpoint source;
+
+        auto tcp_reader = [&]() -> capy::task<> {
+            (void)co_await t1.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+        };
+        auto udp_reader = [&]() -> capy::task<> {
+            (void)co_await u1.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+        };
+        auto ls_reader = [&]() -> capy::task<> {
+            (void)co_await ls1.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+        };
+        auto ld_reader = [&]() -> capy::task<> {
+            (void)co_await ld1.recv(
+                capy::mutable_buffer(buf, sizeof(buf)));
+        };
+
+        capy::run_async(ex)(tcp_reader());
+        capy::run_async(ex)(udp_reader());
+        capy::run_async(ex)(ls_reader());
+        capy::run_async(ex)(ld_reader());
+
+        // Run each coroutine to its parked suspension point only.
+        for (int i = 0; i < 4; ++i)
+            (void)ioc.run_one();
+
+        // Sockets and io_context destruct here with the ops parked.
+        BOOST_TEST_PASS();
+    }
 #endif
 
     void run()
@@ -1505,6 +1664,9 @@ struct reactor_paths_test
         testLocalDgramSendEmpty();
         testLocalDgramShutdownBoth();
         testLocalDgramShutdownReceive();
+        testStopTokenLocalStreamRead();
+        testLocalStreamWriteEAGAIN();
+        testShutdownWithParkedOps();
 #endif
     }
 };
