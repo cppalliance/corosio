@@ -186,6 +186,36 @@ struct ipv6_address_test
         BOOST_TEST(parse_ipv6_address("::g.0.0.0", addr));
         // "1:2:3:4:5:6.7.8.9" — IPv4 with no '::' but not enough h16 groups.
         BOOST_TEST(parse_ipv6_address("1:2:3:4:5:6.7.8.9", addr));
+        // The embedded-IPv4 validator parses each octet as an h16 and
+        // rejects values dotted decimal can never produce.
+        BOOST_TEST(parse_ipv6_address("::1.2.3.400", addr));
+        BOOST_TEST(parse_ipv6_address("::1.2.3.2a", addr));
+        BOOST_TEST(parse_ipv6_address("::1.2.3.a1", addr));
+    }
+
+    void testParseMoreEdges()
+    {
+        ipv6_address addr;
+
+        // Uppercase hex digits.
+        BOOST_TEST(!parse_ipv6_address("ABCD::EF01", addr));
+        BOOST_TEST_EQ(addr.to_string(), "abcd::ef01");
+
+        // Full-form embedded IPv4 with no '::'.
+        BOOST_TEST(!parse_ipv6_address("1:2:3:4:5:6:1.2.3.4", addr));
+
+        // Input ending right after a colon.
+        BOOST_TEST(parse_ipv6_address("1:", addr));
+        BOOST_TEST(parse_ipv6_address("1:2:3:4:5:6:7:", addr));
+
+        // Non-hex garbage after '::'.
+        BOOST_TEST(parse_ipv6_address("1::zz", addr));
+
+        // '::' with all eight groups already present.
+        BOOST_TEST(parse_ipv6_address("1:2:3:4:5:6:7:8::", addr));
+
+        // '::' compressing exactly zero remaining groups at the end.
+        BOOST_TEST(!parse_ipv6_address("1:2:3:4:5:6:7::", addr));
     }
 
     void testPredicates()
@@ -245,6 +275,7 @@ struct ipv6_address_test
         testParse();
         testParseEndsWithDoubleColon();
         testParseInvalidIPv4Suffix();
+        testParseMoreEdges();
         testToString();
         testToStringHexWidths();
         testToBuffer();

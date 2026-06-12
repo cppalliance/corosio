@@ -91,6 +91,17 @@ struct local_connect_pair_test
     }
 
 #if BOOST_COROSIO_POSIX
+    void testDatagramPairRejectsOpenSocket()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket a(ioc), b(ioc);
+        b.open();
+        auto ec = connect_pair(a, b);
+        BOOST_TEST(static_cast<bool>(ec));
+        BOOST_TEST(!a.is_open());
+        BOOST_TEST(b.is_open());
+    }
+
     void testDatagramPairExchangesData()
     {
         io_context ioc(Backend);
@@ -141,6 +152,7 @@ struct local_connect_pair_test
         testStreamPairExchangesData();
         testStreamPairRejectsOpenSocket();
 #if BOOST_COROSIO_POSIX
+        testDatagramPairRejectsOpenSocket();
         testDatagramPairExchangesData();
 #endif
     }
