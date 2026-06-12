@@ -68,6 +68,10 @@ protected:
         io_object::implementation**                          impl_out = nullptr;
         Derived*                                             owner    = nullptr;
         std::atomic<bool>                                    cancelled{false};
+        /// True once linked into `waiters_` (guarded by `mutex_`).
+        /// The stop callback is armed before the node is queued, so
+        /// cancel_waiter must not unlink a node it never queued.
+        bool                                                 queued = false;
         std::optional<std::stop_callback<waiter_canceller>>  stop_cb;
     };
 
@@ -297,23 +301,81 @@ public:
                 ready_op->peer_len     = r->peer_len;
                 delete r;
             }
+        }
+        if (ready_op)
+        {
+            // Post outside the lock — acceptor mutex_ must never be
+            // held while dispatch_mutex_ is acquired by sched_->post().
+            sched_->post(ready_op);
+            return;
+        }
+
+        auto* w     = new waiter_node{};
+        w->h        = h;
+        w->ex       = ex;
+        w->ec_out   = ec;
+        w->impl_out = impl_out;
+        w->owner    = static_cast<Derived*>(this);
+
+        // Arm the stop callback before the node is visible in
+        // `waiters_` and outside `mutex_`: an already-stopped token
+        // invokes the canceller synchronously from emplace, and
+        // cancel_waiter takes `mutex_` (self-deadlock if held).
+        // Arming pre-queue also keeps the CQE handler from claiming
+        // and deleting a node whose callback is not yet constructed.
+        if (token.stop_possible())
+            w->stop_cb.emplace(token, waiter_canceller{w});
+
+        bool was_cancelled = false;
+        {
+            std::lock_guard lk(mutex_);
+            if (w->cancelled.load(std::memory_order_acquire))
+            {
+                // Canceller already fired (pre-stopped token); it saw
+                // queued == false and left completion to us.
+                was_cancelled = true;
+            }
+            else if (auto* r = ready_fds_.pop_front())
+            {
+                // A connection arrived while the callback was armed;
+                // prefer it over parking the waiter behind it.
+                ready_op = new uring_accept_op();
+                ready_op->h            = h;
+                ready_op->ex           = ex;
+                ready_op->ec_out       = ec;
+                ready_op->impl_out     = impl_out;
+                ready_op->peer_service = peer_service_;
+                ready_op->adopt_fn     = &Derived::adopt_thunk;
+                ready_op->accepted_fd  = r->fd;
+                ready_op->peer_storage = r->peer;
+                ready_op->peer_len     = r->peer_len;
+                delete r;
+            }
             else
             {
-                auto* w = new waiter_node{};
-                w->h        = h;
-                w->ex       = ex;
-                w->ec_out   = ec;
-                w->impl_out = impl_out;
-                w->owner    = static_cast<Derived*>(this);
-                if (token.stop_possible())
-                    w->stop_cb.emplace(token, waiter_canceller{w});
+                w->queued = true;
                 sched_->work_started();
                 waiters_.push_back(w);
                 return;
             }
         }
-        // Post outside the lock — acceptor mutex_ must never be held
-        // while dispatch_mutex_ is acquired by sched_->post().
+
+        if (was_cancelled)
+        {
+            auto* op     = new uring_accept_op();
+            op->h        = w->h;
+            op->ex       = w->ex;
+            op->ec_out   = w->ec_out;
+            op->impl_out = w->impl_out;
+            op->cancelled.store(true, std::memory_order_release);
+            w->stop_cb.reset();
+            delete w;
+            sched_->post(op);
+            return;
+        }
+
+        w->stop_cb.reset();
+        delete w;
         sched_->post(ready_op);
     }
 
@@ -322,6 +384,9 @@ public:
         {
             std::lock_guard lk(mutex_);
             if (closing_) return;  // on_accept_cqe_impl will drain with closing_ set
+            if (!w->queued)
+                return;  // not in waiters_ yet; dispatch_or_queue
+                         // observes `cancelled` and completes the op
             waiters_.remove(w);
         }
         // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — stop-token callback: noexcept, OOM => std::terminate is the intended behavior
