@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -350,6 +351,11 @@ public:
             port number.
 
         @return An awaitable that completes with `io_result<resolver_results>`.
+
+        @note `resolver_results` is an alias for `std::vector<resolver_entry>`.
+            Copying it deep-copies every entry (each owns two `std::string`s);
+            move it (`std::move(results)`) or pass iterators when handing it to
+            a by-value sink such as @ref connect.
 
         @par Example
         @code

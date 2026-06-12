@@ -105,6 +105,11 @@ connect(Socket& s, Iter begin, Iter end, ConnectCondition cond);
     @param endpoints A range of candidate endpoints. Taken by value
         so temporaries (e.g. `resolver_results` returned from
         `resolver::resolve`) remain alive for the coroutine's lifetime.
+        Because the range is owned by the coroutine, passing an lvalue
+        copies it; since `resolver_results` is a
+        `std::vector<resolver_entry>`, that is a deep copy of every entry.
+        Pass an rvalue (`std::move(results)`) or use the iterator overload
+        (`connect(s, results.begin(), results.end())`) to avoid the copy.
 
     @return An awaitable completing with
         `capy::io_result<typename Socket::endpoint_type>`:
@@ -153,7 +158,9 @@ connect(Socket& s, Range endpoints)
 
     @param s The socket to connect. See the non-condition overload for
         requirements.
-    @param endpoints A range of candidate endpoints.
+    @param endpoints A range of candidate endpoints, taken by value. See
+        the non-condition overload for the deep-copy caveat when passing
+        an lvalue `resolver_results`.
     @param cond A predicate invocable with
         `(std::error_code const&, typename Socket::endpoint_type const&)`
         returning a value contextually convertible to `bool`.

@@ -85,8 +85,9 @@ capy::task<void> do_lookup(
 
 == Understanding Results
 
-The resolver returns a `resolver_results` object containing `resolver_entry`
-elements. Each entry provides:
+The resolver returns a `resolver_results` — an alias for
+`std::vector<resolver_entry>` — containing one `resolver_entry` per resolved
+endpoint. Each entry provides:
 
 * `get_endpoint()` — The resolved endpoint (address + port)
 * `host_name()` — The queried hostname

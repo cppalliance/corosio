@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -13,8 +14,6 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/endpoint.hpp>
 
-#include <cstddef>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -80,115 +79,21 @@ public:
 
 /** A range of entries produced by a resolver.
 
-    This class holds the results of a DNS resolution query.
-    It provides a range interface for iterating over the
-    resolved endpoints.
+    This is an alias for `std::vector<resolver_entry>`: a contiguous,
+    owning range of the endpoints resolved by a query. It supports the
+    full `std::vector` interface (iteration, `size()`, `empty()`, etc.).
+
+    @note Copying a `resolver_results` deep-copies every entry, and each
+    entry owns two `std::string`s (the host and service names). When you
+    want to hand a result to a sink that takes the range by value — such
+    as `corosio::connect` — pass an rvalue (`std::move(results)`) or use
+    the iterator-based `connect` overloads to avoid the copy.
 
     @par Thread Safety
     Distinct objects: Safe.@n
-    Shared objects: Safe (immutable after construction).
+    Shared objects: Unsafe.
 */
-class resolver_results
-{
-public:
-    /// The entry type.
-    using value_type = resolver_entry;
-
-    /// Const reference to an entry.
-    using const_reference = value_type const&;
-
-    /// Reference to an entry (always const).
-    using reference = const_reference;
-
-    /// Const iterator over entries.
-    using const_iterator = std::vector<resolver_entry>::const_iterator;
-
-    /// Iterator over entries (always const).
-    using iterator = const_iterator;
-
-    /// Signed difference type.
-    using difference_type = std::ptrdiff_t;
-
-    /// Unsigned size type.
-    using size_type = std::size_t;
-
-private:
-    std::shared_ptr<std::vector<resolver_entry>> entries_;
-
-public:
-    /// Construct an empty results range.
-    resolver_results() = default;
-
-    /** Construct from a vector of entries.
-
-        @param entries The resolved entries.
-    */
-    explicit resolver_results(std::vector<resolver_entry> entries)
-        : entries_(
-              std::make_shared<std::vector<resolver_entry>>(std::move(entries)))
-    {
-    }
-
-    /// Return the number of entries.
-    size_type size() const noexcept
-    {
-        return entries_ ? entries_->size() : 0;
-    }
-
-    /// Check if the results are empty.
-    bool empty() const noexcept
-    {
-        return !entries_ || entries_->empty();
-    }
-
-    /// Return an iterator to the first entry.
-    const_iterator begin() const noexcept
-    {
-        if (entries_)
-            return entries_->begin();
-        return std::vector<resolver_entry>::const_iterator();
-    }
-
-    /// Return an iterator past the last entry.
-    const_iterator end() const noexcept
-    {
-        if (entries_)
-            return entries_->end();
-        return std::vector<resolver_entry>::const_iterator();
-    }
-
-    /// Return an iterator to the first entry.
-    const_iterator cbegin() const noexcept
-    {
-        return begin();
-    }
-
-    /// Return an iterator past the last entry.
-    const_iterator cend() const noexcept
-    {
-        return end();
-    }
-
-    /// Swap with another results object.
-    void swap(resolver_results& other) noexcept
-    {
-        entries_.swap(other.entries_);
-    }
-
-    /// Test for equality.
-    friend bool
-    operator==(resolver_results const& a, resolver_results const& b) noexcept
-    {
-        return a.entries_ == b.entries_;
-    }
-
-    /// Test for inequality.
-    friend bool
-    operator!=(resolver_results const& a, resolver_results const& b) noexcept
-    {
-        return !(a == b);
-    }
-};
+using resolver_results = std::vector<resolver_entry>;
 
 /** The result of a reverse DNS resolution.
 

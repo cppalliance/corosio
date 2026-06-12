@@ -117,7 +117,14 @@ auto [ec, results] = co_await r.resolve("127.0.0.1", "8080", flags);
 
 == Working with Results
 
-The `resolver_results` class is a range of `resolver_entry` objects:
+`resolver_results` is an alias for `std::vector<resolver_entry>`, so it
+supports the full `std::vector` interface (iteration, `size()`, `empty()`,
+indexing, and so on):
+
+[source,cpp]
+----
+using resolver_results = std::vector<resolver_entry>;
+----
 
 [source,cpp]
 ----
@@ -134,23 +141,14 @@ for (auto const& entry : results)
 }
 ----
 
-=== resolver_results Interface
-
-[source,cpp]
-----
-class resolver_results
-{
-public:
-    using iterator = /* ... */;
-    using const_iterator = /* ... */;
-
-    std::size_t size() const;
-    bool empty() const;
-
-    const_iterator begin() const;
-    const_iterator end() const;
-};
-----
+[NOTE]
+====
+Copying a `resolver_results` deep-copies every entry, and each entry owns
+two `std::string` query names. When handing the results to a sink that
+takes the range by value — such as `corosio::connect` — pass an rvalue
+(`std::move(results)`) or use the iterator-based overload
+(`connect(s, results.begin(), results.end())`) to avoid the copy.
+====
 
 === resolver_entry Interface
 
