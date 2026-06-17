@@ -45,6 +45,18 @@ struct native_timer_test
         BOOST_TEST(t.expiry() > timer::time_point{});
     }
 
+    // Issue #231: native_timer mirrors timer's executor constructors.
+    void testTimerConstructFromExecutor()
+    {
+        io_context ctx(Backend);
+        native_timer<Backend> t(ctx.get_executor());
+        BOOST_TEST_PASS();
+
+        native_timer<Backend> t2(
+            ctx.get_executor(), std::chrono::milliseconds(100));
+        BOOST_TEST(t2.expiry() > timer::time_point{});
+    }
+
     void testTimerWait()
     {
         io_context ctx(Backend);
@@ -106,6 +118,7 @@ struct native_timer_test
     {
         testTimerConstruct();
         testTimerConstructDuration();
+        testTimerConstructFromExecutor();
         testTimerWait();
         testTimerWaitExpired();
         testTimerPolymorphicSlice();

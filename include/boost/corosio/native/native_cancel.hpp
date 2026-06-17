@@ -149,6 +149,12 @@ cancel_after(
     @note Creates a timer per call. Use the explicit-timer overload
         to amortize allocation across multiple timeouts.
 
+    @note The awaiting coroutine's executor must be backed by an
+        io_context (the deadline timer is built from it). Awaiting this
+        on a non-io_context executor is a precondition violation and
+        aborts; use the explicit-timer overload to construct the timer
+        yourself if you need a catchable error.
+
     @par Example
     @code
     auto [ec, n] = co_await cancel_at<epoll>(
@@ -194,6 +200,12 @@ cancel_at(capy::IoAwaitable auto&& op, timer::time_point deadline)
 
     @note Creates a timer per call. Use the explicit-timer overload
         to amortize allocation across multiple timeouts.
+
+    @note The awaiting coroutine's executor must be backed by an
+        io_context (the deadline timer is built from it). Awaiting this
+        on a non-io_context executor is a precondition violation and
+        aborts; use the explicit-timer overload to construct the timer
+        yourself if you need a catchable error.
 
     @par Example
     @code

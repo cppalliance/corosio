@@ -16,7 +16,7 @@ namespace boost::corosio {
 timer::~timer() = default;
 
 timer::timer(capy::execution_context& ctx)
-    : io_timer(handle(ctx, detail::timer_service_direct(ctx)))
+    : io_timer(create_handle<detail::timer_service>(ctx))
 {
 }
 

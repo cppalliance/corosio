@@ -118,6 +118,52 @@ public:
     {
     }
 
+    /** Construct a native timer from an executor.
+
+        The timer is associated with the executor's context, which must
+        be a corosio io_context.
+
+        @param ex The executor whose context will own this timer.
+
+        @throws std::logic_error if the executor's context is not an
+            io_context.
+    */
+    template<class Ex>
+        requires(!std::same_as<std::remove_cvref_t<Ex>, native_timer>) &&
+        capy::Executor<Ex>
+    explicit native_timer(Ex const& ex) : native_timer(ex.context())
+    {
+    }
+
+    /** Construct a native timer from an executor with an absolute expiry.
+
+        @param ex The executor whose context will own this timer.
+        @param t The initial expiry time point.
+
+        @throws std::logic_error if the executor's context is not an
+            io_context.
+    */
+    template<class Ex>
+        requires capy::Executor<Ex>
+    native_timer(Ex const& ex, time_point t) : native_timer(ex.context(), t)
+    {
+    }
+
+    /** Construct a native timer from an executor with a relative expiry.
+
+        @param ex The executor whose context will own this timer.
+        @param d The initial expiry duration relative to now.
+
+        @throws std::logic_error if the executor's context is not an
+            io_context.
+    */
+    template<class Ex, class Rep, class Period>
+        requires capy::Executor<Ex>
+    native_timer(Ex const& ex, std::chrono::duration<Rep, Period> d)
+        : native_timer(ex.context(), d)
+    {
+    }
+
     /** Move construct.
 
         @param other The timer to move from.

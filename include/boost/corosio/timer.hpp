@@ -17,7 +17,9 @@
 #include <boost/capy/concept/executor.hpp>
 
 #include <chrono>
+#include <concepts>
 #include <cstddef>
+#include <type_traits>
 
 namespace boost::corosio {
 
@@ -58,27 +60,85 @@ public:
 
     /** Construct a timer from an execution context.
 
-        @param ctx The execution context that will own this timer.
+        @param ctx The execution context that will own this timer. It
+            must be a corosio io_context; otherwise the constructor
+            throws (a timer service is required).
+
+        @throws std::logic_error if @p ctx is not an io_context.
     */
     explicit timer(capy::execution_context& ctx);
 
     /** Construct a timer with an initial absolute expiry time.
 
-        @param ctx The execution context that will own this timer.
+        @param ctx The execution context that will own this timer. It
+            must be a corosio io_context; otherwise the constructor
+            throws (a timer service is required).
         @param t The initial expiry time point.
+
+        @throws std::logic_error if @p ctx is not an io_context.
     */
     timer(capy::execution_context& ctx, time_point t);
 
     /** Construct a timer with an initial relative expiry time.
 
-        @param ctx The execution context that will own this timer.
+        @param ctx The execution context that will own this timer. It
+            must be a corosio io_context; otherwise the constructor
+            throws (a timer service is required).
         @param d The initial expiry duration relative to now.
+
+        @throws std::logic_error if @p ctx is not an io_context.
     */
     template<class Rep, class Period>
     timer(capy::execution_context& ctx, std::chrono::duration<Rep, Period> d)
         : timer(ctx)
     {
         expires_after(d);
+    }
+
+    /** Construct a timer from an executor.
+
+        The timer is associated with the executor's context, which must
+        be a corosio io_context.
+
+        @param ex The executor whose context will own this timer.
+
+        @throws std::logic_error if the executor's context is not an
+            io_context.
+    */
+    template<class Ex>
+        requires(!std::same_as<std::remove_cvref_t<Ex>, timer>) &&
+        capy::Executor<Ex>
+    explicit timer(Ex const& ex) : timer(ex.context())
+    {
+    }
+
+    /** Construct a timer from an executor with an absolute expiry time.
+
+        @param ex The executor whose context will own this timer.
+        @param t The initial expiry time point.
+
+        @throws std::logic_error if the executor's context is not an
+            io_context.
+    */
+    template<class Ex>
+        requires capy::Executor<Ex>
+    timer(Ex const& ex, time_point t) : timer(ex.context(), t)
+    {
+    }
+
+    /** Construct a timer from an executor with a relative expiry time.
+
+        @param ex The executor whose context will own this timer.
+        @param d The initial expiry duration relative to now.
+
+        @throws std::logic_error if the executor's context is not an
+            io_context.
+    */
+    template<class Ex, class Rep, class Period>
+        requires capy::Executor<Ex>
+    timer(Ex const& ex, std::chrono::duration<Rep, Period> d)
+        : timer(ex.context(), d)
+    {
     }
 
     /** Move constructor.

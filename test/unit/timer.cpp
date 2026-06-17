@@ -12,18 +12,28 @@
 #include <boost/corosio/timer.hpp>
 
 #include <boost/capy/cond.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/task.hpp>
 
 #include <chrono>
 #include <memory>
 #include <new>
+#include <stdexcept>
 #include <stop_token>
+#include <type_traits>
 
 #include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
+
+// Issue #213: a timer accepts any execution_context (so the common
+// `timer(obj.context())` idiom works), but a non-io_context now throws
+// rather than crashing via an unchecked downcast (see testNonIoContextThrows).
+static_assert(std::is_constructible_v<timer, io_context&>);
+static_assert(std::is_constructible_v<timer, capy::execution_context&>);
 
 // Timer-specific tests
 // Focus: timer construction, expiry, wait, and cancellation
@@ -43,6 +53,19 @@ struct timer_test
         BOOST_TEST_PASS();
     }
 
+    // Issue #213: constructing a timer from an execution_context that is
+    // not a corosio io_context (no timer service installed) must throw,
+    // not crash via an unchecked downcast.
+    void testNonIoContextThrows()
+    {
+        struct bare_context : capy::execution_context
+        {
+        };
+
+        bare_context ctx;
+        BOOST_TEST_THROWS(timer(ctx), std::logic_error);
+    }
+
     void testConstructionWithTimePoint()
     {
         io_context ioc(Backend);
@@ -50,6 +73,42 @@ struct timer_test
         timer t(ioc, tp);
 
         BOOST_TEST(t.expiry() == tp);
+    }
+
+    // Issue #231: bring timer in line with the other I/O objects, which
+    // all construct from an executor (delegating to the executor's context).
+    void testConstructFromExecutor()
+    {
+        io_context ioc(Backend);
+        timer t(ioc.get_executor());
+
+        BOOST_TEST_PASS();
+    }
+
+    void testConstructFromExecutorWithTimePoint()
+    {
+        io_context ioc(Backend);
+        auto tp = timer::clock_type::now() + std::chrono::seconds(10);
+        timer t(ioc.get_executor(), tp);
+
+        BOOST_TEST(t.expiry() == tp);
+    }
+
+    void testConstructFromExecutorWithDuration()
+    {
+        io_context ioc(Backend);
+        timer t(ioc.get_executor(), std::chrono::milliseconds(500));
+
+        BOOST_TEST(t.expiry() > timer::clock_type::now());
+    }
+
+    // The executor ctors delegate to the executor's context, so an executor
+    // whose context is not an io_context (e.g. a thread_pool) must throw,
+    // not crash — same guarantee as testNonIoContextThrows, new entry path.
+    void testExecutorNonIoContextThrows()
+    {
+        capy::thread_pool pool(1);
+        BOOST_TEST_THROWS(timer(pool.get_executor()), std::logic_error);
     }
 
     void testConstructionWithDuration()
@@ -1225,6 +1284,11 @@ struct timer_test
     {
         // Construction and move semantics
         testConstruction();
+        testNonIoContextThrows();
+        testConstructFromExecutor();
+        testConstructFromExecutorWithTimePoint();
+        testConstructFromExecutorWithDuration();
+        testExecutorNonIoContextThrows();
         testConstructionWithTimePoint();
         testConstructionWithDuration();
         testMoveConstruct();

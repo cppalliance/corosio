@@ -12,7 +12,7 @@
 #define BOOST_COROSIO_DETAIL_TIMER_SERVICE_HPP
 
 #include <boost/corosio/timer.hpp>
-#include <boost/corosio/io_context.hpp>
+#include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
@@ -891,26 +891,6 @@ timer_service::implementation::wait(
 
 // Free functions
 
-struct timer_service_access
-{
-    static timer_service& get_timer(io_context& ctx) noexcept
-    {
-        return *ctx.timer_svc_;
-    }
-
-    static void set_timer(io_context& ctx, timer_service& svc) noexcept
-    {
-        ctx.timer_svc_ = &svc;
-    }
-};
-
-// Bypass find_service() mutex by reading io_context's cached pointer
-inline io_object::io_service&
-timer_service_direct(capy::execution_context& ctx) noexcept
-{
-    return timer_service_access::get_timer(static_cast<io_context&>(ctx));
-}
-
 inline std::size_t
 timer_service_update_expiry(timer::implementation& base)
 {
@@ -935,9 +915,7 @@ timer_service_cancel_one(timer::implementation& base) noexcept
 inline timer_service&
 get_timer_service(capy::execution_context& ctx, scheduler& sched)
 {
-    auto& svc = ctx.make_service<timer_service>(sched);
-    timer_service_access::set_timer(static_cast<io_context&>(ctx), svc);
-    return svc;
+    return ctx.make_service<timer_service>(sched);
 }
 
 } // namespace boost::corosio::detail
