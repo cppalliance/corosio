@@ -167,7 +167,6 @@ struct io_context_options
 
 namespace detail {
 class timer_service;
-struct timer_service_access;
 } // namespace detail
 
 /** An I/O context for running asynchronous operations.
@@ -201,8 +200,6 @@ struct timer_service_access;
 */
 class BOOST_COROSIO_DECL io_context : public capy::execution_context
 {
-    friend struct detail::timer_service_access;
-
     /// Pre-create services that depend on options (before construct).
     void apply_options_pre_(io_context_options const& opts);
 
@@ -215,7 +212,6 @@ class BOOST_COROSIO_DECL io_context : public capy::execution_context
     void configure_single_threaded_();
 
 protected:
-    detail::timer_service* timer_svc_ = nullptr;
     detail::scheduler* sched_;
 
 public:

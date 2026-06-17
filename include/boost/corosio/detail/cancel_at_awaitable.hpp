@@ -11,12 +11,14 @@
 #define BOOST_COROSIO_DETAIL_CANCEL_AT_AWAITABLE_HPP
 
 #include <boost/corosio/detail/timeout_coro.hpp>
+#include <boost/corosio/detail/except.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
 #include <chrono>
 #include <coroutine>
 #include <new>
 #include <optional>
+#include <stdexcept>
 #include <stop_token>
 #include <type_traits>
 #include <utility>
@@ -126,7 +128,28 @@ struct cancel_at_awaitable
     auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
     {
         if constexpr (Owning)
-            timer_.emplace(env->executor.context());
+        {
+            // The deadline timer is built here from the awaiting
+            // coroutine's executor context, the first point at which it
+            // is known. await_suspend is driven through a noexcept
+            // wrapper, so a failure cannot be surfaced as a catchable
+            // exception. An executor whose context is not an io_context
+            // cannot supply a timer service; silently running the
+            // operation with no deadline would be a worse failure than
+            // aborting, so translate the service-lookup error into a
+            // clear precondition diagnostic. This terminates by design
+            // (a usage error) rather than dropping the requested timeout.
+            try
+            {
+                timer_.emplace(env->executor.context());
+            }
+            catch (std::logic_error const&)
+            {
+                throw_logic_error(
+                    "cancel_after/cancel_at requires an "
+                    "io_context-backed executor");
+            }
+        }
 
         timer_->expires_at(deadline_);
 
