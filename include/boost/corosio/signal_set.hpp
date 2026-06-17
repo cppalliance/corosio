@@ -18,6 +18,7 @@
 
 #include <concepts>
 #include <system_error>
+#include <type_traits>
 
 /*
     Signal Set Public API
@@ -222,6 +223,36 @@ public:
         };
         check(add(signal));
         (check(add(signals)), ...);
+    }
+
+    /** Construct an empty signal set from an executor.
+
+        The signal set is associated with the executor's context.
+
+        @param ex The executor whose context will own this signal set.
+    */
+    template<class Ex>
+        requires(!std::same_as<std::remove_cvref_t<Ex>, signal_set>) &&
+        capy::Executor<Ex>
+    explicit signal_set(Ex const& ex) : signal_set(ex.context())
+    {
+    }
+
+    /** Construct a signal set with initial signals from an executor.
+
+        The signal set is associated with the executor's context.
+
+        @param ex The executor whose context will own this signal set.
+        @param signal First signal number to add.
+        @param signals Additional signal numbers to add.
+
+        @throws std::system_error Thrown on failure.
+    */
+    template<class Ex, std::convertible_to<int>... Signals>
+        requires capy::Executor<Ex>
+    signal_set(Ex const& ex, int signal, Signals... signals)
+        : signal_set(ex.context(), signal, signals...)
+    {
     }
 
     /** Move constructor.
