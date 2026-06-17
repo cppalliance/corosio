@@ -67,6 +67,22 @@ struct signal_set_test
         BOOST_TEST_PASS();
     }
 
+    void testConstructFromExecutor()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc.get_executor());
+
+        BOOST_TEST_PASS();
+    }
+
+    void testConstructFromExecutorWithSignals()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc.get_executor(), SIGINT, SIGTERM);
+
+        BOOST_TEST_PASS();
+    }
+
     void testMoveConstruct()
     {
         io_context ioc(Backend);
@@ -795,6 +811,8 @@ struct signal_set_test
         testConstructWithOneSignal();
         testConstructWithTwoSignals();
         testConstructWithThreeSignals();
+        testConstructFromExecutor();
+        testConstructFromExecutorWithSignals();
         testMoveConstruct();
         testMoveAssign();
         testMoveAssignCrossContext();
