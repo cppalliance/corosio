@@ -676,12 +676,13 @@ jobs:
                 --warnings-as-errors='*'
 
       - name: FlameGraph
-        uses: alandefreitas/cpp-actions/flamegraph@v1.9.0
+        uses: alandefreitas/cpp-actions/flamegraph@v1.9.5
         if: matrix.time-trace
+        continue-on-error: true
         with:
           source-dir: corosio-root
           build-dir: corosio-root/__build__
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate Coverage Report
         if: ${{ matrix.coverage && matrix.linux }}
