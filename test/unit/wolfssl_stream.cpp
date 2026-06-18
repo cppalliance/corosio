@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -108,6 +109,33 @@ struct wolfssl_stream_test
         // intermediates during handshake.
     }
 
+    /** Test that WolfSSL errors carry the WolfSSL category (issue #223).
+
+        Errors from wolfSSL_get_error must render readable messages, not
+        garbage produced by treating the code as an errno value.
+    */
+    void testErrorCategory()
+    {
+        using namespace test;
+
+        BOOST_TEST(wolfssl_category().name() ==
+            std::string_view("corosio.wolfssl"));
+
+        // End-to-end: a certificate-validation failure surfaces an error
+        // in the WolfSSL category with a non-empty, decoded message.
+        {
+            io_context ioc;
+            auto client_ctx = make_untrusted_ca_client_context();
+            auto server_ctx = make_server_context();
+            std::error_code client_ec;
+            run_tls_test_fail(ioc, client_ctx, server_ctx, make_stream,
+                make_stream, &client_ec);
+            BOOST_TEST(client_ec);
+            BOOST_TEST(client_ec.category() == wolfssl_category());
+            BOOST_TEST(!client_ec.message().empty());
+        }
+    }
+
     void run()
     {
         test::testHandshakeFuse(make_stream);
@@ -137,6 +165,7 @@ struct wolfssl_stream_test
         test::testResetFuse(make_stream);
 
         testCertificateChain();
+        testErrorCategory();
         testName();
         testNextLayer();
     }

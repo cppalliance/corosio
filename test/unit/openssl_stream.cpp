@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -103,6 +104,42 @@ struct openssl_stream_test
         }
     }
 
+    /** Test that OpenSSL errors carry the OpenSSL category (issue #223).
+
+        Errors from the OpenSSL error queue must render readable messages,
+        not "Unknown error <packed code>" via the system category.
+    */
+    void testErrorCategory()
+    {
+        using namespace test;
+
+        // The category exists, is named, and decodes packed codes rather
+        // than treating them as errno values.
+        BOOST_TEST(openssl_category().name() ==
+            std::string_view("corosio.openssl"));
+
+        // 0x0A000086 is a packed SSL-routines error code (see issue #223).
+        std::error_code ec(0x0A000086, openssl_category());
+        std::string msg = ec.message();
+        BOOST_TEST(!msg.empty());
+        BOOST_TEST(msg.find("Unknown error") == std::string::npos);
+
+        // End-to-end: a certificate-validation failure surfaces an error
+        // in the OpenSSL category, not the system category.
+        {
+            io_context ioc;
+            auto client_ctx = make_untrusted_ca_client_context();
+            auto server_ctx = make_server_context();
+            std::error_code client_ec;
+            run_tls_test_fail(ioc, client_ctx, server_ctx, make_stream,
+                make_stream, &client_ec);
+            BOOST_TEST(client_ec);
+            BOOST_TEST(client_ec.category() == openssl_category());
+            BOOST_TEST(client_ec.message().find("Unknown error") ==
+                std::string::npos);
+        }
+    }
+
     void run()
     {
         test::testHandshakeFuse(make_stream);
@@ -128,6 +165,7 @@ struct openssl_stream_test
         test::testResetFuse(make_stream);
 
         testCertificateChain();
+        testErrorCategory();
         testName();
         testNextLayer();
     }

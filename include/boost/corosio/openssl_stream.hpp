@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -19,6 +20,7 @@
 #include <boost/capy/io_task.hpp>
 
 #include <concepts>
+#include <system_error>
 
 namespace boost::corosio {
 
@@ -196,6 +198,24 @@ protected:
 private:
     static impl* make_impl(capy::any_stream& stream, tls_context const& ctx);
 };
+
+/** Return the error category for raw OpenSSL errors.
+
+    Errors reported by @ref openssl_stream that originate from the OpenSSL
+    error queue (`ERR_get_error`) are assigned this category. Its
+    `message()` decodes the packed OpenSSL error code using OpenSSL's own
+    diagnostic strings, so printing such an `error_code` yields a readable
+    description (for example, "certificate verify failed").
+
+    OpenSSL errors whose library is `ERR_LIB_SYS` are reported with
+    `std::system_category()` instead, since their reason code is a genuine
+    `errno` value.
+
+    @return A reference to a static category object with name
+        `"corosio.openssl"`.
+*/
+BOOST_COROSIO_DECL std::error_category const&
+openssl_category() noexcept;
 
 } // namespace boost::corosio
 

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -900,7 +901,8 @@ run_tls_test_fail(
     tls_context client_ctx,
     tls_context server_ctx,
     ClientStreamFactory make_client,
-    ServerStreamFactory make_server)
+    ServerStreamFactory make_server,
+    std::error_code* client_ec_out = nullptr)
 {
     auto [s1, s2] = corosio::test::make_socket_pair(ioc);
 
@@ -919,9 +921,11 @@ run_tls_test_fail(
     // Store lambdas in named variables before invoking - anonymous lambda + immediate
     // invocation pattern [...](){}() can cause capture corruption with run_async
     auto client_task = [&client, &client_failed, &client_done, &server_done,
-                        &timeout, &s1, &s2]() -> capy::task<> {
+                        &timeout, &s1, &s2, client_ec_out]() -> capy::task<> {
         auto [ec] = co_await client.handshake(
             std::remove_reference_t<decltype(client)>::client);
+        if (client_ec_out)
+            *client_ec_out = ec;
         if (ec)
         {
             client_failed = true;
