@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -102,7 +103,44 @@ normalize_openssl_shutdown_read_error(std::error_code ec) noexcept
     return ec;
 }
 
+class openssl_category_impl final : public std::error_category
+{
+    char const*
+    name() const noexcept override
+    {
+        return "corosio.openssl";
+    }
+
+    std::string
+    message(int value) const override
+    {
+        char buf[256];
+        ::ERR_error_string_n(
+            static_cast<unsigned long>(value), buf, sizeof(buf));
+        return buf;
+    }
+};
+
+// Convert a packed OpenSSL error (from ERR_get_error) into an error_code.
+// Codes from the ERR_LIB_SYS library carry a genuine errno reason and are
+// reported with the system category; everything else uses openssl_category.
+inline std::error_code
+make_openssl_error(unsigned long err) noexcept
+{
+    if (ERR_GET_LIB(err) == ERR_LIB_SYS)
+        return std::error_code(
+            static_cast<int>(ERR_GET_REASON(err)), std::system_category());
+    return std::error_code(static_cast<int>(err), openssl_category());
+}
+
 } // namespace
+
+std::error_category const&
+openssl_category() noexcept
+{
+    static openssl_category_impl instance;
+    return instance;
+}
 
 //
 // Native context caching
@@ -474,16 +512,13 @@ struct openssl_stream::impl
                         if (ssl_err == 0)
                             ec = make_error_code(capy::error::stream_truncated);
                         else
-                            ec = std::error_code(
-                                static_cast<int>(ssl_err),
-                                std::system_category());
+                            ec = make_openssl_error(ssl_err);
                         co_return {ec, total_read};
                     }
                     else
                     {
                         unsigned long ssl_err = ERR_get_error();
-                        ec                    = std::error_code(
-                            static_cast<int>(ssl_err), std::system_category());
+                        ec                    = make_openssl_error(ssl_err);
                         co_return {ec, total_read};
                     }
                 }
@@ -544,8 +579,7 @@ struct openssl_stream::impl
                     else
                     {
                         unsigned long ssl_err = ERR_get_error();
-                        ec                    = std::error_code(
-                            static_cast<int>(ssl_err), std::system_category());
+                        ec                    = make_openssl_error(ssl_err);
                         co_return {ec, total_written};
                     }
                 }
@@ -600,8 +634,7 @@ struct openssl_stream::impl
                 else
                 {
                     unsigned long ssl_err = ERR_get_error();
-                    ec                    = std::error_code(
-                        static_cast<int>(ssl_err), std::system_category());
+                    ec                    = make_openssl_error(ssl_err);
                     co_return {ec};
                 }
             }
@@ -667,8 +700,7 @@ struct openssl_stream::impl
                     }
                     else
                     {
-                        ec = std::error_code(
-                            static_cast<int>(ssl_err), std::system_category());
+                        ec = make_openssl_error(ssl_err);
                     }
                     co_return {ec};
                 }
@@ -683,16 +715,14 @@ struct openssl_stream::impl
         if (!native_ctx)
         {
             unsigned long err = ERR_get_error();
-            return std::error_code(
-                static_cast<int>(err), std::system_category());
+            return make_openssl_error(err);
         }
 
         ssl_ = SSL_new(native_ctx);
         if (!ssl_)
         {
             unsigned long err = ERR_get_error();
-            return std::error_code(
-                static_cast<int>(err), std::system_category());
+            return make_openssl_error(err);
         }
 
         BIO* int_bio = nullptr;
@@ -701,8 +731,7 @@ struct openssl_stream::impl
             unsigned long err = ERR_get_error();
             SSL_free(ssl_);
             ssl_ = nullptr;
-            return std::error_code(
-                static_cast<int>(err), std::system_category());
+            return make_openssl_error(err);
         }
 
         SSL_set_bio(ssl_, int_bio, int_bio);

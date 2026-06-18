@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -96,7 +97,32 @@ has_peer_shutdown(WOLFSSL* ssl) noexcept
     return wolfSSL_get_shutdown(ssl) != 0;
 }
 
+class wolfssl_category_impl final : public std::error_category
+{
+    char const*
+    name() const noexcept override
+    {
+        return "corosio.wolfssl";
+    }
+
+    std::string
+    message(int value) const override
+    {
+        char buf[WOLFSSL_MAX_ERROR_SZ];
+        wolfSSL_ERR_error_string_n(
+            static_cast<unsigned long>(value), buf, sizeof(buf));
+        return buf;
+    }
+};
+
 } // namespace
+
+std::error_category const&
+wolfssl_category() noexcept
+{
+    static wolfssl_category_impl instance;
+    return instance;
+}
 
 //
 // Native context caching
@@ -558,7 +584,7 @@ struct wolfssl_stream::impl
                         // Other error
                         current_op_ = nullptr;
                         co_return {
-                            std::error_code(err, std::system_category()),
+                            std::error_code(err, wolfssl_category()),
                             total_read};
                     }
                 }
@@ -686,7 +712,7 @@ struct wolfssl_stream::impl
                         // Other error
                         current_op_ = nullptr;
                         co_return {
-                            std::error_code(err, std::system_category()),
+                            std::error_code(err, wolfssl_category()),
                             total_written};
                     }
                 }
@@ -828,7 +854,7 @@ struct wolfssl_stream::impl
                 else
                 {
                     // Other error
-                    ec = std::error_code(err, std::system_category());
+                    ec = std::error_code(err, wolfssl_category());
                     break;
                 }
             }
@@ -936,14 +962,14 @@ struct wolfssl_stream::impl
                 else
                 {
                     // Unexpected error
-                    ec = std::error_code(err, std::system_category());
+                    ec = std::error_code(err, wolfssl_category());
                     break;
                 }
             }
             else
             {
                 // SSL_FATAL_ERROR or negative return
-                ec = std::error_code(err, std::system_category());
+                ec = std::error_code(err, wolfssl_category());
                 break;
             }
         }
@@ -966,7 +992,7 @@ struct wolfssl_stream::impl
         if (!native)
         {
             return std::error_code(
-                wolfSSL_get_error(nullptr, 0), std::system_category());
+                wolfSSL_get_error(nullptr, 0), wolfssl_category());
         }
 
         // Select appropriate context based on role
@@ -977,7 +1003,7 @@ struct wolfssl_stream::impl
         if (!native_ctx)
         {
             return std::error_code(
-                wolfSSL_get_error(nullptr, 0), std::system_category());
+                wolfSSL_get_error(nullptr, 0), wolfssl_category());
         }
 
         // Create SSL session from the role-specific context
@@ -985,7 +1011,7 @@ struct wolfssl_stream::impl
         if (!ssl_)
         {
             int err = wolfSSL_get_error(nullptr, 0);
-            return std::error_code(err, std::system_category());
+            return std::error_code(err, wolfssl_category());
         }
 
         // Set custom I/O callbacks

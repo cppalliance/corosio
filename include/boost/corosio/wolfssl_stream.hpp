@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -19,6 +20,7 @@
 #include <boost/capy/io_task.hpp>
 
 #include <concepts>
+#include <system_error>
 
 namespace boost::corosio {
 
@@ -196,6 +198,20 @@ protected:
 private:
     static impl* make_impl(capy::any_stream& stream, tls_context const& ctx);
 };
+
+/** Return the error category for raw WolfSSL errors.
+
+    Errors reported by @ref wolfssl_stream that originate from
+    `wolfSSL_get_error` are assigned this category. Its `message()`
+    decodes the WolfSSL error code using WolfSSL's own diagnostic
+    strings, so printing such an `error_code` yields a readable
+    description (for example, "ASN no signer error to confirm failure").
+
+    @return A reference to a static category object with name
+        `"corosio.wolfssl"`.
+*/
+BOOST_COROSIO_DECL std::error_category const&
+wolfssl_category() noexcept;
 
 } // namespace boost::corosio
 
