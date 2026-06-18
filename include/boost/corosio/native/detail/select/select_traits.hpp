@@ -30,8 +30,9 @@
 
    Captures the platform-specific behavior of the portable select() backend:
    manual fcntl for O_NONBLOCK/FD_CLOEXEC, FD_SETSIZE validation,
-   conditional SO_NOSIGPIPE, sendmsg(MSG_NOSIGNAL) where available,
-   and accept()+fcntl for accepted connections.
+   mandatory SO_NOSIGPIPE where the platform defines it,
+   sendmsg(MSG_NOSIGNAL) where available, and accept()+fcntl for
+   accepted connections.
 */
 
 namespace boost::corosio::detail {
@@ -156,12 +157,19 @@ struct select_traits
             }
 
 #ifdef SO_NOSIGPIPE
-            // Best-effort: SO_NOSIGPIPE is a safety net; write paths
-            // also use MSG_NOSIGNAL where available. Failure here
-            // should not prevent the accepted connection from being used.
+            // SO_NOSIGPIPE is the only SIGPIPE guard on platforms that
+            // lack MSG_NOSIGNAL (macOS/BSD). Treat failure as fatal,
+            // matching the kqueue backend and Boost.Asio.
             int one = 1;
-            (void)::setsockopt(
-                new_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+            if (::setsockopt(
+                    new_fd, SOL_SOCKET, SO_NOSIGPIPE,
+                    &one, sizeof(one)) != 0)
+            {
+                int err = errno;
+                ::close(new_fd);
+                errno = err;
+                return -1;
+            }
 #endif
 
             return new_fd;
@@ -190,14 +198,14 @@ struct select_traits
             return make_err(EMFILE);
 
 #ifdef SO_NOSIGPIPE
-        // Best-effort: SO_NOSIGPIPE is a safety net; write paths
-        // also use MSG_NOSIGNAL where available. Match develop's
-        // predominant behavior of ignoring failures here rather
-        // than failing socket creation.
+        // SO_NOSIGPIPE is the only SIGPIPE guard on platforms that lack
+        // MSG_NOSIGNAL (macOS/BSD). Treat failure as fatal, matching the
+        // kqueue backend and Boost.Asio. Caller closes fd on error.
         {
             int one = 1;
-            (void)::setsockopt(
-                fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+            if (::setsockopt(
+                    fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) != 0)
+                return make_err(errno);
         }
 #endif
 
