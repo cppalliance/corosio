@@ -207,7 +207,11 @@ stop_src.request_stop();
 
 When the stop source is signaled:
 
-1. The timer's `wait()` returns `cond::canceled`.
+1. The loop only inspects the timer's `wait()` for cancellation, so that is
+   where the stop is observed: `wait()` returns `cond::canceled`. A stop
+   requested mid-`connect()` is not checked there; it simply falls through to
+   the next timer `wait()`, which then returns `cond::canceled`. Either way
+   the coroutine exits cleanly.
 2. The coroutine checks the error and executes `co_return`.
 3. Local variables (`sock`, `delay`) are destroyed through normal unwinding.
 4. With no more outstanding work, `run()` returns.
@@ -228,7 +232,7 @@ executes the coroutine's own cleanup code.
 | Mechanism | Coroutine sees cancellation? | Use case
 
 | `stop_token`
-| Yes — operations return `cond::canceled`
+| Yes — the awaited operation returns `cond::canceled` (here, the timer `wait()`)
 | Graceful shutdown
 
 | `stop()` + `restart()`
@@ -281,9 +285,10 @@ int main(int argc, char* argv[])
 ----
 
 The event loop runs on a background thread. After five seconds the main thread
-signals cancellation. The coroutine observes `cond::canceled`, unwinds, the
-work count reaches zero, and `run()` returns. The `jthread` destructor joins
-automatically.
+signals cancellation. The coroutine observes `cond::canceled` on its timer
+`wait()`, unwinds, the work count reaches zero, and `run()` returns. The
+`jthread` destructor joins automatically. The shipped example uses a plain
+`std::thread` with an explicit `join()`; the two are equivalent here.
 
 == Testing
 

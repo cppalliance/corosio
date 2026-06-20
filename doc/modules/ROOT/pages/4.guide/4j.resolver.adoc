@@ -19,6 +19,8 @@ Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/resolver.hpp>
+#include <boost/capy/read.hpp>
+#include <boost/capy/write.hpp>
 namespace corosio = boost::corosio;
 ----
 ====
@@ -98,11 +100,20 @@ auto [ec, results] = co_await r.resolve(
 | Only return IPv4 if the system has IPv4 configured, same for IPv6
 
 | `v4_mapped`
-| If no IPv6 addresses found, return IPv4-mapped IPv6 addresses
+| Intended to return IPv4-mapped IPv6 addresses when no IPv6 addresses are
+found. Has no effect in the current implementation (see note below).
 
 | `all_matching`
-| With `v4_mapped`, return all matching IPv4 and IPv6 addresses
+| Intended to combine with `v4_mapped` to return all matching IPv4 and IPv6
+addresses. Has no effect in the current implementation (see note below).
 |===
+
+[NOTE]
+====
+`v4_mapped` and `all_matching` are currently inert. The resolver always
+queries with `ai_family = AF_UNSPEC`, but the underlying `AI_V4MAPPED` and
+`AI_ALL` behavior only takes effect for `AF_INET6`-family queries.
+====
 
 Flags can be combined:
 
@@ -183,7 +194,7 @@ capy::task<void> connect_to_service(
     auto [resolve_ec, results] = co_await r.resolve(host, service);
 
     if (resolve_ec)
-        throw boost::system::system_error(resolve_ec);
+        throw std::system_error(resolve_ec);
 
     if (results.empty())
         throw std::runtime_error("No addresses found");
@@ -191,7 +202,7 @@ capy::task<void> connect_to_service(
     corosio::tcp_socket sock(ioc);
     sock.open();
 
-    boost::system::error_code last_error;
+    std::error_code last_error;
     for (auto const& entry : results)
     {
         auto [ec] = co_await sock.connect(entry.get_endpoint());
@@ -203,7 +214,7 @@ capy::task<void> connect_to_service(
         sock.open();
     }
 
-    throw boost::system::system_error(last_error);
+    throw std::system_error(last_error);
 }
 ----
 
@@ -218,7 +229,10 @@ Cancel pending resolution:
 r.cancel();
 ----
 
-The resolution completes with `operation_canceled`.
+The in-flight resolution completes with `capy::cond::canceled` (the
+underlying value is `capy::error::canceled`). Match it portably with
+`ec == capy::cond::canceled` rather than comparing against a specific
+enumerator.
 
 === Stop Token Cancellation
 
@@ -227,24 +241,34 @@ protocol.
 
 == Error Handling
 
-Common resolution errors:
+Resolution failures do not surface as named DNS error codes. The
+underlying `getaddrinfo()` `EAI_*` errors are mapped to generic
+`std::errc` values:
 
 [cols="1,2"]
 |===
-| Error | Meaning
+| Failure | Resulting `std::error_code`
 
-| `host_not_found`
-| Hostname doesn't exist
+| Host not found (`EAI_NONAME`)
+| `std::errc::no_such_device_or_address`
 
-| `no_data`
-| Hostname exists but has no addresses
+| Unknown service (`EAI_SERVICE`)
+| `std::errc::invalid_argument`
 
-| `service_not_found`
-| Unknown service name
-
-| `operation_canceled`
-| Resolution was cancelled
+| Temporary failure (`EAI_AGAIN`)
+| `std::errc::resource_unavailable_try_again`
 |===
+
+Cancellation is reported through capy's category rather than `std::errc`.
+Match it with:
+
+[source,cpp]
+----
+if (ec == capy::cond::canceled)
+{
+    // resolution was cancelled
+}
+----
 
 == Move Semantics
 
@@ -341,12 +365,13 @@ capy::task<void> http_get(
         "Connection: close\r\n"
         "\r\n";
 
-    (co_await corosio::write(
-        sock, capy::const_buffer(request.data(), request.size()))).value();
+    if (auto [ec, n] = co_await capy::write(
+            sock, capy::const_buffer(request.data(), request.size())); ec)
+        throw std::system_error(ec);
 
     // Read response
     std::string response;
-    co_await corosio::read(sock, response);
+    co_await capy::read(sock, response);
 
     std::cout << response << "\n";
 }
@@ -358,8 +383,16 @@ The resolver uses the system's `getaddrinfo()` function. On most platforms,
 this is a blocking call executed on a thread pool to avoid blocking the
 I/O context.
 
+[IMPORTANT]
+====
+Because resolution runs on a thread pool, it requires a multi-threaded
+`io_context`. When the `io_context` is constructed single-threaded (a
+`concurrency_hint` of 1), `resolve()` completes with
+`std::errc::operation_not_supported` and never performs a lookup.
+====
+
 == Next Steps
 
-* xref:4f.endpoints.adoc[Endpoints] — Working with resolved addresses
-* xref:4d.sockets.adoc[Sockets] — Connecting to endpoints
+* xref:4.guide/4f.endpoints.adoc[Endpoints] — Working with resolved addresses
+* xref:4.guide/4d.sockets.adoc[Sockets] — Connecting to endpoints
 * xref:../3.tutorials/3c.dns-lookup.adoc[DNS Lookup Tutorial] — Complete example

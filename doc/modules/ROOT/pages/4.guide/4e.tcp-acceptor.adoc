@@ -31,9 +31,8 @@ A tcp_acceptor binds to a local endpoint and waits for clients to connect:
 
 [source,cpp]
 ----
-corosio::tcp_acceptor acc(ioc);
-if (auto ec = acc.listen(corosio::endpoint(8080)))  // Listen on port 8080
-    return ec;
+// Convenience constructor: open + SO_REUSEADDR + bind + listen on port 8080
+corosio::tcp_acceptor acc(ioc, corosio::endpoint(8080));
 
 corosio::tcp_socket peer(ioc);
 auto [ec] = co_await acc.accept(peer);
@@ -58,53 +57,75 @@ auto ex = ioc.get_executor();
 corosio::tcp_acceptor acc2(ex);
 ----
 
-The tcp_acceptor doesn't own system resources until `listen()` is called.
+A default-constructed acceptor doesn't own system resources until it is
+opened, bound, and set to listen.
 
 == Listening
 
-=== listen()
+Setting up an acceptor involves three operations: opening a socket, binding it
+to a local endpoint, and marking it as passive (listening). You can do all
+three in one expression with the convenience constructor, or perform them
+separately for fine-grained control.
 
-The `listen()` method creates a socket, binds to an endpoint, and begins
-listening for connections:
+=== Convenience Constructor
+
+The simplest way to get a listening acceptor is the convenience constructor,
+which opens, sets `SO_REUSEADDR`, binds, and listens in a single step:
 
 [source,cpp]
 ----
-if (auto ec = acc.listen(corosio::endpoint(8080)))
+// open + SO_REUSEADDR + bind + listen; address family deduced from the endpoint
+corosio::tcp_acceptor acc(ioc, corosio::endpoint(8080));
+----
+
+This throws `std::system_error` if binding or listening fails. Unlike the
+standalone `open()`, the convenience constructor enables `SO_REUSEADDR` before
+binding, so the listening port can be reused immediately after a restart.
+
+=== bind() and listen()
+
+For explicit error handling, construct the acceptor, then bind and listen as
+separate steps. Both return a `std::error_code` and are marked `[[nodiscard]]`
+to prevent accidentally ignoring errors:
+
+[source,cpp]
+----
+corosio::tcp_acceptor acc(ioc);
+acc.open();                                  // create an IPv4 TCP socket
+
+if (auto ec = acc.bind(corosio::endpoint(8080)))
+{
+    std::cerr << "Bind failed: " << ec.message() << "\n";
+    return ec;
+}
+
+if (auto ec = acc.listen())
 {
     std::cerr << "Listen failed: " << ec.message() << "\n";
     return ec;
 }
 ----
 
-This performs three operations:
-
-1. Creates an IPv4 TCP socket
-2. Binds to the specified endpoint
-3. Marks the socket as passive (listening)
-
-Returns a `std::error_code` indicating success or failure. The return value
-is marked `[[nodiscard]]` to prevent accidentally ignoring errors.
-
-=== Parameters
+The `listen()` method accepts an optional `backlog` parameter:
 
 [source,cpp]
 ----
-[[nodiscard]] std::error_code listen(endpoint ep, int backlog = 128);
+[[nodiscard]] std::error_code listen(int backlog = 128);
 ----
 
 The `backlog` parameter specifies the maximum queue length for pending
-connections. When the queue is full, new connection attempts receive
-`ECONNREFUSED`. The default of 128 works for most applications.
+connections. When the queue is full, the kernel may drop or refuse new
+connection attempts. The default of 128 works for most applications.
 
 === Binding to All Interfaces
 
-To accept connections on any network interface:
+To accept connections on any network interface, bind to port only, which uses
+`0.0.0.0` (all IPv4 interfaces):
 
 [source,cpp]
 ----
 // Port only - binds to 0.0.0.0 (all IPv4 interfaces)
-if (auto ec = acc.listen(corosio::endpoint(8080)))
-    return ec;
+corosio::tcp_acceptor acc(ioc, corosio::endpoint(8080));
 ----
 
 === Binding to a Specific Interface
@@ -114,9 +135,8 @@ To accept connections only on a specific interface:
 [source,cpp]
 ----
 // Localhost only
-if (auto ec = acc.listen(corosio::endpoint(
-    boost::urls::ipv4_address::loopback(), 8080)))
-    return ec;
+corosio::tcp_acceptor acc(ioc, corosio::endpoint(
+    corosio::ipv4_address::loopback(), 8080));
 ----
 
 == Accepting Connections
@@ -161,12 +181,13 @@ Common accept errors:
 | `operation_canceled`
 | Cancelled via `cancel()` or stop token
 
-| `bad_file_descriptor`
-| Acceptor not listening
-
 | Resource errors
 | System limit reached (file descriptors, memory)
 |===
+
+Calling `accept()` on an acceptor that is not listening is a precondition
+violation: it throws `std::logic_error` rather than completing with an error
+code.
 
 === Preconditions
 
@@ -196,7 +217,7 @@ protocol:
 ----
 // Inside a cancellable task:
 auto [ec] = co_await acc.accept(peer);
-if (ec == make_error_code(system::errc::operation_canceled))
+if (ec == std::errc::operation_canceled)
     std::cout << "Accept cancelled\n";
 ----
 
@@ -276,7 +297,7 @@ capy::task<void> accept_loop(
 
         if (ec)
         {
-            if (ec == make_error_code(system::errc::operation_canceled))
+            if (ec == std::errc::operation_canceled)
                 break;  // Shutdown requested
 
             std::cerr << "Accept error: " << ec.message() << "\n";
@@ -306,7 +327,13 @@ Coordinate shutdown with signal handling:
 capy::task<void> run_server(corosio::io_context& ioc)
 {
     corosio::tcp_acceptor acc(ioc);
-    if (auto ec = acc.listen(corosio::endpoint(8080)))
+    acc.open();
+    if (auto ec = acc.bind(corosio::endpoint(8080)))
+    {
+        std::cerr << "Bind failed: " << ec.message() << "\n";
+        co_return;
+    }
+    if (auto ec = acc.listen())
     {
         std::cerr << "Listen failed: " << ec.message() << "\n";
         co_return;
@@ -330,7 +357,7 @@ capy::task<void> run_server(corosio::io_context& ioc)
 
 == Relationship to tcp_server
 
-For production servers, consider using xref:4k.tcp-server.adoc[tcp_server] which
+For production servers, consider using xref:4.guide/4k.tcp-server.adoc[tcp_server] which
 provides:
 
 * Worker pool management
@@ -343,6 +370,6 @@ upon.
 
 == Next Steps
 
-* xref:4d.sockets.adoc[Sockets] — Using accepted connections
-* xref:4k.tcp-server.adoc[TCP Server] — Higher-level server framework
+* xref:4.guide/4d.sockets.adoc[Sockets] — Using accepted connections
+* xref:4.guide/4k.tcp-server.adoc[TCP Server] — Higher-level server framework
 * xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Complete example

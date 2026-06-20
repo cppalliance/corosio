@@ -11,7 +11,7 @@
 
 This chapter introduces the networking concepts you need to understand before
 using Corosio. If you're already comfortable with TCP/IP, sockets, and the
-client-server model, you can skip to xref:4c.io-context.adoc[I/O Context].
+client-server model, you can skip to xref:4.guide/4c.io-context.adoc[I/O Context].
 
 == What is a Network?
 
@@ -474,7 +474,7 @@ the checksum and discards corrupted packets. Unlike TCP, UDP doesn't
 retransmit—the data is simply lost.
 
 Corosio supports TCP, UDP, and Unix domain sockets. See
-xref:4p.unix-sockets.adoc[Unix Domain Sockets] for local inter-process
+xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets] for local inter-process
 communication without the TCP/IP stack overhead.
 
 == Ports and Sockets
@@ -675,9 +675,12 @@ The `TCP_NODELAY` socket option disables Nagle's algorithm, sending data
 immediately regardless of size. Use this for latency-sensitive applications
 where you're sending small packets that shouldn't be delayed.
 
+Corosio exposes this through `socket_option::no_delay`, set via
+`tcp_socket::set_option`:
+
 [source,cpp]
 ----
-// Note: Corosio doesn't currently expose TCP_NODELAY directly
+sock.set_option(corosio::socket_option::no_delay(true));
 ----
 
 === SO_REUSEADDR
@@ -729,7 +732,7 @@ exact amounts:
 auto [ec, n] = co_await sock.read_some(buf);
 
 // Right: reads until buffer is full or EOF
-auto [ec, n] = co_await corosio::read(sock, buf);
+auto [ec, n] = co_await capy::read(sock, buf);
 ----
 
 === Connection Refused
@@ -758,6 +761,6 @@ For a deeper understanding of TCP/IP:
 
 == Next Steps
 
-* xref:4b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
-* xref:4c.io-context.adoc[I/O Context] — The event loop
-* xref:4d.sockets.adoc[Sockets] — Socket operations in detail
+* xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
+* xref:4.guide/4c.io-context.adoc[I/O Context] — The event loop
+* xref:4.guide/4d.sockets.adoc[Sockets] — Socket operations in detail

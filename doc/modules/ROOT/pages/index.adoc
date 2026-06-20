@@ -23,13 +23,15 @@ executor without manual dispatch.
 * **tcp_socket** — Asynchronous TCP socket with connect, read, and write
 * **tcp_acceptor** — TCP listener for accepting incoming connections
 * **tcp_server** — Server framework with worker pools
-* **udp_socket** — Asynchronous UDP socket for datagrams
+* **udp_socket** — Asynchronous UDP socket for datagrams (including multicast)
 * **local_stream_socket** — Unix domain stream socket for local IPC
+* **local_stream_acceptor** — Unix domain stream listener
 * **local_datagram_socket** — Unix domain datagram socket for local IPC
 * **resolver** — Asynchronous DNS resolution
 * **timer** — Asynchronous timer for delays and timeouts
 * **signal_set** — Asynchronous signal handling
-* **wolfssl_stream** — TLS encryption using WolfSSL
+* **stream_file** / **random_access_file** — Asynchronous file I/O
+* **openssl_stream** / **wolfssl_stream** — TLS encryption (OpenSSL or WolfSSL)
 
 == What This Library Does Not Do
 
@@ -38,7 +40,7 @@ Corosio focuses on coroutine-first I/O primitives. It does not include:
 * General-purpose executor abstractions (use Boost.Capy)
 * The sender/receiver execution model (P2300)
 * HTTP, WebSocket, or other application protocols (use Boost.Http or Boost.Beast2)
-* UDP multicast or raw sockets
+* Raw sockets
 
 Corosio works with Boost.Capy for task management and execution contexts.
 
@@ -52,8 +54,8 @@ parameters, not through thread-local storage. When an I/O operation completes,
 it resumes your coroutine through the dispatcher you provided.
 
 **Structured bindings.** Results use `io_result<T>` which supports structured
-bindings: `auto [ec, n] = co_await s.read_some(buf)`. Call `.value()` to throw
-on error instead.
+bindings: `auto [ec, n] = co_await s.read_some(buf)`. `io_result` has no
+`value()`; to throw on error, check `ec` and `throw std::system_error(ec)`.
 
 **Type erasure at I/O boundaries.** Socket implementations use type-erased
 dispatchers internally. The indirection cost is negligible compared to I/O
@@ -74,7 +76,7 @@ and xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] for back
 == Requirements
 
 * C++20 compiler with coroutine support
-* Boost libraries: Capy, URL, System
+* Boost libraries: Capy
 
 === Tested Compilers
 
@@ -125,7 +127,7 @@ capy::task<void> connect_example(corosio::io_context& ioc)
 
     // Connect using structured bindings
     auto [ec] = co_await s.connect(
-        corosio::endpoint(boost::urls::ipv4_address::loopback(), 8080));
+        corosio::endpoint(corosio::ipv4_address::loopback(), 8080));
 
     if (ec)
     {

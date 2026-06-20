@@ -102,12 +102,12 @@ auto ep = entry.get_endpoint();
 if (ep.is_v4())
 {
     // IPv4 address
-    boost::urls::ipv4_address addr = ep.v4_address();
+    corosio::ipv4_address addr = ep.v4_address();
 }
 else
 {
     // IPv6 address
-    boost::urls::ipv6_address addr = ep.v6_address();
+    corosio::ipv6_address addr = ep.v6_address();
 }
 
 std::uint16_t port = ep.port();
@@ -189,13 +189,13 @@ capy::task<void> connect_to_host(
     corosio::resolver r(ioc);
     auto [resolve_ec, results] = co_await r.resolve(host, service);
     if (resolve_ec)
-        throw boost::system::system_error(resolve_ec);
+        throw std::system_error(resolve_ec);
 
     corosio::tcp_socket sock(ioc);
     sock.open();
 
     // Try each address until one works
-    boost::system::error_code last_ec;
+    std::error_code last_ec;
     for (auto const& entry : results)
     {
         auto [ec] = co_await sock.connect(entry.get_endpoint());
@@ -207,7 +207,7 @@ capy::task<void> connect_to_host(
         last_ec = ec;
     }
 
-    throw boost::system::system_error(last_ec, "all addresses failed");
+    throw std::system_error(last_ec, "all addresses failed");
 }
 ----
 
@@ -241,10 +241,14 @@ Resolver operations support cancellation via `std::stop_token`:
 r.cancel();  // Cancel pending operation
 ----
 
+A cancelled resolution completes with `capy::cond::canceled` (the
+underlying value is `capy::error::canceled`), so test for it with
+`ec == capy::cond::canceled`.
+
 Or through the affine awaitable protocol when using `capy::jcancellable_task`.
 
 == Next Steps
 
 * xref:../4.guide/4j.resolver.adoc[Resolver Guide] — Full resolver reference
 * xref:../4.guide/4f.endpoints.adoc[Endpoints Guide] — Working with addresses
-* xref:3b.http-client.adoc[HTTP Client] — Use resolved addresses for connections
+* xref:3.tutorials/3b.http-client.adoc[HTTP Client] — Use resolved addresses for connections

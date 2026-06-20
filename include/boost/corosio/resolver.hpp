@@ -183,8 +183,10 @@ operator&=(reverse_flags& a, reverse_flags b) noexcept
     for (auto const& entry : results)
         std::cout << entry.get_endpoint().port() << std::endl;
 
-    // Or using exceptions
-    auto results = (co_await r.resolve("www.example.com", "https")).value();
+    // Or, to convert errors into exceptions:
+    auto [ec2, results2] = co_await r.resolve("www.example.com", "https");
+    if (ec2)
+        throw std::system_error(ec2);
     @endcode
 */
 class BOOST_COROSIO_DECL resolver : public io_object

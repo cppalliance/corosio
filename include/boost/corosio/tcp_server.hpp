@@ -728,16 +728,20 @@ public:
 
     /** Stop accepting connections.
 
-        Signals all listening ports to stop accepting new connections
-        and requests cancellation of active workers via their stop tokens.
-        
+        Requests the accept loops' stop token and requests cancellation
+        of active workers via their stop tokens. The acceptors are not
+        closed; a suspended accept completes once more before its loop
+        observes the stop token and ends.
+
         This function returns immediately; it does not wait for workers
         to finish. Pending I/O operations complete asynchronously.
 
         Calling `stop()` on a non-running server has no effect.
 
         @par Effects
-        - Closes all acceptors (pending accepts complete with error).
+        - Requests stop on the accept loops' stop token. The acceptors
+          are not closed; a pending accept completes once more before
+          the accept loop ends.
         - Requests stop on each active worker's stop token.
         - Workers observing their stop token should exit promptly.
 

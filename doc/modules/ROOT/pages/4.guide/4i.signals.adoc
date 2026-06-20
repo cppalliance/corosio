@@ -180,9 +180,8 @@ Remove a signal from the set:
 ----
 signals.remove(SIGINT);
 
-// With error code
-boost::system::error_code ec;
-signals.remove(SIGINT, ec);
+// remove() returns an error_code instead of throwing
+std::error_code ec = signals.remove(SIGINT);
 ----
 
 Removing a signal that's not in the set has no effect.
@@ -195,9 +194,8 @@ Remove all signals from the set:
 ----
 signals.clear();
 
-// With error code
-boost::system::error_code ec;
-signals.clear(ec);
+// clear() returns an error_code instead of throwing
+std::error_code ec = signals.clear();
 ----
 
 == Waiting for Signals
@@ -233,12 +231,12 @@ Cancel pending wait operations:
 signals.cancel();
 ----
 
-The wait completes with `capy::error::canceled`:
+The wait completes with `capy::cond::canceled`:
 
 [source,cpp]
 ----
 auto [ec, signum] = co_await signals.wait();
-if (ec == capy::error::canceled)
+if (ec == capy::cond::canceled)
     std::cout << "Wait was cancelled\n";
 ----
 
@@ -391,9 +389,7 @@ capy::task<void> run_server(corosio::io_context& ioc)
         }(ioc, running));
 
     // Accept loop
-    corosio::acceptor acc(ioc);
-    if (auto ec = acc.listen(corosio::endpoint(8080)))
-        co_return;
+    corosio::tcp_acceptor acc(ioc, corosio::endpoint(8080));
 
     while (running)
     {
@@ -428,6 +424,6 @@ The `restart` flag is particularly useful—without it, blocking calls like
 
 == Next Steps
 
-* xref:4h.timers.adoc[Timers] — Timed operations
-* xref:4c.io-context.adoc[I/O Context] — The event loop
+* xref:4.guide/4h.timers.adoc[Timers] — Timed operations
+* xref:4.guide/4c.io-context.adoc[I/O Context] — The event loop
 * xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Server example

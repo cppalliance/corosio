@@ -95,6 +95,9 @@ expect buffer. If they match, the matched prefix is consumed; if they
 don't, `write_some` returns `capy::error::test_failure` and writes zero
 bytes. Once the expect buffer is empty, subsequent writes pass through.
 
+On a match, the reported byte count is the full size of the write (capped
+at `max_write_size`), not the length of the matched prefix.
+
 == Chunked I/O
 
 `make_mocket_pair` accepts `max_read_size` and `max_write_size` to cap
@@ -143,6 +146,11 @@ Always call `close()` at the end of a test that uses `provide` / `expect`
 and assert that the result is empty. This is what catches "the test
 passed because the code under test did nothing."
 
+The leftover-data check only runs on the *first* `close()` of a
+still-open mocket. `close()` on an already-closed mocket returns success
+without inspecting the staging buffers, so the verifying `close()` must be
+the first one.
+
 == Templated over Socket
 
 `basic_mocket` is a template; the default alias only specializes it for
@@ -174,7 +182,16 @@ corosio::tcp_socket& under = m.socket();
 // Pass `under` into a TLS stream, a custom framing layer, etc.
 ----
 
-See xref:5c.patterns.adoc[Testing Patterns] for a TLS-over-mocket
+[IMPORTANT]
+====
+I/O performed through the returned raw socket *bypasses* the mocket's
+`provide()` / `expect()` scripting. Those stages run only inside the
+mocket's own `read_some` / `write_some`; a stream built on `socket()`
+talks to the underlying socket directly. To script bytes for a
+higher-level stream, drive the mocket directly instead.
+====
+
+See xref:5.testing/5c.patterns.adoc[Testing Patterns] for a TLS-over-mocket
 example.
 
 == Thread Safety
@@ -196,9 +213,9 @@ example.
 
 == Next Steps
 
-* xref:5b.socket-pair.adoc[Socket Pairs] — when you need real socket
+* xref:5.testing/5b.socket-pair.adoc[Socket Pairs] — when you need real socket
   semantics instead of staged bytes.
-* xref:5c.patterns.adoc[Testing Patterns] — recipes that combine mocket,
+* xref:5.testing/5c.patterns.adoc[Testing Patterns] — recipes that combine mocket,
   socket_pair, and chunked I/O.
 * xref:../4.guide/4d.sockets.adoc[Sockets Guide] — the underlying socket
   interface.

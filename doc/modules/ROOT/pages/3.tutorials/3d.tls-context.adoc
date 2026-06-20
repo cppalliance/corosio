@@ -20,7 +20,8 @@ Code snippets assume:
 ----
 #include <boost/corosio/tls_context.hpp>
 
-namespace tls = boost::corosio::tls;
+namespace corosio = boost::corosio;
+using namespace boost::corosio;
 ----
 ====
 
@@ -38,6 +39,26 @@ handles:
 
 Use `tls_context` to configure TLS settings once, then pass it to TLS streams
 for establishing secure connections.
+
+[WARNING]
+.Implementation status
+====
+Several settings shown in this tutorial are accepted by the API but are
+*not yet wired up* by the OpenSSL or WolfSSL backends in this release;
+they are stored and silently ignored: `set_default_verify_paths()`,
+`set_verify_callback()` (also fails to link), `set_alpn()`,
+`set_min_protocol_version()` / `set_max_protocol_version()`,
+`add_verify_path()`, all revocation features (`add_crl*`,
+`set_ocsp_staple` / `set_require_ocsp_staple`, `set_revocation_policy`),
+and `use_pkcs12*` (returns `std::errc::function_not_supported`).
+`set_ciphersuites()` is applied by OpenSSL only.
+
+**To verify a peer today you must supply CA certificates explicitly** via
+`load_verify_file()` or `add_certificate_authority()` — system trust via
+`set_default_verify_paths()` does not work yet. The working surface is
+`set_verify_mode()`, `set_verify_depth()`, custom trust anchors,
+credentials, and `set_hostname()`.
+====
 
 == Construction
 
@@ -71,17 +92,17 @@ Most applications follow this pattern:
 tls_context ctx;
 
 // 1. Load credentials (for servers, or clients using client certs)
-ctx.use_certificate_chain_file( "server.crt" ).value();
-ctx.use_private_key_file( "server.key", tls_file_format::pem ).value();
+ctx.use_certificate_chain_file( "server.crt" );
+ctx.use_private_key_file( "server.key", tls_file_format::pem );
 
 // 2. Configure trust anchors (for verifying peer certificates)
-ctx.set_default_verify_paths().value();  // Use system CA store
+ctx.set_default_verify_paths();  // Use system CA store
 
 // 3. Set verification mode
-ctx.set_verify_mode( tls_verify_mode::peer ).value();
+ctx.set_verify_mode( tls_verify_mode::peer );
 
 // 4. Configure protocol options (optional)
-ctx.set_min_protocol_version( tls::version::tls_1_2 ).value();
+ctx.set_min_protocol_version( tls_version::tls_1_2 );
 ----
 
 == Credential Loading
@@ -98,18 +119,18 @@ from separate PEM files:
 [source,cpp]
 ----
 // Load certificate chain (leaf + intermediates)
-ctx.use_certificate_chain_file( "fullchain.pem" ).value();
+ctx.use_certificate_chain_file( "fullchain.pem" );
 
 // Load the matching private key
-ctx.use_private_key_file( "privkey.key", tls_file_format::pem ).value();
+ctx.use_private_key_file( "privkey.key", tls_file_format::pem );
 ----
 
 For a single certificate without intermediates:
 
 [source,cpp]
 ----
-ctx.use_certificate_file( "server.crt", tls_file_format::pem ).value();
-ctx.use_private_key_file( "server.key", tls_file_format::pem ).value();
+ctx.use_certificate_file( "server.crt", tls_file_format::pem );
+ctx.use_private_key_file( "server.key", tls_file_format::pem );
 ----
 
 === Loading from PKCS#12 Bundles
@@ -119,8 +140,12 @@ into a single password-protected file:
 
 [source,cpp]
 ----
-ctx.use_pkcs12_file( "credentials.pfx", "bundle-password" ).value();
+ctx.use_pkcs12_file( "credentials.pfx", "bundle-password" );
 ----
+
+NOTE: PKCS#12 loading is not yet implemented; `use_pkcs12()` and
+`use_pkcs12_file()` return `std::errc::function_not_supported`. Load the
+certificate and key separately for now.
 
 === Loading from Memory
 
@@ -132,8 +157,8 @@ manager), use the non-file variants:
 std::string cert_pem = fetch_certificate_from_vault();
 std::string key_pem = fetch_key_from_vault();
 
-ctx.use_certificate_chain( cert_pem ).value();
-ctx.use_private_key( key_pem, tls_file_format::pem ).value();
+ctx.use_certificate_chain( cert_pem );
+ctx.use_private_key( key_pem, tls_file_format::pem );
 ----
 
 === DER Format
@@ -142,8 +167,8 @@ For binary DER-encoded files (common in embedded systems):
 
 [source,cpp]
 ----
-ctx.use_certificate_file( "server.der", tls_file_format::der ).value();
-ctx.use_private_key_file( "server.key.der", tls_file_format::der ).value();
+ctx.use_certificate_file( "server.der", tls_file_format::der );
+ctx.use_private_key_file( "server.key.der", tls_file_format::der );
 ----
 
 === Encrypted Private Keys
@@ -162,7 +187,7 @@ For HTTPS clients connecting to public servers, use the system's CA store:
 
 [source,cpp]
 ----
-ctx.set_default_verify_paths().value();
+ctx.set_default_verify_paths();
 ----
 
 This uses the operating system's trusted certificates:
@@ -171,6 +196,14 @@ This uses the operating system's trusted certificates:
 * macOS: System Keychain
 * Windows: Windows Certificate Store
 
+[WARNING]
+====
+`set_default_verify_paths()` is *not yet wired up*: it is a no-op and the
+OS trust store is never loaded, so a client relying on it cannot verify a
+public server. Until this is implemented, supply trust anchors explicitly
+with `load_verify_file()` or `add_certificate_authority()` (below).
+====
+
 === Custom CA Bundle
 
 For internal PKI or testing, load a custom CA bundle:
@@ -178,8 +211,14 @@ For internal PKI or testing, load a custom CA bundle:
 [source,cpp]
 ----
 // Load CA bundle file (may contain multiple CAs)
-ctx.load_verify_file( "/path/to/ca-bundle.crt" ).value();
+ctx.load_verify_file( "/path/to/ca-bundle.crt" );
 ----
+
+NOTE: `load_verify_file()` and `add_certificate_authority()` are the
+currently working way to establish trust anchors. With OpenSSL,
+`load_verify_file()` registers only the *first* certificate from a
+multi-cert bundle (WolfSSL handles multi-cert files); add the rest with
+repeated `add_certificate_authority()` calls.
 
 === CA Directory
 
@@ -187,8 +226,11 @@ On systems with hashed certificate directories (created by `c_rehash`):
 
 [source,cpp]
 ----
-ctx.add_verify_path( "/etc/ssl/certs" ).value();
+ctx.add_verify_path( "/etc/ssl/certs" );
 ----
+
+NOTE: `add_verify_path()` is not yet applied; the directory is accepted
+but never loaded.
 
 === Individual CA Certificates
 
@@ -198,11 +240,11 @@ Add CA certificates one at a time:
 ----
 // From memory
 std::string internal_ca = load_ca_from_config();
-ctx.add_certificate_authority( internal_ca ).value();
+ctx.add_certificate_authority( internal_ca );
 
 // Multiple CAs
-ctx.add_certificate_authority( root_ca_pem ).value();
-ctx.add_certificate_authority( intermediate_ca_pem ).value();
+ctx.add_certificate_authority( root_ca_pem );
+ctx.add_certificate_authority( intermediate_ca_pem );
 ----
 
 === Combining Trust Sources
@@ -212,11 +254,14 @@ You can combine multiple trust sources:
 [source,cpp]
 ----
 // Start with system trust store
-ctx.set_default_verify_paths().value();
+ctx.set_default_verify_paths();
 
 // Add an internal CA for corporate servers
-ctx.add_certificate_authority( corporate_ca_pem ).value();
+ctx.add_certificate_authority( corporate_ca_pem );
 ----
+
+NOTE: The `set_default_verify_paths()` call above contributes nothing in
+this release. Only the explicitly added CA is actually trusted.
 
 == Protocol Configuration
 
@@ -229,12 +274,15 @@ Set minimum and/or maximum TLS versions:
 [source,cpp]
 ----
 // Require TLS 1.2 or newer (default)
-ctx.set_min_protocol_version( tls::version::tls_1_2 ).value();
+ctx.set_min_protocol_version( tls_version::tls_1_2 );
 
 // Require TLS 1.3 only
-ctx.set_min_protocol_version( tls::version::tls_1_3 ).value();
-ctx.set_max_protocol_version( tls::version::tls_1_3 ).value();
+ctx.set_min_protocol_version( tls_version::tls_1_3 );
+ctx.set_max_protocol_version( tls_version::tls_1_3 );
 ----
+
+NOTE: Protocol version bounds are not yet applied by the backends. The
+negotiated range is whatever the native default method provides.
 
 === Cipher Suites
 
@@ -243,11 +291,14 @@ Configure allowed cipher suites using OpenSSL-style syntax:
 [source,cpp]
 ----
 // Strong cipher suites only
-ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" ).value();
+ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" );
 
 // Disable weak ciphers
-ctx.set_ciphersuites( "HIGH:!aNULL:!MD5:!RC4" ).value();
+ctx.set_ciphersuites( "HIGH:!aNULL:!MD5:!RC4" );
 ----
+
+NOTE: `set_ciphersuites()` is applied by the OpenSSL backend only; the
+WolfSSL backend accepts the string but silently ignores it.
 
 === ALPN (Application-Layer Protocol Negotiation)
 
@@ -256,14 +307,17 @@ ALPN negotiates the application protocol over TLS. Common uses:
 [source,cpp]
 ----
 // HTTP/2 with HTTP/1.1 fallback
-ctx.set_alpn( { "h2", "http/1.1" } ).value();
+ctx.set_alpn( { "h2", "http/1.1" } );
 
 // gRPC
-ctx.set_alpn( { "h2" } ).value();
+ctx.set_alpn( { "h2" } );
 
 // Custom protocol
-ctx.set_alpn( { "my-protocol/1.0" } ).value();
+ctx.set_alpn( { "my-protocol/1.0" } );
 ----
+
+NOTE: ALPN is not yet wired up; the protocol list is accepted but never
+negotiated by either backend.
 
 The server selects from the client's list based on its own preferences.
 
@@ -276,13 +330,13 @@ Configure how peer certificates are verified during the TLS handshake.
 [source,cpp]
 ----
 // Don't verify peer (not recommended for production)
-ctx.set_verify_mode( tls_verify_mode::none ).value();
+ctx.set_verify_mode( tls_verify_mode::none );
 
 // Verify peer if certificate is presented
-ctx.set_verify_mode( tls_verify_mode::peer ).value();
+ctx.set_verify_mode( tls_verify_mode::peer );
 
 // Require and verify peer certificate (mTLS server-side)
-ctx.set_verify_mode( tls_verify_mode::require_peer ).value();
+ctx.set_verify_mode( tls_verify_mode::require_peer );
 ----
 
 Typical usage:
@@ -313,7 +367,7 @@ Limit how many intermediate certificates are allowed:
 [source,cpp]
 ----
 // Allow up to 3 intermediates (leaf -> 3 intermediates -> root)
-ctx.set_verify_depth( 3 ).value();
+ctx.set_verify_depth( 3 );
 ----
 
 The default (typically 100) is sufficient for most chains.
@@ -321,6 +375,13 @@ The default (typically 100) is sufficient for most chains.
 === Custom Verification
 
 For advanced use cases, install a custom verification callback:
+
+[WARNING]
+====
+`set_verify_callback()` is not yet implemented: the template is declared
+but never defined, so code that instantiates it *fails to link*. Use
+`set_verify_mode()` with explicitly supplied trust anchors instead.
+====
 
 [source,cpp]
 ----
@@ -338,13 +399,23 @@ ctx.set_verify_callback(
         
         // Additional custom checks...
         return true;  // accept
-    }).value();
+    });
 ----
 
 == Revocation Checking
 
 Certificate revocation checking verifies that certificates haven't been
 invalidated by the issuing CA. Two mechanisms are supported: CRL and OCSP.
+
+[WARNING]
+====
+None of the revocation features in this section are wired up yet.
+`set_revocation_policy()`, CRLs (`add_crl()` / `add_crl_file()`), and OCSP
+stapling (`set_ocsp_staple()` / `set_require_ocsp_staple()`) are all
+accepted but inert. In particular, `set_require_ocsp_staple(true)` does
+*not* fail the handshake when no staple is present, and `soft_fail` /
+`hard_fail` do not change verification behavior.
+====
 
 === Revocation Policy
 
@@ -353,13 +424,13 @@ Set the overall revocation checking behavior:
 [source,cpp]
 ----
 // Don't check revocation (default)
-ctx.set_revocation_policy( tls::revocation_policy::disabled );
+ctx.set_revocation_policy( tls_revocation_policy::disabled );
 
 // Check but allow if status is unknown (lenient)
-ctx.set_revocation_policy( tls::revocation_policy::soft_fail );
+ctx.set_revocation_policy( tls_revocation_policy::soft_fail );
 
 // Require successful revocation check (strict)
-ctx.set_revocation_policy( tls::revocation_policy::hard_fail );
+ctx.set_revocation_policy( tls_revocation_policy::hard_fail );
 ----
 
 === CRL (Certificate Revocation Lists)
@@ -369,11 +440,11 @@ Load CRLs from the CA that issued the certificates you're verifying:
 [source,cpp]
 ----
 // From file
-ctx.add_crl_file( "/path/to/issuer.crl" ).value();
+ctx.add_crl_file( "/path/to/issuer.crl" );
 
 // From memory (e.g., fetched via HTTP)
 std::string crl_data = fetch_crl_from_url( crl_url );
-ctx.add_crl( crl_data ).value();
+ctx.add_crl( crl_data );
 ----
 
 CRLs must be refreshed periodically as they expire.
@@ -391,7 +462,7 @@ large CRLs.
 std::string ocsp_response = fetch_ocsp_response();
 
 // Provide to clients during handshake
-ctx.set_ocsp_staple( ocsp_response ).value();
+ctx.set_ocsp_staple( ocsp_response );
 ----
 
 **Client-side** (require server to staple):
@@ -406,20 +477,29 @@ ctx.set_require_ocsp_staple( true );
 
 A common pattern uses two context configurations:
 
+[WARNING]
+====
+Both contexts below rely on `set_default_verify_paths()` (a no-op here) for
+trust and on revocation policy / CRLs for the "hardened" path — none of
+which are applied yet. As written, neither context verifies anything. To
+verify a peer today, load a CA bundle explicitly with
+`load_verify_file()`; the revocation hardening is not yet available.
+====
+
 [source,cpp]
 ----
 // Bootstrap context: for fetching revocation data
 tls_context bootstrap_ctx;
-bootstrap_ctx.set_default_verify_paths().value();
-bootstrap_ctx.set_verify_mode( tls_verify_mode::peer ).value();
-bootstrap_ctx.set_revocation_policy( tls::revocation_policy::disabled );
+bootstrap_ctx.set_default_verify_paths();
+bootstrap_ctx.set_verify_mode( tls_verify_mode::peer );
+bootstrap_ctx.set_revocation_policy( tls_revocation_policy::disabled );
 
 // Hardened context: for sensitive connections
 tls_context hardened_ctx;
-hardened_ctx.set_default_verify_paths().value();
-hardened_ctx.set_verify_mode( tls_verify_mode::peer ).value();
-hardened_ctx.add_crl_file( "cached.crl" ).value();
-hardened_ctx.set_revocation_policy( tls::revocation_policy::hard_fail );
+hardened_ctx.set_default_verify_paths();
+hardened_ctx.set_verify_mode( tls_verify_mode::peer );
+hardened_ctx.add_crl_file( "cached.crl" );
+hardened_ctx.set_revocation_policy( tls_revocation_policy::hard_fail );
 ----
 
 == Password Handling
@@ -433,14 +513,14 @@ Set a password callback before loading encrypted material.
 ----
 // Set callback before loading encrypted key
 ctx.set_password_callback(
-    []( std::size_t max_length, tls::password_purpose purpose )
+    []( std::size_t max_length, tls_password_purpose purpose )
     {
         // purpose: for_reading (decrypt) or for_writing (encrypt)
         return std::string( "my-secret-password" );
     });
 
 // Now load encrypted private key
-ctx.use_private_key_file( "encrypted.key", tls_file_format::pem ).value();
+ctx.use_private_key_file( "encrypted.key", tls_file_format::pem );
 ----
 
 === Secure Password Handling
@@ -450,7 +530,7 @@ In production, don't hardcode passwords:
 [source,cpp]
 ----
 ctx.set_password_callback(
-    []( std::size_t max_length, tls::password_purpose purpose )
+    []( std::size_t max_length, tls_password_purpose purpose )
     {
         // Read from environment
         if( auto* pw = std::getenv( "TLS_KEY_PASSWORD" ) )
@@ -467,14 +547,14 @@ PKCS#12 files take the password directly (no callback needed):
 
 [source,cpp]
 ----
-ctx.use_pkcs12_file( "credentials.pfx", "bundle-password" ).value();
+ctx.use_pkcs12_file( "credentials.pfx", "bundle-password" );
 ----
 
 For PKCS#12 loaded from memory:
 
 [source,cpp]
 ----
-ctx.use_pkcs12( pkcs12_data, "bundle-password" ).value();
+ctx.use_pkcs12( pkcs12_data, "bundle-password" );
 ----
 
 == Complete Examples
@@ -484,6 +564,15 @@ scenarios.
 
 === HTTPS Client Context
 
+[WARNING]
+====
+This example trusts public CAs via `set_default_verify_paths()`, which is a
+no-op in this release, so it verifies nothing. Replace it with an explicit
+CA bundle to actually verify the server, for example
+`ctx.load_verify_file( "/etc/ssl/certs/ca-certificates.crt" );`. The
+`set_min_protocol_version()` call is also inert.
+====
+
 [source,cpp]
 ----
 tls_context make_https_client_context()
@@ -491,13 +580,13 @@ tls_context make_https_client_context()
     tls_context ctx;
     
     // Trust system CAs for public websites
-    ctx.set_default_verify_paths().value();
+    ctx.set_default_verify_paths();
     
     // Verify server certificates
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
+    ctx.set_verify_mode( tls_verify_mode::peer );
     
     // Modern TLS only
-    ctx.set_min_protocol_version( tls::version::tls_1_2 ).value();
+    ctx.set_min_protocol_version( tls_version::tls_1_2 );
     
     return ctx;
 }
@@ -505,8 +594,10 @@ tls_context make_https_client_context()
 // Usage with TLS stream
 tls_context ctx = make_https_client_context();
 ctx.set_hostname("api.example.com");  // Set before creating stream
-corosio::wolfssl_stream secure( sock, ctx );
-co_await secure.handshake( corosio::tls_stream::client );
+
+// Pointer form wraps the connected socket without taking ownership
+corosio::wolfssl_stream secure( &sock, ctx );
+co_await secure.handshake( corosio::wolfssl_stream::client );
 ----
 
 === TLS Server Context
@@ -518,11 +609,11 @@ tls_context make_server_context()
     tls_context ctx;
     
     // Load server credentials
-    ctx.use_certificate_chain_file( "fullchain.pem" ).value();
-    ctx.use_private_key_file( "privkey.pem", tls_file_format::pem ).value();
+    ctx.use_certificate_chain_file( "fullchain.pem" );
+    ctx.use_private_key_file( "privkey.pem", tls_file_format::pem );
     
     // Don't verify client certificates (no mTLS)
-    ctx.set_verify_mode( tls_verify_mode::none ).value();
+    ctx.set_verify_mode( tls_verify_mode::none );
     
     return ctx;
 }
@@ -537,12 +628,12 @@ tls_context make_mtls_client_context()
     tls_context ctx;
     
     // Client credentials for mTLS
-    ctx.use_certificate_chain_file( "client.crt" ).value();
-    ctx.use_private_key_file( "client.key", tls_file_format::pem ).value();
+    ctx.use_certificate_chain_file( "client.crt" );
+    ctx.use_private_key_file( "client.key", tls_file_format::pem );
     
     // Trust specific CA for server verification
-    ctx.load_verify_file( "server-ca.crt" ).value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
+    ctx.load_verify_file( "server-ca.crt" );
+    ctx.set_verify_mode( tls_verify_mode::peer );
     
     return ctx;
 }
@@ -577,4 +668,4 @@ Common errors include:
 == Next Steps
 
 * xref:../4.guide/4l.tls.adoc[TLS Encryption] — Using TLS streams
-* xref:3b.http-client.adoc[HTTP Client Tutorial] — HTTPS example
+* xref:3.tutorials/3b.http-client.adoc[HTTP Client Tutorial] — HTTPS example

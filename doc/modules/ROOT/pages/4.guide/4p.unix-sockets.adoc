@@ -200,8 +200,11 @@ std::string_view path = ep.path();
 bool bound = !ep.empty();
 ----
 
-The maximum path length is 107 bytes (the `sun_path` field in `sockaddr_un`
-minus the null terminator). Paths longer than this throw
+The maximum path length is 103 bytes. This is the portable minimum across
+platforms: the `sun_path` field in `sockaddr_un` is 108 bytes on Linux but
+only 104 on macOS and FreeBSD. Corosio uses a 104-byte buffer with a 103-char
+limit (one byte reserved for the null terminator) so a `local_endpoint` is
+portable across all three. Paths longer than this throw
 `std::errc::filename_too_long`.
 
 === Abstract Sockets (Linux Only)
@@ -249,22 +252,25 @@ assert(ep.is_abstract());
 
 | Platform
 | All platforms
-| POSIX only (Linux, macOS, BSD)
+| Linux, macOS, BSD, Windows (stream); POSIX only for datagram
 |===
 
 == Platform Support
 
-Unix domain sockets are available on all POSIX platforms:
+Unix domain **stream** sockets and acceptors are available on every supported
+platform:
 
 * **Linux** — Full support including abstract sockets
 * **macOS** — Full support (no abstract sockets)
 * **FreeBSD** — Full support (no abstract sockets)
+* **Windows** — Stream sockets and acceptors via IOCP (AF_UNIX, Windows 10
+  1803 and later; no abstract sockets)
 
-Windows has limited AF_UNIX support (since Windows 10 1803) but Corosio
-does not currently support Unix sockets on Windows.
+Unix domain **datagram** sockets are POSIX only — they are not available on
+Windows.
 
 == Next Steps
 
-* xref:4d.sockets.adoc[TCP Sockets] — TCP socket operations
-* xref:4e.tcp-acceptor.adoc[TCP Acceptors] — TCP listener operations
-* xref:4f.endpoints.adoc[IP Endpoints] — IP address and port endpoints
+* xref:4.guide/4d.sockets.adoc[TCP Sockets] — TCP socket operations
+* xref:4.guide/4e.tcp-acceptor.adoc[TCP Acceptors] — TCP listener operations
+* xref:4.guide/4f.endpoints.adoc[IP Endpoints] — IP address and port endpoints

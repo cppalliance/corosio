@@ -52,9 +52,10 @@ The `io_context`:
 corosio::io_context ioc;
 ----
 
-Creates an `io_context` with a concurrency hint equal to
-`std::thread::hardware_concurrency()`. If more than one thread is available,
-thread-safe synchronization is enabled.
+Creates an `io_context` with a concurrency hint of
+`std::max(2u, std::thread::hardware_concurrency())` — the default constructor
+never selects single-threaded mode. Single-threaded (lockless) mode is keyed
+on a `concurrency_hint` of exactly `1`; pass `1` explicitly to opt into it.
 
 === With Concurrency Hint
 
@@ -67,7 +68,10 @@ corosio::io_context ioc(4);  // Up to 4 threads, thread-safe
 The concurrency hint affects:
 
 * Internal synchronization strategy
-* IOCP thread pool size on Windows
+* On Windows, the hint is passed to `CreateIoCompletionPort` as
+  `NumberOfConcurrentThreads`, bounding how many completion threads may run
+  concurrently. It is not a library-managed thread pool, and it is distinct
+  from `thread_pool_size`.
 
 Use `1` for single-threaded programs to avoid synchronization overhead.
 
@@ -88,6 +92,7 @@ This function:
 * Blocks until all work completes or `stop()` is called
 * Returns the number of handlers executed
 * Automatically stops when no outstanding work remains
+* Returns immediately with `0` if there is no outstanding work when called
 
 === run_one()
 
@@ -190,18 +195,21 @@ if (ex.running_in_this_thread())
 ----
 auto ex = ioc.get_executor();
 
-// Dispatch: symmetric transfer if inside run(), otherwise post
-ex(handle);
+// Dispatch a continuation: symmetric transfer if inside run(),
+// otherwise post. Returns a handle to resume.
+std::coroutine_handle<> next = ex.dispatch(cont);
 
-// Post: always queue for later execution
+// Post a continuation: always queue for later execution
+ex.post(cont);
+
+// Post a bare coroutine handle for later execution
 ex.post(handle);
-
-// Defer: same as post (conveys continuation intent)
-ex.defer(handle);
 ----
 
-The dispatch operation `ex(handle)` enables symmetric transfer when already
-running inside `run()`. This is how child coroutines resume parents
+The dispatch operation `ex.dispatch(cont)` enables symmetric transfer when
+already running inside `run()`: it returns `cont.h` directly so the caller can
+resume it inline. Otherwise it posts the continuation for later execution and
+returns `std::noop_coroutine()`. This is how child coroutines resume parents
 efficiently.
 
 === Work Tracking
@@ -310,6 +318,6 @@ On macOS and FreeBSD, the `io_context` uses kqueue:
 
 == Next Steps
 
-* xref:4d.sockets.adoc[Sockets] — I/O with TCP sockets
-* xref:4e.tcp-acceptor.adoc[Acceptors] — Accept incoming connections
-* xref:4h.timers.adoc[Timers] — Async delays and timeouts
+* xref:4.guide/4d.sockets.adoc[Sockets] — I/O with TCP sockets
+* xref:4.guide/4e.tcp-acceptor.adoc[Acceptors] — Accept incoming connections
+* xref:4.guide/4h.timers.adoc[Timers] — Async delays and timeouts

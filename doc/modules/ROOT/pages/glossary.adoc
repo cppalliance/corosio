@@ -18,8 +18,9 @@ An I/O object that listens for and accepts incoming TCP connections. See
 `corosio::tcp_acceptor` and xref:4.guide/4e.tcp-acceptor.adoc[Acceptors Guide].
 
 Affine Awaitable::
-An awaitable type that implements the affine protocol, receiving a dispatcher
-parameter in `await_suspend` to ensure correct executor affinity.
+An awaitable type that implements the affine protocol, receiving an
+`io_env const*` in `await_suspend` (carrying the executor, stop token, and
+frame allocator) to ensure correct executor affinity.
 
 Affinity::
 The binding of a coroutine to a specific executor. A coroutine with affinity
@@ -29,9 +30,9 @@ buffer_param::
 A type-erased buffer sequence parameter, allowing non-template code to
 work with any buffer type.
 
-any_dispatcher::
-A type-erased wrapper for dispatchers, enabling runtime polymorphism for
-executor types.
+any_executor::
+A type-erased wrapper for executors, enabling runtime polymorphism for
+executor types. See `capy::any_executor`.
 
 Awaitable::
 A type that can be used with `co_await`. Must provide `await_ready()`,
@@ -59,7 +60,7 @@ with an error.
 
 Composed Operation::
 An operation built from multiple primitive operations. For example,
-`corosio::read()` repeatedly calls `read_some()` until the buffer is full.
+`capy::read()` repeatedly calls `read_some()` until the buffer is full.
 
 Concurrency Hint::
 A value passed to `io_context` indicating how many threads may call `run()`.
@@ -77,12 +78,6 @@ Coroutine Handle::
 A low-level handle to a suspended coroutine, represented by
 `std::coroutine_handle<>`.
 
-== D
-
-Dispatcher::
-An object that can dispatch coroutine handles for execution. Satisfies the
-`capy::dispatcher` concept.
-
 == E
 
 Endpoint::
@@ -91,14 +86,14 @@ See `corosio::endpoint`.
 
 EOF (End of File/Stream)::
 A condition indicating no more data is available. Signaled by
-`capy::error::eof`.
+`capy::cond::eof`.
 
 Error Category::
-A grouping of related error codes. Boost.System uses categories to
-distinguish different error sources.
+A grouping of related error codes. The standard library uses categories
+to distinguish different error sources (system, generic, and capy).
 
 Error Code::
-A lightweight error indicator. See `boost::system::error_code`.
+A lightweight error indicator. See `std::error_code`.
 
 Error Condition::
 A portable error classification. Enables comparing errors across categories.
@@ -108,8 +103,8 @@ An environment where work runs. Provides service management and an executor.
 See `capy::execution_context`.
 
 Executor::
-An object that can dispatch work for execution. Satisfies the `capy::executor`
-concept.
+An object that can dispatch or post coroutine handles and work for execution.
+Satisfies the `capy::Executor` concept.
 
 == H
 
@@ -174,7 +169,10 @@ outstanding work exists.
 == P
 
 Platform Backend::
-The operating system-specific implementation (IOCP, io_uring, kqueue).
+The operating system-specific I/O implementation. Corosio provides five:
+epoll, kqueue, IOCP, io_uring, and select. The default selection is IOCP
+(Windows), epoll (Linux), kqueue (BSD/macOS), and select (fallback); io_uring
+is available but not selected by default.
 
 Poll::
 Processing ready work without blocking. See `io_context::poll()`.
@@ -218,9 +216,11 @@ Stop Token::
 A mechanism for requesting cancellation. See `std::stop_token`.
 
 Strand::
-A serialization mechanism that ensures handlers don't run concurrently.
-Operations posted to a strand execute one at a time, eliminating data
-races without mutexes. See xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming].
+A serialization mechanism that ensures handlers don't run concurrently, so
+operations execute one at a time, eliminating data races without mutexes.
+Corosio does not provide a strand type; the equivalent is executor affinity
+or a single-threaded `io_context`.
+See xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming].
 
 Stream::
 A sequence of bytes that can be read or written incrementally.

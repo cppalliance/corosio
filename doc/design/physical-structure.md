@@ -254,7 +254,7 @@ private:
 | Type         | Base(s)   | Key Operations                                                     |
 | ------------ | --------- | ------------------------------------------------------------------ |
 | tcp_socket   | io_stream | connect(endpoint), shutdown(), TCP options, local/remote_endpoint() |
-| tcp_acceptor | io_object | listen(endpoint, backlog), accept(tcp_socket&), local_endpoint()   |
+| tcp_acceptor | io_object | bind(endpoint), listen(backlog), accept(tcp_socket&), local_endpoint() |
 | resolver     | io_object | resolve(host, service), resolve(endpoint), cancel()                |
 
 **Types table** - Sockets (UDP):

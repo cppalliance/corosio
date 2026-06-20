@@ -175,7 +175,7 @@ tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
     ctx.set_hostname( "example.com" );
 
     // Use with a TLS stream
-    corosio::openssl_stream secure( sock, ctx );
+    corosio::openssl_stream secure( &sock, ctx );
     co_await secure.handshake( corosio::tls_stream::client );
     @endcode
 
@@ -405,6 +405,11 @@ public:
         @return Success, or an error if the bundle could not be parsed
             or the passphrase is incorrect.
 
+        @note Not yet implemented in this release; returns
+            `std::errc::function_not_supported`. Load the certificate
+            and key separately via `use_certificate_chain()` and
+            `use_private_key()` instead.
+
         @see use_pkcs12_file
     */
     std::error_code
@@ -423,6 +428,11 @@ public:
 
         @return Success, or an error if the file could not be read,
             parsed, or the passphrase is incorrect.
+
+        @note Not yet implemented in this release; returns
+            `std::errc::function_not_supported`. Load the certificate
+            and key separately via `use_certificate_chain_file()` and
+            `use_private_key_file()` instead.
 
         @par Example
         @code
@@ -484,6 +494,11 @@ public:
 
         @return Success, or an error if the directory is invalid.
 
+        @note Not yet applied by the backends in this release; the
+            directory is accepted but never loaded. Use
+            `load_verify_file()` or `add_certificate_authority()` to
+            supply trust anchors.
+
         @par Example
         @code
         ctx.add_verify_path( "/etc/ssl/certs" );
@@ -507,6 +522,13 @@ public:
         - Windows: Windows Certificate Store
 
         @return Success, or an error if the system store could not be loaded.
+
+        @note Not yet applied by the backends in this release. This is a
+            no-op: the OS trust store is never loaded, so a client that
+            relies on it has an empty trust store and cannot verify a
+            public server. To verify a peer today, supply CA certificates
+            explicitly via `load_verify_file()` or
+            `add_certificate_authority()`.
 
         @par Example
         @code
@@ -533,6 +555,10 @@ public:
         @return Success, or an error if the version is not supported
             by the backend.
 
+        @note Not yet applied by the backends in this release; the bound
+            is accepted but has no effect. The negotiated range is
+            whatever the native default method provides.
+
         @par Example
         @code
         // Require TLS 1.3 minimum
@@ -552,6 +578,10 @@ public:
 
         @return Success, or an error if the version is not supported
             by the backend.
+
+        @note Not yet applied by the backends in this release; the bound
+            is accepted but has no effect. The negotiated range is
+            whatever the native default method provides.
 
         @see set_min_protocol_version
     */
@@ -575,6 +605,9 @@ public:
 
         @note For TLS 1.3, use `set_ciphersuites_tls13()` on backends
             that distinguish between TLS 1.2 and 1.3 cipher configuration.
+
+        @note Applied by the OpenSSL backend only in this release; the
+            WolfSSL backend accepts the string but silently ignores it.
     */
     std::error_code set_ciphersuites(std::string_view ciphers);
 
@@ -590,6 +623,9 @@ public:
         @param protocols Ordered list of protocol identifiers.
 
         @return Success, or an error if ALPN configuration fails.
+
+        @note Not yet applied by the backends in this release; the
+            protocol list is accepted but ALPN is never negotiated.
 
         @par Example
         @code
@@ -654,6 +690,11 @@ public:
         @param callback The verification callback.
 
         @return Success, or an error if the callback could not be set.
+
+        @note Not yet implemented in this release. This template is
+            declared but not defined; code that instantiates it fails to
+            link. Use `set_verify_mode()` with explicitly supplied trust
+            anchors instead.
 
         @note The `verify_context` type provides access to the
             certificate and chain information. Its exact interface
@@ -740,6 +781,9 @@ public:
 
         @return Success, or an error if the CRL could not be parsed.
 
+        @note Not yet applied by the backends in this release; the CRL is
+            accepted but never used during verification.
+
         @see add_crl_file
         @see set_revocation_policy
     */
@@ -754,6 +798,9 @@ public:
 
         @return Success, or an error if the file could not be read
             or the CRL is invalid.
+
+        @note Not yet applied by the backends in this release; the CRL is
+            accepted but never used during verification.
 
         @par Example
         @code
@@ -779,6 +826,9 @@ public:
 
         @return Success, or an error if the response is invalid.
 
+        @note Not yet applied by the backends in this release; the
+            response is accepted but never stapled into the handshake.
+
         @note This is a server-side operation. Clients use
             `set_require_ocsp_staple()` to require stapled responses.
     */
@@ -792,6 +842,10 @@ public:
         fails.
 
         @param require Whether to require OCSP stapling.
+
+        @note Not yet applied by the backends in this release; the flag
+            is accepted but has no effect. Setting it to `true` does not
+            make the handshake fail when no staple is present.
 
         @note Not all servers support OCSP stapling. Enable this only
             when connecting to servers known to support it.
@@ -813,6 +867,10 @@ public:
         // Check but allow unknown status
         ctx.set_revocation_policy( tls_revocation_policy::soft_fail );
         @endcode
+
+        @note Not yet applied by the backends in this release; the policy
+            is accepted but has no effect. `soft_fail` and `hard_fail` do
+            not change verification behavior.
 
         @see tls_revocation_policy
         @see add_crl

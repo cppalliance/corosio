@@ -534,7 +534,7 @@ for (int i = 0; i < max_workers; ++i)
 ----
 
 Corosio's `tcp_server` class implements this pattern—see
-xref:4k.tcp-server.adoc[TCP Server] for details.
+xref:4.guide/4k.tcp-server.adoc[TCP Server] for details.
 
 === Pipelines
 
@@ -630,5 +630,5 @@ provides excellent performance with simple, race-free code.
 
 == Next Steps
 
-* xref:4c.io-context.adoc[I/O Context] — The event loop in detail
+* xref:4.guide/4c.io-context.adoc[I/O Context] — The event loop in detail
 * xref:../3.tutorials/3a.echo-server.adoc[Echo Server] — Practical concurrency example

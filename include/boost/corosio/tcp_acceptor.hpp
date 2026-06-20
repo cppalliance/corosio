@@ -466,17 +466,17 @@ public:
 
         Returns the local address and port to which the acceptor is bound.
         This is useful when binding to port 0 (ephemeral port) to discover
-        the OS-assigned port number. The endpoint is cached when listen()
+        the OS-assigned port number. The endpoint is cached when bind()
         is called.
 
         @return The local endpoint, or a default endpoint (0.0.0.0:0) if
-            the acceptor is not listening.
+            the acceptor is not open.
 
         @par Thread Safety
-        The cached endpoint value is set during listen() and cleared
+        The cached endpoint value is set during bind() and cleared
         during close(). This function may be called concurrently with
         accept operations, but must not be called concurrently with
-        listen() or close().
+        bind() or close().
     */
     endpoint local_endpoint() const noexcept;
 
