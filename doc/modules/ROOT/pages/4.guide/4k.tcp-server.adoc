@@ -40,38 +40,47 @@ framework handles:
 
 [source,cpp]
 ----
-class echo_server : public corosio::tcp_server
+class echo_worker : public corosio::tcp_server::worker_base
 {
-    struct worker : worker_base
-    {
-        corosio::io_context& ctx_;
-        corosio::tcp_socket sock_;
-        std::string buf;
-
-        explicit worker(corosio::io_context& ctx)
-            : ctx_(ctx)
-            , sock_(ctx)
-        {
-            buf.reserve(4096);
-        }
-
-        corosio::tcp_socket& socket() override { return sock_; }
-
-        void run(launcher launch) override
-        {
-            launch(ctx_.get_executor(), do_echo());
-        }
-
-        capy::task<void> do_echo();
-    };
+    corosio::io_context& ctx_;
+    corosio::tcp_socket sock_;
+    std::string buf;
 
 public:
-    echo_server(corosio::io_context& ioc)
+    explicit echo_worker(corosio::io_context& ctx)
+        : ctx_(ctx)
+        , sock_(ctx)
+    {
+        buf.reserve(4096);
+    }
+
+    corosio::tcp_socket& socket() override { return sock_; }
+
+    void run(launcher launch) override
+    {
+        launch(ctx_.get_executor(), do_echo());
+    }
+
+    capy::task<void> do_echo();
+};
+
+// Build the worker pool as a range of pointer-like objects.
+auto make_echo_workers(corosio::io_context& ctx, int n)
+{
+    std::vector<std::unique_ptr<corosio::tcp_server::worker_base>> v;
+    v.reserve(n);
+    for (int i = 0; i < n; ++i)
+        v.push_back(std::make_unique<echo_worker>(ctx));
+    return v;
+}
+
+class echo_server : public corosio::tcp_server
+{
+public:
+    echo_server(corosio::io_context& ioc, int max_workers)
         : tcp_server(ioc, ioc.get_executor())
     {
-        wv_.reserve(100);
-        for (int i = 0; i < 100; ++i)
-            wv_.emplace<worker>(ioc);
+        set_workers(make_echo_workers(ioc, max_workers));
     }
 };
 ----
@@ -83,14 +92,20 @@ a socket and any state needed for a session.
 
 === worker_base
 
-The `worker_base` class is the foundation:
+The `worker_base` class is the foundation. It declares a constructor and a
+virtual destructor, holds private intrusive-list bookkeeping used by the
+server's idle and active pools, and exposes two pure virtuals you must
+override:
 
 [source,cpp]
 ----
 class worker_base
 {
+    // Private list/bookkeeping members managed by tcp_server.
 public:
-    virtual ~worker_base() = default;
+    worker_base();
+    virtual ~worker_base();
+
     virtual void run(launcher launch) = 0;
     virtual corosio::tcp_socket& socket() = 0;
 };
@@ -101,13 +116,14 @@ required methods:
 
 [source,cpp]
 ----
-struct my_worker : tcp_server::worker_base
+class my_worker : public corosio::tcp_server::worker_base
 {
     corosio::io_context& ctx_;
     corosio::tcp_socket sock_;
     std::string request_buf;
     std::string response_buf;
 
+public:
     explicit my_worker(corosio::io_context& ctx)
         : ctx_(ctx)
         , sock_(ctx)
@@ -128,37 +144,45 @@ struct my_worker : tcp_server::worker_base
 };
 ----
 
-=== The workers Container
+=== Providing Workers
 
-The `workers` class manages the worker pool:
+The worker pool is installed with `set_workers()`. It accepts any forward
+range of pointer-like objects convertible to `worker_base*`, such as a
+`std::vector<std::unique_ptr<worker_base>>`. The server takes ownership of the
+range and reuses each worker across connections:
 
 [source,cpp]
 ----
-class workers
+template<class Range>
+void set_workers(Range&& workers);
+----
+
+A small helper that builds the range keeps construction tidy:
+
+[source,cpp]
+----
+auto make_workers(corosio::io_context& ctx, int n)
+{
+    std::vector<std::unique_ptr<corosio::tcp_server::worker_base>> v;
+    v.reserve(n);
+    for (int i = 0; i < n; ++i)
+        v.push_back(std::make_unique<my_worker>(ctx));
+    return v;
+}
+
+class my_server : public corosio::tcp_server
 {
 public:
-    template<class T, class... Args>
-    T& emplace(Args&&... args);
-
-    void reserve(std::size_t n);
-    std::size_t size() const noexcept;
+    my_server(corosio::io_context& ioc, int max_workers)
+        : tcp_server(ioc, ioc.get_executor())
+    {
+        set_workers(make_workers(ioc, max_workers));
+    }
 };
 ----
 
-Use `emplace()` to add workers during construction:
-
-[source,cpp]
-----
-my_server(corosio::io_context& ioc)
-    : tcp_server(ioc, ioc.get_executor())
-{
-    wv_.reserve(max_workers);
-    for (int i = 0; i < max_workers; ++i)
-        wv_.emplace<my_worker>(ioc);
-}
-----
-
-Workers are stored polymorphically, allowing different worker types if needed.
+Because the range holds `unique_ptr<worker_base>`, workers are stored
+polymorphically, allowing different worker types in the same pool if needed.
 
 == The Launcher
 
@@ -229,6 +253,9 @@ Begin accepting connections:
 server.start();
 ----
 
+Workers must have been provided via `set_workers()` before calling `start()`,
+and at least one endpoint must be bound.
+
 After `start()`, the server:
 
 1. Listens on all bound ports
@@ -236,7 +263,9 @@ After `start()`, the server:
 3. Assigns connections to available workers
 4. Calls each worker's `run()` method
 
-The accept loop runs until the `io_context` stops.
+The accept loop runs until `tcp_server::stop()` is called, which requests the
+workers' stop token. Note that `stop()` does not close the acceptors, so a
+suspended accept completes once more before the loop exits.
 
 == Complete Example
 
@@ -244,66 +273,76 @@ The accept loop runs until the `io_context` stops.
 ----
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/write.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/write.hpp>
 #include <iostream>
+#include <memory>
+#include <vector>
 
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 
+class echo_worker : public corosio::tcp_server::worker_base
+{
+    corosio::io_context& ctx_;
+    corosio::tcp_socket sock_;
+    std::string buf;
+
+public:
+    explicit echo_worker(corosio::io_context& ctx)
+        : ctx_(ctx)
+        , sock_(ctx)
+    {
+        buf.reserve(4096);
+    }
+
+    corosio::tcp_socket& socket() override { return sock_; }
+
+    void run(launcher launch) override
+    {
+        launch(ctx_.get_executor(), do_session());
+    }
+
+    capy::task<void> do_session()
+    {
+        for (;;)
+        {
+            buf.resize(4096);
+            auto [ec, n] = co_await sock_.read_some(
+                capy::mutable_buffer(buf.data(), buf.size()));
+
+            if (ec || n == 0)
+                break;
+
+            buf.resize(n);
+            auto [wec, wn] = co_await capy::write(
+                sock_, capy::const_buffer(buf.data(), buf.size()));
+
+            if (wec)
+                break;
+        }
+
+        sock_.close();
+    }
+};
+
+auto make_echo_workers(corosio::io_context& ctx, int n)
+{
+    std::vector<std::unique_ptr<corosio::tcp_server::worker_base>> v;
+    v.reserve(n);
+    for (int i = 0; i < n; ++i)
+        v.push_back(std::make_unique<echo_worker>(ctx));
+    return v;
+}
+
 class echo_server : public corosio::tcp_server
 {
-    struct worker : worker_base
-    {
-        corosio::io_context& ctx_;
-        corosio::tcp_socket sock_;
-        std::string buf;
-
-        explicit worker(corosio::io_context& ctx)
-            : ctx_(ctx)
-            , sock_(ctx)
-        {
-            buf.reserve(4096);
-        }
-
-        corosio::tcp_socket& socket() override { return sock_; }
-
-        void run(launcher launch) override
-        {
-            launch(ctx_.get_executor(), do_session());
-        }
-
-        capy::task<void> do_session()
-        {
-            for (;;)
-            {
-                buf.resize(4096);
-                auto [ec, n] = co_await sock_.read_some(
-                    capy::mutable_buffer(buf.data(), buf.size()));
-
-                if (ec || n == 0)
-                    break;
-
-                buf.resize(n);
-                auto [wec, wn] = co_await corosio::write(
-                    sock_, capy::const_buffer(buf.data(), buf.size()));
-
-                if (wec)
-                    break;
-            }
-
-            sock_.close();
-        }
-    };
-
 public:
     echo_server(corosio::io_context& ctx, int max_workers)
         : tcp_server(ctx, ctx.get_executor())
     {
-        wv_.reserve(max_workers);
-        for (int i = 0; i < max_workers; ++i)
-            wv_.emplace<worker>(ctx);
+        set_workers(make_echo_workers(ctx, max_workers));
     }
 };
 
@@ -389,6 +428,6 @@ synchronization.
 
 == Next Steps
 
-* xref:4d.sockets.adoc[Sockets] — Socket operations
-* xref:4b.concurrent-programming.adoc[Concurrent Programming] — Coroutine patterns
+* xref:4.guide/4d.sockets.adoc[Sockets] — Socket operations
+* xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] — Coroutine patterns
 * xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Simpler approach

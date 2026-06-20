@@ -173,9 +173,7 @@ If the socket is not yet open when `connect()` is called, it is opened
 automatically using the address family of the destination endpoint. This
 makes a connect-then-send client a two-line affair.
 
-You can call `connect()` again at any time to switch peers, or call it with
-an unspecified endpoint (`AF_UNSPEC`) on platforms that support it to
-dissolve the association.
+You can call `connect()` again at any time to switch peers.
 
 Connected mode is useful for two reasons:
 
@@ -249,7 +247,7 @@ Options commonly relevant to UDP:
   platforms; enable for IPv6-only services.
 |===
 
-See xref:4d.sockets.adoc[Sockets] for the full list of generic socket
+See xref:4.guide/4d.sockets.adoc[Sockets] for the full list of generic socket
 options.
 
 == Multicast
@@ -290,8 +288,8 @@ Related options:
 | Set the multicast TTL (IPv4) / hop limit (IPv6). Default is `1` —
   datagrams stay on the local subnet unless you raise it.
 
-| `multicast_interface_v6`
-| Choose the outgoing interface for IPv6 multicast.
+| `multicast_interface_v4` / `multicast_interface_v6`
+| Choose the outgoing interface for IPv4 / IPv6 multicast.
 |===
 
 == Cancellation
@@ -318,7 +316,7 @@ ss.request_stop();   // unblocks any in-flight recv_from inside my_task
 
 For portable error comparison, check against `capy::cond::canceled` rather
 than a platform-specific `errc` value. See
-xref:4m.error-handling.adoc[Error Handling].
+xref:4.guide/4m.error-handling.adoc[Error Handling].
 
 == Concurrent Operations
 
@@ -370,6 +368,6 @@ cost in the kernel, so a server can run several receivers in parallel.
 
 * xref:2.networking-tutorial/2g.udp.adoc[UDP: Fast, Simple, Unreliable] —
   protocol-level background
-* xref:4d.sockets.adoc[Sockets] — generic socket options and lifetime rules
-* xref:4f.endpoints.adoc[Endpoints] — IP address and port construction
-* xref:4m.error-handling.adoc[Error Handling] — the `io_result` pattern
+* xref:4.guide/4d.sockets.adoc[Sockets] — generic socket options and lifetime rules
+* xref:4.guide/4f.endpoints.adoc[Endpoints] — IP address and port construction
+* xref:4.guide/4m.error-handling.adoc[Error Handling] — the `io_result` pattern

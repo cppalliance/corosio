@@ -21,6 +21,7 @@ Code snippets assume:
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/write.hpp>
 
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
@@ -103,7 +104,7 @@ capy::task<> echo_server::worker::do_session()
         auto [ec, n] = co_await sock_.read_some(
             capy::mutable_buffer(buf_, sizeof buf_));
 
-        auto [wec, wn] = co_await corosio::write(
+        auto [wec, wn] = co_await capy::write(
             sock_, capy::const_buffer(buf_, n));
 
         if (wec || ec)
@@ -119,28 +120,37 @@ Notice:
 * We reuse the worker's buffer across reads
 * `read_some()` returns when _any_ data arrives — it may deliver bytes alongside an error
 * We always write before checking the error (advance-then-check); writing zero bytes is a no-op
-* `corosio::write()` writes _all_ data (it's a composed operation)
+* `capy::write()` writes _all_ data (it's a composed operation)
 * When the coroutine ends, the launcher returns the worker to the pool
 
 == Server Construction
 
-The server constructor populates the worker pool:
+A helper builds the worker pool, then the constructor hands it to
+`set_workers()`:
 
 [source,cpp]
 ----
+    static std::vector<std::unique_ptr<worker_base>>
+    make_workers(corosio::io_context& ctx, int n)
+    {
+        std::vector<std::unique_ptr<worker_base>> v;
+        v.reserve(n);
+        for (int i = 0; i < n; ++i)
+            v.push_back(std::make_unique<worker>(ctx));
+        return v;
+    }
+
 public:
     echo_server(corosio::io_context& ctx, int max_workers)
         : tcp_server(ctx, ctx.get_executor())
     {
-        wv_.reserve(max_workers);
-        for (int i = 0; i < max_workers; ++i)
-            wv_.emplace<worker>(ctx);
+        set_workers(make_workers(ctx, max_workers));
     }
 };
 ----
 
-Workers are stored polymorphically via `wv_.emplace<T>()`, allowing different
-worker types if needed.
+Workers are owned polymorphically through `std::unique_ptr<worker_base>`, so
+`set_workers()` accepts any range of worker types.
 
 == Main Function
 
@@ -194,7 +204,7 @@ The `tcp_server` framework provides:
 
 === Why Composed Write?
 
-The `corosio::write()` free function ensures all data is sent:
+The `capy::write()` free function ensures all data is sent:
 
 [source,cpp]
 ----
@@ -202,7 +212,7 @@ The `corosio::write()` free function ensures all data is sent:
 auto [ec, n] = co_await sock.write_some(buf);  // n might be < buf.size()
 
 // write: writes all data or fails
-auto [ec, n] = co_await corosio::write(sock, buf);  // n == buf.size() or error
+auto [ec, n] = co_await capy::write(sock, buf);  // n == buf.size() or error
 ----
 
 For echo servers, we want complete message delivery.
@@ -215,7 +225,7 @@ with advance-then-check, we always act on `n` before inspecting `ec`:
 [source,cpp]
 ----
 auto [ec, n] = co_await sock.read_some(buf);
-auto [wec, wn] = co_await corosio::write(sock, const_buffer(buf.data(), n));
+auto [wec, wn] = co_await capy::write(sock, const_buffer(buf.data(), n));
 if (wec || ec)
     break;  // Normal termination path
 ----
@@ -225,7 +235,8 @@ With exceptions, EOF would require a try-catch:
 [source,cpp]
 ----
 try {
-    auto n = (co_await sock.read_some(buf)).value();
+    auto [ec, n] = co_await sock.read_some(buf);
+    if (ec) throw std::system_error(ec);
 } catch (...) {
     // EOF is an exception here
 }
@@ -254,7 +265,7 @@ World
 
 == Next Steps
 
-* xref:3b.http-client.adoc[HTTP Client] — Build an HTTP client
+* xref:3.tutorials/3b.http-client.adoc[HTTP Client] — Build an HTTP client
 * xref:../4.guide/4k.tcp-server.adoc[TCP Server Guide] — Deep dive into tcp_server
 * xref:../4.guide/4d.sockets.adoc[Sockets Guide] — Deep dive into socket operations
 * xref:../4.guide/4g.composed-operations.adoc[Composed Operations] — Understanding read/write

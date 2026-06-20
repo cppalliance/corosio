@@ -9,8 +9,8 @@
 
 = Testing Patterns
 
-This page collects recipes that combine xref:5a.mocket.adoc[`mocket`]
-and xref:5b.socket-pair.adoc[`make_socket_pair`] in realistic test
+This page collects recipes that combine xref:5.testing/5a.mocket.adoc[`mocket`]
+and xref:5.testing/5b.socket-pair.adoc[`make_socket_pair`] in realistic test
 scenarios. Each recipe is a small standalone block; copy and adapt.
 
 [NOTE]
@@ -92,9 +92,14 @@ The same applies to `max_write_size` for write-loop testing.
 
 == Layering Streams on a Mocket
 
-`m.socket()` returns the underlying `tcp_socket`. Stack any stream that
-wraps a TCP socket on top of it; the staging buffers still apply at the
-TCP layer, with the higher-level stream's wire format flowing through:
+`m.socket()` returns the underlying `tcp_socket`. You can stack any stream
+that wraps a TCP socket on top of it, but be aware that doing so *bypasses*
+the mocket's `provide()` / `expect()` scripting: those stages run only
+inside the mocket's own `read_some` / `write_some`. A stream built on
+`m.socket()` calls the underlying socket's `read_some` / `write_some`
+directly, so staged bytes do not apply. If you need to script bytes for a
+higher-level stream, drive the mocket directly instead of layering on
+`m.socket()`:
 
 [source,cpp]
 ----
@@ -102,7 +107,7 @@ auto [m, peer] = corosio::test::make_mocket_pair(ioc);
 
 // Pass m.socket() into a TLS stream or other layer in production code:
 corosio::tcp_socket& under = m.socket();
-// e.g., openssl_stream<corosio::tcp_socket*> tls(&under, tls_ctx);
+// e.g., openssl_stream tls(&under, tls_ctx);
 ----
 
 This is the right tool when the bytes you want to stage are below a
@@ -148,9 +153,15 @@ auto ec = m.close();
 This is the line that catches "the test passed because the code under
 test silently did nothing." Treat it as a test-suite convention.
 
+The leftover-data check only runs on the *first* `close()` of a
+still-open mocket. If the mocket is already closed, `close()` returns
+success without inspecting the staging buffers, so leftover `provide()` /
+`expect()` data goes undetected. Make the verifying `close()` the first
+one.
+
 == See Also
 
-* xref:5a.mocket.adoc[Mock Sockets]
-* xref:5b.socket-pair.adoc[Socket Pairs]
+* xref:5.testing/5a.mocket.adoc[Mock Sockets]
+* xref:5.testing/5b.socket-pair.adoc[Socket Pairs]
 * xref:../4.guide/4d.sockets.adoc[Sockets Guide]
 * xref:../4.guide/4l.tls.adoc[TLS Encryption]

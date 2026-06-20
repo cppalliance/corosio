@@ -21,6 +21,7 @@ Code snippets assume:
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/write.hpp>
 
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
@@ -53,39 +54,48 @@ Derive from it and define a worker class:
 
 [source,cpp]
 ----
+class worker : public corosio::tcp_server::worker_base
+{
+    corosio::io_context& ctx_;
+    corosio::tcp_socket sock_;
+    std::string buf_;
+
+public:
+    worker(corosio::io_context& ctx)
+        : ctx_(ctx)
+        , sock_(ctx)
+    {
+        buf_.reserve(4096);
+    }
+
+    corosio::tcp_socket& socket() override { return sock_; }
+
+    void run(corosio::tcp_server::launcher launch) override
+    {
+        launch(ctx_.get_executor(), do_session());
+    }
+
+    capy::task<> do_session();
+};
+
+// Build a pool of workers as a range of unique_ptr<worker_base>.
+inline auto
+make_workers(corosio::io_context& ctx, int n)
+{
+    std::vector<std::unique_ptr<corosio::tcp_server::worker_base>> v;
+    v.reserve(n);
+    for (int i = 0; i < n; ++i)
+        v.push_back(std::make_unique<worker>(ctx));
+    return v;
+}
+
 class echo_server : public corosio::tcp_server
 {
-    class worker : public worker_base
-    {
-        corosio::io_context& ctx_;
-        corosio::tcp_socket sock_;
-        std::string buf_;
-
-    public:
-        worker(corosio::io_context& ctx)
-            : ctx_(ctx)
-            , sock_(ctx)
-        {
-            buf_.reserve(4096);
-        }
-
-        corosio::tcp_socket& socket() override { return sock_; }
-
-        void run(launcher launch) override
-        {
-            launch(ctx_.get_executor(), do_session());
-        }
-
-        capy::task<> do_session();
-    };
-
 public:
     echo_server(corosio::io_context& ctx, int max_workers)
         : tcp_server(ctx, ctx.get_executor())
     {
-        wv_.reserve(max_workers);
-        for (int i = 0; i < max_workers; ++i)
-            wv_.emplace<worker>(ctx);
+        set_workers(make_workers(ctx, max_workers));
     }
 };
 ----
@@ -102,7 +112,7 @@ The session coroutine reads data and echoes it back:
 
 [source,cpp]
 ----
-capy::task<> echo_server::worker::do_session()
+capy::task<> worker::do_session()
 {
     for (;;)
     {
@@ -118,7 +128,7 @@ capy::task<> echo_server::worker::do_session()
         buf_.resize(n);
 
         // Echo it back
-        auto [wec, wn] = co_await corosio::write(
+        auto [wec, wn] = co_await capy::write(
             sock_, capy::const_buffer(buf_.data(), buf_.size()));
 
         if (wec)
@@ -132,7 +142,7 @@ capy::task<> echo_server::worker::do_session()
 Key points:
 
 * `read_some()` returns when _any_ data is available
-* `write()` (the free function) writes _all_ data or fails
+* `capy::write()` (the free function) writes _all_ data or fails
 * Structured bindings extract the error code and byte count
 * When the coroutine ends, the worker automatically returns to the pool
 
@@ -192,12 +202,12 @@ if (ec)
 
 [source,cpp]
 ----
-auto n = (co_await sock.read_some(buf)).value();
-// Throws system_error if read fails
+auto [ec, n] = co_await sock.read_some(buf);
+if (ec) throw std::system_error(ec);  // Throws if read fails
 ----
 
-The `.value()` method throws `boost::system::system_error` if the operation
-failed.
+Checking `ec` and throwing `std::system_error(ec)` is the explicit exception
+style for handling a failed operation.
 
 == Next Steps
 

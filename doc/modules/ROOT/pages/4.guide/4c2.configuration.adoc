@@ -2,9 +2,21 @@
 :navtitle: Configuration
 
 The `io_context_options` struct provides runtime tuning knobs for the
-I/O context and its backend scheduler.  All defaults match the
-library's built-in values, so an unconfigured context behaves
-identically to previous releases.
+I/O context and its backend scheduler.  The defaults listed in the
+table below are the struct field defaults — the values you get from a
+freshly default-constructed `io_context_options`.
+
+[IMPORTANT]
+====
+The inline budget defaults in the table are *not* what a
+default-constructed `io_context` runs with on a multi-core machine.
+When `concurrency_hint > 1` and the inline budgets are still at their
+struct defaults, the constructor overrides them to `(0, 0, 0)`,
+disabling the inline fast path (see the note under
+<<inline-completion-budget>>).  Pass an explicit
+`io_context_options` with non-default budgets to keep the fast path
+enabled in multi-threaded mode.
+====
 
 [source,cpp]
 ----
@@ -84,6 +96,9 @@ corosio::native_io_context<corosio::epoll> ioc(opts);
 |===
 
 Options that do not apply to the active backend are silently ignored.
+The one exception is `thread_pool_size`, which is always validated:
+a value less than `1` causes construction to throw
+`std::invalid_argument`.
 
 == Tuning Guidelines
 
@@ -97,6 +112,7 @@ The event buffer controls how many I/O events are fetched in a single
 * *Many idle connections* (chat servers, WebSocket hubs):
   keep at 128 or lower for better fairness.
 
+[#inline-completion-budget]
 === Inline Completion Budget
 
 The inline budget controls how many I/O completions the reactor
@@ -117,11 +133,12 @@ a re-queue through the scheduler.
 [NOTE]
 ====
 When `io_context` is constructed with `concurrency_hint > 1` and all
-three budget fields are at their defaults `(2, 16, 4)`, the
-constructor overrides them to `(0, 0, 0)`.  Multi-thread workloads
-benefit from cross-thread work-stealing, which "post-everything"
-mode enables.  Setting any budget field to a non-default value
-disables the override.
+three budget fields are at their struct defaults `(2, 16, 4)` — which
+is the case for a default-constructed context on a multi-core machine
+— the constructor overrides them to `(0, 0, 0)`, disabling the inline
+fast path.  Multi-thread workloads benefit from cross-thread
+work-stealing, which "post-everything" mode enables.  Setting any
+budget field to a non-default value disables the override.
 ====
 
 === IOCP Timeout (`gqcs_timeout_ms`)

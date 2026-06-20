@@ -143,6 +143,6 @@ platforms.
 
 == See Also
 
-* xref:4d.sockets.adoc[Sockets]
-* xref:4e.tcp-acceptor.adoc[Acceptors]
-* xref:4q.udp.adoc[UDP Sockets]
+* xref:4.guide/4d.sockets.adoc[Sockets]
+* xref:4.guide/4e.tcp-acceptor.adoc[Acceptors]
+* xref:4.guide/4q.udp.adoc[UDP Sockets]

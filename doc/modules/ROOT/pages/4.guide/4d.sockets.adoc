@@ -37,7 +37,7 @@ corosio::tcp_socket s(ioc);
 s.open();
 
 auto [ec] = co_await s.connect(
-    corosio::endpoint(boost::urls::ipv4_address::loopback(), 8080));
+    corosio::endpoint(corosio::ipv4_address::loopback(), 8080));
 
 char buf[1024];
 auto [read_ec, n] = co_await s.read_some(
@@ -68,7 +68,8 @@ Creates the underlying TCP socket:
 
 [source,cpp]
 ----
-s.open();  // Creates IPv4 TCP socket, associates with IOCP
+s.open();  // Creates IPv4 TCP socket, associates with the platform
+           // reactor (IOCP on Windows, epoll/kqueue/select on POSIX)
 ----
 
 This allocates a socket handle and registers it with the I/O backend.
@@ -83,7 +84,8 @@ Releases socket resources:
 s.close();  // Cancels pending ops, closes socket
 ----
 
-Any pending operations complete with `operation_canceled`.
+Any pending operations complete with `capy::error::canceled`; test for it
+portably with `ec == capy::cond::canceled`.
 
 === is_open()
 
@@ -123,8 +125,8 @@ Common error conditions:
 | `network_unreachable`
 | No route to the host
 
-| `operation_canceled`
-| Cancelled via `cancel()` or stop token
+| `capy::error::canceled`
+| Cancelled via `cancel()` or stop token (test with `ec == capy::cond::canceled`)
 |===
 
 === Exception Pattern
@@ -133,7 +135,8 @@ For simpler code when errors are fatal:
 
 [source,cpp]
 ----
-(co_await s.connect(endpoint)).value();  // Throws on error
+if (auto [ec] = co_await s.connect(endpoint); ec)
+    throw std::system_error(ec);  // Throws on error
 ----
 
 === Range-Based Connect
@@ -232,24 +235,25 @@ When the peer closes the connection:
 ----
 auto [ec, n] = co_await s.read_some(buf);
 
-if (ec == capy::error::eof)
+if (ec == capy::cond::eof)
     // Connection closed normally
-
-if (n == 0 && !ec)
-    // Also indicates EOF in some cases
 ----
+
+EOF is signaled only by `ec == capy::cond::eof`. A successful read with
+`n == 0 && !ec` is not EOF: it occurs when the buffer has zero length, and
+the request simply completes with nothing to do.
 
 === Reading Exact Amounts
 
-Use the `corosio::read()` free function to fill a buffer completely:
+Use the `capy::read()` free function to fill a buffer completely:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await corosio::read(s, buf);
+auto [ec, n] = co_await capy::read(s, buf);
 // n == buffer_size(buf) or error occurred
 ----
 
-See xref:4g.composed-operations.adoc[Composed Operations] for details.
+See xref:4.guide/4g.composed-operations.adoc[Composed Operations] for details.
 
 == Writing Data
 
@@ -269,11 +273,11 @@ than the buffer size.
 
 === Writing All Data
 
-Use the `corosio::write()` free function:
+Use the `capy::write()` free function:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await corosio::write(s, buf);
+auto [ec, n] = co_await capy::write(s, buf);
 // n == buffer_size(buf) or error occurred
 ----
 
@@ -288,7 +292,8 @@ Cancel pending operations:
 s.cancel();
 ----
 
-All outstanding operations complete with `operation_canceled`.
+All outstanding operations complete with `capy::error::canceled`; test for it
+portably with `ec == capy::cond::canceled`.
 
 === Stop Token Cancellation
 
@@ -345,7 +350,7 @@ This enables polymorphic use:
 ----
 capy::task<void> send_data(corosio::io_stream& stream)
 {
-    co_await corosio::write(stream, some_buffer);
+    co_await capy::write(stream, some_buffer);
 }
 
 // Works with socket, wolfssl_stream, or any io_stream
@@ -371,7 +376,7 @@ std::array<capy::mutable_buffer, 2> bufs = {
 co_await s.read_some(bufs);
 ----
 
-See xref:4n.buffers.adoc[Buffer Sequences] for details.
+See xref:4.guide/4n.buffers.adoc[Buffer Sequences] for details.
 
 == Thread Safety
 
@@ -398,12 +403,14 @@ capy::task<void> echo_client(corosio::io_context& ioc)
     corosio::tcp_socket s(ioc);
     s.open();
 
-    (co_await s.connect(
-        corosio::endpoint(boost::urls::ipv4_address::loopback(), 8080))).value();
+    if (auto [ec] = co_await s.connect(
+            corosio::endpoint(corosio::ipv4_address::loopback(), 8080)); ec)
+        throw std::system_error(ec);
 
     std::string msg = "Hello, server!";
-    (co_await corosio::write(
-        s, capy::const_buffer(msg.data(), msg.size()))).value();
+    if (auto [ec, n] = co_await capy::write(
+            s, capy::const_buffer(msg.data(), msg.size())); ec)
+        throw std::system_error(ec);
 
     char buf[1024];
     auto [ec, n] = co_await s.read_some(
@@ -417,7 +424,7 @@ capy::task<void> echo_client(corosio::io_context& ioc)
 
 == Next Steps
 
-* xref:4e.tcp-acceptor.adoc[Acceptors] — Accept incoming connections
-* xref:4f.endpoints.adoc[Endpoints] — IP addresses and ports
-* xref:4g.composed-operations.adoc[Composed Operations] — read() and write()
+* xref:4.guide/4e.tcp-acceptor.adoc[Acceptors] — Accept incoming connections
+* xref:4.guide/4f.endpoints.adoc[Endpoints] — IP addresses and ports
+* xref:4.guide/4g.composed-operations.adoc[Composed Operations] — read() and write()
 * xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Server example

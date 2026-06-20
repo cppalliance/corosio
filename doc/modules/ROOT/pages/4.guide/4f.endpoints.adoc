@@ -19,8 +19,8 @@ Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/endpoint.hpp>
-#include <boost/url/ipv4_address.hpp>
-#include <boost/url/ipv6_address.hpp>
+#include <boost/corosio/ipv4_address.hpp>
+#include <boost/corosio/ipv6_address.hpp>
 
 namespace corosio = boost::corosio;
 ----
@@ -33,10 +33,10 @@ An endpoint combines an address and port:
 [source,cpp]
 ----
 // IPv4 endpoint
-corosio::endpoint ep4(boost::urls::ipv4_address::loopback(), 8080);
+corosio::endpoint ep4(corosio::ipv4_address::loopback(), 8080);
 
 // IPv6 endpoint
-corosio::endpoint ep6(boost::urls::ipv6_address::loopback(), 8080);
+corosio::endpoint ep6(corosio::ipv6_address::loopback(), 8080);
 
 // Port only (binds to all interfaces)
 corosio::endpoint bind_ep(8080);
@@ -48,7 +48,7 @@ corosio::endpoint bind_ep(8080);
 
 [source,cpp]
 ----
-auto addr = boost::urls::ipv4_address::loopback();  // 127.0.0.1
+auto addr = corosio::ipv4_address::loopback();  // 127.0.0.1
 corosio::endpoint ep(addr, 8080);
 ----
 
@@ -56,7 +56,7 @@ corosio::endpoint ep(addr, 8080);
 
 [source,cpp]
 ----
-auto addr = boost::urls::ipv6_address::loopback();  // ::1
+auto addr = corosio::ipv6_address::loopback();  // ::1
 corosio::endpoint ep(addr, 8080);
 ----
 
@@ -102,7 +102,7 @@ std::uint16_t port = ep.port();  // Host byte order
 ----
 if (ep.is_v4())
 {
-    boost::urls::ipv4_address addr = ep.v4_address();
+    corosio::ipv4_address addr = ep.v4_address();
     std::cout << addr.to_string() << "\n";
 }
 ----
@@ -113,7 +113,7 @@ if (ep.is_v4())
 ----
 if (ep.is_v6())
 {
-    boost::urls::ipv6_address addr = ep.v6_address();
+    corosio::ipv6_address addr = ep.v6_address();
     std::cout << addr.to_string() << "\n";
 }
 ----
@@ -125,10 +125,10 @@ if (ep.is_v6())
 [source,cpp]
 ----
 // IPv4 loopback: 127.0.0.1
-auto v4_loop = boost::urls::ipv4_address::loopback();
+auto v4_loop = corosio::ipv4_address::loopback();
 
 // IPv6 loopback: ::1
-auto v6_loop = boost::urls::ipv6_address::loopback();
+auto v6_loop = corosio::ipv6_address::loopback();
 ----
 
 === Any Address
@@ -136,10 +136,10 @@ auto v6_loop = boost::urls::ipv6_address::loopback();
 [source,cpp]
 ----
 // IPv4 any: 0.0.0.0 (all interfaces)
-auto v4_any = boost::urls::ipv4_address::any();
+auto v4_any = corosio::ipv4_address::any();
 
 // IPv6 any: :: (all interfaces)
-auto v6_any = boost::urls::ipv6_address::any();
+auto v6_any = corosio::ipv6_address::any();
 ----
 
 === Broadcast
@@ -147,27 +147,41 @@ auto v6_any = boost::urls::ipv6_address::any();
 [source,cpp]
 ----
 // IPv4 broadcast: 255.255.255.255
-auto v4_bcast = boost::urls::ipv4_address::broadcast();
+auto v4_bcast = corosio::ipv4_address::broadcast();
 ----
 
 == Parsing Addresses
 
-Parse addresses from strings using Boost.URL:
+Parse addresses from strings. Parsing reports failure through an
+`std::error_code` out-parameter:
 
 [source,cpp]
 ----
 // IPv4
-auto result = boost::urls::parse_ipv4_address("192.168.1.1");
-if (result)
+corosio::ipv4_address addr;
+if (auto ec = corosio::parse_ipv4_address("192.168.1.1", addr); !ec)
 {
-    corosio::endpoint ep(*result, 8080);
+    corosio::endpoint ep(addr, 8080);
 }
 
 // IPv6
-auto result6 = boost::urls::parse_ipv6_address("2001:db8::1");
-if (result6)
+corosio::ipv6_address addr6;
+if (auto ec = corosio::parse_ipv6_address("2001:db8::1", addr6); !ec)
 {
-    corosio::endpoint ep(*result6, 8080);
+    corosio::endpoint ep(addr6, 8080);
+}
+----
+
+You can also parse a full `address:port` string directly into an endpoint
+using `parse_endpoint()`, or the `endpoint` constructor that accepts a
+`std::string_view`:
+
+[source,cpp]
+----
+corosio::endpoint ep;
+if (auto ec = corosio::parse_endpoint("192.168.1.1:8080", ep); !ec)
+{
+    // Use ep...
 }
 ----
 
@@ -177,9 +191,9 @@ Endpoints support equality comparison:
 
 [source,cpp]
 ----
-corosio::endpoint ep1(boost::urls::ipv4_address::loopback(), 8080);
-corosio::endpoint ep2(boost::urls::ipv4_address::loopback(), 8080);
-corosio::endpoint ep3(boost::urls::ipv4_address::loopback(), 9090);
+corosio::endpoint ep1(corosio::ipv4_address::loopback(), 8080);
+corosio::endpoint ep2(corosio::ipv4_address::loopback(), 8080);
+corosio::endpoint ep3(corosio::ipv4_address::loopback(), 9090);
 
 assert(ep1 == ep2);  // Same address and port
 assert(ep1 != ep3);  // Different port
@@ -195,7 +209,7 @@ corosio::tcp_socket s(ioc);
 s.open();
 
 corosio::endpoint target(
-    boost::urls::ipv4_address::loopback(), 8080);
+    corosio::ipv4_address::loopback(), 8080);
 
 auto [ec] = co_await s.connect(target);
 ----
@@ -204,9 +218,8 @@ auto [ec] = co_await s.connect(target);
 
 [source,cpp]
 ----
-corosio::tcp_acceptor acc(ioc);
-if (auto ec = acc.listen(corosio::endpoint(8080)))  // Bind to all interfaces
-    return ec;
+// Convenience constructor: open + SO_REUSEADDR + bind + listen
+corosio::tcp_acceptor acc(ioc, corosio::endpoint(8080));  // bind to all interfaces
 ----
 
 == From Resolver Results
@@ -256,6 +269,6 @@ use from any thread.
 
 == Next Steps
 
-* xref:4d.sockets.adoc[Sockets] — Connect to endpoints
-* xref:4j.resolver.adoc[Name Resolution] — Convert hostnames to endpoints
+* xref:4.guide/4d.sockets.adoc[Sockets] — Connect to endpoints
+* xref:4.guide/4j.resolver.adoc[Name Resolution] — Convert hostnames to endpoints
 * xref:../3.tutorials/3c.dns-lookup.adoc[DNS Lookup Tutorial] — Practical resolution

@@ -12,7 +12,7 @@
 `make_socket_pair` creates two `tcp_socket` objects connected via
 loopback TCP. Use it when a test needs real socket semantics — TLS
 handshakes, `set_option`, `shutdown` ordering, true EOF — that the
-byte-level staging in xref:5a.mocket.adoc[`mocket`] cannot reproduce.
+byte-level staging in xref:5.testing/5a.mocket.adoc[`mocket`] cannot reproduce.
 
 [NOTE]
 ====
@@ -122,7 +122,7 @@ auto [s1, s2] = corosio::test::make_socket_pair<
 
 For tests that need byte-level determinism *and* a real socket
 underneath (e.g., framing on top of TLS), see the layering recipe in
-xref:5c.patterns.adoc[Testing Patterns].
+xref:5.testing/5c.patterns.adoc[Testing Patterns].
 
 == Caveats
 
@@ -138,8 +138,8 @@ xref:5c.patterns.adoc[Testing Patterns].
 
 == Next Steps
 
-* xref:5a.mocket.adoc[Mock Sockets] — for byte-level deterministic
+* xref:5.testing/5a.mocket.adoc[Mock Sockets] — for byte-level deterministic
   tests.
-* xref:5c.patterns.adoc[Testing Patterns] — recipes that combine both.
+* xref:5.testing/5c.patterns.adoc[Testing Patterns] — recipes that combine both.
 * xref:../4.guide/4l.tls.adoc[TLS Encryption] — common consumer of
   `make_socket_pair`.

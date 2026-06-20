@@ -49,7 +49,7 @@ This tutorial demonstrates:
 * Accepting connections with `tcp_acceptor`
 * Spawning independent session coroutines with `run_async`
 * Switching executors with `capy::run()` for CPU-bound work
-* The dispatch trampoline that returns the coroutine to its home executor
+* The trampoline that returns the coroutine to its home executor
 
 == The Hash Function
 
@@ -125,7 +125,7 @@ Three things happen in sequence, but on two different executors:
    the coroutine until data arrives from the kernel.
 2. **Hash** — `capy::run( pool.get_executor() )` posts `compute_fnv1a` to the
    thread pool. The coroutine suspends on the `io_context` and resumes on a
-   pool thread. When the task completes, a dispatch trampoline posts the
+   pool thread. When the task completes, a trampoline posts the
    coroutine back to the `io_context`.
 3. **Write** — back on the `io_context` thread, the hex result is sent to the
    client.
@@ -146,14 +146,14 @@ auto hash = co_await capy::run( pool.get_executor() )(
 Behind the scenes:
 
 1. `run()` creates an awaitable that stores the pool executor.
-2. On `co_await`, the awaitable's `await_suspend` dispatches the inner task
-   through `pool_executor.dispatch(task_handle)`. For a thread pool, dispatch
-   always posts — the task is queued for a worker thread.
+2. On `co_await`, the awaitable's `await_suspend` posts the inner task
+   through `pool_executor.post(task_handle)` — the task is queued for a worker
+   thread.
 3. The calling coroutine suspends (the `io_context` is free to process other
    connections).
 4. A pool thread picks up the task and runs it to completion.
-5. The task's `final_suspend` resumes a dispatch trampoline, which calls
-   `io_context_executor.dispatch(caller_handle)` to post the caller back
+5. The task's `final_suspend` resumes a trampoline, which calls
+   `io_context_executor.post(caller_handle)` to post the caller back
    to the `io_context`.
 6. The caller resumes on the `io_context` thread with the hash result.
 

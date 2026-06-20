@@ -42,9 +42,10 @@ namespace boost::corosio {
     Shared objects: Unsafe.
 
     @par Semantics
-    Wraps platform timer facilities via the io_context reactor.
-    Operations dispatch to OS timer APIs (timerfd, IOCP timers,
-    kqueue EVFILT_TIMER).
+    Timers are not backed by per-timer kernel objects. The io_context's
+    timer service keeps a process-side min-heap of pending expirations;
+    the nearest expiry drives the reactor's poll timeout, and expirations
+    are processed in the run loop.
 */
 class BOOST_COROSIO_DECL timer : public io_timer
 {

@@ -59,11 +59,11 @@ namespace boost::corosio {
         while( total < buf.size() )
         {
             auto [ec, n] = co_await stream.read_some(
-                capy::buffer( buf.data() + total, buf.size() - total ) );
+                capy::mutable_buffer( buf.data() + total, buf.size() - total ) );
             if( ec == capy::cond::eof )
                 break;
-            if( ec.failed() )
-                capy::detail::throw_system_error( ec );
+            if( ec )
+                throw std::system_error( ec );
             total += n;
         }
     }

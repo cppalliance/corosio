@@ -21,12 +21,12 @@ that make thorough testing of I/O code practical and repeatable.
 
 == What's in this section
 
-* xref:5a.mocket.adoc[Mock Sockets] — `mocket`, `make_mocket_pair`, and
+* xref:5.testing/5a.mocket.adoc[Mock Sockets] — `mocket`, `make_mocket_pair`, and
   the staging API for byte-level deterministic tests.
-* xref:5b.socket-pair.adoc[Socket Pairs] — `make_socket_pair` for tests
+* xref:5.testing/5b.socket-pair.adoc[Socket Pairs] — `make_socket_pair` for tests
   that need real socket semantics (TLS, `set_option`, `shutdown`, true
   EOF).
-* xref:5c.patterns.adoc[Testing Patterns] — recipes that combine the two
+* xref:5.testing/5c.patterns.adoc[Testing Patterns] — recipes that combine the two
   facilities.
 
 == Choosing the right tool
@@ -43,5 +43,5 @@ ordering, EOF
 | `socket_pair`
 
 | Combine the two (e.g., framing on top of TLS over a real socket)
-| See xref:5c.patterns.adoc[Patterns]
+| See xref:5.testing/5c.patterns.adoc[Patterns]
 |===

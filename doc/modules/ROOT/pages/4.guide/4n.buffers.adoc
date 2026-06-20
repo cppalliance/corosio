@@ -119,11 +119,11 @@ Corosio uses concepts from Capy:
 [source,cpp]
 ----
 // Readable buffers (for writing to sockets)
-template<capy::const_buffer_sequence ConstBufferSequence>
+template<capy::ConstBufferSequence ConstBufferSequence>
 auto write_some(ConstBufferSequence const& buffers);
 
 // Writable buffers (for reading from sockets)
-template<capy::mutable_buffer_sequence MutableBufferSequence>
+template<capy::MutableBufferSequence MutableBufferSequence>
 auto read_some(MutableBufferSequence const& buffers);
 ----
 
@@ -139,29 +139,33 @@ std::array<capy::mutable_buffer, 2> bufs = {...};
 std::size_t total = capy::buffer_size(bufs);
 ----
 
-== consuming_buffers
+== buffer_slice
 
-The `consuming_buffers` wrapper tracks progress through a buffer sequence:
+`capy::buffer_slice` returns a view over a byte range of a buffer sequence.
+It exposes the bytes not yet transferred via `data()` and advances past
+completed bytes with `remove_prefix(n)`:
 
 [source,cpp]
 ----
-#include <boost/capy/buffers/consuming_buffers.hpp>
+#include <boost/capy/buffers/buffer_slice.hpp>
 
 std::array<capy::mutable_buffer, 2> bufs = {
     capy::mutable_buffer(header, 16),
     capy::mutable_buffer(body, 1024)
 };
 
-capy::consuming_buffers<decltype(bufs)> consuming(bufs);
+auto slice = capy::buffer_slice(bufs);
 
 // After reading 20 bytes:
-auto [ec, n] = co_await sock.read_some(consuming);
-consuming.consume(n);  // Advance by bytes read
+auto [ec, n] = co_await sock.read_some(slice.data());
+slice.remove_prefix(n);  // Advance past the bytes read
 
-// Now consuming represents the remaining unread portion
+// slice.data() now represents the remaining unread portion
 ----
 
 This is used internally by `read()` and `write()` but can be used directly.
+The underlying sequence must outlive the slice and any sequence obtained from
+its `data()`.
 
 == buffer_param
 
@@ -169,7 +173,7 @@ The `buffer_param` class type-erases buffer sequences:
 
 [source,cpp]
 ----
-#include <boost/corosio/io/buffer_param.hpp>
+#include <boost/corosio/detail/buffer_param.hpp>
 
 void accept_any_buffer(corosio::buffer_param buffers)
 {
@@ -284,11 +288,11 @@ struct packet_header
 capy::task<packet_header> read_header(corosio::io_stream& stream)
 {
     packet_header header;
-    auto [ec, n] = co_await corosio::read(
+    auto [ec, n] = co_await capy::read(
         stream, capy::mutable_buffer(&header, sizeof(header)));
 
     if (ec)
-        throw boost::system::system_error(ec);
+        throw std::system_error(ec);
 
     return header;
 }
@@ -296,6 +300,6 @@ capy::task<packet_header> read_header(corosio::io_stream& stream)
 
 == Next Steps
 
-* xref:4g.composed-operations.adoc[Composed Operations] — Using buffers with read/write
-* xref:4d.sockets.adoc[Sockets] — Socket I/O operations
+* xref:4.guide/4g.composed-operations.adoc[Composed Operations] — Using buffers with read/write
+* xref:4.guide/4d.sockets.adoc[Sockets] — Socket I/O operations
 * xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Practical usage

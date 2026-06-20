@@ -143,25 +143,28 @@ write(
 2. If an error occurs, returns immediately with bytes written so far
 3. On success, returns total bytes (equals `buffer_size(buffers)`)
 
-== consuming_buffers Helper
+== buffer_slice Helper
 
-Both `read()` and `write()` use `consuming_buffers` internally to track
-progress through a buffer sequence:
+Both `read()` and `write()` use `capy::buffer_slice` internally to track
+progress through a buffer sequence. `buffer_slice` returns a view over a
+byte range of the underlying sequence. It exposes the bytes not yet
+transferred via `data()` and advances past completed bytes with
+`remove_prefix(n)`:
 
 [source,cpp]
 ----
-#include <boost/capy/buffers/consuming_buffers.hpp>
+#include <boost/capy/buffers/buffer_slice.hpp>
 
 std::array<capy::mutable_buffer, 2> bufs = {
     capy::mutable_buffer(header, 16),
     capy::mutable_buffer(body, 1024)
 };
 
-capy::consuming_buffers<decltype(bufs)> consuming(bufs);
+auto slice = capy::buffer_slice(bufs);
 
 // After reading 20 bytes:
-consuming.consume(20);
-// Now consuming represents: 4 bytes of header remaining + full body
+slice.remove_prefix(20);
+// slice.data() now represents: 4 bytes of header remaining + full body
 ----
 
 === Interface
@@ -169,19 +172,23 @@ consuming.consume(20);
 [source,cpp]
 ----
 template<class BufferSequence>
-class consuming_buffers
-{
-public:
-    explicit consuming_buffers(BufferSequence const& bufs);
-
-    void consume(std::size_t n);
-
-    const_iterator begin() const;
-    const_iterator end() const;
-};
+    requires MutableBufferSequence<BufferSequence>
+          || ConstBufferSequence<BufferSequence>
+auto
+buffer_slice(
+    BufferSequence const& seq,
+    std::size_t offset = 0,
+    std::size_t length = std::numeric_limits<std::size_t>::max());
 ----
 
-The iterator returns adjusted buffers accounting for consumed bytes.
+The returned object satisfies the `Slice` concept (and `MutableSlice`
+when `seq` is a mutable buffer sequence). Its `data()` member returns a
+buffer sequence covering the remaining bytes, and `remove_prefix(n)`
+advances the slice past `n` consumed bytes.
+
+NOTE: `seq` must outlive the slice and any buffer sequence obtained from
+its `data()`. Passing a temporary buffer sequence is rejected at compile
+time; hoist it into a named variable first.
 
 == Error Handling Patterns
 
@@ -277,6 +284,6 @@ capy::task<std::string> read_http_response(corosio::io_stream& stream)
 
 == Next Steps
 
-* xref:4d.sockets.adoc[Sockets] — The underlying stream interface
-* xref:4n.buffers.adoc[Buffer Sequences] — Working with buffers
+* xref:4.guide/4d.sockets.adoc[Sockets] — The underlying stream interface
+* xref:4.guide/4n.buffers.adoc[Buffer Sequences] — Working with buffers
 * xref:../3.tutorials/3b.http-client.adoc[HTTP Client Tutorial] — Practical example

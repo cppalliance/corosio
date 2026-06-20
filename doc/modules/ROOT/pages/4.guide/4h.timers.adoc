@@ -102,7 +102,7 @@ The cancelled wait completes with an error:
 [source,cpp]
 ----
 auto [ec] = co_await t.wait();
-if (ec == capy::error::canceled)
+if (ec == capy::cond::canceled)
     std::cout << "Timer was cancelled\n";
 ----
 
@@ -134,7 +134,7 @@ std::size_t n = t.expires_after(5s);  // Resets to 5s, cancels previous waits
 
 Multiple coroutines can wait on the same timer concurrently. When the
 timer expires, all waiters complete with success. When cancelled, all
-waiters complete with `capy::error::canceled`:
+waiters complete with `capy::cond::canceled`:
 
 [source,cpp]
 ----
@@ -252,7 +252,7 @@ Timer waits support stop token cancellation through the affine protocol:
 ----
 // Inside a cancellable task:
 auto [ec] = co_await t.wait();
-// Completes with capy::error::canceled if stop requested
+// Completes with capy::cond::canceled if stop requested
 ----
 
 == Move Semantics
@@ -308,7 +308,7 @@ capy::task<void> heartbeat(
 
         // Send heartbeat
         std::string ping = "PING\r\n";
-        auto [wec, n] = co_await corosio::write(
+        auto [wec, n] = co_await capy::write(
             sock, capy::const_buffer(ping.data(), ping.size()));
 
         if (wec)
@@ -319,6 +319,6 @@ capy::task<void> heartbeat(
 
 == Next Steps
 
-* xref:4i.signals.adoc[Signal Handling] — Respond to OS signals
-* xref:4c.io-context.adoc[I/O Context] — The event loop
-* xref:4m.error-handling.adoc[Error Handling] — Cancellation patterns
+* xref:4.guide/4i.signals.adoc[Signal Handling] — Respond to OS signals
+* xref:4.guide/4c.io-context.adoc[I/O Context] — The event loop
+* xref:4.guide/4m.error-handling.adoc[Error Handling] — Cancellation patterns
