@@ -301,9 +301,9 @@ On Linux, the `io_context` uses epoll:
 * Edge-triggered notifications
 * Efficient for long-lived connections
 
-==== io_uring — Planned
+==== io_uring
 
-Future Linux support will add io_uring for:
+Linux also provides an io_uring backend:
 
 * Kernel-level async I/O
 * Reduced system calls
