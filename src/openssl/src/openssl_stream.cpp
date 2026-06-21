@@ -325,7 +325,9 @@ public:
 
         if (!cd.ciphersuites.empty())
         {
+#ifndef OPENSSL_IS_BORINGSSL
             SSL_CTX_set_security_level(ctx_, 0);
+#endif
             SSL_CTX_set_cipher_list(ctx_, cd.ciphersuites.c_str());
         }
     }
