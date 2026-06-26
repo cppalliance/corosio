@@ -122,6 +122,8 @@ private:
     };
 
     scheduler* sched_ = nullptr;
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // std:: members, dll-interface
     mutable std::mutex mutex_;
     std::vector<heap_entry> heap_;
     implementation* free_list_     = nullptr;
@@ -131,6 +133,7 @@ private:
     // Avoids mutex in nearest_expiry() and empty()
     mutable std::atomic<std::int64_t> cached_nearest_ns_{
         (std::numeric_limits<std::int64_t>::max)()};
+    BOOST_COROSIO_MSVC_WARNING_POP
 
 public:
     /// Construct the timer service bound to a scheduler.

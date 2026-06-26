@@ -190,11 +190,14 @@ private:
     void load_extension_functions();
 
     win_scheduler& sched_;
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
     win_mutex mutex_;
     intrusive_list<win_tcp_socket_internal> socket_list_;
     intrusive_list<win_tcp_acceptor_internal> acceptor_list_;
     intrusive_list<win_tcp_socket> socket_wrapper_list_;
     intrusive_list<win_tcp_acceptor> acceptor_wrapper_list_;
+    BOOST_COROSIO_MSVC_WARNING_POP
     void* iocp_;
     LPFN_CONNECTEX connect_ex_ = nullptr;
     LPFN_ACCEPTEX accept_ex_   = nullptr;

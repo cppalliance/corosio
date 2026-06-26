@@ -37,6 +37,9 @@ namespace boost::corosio::detail {
 
     @note Only available on Windows platforms with _WIN32_WINNT >= 0x0602.
 */
+BOOST_COROSIO_MSVC_WARNING_PUSH
+// 4251: std::/detail:: members; 4275: non-exported win_wsa_init base
+BOOST_COROSIO_MSVC_WARNING_DISABLE(4251 4275)
 class BOOST_COROSIO_DECL win_resolver_service final
     : private win_wsa_init
     , public capy::execution_context::service
@@ -96,6 +99,7 @@ private:
     std::unordered_map<win_resolver*, std::shared_ptr<win_resolver>>
         resolver_ptrs_;
 };
+BOOST_COROSIO_MSVC_WARNING_POP
 
 namespace resolver_detail {
 

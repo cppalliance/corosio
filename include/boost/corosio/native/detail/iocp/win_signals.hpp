@@ -236,8 +236,11 @@ private:
     static void remove_service(win_signals* service);
 
     win_scheduler& sched_;
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
     win_mutex mutex_;
     intrusive_list<win_signal> impl_list_;
+    BOOST_COROSIO_MSVC_WARNING_POP
 
     // Per-signal registration table for this service
     signal_registration* registrations_[max_signal_number];

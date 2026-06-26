@@ -242,6 +242,7 @@ apply_scheduler_options(
 
     (void)sched;
     (void)opts;
+    (void)concurrency_hint;
 }
 
 detail::scheduler&

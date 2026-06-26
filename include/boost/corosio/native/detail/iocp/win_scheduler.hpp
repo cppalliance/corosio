@@ -134,12 +134,15 @@ private:
     unsigned long gqcs_timeout_ms_ = 500;
     bool single_threaded_ = false;
 
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // std::/detail:: members, dll-interface
     mutable win_mutex dispatch_mutex_;
     mutable op_queue completed_ops_;
     std::unique_ptr<win_timers> timers_;
     std::unique_ptr<win_wait_reactor> wait_reactor_;
     std::once_flag wait_reactor_once_;
     std::atomic<bool> wait_reactor_ready_{false};
+    BOOST_COROSIO_MSVC_WARNING_POP
 
 public:
     /** Auxiliary select-based reactor for IOCP wait operations.

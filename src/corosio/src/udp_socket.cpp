@@ -74,7 +74,13 @@ native_handle_type
 udp_socket::native_handle() const noexcept
 {
     if (!is_open())
+    {
+#if BOOST_COROSIO_HAS_IOCP
+        return static_cast<native_handle_type>(~0ull); // INVALID_SOCKET
+#else
         return -1;
+#endif
+    }
     return get().native_handle();
 }
 

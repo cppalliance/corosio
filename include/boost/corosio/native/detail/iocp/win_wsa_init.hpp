@@ -31,7 +31,7 @@ namespace boost::corosio::detail {
     Derive from this class to ensure Winsock is initialized before
     any socket operations.
 */
-class win_wsa_init
+class BOOST_COROSIO_DECL win_wsa_init
 {
 protected:
     win_wsa_init();
@@ -39,22 +39,28 @@ protected:
 
     win_wsa_init(win_wsa_init const&)            = delete;
     win_wsa_init& operator=(win_wsa_init const&) = delete;
-
-private:
-    static long count_;
 };
 
-inline long win_wsa_init::count_ = 0;
+// Process-wide Winsock init refcount. Kept as an inline function-local
+// static (one shared instance across TUs) rather than a static data member
+// so win_wsa_init can carry BOOST_COROSIO_DECL: an exported/imported static
+// data member defined in a header is rejected by MSVC and clang-cl
+// ("definition of dllimport static field not allowed").
+inline long& win_wsa_init_count() noexcept
+{
+    static long count = 0;
+    return count;
+}
 
 inline win_wsa_init::win_wsa_init()
 {
-    if (::InterlockedIncrement(&count_) == 1)
+    if (::InterlockedIncrement(&win_wsa_init_count()) == 1)
     {
         WSADATA wsaData;
         int result = ::WSAStartup(MAKEWORD(2, 2), &wsaData);
         if (result != 0)
         {
-            ::InterlockedDecrement(&count_);
+            ::InterlockedDecrement(&win_wsa_init_count());
             throw_system_error(make_err(result));
         }
     }
@@ -62,7 +68,7 @@ inline win_wsa_init::win_wsa_init()
 
 inline win_wsa_init::~win_wsa_init()
 {
-    if (::InterlockedDecrement(&count_) == 0)
+    if (::InterlockedDecrement(&win_wsa_init_count()) == 0)
         ::WSACleanup();
 }
 

@@ -17,6 +17,35 @@
 #define BOOST_COROSIO_ASSERT(expr) assert(expr)
 #endif
 
+// MSVC warning suppression helpers.
+// On MSVC these expand to __pragma(); elsewhere they are empty. Used to
+// silence C4251/C4275 (dll-interface) on exported classes whose private
+// members are std:: or detail:: types the clients never touch.
+#ifdef _MSC_VER
+# define BOOST_COROSIO_MSVC_WARNING_PUSH       __pragma(warning(push))
+# define BOOST_COROSIO_MSVC_WARNING_DISABLE(x) __pragma(warning(disable: x))
+# define BOOST_COROSIO_MSVC_WARNING_POP        __pragma(warning(pop))
+#else
+# define BOOST_COROSIO_MSVC_WARNING_PUSH
+# define BOOST_COROSIO_MSVC_WARNING_DISABLE(x)
+# define BOOST_COROSIO_MSVC_WARNING_POP
+#endif
+
+// GCC warning suppression helpers, for GCC-only diagnostics (e.g. -Wtsan).
+// clang rejects unknown warning names under -Werror, so these expand only
+// on real GCC; the warning name is passed as a string, e.g.
+// BOOST_COROSIO_GCC_WARNING_DISABLE("-Wtsan").
+#if defined(__GNUC__) && !defined(__clang__)
+# define BOOST_COROSIO_GCC_DO_PRAGMA(x)       _Pragma(#x)
+# define BOOST_COROSIO_GCC_WARNING_PUSH       _Pragma("GCC diagnostic push")
+# define BOOST_COROSIO_GCC_WARNING_DISABLE(w) BOOST_COROSIO_GCC_DO_PRAGMA(GCC diagnostic ignored w)
+# define BOOST_COROSIO_GCC_WARNING_POP        _Pragma("GCC diagnostic pop")
+#else
+# define BOOST_COROSIO_GCC_WARNING_PUSH
+# define BOOST_COROSIO_GCC_WARNING_DISABLE(w)
+# define BOOST_COROSIO_GCC_WARNING_POP
+#endif
+
 // Symbol export/import for shared libraries
 #if defined(_WIN32) || defined(__CYGWIN__)
 #define BOOST_COROSIO_SYMBOL_EXPORT __declspec(dllexport)
