@@ -21,6 +21,7 @@
 #elif BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <random>
@@ -161,8 +162,9 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
 
     detail::un_sa_t addr{};
     addr.sun_family = AF_UNIX;
-    std::strncpy(
-        addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
+    std::memcpy(
+        addr.sun_path, path.c_str(),
+        (std::min)(path.size(), sizeof(addr.sun_path) - 1));
     int addr_len = static_cast<int>(
         offsetof(detail::un_sa_t, sun_path) + path.size() + 1);
 
@@ -198,8 +200,9 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
 
         detail::un_sa_t caddr{};
         caddr.sun_family = AF_UNIX;
-        std::strncpy(
-            caddr.sun_path, path.c_str(), sizeof(caddr.sun_path) - 1);
+        std::memcpy(
+            caddr.sun_path, path.c_str(),
+            (std::min)(path.size(), sizeof(caddr.sun_path) - 1));
         int caddr_len = static_cast<int>(
             offsetof(detail::un_sa_t, sun_path) + path.size() + 1);
 

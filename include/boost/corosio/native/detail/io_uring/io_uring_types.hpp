@@ -84,7 +84,7 @@ class BOOST_COROSIO_DECL io_uring_tcp_socket final
 
     int                   family_ = AF_UNSPEC;  // cached at open_socket
     io_uring_scheduler*   sched_  = nullptr;
-    io_uring_tcp_service* svc_    = nullptr;
+    [[maybe_unused]] io_uring_tcp_service* svc_    = nullptr;
 
     // fd_ and local_endpoint_ are provided by native_socket_base (the
     // readiness/completion-agnostic socket base shared with the reactor
@@ -858,7 +858,7 @@ class BOOST_COROSIO_DECL io_uring_local_stream_socket final
     friend io_uring_local_stream_service;
 
     io_uring_scheduler*           sched_ = nullptr;
-    io_uring_local_stream_service* svc_  = nullptr;
+    [[maybe_unused]] io_uring_local_stream_service* svc_  = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -1602,7 +1602,7 @@ class BOOST_COROSIO_DECL io_uring_udp_socket final
 
     int                    family_ = AF_UNSPEC;  // cached at open_socket
     io_uring_scheduler*    sched_  = nullptr;
-    io_uring_udp_service*  svc_    = nullptr;
+    [[maybe_unused]] io_uring_udp_service*  svc_    = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -2123,7 +2123,7 @@ class BOOST_COROSIO_DECL io_uring_local_datagram_socket final
     friend io_uring_local_datagram_service;
 
     io_uring_scheduler*              sched_ = nullptr;
-    io_uring_local_datagram_service* svc_   = nullptr;
+    [[maybe_unused]] io_uring_local_datagram_service* svc_   = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.

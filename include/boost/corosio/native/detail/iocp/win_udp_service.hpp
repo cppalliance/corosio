@@ -87,9 +87,12 @@ public:
 
 private:
     win_scheduler& sched_;
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
     win_mutex mutex_;
     intrusive_list<win_udp_socket_internal> socket_list_;
     intrusive_list<win_udp_socket> wrapper_list_;
+    BOOST_COROSIO_MSVC_WARNING_POP
     void* iocp_;
 };
 

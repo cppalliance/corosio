@@ -48,7 +48,12 @@ struct continuation_op final : scheduler_op
     // routes to do_complete below.
     void operator()() override
     {
+        // ThreadSanitizer cannot instrument standalone fences; this acquire
+        // fence pairs with the scheduler's release and is intentional.
+        BOOST_COROSIO_GCC_WARNING_PUSH
+        BOOST_COROSIO_GCC_WARNING_DISABLE("-Wtsan")
         std::atomic_thread_fence(std::memory_order_acquire);
+        BOOST_COROSIO_GCC_WARNING_POP
         cont.h.resume();
     }
 
@@ -73,7 +78,10 @@ private:
                 self->cont.h.destroy();
             return;
         }
+        BOOST_COROSIO_GCC_WARNING_PUSH
+        BOOST_COROSIO_GCC_WARNING_DISABLE("-Wtsan")
         std::atomic_thread_fence(std::memory_order_acquire);
+        BOOST_COROSIO_GCC_WARNING_POP
         self->cont.h.resume();
     }
 

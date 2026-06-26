@@ -35,8 +35,8 @@ public:
         friend class intrusive_list;
 
     private:
-        T* next_;
-        T* prev_;
+        T* next_ = nullptr;
+        T* prev_ = nullptr;
     };
 
 private:
@@ -172,7 +172,7 @@ public:
         friend class intrusive_queue;
 
     private:
-        T* next_;
+        T* next_ = nullptr;
     };
 
 private:

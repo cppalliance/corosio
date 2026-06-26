@@ -30,7 +30,7 @@ class win_timers_thread final : public win_timers
     long shutdown_ = 0;
 
 public:
-    win_timers_thread(void* iocp, long* dispatch_required) noexcept;
+    win_timers_thread(void* iocp_handle, long* dispatch_required) noexcept;
     ~win_timers_thread();
 
     win_timers_thread(win_timers_thread const&)            = delete;
@@ -45,9 +45,9 @@ private:
 };
 
 inline win_timers_thread::win_timers_thread(
-    void* iocp, long* dispatch_required) noexcept
+    void* iocp_handle, long* dispatch_required) noexcept
     : win_timers(dispatch_required)
-    , iocp_(iocp)
+    , iocp_(iocp_handle)
 {
     waitable_timer_ = ::CreateWaitableTimerW(nullptr, FALSE, nullptr);
 }

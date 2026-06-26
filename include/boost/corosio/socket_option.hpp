@@ -40,7 +40,7 @@ namespace boost::corosio::socket_option {
     Stores a boolean as an `int` suitable for `setsockopt`/`getsockopt`.
     Derived types provide `level()` and `name()` for the specific option.
 */
-class boolean_option
+class BOOST_COROSIO_DECL boolean_option
 {
     int value_ = 0;
 
@@ -115,7 +115,7 @@ public:
     Stores an integer suitable for `setsockopt`/`getsockopt`.
     Derived types provide `level()` and `name()` for the specific option.
 */
-class integer_option
+class BOOST_COROSIO_DECL integer_option
 {
     int value_ = 0;
 
@@ -179,7 +179,7 @@ public:
     `EINVAL` for the four-byte form that Linux accepts. This base provides
     `unsigned char` storage so the same options work on every platform.
 */
-class byte_boolean_option
+class BOOST_COROSIO_DECL byte_boolean_option
 {
     unsigned char value_ = 0;
 
@@ -246,7 +246,7 @@ public:
     `IP_MULTICAST_TTL` to be set with a one-byte value. Linux accepts
     one-byte too, so single-byte storage is portable.
 */
-class byte_integer_option
+class BOOST_COROSIO_DECL byte_integer_option
 {
     unsigned char value_ = 0;
 

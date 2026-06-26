@@ -85,9 +85,6 @@ protected:
 
     io_read_stream() noexcept = default;
 
-    /// Construct from a handle.
-    explicit io_read_stream(handle h) noexcept : io_object(std::move(h)) {}
-
     io_read_stream(io_read_stream&&) noexcept            = default;
     io_read_stream& operator=(io_read_stream&&) noexcept = delete;
     io_read_stream(io_read_stream const&)                = delete;

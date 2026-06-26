@@ -96,9 +96,12 @@ private:
         HANDLE, ULONG, void*, ULONG, io_status_block*);
 
     win_scheduler& sched_;
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
     win_mutex mutex_;
     intrusive_list<win_random_access_file_internal> file_list_;
     intrusive_list<win_random_access_file> wrapper_list_;
+    BOOST_COROSIO_MSVC_WARNING_POP
     void* iocp_;
     nt_flush_fn nt_flush_buffers_file_ex_;
 };

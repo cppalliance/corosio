@@ -47,7 +47,7 @@ class win_timers_nt final : public win_timers
     NtCancelWaitCompletionPacketFn nt_cancel_;
 
     win_timers_nt(
-        void* iocp,
+        void* iocp_handle,
         long* dispatch_required,
         NtAssociateWaitCompletionPacketFn nt_assoc,
         NtCancelWaitCompletionPacketFn nt_cancel);
@@ -55,7 +55,7 @@ class win_timers_nt final : public win_timers
 public:
     // Returns nullptr if NT APIs unavailable (pre-Windows 8)
     static std::unique_ptr<win_timers_nt>
-    try_create(void* iocp, long* dispatch_required);
+    try_create(void* iocp_handle, long* dispatch_required);
 
     ~win_timers_nt();
 
@@ -121,12 +121,12 @@ using NtCreateWaitCompletionPacketFn = NTSTATUS(NTAPI*)(
     void* ObjectAttributes);
 
 inline win_timers_nt::win_timers_nt(
-    void* iocp,
+    void* iocp_handle,
     long* dispatch_required,
     NtAssociateWaitCompletionPacketFn nt_assoc,
     NtCancelWaitCompletionPacketFn nt_cancel)
     : win_timers(dispatch_required)
-    , iocp_(iocp)
+    , iocp_(iocp_handle)
     , nt_associate_(nt_assoc)
     , nt_cancel_(nt_cancel)
 {
@@ -134,24 +134,31 @@ inline win_timers_nt::win_timers_nt(
 }
 
 inline std::unique_ptr<win_timers_nt>
-win_timers_nt::try_create(void* iocp, long* dispatch_required)
+win_timers_nt::try_create(void* iocp_handle, long* dispatch_required)
 {
     HMODULE ntdll = ::GetModuleHandleW(L"ntdll.dll");
     if (!ntdll)
         return nullptr;
 
+    // GetProcAddress returns FARPROC; cast through void* to the specific NT
+    // entry-point signature (same idiom as win_file_service and
+    // win_random_access_file_service). The void* hop avoids GCC/Clang's
+    // -Wcast-function-type without a compiler-specific pragma.
     auto nt_create = reinterpret_cast<NtCreateWaitCompletionPacketFn>(
-        ::GetProcAddress(ntdll, "NtCreateWaitCompletionPacket"));
+        reinterpret_cast<void*>(
+            ::GetProcAddress(ntdll, "NtCreateWaitCompletionPacket")));
     auto nt_assoc = reinterpret_cast<NtAssociateWaitCompletionPacketFn>(
-        ::GetProcAddress(ntdll, "NtAssociateWaitCompletionPacket"));
+        reinterpret_cast<void*>(
+            ::GetProcAddress(ntdll, "NtAssociateWaitCompletionPacket")));
     auto nt_cancel = reinterpret_cast<NtCancelWaitCompletionPacketFn>(
-        ::GetProcAddress(ntdll, "NtCancelWaitCompletionPacket"));
+        reinterpret_cast<void*>(
+            ::GetProcAddress(ntdll, "NtCancelWaitCompletionPacket")));
 
     if (!nt_create || !nt_assoc || !nt_cancel)
         return nullptr;
 
     auto p = std::unique_ptr<win_timers_nt>(
-        new win_timers_nt(iocp, dispatch_required, nt_assoc, nt_cancel));
+        new win_timers_nt(iocp_handle, dispatch_required, nt_assoc, nt_cancel));
 
     if (!p->waitable_timer_)
         return nullptr;

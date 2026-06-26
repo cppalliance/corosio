@@ -61,7 +61,7 @@ public:
         creation, closing, and destruction of I/O object
         implementations.
     */
-    struct io_service
+    struct BOOST_COROSIO_DECL io_service
     {
         virtual ~io_service() = default;
 
@@ -224,7 +224,10 @@ protected:
     io_object& operator=(io_object const&) = delete;
 
     /// The platform I/O handle owned by this object.
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251)
     handle h_;
+    BOOST_COROSIO_MSVC_WARNING_POP
 };
 
 } // namespace boost::corosio

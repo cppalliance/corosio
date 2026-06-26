@@ -116,11 +116,14 @@ private:
 
     win_tcp_service& tcp_svc_;
     win_scheduler& sched_;
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
     win_mutex mutex_;
     intrusive_list<win_local_stream_socket_internal> socket_list_;
     intrusive_list<win_local_stream_acceptor_internal> acceptor_list_;
     intrusive_list<win_local_stream_socket> socket_wrapper_list_;
     intrusive_list<win_local_stream_acceptor> acceptor_wrapper_list_;
+    BOOST_COROSIO_MSVC_WARNING_POP
     void* iocp_;
 };
 

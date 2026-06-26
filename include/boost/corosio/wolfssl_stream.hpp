@@ -70,7 +70,10 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL wolfssl_stream final : public tls_stream
 {
     struct impl;
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // capy::any_stream, dll-interface
     capy::any_stream stream_; // must be first - impl_ holds reference
+    BOOST_COROSIO_MSVC_WARNING_POP
     impl* impl_;
 
 public:
