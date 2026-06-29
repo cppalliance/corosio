@@ -73,13 +73,6 @@ corosio::native_io_context<corosio::epoll> ioc(opts);
 | Inline budget when no other thread is running the event loop.
   Prevents a single-threaded context from starving connections.
 
-| `gqcs_timeout_ms`
-| 500
-| IOCP
-| Maximum `GetQueuedCompletionStatus` blocking time in
-  milliseconds.  Lower values improve timer responsiveness at the
-  cost of more syscalls.
-
 | `thread_pool_size`
 | 1
 | POSIX (epoll, kqueue, select)
@@ -140,14 +133,6 @@ fast path.  Multi-thread workloads benefit from cross-thread
 work-stealing, which "post-everything" mode enables.  Setting any
 budget field to a non-default value disables the override.
 ====
-
-=== IOCP Timeout (`gqcs_timeout_ms`)
-
-On Windows, the IOCP scheduler periodically wakes to recheck timers.
-The default 500ms balances responsiveness with efficiency.
-
-* *Sub-second timer precision*: reduce to 50-100ms.
-* *Minimal syscall overhead*: increase to 1000ms or higher.
 
 === Thread Pool Size (`thread_pool_size`)
 

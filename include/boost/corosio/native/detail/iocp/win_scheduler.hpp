@@ -82,15 +82,6 @@ public:
     void work_started() noexcept override;
     void work_finished() noexcept override;
 
-    /** Apply runtime IOCP configuration.
-
-        @param gqcs_timeout_ms  Max GQCS blocking time in milliseconds.
-    */
-    void configure_iocp(unsigned gqcs_timeout_ms) noexcept
-    {
-        gqcs_timeout_ms_ = gqcs_timeout_ms;
-    }
-
     /** Enable or disable single-threaded (lockless) mode.
 
         When enabled, the dispatch mutex becomes a no-op.
@@ -131,7 +122,6 @@ private:
     mutable long stopped_;
     long stop_event_posted_;
     mutable long dispatch_required_;
-    unsigned long gqcs_timeout_ms_ = 500;
     bool single_threaded_ = false;
 
     BOOST_COROSIO_MSVC_WARNING_PUSH
@@ -185,9 +175,11 @@ public:
 
 namespace iocp {
 
-// Max timeout for GQCS to allow periodic re-checking of conditions.
-// Matches Asio's default_gqcs_timeout for pre-Vista compatibility.
-inline constexpr unsigned long max_gqcs_timeout = 500;
+// Poll interval (ms) for the one-time shutdown drain loop. Unlike the
+// steady-state loop (which blocks indefinitely until a real wake-up),
+// the drain must keep re-checking the work count and the deferred
+// completion queue to make progress, so it uses a finite wait.
+inline constexpr unsigned long shutdown_drain_timeout_ms = 500;
 
 struct BOOST_COROSIO_SYMBOL_VISIBLE scheduler_context
 {
@@ -388,10 +380,12 @@ win_scheduler::stop()
         {
             if (!::PostQueuedCompletionStatus(iocp_, 0, key_shutdown, nullptr))
             {
-                // PQCS failure is non-fatal: stopped_ is already set.
-                // The run() loop will notice via the GQCS timeout
-                // (gqcs_timeout_ms_, default 500ms) and exit.
-                ::InterlockedExchange(&dispatch_required_, 1);
+                // The shutdown post is the only thing that wakes a
+                // run()/run_one() thread blocked indefinitely in GQCS.
+                // With no periodic timeout there is no fallback, so a
+                // failed post is fatal (matches Asio). It can only fail
+                // under resource exhaustion (ERROR_NO_SYSTEM_RESOURCES).
+                detail::throw_system_error(make_err(::GetLastError()));
             }
         }
     }
@@ -547,9 +541,7 @@ win_scheduler::do_one(unsigned long timeout_ms)
         ::SetLastError(0);
 
         BOOL result = ::GetQueuedCompletionStatus(
-            iocp_, &bytes, &key, &overlapped,
-            timeout_ms < gqcs_timeout_ms_ ? timeout_ms
-                                        : gqcs_timeout_ms_);
+            iocp_, &bytes, &key, &overlapped, timeout_ms);
         DWORD dwError = ::GetLastError();
 
         // Handle based on completion key
@@ -630,17 +622,14 @@ win_scheduler::do_one(unsigned long timeout_ms)
             }
         }
 
-        // Timeout or error
+        // Timeout or error. INFINITE never times out, so a WAIT_TIMEOUT
+        // can only be a finite caller timeout (wait_one/poll) elapsing
+        // with no work. run()/run_one() pass INFINITE and block until a
+        // real wake-up; they exit only when stop() posts key_shutdown
+        // (a failed post is fatal in stop()).
         if (dwError != WAIT_TIMEOUT)
             detail::throw_system_error(make_err(dwError));
-        if (timeout_ms != INFINITE)
-            return 0;
-        // PQCS-failure fallback: stop() sets stopped_ and
-        // dispatch_required_ but if the key_shutdown post failed,
-        // no completion is ever dequeued.  Catch it here on the
-        // periodic 500 ms GQCS timeout so run()/run_one() can exit.
-        if (stopped())
-            return 0;
+        return 0;
     }
 }
 
@@ -726,7 +715,8 @@ win_scheduler::shutdown()
             ULONG_PTR key;
             LPOVERLAPPED overlapped;
             ::GetQueuedCompletionStatus(
-                iocp_, &bytes, &key, &overlapped, gqcs_timeout_ms_);
+                iocp_, &bytes, &key, &overlapped,
+                iocp::shutdown_drain_timeout_ms);
             if (overlapped)
             {
                 ::InterlockedDecrement(&outstanding_work_);

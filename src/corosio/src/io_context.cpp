@@ -235,7 +235,6 @@ apply_scheduler_options(
 
 #if BOOST_COROSIO_HAS_IOCP
     auto& iocp_sched = static_cast<detail::win_scheduler&>(sched);
-    iocp_sched.configure_iocp(opts.gqcs_timeout_ms);
     if (opts.single_threaded)
         iocp_sched.configure_single_threaded(true);
 #endif

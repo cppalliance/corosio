@@ -240,7 +240,16 @@ win_wait_reactor::wake_self() noexcept
     if (wakeup_write_ != INVALID_SOCKET)
     {
         char b = 0;
-        ::send(wakeup_write_, &b, 1, 0);
+        if (::send(wakeup_write_, &b, 1, 0) == SOCKET_ERROR)
+        {
+            // The self-pipe byte is the only thing that wakes the reactor
+            // thread from an indefinite poll(); a coalesced lost wakeup
+            // would leave wake_pending_ stuck true and hang the op.
+            // wakeup_write_ is a blocking socket, so a 1-byte send can
+            // only fail on a hard error -- fatal, mirroring a failed
+            // PostQueuedCompletionStatus in win_scheduler.
+            detail::throw_system_error(make_err(::WSAGetLastError()));
+        }
     }
 }
 
@@ -326,17 +335,15 @@ win_wait_reactor::run()
         for (auto& e : registered_)
             pollfds.push_back({e.fd, events_for_wait(e.w), 0});
 
-        // Bounded timeout rather than infinite: this is a safety net
-        // against a lost self-pipe wakeup (e.g. a failed/coalesced
-        // send in wake_self leaving wake_pending_ stuck true). On
-        // timeout the loop re-drains pending_register_/pending_cancel_
-        // and re-checks stop_, so a missed wakeup costs at most one
-        // poll interval of latency instead of a permanent hang. This
-        // mirrors the 500 ms GQCS safety timeout in win_scheduler.
+        // Block until the self-pipe (slot 0) is poked by a register,
+        // cancel, or stop, or a watched socket becomes ready. There is
+        // no periodic safety-net timeout: a lost self-pipe wakeup is
+        // fatal in wake_self() (the byte send can only fail on a hard
+        // error), so an idle reactor consumes no CPU.
         int n = ::WSAPoll(
             pollfds.data(),
             static_cast<ULONG>(pollfds.size()),
-            500 /* ms */);
+            -1 /* infinite */);
         if (n == SOCKET_ERROR)
             break;
 
