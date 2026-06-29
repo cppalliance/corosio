@@ -636,7 +636,12 @@ io_uring_scheduler::post(std::coroutine_handle<> h) const
         {
             auto saved = h_;
             delete this;
+            // TSan cannot instrument standalone fences; this acquire
+            // pairs with the posting thread's release and is intentional.
+            BOOST_COROSIO_GCC_WARNING_PUSH
+            BOOST_COROSIO_GCC_WARNING_DISABLE("-Wtsan")
             std::atomic_thread_fence(std::memory_order_acquire);
+            BOOST_COROSIO_GCC_WARNING_POP
             saved.resume();
         }
 
