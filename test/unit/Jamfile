@@ -21,6 +21,12 @@ project boost/corosio/test/unit
       <target-os>windows:<define>_WIN32_WINNT=0x0602
       <warnings>extra
       <warnings-as-errors>on
+      # GCC mis-analyzes the structured-binding-from-co_await idiom
+      # (auto [ec, ...] = co_await op) in coroutine frames and reports a
+      # bogus -Wmaybe-uninitialized. The pattern is unavoidable and used by
+      # most async tests, so suppress it for GCC across the test project.
+      # (The library itself is clean; see capy test/unit/Jamfile.)
+      <toolset>gcc:<cxxflags>-Wno-maybe-uninitialized
     ;
 
 # Non-TLS tests (recurses into test/, native/, etc.)
