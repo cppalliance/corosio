@@ -276,14 +276,13 @@ struct io_context_test
 
     void testConstructionWithOptions()
     {
-        // Tune reactor budgets (POSIX) and IOCP gqcs timeout so the
-        // option-applying constructor path exercises non-default values.
+        // Tune reactor budgets so the option-applying constructor path
+        // exercises non-default values.
         io_context_options opts;
         opts.max_events_per_poll   = 256;
         opts.inline_budget_initial = 4;
         opts.inline_budget_max     = 32;
         opts.unassisted_budget     = 8;
-        opts.gqcs_timeout_ms       = 250;
 
         io_context ioc(opts, 2);
         BOOST_TEST(!ioc.stopped());

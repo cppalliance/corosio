@@ -89,14 +89,6 @@ struct io_context_options
     */
     unsigned unassisted_budget = 4;
 
-    /** Maximum `GetQueuedCompletionStatus` timeout in milliseconds.
-
-        Bounds how long the IOCP scheduler blocks between timer
-        rechecks. Lower values improve timer responsiveness at the
-        cost of more syscalls. Applies to IOCP only.
-    */
-    unsigned gqcs_timeout_ms = 500;
-
     /** Thread pool size for blocking I/O (file I/O, DNS resolution).
 
         Sets the number of worker threads in the shared thread pool
