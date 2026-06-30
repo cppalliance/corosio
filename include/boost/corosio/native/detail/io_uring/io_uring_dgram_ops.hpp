@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -89,10 +90,7 @@ struct uring_dgram_send_op : io_uring_op
         cqe_flags  = 0;
         msg_flags  = flags;
 
-        iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        iovec_count = copy_to_iovec(buffers, iovecs);
 
         msg = {};
         msg.msg_iov    = iovecs;
@@ -231,10 +229,7 @@ struct uring_dgram_recv_op : io_uring_op
         cqe_flags  = 0;
         msg_flags  = flags;
 
-        iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        iovec_count = copy_to_iovec(buffers, iovecs);
 
         msg = {};
         // For the zero-iovec bypass path the caller pushes the slot

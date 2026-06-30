@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -73,14 +74,27 @@ namespace boost::corosio {
     to the buffers obtained from `copy_to`. The const-cast exists
     solely to provide a uniform interface for platform I/O calls.
 
+    @note Do NOT `reinterpret_cast` the `mutable_buffer` array to
+    `iovec*`/`WSABUF*` and pass it to the OS, even when the layouts
+    match: no object of the target type exists in that storage, so the
+    access is undefined behavior (and `mutable_buffer` is not an
+    implicit-lifetime type, so `std::start_lifetime_as_array` cannot
+    rescue it). Copy field by field into a real platform array instead.
+
     @code
     // For write operations (const buffers):
     void submit_write(buffer_param p)
     {
         capy::mutable_buffer bufs[8];
         auto n = p.copy_to(bufs, 8);
-        // bufs[] may reference const data - DO NOT WRITE
-        writev(fd, reinterpret_cast<iovec*>(bufs), n);  // OK: read-only
+        iovec iov[8];
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            // bufs[] may reference const data - DO NOT WRITE through iov
+            iov[i].iov_base = bufs[i].data();
+            iov[i].iov_len  = bufs[i].size();
+        }
+        writev(fd, iov, n);  // read-only
     }
 
     // For read operations (mutable buffers):
@@ -88,8 +102,14 @@ namespace boost::corosio {
     {
         capy::mutable_buffer bufs[8];
         auto n = p.copy_to(bufs, 8);
-        // bufs[] references mutable data - safe to write
-        readv(fd, reinterpret_cast<iovec*>(bufs), n);  // OK: writing
+        iovec iov[8];
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            // bufs[] references mutable data - safe to write
+            iov[i].iov_base = bufs[i].data();
+            iov[i].iov_len  = bufs[i].size();
+        }
+        readv(fd, iov, n);  // writing
     }
     @endcode
 
@@ -131,10 +151,17 @@ namespace boost::corosio {
         buffer_param p,
         std::coroutine_handle<> h)
     {
-        // CORRECT: Unroll immediately into platform structure
+        // CORRECT: Unroll immediately into platform structure.
+        // Copy field by field; do NOT reinterpret_cast the
+        // mutable_buffer array to iovec* (see the @note above).
+        capy::mutable_buffer bufs[16];
+        std::size_t n = p.copy_to(bufs, 16);
         iovec vecs[16];
-        std::size_t n = p.copy_to(
-            reinterpret_cast<capy::mutable_buffer*>(vecs), 16);
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            vecs[i].iov_base = bufs[i].data();
+            vecs[i].iov_len  = bufs[i].size();
+        }
 
         // CORRECT: Use unrolled buffers for system call now
         submit_to_io_uring(vecs, n, h);
