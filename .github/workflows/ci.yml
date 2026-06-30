@@ -12,12 +12,13 @@ name: CI
 
 on:
   pull_request:
-    branches: [ master, develop ]
+    branches: [ master, develop, develop-2 ]
   workflow_dispatch:
   push:
     branches:
       - master
       - develop
+      - develop-2
       - bugfix/**
       - feature/**
       - fix/**
