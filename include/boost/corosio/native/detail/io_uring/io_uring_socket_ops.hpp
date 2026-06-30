@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -46,6 +47,35 @@ namespace boost::corosio::detail {
 /// cases (fragmented buffers from buffer_sequence) without bloating
 /// per-op memory.
 inline constexpr std::size_t io_uring_max_iov = 16;
+
+/** Fill an `iovec` array from a buffer sequence without type-punning.
+
+    `buffer_param::copy_to` writes `capy::mutable_buffer` objects. Those
+    cannot legally alias `iovec` storage: no `mutable_buffer` lives at
+    that address, and `mutable_buffer` is not an implicit-lifetime type,
+    so its lifetime cannot be started in place (which also rules out
+    `std::start_lifetime_as_array`). We copy into a real `mutable_buffer`
+    scratch array, then translate field by field into the caller's
+    `iovec` array. Zero-size buffers are already skipped by `copy_to`.
+
+    @param buffers The source buffer sequence.
+    @param iovecs  Destination array, filled with the non-zero buffers.
+    @return The number of `iovec` entries written.
+*/
+inline int
+copy_to_iovec(
+    buffer_param const& buffers,
+    iovec (&iovecs)[io_uring_max_iov]) noexcept
+{
+    capy::mutable_buffer bufs[io_uring_max_iov];
+    std::size_t const n = buffers.copy_to(bufs, io_uring_max_iov);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        iovecs[i].iov_base = bufs[i].data();
+        iovecs[i].iov_len  = bufs[i].size();
+    }
+    return static_cast<int>(n);
+}
 
 /** Resolve ec_out/bytes_out from a CQE result for a completed I/O op.
 
@@ -117,10 +147,7 @@ struct uring_read_op : io_uring_op
         spec_state = spec;
         res        = 0;
         cqe_flags  = 0;
-        iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        iovec_count = copy_to_iovec(buffers, iovecs);
         empty_buffer = (iovec_count == 0);
         start(token);
     }
@@ -225,10 +252,7 @@ struct uring_write_op : io_uring_op
         spec_state = spec;
         res        = 0;
         cqe_flags  = 0;
-        iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        iovec_count = copy_to_iovec(buffers, iovecs);
         empty_buffer = (iovec_count == 0);
         if (!empty_buffer)
         {

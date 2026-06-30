@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -84,10 +85,7 @@ public:
         impl_ptr  = std::move(impl);
         res       = 0;
         cqe_flags = 0;
-        iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        iovec_count = copy_to_iovec(buffers, iovecs);
         empty_buffer = (iovec_count == 0);
         start(token);
     }
@@ -225,10 +223,7 @@ public:
         impl_ptr  = std::move(impl);
         res       = 0;
         cqe_flags = 0;
-        iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        iovec_count = copy_to_iovec(buffers, iovecs);
         empty_buffer = (iovec_count == 0);
         start(token);
     }

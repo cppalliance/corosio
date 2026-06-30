@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -152,10 +153,7 @@ public:
         std::size_t*            bytes) override
     {
         iovec iovecs[io_uring_max_iov];
-        int   iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
 
@@ -232,10 +230,7 @@ public:
         std::size_t*            bytes) override
     {
         iovec iovecs[io_uring_max_iov];
-        int   iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
 
@@ -907,10 +902,7 @@ public:
         std::size_t*            bytes) override
     {
         iovec iovecs[io_uring_max_iov];
-        int   iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
 
@@ -987,10 +979,7 @@ public:
         std::size_t*            bytes) override
     {
         iovec iovecs[io_uring_max_iov];
-        int   iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
 
@@ -1811,10 +1800,7 @@ private:
         std::size_t*                   bytes)
     {
         iovec iovecs[io_uring_max_iov];
-        int   iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
 
@@ -1899,10 +1885,7 @@ private:
         std::size_t*             bytes)
     {
         iovec iovecs[io_uring_max_iov];
-        int   iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
 
@@ -2365,10 +2348,7 @@ private:
         std::size_t*                   bytes)
     {
         iovec iovecs[io_uring_max_iov];
-        int   iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
 
@@ -2453,10 +2433,7 @@ private:
         std::size_t*               bytes)
     {
         iovec iovecs[io_uring_max_iov];
-        int   iovec_count = static_cast<int>(
-            buffers.copy_to(
-                reinterpret_cast<capy::mutable_buffer*>(iovecs),
-                io_uring_max_iov));
+        int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
 
