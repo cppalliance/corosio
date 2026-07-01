@@ -14,7 +14,6 @@
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp.hpp>
 
-#include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>
 #include <boost/corosio/timer.hpp>
@@ -882,15 +881,13 @@ struct tcp_socket_test
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             std::string send_data = "Hello, this is a test message!";
             (void)co_await capy::write(a, capy::make_buffer(send_data));
-            a.close();
 
-            // Read into string until EOF using dynamic buffer
-            std::string result;
-            auto [ec, n] =
-                co_await capy::read(b, capy::string_dynamic_buffer(&result));
+            char buf[64] = {};
+            auto [ec, n] = co_await capy::read(
+                b, capy::mutable_buffer(buf, send_data.size()));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, send_data.size());
-            BOOST_TEST_EQ(result, send_data);
+            BOOST_TEST_EQ(std::string_view(buf, n), send_data);
         };
         capy::run_async(ioc.get_executor())(task(s1, s2));
 

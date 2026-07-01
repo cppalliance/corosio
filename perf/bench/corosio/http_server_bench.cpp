@@ -15,17 +15,18 @@
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/corosio/native/native_socket_option.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/read.hpp>
-#include <boost/capy/read_until.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/write.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "../common/http_protocol.hpp"
@@ -37,6 +38,31 @@ namespace capy    = boost::capy;
 namespace corosio_bench {
 namespace {
 
+// Read into `buf` until `delim` appears; return the index just past it.
+// capy dropped composed read_until, and this benchmark only needs to locate
+// the header terminator; bytes past the delimiter stay buffered in `buf`.
+template<class Sock>
+capy::task<std::pair<std::error_code, std::size_t>>
+read_until(Sock& sock, std::string& buf, std::string_view delim)
+{
+    std::size_t scan_from = 0;
+    for (;;)
+    {
+        if (auto pos = buf.find(delim, scan_from); pos != std::string::npos)
+            co_return {std::error_code{}, pos + delim.size()};
+        // A full delimiter can only straddle the last delim.size()-1 bytes,
+        // so the next scan need not re-examine earlier bytes.
+        scan_from =
+            buf.size() >= delim.size() ? buf.size() - (delim.size() - 1) : 0;
+        char chunk[4096];
+        auto [ec, n] =
+            co_await sock.read_some(capy::mutable_buffer(chunk, sizeof(chunk)));
+        buf.append(chunk, n);
+        if (ec)
+            co_return {ec, buf.size()};
+    }
+}
+
 template<auto Backend>
 capy::task<>
 server_task(corosio::native_tcp_socket<Backend>& sock)
@@ -45,8 +71,7 @@ server_task(corosio::native_tcp_socket<Backend>& sock)
 
     for (;;)
     {
-        auto [ec, n] = co_await capy::read_until(
-            sock, capy::dynamic_buffer(buf), "\r\n\r\n");
+        auto [ec, n] = co_await read_until(sock, buf, "\r\n\r\n");
         if (ec)
             co_return;
 
@@ -80,8 +105,7 @@ client_task(
         if (wec)
             co_return;
 
-        auto [ec, header_end] = co_await capy::read_until(
-            sock, capy::dynamic_buffer(buf), "\r\n\r\n");
+        auto [ec, header_end] = co_await read_until(sock, buf, "\r\n\r\n");
         if (ec)
             co_return;
 

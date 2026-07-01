@@ -13,7 +13,6 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>
@@ -42,13 +41,22 @@ do_request(
             stream, capy::const_buffer(request.data(), request.size())); ec)
         throw std::system_error(ec);
 
-    // Read entire response until EOF
+    // Read the entire response until EOF, one fixed chunk at a time
     std::string response;
-    auto [ec, n] = co_await capy::read(
-            stream, capy::string_dynamic_buffer(&response));
-    // EOF is expected when server closes connection
-    if (ec && ec != capy::error::eof)
-        throw std::system_error(ec);
+    for (;;)
+    {
+        char chunk[4096];
+        auto [ec, n] = co_await capy::read(
+            stream, capy::mutable_buffer(chunk, sizeof(chunk)));
+        response.append(chunk, n);
+        if (ec)
+        {
+            // EOF is expected when the server closes the connection
+            if (ec != capy::error::eof)
+                throw std::system_error(ec);
+            break;
+        }
+    }
 
     std::cout << response << std::endl;
 }
