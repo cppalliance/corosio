@@ -176,7 +176,7 @@ struct uring_read_op : io_uring_op
 
     static void do_cqe(
         io_uring_op* base, int res, unsigned flags,
-        op_queue& local) noexcept
+        ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_read_op*>(base);
         self->res       = res;
@@ -286,7 +286,7 @@ struct uring_write_op : io_uring_op
 
     static void do_cqe(
         io_uring_op* base, int res, unsigned flags,
-        op_queue& local) noexcept
+        ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_write_op*>(base);
         self->res       = res;
@@ -387,7 +387,7 @@ struct uring_connect_op : io_uring_op
 
     static void do_cqe(
         io_uring_op* base, int res, unsigned flags,
-        op_queue& local) noexcept
+        ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_connect_op*>(base);
         self->res       = res;
@@ -552,7 +552,7 @@ struct uring_wait_op : io_uring_op
 
     static void do_cqe(
         io_uring_op* base, int res, unsigned flags,
-        op_queue& local) noexcept
+        ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_wait_op*>(base);
         self->res       = res;
@@ -643,7 +643,7 @@ struct uring_local_connect_op : io_uring_op
 
     static void do_cqe(
         io_uring_op* base, int res, unsigned flags,
-        op_queue& local) noexcept
+        ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_local_connect_op*>(base);
         self->res       = res;

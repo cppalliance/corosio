@@ -307,8 +307,8 @@ signal_op::do_complete(
     auto* service = op->svc;
     op->svc       = nullptr;
 
-    op->cont_op.cont.h = op->h;
-    dispatch_coro(op->d, op->cont_op.cont).resume();
+    op->cont.h = op->h;
+    dispatch_coro(op->d, op->cont).resume();
 
     if (service)
         service->work_finished();
@@ -341,8 +341,8 @@ win_signal::wait(
             *ec = make_error_code(capy::error::canceled);
         if (signal_out)
             *signal_out = 0;
-        pending_op_.cont_op.cont.h = h;
-        dispatch_coro(d, pending_op_.cont_op.cont).resume();
+        pending_op_.cont.h = h;
+        dispatch_coro(d, pending_op_.cont).resume();
         // completion is always posted to scheduler queue, never inline.
         return std::noop_coroutine();
     }
@@ -616,8 +616,8 @@ win_signals::cancel_wait(win_signal& impl)
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        op->cont_op.cont.h = op->h;
-        dispatch_coro(op->d, op->cont_op.cont).resume();
+        op->cont.h = op->h;
+        dispatch_coro(op->d, op->cont).resume();
         sched_.work_finished();
     }
 }
@@ -639,7 +639,7 @@ win_signals::start_wait(win_signal& impl, signal_op* op)
                 *op->ec_out = make_error_code(capy::error::canceled);
             if (op->signal_out)
                 *op->signal_out = 0;
-            op->cont_op.cont.h = op->h;
+            op->cont.h = op->h;
         }
         else
         {
@@ -671,7 +671,7 @@ win_signals::start_wait(win_signal& impl, signal_op* op)
     // Dispatch outside the lock to avoid deadlock if the resumed
     // coroutine re-enters cancel()/add()/remove()
     if (was_cancelled)
-        dispatch_coro(op->d, op->cont_op.cont).resume();
+        dispatch_coro(op->d, op->cont).resume();
 }
 
 inline void

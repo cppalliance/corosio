@@ -45,7 +45,11 @@ enum completion_key : ULONG_PTR
     key_result_stored = 3,
 
     /** Posted scheduler_op*. OVERLAPPED* is actually a scheduler_op*. */
-    key_posted = 4
+    key_posted = 4,
+
+    /** Posted capy::continuation*. OVERLAPPED* is actually a
+        capy::continuation*; resume its handle. */
+    key_continuation = 5
 };
 
 } // namespace boost::corosio::detail

@@ -53,7 +53,7 @@ class native_timer : public timer
         native_timer& self_;
         std::stop_token token_;
         mutable std::error_code ec_;
-        detail::continuation_op cont_op_;
+        capy::continuation cont_;
 
         explicit native_wait_awaitable(native_timer& self) noexcept
             : self_(self)
@@ -76,7 +76,7 @@ class native_timer : public timer
             -> std::coroutine_handle<>
         {
             token_     = env->stop_token;
-            cont_op_.cont.h = h;
+            cont_.h = h;
             auto& impl = self_.get_impl();
             // Fast path: already expired and not in the heap
             if (impl.heap_index_ == timer::implementation::npos &&
@@ -85,10 +85,10 @@ class native_timer : public timer
             {
                 ec_    = {};
                 auto d = env->executor;
-                d.post(cont_op_.cont);
+                d.post(cont_);
                 return std::noop_coroutine();
             }
-            return impl.wait(h, env->executor, std::move(token_), &ec_, &cont_op_.cont);
+            return impl.wait(h, env->executor, std::move(token_), &ec_, &cont_);
         }
     };
 

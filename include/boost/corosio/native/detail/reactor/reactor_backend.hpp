@@ -98,8 +98,8 @@ reactor_acceptor_impl<Derived, Traits, Service, SocketFinal, AccImplBase, Endpoi
                 if (impl_out)
                     *impl_out = nullptr;
             }
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
 
         op.accepted_fd  = accepted;

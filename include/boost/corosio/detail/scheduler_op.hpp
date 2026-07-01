@@ -14,7 +14,6 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 
-#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -114,9 +113,12 @@ protected:
 
     func_type func_;
 
-    // Pad to 32 bytes so derived structs (descriptor_state, epoll_op)
-    // keep hot fields on optimal cache line boundaries
-    std::byte reserved_[sizeof(void*)] = {};
+public:
+    // Tagged next-link for ready_queue (low bit selects node kind). Reuses
+    // the former 8-byte padding word, so size/alignment are unchanged. Used
+    // only while this op is in the ready queue; node.next_ is used while it
+    // is pending in an op_queue. An op is in one or the other, never both.
+    std::uintptr_t q_next_ = 0;
 };
 
 using op_queue = intrusive_queue<scheduler_op>;

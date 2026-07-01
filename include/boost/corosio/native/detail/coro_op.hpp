@@ -11,7 +11,7 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_CORO_OP_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/continuation_op.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
@@ -74,7 +74,7 @@ struct coro_op : scheduler_op
     };
 
     std::coroutine_handle<>  h;
-    detail::continuation_op  cont_op;
+    capy::continuation       cont;
     capy::executor_ref       ex;
     std::error_code*         ec_out    = nullptr;
     std::size_t*             bytes_out = nullptr;

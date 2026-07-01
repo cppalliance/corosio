@@ -206,11 +206,11 @@ local_stream_accept_op::do_complete(
             *op->impl_out = nullptr;
     }
 
-    op->cont_op.cont.h                         = op->h;
+    op->cont.h                         = op->h;
     auto saved_ex                      = op->ex;
     auto prevent_premature_destruction = std::move(op->acceptor_ptr);
 
-    dispatch_coro(saved_ex, op->cont_op.cont).resume();
+    dispatch_coro(saved_ex, op->cont).resume();
 }
 
 inline void

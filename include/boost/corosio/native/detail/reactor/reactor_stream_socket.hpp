@@ -375,8 +375,8 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
         if (this->svc_.scheduler().try_consume_inline_budget())
         {
             *ec = err ? make_err(err) : std::error_code{};
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.reset();
         op.h               = h;
@@ -487,8 +487,8 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
             else
                 *ec = {};
             *bytes_out = bytes;
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
         op.ex        = ex;
@@ -586,8 +586,8 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
         op.ex        = ex;
@@ -645,8 +645,8 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
         if (this->svc_.scheduler().try_consume_inline_budget())
         {
             *ec               = std::error_code{};
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.reset();
         op.wait_event = reactor_event_write;

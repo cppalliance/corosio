@@ -337,7 +337,7 @@ kqueue_scheduler::run_task(
     if (nev < 0 && saved_errno != EINTR)
         detail::throw_system_error(make_err(saved_errno), "kevent");
 
-    op_queue local_ops;
+    ready_queue local_ops;
 
     for (int i = 0; i < nev; ++i)
     {
@@ -385,8 +385,7 @@ kqueue_scheduler::run_task(
 
     lock.lock();
 
-    if (!local_ops.empty())
-        completed_ops_.splice(local_ops);
+    completed_ops_.splice(local_ops);
 }
 
 } // namespace boost::corosio::detail

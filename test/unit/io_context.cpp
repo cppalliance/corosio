@@ -10,8 +10,6 @@
 // Test that header file is self-contained.
 #include <boost/corosio/io_context.hpp>
 
-#include <boost/corosio/detail/continuation_op.hpp>
-
 #include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -229,9 +227,8 @@ make_check_coro(bool& result, io_context::executor_type& ex)
 }
 
 // Helper: post a bare coroutine handle (heap-allocating path).
-// Test-only: production code embeds continuation_op in long-lived
-// structures; this helper uses the executor's post(coroutine_handle<>)
-// overload since the handle has no enclosing continuation_op.
+// Test-only: uses the heap-allocating overload since the handle has
+// no enclosing capy::continuation.
 inline void
 post_coro(io_context::executor_type& ex, std::coroutine_handle<> h)
 {
@@ -711,31 +708,28 @@ struct io_context_test
         BOOST_TEST_EQ(destroyed, 3);
     }
 
-    // Exercises continuation_op::destroy() — invoked when shutdown drains
-    // queued continuation_op posts. The tagged-post path through
-    // executor::post(capy::continuation&) routes to scheduler::post(scheduler_op*)
-    // which enqueues without heap allocation; on shutdown the queue is drained
-    // and destroy() must release each continuation's coroutine frame.
+    // Exercises scheduler shutdown drain on posted continuations.
     void testContinuationOpDestroyOnShutdown()
     {
         int destroyed = 0;
 
-        // Allocate the continuation_ops outside the io_context scope so the
-        // ops outlive the scheduler that points at them.
-        detail::continuation_op op1;
-        detail::continuation_op op2;
-        op1.cont.h = make_destroy_coro(destroyed);
-        op2.cont.h = make_destroy_coro(destroyed);
+        // Continuations live outside the io_context scope; the scheduler
+        // links them through their own reserved slot and destroys their
+        // coroutine frames on shutdown.
+        capy::continuation cont1;
+        capy::continuation cont2;
+        cont1.h = make_destroy_coro(destroyed);
+        cont2.h = make_destroy_coro(destroyed);
 
         {
             io_context ioc(Backend);
             auto ex = ioc.get_executor();
 
-            ex.post(op1.cont);
-            ex.post(op2.cont);
+            ex.post(cont1);
+            ex.post(cont2);
 
-            // io_context destructor drains scheduler queue and calls
-            // continuation_op::destroy() on each.
+            // io_context destructor drains the ready queue and calls
+            // h.destroy() on each queued continuation's handle.
         }
 
         BOOST_TEST_EQ(destroyed, 2);

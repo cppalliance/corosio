@@ -12,6 +12,7 @@
 #define BOOST_COROSIO_DETAIL_SCHEDULER_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/capy/continuation.hpp>
 #include <coroutine>
 
 #include <cstddef>
@@ -37,6 +38,9 @@ struct BOOST_COROSIO_DECL scheduler
 
     /// Post a scheduler operation for deferred execution.
     virtual void post(scheduler_op*) const = 0;
+
+    /// Post a continuation for deferred execution (zero-allocation).
+    virtual void post(capy::continuation&) const = 0;
 
     /// Increment the outstanding work count.
     virtual void work_started() noexcept = 0;

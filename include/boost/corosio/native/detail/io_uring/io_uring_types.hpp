@@ -191,8 +191,8 @@ public:
                     n < 0 ? 0u : static_cast<std::size_t>(n), empty_buf);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
-                rd_.cont_op.cont.h = h;
-                return dispatch_coro(ex, rd_.cont_op.cont);
+                rd_.cont.h = h;
+                return dispatch_coro(ex, rd_.cont);
             }
             rd_.prepare(h, ex, ec, bytes, fd_, sched_,
                 shared_from_this(), &spec_, buffers, token);
@@ -264,8 +264,8 @@ public:
                     /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
-                wr_.cont_op.cont.h = h;
-                return dispatch_coro(ex, wr_.cont_op.cont);
+                wr_.cont.h = h;
+                return dispatch_coro(ex, wr_.cont);
             }
             wr_.prepare(h, ex, ec, bytes, fd_, sched_,
                 shared_from_this(), &spec_, buffers, token);
@@ -311,8 +311,8 @@ public:
             if (sched_->try_consume_inline_budget())
             {
                 if (ec) *ec = capy::error::canceled;
-                conn_.cont_op.cont.h = h;
-                return dispatch_coro(ex, conn_.cont_op.cont);
+                conn_.cont.h = h;
+                return dispatch_coro(ex, conn_.cont);
             }
             conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
             conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
@@ -940,8 +940,8 @@ public:
                     n < 0 ? 0u : static_cast<std::size_t>(n), empty_buf);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
-                rd_.cont_op.cont.h = h;
-                return dispatch_coro(ex, rd_.cont_op.cont);
+                rd_.cont.h = h;
+                return dispatch_coro(ex, rd_.cont);
             }
             rd_.prepare(h, ex, ec, bytes, fd_, sched_,
                 shared_from_this(), &spec_, buffers, token);
@@ -1013,8 +1013,8 @@ public:
                     /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
-                wr_.cont_op.cont.h = h;
-                return dispatch_coro(ex, wr_.cont_op.cont);
+                wr_.cont.h = h;
+                return dispatch_coro(ex, wr_.cont);
             }
             wr_.prepare(h, ex, ec, bytes, fd_, sched_,
                 shared_from_this(), &spec_, buffers, token);
@@ -1060,8 +1060,8 @@ public:
             if (sched_->try_consume_inline_budget())
             {
                 if (ec) *ec = capy::error::canceled;
-                conn_.cont_op.cont.h = h;
-                return dispatch_coro(ex, conn_.cont_op.cont);
+                conn_.cont.h = h;
+                return dispatch_coro(ex, conn_.cont);
             }
             conn_.addrlen = to_sockaddr(ep, conn_.addr);
             conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
@@ -1701,8 +1701,8 @@ public:
             if (sched_->try_consume_inline_budget())
             {
                 if (ec) *ec = capy::error::canceled;
-                conn_.cont_op.cont.h = h;
-                return dispatch_coro(ex, conn_.cont_op.cont);
+                conn_.cont.h = h;
+                return dispatch_coro(ex, conn_.cont);
             }
             conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
             conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
@@ -1841,8 +1841,8 @@ private:
                     /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
-                send_.cont_op.cont.h = h;
-                return dispatch_coro(ex, send_.cont_op.cont);
+                send_.cont.h = h;
+                return dispatch_coro(ex, send_.cont);
             }
             send_.prepare(h, ex, ec, bytes, fd_, sched_,
                 shared_from_this(), &spec_, buffers, dest_len, dest_storage,
@@ -1930,8 +1930,8 @@ private:
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 if (n >= 0 && want_source && source_out && !empty_buf)
                     *source_out = sockaddr_to_endpoint(src_storage);
-                recv_.cont_op.cont.h = h;
-                return dispatch_coro(ex, recv_.cont_op.cont);
+                recv_.cont.h = h;
+                return dispatch_coro(ex, recv_.cont);
             }
             recv_.prepare(h, ex, ec, bytes, fd_, sched_, shared_from_this(),
                 &spec_, buffers, source_out,
@@ -2216,8 +2216,8 @@ public:
             if (sched_->try_consume_inline_budget())
             {
                 if (ec) *ec = capy::error::canceled;
-                conn_.cont_op.cont.h = h;
-                return dispatch_coro(ex, conn_.cont_op.cont);
+                conn_.cont.h = h;
+                return dispatch_coro(ex, conn_.cont);
             }
             conn_.addrlen = to_sockaddr(ep, conn_.addr);
             conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
@@ -2389,8 +2389,8 @@ private:
                     /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
-                send_.cont_op.cont.h = h;
-                return dispatch_coro(ex, send_.cont_op.cont);
+                send_.cont.h = h;
+                return dispatch_coro(ex, send_.cont);
             }
             send_.prepare(h, ex, ec, bytes, fd_, sched_,
                 shared_from_this(), &spec_, buffers, dest_len, dest_storage,
@@ -2478,8 +2478,8 @@ private:
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 if (n >= 0 && want_source && source_out && !empty_buf)
                     *source_out = sockaddr_to_local_endpoint(src_storage, src_namelen);
-                recv_.cont_op.cont.h = h;
-                return dispatch_coro(ex, recv_.cont_op.cont);
+                recv_.cont.h = h;
+                return dispatch_coro(ex, recv_.cont);
             }
             recv_.prepare(h, ex, ec, bytes, fd_, sched_, shared_from_this(),
                 &spec_, buffers, source_out,

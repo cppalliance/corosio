@@ -174,8 +174,8 @@ posix_stream_file::read_some(
     {
         *ec        = {};
         *bytes_out = 0;
-        op.cont_op.cont.h = h;
-        return dispatch_coro(ex, op.cont_op.cont);
+        op.cont.h = h;
+        return dispatch_coro(ex, op.cont);
     }
 
     for (int i = 0; i < op.iovec_count; ++i)
@@ -258,8 +258,8 @@ posix_stream_file::write_some(
     {
         *ec        = {};
         *bytes_out = 0;
-        op.cont_op.cont.h = h;
-        return dispatch_coro(ex, op.cont_op.cont);
+        op.cont.h = h;
+        return dispatch_coro(ex, op.cont);
     }
 
     for (int i = 0; i < op.iovec_count; ++i)

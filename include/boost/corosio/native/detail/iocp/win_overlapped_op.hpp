@@ -118,8 +118,8 @@ struct overlapped_op
         if (bytes_out)
             *bytes_out = static_cast<std::size_t>(bytes_transferred);
 
-        cont_op.cont.h = h;
-        dispatch_coro(ex, cont_op.cont).resume();
+        cont.h = h;
+        dispatch_coro(ex, cont).resume();
     }
 
     /** Disarm cancellation and abandon the coroutine handle. */

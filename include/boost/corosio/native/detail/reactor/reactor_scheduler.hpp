@@ -13,6 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
+#include <boost/corosio/detail/ready_queue.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
@@ -50,7 +51,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE reactor_scheduler_context
     reactor_scheduler_context* next;
 
     /// Private work queue for reduced contention.
-    op_queue private_queue;
+    ready_queue private_queue;
 
     /// Unflushed work count for the private queue.
     std::int64_t private_outstanding_work;
@@ -107,7 +108,7 @@ inline bool
 reactor_drain_private_queue(
     reactor_scheduler_context* ctx,
     std::atomic<std::int64_t>& outstanding_work,
-    op_queue& completed_ops) noexcept
+    ready_queue& completed_ops) noexcept
 {
     if (!ctx || ctx->private_queue.empty())
         return false;
@@ -153,6 +154,9 @@ public:
 
     /// Post a scheduler operation for deferred execution.
     void post(scheduler_op* h) const override;
+
+    /// Post a continuation for deferred execution.
+    void post(capy::continuation&) const override;
 
     /// Return true if called from a thread running this scheduler.
     bool running_in_this_thread() const noexcept override;
@@ -216,7 +220,7 @@ public:
         @param queue The private queue to drain.
         @param count Private work count to flush before draining.
     */
-    void drain_thread_queue(op_queue& queue, std::int64_t count) const;
+    void drain_thread_queue(ready_queue& queue, std::int64_t count) const;
 
     /** Post completed operations for deferred invocation.
 
@@ -230,7 +234,7 @@ public:
 
         @param ops Queue of operations to post.
     */
-    void post_deferred_completions(op_queue& ops) const;
+    void post_deferred_completions(ready_queue& ops) const;
 
     /** Apply runtime configuration to the scheduler.
 
@@ -299,7 +303,7 @@ protected:
 
     mutable mutex_type mutex_{true};
     mutable event_type cond_{true};
-    mutable op_queue completed_ops_;
+    mutable ready_queue completed_ops_;
     mutable std::atomic<std::int64_t> outstanding_work_{0};
     std::atomic<bool> stopped_{false};
     mutable std::atomic<bool> task_running_{false};
@@ -490,13 +494,6 @@ reactor_scheduler::post(std::coroutine_handle<> h) const
         {
             auto saved = h_;
             delete this;
-            // Ensure stores from the posting thread are visible. TSan
-            // cannot instrument standalone fences; this acquire pairs
-            // with the posting thread's release and is intentional.
-            BOOST_COROSIO_GCC_WARNING_PUSH
-            BOOST_COROSIO_GCC_WARNING_DISABLE("-Wtsan")
-            std::atomic_thread_fence(std::memory_order_acquire);
-            BOOST_COROSIO_GCC_WARNING_POP
             saved.resume();
         }
 
@@ -538,6 +535,23 @@ reactor_scheduler::post(scheduler_op* h) const
 
     lock_type lock(mutex_);
     completed_ops_.push(h);
+    wake_one_thread_and_unlock(lock);
+}
+
+inline void
+reactor_scheduler::post(capy::continuation& c) const
+{
+    if (auto* ctx = reactor_find_context(this))
+    {
+        ++ctx->private_outstanding_work;
+        ctx->private_queue.push(c);
+        return;
+    }
+
+    outstanding_work_.fetch_add(1, std::memory_order_relaxed);
+
+    lock_type lock(mutex_);
+    completed_ops_.push(c);
     wake_one_thread_and_unlock(lock);
 }
 
@@ -686,7 +700,7 @@ reactor_scheduler::compensating_work_started() const noexcept
 
 inline void
 reactor_scheduler::drain_thread_queue(
-    op_queue& queue, std::int64_t count) const
+    ready_queue& queue, std::int64_t count) const
 {
     if (count > 0)
         outstanding_work_.fetch_add(count, std::memory_order_relaxed);
@@ -698,7 +712,7 @@ reactor_scheduler::drain_thread_queue(
 }
 
 inline void
-reactor_scheduler::post_deferred_completions(op_queue& ops) const
+reactor_scheduler::post_deferred_completions(ready_queue& ops) const
 {
     if (ops.empty())
         return;
@@ -719,13 +733,24 @@ reactor_scheduler::shutdown_drain()
 {
     lock_type lock(mutex_);
 
-    while (auto* h = completed_ops_.pop())
+    while (auto e = completed_ops_.pop())
     {
-        if (h == &task_op_)
-            continue;
-        lock.unlock();
-        h->destroy();
-        lock.lock();
+        if (ready_is_continuation(e))
+        {
+            lock.unlock();
+            if (auto h = ready_as_cont(e)->h)
+                h.destroy();
+            lock.lock();
+        }
+        else
+        {
+            auto* op = ready_as_op(e);
+            if (op == &task_op_)
+                continue;
+            lock.unlock();
+            op->destroy();
+            lock.lock();
+        }
     }
 
     signal_all(lock);
@@ -866,7 +891,8 @@ reactor_scheduler::do_one(
         if (stopped_.load(std::memory_order_acquire))
             return 0;
 
-        scheduler_op* op = completed_ops_.pop();
+        std::uintptr_t e = completed_ops_.pop();
+        scheduler_op* op = ready_is_continuation(e) ? nullptr : ready_as_op(e);
 
         // Handle reactor sentinel — time to poll for I/O
         if (op == &task_op_)
@@ -906,8 +932,8 @@ reactor_scheduler::do_one(
             continue;
         }
 
-        // Handle operation
-        if (op != nullptr)
+        // Handle ready entry (op or continuation)
+        if (e != 0)
         {
             bool more = !completed_ops_.empty();
 
@@ -922,7 +948,10 @@ reactor_scheduler::do_one(
             work_cleanup on_exit{this, &lock, ctx};
             (void)on_exit;
 
-            (*op)();
+            if (ready_is_continuation(e))
+                ready_as_cont(e)->h.resume();
+            else
+                (*op)();
             return 1;
         }
 

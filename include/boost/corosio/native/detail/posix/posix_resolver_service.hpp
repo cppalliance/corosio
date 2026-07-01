@@ -273,8 +273,8 @@ posix_resolver::resolve_op::operator()()
         *out = std::move(stored_results);
 
     impl->svc_.work_finished();
-    cont_op.cont.h = h;
-    dispatch_coro(ex, cont_op.cont).resume();
+    cont.h = h;
+    dispatch_coro(ex, cont).resume();
 }
 
 inline void
@@ -339,8 +339,8 @@ posix_resolver::reverse_resolve_op::operator()()
     }
 
     impl->svc_.work_finished();
-    cont_op.cont.h = h;
-    dispatch_coro(ex, cont_op.cont).resume();
+    cont.h = h;
+    dispatch_coro(ex, cont).resume();
 }
 
 inline void
@@ -381,8 +381,8 @@ posix_resolver::resolve(
     if (svc_.single_threaded())
     {
         *ec = std::make_error_code(std::errc::operation_not_supported);
-        op_.cont_op.cont.h = h;
-        return dispatch_coro(ex, op_.cont_op.cont);
+        op_.cont.h = h;
+        return dispatch_coro(ex, op_.cont);
     }
 
     auto& op = op_;
@@ -427,8 +427,8 @@ posix_resolver::reverse_resolve(
     if (svc_.single_threaded())
     {
         *ec = std::make_error_code(std::errc::operation_not_supported);
-        reverse_op_.cont_op.cont.h = h;
-        return dispatch_coro(ex, reverse_op_.cont_op.cont);
+        reverse_op_.cont.h = h;
+        return dispatch_coro(ex, reverse_op_.cont);
     }
 
     auto& op = reverse_op_;

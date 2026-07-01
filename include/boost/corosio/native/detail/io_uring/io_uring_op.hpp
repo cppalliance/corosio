@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_IO_URING
 
 #include <boost/corosio/native/detail/coro_op.hpp>
+#include <boost/corosio/detail/ready_queue.hpp>
 
 // Forward declare to avoid circular include with io_uring_scheduler.hpp.
 namespace boost::corosio::detail { class io_uring_scheduler; }
@@ -42,7 +43,7 @@ struct io_uring_op : coro_op
     /// process_completions can splice the batch into completed_ops_
     /// atomically and do_one dispatches one handler at a time.
     using cqe_func_type =
-        void (*)(io_uring_op*, int res, unsigned flags, op_queue& local) noexcept;
+        void (*)(io_uring_op*, int res, unsigned flags, ready_queue& local) noexcept;
 
     /// SQE-preparation dispatcher type. Called by the leader during
     /// its drain step to fill an SQE for this op. Concrete op types

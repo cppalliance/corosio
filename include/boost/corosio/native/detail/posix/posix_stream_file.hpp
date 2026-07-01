@@ -20,7 +20,6 @@
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
-#include <boost/corosio/detail/continuation_op.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
@@ -105,7 +104,7 @@ public:
 
         // Coroutine state
         std::coroutine_handle<> h;
-        detail::continuation_op cont_op;
+        capy::continuation cont;
         capy::executor_ref ex;
 
         // Output pointers
@@ -426,8 +425,8 @@ posix_stream_file::file_op::operator()()
     // the parent posix_stream_file (which embeds this file_op) alive.
     auto prevent_destroy = std::move(impl_ref);
     ex.on_work_finished();
-    cont_op.cont.h = h;
-    dispatch_coro(ex, cont_op.cont).resume();
+    cont.h = h;
+    dispatch_coro(ex, cont).resume();
 }
 
 inline void

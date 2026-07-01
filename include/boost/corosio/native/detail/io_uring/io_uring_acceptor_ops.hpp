@@ -77,7 +77,7 @@ struct uring_multi_accept_op : io_uring_op
     }
 
     static void do_cqe(io_uring_op* base, int res, unsigned flags,
-                       op_queue& /*local*/) noexcept
+                       ready_queue& /*local*/) noexcept
     {
         auto* self  = static_cast<uring_multi_accept_op*>(base);
         bool  more  = (flags & IORING_CQE_F_MORE) != 0;
@@ -138,7 +138,7 @@ struct uring_accept_op : io_uring_op
     {}
 
     static void do_cqe(io_uring_op*, int, unsigned,
-                       op_queue&) noexcept
+                       ready_queue&) noexcept
     {
         // Unreachable: this op never receives a CQE.
     }
@@ -165,8 +165,8 @@ struct uring_accept_op : io_uring_op
                 *self->ec_out = was_cancelled
                     ? std::error_code(capy::error::canceled)
                     : make_err(self->err);
-            self->cont_op.cont.h = self->h;
-            auto next = dispatch_coro(self->ex, self->cont_op.cont);
+            self->cont.h = self->h;
+            auto next = dispatch_coro(self->ex, self->cont);
             delete self;
             next.resume();
             return;
@@ -184,8 +184,8 @@ struct uring_accept_op : io_uring_op
         if (self->ec_out)
             *self->ec_out = {};
 
-        self->cont_op.cont.h = self->h;
-        auto next = dispatch_coro(self->ex, self->cont_op.cont);
+        self->cont.h = self->h;
+        auto next = dispatch_coro(self->ex, self->cont);
         delete self;
         next.resume();
     }

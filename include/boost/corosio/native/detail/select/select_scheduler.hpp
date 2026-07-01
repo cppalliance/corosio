@@ -383,7 +383,7 @@ select_scheduler::run_task(
     // Process timers outside the lock
     timer_svc_->process_expired();
 
-    op_queue local_ops;
+    ready_queue local_ops;
 
     if (ready > 0)
     {
@@ -425,8 +425,7 @@ select_scheduler::run_task(
 
     lock.lock();
 
-    if (!local_ops.empty())
-        completed_ops_.splice(local_ops);
+    completed_ops_.splice(local_ops);
 }
 
 } // namespace boost::corosio::detail

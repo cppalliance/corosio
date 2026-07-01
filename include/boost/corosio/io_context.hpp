@@ -13,7 +13,6 @@
 #define BOOST_COROSIO_IO_CONTEXT_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/continuation_op.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/continuation.hpp>
@@ -567,12 +566,10 @@ public:
     /** Dispatch a continuation.
 
         Returns a handle for symmetric transfer. If called from
-        within `run()`, returns `c.h`. Otherwise posts the
-        enclosing continuation_op as a scheduler_op for later
-        execution and returns `std::noop_coroutine()`.
+        within `run()`, returns `c.h`. Otherwise posts `c` for
+        later execution and returns `std::noop_coroutine()`.
 
-        @param c The continuation to dispatch. Must be the `cont`
-                 member of a `detail::continuation_op`.
+        @param c The continuation to dispatch.
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
     */
@@ -586,25 +583,19 @@ public:
 
     /** Post a continuation for deferred execution.
 
-        If the continuation is backed by a continuation_op
-        (tagged), posts it directly as a scheduler_op — zero
-        heap allocation. Otherwise falls back to the
-        heap-allocating post(coroutine_handle<>) path.
+        Enqueues `c` directly on the scheduler's ready queue.
+        No heap allocation occurs.
     */
     void post(capy::continuation& c) const
     {
-        auto* op = detail::continuation_op::try_from_continuation(c);
-        if (op)
-            ctx_->sched_->post(op);
-        else
-            ctx_->sched_->post(c.h);
+        ctx_->sched_->post(c);
     }
 
     /** Post a bare coroutine handle for deferred execution.
 
-        Heap-allocates a scheduler_op to wrap the handle. Prefer
-        posting through a continuation_op-backed continuation when
-        the continuation has suitable lifetime.
+        Heap-allocates a scheduler_op to wrap the handle. A caller
+        that already owns a `scheduler_op` can post it directly via
+        the `post(scheduler_op*)` overload to avoid the allocation.
 
         @param h The coroutine handle to post.
     */

@@ -159,7 +159,7 @@ private:
     {
         waiter* next;
         std::coroutine_handle<> h;
-        detail::continuation_op cont_op;
+        capy::continuation cont;
         worker_base* w;
     };
 
@@ -348,7 +348,7 @@ private:
     {
         tcp_server& self_;
         worker_base& w_;
-        detail::continuation_op cont_op_;
+        capy::continuation cont_;
 
     public:
         push_awaitable(tcp_server& self, worker_base& w) noexcept
@@ -366,8 +366,8 @@ private:
         await_suspend(std::coroutine_handle<> h, capy::io_env const*) noexcept
         {
             // Symmetric transfer to server's executor
-            cont_op_.cont.h = h;
-            return self_.ex_.dispatch(cont_op_.cont);
+            cont_.h = h;
+            return self_.ex_.dispatch(cont_);
         }
 
         void await_resume() noexcept
@@ -380,8 +380,8 @@ private:
                 auto* wait     = self_.waiters_;
                 self_.waiters_ = wait->next;
                 wait->w        = &w_;
-                wait->cont_op.cont.h = wait->h;
-                self_.ex_.post(wait->cont_op.cont);
+                wait->cont.h = wait->h;
+                self_.ex_.post(wait->cont);
             }
             else
             {
@@ -438,8 +438,8 @@ private:
             auto* wait = waiters_;
             waiters_   = wait->next;
             wait->w    = &w;
-            wait->cont_op.cont.h = wait->h;
-            ex_.post(wait->cont_op.cont);
+            wait->cont.h = wait->h;
+            ex_.post(wait->cont);
         }
         else
         {

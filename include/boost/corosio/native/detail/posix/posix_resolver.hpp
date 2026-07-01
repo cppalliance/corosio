@@ -176,7 +176,7 @@ public:
 
         // Coroutine state
         std::coroutine_handle<> h;
-        detail::continuation_op cont_op;
+        capy::continuation cont;
         capy::executor_ref ex;
         posix_resolver* impl = nullptr;
 
@@ -221,7 +221,7 @@ public:
 
         // Coroutine state
         std::coroutine_handle<> h;
-        detail::continuation_op cont_op;
+        capy::continuation cont;
         capy::executor_ref ex;
         posix_resolver* impl = nullptr;
 

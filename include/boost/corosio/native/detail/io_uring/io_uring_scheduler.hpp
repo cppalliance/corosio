@@ -22,6 +22,7 @@
 #include <boost/corosio/detail/conditionally_enabled_mutex.hpp>
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/detail/ready_queue.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
@@ -76,9 +77,9 @@ public:
 
     void shutdown() override;
 
-    // scheduler virtuals — definitions in Task 6
     void post(std::coroutine_handle<>) const override;
     void post(scheduler_op*) const override;
+    void post(capy::continuation&) const override;
 
     bool running_in_this_thread() const noexcept override;
     void stop() override;
@@ -287,7 +288,7 @@ private:
     mutable mutex_type                dispatch_mutex_{true};
     mutable mutex_type                ring_mutex_{true};
     mutable event_type                cond_{true};
-    mutable op_queue                  completed_ops_;
+    mutable ready_queue               completed_ops_;
     // outstanding_work_ and io_uring_inflight_ are both atomic
     // counters updated at high frequency on different paths:
     //   - outstanding_work_ : every work_started / work_finished call,
@@ -526,11 +527,21 @@ io_uring_scheduler::shutdown()
     // broken explicitly inside each service before the scheduler
     // shutdown runs.
     lock_type lock(dispatch_mutex_);
-    while (auto* op = completed_ops_.pop())
+    while (auto e = completed_ops_.pop())
     {
-        lock.unlock();
-        op->destroy();
-        lock.lock();
+        if (ready_is_continuation(e))
+        {
+            lock.unlock();
+            if (auto h = ready_as_cont(e)->h)
+                h.destroy();
+            lock.lock();
+        }
+        else
+        {
+            lock.unlock();
+            ready_as_op(e)->destroy();
+            lock.lock();
+        }
     }
     cond_.notify_all();
 }
@@ -636,12 +647,6 @@ io_uring_scheduler::post(std::coroutine_handle<> h) const
         {
             auto saved = h_;
             delete this;
-            // TSan cannot instrument standalone fences; this acquire
-            // pairs with the posting thread's release and is intentional.
-            BOOST_COROSIO_GCC_WARNING_PUSH
-            BOOST_COROSIO_GCC_WARNING_DISABLE("-Wtsan")
-            std::atomic_thread_fence(std::memory_order_acquire);
-            BOOST_COROSIO_GCC_WARNING_POP
             saved.resume();
         }
 
@@ -678,6 +683,23 @@ io_uring_scheduler::post(scheduler_op* op) const
     {
         lock_type lock(dispatch_mutex_);
         completed_ops_.push(op);
+        wake_leader = task_running_;
+        if (!wake_leader)
+            cond_.notify_one();
+    }
+    if (wake_leader)
+        interrupt_reactor();
+}
+
+inline void
+io_uring_scheduler::post(capy::continuation& c) const
+{
+    lazy_init_ring();
+    outstanding_work_.fetch_add(1, std::memory_order_relaxed);
+    bool wake_leader;
+    {
+        lock_type lock(dispatch_mutex_);
+        completed_ops_.push(c);
         wake_leader = task_running_;
         if (!wake_leader)
             cond_.notify_one();
@@ -927,7 +949,7 @@ io_uring_scheduler::do_one(long timeout_us)
         if (stopped_.load(std::memory_order_acquire))
             return 0;
 
-        if (auto* op = completed_ops_.pop())
+        if (auto e = completed_ops_.pop())
         {
             // Hand off any remaining queued work to a follower so we
             // dispatch in parallel.
@@ -936,7 +958,10 @@ io_uring_scheduler::do_one(long timeout_us)
             lock.unlock();
             // Speculative follow-ups in the handler share this budget.
             reset_inline_budget();
-            (*op)();
+            if (ready_is_continuation(e))
+                ready_as_cont(e)->h.resume();
+            else
+                (*ready_as_op(e))();
             work_finished();
             return 1;
         }
@@ -1080,7 +1105,7 @@ io_uring_scheduler::process_completions()
 
     // Collect completed I/O ops locally; splice into completed_ops_
     // after the loop so do_one dispatches them one at a time.
-    op_queue local_ops;
+    ready_queue local_ops;
 
     std::int64_t inflight_dec = 0;
     io_uring_for_each_cqe(&ring_, head, cqe)

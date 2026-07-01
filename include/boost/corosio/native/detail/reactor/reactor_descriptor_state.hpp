@@ -12,6 +12,7 @@
 
 #include <boost/corosio/native/detail/reactor/reactor_op_base.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
+#include <boost/corosio/detail/ready_queue.hpp>
 
 #include <boost/corosio/detail/conditionally_enabled_mutex.hpp>
 
@@ -148,7 +149,7 @@ inline void
 reactor_descriptor_state::invoke_deferred_io()
 {
     std::shared_ptr<void> prevent_impl_destruction;
-    op_queue local_ops;
+    ready_queue local_ops;
 
     {
         conditionally_enabled_mutex::scoped_lock lock(mutex);
@@ -292,8 +293,9 @@ reactor_descriptor_state::invoke_deferred_io()
     }
 
     // Execute first handler inline — the scheduler's work_cleanup
-    // accounts for this as the "consumed" work item
-    scheduler_op* first = local_ops.pop();
+    // accounts for this as the "consumed" work item. local_ops holds
+    // only ops, so the popped entry decodes directly.
+    scheduler_op* first = ready_as_op(local_ops.pop());
     if (first)
     {
         scheduler_->post_deferred_completions(local_ops);

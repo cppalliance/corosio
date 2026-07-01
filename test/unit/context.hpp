@@ -93,6 +93,14 @@
     COROSIO_TEST_KQUEUE_(impl, name)              \
     COROSIO_TEST_SELECT_(impl, name)
 
+// All backends except IOCP (which posts via a separate tagged-PQCS path
+// and is not zero-alloc until that task is done).
+#define COROSIO_NON_IOCP_BACKEND_TESTS(impl, name) \
+    COROSIO_TEST_EPOLL_(impl, name)                \
+    COROSIO_TEST_KQUEUE_(impl, name)               \
+    COROSIO_TEST_SELECT_(impl, name)               \
+    COROSIO_TEST_IO_URING_(impl, name)
+
 // Tests that destroy the io_context with ops still parked abandon the
 // suspended coroutine frames: op destroy() must not resume or destroy
 // them (resuming runs user code during teardown; destroying recurses

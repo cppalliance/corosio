@@ -118,7 +118,7 @@ struct uring_dgram_send_op : io_uring_op
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags, op_queue& local) noexcept
+        io_uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self = static_cast<uring_dgram_send_op*>(base);
         self->res       = res;
@@ -272,7 +272,7 @@ struct uring_dgram_recv_op : io_uring_op
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags, op_queue& local) noexcept
+        io_uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self = static_cast<uring_dgram_recv_op*>(base);
         self->res       = res;

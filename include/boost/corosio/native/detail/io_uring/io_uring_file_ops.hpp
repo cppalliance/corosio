@@ -100,7 +100,7 @@ public:
 
     static void do_cqe(
         io_uring_op* base, int res, unsigned flags,
-        op_queue& local) noexcept
+        ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_file_read_op_base*>(base);
         self->res       = res;
@@ -117,8 +117,8 @@ public:
         if (self->bytes_out)
             *self->bytes_out =
                 self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u;
-        self->cont_op.cont.h = self->h;
-        return dispatch_coro(self->ex, self->cont_op.cont);
+        self->cont.h = self->h;
+        return dispatch_coro(self->ex, self->cont);
     }
 };
 
@@ -238,7 +238,7 @@ public:
 
     static void do_cqe(
         io_uring_op* base, int res, unsigned flags,
-        op_queue& local) noexcept
+        ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_file_write_op_base*>(base);
         self->res       = res;
@@ -253,8 +253,8 @@ public:
         if (self->bytes_out)
             *self->bytes_out =
                 self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u;
-        self->cont_op.cont.h = self->h;
-        return dispatch_coro(self->ex, self->cont_op.cont);
+        self->cont.h = self->h;
+        return dispatch_coro(self->ex, self->cont);
     }
 };
 

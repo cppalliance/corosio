@@ -124,8 +124,8 @@ coro_drain_if_shutdown(void* owner, coro_op* self) noexcept
 inline void
 coro_resume(coro_op* self) noexcept
 {
-    self->cont_op.cont.h = self->h;
-    auto next = dispatch_coro(self->ex, self->cont_op.cont);
+    self->cont.h = self->h;
+    auto next = dispatch_coro(self->ex, self->cont);
     auto suicide = std::move(self->impl_ptr);
     next.resume();
     // suicide drops here; may destroy impl + self.

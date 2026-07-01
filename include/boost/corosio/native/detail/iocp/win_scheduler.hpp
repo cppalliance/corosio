@@ -22,6 +22,7 @@
 #include <system_error>
 
 #include <boost/corosio/detail/scheduler_op.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
 #include <boost/corosio/native/detail/iocp/win_mutex.hpp>
 
@@ -64,6 +65,7 @@ public:
     void shutdown() override;
     void post(std::coroutine_handle<> h) const override;
     void post(scheduler_op* h) const override;
+    void post(capy::continuation&) const override;
     bool running_in_this_thread() const noexcept override;
     void stop() override;
     bool stopped() const noexcept override;
@@ -171,6 +173,8 @@ public:
       - key_wake_dispatch (1): Timer wakeup, check dispatch_required_
       - key_shutdown (2): Stop signal
       - key_result_stored (3): Results pre-stored in OVERLAPPED
+      - key_posted: Carries a scheduler_op* in the OVERLAPPED pointer
+      - key_continuation: Carries a capy::continuation* in the OVERLAPPED pointer
 */
 
 namespace iocp {
@@ -277,7 +281,6 @@ win_scheduler::post(std::coroutine_handle<> h) const
             }
             auto coro = self->h_;
             delete self;
-            std::atomic_thread_fence(std::memory_order_acquire);
             coro.resume();
         }
 
@@ -311,6 +314,22 @@ win_scheduler::post(scheduler_op* h) const
         std::lock_guard<win_mutex> lock(dispatch_mutex_);
         completed_ops_.push(h);
         ::InterlockedExchange(&dispatch_required_, 1);
+    }
+}
+
+inline void
+win_scheduler::post(capy::continuation& c) const
+{
+    ::InterlockedIncrement(&outstanding_work_);
+
+    if (!::PostQueuedCompletionStatus(
+            iocp_, 0, key_continuation, reinterpret_cast<LPOVERLAPPED>(&c)))
+    {
+        // completed_ops_ is an op_queue and cannot carry a raw continuation,
+        // so on the rare PQCS failure fall back to the allocating handle
+        // path. Drop the increment first; post(c.h) does its own accounting.
+        ::InterlockedDecrement(&outstanding_work_);
+        post(c.h);
     }
 }
 
@@ -589,6 +608,15 @@ win_scheduler::do_one(unsigned long timeout_ms)
                 return 1;
             }
 
+            case key_continuation:
+            {
+                // Posted continuation: overlapped is actually a continuation*
+                auto* c = reinterpret_cast<capy::continuation*>(overlapped);
+                c->h.resume();
+                work_finished();
+                return 1;
+            }
+
             default:
                 continue;
             }
@@ -724,6 +752,13 @@ win_scheduler::shutdown()
                 {
                     auto* op = reinterpret_cast<scheduler_op*>(overlapped);
                     op->destroy();
+                }
+                else if (key == key_continuation)
+                {
+                    // Drain without resuming: destroy the parked frame.
+                    auto* c = reinterpret_cast<capy::continuation*>(overlapped);
+                    if (c->h)
+                        c->h.destroy();
                 }
                 else
                 {

@@ -13,16 +13,12 @@
 #include <boost/corosio/native/detail/reactor/reactor_op_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/corosio/endpoint.hpp>
-#include <boost/corosio/detail/continuation_op.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <atomic>
-#include <coroutine>
 #include <cstddef>
-#include <memory>
 #include <optional>
 #include <stop_token>
-#include <system_error>
 
 #include <errno.h>
 
@@ -50,7 +46,7 @@ namespace boost::corosio::detail {
 template<class Socket, class Acceptor>
 struct reactor_op : reactor_op_base
 {
-    // The op envelope — coroutine handle h, cont_op, executor ex, ec_out,
+    // The op envelope — coroutine handle h, cont, executor ex, ec_out,
     // bytes_out, cancelled, stop_cb (+ its canceller), impl_ptr — lives in
     // coro_op (via reactor_op_base) and is shared with io_uring/IOCP.
     // reactor_op adds only the reactor-specific routing state below.

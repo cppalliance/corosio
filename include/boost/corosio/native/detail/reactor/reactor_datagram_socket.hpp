@@ -502,8 +502,8 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
         op.ex        = ex;
@@ -627,8 +627,8 @@ reactor_datagram_socket<
                     op.source_storage,
                     op.source_addrlen,
                     Endpoint{});
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
         op.ex        = ex;
@@ -714,8 +714,8 @@ reactor_datagram_socket<
         if (this->svc_.scheduler().try_consume_inline_budget())
         {
             *ec = err ? make_err(err) : std::error_code{};
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.reset();
         op.h               = h;
@@ -824,8 +824,8 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
         op.ex        = ex;
@@ -937,8 +937,8 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
         op.ex        = ex;
@@ -1006,8 +1006,8 @@ reactor_datagram_socket<
         if (this->svc_.scheduler().try_consume_inline_budget())
         {
             *ec               = std::error_code{};
-            op.cont_op.cont.h = h;
-            return dispatch_coro(ex, op.cont_op.cont);
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
         }
         op.reset();
         op.wait_event = reactor_event_write;

@@ -346,7 +346,7 @@ epoll_scheduler::run_task(
         detail::throw_system_error(make_err(errno), "epoll_wait");
 
     bool check_timers = false;
-    op_queue local_ops;
+    ready_queue local_ops;
 
     for (int i = 0; i < nfds; ++i)
     {
@@ -390,8 +390,7 @@ epoll_scheduler::run_task(
 
     lock.lock();
 
-    if (!local_ops.empty())
-        completed_ops_.splice(local_ops);
+    completed_ops_.splice(local_ops);
 }
 
 } // namespace boost::corosio::detail
