@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -23,7 +24,10 @@
 
 #include <mutex>
 
+#include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
+#include <unistd.h>
 
 /*
     POSIX Signal Service
@@ -68,15 +72,24 @@
     Signal Delivery Flow
     --------------------
 
-    1. Signal arrives -> corosio_posix_signal_handler() (must be async-signal-safe)
-       -> deliver_signal()
+    Delivery uses the self-pipe trick so the signal handler itself performs
+    only async-signal-safe work (mirrors Boost.Asio):
 
-    2. deliver_signal() iterates all posix_signal_service services:
+    1. Signal arrives -> corosio_posix_signal_handler(). The handler only
+       write()s the signal number to the global self-pipe (write_fd) and
+       restores errno. No locks, no allocation, no scheduler dispatch.
+
+    2. The read end of the pipe is watched by one backend's event loop
+       (registered via scheduler::register_signal_reader on the first
+       registration). When it becomes readable the backend drains it
+       (drain_signal_pipe) and calls deliver_signal() in normal context.
+
+    3. deliver_signal() iterates all posix_signal_service services:
        - If a signal_set is waiting (impl->waiting_ == true), post the signal_op
          to the scheduler for immediate completion
        - Otherwise, increment reg->undelivered to queue the signal
 
-    3. When wait() is called via start_wait():
+    4. When wait() is called via start_wait():
        - First check for queued signals (undelivered > 0); if found, post
          immediate completion without blocking
        - Otherwise, set waiting_ = true and call work_started() to keep
@@ -89,25 +102,17 @@
       1. signal_state::mutex - protects handler registration and service list
       2. posix_signal_service::mutex_ - protects per-service registration tables
 
-    Async-Signal-Safety Limitation
-    ------------------------------
+    Async-Signal-Safety
+    -------------------
 
-    IMPORTANT: deliver_signal() is called from signal handler context and
-    acquires mutexes. This is NOT strictly async-signal-safe per POSIX.
-    The limitation:
-      - If a signal arrives while another thread holds state->mutex or
-        service->mutex_, and that same thread receives the signal, a
-        deadlock can occur (self-deadlock on non-recursive mutex).
-
-    This design trades strict async-signal-safety for implementation simplicity.
-    In practice, deadlocks are rare because:
-      - Mutexes are held only briefly during registration changes
-      - Most programs don't modify signal sets while signals are expected
-      - The window for signal arrival during mutex hold is small
-
-    A fully async-signal-safe implementation would require lock-free data
-    structures and atomic operations throughout, significantly increasing
-    complexity.
+    The C signal handler (corosio_posix_signal_handler) performs only
+    async-signal-safe operations: it reads the single global write_fd and
+    calls write(), saving/restoring errno. It never locks a mutex, allocates
+    memory, or dispatches through the scheduler. All of that happens in
+    deliver_signal(), which runs in normal thread context from the backend
+    event loop after draining the self-pipe. There is therefore no
+    self-deadlock risk if a signal arrives while a thread holds state->mutex
+    or service->mutex_.
 
     Flag Handling
     -------------
@@ -192,6 +197,13 @@ private:
 
     scheduler* sched_;
     std::mutex mutex_;
+
+    // Registers the signal self-pipe's read end with sched_ exactly once per
+    // service, so every io_context that waits on a signal can drain the pipe.
+    // A once_flag (not a bool under mutex_) because registration must run
+    // without holding mutex_ or the signal-state mutex — see add_signal.
+    std::once_flag reader_once_;
+
     intrusive_list<posix_signal> impl_list_;
 
     // Per-signal registration table
@@ -237,6 +249,17 @@ struct signal_state
     posix_signal_service* service_list                      = nullptr;
     std::size_t registration_count[max_signal_number]       = {};
     signal_set::flags_t registered_flags[max_signal_number] = {};
+
+    // Self-pipe used to defer signal delivery out of handler context.
+    // The C handler writes the signal number to write_fd (async-signal-
+    // safe); a backend event loop drains read_fd and calls deliver_signal()
+    // in normal context. Created once (on the first signal registration) and
+    // kept for the process lifetime. Each posix_signal_service registers the
+    // read end with its own scheduler (see reader_once_) so every running
+    // io_context can drain it; multiple readers on one pipe are safe because
+    // each signal is a fixed sizeof(int) record read atomically.
+    int read_fd  = -1;
+    int write_fd = -1;
 };
 
 BOOST_COROSIO_DECL signal_state* get_signal_state();
@@ -288,13 +311,70 @@ flags_compatible(signal_set::flags_t existing, signal_set::flags_t requested)
     return (existing & mask) == (requested & mask);
 }
 
-// C signal handler - must be async-signal-safe
+// Lazily create the global signal self-pipe. Idempotent; call under
+// state->mutex before installing the first signal handler so write_fd is
+// valid by the time the handler can fire. Both ends are non-blocking and
+// close-on-exec (mirrors the reactor self-pipe setup in select_scheduler).
+// Returns false and leaves the fds at -1 if creation fails.
+inline bool
+open_signal_pipe(signal_state* state)
+{
+    if (state->read_fd >= 0)
+        return true;
+
+    int fds[2];
+    if (::pipe(fds) < 0)
+        return false;
+
+    for (int i = 0; i < 2; ++i)
+    {
+        int fl = ::fcntl(fds[i], F_GETFL, 0);
+        if (fl == -1 || ::fcntl(fds[i], F_SETFL, fl | O_NONBLOCK) == -1 ||
+            ::fcntl(fds[i], F_SETFD, FD_CLOEXEC) == -1)
+        {
+            ::close(fds[0]);
+            ::close(fds[1]);
+            return false;
+        }
+    }
+
+    state->read_fd  = fds[0];
+    state->write_fd = fds[1];
+    return true;
+}
+
+// C signal handler. Async-signal-safe: it touches only the single global
+// write_fd (an int set before any handler is installed) and calls write(),
+// which POSIX lists as async-signal-safe. errno is saved and restored so an
+// interrupted foreground syscall is unaffected. A full pipe (write returns
+// EAGAIN) or a short write is intentionally dropped — the reactor still
+// coalesces because deliver_signal reports the signal to every waiting set.
 inline void
 corosio_posix_signal_handler(int signal_number)
 {
-    posix_signal_service::deliver_signal(signal_number);
-    // Note: With sigaction(), the handler persists automatically
-    // (unlike some signal() implementations that reset to SIG_DFL)
+    int saved_errno         = errno;
+    signal_state* state     = get_signal_state();
+    [[maybe_unused]] ssize_t r =
+        ::write(state->write_fd, &signal_number, sizeof(int));
+    errno = saved_errno;
+    // With sigaction(), the handler persists automatically (unlike some
+    // signal() implementations that reset to SIG_DFL).
+}
+
+// Drain the signal self-pipe and deliver each pending signal. Runs in normal
+// thread context from the backend event loop, so deliver_signal()'s mutex
+// locking and scheduler post are safe here. Reads until EAGAIN (edge-
+// triggered backends require a full drain per readiness event).
+inline void
+drain_signal_pipe()
+{
+    signal_state* state = get_signal_state();
+    int signal_number;
+    while (::read(state->read_fd, &signal_number, sizeof(int)) ==
+           static_cast<ssize_t>(sizeof(int)))
+    {
+        posix_signal_service::deliver_signal(signal_number);
+    }
 }
 
 } // namespace posix_signal_detail
@@ -463,6 +543,24 @@ posix_signal_service::add_signal(
 
     posix_signal_detail::signal_state* state =
         posix_signal_detail::get_signal_state();
+
+    // Ensure the global self-pipe exists and this service's scheduler is
+    // watching its read end, BEFORE taking the registration locks. The
+    // reactor drain path locks the descriptor mutex and then the signal-state
+    // and service mutexes; register_signal_reader locks the descriptor mutex
+    // (via register_descriptor), so it must run holding neither of those or
+    // the lock order would invert (a real deadlock, caught by TSan). call_once
+    // makes the once-per-service registration safe when two signal_sets on
+    // this context race add() from different threads.
+    {
+        std::lock_guard state_lock(state->mutex);
+        if (!posix_signal_detail::open_signal_pipe(state))
+            return make_error_code(std::errc::io_error);
+    }
+    std::call_once(reader_once_, [this, state] {
+        sched_->register_signal_reader(state->read_fd);
+    });
+
     std::lock_guard state_lock(state->mutex);
     std::lock_guard lock(mutex_);
 

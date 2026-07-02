@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -529,6 +530,78 @@ struct signal_set_test
         BOOST_TEST_EQ(wait_count, 2);
     }
 
+    // Async-signal-safety / self-pipe regression tests
+    //
+    // Signals are delivered via a self-pipe: the handler only write()s the
+    // signal number to a pipe and the event loop drains it. These exercise
+    // the drain path repeatedly to catch a broken re-arm (io_uring multishot),
+    // failure to re-park (epoll/kqueue edge-triggered), or a missed drain
+    // (select level-triggered).
+
+    void testManySequentialSignalCycles()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+
+        constexpr int cycles = 100;
+        int delivered        = 0;
+
+        auto task = [](signal_set& s_ref, int& count_out) -> capy::task<> {
+            for (int i = 0; i < cycles; ++i)
+            {
+                std::raise(SIGINT);
+                auto [ec, signum] = co_await s_ref.wait();
+                BOOST_TEST(!ec);
+                BOOST_TEST_EQ(signum, SIGINT);
+                ++count_out;
+            }
+        };
+        capy::run_async(ioc.get_executor())(task(s, delivered));
+
+        ioc.run();
+        BOOST_TEST_EQ(delivered, cycles);
+    }
+
+    // A signal that arrives while a coroutine is NOT waiting must still be
+    // delivered on the next wait(). Repeat to exercise the queued path (the
+    // undelivered counter) alongside the self-pipe drain across many cycles.
+    void testInterleavedQueuedAndWaitedSignals()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+        timer t(ioc);
+
+        int delivered = 0;
+
+        auto task = [](signal_set& s_ref, timer& t_ref,
+                       int& count_out) -> capy::task<> {
+            for (int i = 0; i < 20; ++i)
+            {
+                // Raise before waiting: exercises the queued (undelivered)
+                // path where deliver_signal runs with no waiter registered.
+                std::raise(SIGINT);
+                auto [ec1, sig1] = co_await s_ref.wait();
+                BOOST_TEST(!ec1);
+                BOOST_TEST_EQ(sig1, SIGINT);
+                ++count_out;
+
+                // Raise after a delay while waiting: exercises the live-waiter
+                // path where the drain posts a completion.
+                t_ref.expires_after(std::chrono::milliseconds(1));
+                (void)co_await t_ref.wait();
+                std::raise(SIGINT);
+                auto [ec2, sig2] = co_await s_ref.wait();
+                BOOST_TEST(!ec2);
+                BOOST_TEST_EQ(sig2, SIGINT);
+                ++count_out;
+            }
+        };
+        capy::run_async(ioc.get_executor())(task(s, t, delivered));
+
+        ioc.run();
+        BOOST_TEST_EQ(delivered, 40);
+    }
+
     // io_result tests
 
     void testIoResultSuccess()
@@ -849,6 +922,10 @@ struct signal_set_test
 
         // Sequential wait tests
         testSequentialWaits();
+
+        // Async-signal-safety / self-pipe regression tests
+        testManySequentialSignalCycles();
+        testInterleavedQueuedAndWaitedSignals();
 
         // io_result tests
         testIoResultSuccess();

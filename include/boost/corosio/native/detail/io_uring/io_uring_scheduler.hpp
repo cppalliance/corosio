@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -91,6 +92,11 @@ public:
     std::size_t poll_one() override;
     void work_started() noexcept override;
     void work_finished() noexcept override;
+
+    /// Watch the read end of the POSIX signal self-pipe (see scheduler.hpp).
+    /// Submits a multishot POLL on @p read_fd; on readiness the drain+deliver
+    /// runs in dispatch context via signal_drain_op_.
+    void register_signal_reader(int read_fd) override;
 
     /** Return the underlying liburing ring.
 
@@ -318,6 +324,35 @@ private:
     int                               cancel_sentinel_ = 0;
     mutable std::atomic<bool>         wakeup_armed_{false};
 
+    // Signal self-pipe integration. The read end is watched via a multishot
+    // POLL SQE tagged with &signal_pipe_sentinel_ (distinct from nullptr =
+    // wakeup eventfd and &cancel_sentinel_). On its CQE we re-arm the poll if
+    // needed and enqueue signal_drain_op_ so the drain+deliver runs in
+    // dispatch context — never under ring_mutex_ — keeping deliver_signal's
+    // mutex locking off the ring critical section.
+    int                               signal_pipe_read_fd_ = -1;
+    int                               signal_pipe_sentinel_ = 0;
+
+    /// Dispatch-context op that drains the signal self-pipe and delivers each
+    /// pending signal. Enqueued (once at a time, guarded by queued_) from
+    /// process_completions when the poll CQE fires. Scheduler-owned; destroy()
+    /// is a no-op.
+    struct signal_drain_op final : scheduler_op
+    {
+        std::atomic<bool> queued_{false};
+
+        void operator()() override
+        {
+            // Clear before draining so a signal that arrives mid-drain re-arms
+            // the op via a fresh CQE rather than being lost.
+            queued_.store(false, std::memory_order_release);
+            posix_signal_detail::drain_signal_pipe();
+        }
+
+        void destroy() override {}
+    };
+    mutable signal_drain_op           signal_drain_op_;
+
     /// Flushes the SQ ring and drains CQEs in one mutex-held pass.
     /// One instance covers a whole batch; subsequent SQEs in the same
     /// batch skip the post, amortising syscall cost across the batch.
@@ -356,6 +391,7 @@ private:
     std::size_t do_one(long timeout_us);
     void        process_completions();
     void        drain_wakeup_eventfd() const noexcept;
+    void        prep_multishot_poll(int fd, void* data) noexcept;
     void        lazy_init_ring_unlocked() const;
 };
 
@@ -622,6 +658,44 @@ io_uring_scheduler::drain_wakeup_eventfd() const noexcept
     // a posting thread that observes wakeup_armed_ == false from this
     // store will see the eventfd already drained by the leader.
     wakeup_armed_.store(false, std::memory_order_release);
+}
+
+inline void
+io_uring_scheduler::prep_multishot_poll(int fd, void* data) noexcept
+{
+    // Prepare a multishot POLLIN SQE on `fd` tagged with `data`. Caller holds
+    // ring_mutex_ and flushes separately (re-arm sites ride the batch submit;
+    // register/init submit explicitly). Best-effort: a get_sqe failure after
+    // one flush leaves the poll un-armed. Shared by the wakeup-eventfd and
+    // signal self-pipe multishot polls.
+    ::io_uring_sqe* sqe = ::io_uring_get_sqe(&ring_);
+    if (!sqe)
+    {
+        ::io_uring_submit(&ring_);
+        sqe = ::io_uring_get_sqe(&ring_);
+    }
+    if (!sqe)
+        return;
+    ::io_uring_prep_poll_multishot(sqe, fd, POLLIN);
+    ::io_uring_sqe_set_data(sqe, data);
+}
+
+inline void
+io_uring_scheduler::register_signal_reader(int read_fd)
+{
+    // Called once per service from add_signal(), holding neither the
+    // signal_state mutex nor the service mutex (see the call site). Submit a
+    // multishot POLL on the pipe read end; its CQE (tagged with
+    // &signal_pipe_sentinel_) is recognised in process_completions. The actual
+    // drain+deliver is deferred to dispatch context, so the only lock taken
+    // here is ring_mutex_ with no outer lock held, hence no lock-order
+    // inversion with the reactor drain path.
+    signal_pipe_read_fd_ = read_fd;
+    lazy_init_ring();
+
+    lock_type lock(ring_mutex_);
+    prep_multishot_poll(read_fd, &signal_pipe_sentinel_);
+    ::io_uring_submit(&ring_);
 }
 
 inline void
@@ -1097,20 +1171,7 @@ io_uring_scheduler::process_completions()
             // pressure or similar), re-arm. Each CQE except the last
             // sets IORING_CQE_F_MORE.
             if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-            {
-                ::io_uring_sqe* re = ::io_uring_get_sqe(&ring_);
-                if (!re)
-                {
-                    ::io_uring_submit(&ring_);
-                    re = ::io_uring_get_sqe(&ring_);
-                }
-                if (re)
-                {
-                    ::io_uring_prep_poll_multishot(
-                        re, wakeup_eventfd_, POLLIN);
-                    ::io_uring_sqe_set_data(re, nullptr);
-                }
-            }
+                prep_multishot_poll(wakeup_eventfd_, nullptr);
         }
         else if (ud == &cancel_sentinel_)
         {
@@ -1118,6 +1179,26 @@ io_uring_scheduler::process_completions()
             // CQE arrives separately and is dispatched via cqe_func.
             // Cancels are one-shot, no F_MORE, decrement inflight.
             ++inflight_dec;
+        }
+        else if (ud == &signal_pipe_sentinel_)
+        {
+            // Signal self-pipe readiness. Re-arm the multishot poll if it
+            // terminated (F_MORE cleared), then enqueue signal_drain_op_ to
+            // drain + deliver in dispatch context. Not counted in
+            // io_uring_inflight_ (like the wakeup eventfd poll): its progress
+            // does not gate DEFER_TASKRUN GETEVENTS.
+            if ((cqe->flags & IORING_CQE_F_MORE) == 0)
+                prep_multishot_poll(
+                    signal_pipe_read_fd_, &signal_pipe_sentinel_);
+            bool expected = false;
+            if (signal_drain_op_.queued_.compare_exchange_strong(
+                    expected, true, std::memory_order_acq_rel,
+                    std::memory_order_relaxed))
+            {
+                // Balance the work_finished() do_one runs after dispatching.
+                work_started();
+                local_ops.push(&signal_drain_op_);
+            }
         }
         else
         {

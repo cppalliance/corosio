@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -75,6 +76,22 @@ struct BOOST_COROSIO_DECL scheduler
 
     /// Run at most one ready handler without blocking.
     virtual std::size_t poll_one() = 0;
+
+    /** Register the read end of the POSIX signal self-pipe.
+
+        Called once (by the first signal_set to register a signal) so the
+        backend's event loop watches @p read_fd for readability. When the
+        pipe becomes readable the backend drains it and calls
+        `posix_signal_service::deliver_signal` for each pending signal, in
+        normal thread context. This keeps the C signal handler
+        async-signal-safe: it only writes the signal number to the pipe.
+
+        POSIX backends override this; the default is a no-op (Windows/IOCP
+        uses synchronous C-runtime signal handling instead).
+
+        @param read_fd The read end of the global signal self-pipe.
+    */
+    virtual void register_signal_reader(int read_fd) { (void)read_fd; }
 
     /// True if the scheduler is configured for single-threaded use.
     /// Default false; overridden by backends that support the mode.

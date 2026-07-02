@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -18,6 +19,7 @@
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_signal_pipe.hpp>
 
 #include <boost/corosio/native/detail/epoll/epoll_traits.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
@@ -120,6 +122,12 @@ public:
     */
     void deregister_descriptor(int fd) const;
 
+    /// Watch the read end of the POSIX signal self-pipe (see scheduler.hpp).
+    void register_signal_reader(int read_fd) override
+    {
+        register_descriptor(read_fd, signal_pipe_reader_.arm());
+    }
+
 private:
     void
     run_task(lock_type& lock, context_type* ctx,
@@ -130,6 +138,10 @@ private:
     int epoll_fd_;
     int event_fd_;
     int timer_fd_;
+
+    // Watches the global signal self-pipe's read end (armed lazily by
+    // register_signal_reader on the first signal registration).
+    reactor_signal_pipe_reader signal_pipe_reader_;
 
     // Edge-triggered eventfd state
     mutable std::atomic<bool> eventfd_armed_{false};

@@ -422,6 +422,13 @@ On POSIX systems, signals are handled using `sigaction()` which provides:
 The `restart` flag is particularly useful—without it, blocking calls like
 `read()` can fail with `EINTR` when a signal arrives.
 
+The installed handler is async-signal-safe: it only writes the signal number
+to an internal self-pipe (a `write()`, saving and restoring `errno`). It never
+locks a mutex, allocates memory, or dispatches handlers. The event loop drains
+the pipe and completes waiting `wait()` operations in normal context. As a
+result it is safe for a signal to arrive at any time, including while another
+thread is modifying a `signal_set`.
+
 == Next Steps
 
 * xref:4.guide/4h.timers.adoc[Timers] — Timed operations
