@@ -159,6 +159,23 @@ public:
         io_uring_inflight_.fetch_add(1, std::memory_order_release);
     }
 
+    /** Return the current io_uring in-flight counter.
+
+        Test-only helper: `io_uring_inflight_` is an internal accounting
+        counter (it gates the `do_one` ring pump), with no bearing on the
+        public API. It is exposed solely so tests can assert the counter
+        stays balanced across op submission and teardown — in particular
+        that `drain_cqes_for` does not leak counts. Not thread-safe with
+        respect to a concurrently running scheduler; call it from a quiesced
+        context.
+
+        @return The number of SQEs currently counted as in flight.
+    */
+    std::int64_t inflight() const noexcept
+    {
+        return io_uring_inflight_.load(std::memory_order_acquire);
+    }
+
     /// Initialize the io_uring ring on first access. Idempotent.
     void lazy_init_ring() const;
 
@@ -1386,28 +1403,80 @@ io_uring_scheduler::drain_cqes_for(io_uring_op* target) noexcept
         ::io_uring_cqe* cqe;
         unsigned        consumed = 0;
         bool            saw_target = false;
+        std::int64_t    inflight_dec = 0;
 
         io_uring_for_each_cqe(&ring_, head, cqe)
         {
+            // Mirror process_completions' io_uring_inflight_ accounting.
+            // That counter gates the do_one ring pump, so every CQE we
+            // advance past here must adjust it exactly as the normal
+            // drain would — otherwise it drifts upward (each teardown
+            // leaks the counts of the CQEs it swallows), defeating the
+            // idle-skip optimisation for the lifetime of the io_context.
+            // We do NOT dispatch real ops — the target is being
+            // destructed and siblings may already be freed — but we still
+            // account for and house-keep each CQE we consume.
             void* ud = io_uring_cqe_get_data(cqe);
-            if (ud == target)
+            if (ud == nullptr)
+            {
+                // Wakeup eventfd CQE — our own interrupt_reactor() above
+                // very likely produced one. Drain the byte and re-arm if
+                // the multishot terminated, exactly as process_completions
+                // does. Never incremented, so never decremented.
+                drain_wakeup_eventfd();
+                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
+                    prep_multishot_poll(wakeup_eventfd_, nullptr);
+            }
+            else if (ud == &signal_pipe_sentinel_)
+            {
+                // Signal self-pipe readiness. Re-arm if the multishot
+                // terminated; the still-readable pipe re-fires on the next
+                // kernel enter so process_completions delivers the signal —
+                // we deliberately do NOT enqueue signal_drain_op_ from this
+                // teardown path. Not counted by io_uring_inflight_ (the poll
+                // was armed via prep_multishot_poll, which never increments),
+                // so it must NOT be decremented.
+                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
+                    prep_multishot_poll(
+                        signal_pipe_read_fd_, &signal_pipe_sentinel_);
+            }
+            else if (ud == &cancel_sentinel_)
+            {
+                // ASYNC_CANCEL CQE (one-shot, no F_MORE), including the
+                // cancel SQE we submitted just above. Decrement inflight.
+                ++inflight_dec;
+            }
+            else if (ud == target)
             {
                 saw_target = true;
-                // Don't dispatch — caller is destructing target;
-                // just consume so the CQE doesn't dangle.
+                // Don't dispatch — caller is destructing target; just
+                // consume so the CQE doesn't dangle. Decrement inflight on
+                // the terminal CQE only: the target is a multishot op
+                // whose intermediate CQEs carry F_MORE.
+                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
+                    ++inflight_dec;
             }
-            // Other CQEs are intentionally NOT dispatched here. They
-            // may belong to ops freed by sibling teardowns (other
-            // acceptors / sockets), and dispatching would UAF. The
-            // next normal run-loop iteration will handle them; the
-            // io_context's destructor sequence runs services'
-            // shutdowns before ~scheduler so any still-live ops get
-            // a chance to drain through their own paths first.
+            else
+            {
+                // Some other op's CQE. Intentionally NOT dispatched: it
+                // may belong to an op freed by a sibling teardown (other
+                // acceptors / sockets), and dispatching would UAF. We
+                // still account for its terminal CQE so inflight stays
+                // balanced — the submit that produced it incremented the
+                // counter. The io_context's destructor sequence runs
+                // services' shutdowns before ~scheduler, so any still-live
+                // ops drain through their own paths first.
+                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
+                    ++inflight_dec;
+            }
             ++consumed;
         }
         if (consumed)
         {
             io_uring_cq_advance(&ring_, consumed);
+            if (inflight_dec)
+                io_uring_inflight_.fetch_sub(
+                    inflight_dec, std::memory_order_acq_rel);
             if (saw_target)
                 break;
             continue;
