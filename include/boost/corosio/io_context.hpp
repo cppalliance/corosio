@@ -182,6 +182,18 @@ class timer_service;
     io_context ioc2(corosio::epoll);  // explicit backend
     @endcode
 
+    @par Preconditions
+    The context must outlive every operation posted or dispatched
+    through its executor, and no thread may be executing a run
+    variant when the context is destroyed. Posting to the context
+    concurrently with, or after, its destruction is undefined
+    behavior. The safe teardown pattern is to stop submitting new
+    work, let every `run()` call return (each returns once no
+    outstanding work remains), and join the threads that ran the
+    loop before destroying the context. Work launched with
+    `capy::run` / `capy::run_async` is work-tracked, so a normal
+    `run()` completion already waits for it.
+
     @par Thread Safety
     Distinct objects: Safe.@n
     Shared objects: Safe, if using a concurrency hint greater
@@ -572,6 +584,11 @@ public:
         @param c The continuation to dispatch.
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
+
+        @par Preconditions
+        The associated context must outlive this call. Dispatching
+        concurrently with, or after, the context's destruction is
+        undefined behavior.
     */
     std::coroutine_handle<> dispatch(capy::continuation& c) const
     {
@@ -585,6 +602,11 @@ public:
 
         Enqueues `c` directly on the scheduler's ready queue.
         No heap allocation occurs.
+
+        @par Preconditions
+        The associated context must outlive this call. Posting
+        concurrently with, or after, the context's destruction is
+        undefined behavior.
     */
     void post(capy::continuation& c) const
     {
@@ -598,6 +620,11 @@ public:
         the `post(scheduler_op*)` overload to avoid the allocation.
 
         @param h The coroutine handle to post.
+
+        @par Preconditions
+        The associated context must outlive this call. Posting
+        concurrently with, or after, the context's destruction is
+        undefined behavior.
     */
     void post(std::coroutine_handle<> h) const
     {

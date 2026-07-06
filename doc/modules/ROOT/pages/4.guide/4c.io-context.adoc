@@ -266,6 +266,35 @@ work across threads.
 WARNING: Individual I/O objects (sockets, timers) are not thread-safe.
 Don't access the same socket from multiple threads without synchronization.
 
+== Lifetime and Teardown
+
+The `io_context` must outlive every operation posted or dispatched through its
+executor, and no thread may still be inside a `run()` call when the context is
+destroyed. Posting to the context — from a thread it does not track —
+concurrently with, or after, its destruction is undefined behavior.
+
+Work launched with `capy::run` / `capy::run_async` is work-tracked, so a normal
+`run()` completion already waits for it to finish. The safe teardown pattern is
+therefore: stop submitting new work, let every `run()` return, join the threads
+that ran the loop, and only then destroy the context.
+
+[source,cpp]
+----
+corosio::io_context ioc(4);
+
+std::vector<std::thread> threads;
+for (int i = 0; i < 4; ++i)
+    threads.emplace_back([&ioc] { ioc.run(); });
+
+// Join every run() thread before ioc leaves scope.
+for (auto& t : threads)
+    t.join();
+----
+
+WARNING: `stop()` abandons pending work rather than draining it. Destroying the
+context after `stop()` while other threads may still post to it is undefined
+behavior — join those threads first.
+
 == Inheritance from execution_context
 
 `io_context` inherits from `capy::execution_context`, providing service
