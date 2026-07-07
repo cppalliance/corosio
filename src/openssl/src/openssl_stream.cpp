@@ -172,6 +172,38 @@ password_callback(char* buf, int size, int rwflag, void* userdata)
     return len;
 }
 
+// Trampoline installed via SSL_CTX_set_verify. Recovers the portable
+// context data from the SSL_CTX ex_data (populated for every context),
+// wraps the store context, and delegates to the user's callback.
+static int
+verify_callback_trampoline(int preverified, X509_STORE_CTX* store_ctx)
+{
+    SSL* ssl = static_cast<SSL*>(X509_STORE_CTX_get_ex_data(
+        store_ctx, SSL_get_ex_data_X509_STORE_CTX_idx()));
+    if (!ssl)
+        return preverified;
+
+    auto* cd = static_cast<tls_context_data const*>(
+        SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), sni_ctx_data_index));
+    if (!cd || !cd->verify_callback)
+        return preverified;
+
+    // Expose the current certificate's DER so the callback can inspect it
+    // portably. i2d_X509 allocates; free it after the callback returns.
+    X509* cert         = X509_STORE_CTX_get_current_cert(store_ctx);
+    unsigned char* der = nullptr;
+    int der_len        = cert ? i2d_X509(cert, &der) : 0;
+
+    verify_context vc(
+        store_ctx, der,
+        der_len > 0 ? static_cast<std::size_t>(der_len) : 0);
+    bool const ok = cd->verify_callback(preverified != 0, vc);
+
+    if (der)
+        OPENSSL_free(der);
+    return ok ? 1 : 0;
+}
+
 static int
 sni_callback(SSL* ssl, int* /* alert */, void* /* arg */)
 {
@@ -228,7 +260,9 @@ public:
         else if (cd.verification_mode == tls_verify_mode::require_peer)
             verify_mode_flag =
                 SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
-        SSL_CTX_set_verify(ctx_, verify_mode_flag, nullptr);
+        SSL_CTX_set_verify(
+            ctx_, verify_mode_flag,
+            cd.verify_callback ? &verify_callback_trampoline : nullptr);
 
         if (!cd.entity_certificate.empty())
         {
@@ -320,6 +354,16 @@ public:
                 BIO_free(bio);
             }
         }
+
+        // Trust anchors from the system store and explicit directories.
+        // Failures leave the affected source unloaded rather than aborting
+        // context creation; the error queue is cleared so it does not leak
+        // into a later handshake.
+        if (cd.use_default_verify_paths)
+            SSL_CTX_set_default_verify_paths(ctx_);
+        for (auto const& path : cd.verify_paths)
+            SSL_CTX_load_verify_locations(ctx_, nullptr, path.c_str());
+        ERR_clear_error();
 
         SSL_CTX_set_verify_depth(ctx_, cd.verify_depth);
 

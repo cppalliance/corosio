@@ -15,6 +15,9 @@
 
 #ifdef BOOST_COROSIO_HAS_OPENSSL
 
+#include <filesystem>
+#include <fstream>
+
 namespace boost::corosio {
 
 // Callable wrapper for passing to test helper templates
@@ -140,6 +143,65 @@ struct openssl_stream_test
         }
     }
 
+    /** Test that set_default_verify_paths() is applied without breaking
+        context creation.
+
+        Behaviorally exercising the system trust store would require
+        redirecting it (SSL_CERT_FILE), which is not portable across the CI
+        matrix, so this only asserts the call path runs cleanly: a client
+        that trusts the CA explicitly *and* calls set_default_verify_paths()
+        still completes the handshake. The load-from-path mechanism is
+        covered behaviorally by testAddVerifyPath().
+    */
+    void testDefaultVerifyPaths()
+    {
+        using namespace test;
+
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        // Adding the system store on top of the explicit CA must not break
+        // context creation or verification.
+        client_ctx.set_default_verify_paths(); // NOLINT(bugprone-unused-return-value)
+
+        auto server_ctx = make_server_context();
+        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    /** Test that add_verify_path() loads CAs from a hashed directory.
+
+        OpenSSL CApath lookups require files named by subject-name hash (as
+        produced by `openssl rehash`). The test CA's subject hash is a
+        constant for OpenSSL 1.0.0+ (SHA-1 over the canonical subject), so
+        the filename is hardcoded here to avoid linking the test against
+        libcrypto. Recompute with `openssl x509 -in ca.pem -hash -noout` if
+        the test certificate changes.
+    */
+    void testAddVerifyPath()
+    {
+        using namespace test;
+
+        auto dir = std::filesystem::temp_directory_path() /
+            "corosio_test_capath";
+        std::filesystem::create_directories(dir);
+        auto ca_file = dir / "d13e2296.0"; // subject hash of ca_cert_pem
+        {
+            std::ofstream out(ca_file, std::ios::binary);
+            out << ca_cert_pem;
+        }
+
+        {
+            io_context ioc;
+            tls_context client_ctx;
+            client_ctx.add_verify_path(dir.string()); // NOLINT(bugprone-unused-return-value)
+            client_ctx.set_verify_mode(tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
+
+            auto server_ctx = make_server_context();
+            run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+        }
+
+        std::filesystem::remove(ca_file);
+    }
+
     void run()
     {
         test::testHandshakeFuse(make_stream);
@@ -154,6 +216,8 @@ struct openssl_stream_test
         test::testCertificateValidation(make_stream);
         test::testSni(make_stream);
         test::testSniCallback(make_stream);
+        test::testVerifyCallback(make_stream);
+        test::testVerifyCallbackOnSuccess(make_stream);
         test::testMtls(make_stream);
         test::testMoveSemantics(make_stream);
         test::testAbruptClose(make_stream);
@@ -166,6 +230,8 @@ struct openssl_stream_test
 
         testCertificateChain();
         testErrorCategory();
+        testDefaultVerifyPaths();
+        testAddVerifyPath();
         testName();
         testNextLayer();
     }

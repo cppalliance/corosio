@@ -230,6 +230,18 @@ jobs:
           }
           EOF
 
+      # For the wolfssl-minimal lane, point vcpkg at the repo overlay port
+      # that disables OPENSSL_EXTRA (and thus WOLFSSL_ALWAYS_VERIFY_CB). This
+      # yields a "minimal" WolfSSL like a stock distribution build, so
+      # corosio's set_verify_callback fail-closed path (returns
+      # std::errc::function_not_supported) is exercised. All other lanes use
+      # the upstream (capable) port.
+      - name: Enable minimal-WolfSSL overlay port
+        if: ${{ matrix.wolfssl-minimal }}
+        shell: bash
+        run: |
+          echo "VCPKG_OVERLAY_PORTS=${GITHUB_WORKSPACE}/corosio-root/.github/vcpkg-overlay-ports" >> $GITHUB_ENV
+
       - name: Set vcpkg triplet
         if: matrix.vcpkg-triplet
         shell: bash

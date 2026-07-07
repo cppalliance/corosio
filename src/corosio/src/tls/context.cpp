@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -215,6 +216,13 @@ tls_context::set_password_callback_impl(
     std::function<std::string(std::size_t, tls_password_purpose)> callback)
 {
     impl_->password_callback = std::move(callback);
+}
+
+void
+tls_context::set_verify_callback_impl(
+    std::function<bool(bool, verify_context&)> callback)
+{
+    impl_->verify_callback = std::move(callback);
 }
 
 //

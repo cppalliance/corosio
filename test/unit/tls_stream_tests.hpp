@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -464,6 +465,207 @@ testSniCallback(StreamFactory make_stream)
 
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
         BOOST_TEST(!invoked);
+    }
+}
+
+/** Test the certificate verification callback (portable contract).
+
+    Exercises the guarantees that hold on every backend that supports the
+    callback: it is consulted when the backend's built-in verification
+    fails, its return value determines the outcome, and it can inspect the
+    certificate's DER portably.
+
+      1. Override accept: an untrusted CA would normally fail, but a
+         callback returning true completes the handshake, and the
+         callback observes preverified == false with a usable native
+         handle and DER bytes.
+      2. Decline: an untrusted CA with a callback returning false leaves
+         the handshake failed.
+
+    @param callback_supported Whether this backend build can honor a
+        verify callback. Pass `false` for builds that cannot invoke the
+        callback on a successful handshake (e.g. WolfSSL without
+        WOLFSSL_ALWAYS_VERIFY_CB): installing a callback must then fail
+        the handshake with `std::errc::function_not_supported` rather than
+        silently ignore it (which would let a tightening callback fail
+        open).
+*/
+template<typename StreamFactory>
+void
+testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
+{
+    if (!callback_supported)
+    {
+        // Fail-closed: a context carrying a verify_callback must fail the
+        // handshake with a clear error, never silently accept.
+        {
+            io_context ioc;
+            auto client_ctx = make_client_context();
+            // NOLINTNEXTLINE(bugprone-unused-return-value)
+            client_ctx.set_verify_callback(
+                [](bool preverified, verify_context&) -> bool {
+                    return preverified;
+                });
+            auto server_ctx = make_server_context();
+            std::error_code client_ec;
+            run_tls_test_fail(
+                ioc, client_ctx, server_ctx, make_stream, make_stream,
+                &client_ec);
+            BOOST_TEST(client_ec == std::errc::function_not_supported);
+        }
+
+        // A retried handshake on the same stream must stay fail-closed. The
+        // fail-closed path returns before any I/O, so this needs no peer;
+        // it is a regression guard against leaving the native session
+        // non-null (which would let the retry bypass the check).
+        {
+            io_context ioc;
+            auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+            (void)m2;
+            auto client_ctx = make_client_context();
+            // NOLINTNEXTLINE(bugprone-unused-return-value)
+            client_ctx.set_verify_callback(
+                [](bool preverified, verify_context&) -> bool {
+                    return preverified;
+                });
+            auto client       = make_stream(m1, client_ctx);
+            using stream_type = std::remove_reference_t<decltype(client)>;
+
+            std::error_code ec1;
+            std::error_code ec2;
+            auto attempt = [&](std::error_code& out) -> capy::task<> {
+                auto [ec] = co_await client.handshake(stream_type::client);
+                out = ec;
+            };
+            capy::run_async(ioc.get_executor())(attempt(ec1));
+            ioc.run();
+            ioc.restart();
+            capy::run_async(ioc.get_executor())(attempt(ec2));
+            ioc.run();
+
+            BOOST_TEST(ec1 == std::errc::function_not_supported);
+            BOOST_TEST(ec2 == std::errc::function_not_supported);
+
+            m1.close(); // NOLINT(bugprone-unused-return-value)
+        }
+        return;
+    }
+
+    // 1. Override accept: untrusted CA (preverified == false) but callback
+    //    returns true -> handshake succeeds. Without the callback this
+    //    configuration fails, so success proves the callback is consulted
+    //    and its return value controls the result.
+    {
+        io_context ioc;
+        bool saw_unverified = false;
+
+        auto client_ctx = make_wrong_ca_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.set_verify_callback(
+            [&saw_unverified](bool preverified, verify_context& vc) -> bool {
+                if (!preverified)
+                {
+                    saw_unverified = true;
+                    BOOST_TEST(vc.native_handle() != nullptr);
+                    // Portable certificate access: the callback must see the
+                    // DER bytes of the cert under verification on both
+                    // backends. A DER certificate is an ASN.1 SEQUENCE, so
+                    // the first byte is 0x30.
+                    auto der = vc.certificate();
+                    BOOST_TEST(!der.empty());
+                    if (!der.empty())
+                        BOOST_TEST(der[0] == 0x30);
+                }
+                return true;
+            });
+
+        auto server_ctx = make_server_context();
+        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+        BOOST_TEST(saw_unverified);
+    }
+
+    // 2. Decline: untrusted CA and callback returns false -> stays failed.
+    {
+        io_context ioc;
+        auto client_ctx = make_wrong_ca_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.set_verify_callback(
+            [](bool, verify_context&) -> bool { return false; });
+
+        auto server_ctx = make_server_context();
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+}
+
+/** Test that the verify callback also runs on successful verification.
+
+    Backends that support the full callback contract (OpenSSL always;
+    WolfSSL with WOLFSSL_ALWAYS_VERIFY_CB) invoke it for a certificate that
+    passed the built-in checks, which lets a callback reject an otherwise
+    valid certificate (e.g. for pinning) and inspect it on the success
+    path. Only call this for backends where the callback is fully
+    supported.
+*/
+template<typename StreamFactory>
+void
+testVerifyCallbackOnSuccess(StreamFactory make_stream)
+{
+    // Invoked on success: trusted CA + pass-through callback succeeds, and
+    // the certificate is inspectable on the success path.
+    {
+        io_context ioc;
+        bool invoked  = false;
+        bool saw_cert = false;
+
+        auto client_ctx = make_client_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.set_verify_callback(
+            [&](bool preverified, verify_context& vc) -> bool {
+                invoked = true;
+                if (preverified && !vc.certificate().empty() &&
+                    vc.certificate()[0] == 0x30)
+                    saw_cert = true;
+                return preverified;
+            });
+
+        auto server_ctx = make_server_context();
+        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+        BOOST_TEST(invoked);
+        BOOST_TEST(saw_cert);
+    }
+
+    // Reject a valid cert: trusted CA but callback returns false -> fail.
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.set_verify_callback(
+            [](bool, verify_context&) -> bool { return false; });
+
+        auto server_ctx = make_server_context();
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // Content-based pinning: reject unless the leaf DER matches an expected
+    // pin. A deliberately-wrong pin must fail the handshake even though the
+    // chain is otherwise valid.
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.set_verify_callback(
+            [](bool preverified, verify_context& vc) -> bool {
+                if (!preverified)
+                    return false;
+                auto der = vc.certificate();
+                return der.size() == 1 && der[0] == 0xFF; // never matches
+            });
+
+        auto server_ctx = make_server_context();
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
 }
 

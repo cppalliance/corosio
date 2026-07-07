@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -40,35 +41,48 @@ confidentiality, integrity, and authentication. Corosio supports TLS through:
 * **wolfssl_stream** — TLS implementation using WolfSSL
 * **openssl_stream** — TLS implementation using OpenSSL
 
+A verified-safe client trusts the system CAs, requires a peer certificate,
+and checks the hostname:
+
+[source,cpp]
+----
+tls_context ctx;
+ctx.set_default_verify_paths();              // trust the system CAs
+ctx.set_verify_mode(tls_verify_mode::peer);  // require + verify the peer
+ctx.set_hostname("example.com");             // SNI + hostname check
+----
+
+Trust anchors can also be supplied explicitly with
+`add_certificate_authority()`, `load_verify_file()`, or `add_verify_path()`,
+and `set_verify_callback()` installs a custom verification hook.
+
 [WARNING]
-.Implementation status
+.Not yet implemented
 ====
-Several `tls_context` settings are accepted by the API but are *not yet
-wired up* by the OpenSSL or WolfSSL backends in this release. They are
+Several other `tls_context` settings are accepted by the API but are *not
+yet wired up* by the OpenSSL or WolfSSL backends in this release. They are
 stored and silently ignored:
 
-* `set_default_verify_paths()` — the OS trust store is never loaded. A
-  client that relies on it has an *empty trust store* and cannot verify a
-  public server.
-* `set_verify_callback()` — declared but not defined; instantiating it
-  *fails to link*.
 * `set_alpn()` — ALPN is never negotiated.
 * `set_min_protocol_version()` / `set_max_protocol_version()` — version
   bounds are never applied; the range is the native default.
 * `add_crl()` / `add_crl_file()`, `set_ocsp_staple()` /
   `set_require_ocsp_staple()`, `set_revocation_policy()` — all
   revocation checking is inert.
-* `add_verify_path()` — directory of CAs is never loaded.
 * `use_pkcs12()` / `use_pkcs12_file()` — return
   `std::errc::function_not_supported`.
 * `set_ciphersuites()` — applied by OpenSSL only; WolfSSL ignores it.
+====
 
-**To verify a peer today you must supply CA certificates explicitly** via
-`load_verify_file()` or `add_certificate_authority()`. The working
-configuration surface is: `set_verify_mode()`, `set_verify_depth()`,
-custom trust anchors (`add_certificate_authority()` / `load_verify_file()`),
-credentials (`use_certificate*` / `use_private_key*`), and `set_hostname()`
-for SNI plus client-side hostname verification.
+[NOTE]
+====
+Two implemented features depend on how WolfSSL was built.
+`set_default_verify_paths()` requires `WOLFSSL_SYS_CA_CERTS` to load the
+system store; without it, supply trust anchors explicitly.
+`set_verify_callback()` requires `WOLFSSL_ALWAYS_VERIFY_CB` — without it,
+installing a callback fails the handshake with
+`std::errc::function_not_supported` rather than failing open (see below).
+Both are enabled by `--enable-opensslextra`.
 ====
 
 The typical flow:
@@ -186,14 +200,10 @@ Use the operating system's default CA certificates:
 ctx.set_default_verify_paths();
 ----
 
-[WARNING]
-====
-`set_default_verify_paths()` is *not yet wired up*: it is a no-op and the
-OS trust store is never loaded. A client relying on it has an empty trust
-store and cannot verify a public server. Until this is implemented, load a
-CA bundle explicitly with `load_verify_file()` or
-`add_certificate_authority()`.
-====
+On OpenSSL the `SSL_CERT_FILE` and `SSL_CERT_DIR` environment variables are
+honored; the WolfSSL backend requires a build with `WOLFSSL_SYS_CA_CERTS`,
+without which this call has no effect and a CA bundle must be supplied
+explicitly via `load_verify_file()` or `add_certificate_authority()`.
 
 ==== Custom CA Certificates
 
@@ -209,12 +219,11 @@ ctx.load_verify_file("/etc/ssl/certs/ca-certificates.crt");
 ctx.add_verify_path("/etc/ssl/certs");
 ----
 
-NOTE: `add_certificate_authority()` and `load_verify_file()` are the
-currently working way to establish trust anchors. With OpenSSL,
-`load_verify_file()` registers only the *first* certificate from a
-multi-cert bundle (WolfSSL handles multi-cert files); add others with
-repeated `add_certificate_authority()` calls. `add_verify_path()` is not
-yet applied — the directory is never loaded.
+NOTE: With OpenSSL, `load_verify_file()` registers only the *first*
+certificate from a multi-cert bundle (WolfSSL handles multi-cert files);
+add others with repeated `add_certificate_authority()` calls. For
+`add_verify_path()`, OpenSSL requires the hashed-filename layout produced
+by `openssl rehash`, while WolfSSL loads every file in the directory.
 
 === Protocol Configuration
 
@@ -314,27 +323,41 @@ ctx.set_verify_depth(10); // Max 10 intermediate certs
 
 ==== Custom Verification Callback
 
-For advanced verification logic:
-
-[WARNING]
-====
-`set_verify_callback()` is not yet implemented: the template is declared
-but never defined, so code that instantiates it *fails to link*. Use
-`set_verify_mode()` with explicitly supplied trust anchors instead.
-====
+For advanced verification logic, install a callback. It runs during the
+handshake; returning `true` accepts the certificate and `false` rejects
+it. Inspect the certificate portably with `certificate()`, which returns
+its DER bytes — ideal for certificate pinning. (`native_handle()` also
+exposes the backend's `X509_STORE_CTX*` for backend-specific use.)
 
 [source,cpp]
 ----
 ctx.set_verify_callback(
-    [](bool preverified, /* verify_context& */ auto& ctx) {
-        // Return true to accept, false to reject
+    [](bool preverified, corosio::verify_context& ctx) {
         if (!preverified)
-            return false; // Reject if basic checks failed
+            return false;              // reject if the chain didn't verify
 
-        // Additional custom checks...
-        return true;
+        auto der = ctx.certificate();  // DER of the current certificate
+        return der.size() == expected_pin.size() &&
+            std::equal(der.begin(), der.end(), expected_pin.begin());
     });
 ----
+
+[NOTE]
+====
+Which certificates the callback sees depends on the backend:
+
+* OpenSSL — invoked for every certificate in the chain, including ones
+  that passed, so it can both *relax* (accept a rejected cert) and
+  *tighten* (reject an otherwise-valid cert, e.g. pinning) verification.
+* WolfSSL built with `WOLFSSL_ALWAYS_VERIFY_CB` (via
+  `--enable-opensslextra`) — same as OpenSSL.
+* WolfSSL without that option — the library invokes the callback only on
+  *failure*, so it cannot be honored on a successful handshake. To avoid
+  silently ignoring a tightening callback (which would fail open), a
+  context that carries a callback instead *fails the handshake* with
+  `std::errc::function_not_supported`. Rebuild WolfSSL with
+  `WOLFSSL_ALWAYS_VERIFY_CB`, or omit the callback.
+====
 
 === Revocation Checking
 
@@ -738,8 +761,9 @@ server_ctx.load_verify_file("client-ca.pem");
 
 === Client Side
 
-NOTE: `set_default_verify_paths()` below is a no-op in this release; supply
-the server's CA explicitly with `load_verify_file()` to actually verify it.
+NOTE: On WolfSSL builds without `WOLFSSL_SYS_CA_CERTS`,
+`set_default_verify_paths()` cannot load the system store; supply the
+server's CA explicitly with `load_verify_file()` instead.
 
 [source,cpp]
 ----

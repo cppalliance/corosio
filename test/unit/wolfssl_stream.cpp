@@ -21,6 +21,9 @@
 
 #ifdef BOOST_COROSIO_HAS_WOLFSSL
 
+#include <filesystem>
+#include <fstream>
+
 namespace boost::corosio {
 
 // Callable wrapper for passing to test helper templates
@@ -136,6 +139,40 @@ struct wolfssl_stream_test
         }
     }
 
+    /** Test that add_verify_path() loads CAs from a directory.
+
+        WolfSSL loads every certificate file in the directory, so no
+        hash-based naming is required. A client that trusts the CA only
+        through add_verify_path() must be able to verify the server.
+    */
+    void testAddVerifyPath()
+    {
+        using namespace test;
+
+        auto dir = std::filesystem::temp_directory_path() /
+            "corosio_wolfssl_capath";
+        std::filesystem::create_directories(dir);
+        auto ca_file = dir / "test_ca.pem";
+        {
+            std::ofstream out(ca_file, std::ios::binary);
+            out << ca_cert_pem;
+        }
+
+        {
+            io_context ioc;
+            tls_context client_ctx;
+            // NOLINTNEXTLINE(bugprone-unused-return-value)
+            client_ctx.add_verify_path(dir.string());
+            // NOLINTNEXTLINE(bugprone-unused-return-value)
+            client_ctx.set_verify_mode(tls_verify_mode::peer);
+
+            auto server_ctx = make_server_context();
+            run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+        }
+
+        std::filesystem::remove(ca_file);
+    }
+
     void run()
     {
         test::testHandshakeFuse(make_stream);
@@ -152,6 +189,22 @@ struct wolfssl_stream_test
         test::testCertificateValidation(make_stream);
         test::testSni(make_stream);
         test::testSniCallback(make_stream);
+        // Whether the linked WolfSSL can honor a verify callback on success
+        // (WOLFSSL_ALWAYS_VERIFY_CB) is a build-time property, queried here
+        // at runtime so the test needs no WolfSSL headers.
+        if (wolfssl_supports_verify_callback())
+        {
+            // Capable build: full OpenSSL-parity semantics (override,
+            // decline, inspect, tighten).
+            test::testVerifyCallback(make_stream, /*callback_supported=*/true);
+            test::testVerifyCallbackOnSuccess(make_stream);
+        }
+        else
+        {
+            // Minimal build: the callback cannot fire on success, so corosio
+            // fails closed rather than let a tightening callback fail open.
+            test::testVerifyCallback(make_stream, /*callback_supported=*/false);
+        }
         test::testMtls(make_stream);
         test::testMoveSemantics(make_stream);
         test::testAbruptClose(make_stream);
@@ -166,6 +219,7 @@ struct wolfssl_stream_test
 
         testCertificateChain();
         testErrorCategory();
+        testAddVerifyPath();
         testName();
         testNextLayer();
     }

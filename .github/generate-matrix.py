@@ -141,6 +141,9 @@ def generate_name(compiler_family, entry):
     if entry.get("superproject-cmake"):
         modifiers.append("superproject CMake")
 
+    if entry.get("wolfssl-minimal"):
+        modifiers.append("wolfssl-minimal")
+
     if entry.get("shared") is False:
         modifiers.append("static")
 
@@ -255,6 +258,26 @@ def generate_superproject_cmake_variant(compiler_family, spec):
     return entry
 
 
+def generate_wolfssl_minimal_variant(compiler_family, spec):
+    """Build against a minimal WolfSSL to exercise the verify-callback
+    fail-closed path.
+
+    The default vcpkg wolfssl port hardcodes OPENSSL_EXTRA (which implies
+    WOLFSSL_ALWAYS_VERIFY_CB), so every normal lane runs a "capable" WolfSSL
+    that invokes verify callbacks on success. This variant points vcpkg at a
+    repo overlay port with OPENSSL_EXTRA disabled, matching a stock
+    distribution build, so corosio's set_verify_callback fail-closed path
+    (returns std::errc::function_not_supported) is exercised in CI.
+    """
+    entry = make_entry(compiler_family, spec, **{
+        "wolfssl-minimal": True,
+        "build-cmake": True,
+    })
+    entry.pop("is-latest", None)
+    entry.pop("is-earliest", None)
+    return entry
+
+
 def apply_clang_tidy(entry, spec):
     """Add clang-tidy flag and install package to an entry."""
     entry["clang-tidy"] = True
@@ -298,6 +321,7 @@ def main():
 
                 if family == "gcc":
                     matrix.append(generate_superproject_cmake_variant(family, spec))
+                    matrix.append(generate_wolfssl_minimal_variant(family, spec))
 
                 if family == "clang":
                     matrix.append(generate_x86_variant(family, spec))

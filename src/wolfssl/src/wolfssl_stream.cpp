@@ -124,6 +124,16 @@ wolfssl_category() noexcept
     return instance;
 }
 
+bool
+wolfssl_supports_verify_callback() noexcept
+{
+#if defined(WOLFSSL_ALWAYS_VERIFY_CB)
+    return true;
+#else
+    return false;
+#endif
+}
+
 //
 // Native context caching
 //
@@ -153,6 +163,64 @@ wolfssl_sni_callback(WOLFSSL* ssl, int* /* alert */, void* arg)
     return 0; // Accept
 }
 
+#if defined(WOLFSSL_ALWAYS_VERIFY_CB)
+// WOLFSSL_CTX ex_data slot holding the portable tls_context_data pointer,
+// used to reach the user's verify callback from the trampoline. Allocated
+// dynamically (see apply_common_settings) rather than hardcoded, because
+// slot 0 is the OpenSSL-compat app-data slot.
+static int verify_cd_ex_index = -1;
+
+// Trampoline installed via wolfSSL_CTX_set_verify.
+//
+// This is only wired up when the linked WolfSSL was built with
+// WOLFSSL_ALWAYS_VERIFY_CB (implied by --enable-opensslextra), which makes
+// WolfSSL invoke the callback for every certificate including on success.
+// Without it, WolfSSL calls the callback only on failure, so a callback
+// that tightens verification would silently fail open; on such builds the
+// callback is refused entirely (see init_ssl_for_role).
+//
+// The context data is recovered via the OpenSSL-compatible ex_data chain
+// (store -> WOLFSSL -> WOLFSSL_CTX -> ex_data), which those builds provide.
+// The native store->userCtx field is NOT used: it is left unset by WolfSSL
+// on OPENSSL_EXTRA builds, so relying on it silently drops the callback.
+static int
+wolfssl_verify_callback(int preverified, WOLFSSL_X509_STORE_CTX* store)
+{
+    WOLFSSL* ssl = static_cast<WOLFSSL*>(wolfSSL_X509_STORE_CTX_get_ex_data(
+        store, wolfSSL_get_ex_data_X509_STORE_CTX_idx()));
+    if (!ssl)
+        return preverified;
+
+    WOLFSSL_CTX* wctx = wolfSSL_get_SSL_CTX(ssl);
+    auto* cd          = wctx ? static_cast<tls_context_data const*>(
+                             wolfSSL_CTX_get_ex_data(wctx, verify_cd_ex_index))
+                             : nullptr;
+    if (!cd || !cd->verify_callback)
+        return preverified;
+
+    // Expose the current certificate's DER so the callback can inspect it.
+    // On OPENSSL_EXTRA builds (the only builds this trampoline runs on) the
+    // current certificate is available via the compat API; get_der returns a
+    // pointer into the certificate's own storage (no allocation, valid for
+    // the callback's duration).
+    unsigned char const* der = nullptr;
+    std::size_t der_len       = 0;
+    if (WOLFSSL_X509* cert = wolfSSL_X509_STORE_CTX_get_current_cert(store))
+    {
+        int sz             = 0;
+        unsigned char const* d = wolfSSL_X509_get_der(cert, &sz);
+        if (d && sz > 0)
+        {
+            der     = d;
+            der_len = static_cast<std::size_t>(sz);
+        }
+    }
+
+    verify_context vc(store, der, der_len);
+    return cd->verify_callback(preverified != 0, vc) ? 1 : 0;
+}
+#endif // WOLFSSL_ALWAYS_VERIFY_CB
+
 /** Cached WolfSSL contexts owning WOLFSSL_CTX for client and server.
 
     Created on first stream construction for a given tls_context,
@@ -179,7 +247,39 @@ public:
         else if (cd.verification_mode == tls_verify_mode::require_peer)
             verify_mode_flag =
                 WOLFSSL_VERIFY_PEER | WOLFSSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+
+        // On capable builds install the verify trampoline and stash the
+        // context data in the WOLFSSL_CTX ex_data, where the trampoline
+        // recovers it. On builds that cannot honor the callback the
+        // handshake is refused in init_ssl_for_role instead.
+#if defined(WOLFSSL_ALWAYS_VERIFY_CB)
+        if (cd.verify_callback)
+        {
+            if (verify_cd_ex_index < 0)
+            {
+#if defined(HAVE_EX_DATA_CRYPTO)
+                // Allocate a dedicated ex_data slot when the API is available.
+                verify_cd_ex_index = wolfSSL_CTX_get_ex_new_index(
+                    0, nullptr, nullptr, nullptr, nullptr);
+#endif
+                // wolfSSL_CTX_get_ex_new_index requires HAVE_EX_DATA_CRYPTO,
+                // which OPENSSL_EXTRA does not imply. Where it is unavailable
+                // (or returned slot 0, the OpenSSL-compat app-data slot),
+                // fall back to a fixed non-app-data slot. corosio stores no
+                // other ex_data on this WOLFSSL_CTX.
+                if (verify_cd_ex_index <= 0)
+                    verify_cd_ex_index = 1;
+            }
+            wolfSSL_CTX_set_ex_data(
+                ctx, verify_cd_ex_index, const_cast<tls_context_data*>(&cd));
+            wolfSSL_CTX_set_verify(
+                ctx, verify_mode_flag, wolfssl_verify_callback);
+        }
+        else
+            wolfSSL_CTX_set_verify(ctx, verify_mode_flag, nullptr);
+#else
         wolfSSL_CTX_set_verify(ctx, verify_mode_flag, nullptr);
+#endif
 
         // Apply certificate chain if provided (entity cert + intermediates)
         // wolfSSL_CTX_use_certificate_chain_buffer loads entity as cert, rest as chain
@@ -270,6 +370,16 @@ public:
                 ctx, reinterpret_cast<unsigned char const*>(ca.data()),
                 static_cast<long>(ca.size()), WOLFSSL_FILETYPE_PEM);
         }
+
+        // Trust anchors from the system store and explicit directories.
+        // A failing source is left unloaded rather than aborting context
+        // creation.
+#ifdef WOLFSSL_SYS_CA_CERTS
+        if (cd.use_default_verify_paths)
+            wolfSSL_CTX_load_system_CA_certs(ctx);
+#endif
+        for (auto const& path : cd.verify_paths)
+            wolfSSL_CTX_load_verify_locations(ctx, nullptr, path.c_str());
 
         // Apply verify depth
         wolfSSL_CTX_set_verify_depth(ctx, cd.verify_depth);
@@ -1021,6 +1131,30 @@ struct wolfssl_stream::impl
         // Set this impl as the I/O context
         wolfSSL_SetIOReadCtx(ssl_, this);
         wolfSSL_SetIOWriteCtx(ssl_, this);
+
+        // Verify callback handling.
+        if (cd.verify_callback)
+        {
+#if defined(WOLFSSL_ALWAYS_VERIFY_CB)
+            // Capable build: the trampoline and its context data are already
+            // installed on the WOLFSSL_CTX (see apply_common_settings); the
+            // session inherits them. Nothing to do per-session.
+#else
+            // This WolfSSL build invokes the verify callback only on failure,
+            // never on success, so a callback that tightens verification
+            // (e.g. certificate pinning) would silently fail open. Rather
+            // than mislead, refuse the connection. Rebuild WolfSSL with
+            // WOLFSSL_ALWAYS_VERIFY_CB (e.g. --enable-opensslextra) to use
+            // verify callbacks, or omit the callback.
+            //
+            // Free the session first: leaving ssl_ non-null would let a
+            // retried handshake() pass the `if (ssl_) return {}` sentinel and
+            // proceed on this unconfigured (and unsupported) session.
+            wolfSSL_free(ssl_);
+            ssl_ = nullptr;
+            return std::make_error_code(std::errc::function_not_supported);
+#endif
+        }
 
         // Apply per-session config (SNI + hostname verification) from context
         if (type == wolfssl_stream::client && !cd.hostname.empty())

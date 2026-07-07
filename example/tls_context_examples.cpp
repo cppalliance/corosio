@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -8,11 +9,31 @@
 //
 
 // Examples demonstrating tls_context API usage patterns.
-// These examples are not meant to compile; they validate API ergonomics.
+//
+// The configuration setters return a std::error_code rather than throwing.
+// These examples use the small must() helper to turn a failure into an
+// exception where that keeps the example terse; load_checked() and
+// load_mixed() below show the explicit error_code style instead.
 
 #include <boost/corosio/tls_context.hpp>
 
+#include <algorithm>
+#include <cstdlib>
+#include <iostream>
+#include <span>
+#include <string>
+#include <string_view>
+#include <system_error>
+
 using namespace boost::corosio;
+
+// Throw std::system_error if an operation reported a failure.
+static void
+must(std::error_code ec)
+{
+    if (ec)
+        throw std::system_error(ec);
+}
 
 //
 // HTTPS Client Context
@@ -22,16 +43,16 @@ using namespace boost::corosio;
 tls_context make_https_client()
 {
     tls_context ctx;
-    
+
     // Use system trust store for public websites
-    ctx.set_default_verify_paths().value();
-    
+    must(ctx.set_default_verify_paths());
+
     // Verify the server certificate
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     // Set the hostname for SNI and certificate verification
     ctx.set_hostname( "api.example.com" );
-    
+
     return ctx;
 }
 
@@ -39,13 +60,13 @@ tls_context make_https_client()
 tls_context make_pinned_ca_client( std::string_view ca_pem )
 {
     tls_context ctx;
-    
+
     // Only trust this specific CA
-    ctx.add_certificate_authority( ca_pem ).value();
-    
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
+    must(ctx.add_certificate_authority( ca_pem ));
+
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
     ctx.set_hostname( "internal.example.com" );
-    
+
     return ctx;
 }
 
@@ -53,13 +74,13 @@ tls_context make_pinned_ca_client( std::string_view ca_pem )
 tls_context make_http2_client()
 {
     tls_context ctx;
-    
-    ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+
+    must(ctx.set_default_verify_paths());
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     // Prefer HTTP/2, fall back to HTTP/1.1
-    ctx.set_alpn( { "h2", "http/1.1" } ).value();
-    
+    must(ctx.set_alpn( { "h2", "http/1.1" } ));
+
     return ctx;
 }
 
@@ -71,14 +92,14 @@ tls_context make_http2_client()
 tls_context make_basic_server()
 {
     tls_context ctx;
-    
+
     // Load certificate chain and private key
-    ctx.use_certificate_chain_file( "server-fullchain.pem" ).value();
-    ctx.use_private_key_file( "server.key", tls_file_format::pem ).value();
-    
+    must(ctx.use_certificate_chain_file( "server-fullchain.pem" ));
+    must(ctx.use_private_key_file( "server.key", tls_file_format::pem ));
+
     // Don't verify clients (no mTLS)
-    ctx.set_verify_mode( tls_verify_mode::none ).value();
-    
+    must(ctx.set_verify_mode( tls_verify_mode::none ));
+
     return ctx;
 }
 
@@ -86,17 +107,17 @@ tls_context make_basic_server()
 tls_context make_mtls_server()
 {
     tls_context ctx;
-    
+
     // Server credentials
-    ctx.use_certificate_chain_file( "server-fullchain.pem" ).value();
-    ctx.use_private_key_file( "server.key", tls_file_format::pem ).value();
-    
+    must(ctx.use_certificate_chain_file( "server-fullchain.pem" ));
+    must(ctx.use_private_key_file( "server.key", tls_file_format::pem ));
+
     // Trust this CA for client certificates
-    ctx.load_verify_file( "client-ca.crt" ).value();
-    
+    must(ctx.load_verify_file( "client-ca.crt" ));
+
     // Require clients to present a valid certificate
-    ctx.set_verify_mode( tls_verify_mode::require_peer ).value();
-    
+    must(ctx.set_verify_mode( tls_verify_mode::require_peer ));
+
     return ctx;
 }
 
@@ -104,12 +125,12 @@ tls_context make_mtls_server()
 tls_context make_server_from_pfx()
 {
     tls_context ctx;
-    
+
     // Load all credentials from a single file
-    ctx.use_pkcs12_file( "server.pfx", "bundle-password" ).value();
-    
-    ctx.set_verify_mode( tls_verify_mode::none ).value();
-    
+    must(ctx.use_pkcs12_file( "server.pfx", "bundle-password" ));
+
+    must(ctx.set_verify_mode( tls_verify_mode::none ));
+
     return ctx;
 }
 
@@ -117,18 +138,22 @@ tls_context make_server_from_pfx()
 tls_context make_server_encrypted_key()
 {
     tls_context ctx;
-    
+
     // Set password callback before loading encrypted key
     ctx.set_password_callback(
         []( std::size_t max_len, tls_password_purpose purpose )
         {
+            (void)max_len;
+            (void)purpose;
             // Read from environment or secret manager
-            return std::string( std::getenv( "TLS_KEY_PASSWORD" ) );
+            char const* pw = std::getenv( "TLS_KEY_PASSWORD" );
+            return std::string( pw ? pw : "" );
         });
-    
-    ctx.use_certificate_chain_file( "server.crt" ).value();
-    ctx.use_private_key_file( "server-encrypted.key", tls_file_format::pem ).value();
-    
+
+    must(ctx.use_certificate_chain_file( "server.crt" ));
+    must(ctx.use_private_key_file(
+        "server-encrypted.key", tls_file_format::pem ));
+
     return ctx;
 }
 
@@ -140,15 +165,15 @@ tls_context make_server_encrypted_key()
 tls_context make_mtls_client()
 {
     tls_context ctx;
-    
+
     // Client credentials for mTLS
-    ctx.use_certificate_file( "client.crt", tls_file_format::pem ).value();
-    ctx.use_private_key_file( "client.key", tls_file_format::pem ).value();
-    
+    must(ctx.use_certificate_file( "client.crt", tls_file_format::pem ));
+    must(ctx.use_private_key_file( "client.key", tls_file_format::pem ));
+
     // Trust specific CA for server verification
-    ctx.load_verify_file( "server-ca.crt" ).value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+    must(ctx.load_verify_file( "server-ca.crt" ));
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     return ctx;
 }
 
@@ -160,13 +185,13 @@ tls_context make_mtls_client()
 tls_context make_tls13_only()
 {
     tls_context ctx;
-    
-    ctx.set_min_protocol_version( tls_version::tls_1_3 ).value();
-    ctx.set_max_protocol_version( tls_version::tls_1_3 ).value();
-    
-    ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+
+    must(ctx.set_min_protocol_version( tls_version::tls_1_3 ));
+    must(ctx.set_max_protocol_version( tls_version::tls_1_3 ));
+
+    must(ctx.set_default_verify_paths());
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     return ctx;
 }
 
@@ -174,13 +199,13 @@ tls_context make_tls13_only()
 tls_context make_tls12_plus()
 {
     tls_context ctx;
-    
-    ctx.set_min_protocol_version( tls_version::tls_1_2 ).value();
+
+    must(ctx.set_min_protocol_version( tls_version::tls_1_2 ));
     // No max = allow newest
-    
-    ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+
+    must(ctx.set_default_verify_paths());
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     return ctx;
 }
 
@@ -192,16 +217,16 @@ tls_context make_tls12_plus()
 tls_context make_high_security()
 {
     tls_context ctx;
-    
+
     // Only ECDHE key exchange with AESGCM or ChaCha20
-    ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" ).value();
-    
+    must(ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" ));
+
     // TLS 1.3 only
-    ctx.set_min_protocol_version( tls_version::tls_1_3 ).value();
-    
-    ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+    must(ctx.set_min_protocol_version( tls_version::tls_1_3 ));
+
+    must(ctx.set_default_verify_paths());
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     return ctx;
 }
 
@@ -213,15 +238,15 @@ tls_context make_high_security()
 tls_context make_client_with_crl( std::string_view crl_path )
 {
     tls_context ctx;
-    
-    ctx.set_default_verify_paths().value();
-    ctx.add_crl_file( crl_path ).value();
-    
+
+    must(ctx.set_default_verify_paths());
+    must(ctx.add_crl_file( crl_path ));
+
     // Fail if certificate is revoked, allow if status unknown
-    ctx.set_revocation_policy( tls::revocation_policy::soft_fail );
-    
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+    ctx.set_revocation_policy( tls_revocation_policy::soft_fail );
+
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     return ctx;
 }
 
@@ -229,13 +254,13 @@ tls_context make_client_with_crl( std::string_view crl_path )
 tls_context make_client_require_ocsp()
 {
     tls_context ctx;
-    
-    ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+
+    must(ctx.set_default_verify_paths());
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     // Require server to provide OCSP staple
     ctx.set_require_ocsp_staple( true );
-    
+
     return ctx;
 }
 
@@ -243,13 +268,13 @@ tls_context make_client_require_ocsp()
 tls_context make_server_with_ocsp( std::string_view ocsp_response )
 {
     tls_context ctx;
-    
-    ctx.use_certificate_chain_file( "server.crt" ).value();
-    ctx.use_private_key_file( "server.key", tls_file_format::pem ).value();
-    
+
+    must(ctx.use_certificate_chain_file( "server.crt" ));
+    must(ctx.use_private_key_file( "server.key", tls_file_format::pem ));
+
     // Provide pre-fetched OCSP response to clients
-    ctx.set_ocsp_staple( ocsp_response ).value();
-    
+    must(ctx.set_ocsp_staple( ocsp_response ));
+
     return ctx;
 }
 
@@ -257,16 +282,16 @@ tls_context make_server_with_ocsp( std::string_view ocsp_response )
 tls_context make_hardened_client()
 {
     tls_context ctx;
-    
-    ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+
+    must(ctx.set_default_verify_paths());
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     // Fail if revocation status cannot be determined
-    ctx.set_revocation_policy( tls::revocation_policy::hard_fail );
-    
+    ctx.set_revocation_policy( tls_revocation_policy::hard_fail );
+
     // Require OCSP staple from server
     ctx.set_require_ocsp_staple( true );
-    
+
     return ctx;
 }
 
@@ -274,31 +299,30 @@ tls_context make_hardened_client()
 // Custom Verification
 //
 
-// Client with custom verification callback
-tls_context make_client_custom_verify()
+// Client that pins a specific certificate via a verification callback.
+tls_context make_client_custom_verify( std::span<unsigned char const> pin )
 {
     tls_context ctx;
-    
-    ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
-    ctx.set_verify_callback(
-        []( bool preverified, auto& verify_ctx ) -> bool
+
+    must(ctx.set_default_verify_paths());
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
+    must(ctx.set_verify_callback(
+        [pin]( bool preverified, verify_context& verify_ctx ) -> bool
         {
+            // Require the chain to verify normally first.
             if( !preverified )
-            {
-                // Standard verification failed - could log here
                 return false;
-            }
-            
-            // Additional custom checks could go here:
-            // - Check specific certificate fields
-            // - Verify against a pinned certificate
-            // - Log certificate details
-            
-            return true;
-        }).value();
-    
+
+            // Then pin: accept only if the certificate's DER matches. The
+            // DER bytes are available portably across backends via
+            // certificate(); the raw X509_STORE_CTX* is also reachable
+            // through verify_ctx.native_handle() for backend-specific use.
+            auto der = verify_ctx.certificate();
+            return der.size() == pin.size() &&
+                std::equal( der.begin(), der.end(), pin.begin() );
+        }));
+
     return ctx;
 }
 
@@ -306,13 +330,13 @@ tls_context make_client_custom_verify()
 tls_context make_client_limited_depth()
 {
     tls_context ctx;
-    
-    ctx.set_default_verify_paths().value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+
+    must(ctx.set_default_verify_paths());
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     // Allow at most 2 intermediate certificates
-    ctx.set_verify_depth( 2 ).value();
-    
+    must(ctx.set_verify_depth( 2 ));
+
     return ctx;
 }
 
@@ -327,14 +351,14 @@ tls_context make_from_memory(
     std::string_view ca_pem )
 {
     tls_context ctx;
-    
+
     // From vault/secret manager
-    ctx.use_certificate_chain( cert_pem ).value();
-    ctx.use_private_key( key_pem, tls_file_format::pem ).value();
-    ctx.add_certificate_authority( ca_pem ).value();
-    
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+    must(ctx.use_certificate_chain( cert_pem ));
+    must(ctx.use_private_key( key_pem, tls_file_format::pem ));
+    must(ctx.add_certificate_authority( ca_pem ));
+
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     return ctx;
 }
 
@@ -344,10 +368,10 @@ tls_context make_from_pkcs12_memory(
     std::string_view passphrase )
 {
     tls_context ctx;
-    
-    ctx.use_pkcs12( pkcs12_data, passphrase ).value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
-    
+
+    must(ctx.use_pkcs12( pkcs12_data, passphrase ));
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
+
     return ctx;
 }
 
@@ -359,10 +383,10 @@ tls_context make_from_pkcs12_memory(
 tls_context make_from_der()
 {
     tls_context ctx;
-    
-    ctx.use_certificate_file( "server.der", tls_file_format::der ).value();
-    ctx.use_private_key_file( "server.key.der", tls_file_format::der ).value();
-    
+
+    must(ctx.use_certificate_file( "server.der", tls_file_format::der ));
+    must(ctx.use_private_key_file( "server.key.der", tls_file_format::der ));
+
     return ctx;
 }
 
@@ -375,18 +399,21 @@ void demonstrate_sharing()
 {
     // Create a context
     tls_context original;
-    original.set_default_verify_paths().value();
-    original.set_verify_mode( tls_verify_mode::peer ).value();
-    
+    must(original.set_default_verify_paths());
+    must(original.set_verify_mode( tls_verify_mode::peer ));
+
     // Share via copy - both point to same underlying state
     tls_context copy1 = original;
     tls_context copy2 = original;
-    
+    (void)copy1;
+    (void)copy2;
+
     // Changes to copy1 affect copy2 and original
     // (they all share the same impl)
-    
+
     // Move transfers ownership
     tls_context moved = std::move( original );
+    (void)moved;
     // original is now empty
 }
 
@@ -398,33 +425,33 @@ void demonstrate_sharing()
 void load_throwing()
 {
     tls_context ctx;
-    
-    ctx.use_certificate_chain_file( "cert.pem" ).value();  // throws on error
-    ctx.use_private_key_file( "key.pem", tls_file_format::pem ).value();
-    ctx.set_default_verify_paths().value();
+
+    must(ctx.use_certificate_chain_file( "cert.pem" ));  // throws on error
+    must(ctx.use_private_key_file( "key.pem", tls_file_format::pem ));
+    must(ctx.set_default_verify_paths());
 }
 
 // Check errors explicitly
 bool load_checked( tls_context& ctx, std::string& error_msg )
 {
-    if( auto r = ctx.use_certificate_chain_file( "cert.pem" ); !r )
+    if( auto ec = ctx.use_certificate_chain_file( "cert.pem" ); ec )
     {
-        error_msg = "Certificate: " + std::string( r.error().message() );
+        error_msg = "Certificate: " + ec.message();
         return false;
     }
-    
-    if( auto r = ctx.use_private_key_file( "key.pem", tls_file_format::pem ); !r )
+
+    if( auto ec = ctx.use_private_key_file( "key.pem", tls_file_format::pem ); ec )
     {
-        error_msg = "Key: " + std::string( r.error().message() );
+        error_msg = "Key: " + ec.message();
         return false;
     }
-    
-    if( auto r = ctx.set_default_verify_paths(); !r )
+
+    if( auto ec = ctx.set_default_verify_paths(); ec )
     {
-        error_msg = "CA store: " + std::string( r.error().message() );
+        error_msg = "CA store: " + ec.message();
         return false;
     }
-    
+
     return true;
 }
 
@@ -432,31 +459,41 @@ bool load_checked( tls_context& ctx, std::string& error_msg )
 void load_mixed()
 {
     tls_context ctx;
-    
+
     // File loading might fail at runtime
-    if( auto r = ctx.use_certificate_chain_file( "cert.pem" ); !r )
+    if( auto ec = ctx.use_certificate_chain_file( "cert.pem" ); ec )
     {
         // Handle missing file gracefully
-        std::cerr << "Certificate not found: " << r.error().message() << "\n";
+        std::cerr << "Certificate not found: " << ec.message() << "\n";
         return;
     }
-    
+
     // Protocol settings won't fail if arguments are valid
-    ctx.set_min_protocol_version( tls_version::tls_1_2 ).value();
-    ctx.set_verify_mode( tls_verify_mode::peer ).value();
+    must(ctx.set_min_protocol_version( tls_version::tls_1_2 ));
+    must(ctx.set_verify_mode( tls_verify_mode::peer ));
 }
 
 //
-// Main (not compiled, just for documentation)
+// Main
 //
 
 int main()
 {
     // These examples demonstrate API ergonomics
-    
-    auto https = make_https_client();
-    auto server = make_basic_server();
-    auto mtls = make_mtls_server();
-    
+    try
+    {
+        auto https  = make_https_client();
+        auto server = make_basic_server();
+        auto mtls   = make_mtls_server();
+        (void)https;
+        (void)server;
+        (void)mtls;
+    }
+    catch( std::exception const& e )
+    {
+        std::cerr << "error: " << e.what() << "\n";
+        return 1;
+    }
+
     return 0;
 }

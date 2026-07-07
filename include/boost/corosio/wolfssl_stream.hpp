@@ -216,6 +216,27 @@ private:
 BOOST_COROSIO_DECL std::error_category const&
 wolfssl_category() noexcept;
 
+/** Report whether this build's WolfSSL can honor a verify callback.
+
+    A verify callback installed via @ref tls_context::set_verify_callback
+    can only be honored on a successful handshake when the linked WolfSSL
+    was built with `WOLFSSL_ALWAYS_VERIFY_CB` (implied by
+    `--enable-opensslextra`). On a build without it, WolfSSL invokes the
+    callback only on verification failure, so a callback that tightens
+    verification would silently fail open; the @ref wolfssl_stream backend
+    instead fails the handshake with `std::errc::function_not_supported`
+    when a callback is present.
+
+    This function lets callers detect that situation up front.
+
+    @return `true` if verify callbacks are fully supported by this build,
+        `false` if installing one will cause the handshake to fail.
+
+    @see tls_context::set_verify_callback
+*/
+BOOST_COROSIO_DECL bool
+wolfssl_supports_verify_callback() noexcept;
+
 } // namespace boost::corosio
 
 #endif

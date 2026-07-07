@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -64,7 +65,7 @@ struct tls_context_data
     tls_verify_mode verification_mode = tls_verify_mode::none;
     int verify_depth                  = 100;
     std::string hostname;
-    std::function<bool(bool, void*)> verify_callback;
+    std::function<bool(bool, verify_context&)> verify_callback;
 
     // SNI (Server Name Indication)
 
