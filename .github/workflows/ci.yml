@@ -95,30 +95,14 @@ jobs:
             liburing-dev
             curl zip unzip tar pkg-config
 
-      # Use the capy branch with the same name as this build's branch
-      # (for pull requests: the source branch, then the target branch);
-      # fall back to capy's default branch.
       - name: Resolve Capy branch
         id: capy-ref
-        shell: bash
-        run: |
-          url=https://github.com/cppalliance/capy.git
-          ref=
-          for candidate in "${{ github.head_ref }}" "${{ github.base_ref }}" "${{ github.ref_name }}"; do
-            if [ -n "$candidate" ] && git ls-remote --exit-code --heads "$url" "$candidate" > /dev/null; then
-              ref="$candidate"
-              break
-            fi
-          done
-          if [ -z "$ref" ]; then
-            ref=$(git ls-remote --symref "$url" HEAD | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2 }')
-          fi
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+        uses: ./corosio-root/.github/actions/resolve-capy
 
       - name: Clone Capy
         uses: actions/checkout@v4
         with:
-          repository: cppalliance/capy
+          repository: ${{ steps.capy-ref.outputs.repo }}
           ref: ${{ steps.capy-ref.outputs.ref }}
           path: capy-root
 
@@ -674,6 +658,7 @@ jobs:
           package-artifact: false
           ref-source-dir: boost-root
 
+
       - name: Configure for clang-tidy
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
         if: ${{ matrix.clang-tidy }}
@@ -799,30 +784,14 @@ jobs:
         with:
           path: corosio-root
 
-      # Use the capy branch with the same name as this build's branch
-      # (for pull requests: the source branch, then the target branch);
-      # fall back to capy's default branch.
       - name: Resolve Capy branch
         id: capy-ref
-        shell: bash
-        run: |
-          url=https://github.com/cppalliance/capy.git
-          ref=
-          for candidate in "${{ github.head_ref }}" "${{ github.base_ref }}" "${{ github.ref_name }}"; do
-            if [ -n "$candidate" ] && git ls-remote --exit-code --heads "$url" "$candidate" > /dev/null; then
-              ref="$candidate"
-              break
-            fi
-          done
-          if [ -z "$ref" ]; then
-            ref=$(git ls-remote --symref "$url" HEAD | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2 }')
-          fi
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+        uses: ./corosio-root/.github/actions/resolve-capy
 
       - name: Clone Capy
         uses: actions/checkout@v4
         with:
-          repository: cppalliance/capy
+          repository: ${{ steps.capy-ref.outputs.repo }}
           ref: ${{ steps.capy-ref.outputs.ref }}
           path: capy-root
 

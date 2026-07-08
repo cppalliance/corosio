@@ -1,0 +1,63 @@
+#
+# Copyright (c) 2026 Steve Gerbino
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio/
+#
+
+name: Resolve Capy branch
+description: >-
+  Resolve the capy repository and branch matching this build. Use the
+  capy branch with the same name as this build's branch (for pull
+  requests: the source branch, then the target branch). Inside a fork
+  the owner's capy fork is preferred, so fork branches build against
+  their matching capy fork branch. Cross-repo PRs into cppalliance
+  resolve against cppalliance/capy as before. Fall back to capy's
+  default branch.
+
+outputs:
+  repo:
+    description: The resolved capy repository (owner/capy).
+    value: ${{ steps.resolve.outputs.repo }}
+  ref:
+    description: The resolved capy branch.
+    value: ${{ steps.resolve.outputs.ref }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      # Bind untrusted context values into env: head_ref is
+      # attacker-controlled on fork PRs, so never interpolate it into
+      # the script body.
+      env:
+        HEAD_REF: ${{ github.head_ref }}
+        BASE_REF: ${{ github.base_ref }}
+        REF_NAME: ${{ github.ref_name }}
+        OWNER: ${{ github.repository_owner }}
+      run: |
+        repo=cppalliance/capy
+        ref=
+        for candidate in "$HEAD_REF" "$BASE_REF" "$REF_NAME"; do
+          [ -n "$candidate" ] || continue
+          probed=
+          for fork in "$OWNER/capy" cppalliance/capy; do
+            # Skip a fork already probed for this candidate (the owner
+            # fork equals cppalliance/capy when running in cppalliance).
+            [ "$fork" = "$probed" ] && continue
+            probed="$fork"
+            if GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code --heads "https://github.com/$fork.git" "$candidate" > /dev/null; then
+              repo="$fork"
+              ref="$candidate"
+              break 2
+            fi
+          done
+        done
+        if [ -z "$ref" ]; then
+          ref=$(GIT_TERMINAL_PROMPT=0 git ls-remote --symref "https://github.com/$repo.git" HEAD | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2 }')
+        fi
+        echo "repo=$repo" >> "$GITHUB_OUTPUT"
+        echo "ref=$ref" >> "$GITHUB_OUTPUT"
