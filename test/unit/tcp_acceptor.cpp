@@ -13,7 +13,7 @@
 
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp.hpp>
-#include <boost/corosio/timer.hpp>
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/wait_type.hpp>
 
 #include <boost/capy/cond.hpp>
@@ -138,10 +138,6 @@ struct tcp_acceptor_test
         tcp_socket peer(ioc);
 
         auto task = [&]() -> capy::task<> {
-            // Start a timer to cancel the accept
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(50));
-
             // Launch accept that will block (no incoming connections)
             // Store lambda in variable to ensure it outlives the coroutine.
             auto nested_coro = [&acc, &peer, &accept_done,
@@ -152,14 +148,12 @@ struct tcp_acceptor_test
             };
             capy::run_async(ioc.get_executor())(nested_coro());
 
-            // Wait for timer then cancel
-            (void)co_await t.wait();
+            // Wait then cancel
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             acc.cancel();
 
             // Wait for accept to complete
-            timer t2(ioc);
-            t2.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t2.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(accept_done);
             BOOST_TEST(accept_ec == capy::cond::canceled);
@@ -194,9 +188,6 @@ struct tcp_acceptor_test
         // the nested coroutine and close operation
         auto task = [&ioc, &acc, &peer, &accept_done,
                      &accept_ec]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(50));
-
             // Store lambda in variable to ensure it outlives the coroutine.
             // Lambda coroutines capture 'this' by reference, so the lambda
             // must remain alive while the coroutine is suspended.
@@ -209,12 +200,10 @@ struct tcp_acceptor_test
             capy::run_async(ioc.get_executor())(nested_coro());
 
             // Wait then close the acceptor
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             acc.close();
 
-            timer t2(ioc);
-            t2.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t2.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(accept_done);
             BOOST_TEST(accept_ec == capy::cond::canceled);
@@ -444,9 +433,7 @@ struct tcp_acceptor_test
 
         // Cancel lingering accept after connect completes
         auto cancel_task = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(200));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(200));
             acc.cancel();
         };
         capy::run_async(ex)(cancel_task());
@@ -771,9 +758,7 @@ struct tcp_acceptor_test
             accept_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 

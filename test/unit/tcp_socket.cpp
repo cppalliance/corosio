@@ -16,7 +16,7 @@
 
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>
-#include <boost/corosio/timer.hpp>
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
@@ -624,9 +624,7 @@ struct tcp_socket_test
             b.close();
 
             // Give OS time to process the close
-            timer t(a.context());
-            t.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             // Writing to closed peer should eventually fail.
             // We need to write enough data to fill the tcp_socket buffer and
@@ -659,11 +657,7 @@ struct tcp_socket_test
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
-        auto task = [&](tcp_socket& a, tcp_socket& b) -> capy::task<> {
-            // Start a timer to cancel the read
-            timer t(a.context());
-            t.expires_after(std::chrono::milliseconds(50));
-
+        auto task = [&](tcp_socket&, tcp_socket& b) -> capy::task<> {
             // Launch read that will block (no data available)
             bool read_done = false;
             std::error_code read_ec;
@@ -680,14 +674,12 @@ struct tcp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested_coro());
 
-            // Wait for timer then cancel
-            (void)co_await t.wait();
+            // Wait for the read to be underway then cancel it
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             b.cancel();
 
             // Wait for read to complete
-            timer t2(a.context());
-            t2.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t2.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(read_done);
             BOOST_TEST(read_ec == capy::cond::canceled);
@@ -705,10 +697,7 @@ struct tcp_socket_test
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
-        auto task = [&](tcp_socket& a, tcp_socket& b) -> capy::task<> {
-            timer t(a.context());
-            t.expires_after(std::chrono::milliseconds(50));
-
+        auto task = [&](tcp_socket&, tcp_socket& b) -> capy::task<> {
             bool read_done = false;
             std::error_code read_ec;
 
@@ -725,12 +714,10 @@ struct tcp_socket_test
             capy::run_async(ioc.get_executor())(nested_coro());
 
             // Wait then close the tcp_socket
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             b.close();
 
-            timer t2(a.context());
-            t2.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t2.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(read_done);
             // Close should cancel pending operations
@@ -783,9 +770,8 @@ struct tcp_socket_test
 
         // Failsafe task - detects if stop_token cancellation didn't work
         auto failsafe_task = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(1000));
-            auto [ec] = co_await t.wait();
+            auto [ec] =
+                co_await corosio::delay(std::chrono::milliseconds(1000));
             // Only trigger failsafe if reader hasn't completed yet.
             // If read_done is true, stop_token cancellation worked.
             if (!ec && !read_done)

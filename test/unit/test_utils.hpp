@@ -11,9 +11,9 @@
 #ifndef BOOST_COROSIO_TEST_TLS_TEST_UTILS_HPP
 #define BOOST_COROSIO_TEST_TLS_TEST_UTILS_HPP
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/io/io_stream.hpp>
-#include <boost/corosio/timer.hpp>
 #include <boost/corosio/tls_context.hpp>
 #include <boost/corosio/tls_stream.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
@@ -1494,9 +1494,9 @@ run_tls_test_no_shutdown(
 
 /** Run a TLS test expecting handshake failure.
 
-    Uses a timer to handle the case where one side fails and the other
-    blocks waiting for data. When the timer fires, sockets are closed
-    to unblock any pending operations.
+    Uses a failsafe deadline to handle the case where one side fails and
+    the other blocks waiting for data. When the deadline elapses, sockets
+    are closed to unblock any pending operations.
     
     @param ioc          The io_context to use
     @param client_ctx   TLS context for the client
@@ -1524,14 +1524,15 @@ run_tls_test_fail(
     bool client_done   = false;
     bool server_done   = false;
 
-    // Timer to unblock stuck handshakes (failsafe only)
-    timer timeout(ioc);
-    timeout.expires_after(std::chrono::milliseconds(200 * failsafe_scale));
+    // Failsafe deadline to unblock stuck handshakes; the still-running
+    // side requests stop on it once both sides finish.
+    std::stop_source failsafe_stop;
 
     // Store lambdas in named variables before invoking - anonymous lambda + immediate
     // invocation pattern [...](){}() can cause capture corruption with run_async
     auto client_task = [&client, &client_failed, &client_done, &server_done,
-                        &timeout, &s1, &s2, client_ec_out]() -> capy::task<> {
+                        &failsafe_stop, &s1, &s2,
+                        client_ec_out]() -> capy::task<> {
         auto [ec] = co_await client.handshake(
             std::remove_reference_t<decltype(client)>::client);
         if (client_ec_out)
@@ -1553,11 +1554,11 @@ run_tls_test_fail(
         }
         client_done = true;
         if (server_done)
-            timeout.cancel();
+            failsafe_stop.request_stop();
     };
 
     auto server_task = [&server, &server_failed, &server_done, &client_done,
-                        &timeout, &s1, &s2]() -> capy::task<> {
+                        &failsafe_stop, &s1, &s2]() -> capy::task<> {
         auto [ec] = co_await server.handshake(
             std::remove_reference_t<decltype(server)>::server);
         if (ec)
@@ -1577,16 +1578,17 @@ run_tls_test_fail(
         }
         server_done = true;
         if (client_done)
-            timeout.cancel();
+            failsafe_stop.request_stop();
     };
 
     bool failsafe_hit = false;
-    auto timeout_task = [&timeout, &failsafe_hit, &s1, &s2]() -> capy::task<> {
-        auto [ec] = co_await timeout.wait();
+    auto timeout_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
+        auto [ec] = co_await corosio::delay(
+            std::chrono::milliseconds(200 * failsafe_scale));
         if (!ec)
         {
             failsafe_hit = true;
-            // Timer expired - cancel pending operations then close sockets
+            // Deadline elapsed - cancel pending operations then close sockets
             if (s1.is_open())
             {
                 s1.cancel();
@@ -1602,7 +1604,8 @@ run_tls_test_fail(
 
     capy::run_async(ioc.get_executor())(client_task());
     capy::run_async(ioc.get_executor())(server_task());
-    capy::run_async(ioc.get_executor())(timeout_task());
+    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
+        timeout_task());
 
     ioc.run();
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -1676,14 +1679,13 @@ run_tls_shutdown_test(
     // Server closing the socket causes client's shutdown to complete.
     bool done = false;
 
-    // Failsafe timer in case of bugs
-    timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::milliseconds(200 * failsafe_scale));
+    // Failsafe deadline in case of bugs
+    std::stop_source failsafe_stop;
 
-    auto client_shutdown = [&client, &done, &failsafe]() -> capy::task<> {
+    auto client_shutdown = [&client, &done, &failsafe_stop]() -> capy::task<> {
         auto [ec] = co_await client.shutdown();
         done      = true;
-        failsafe.cancel();
+        failsafe_stop.request_stop();
         BOOST_TEST(
             !ec || ec == capy::cond::stream_truncated ||
             ec == capy::cond::eof || ec == capy::cond::canceled);
@@ -1702,9 +1704,9 @@ run_tls_shutdown_test(
     };
 
     bool failsafe_hit  = false;
-    auto failsafe_task = [&failsafe, &failsafe_hit, &done, &s1,
-                          &s2]() -> capy::task<> {
-        auto [ec] = co_await failsafe.wait();
+    auto failsafe_task = [&failsafe_hit, &done, &s1, &s2]() -> capy::task<> {
+        auto [ec] = co_await corosio::delay(
+            std::chrono::milliseconds(200 * failsafe_scale));
         if (!ec && !done)
         {
             failsafe_hit = true;
@@ -1723,7 +1725,8 @@ run_tls_shutdown_test(
 
     capy::run_async(ioc.get_executor())(client_shutdown());
     capy::run_async(ioc.get_executor())(server_read_then_close());
-    capy::run_async(ioc.get_executor())(failsafe_task());
+    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
+        failsafe_task());
 
     ioc.run();
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -1790,10 +1793,8 @@ run_tls_truncation_test(
     bool read_done    = false;
     bool failsafe_hit = false;
 
-    // Timeout to prevent deadlock
-    timer timeout(ioc);
-    // IOCP peer-close propagation can be bursty under TLS backends.
-    timeout.expires_after(std::chrono::milliseconds(750 * failsafe_scale));
+    // Deadline to prevent deadlock
+    std::stop_source failsafe_stop;
 
     auto client_close = [&s1, &s2]() -> capy::task<> {
         // Cancel and close underlying socket without TLS shutdown (IOCP needs cancel)
@@ -1806,23 +1807,25 @@ run_tls_truncation_test(
     };
 
     auto server_read_truncated = [&server, &read_done,
-                                  &timeout]() -> capy::task<> {
+                                  &failsafe_stop]() -> capy::task<> {
         char buf[32];
         auto [ec, n] =
             co_await server.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         read_done = true;
-        timeout.cancel();
+        failsafe_stop.request_stop();
         // Under IOCP + TLS backends, abrupt peer close may surface as an error
         // or as a zero-byte completion after cancellation/close unblocks the read.
         BOOST_TEST(!!ec || n == 0);
     };
 
-    auto timeout_task = [&timeout, &failsafe_hit, &s1, &s2]() -> capy::task<> {
-        auto [ec] = co_await timeout.wait();
+    auto timeout_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
+        // IOCP peer-close propagation can be bursty under TLS backends.
+        auto [ec] = co_await corosio::delay(
+            std::chrono::milliseconds(750 * failsafe_scale));
         if (!ec)
         {
             failsafe_hit = true;
-            // Timer expired - cancel pending operations (check if still open)
+            // Deadline elapsed - cancel pending operations (check if still open)
             if (s1.is_open())
             {
                 s1.cancel();
@@ -1838,7 +1841,8 @@ run_tls_truncation_test(
 
     capy::run_async(ioc.get_executor())(client_close());
     capy::run_async(ioc.get_executor())(server_read_truncated());
-    capy::run_async(ioc.get_executor())(timeout_task());
+    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
+        timeout_task());
 
     ioc.run();
     BOOST_TEST(read_done);
@@ -2070,16 +2074,16 @@ run_connection_reset_test(
     bool client_failed = false;
 
     // Timeout protection
-    timer timeout(ioc);
-    timeout.expires_after(std::chrono::milliseconds(200 * failsafe_scale));
+    std::stop_source failsafe_stop;
 
-    auto client_task = [&client, &client_failed, &timeout]() -> capy::task<> {
+    auto client_task = [&client, &client_failed,
+                        &failsafe_stop]() -> capy::task<> {
         auto [ec] = co_await client.handshake(
             std::remove_reference_t<decltype(client)>::client);
         // Should fail because server closed socket
         if (ec)
             client_failed = true;
-        timeout.cancel();
+        failsafe_stop.request_stop();
     };
 
     // Server closes socket immediately (simulates connection reset)
@@ -2091,8 +2095,9 @@ run_connection_reset_test(
     };
 
     bool failsafe_hit = false;
-    auto timeout_task = [&timeout, &failsafe_hit, &s1]() -> capy::task<> {
-        auto [ec] = co_await timeout.wait();
+    auto timeout_task = [&failsafe_hit, &s1]() -> capy::task<> {
+        auto [ec] = co_await corosio::delay(
+            std::chrono::milliseconds(200 * failsafe_scale));
         if (!ec && s1.is_open())
         {
             failsafe_hit = true;
@@ -2103,7 +2108,8 @@ run_connection_reset_test(
 
     capy::run_async(ioc.get_executor())(client_task());
     capy::run_async(ioc.get_executor())(server_task());
-    capy::run_async(ioc.get_executor())(timeout_task());
+    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
+        timeout_task());
 
     ioc.run();
 
@@ -2151,19 +2157,18 @@ run_stop_token_handshake_test(
     std::stop_source stop_src;
     bool client_got_error = false;
 
-    // Failsafe timeout to prevent infinite hang if cancellation doesn't work
+    // Failsafe deadline to prevent infinite hang if cancellation doesn't work
     // 2000ms allows headroom for CI with coverage instrumentation
-    timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::milliseconds(2000 * failsafe_scale));
+    std::stop_source failsafe_stop;
 
     // Client handshake - will be cancelled while waiting for ServerHello
     auto client_task = [&client, &client_got_error,
-                        &failsafe]() -> capy::task<> {
+                        &failsafe_stop]() -> capy::task<> {
         auto [ec] = co_await client.handshake(
             std::remove_reference_t<decltype(client)>::client);
         if (ec)
             client_got_error = true;
-        failsafe.cancel();
+        failsafe_stop.request_stop();
     };
 
     // Server waits for ClientHello then cancels - deterministic synchronization
@@ -2176,9 +2181,9 @@ run_stop_token_handshake_test(
     };
 
     bool failsafe_hit  = false;
-    auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
-                          &s2]() -> capy::task<> {
-        auto [ec] = co_await failsafe.wait();
+    auto failsafe_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
+        auto [ec] = co_await corosio::delay(
+            std::chrono::milliseconds(2000 * failsafe_scale));
         if (!ec)
         {
             failsafe_hit = true;
@@ -2196,7 +2201,8 @@ run_stop_token_handshake_test(
     };
     capy::run_async(ioc.get_executor(), stop_src.get_token())(client_task());
     capy::run_async(ioc.get_executor())(server_task());
-    capy::run_async(ioc.get_executor())(failsafe_task());
+    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
+        failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -2254,17 +2260,17 @@ run_stop_token_read_test(
     std::stop_source stop_src;
     bool read_got_error = false;
 
-    // Failsafe timeout - 2000ms allows headroom for CI with coverage instrumentation
-    timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::milliseconds(2000 * failsafe_scale));
+    // Failsafe deadline - 2000ms allows headroom for CI with coverage instrumentation
+    std::stop_source failsafe_stop;
 
-    auto client_read = [&client, &read_got_error, &failsafe]() -> capy::task<> {
+    auto client_read = [&client, &read_got_error,
+                        &failsafe_stop]() -> capy::task<> {
         char buf[32];
         auto [ec, n] =
             co_await client.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         if (ec)
             read_got_error = true;
-        failsafe.cancel();
+        failsafe_stop.request_stop();
     };
 
     // Server triggers cancellation immediately - client will block on read
@@ -2276,9 +2282,9 @@ run_stop_token_read_test(
     };
 
     bool failsafe_hit  = false;
-    auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
-                          &s2]() -> capy::task<> {
-        auto [ec] = co_await failsafe.wait();
+    auto failsafe_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
+        auto [ec] = co_await corosio::delay(
+            std::chrono::milliseconds(2000 * failsafe_scale));
         if (!ec)
         {
             failsafe_hit = true;
@@ -2296,7 +2302,8 @@ run_stop_token_read_test(
     };
     capy::run_async(ioc.get_executor(), stop_src.get_token())(client_read());
     capy::run_async(ioc.get_executor())(server_cancel());
-    capy::run_async(ioc.get_executor())(failsafe_task());
+    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
+        failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -2357,12 +2364,11 @@ run_stop_token_write_test(
     // Large buffer to fill socket buffer and cause blocking
     std::vector<char> large_buf(std::size_t{1024} * 1024, 'X');
 
-    // Failsafe timeout - 2000ms allows headroom for CI with coverage instrumentation
-    timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::milliseconds(2000 * failsafe_scale));
+    // Failsafe deadline - 2000ms allows headroom for CI with coverage instrumentation
+    std::stop_source failsafe_stop;
 
     auto client_write = [&client, &large_buf, &write_got_error,
-                         &failsafe]() -> capy::task<> {
+                         &failsafe_stop]() -> capy::task<> {
         // Write in loop until cancelled or error
         for (int i = 0; i < 100; ++i)
         {
@@ -2371,11 +2377,11 @@ run_stop_token_write_test(
             if (ec)
             {
                 write_got_error = true;
-                failsafe.cancel();
+                failsafe_stop.request_stop();
                 co_return;
             }
         }
-        failsafe.cancel();
+        failsafe_stop.request_stop();
     };
 
     // Server waits for data then cancels - deterministic synchronization
@@ -2388,9 +2394,9 @@ run_stop_token_write_test(
     };
 
     bool failsafe_hit  = false;
-    auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
-                          &s2]() -> capy::task<> {
-        auto [ec] = co_await failsafe.wait();
+    auto failsafe_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
+        auto [ec] = co_await corosio::delay(
+            std::chrono::milliseconds(2000 * failsafe_scale));
         if (!ec)
         {
             failsafe_hit = true;
@@ -2408,7 +2414,8 @@ run_stop_token_write_test(
     };
     capy::run_async(ioc.get_executor(), stop_src.get_token())(client_write());
     capy::run_async(ioc.get_executor())(server_cancel());
-    capy::run_async(ioc.get_executor())(failsafe_task());
+    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
+        failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -2448,18 +2455,17 @@ run_socket_cancel_test(
 
     bool client_got_error = false;
 
-    // Failsafe timeout - 2000ms allows headroom for CI with coverage instrumentation
-    timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::milliseconds(2000 * failsafe_scale));
+    // Failsafe deadline - 2000ms allows headroom for CI with coverage instrumentation
+    std::stop_source failsafe_stop;
 
     // Client starts handshake - will be cancelled
     auto client_task = [&client, &client_got_error,
-                        &failsafe]() -> capy::task<> {
+                        &failsafe_stop]() -> capy::task<> {
         auto [ec] = co_await client.handshake(
             std::remove_reference_t<decltype(client)>::client);
         if (ec)
             client_got_error = true;
-        failsafe.cancel();
+        failsafe_stop.request_stop();
     };
 
     // Server waits for ClientHello then cancels - deterministic synchronization
@@ -2472,9 +2478,9 @@ run_socket_cancel_test(
     };
 
     bool failsafe_hit  = false;
-    auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
-                          &s2]() -> capy::task<> {
-        auto [ec] = co_await failsafe.wait();
+    auto failsafe_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
+        auto [ec] = co_await corosio::delay(
+            std::chrono::milliseconds(2000 * failsafe_scale));
         if (!ec)
         {
             failsafe_hit = true;
@@ -2492,7 +2498,8 @@ run_socket_cancel_test(
     };
     capy::run_async(ioc.get_executor())(client_task());
     capy::run_async(ioc.get_executor())(server_task());
-    capy::run_async(ioc.get_executor())(failsafe_task());
+    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
+        failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit

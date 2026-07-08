@@ -15,12 +15,12 @@
 
 #include <boost/corosio/detail/platform.hpp>
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/timer.hpp>
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 
@@ -91,9 +91,7 @@ struct reactor_paths_test
         };
         auto peer_writer = [&]() -> capy::task<> {
             // Brief delay so the read side parks first.
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(10));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(10));
             auto [ec, n] = co_await s2.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
             (void)ec;
@@ -141,9 +139,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(500));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(500));
             sock.cancel();
         };
 
@@ -186,7 +182,7 @@ struct reactor_paths_test
     }
 
     // wait_type::error should complete when peer closes (reactor delivers
-    // HUP via the err/ready_events path). Bounded by a cancel timer because
+    // HUP via the err/ready_events path). Bounded by a cancel delay because
     // not every backend reports HUP as an error condition.
     void testWaitForError()
     {
@@ -204,15 +200,11 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto closer = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             s2.close();
             // Bound the wait: cancel s1 after another delay if the peer
             // close did not surface as an error condition.
-            timer t2(ioc);
-            t2.expires_after(std::chrono::milliseconds(200));
-            (void)co_await t2.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(200));
             s1.cancel();
         };
 
@@ -243,9 +235,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -285,9 +275,7 @@ struct reactor_paths_test
             read_n       = n;
         };
         auto writer = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(10));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(10));
             auto [ec, n] = co_await s2.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
             (void)ec;
@@ -479,9 +467,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             acc.cancel();
         };
 
@@ -541,9 +527,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             sock.cancel();
         };
 
@@ -776,9 +760,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto closer = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             sock.close();
         };
 
@@ -870,9 +852,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -902,9 +882,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -960,9 +938,7 @@ struct reactor_paths_test
             recv_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -999,9 +975,7 @@ struct reactor_paths_test
             recv_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1036,9 +1010,7 @@ struct reactor_paths_test
             accept_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1187,9 +1159,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -1254,9 +1224,7 @@ struct reactor_paths_test
             read_n       = n;
         };
         auto writer = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(10));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(10));
             auto [ec, n] = co_await s2.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
             (void)ec;
@@ -1331,9 +1299,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -1482,9 +1448,7 @@ struct reactor_paths_test
             read_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 

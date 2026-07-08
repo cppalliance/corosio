@@ -14,8 +14,8 @@
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/corosio/native/native_socket_option.hpp>
-#include <boost/corosio/native/native_timer.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/ex/async_waker.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/task.hpp>
@@ -51,10 +51,30 @@ echo_server(corosio::native_tcp_socket<Backend>& sock)
     }
 }
 
+// Completion latch: N children arrive, the last one wakes the single
+// waiting parent. The waker's wake() is safe from any thread; today
+// every arrival happens on the one ioc.run() thread. Construct a
+// fresh latch per lap so a wakeup can never leak across rounds. A
+// future multi-threaded variant needs the parent to wait on a strand
+// (async_waker requires serialized resumption).
+struct fan_out_latch
+{
+    std::atomic<int> remaining;
+    capy::async_waker done;
+
+    explicit fan_out_latch(int n) : remaining(n) {}
+
+    void arrive()
+    {
+        if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1)
+            done.wake();
+    }
+};
+
 template<auto Backend>
 capy::task<>
 sub_request(
-    corosio::native_tcp_socket<Backend>& client, std::atomic<int>& remaining)
+    corosio::native_tcp_socket<Backend>& client, fan_out_latch& latch)
 {
     char send_buf[64] = {};
     char recv_buf[64];
@@ -63,7 +83,7 @@ sub_request(
         co_await capy::write(client, capy::const_buffer(send_buf, 64));
     if (wec)
     {
-        remaining.fetch_sub(1, std::memory_order_release);
+        latch.arrive();
         co_return;
     }
 
@@ -71,7 +91,7 @@ sub_request(
         co_await capy::read(client, capy::mutable_buffer(recv_buf, 64));
     (void)rec;
     (void)rn;
-    remaining.fetch_sub(1, std::memory_order_release);
+    latch.arrive();
 }
 
 // Parent spawns N sub-requests, waits for all N to complete, then repeats
@@ -80,7 +100,6 @@ void
 bench_fork_join(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
-    using timer_type  = corosio::native_timer<Backend>;
 
     int fan_out = static_cast<int>(state.range(0));
     state.counters["fan_out"] = fan_out;
@@ -106,22 +125,17 @@ bench_fork_join(bench::state& state)
         capy::run_async(ioc.get_executor())(echo_server<Backend>(servers[i]));
 
     auto parent = [&]() -> capy::task<> {
-        timer_type t(ioc);
         while (state.running())
         {
             auto lp = state.lap();
 
-            std::atomic<int> remaining{fan_out};
+            fan_out_latch latch{fan_out};
             for (int i = 0; i < fan_out; ++i)
                 capy::run_async(ioc.get_executor())(
-                    sub_request<Backend>(clients[i], remaining));
+                    sub_request<Backend>(clients[i], latch));
 
-            while (remaining.load(std::memory_order_acquire) > 0)
-            {
-                t.expires_after(std::chrono::nanoseconds(0));
-                auto [ec] = co_await t.wait();
-                (void)ec;
-            }
+            auto [ec] = co_await latch.done.wait();
+            (void)ec;
         }
 
         for (auto& c : clients)
@@ -152,7 +166,6 @@ void
 bench_nested(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
-    using timer_type  = corosio::native_timer<Backend>;
 
     int groups         = static_cast<int>(state.range(0));
     int subs_per_group = 4;
@@ -182,40 +195,30 @@ bench_nested(bench::state& state)
         capy::run_async(ioc.get_executor())(echo_server<Backend>(servers[i]));
 
     auto group_task = [&](int base_idx, int n,
-                          std::atomic<int>& groups_remaining) -> capy::task<> {
-        std::atomic<int> subs_remaining{n};
+                          fan_out_latch& groups_latch) -> capy::task<> {
+        fan_out_latch subs_latch{n};
         for (int i = 0; i < n; ++i)
             capy::run_async(ioc.get_executor())(
-                sub_request<Backend>(clients[base_idx + i], subs_remaining));
+                sub_request<Backend>(clients[base_idx + i], subs_latch));
 
-        timer_type t(ioc);
-        while (subs_remaining.load(std::memory_order_acquire) > 0)
-        {
-            t.expires_after(std::chrono::nanoseconds(0));
-            auto [ec] = co_await t.wait();
-            (void)ec;
-        }
+        auto [ec] = co_await subs_latch.done.wait();
+        (void)ec;
 
-        groups_remaining.fetch_sub(1, std::memory_order_release);
+        groups_latch.arrive();
     };
 
     auto parent = [&]() -> capy::task<> {
-        timer_type t(ioc);
         while (state.running())
         {
             auto lp = state.lap();
 
-            std::atomic<int> groups_remaining{groups};
+            fan_out_latch groups_latch{groups};
             for (int g = 0; g < groups; ++g)
                 capy::run_async(ioc.get_executor())(group_task(
-                    g * subs_per_group, subs_per_group, groups_remaining));
+                    g * subs_per_group, subs_per_group, groups_latch));
 
-            while (groups_remaining.load(std::memory_order_acquire) > 0)
-            {
-                t.expires_after(std::chrono::nanoseconds(0));
-                auto [ec] = co_await t.wait();
-                (void)ec;
-            }
+            auto [ec] = co_await groups_latch.done.wait();
+            (void)ec;
         }
 
         for (auto& c : clients)
@@ -246,7 +249,6 @@ void
 bench_concurrent_parents(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
-    using timer_type  = corosio::native_timer<Backend>;
 
     int num_parents = static_cast<int>(state.range(0));
     int fan_out     = 16;
@@ -279,23 +281,18 @@ bench_concurrent_parents(bench::state& state)
 
     auto parent_task = [&](int parent_idx) -> capy::task<> {
         int base = parent_idx * fan_out;
-        timer_type t(ioc);
 
         while (state.running())
         {
             auto lp = state.lap();
 
-            std::atomic<int> remaining{fan_out};
+            fan_out_latch latch{fan_out};
             for (int i = 0; i < fan_out; ++i)
                 capy::run_async(ioc.get_executor())(
-                    sub_request<Backend>(clients[base + i], remaining));
+                    sub_request<Backend>(clients[base + i], latch));
 
-            while (remaining.load(std::memory_order_acquire) > 0)
-            {
-                t.expires_after(std::chrono::nanoseconds(0));
-                auto [ec] = co_await t.wait();
-                (void)ec;
-            }
+            auto [ec] = co_await latch.done.wait();
+            (void)ec;
         }
 
         if (parents_done.fetch_add(1, std::memory_order_acq_rel) ==
@@ -330,7 +327,6 @@ void
 bench_fork_join_lockless(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
-    using timer_type  = corosio::native_timer<Backend>;
 
     int fan_out = static_cast<int>(state.range(0));
     state.counters["fan_out"] = fan_out;
@@ -358,22 +354,17 @@ bench_fork_join_lockless(bench::state& state)
         capy::run_async(ioc.get_executor())(echo_server<Backend>(servers[i]));
 
     auto parent = [&]() -> capy::task<> {
-        timer_type t(ioc);
         while (state.running())
         {
             auto lp = state.lap();
 
-            std::atomic<int> remaining{fan_out};
+            fan_out_latch latch{fan_out};
             for (int i = 0; i < fan_out; ++i)
                 capy::run_async(ioc.get_executor())(
-                    sub_request<Backend>(clients[i], remaining));
+                    sub_request<Backend>(clients[i], latch));
 
-            while (remaining.load(std::memory_order_acquire) > 0)
-            {
-                t.expires_after(std::chrono::nanoseconds(0));
-                auto [ec] = co_await t.wait();
-                (void)ec;
-            }
+            auto [ec] = co_await latch.done.wait();
+            (void)ec;
         }
 
         for (auto& c : clients)
@@ -403,7 +394,6 @@ void
 bench_nested_lockless(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
-    using timer_type  = corosio::native_timer<Backend>;
 
     int groups         = static_cast<int>(state.range(0));
     int subs_per_group = 4;
@@ -435,40 +425,30 @@ bench_nested_lockless(bench::state& state)
         capy::run_async(ioc.get_executor())(echo_server<Backend>(servers[i]));
 
     auto group_task = [&](int base_idx, int n,
-                          std::atomic<int>& groups_remaining) -> capy::task<> {
-        std::atomic<int> subs_remaining{n};
+                          fan_out_latch& groups_latch) -> capy::task<> {
+        fan_out_latch subs_latch{n};
         for (int i = 0; i < n; ++i)
             capy::run_async(ioc.get_executor())(
-                sub_request<Backend>(clients[base_idx + i], subs_remaining));
+                sub_request<Backend>(clients[base_idx + i], subs_latch));
 
-        timer_type t(ioc);
-        while (subs_remaining.load(std::memory_order_acquire) > 0)
-        {
-            t.expires_after(std::chrono::nanoseconds(0));
-            auto [ec] = co_await t.wait();
-            (void)ec;
-        }
+        auto [ec] = co_await subs_latch.done.wait();
+        (void)ec;
 
-        groups_remaining.fetch_sub(1, std::memory_order_release);
+        groups_latch.arrive();
     };
 
     auto parent = [&]() -> capy::task<> {
-        timer_type t(ioc);
         while (state.running())
         {
             auto lp = state.lap();
 
-            std::atomic<int> groups_remaining{groups};
+            fan_out_latch groups_latch{groups};
             for (int g = 0; g < groups; ++g)
                 capy::run_async(ioc.get_executor())(group_task(
-                    g * subs_per_group, subs_per_group, groups_remaining));
+                    g * subs_per_group, subs_per_group, groups_latch));
 
-            while (groups_remaining.load(std::memory_order_acquire) > 0)
-            {
-                t.expires_after(std::chrono::nanoseconds(0));
-                auto [ec] = co_await t.wait();
-                (void)ec;
-            }
+            auto [ec] = co_await groups_latch.done.wait();
+            (void)ec;
         }
 
         for (auto& c : clients)
@@ -498,7 +478,6 @@ void
 bench_concurrent_parents_lockless(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
-    using timer_type  = corosio::native_timer<Backend>;
 
     int num_parents = static_cast<int>(state.range(0));
     int fan_out     = 16;
@@ -533,23 +512,18 @@ bench_concurrent_parents_lockless(bench::state& state)
 
     auto parent_task = [&](int parent_idx) -> capy::task<> {
         int base = parent_idx * fan_out;
-        timer_type t(ioc);
 
         while (state.running())
         {
             auto lp = state.lap();
 
-            std::atomic<int> remaining{fan_out};
+            fan_out_latch latch{fan_out};
             for (int i = 0; i < fan_out; ++i)
                 capy::run_async(ioc.get_executor())(
-                    sub_request<Backend>(clients[base + i], remaining));
+                    sub_request<Backend>(clients[base + i], latch));
 
-            while (remaining.load(std::memory_order_acquire) > 0)
-            {
-                t.expires_after(std::chrono::nanoseconds(0));
-                auto [ec] = co_await t.wait();
-                (void)ec;
-            }
+            auto [ec] = co_await latch.done.wait();
+            (void)ec;
         }
 
         if (parents_done.fetch_add(1, std::memory_order_acq_rel) ==

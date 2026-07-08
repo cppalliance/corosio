@@ -28,7 +28,7 @@
 ** xref:4.guide/4e.tcp-acceptor.adoc[Acceptors]
 ** xref:4.guide/4f.endpoints.adoc[Endpoints]
 ** xref:4.guide/4g.composed-operations.adoc[Composed Operations]
-** xref:4.guide/4h.timers.adoc[Timers]
+** xref:4.guide/4h.timers.adoc[Delays and Timeouts]
 ** xref:4.guide/4i.signals.adoc[Signal Handling]
 ** xref:4.guide/4j.resolver.adoc[Name Resolution]
 ** xref:4.guide/4k.tcp-server.adoc[TCP Server]

@@ -10,6 +10,7 @@
 #include "benchmarks.hpp"
 #include "../socket_utils.hpp"
 
+#include <boost/asio/as_tuple.hpp>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/awaitable.hpp>
@@ -50,8 +51,24 @@ echo_server(tcp_socket& sock)
     }
 }
 
+// Notifies a parked timer (expires_at(time_point::max())) when all
+// children have arrived: the last arriver's cancel() is the wakeup.
+// Mirrors corosio's fan_out_latch for readability parity between the
+// two benchmark sides.
+struct fan_out_notifier
+{
+    std::atomic<int>& remaining;
+    timer_type& timer;
+
+    void arrive()
+    {
+        if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1)
+            timer.cancel();
+    }
+};
+
 asio::awaitable<void, executor_type>
-sub_request(tcp_socket& client, std::atomic<int>& remaining)
+sub_request(tcp_socket& client, fan_out_notifier notifier)
 {
     char send_buf[64] = {};
     char recv_buf[64];
@@ -67,7 +84,7 @@ sub_request(tcp_socket& client, std::atomic<int>& remaining)
     {
     }
 
-    remaining.fetch_sub(1, std::memory_order_release);
+    notifier.arrive();
 }
 
 // Parent spawns N sub-requests, waits for all N to complete, then repeats
@@ -98,27 +115,30 @@ bench_fork_join(bench::state& state)
 
     auto parent = [&]() -> asio::awaitable<void, executor_type> {
         timer_type t(ioc);
-        try
+        // Park the timer at "never"; cancel() leaves the expiry intact,
+        // so one arm covers every lap. The last child's cancel() is the
+        // wakeup.
+        t.expires_at(std::chrono::steady_clock::time_point::max());
+        while (running.load(std::memory_order_relaxed))
         {
-            while (running.load(std::memory_order_relaxed))
+            auto lp = state.lap();
+
+            std::atomic<int> remaining{fan_out};
+            for (int i = 0; i < fan_out; ++i)
+                asio::co_spawn(
+                    ioc,
+                    sub_request(clients[i], fan_out_notifier{remaining, t}),
+                    asio::detached);
+
+            // Guard closes the cancel-before-wait race: single run
+            // thread, so no child can cancel between the load and
+            // async_wait registering.
+            while (remaining.load(std::memory_order_acquire) > 0)
             {
-                auto lp = state.lap();
-
-                std::atomic<int> remaining{fan_out};
-                for (int i = 0; i < fan_out; ++i)
-                    asio::co_spawn(
-                        ioc, sub_request(clients[i], remaining),
-                        asio::detached);
-
-                while (remaining.load(std::memory_order_acquire) > 0)
-                {
-                    t.expires_after(std::chrono::nanoseconds(0));
-                    co_await t.async_wait(asio::deferred);
-                }
+                auto [ec] =
+                    co_await t.async_wait(asio::as_tuple(asio::deferred));
+                (void)ec;
             }
-        }
-        catch (std::exception const&)
-        {
         }
 
         for (auto& c : clients)
@@ -174,56 +194,57 @@ bench_nested(bench::state& state)
     std::atomic<bool> running{true};
 
     auto group_task = [&](int base_idx, int n,
-                          std::atomic<int>& groups_remaining)
+                          fan_out_notifier groups_notifier)
         -> asio::awaitable<void, executor_type> {
         std::atomic<int> subs_remaining{n};
+        timer_type t(ioc);
+        // Park the timer at "never"; the last child's cancel() is the
+        // wakeup.
+        t.expires_at(std::chrono::steady_clock::time_point::max());
         for (int i = 0; i < n; ++i)
             asio::co_spawn(
-                ioc, sub_request(clients[base_idx + i], subs_remaining),
+                ioc,
+                sub_request(
+                    clients[base_idx + i], fan_out_notifier{subs_remaining, t}),
                 asio::detached);
 
-        timer_type t(ioc);
-        try
+        // Guard closes the cancel-before-wait race: single run thread,
+        // so no child can cancel between the load and async_wait
+        // registering.
+        while (subs_remaining.load(std::memory_order_acquire) > 0)
         {
-            while (subs_remaining.load(std::memory_order_acquire) > 0)
-            {
-                t.expires_after(std::chrono::nanoseconds(0));
-                co_await t.async_wait(asio::deferred);
-            }
-        }
-        catch (std::exception const&)
-        {
+            auto [ec] = co_await t.async_wait(asio::as_tuple(asio::deferred));
+            (void)ec;
         }
 
-        groups_remaining.fetch_sub(1, std::memory_order_release);
+        groups_notifier.arrive();
     };
 
     auto parent = [&]() -> asio::awaitable<void, executor_type> {
         timer_type t(ioc);
-        try
+        // Groups wait concurrently, so each group_task carries its own
+        // timer; this one only notifies on all-groups-done. cancel()
+        // leaves the expiry intact, so one arm covers every lap.
+        t.expires_at(std::chrono::steady_clock::time_point::max());
+        while (running.load(std::memory_order_relaxed))
         {
-            while (running.load(std::memory_order_relaxed))
+            auto lp = state.lap();
+
+            std::atomic<int> groups_remaining{groups};
+            for (int g = 0; g < groups; ++g)
+                asio::co_spawn(
+                    ioc,
+                    group_task(
+                        g * subs_per_group, subs_per_group,
+                        fan_out_notifier{groups_remaining, t}),
+                    asio::detached);
+
+            while (groups_remaining.load(std::memory_order_acquire) > 0)
             {
-                auto lp = state.lap();
-
-                std::atomic<int> groups_remaining{groups};
-                for (int g = 0; g < groups; ++g)
-                    asio::co_spawn(
-                        ioc,
-                        group_task(
-                            g * subs_per_group, subs_per_group,
-                            groups_remaining),
-                        asio::detached);
-
-                while (groups_remaining.load(std::memory_order_acquire) > 0)
-                {
-                    t.expires_after(std::chrono::nanoseconds(0));
-                    co_await t.async_wait(asio::deferred);
-                }
+                auto [ec] =
+                    co_await t.async_wait(asio::as_tuple(asio::deferred));
+                (void)ec;
             }
-        }
-        catch (std::exception const&)
-        {
         }
 
         for (auto& c : clients)
@@ -283,28 +304,32 @@ bench_concurrent_parents(bench::state& state)
         [&](int parent_idx) -> asio::awaitable<void, executor_type> {
         int base = parent_idx * fan_out;
         timer_type t(ioc);
+        // Park the timer at "never"; cancel() leaves the expiry intact,
+        // so one arm covers every lap. The last child's cancel() is the
+        // wakeup.
+        t.expires_at(std::chrono::steady_clock::time_point::max());
 
-        try
+        while (running.load(std::memory_order_relaxed))
         {
-            while (running.load(std::memory_order_relaxed))
+            auto lp = state.lap();
+
+            std::atomic<int> remaining{fan_out};
+            for (int i = 0; i < fan_out; ++i)
+                asio::co_spawn(
+                    ioc,
+                    sub_request(
+                        clients[base + i], fan_out_notifier{remaining, t}),
+                    asio::detached);
+
+            // Guard closes the cancel-before-wait race: single run
+            // thread, so no child can cancel between the load and
+            // async_wait registering.
+            while (remaining.load(std::memory_order_acquire) > 0)
             {
-                auto lp = state.lap();
-
-                std::atomic<int> remaining{fan_out};
-                for (int i = 0; i < fan_out; ++i)
-                    asio::co_spawn(
-                        ioc, sub_request(clients[base + i], remaining),
-                        asio::detached);
-
-                while (remaining.load(std::memory_order_acquire) > 0)
-                {
-                    t.expires_after(std::chrono::nanoseconds(0));
-                    co_await t.async_wait(asio::deferred);
-                }
+                auto [ec] =
+                    co_await t.async_wait(asio::as_tuple(asio::deferred));
+                (void)ec;
             }
-        }
-        catch (std::exception const&)
-        {
         }
 
         if (parents_done.fetch_add(1, std::memory_order_acq_rel) ==
@@ -361,27 +386,30 @@ bench_fork_join_lockless(bench::state& state)
 
     auto parent = [&]() -> asio::awaitable<void, executor_type> {
         timer_type t(ioc);
-        try
+        // Park the timer at "never"; cancel() leaves the expiry intact,
+        // so one arm covers every lap. The last child's cancel() is the
+        // wakeup.
+        t.expires_at(std::chrono::steady_clock::time_point::max());
+        while (running.load(std::memory_order_relaxed))
         {
-            while (running.load(std::memory_order_relaxed))
+            auto lp = state.lap();
+
+            std::atomic<int> remaining{fan_out};
+            for (int i = 0; i < fan_out; ++i)
+                asio::co_spawn(
+                    ioc,
+                    sub_request(clients[i], fan_out_notifier{remaining, t}),
+                    asio::detached);
+
+            // Guard closes the cancel-before-wait race: single run
+            // thread, so no child can cancel between the load and
+            // async_wait registering.
+            while (remaining.load(std::memory_order_acquire) > 0)
             {
-                auto lp = state.lap();
-
-                std::atomic<int> remaining{fan_out};
-                for (int i = 0; i < fan_out; ++i)
-                    asio::co_spawn(
-                        ioc, sub_request(clients[i], remaining),
-                        asio::detached);
-
-                while (remaining.load(std::memory_order_acquire) > 0)
-                {
-                    t.expires_after(std::chrono::nanoseconds(0));
-                    co_await t.async_wait(asio::deferred);
-                }
+                auto [ec] =
+                    co_await t.async_wait(asio::as_tuple(asio::deferred));
+                (void)ec;
             }
-        }
-        catch (std::exception const&)
-        {
         }
 
         for (auto& c : clients)
@@ -436,56 +464,57 @@ bench_nested_lockless(bench::state& state)
     std::atomic<bool> running{true};
 
     auto group_task = [&](int base_idx, int n,
-                          std::atomic<int>& groups_remaining)
+                          fan_out_notifier groups_notifier)
         -> asio::awaitable<void, executor_type> {
         std::atomic<int> subs_remaining{n};
+        timer_type t(ioc);
+        // Park the timer at "never"; the last child's cancel() is the
+        // wakeup.
+        t.expires_at(std::chrono::steady_clock::time_point::max());
         for (int i = 0; i < n; ++i)
             asio::co_spawn(
-                ioc, sub_request(clients[base_idx + i], subs_remaining),
+                ioc,
+                sub_request(
+                    clients[base_idx + i], fan_out_notifier{subs_remaining, t}),
                 asio::detached);
 
-        timer_type t(ioc);
-        try
+        // Guard closes the cancel-before-wait race: single run thread,
+        // so no child can cancel between the load and async_wait
+        // registering.
+        while (subs_remaining.load(std::memory_order_acquire) > 0)
         {
-            while (subs_remaining.load(std::memory_order_acquire) > 0)
-            {
-                t.expires_after(std::chrono::nanoseconds(0));
-                co_await t.async_wait(asio::deferred);
-            }
-        }
-        catch (std::exception const&)
-        {
+            auto [ec] = co_await t.async_wait(asio::as_tuple(asio::deferred));
+            (void)ec;
         }
 
-        groups_remaining.fetch_sub(1, std::memory_order_release);
+        groups_notifier.arrive();
     };
 
     auto parent = [&]() -> asio::awaitable<void, executor_type> {
         timer_type t(ioc);
-        try
+        // Groups wait concurrently, so each group_task carries its own
+        // timer; this one only notifies on all-groups-done. cancel()
+        // leaves the expiry intact, so one arm covers every lap.
+        t.expires_at(std::chrono::steady_clock::time_point::max());
+        while (running.load(std::memory_order_relaxed))
         {
-            while (running.load(std::memory_order_relaxed))
+            auto lp = state.lap();
+
+            std::atomic<int> groups_remaining{groups};
+            for (int g = 0; g < groups; ++g)
+                asio::co_spawn(
+                    ioc,
+                    group_task(
+                        g * subs_per_group, subs_per_group,
+                        fan_out_notifier{groups_remaining, t}),
+                    asio::detached);
+
+            while (groups_remaining.load(std::memory_order_acquire) > 0)
             {
-                auto lp = state.lap();
-
-                std::atomic<int> groups_remaining{groups};
-                for (int g = 0; g < groups; ++g)
-                    asio::co_spawn(
-                        ioc,
-                        group_task(
-                            g * subs_per_group, subs_per_group,
-                            groups_remaining),
-                        asio::detached);
-
-                while (groups_remaining.load(std::memory_order_acquire) > 0)
-                {
-                    t.expires_after(std::chrono::nanoseconds(0));
-                    co_await t.async_wait(asio::deferred);
-                }
+                auto [ec] =
+                    co_await t.async_wait(asio::as_tuple(asio::deferred));
+                (void)ec;
             }
-        }
-        catch (std::exception const&)
-        {
         }
 
         for (auto& c : clients)
@@ -544,28 +573,32 @@ bench_concurrent_parents_lockless(bench::state& state)
         [&](int parent_idx) -> asio::awaitable<void, executor_type> {
         int base = parent_idx * fan_out;
         timer_type t(ioc);
+        // Park the timer at "never"; cancel() leaves the expiry intact,
+        // so one arm covers every lap. The last child's cancel() is the
+        // wakeup.
+        t.expires_at(std::chrono::steady_clock::time_point::max());
 
-        try
+        while (running.load(std::memory_order_relaxed))
         {
-            while (running.load(std::memory_order_relaxed))
+            auto lp = state.lap();
+
+            std::atomic<int> remaining{fan_out};
+            for (int i = 0; i < fan_out; ++i)
+                asio::co_spawn(
+                    ioc,
+                    sub_request(
+                        clients[base + i], fan_out_notifier{remaining, t}),
+                    asio::detached);
+
+            // Guard closes the cancel-before-wait race: single run
+            // thread, so no child can cancel between the load and
+            // async_wait registering.
+            while (remaining.load(std::memory_order_acquire) > 0)
             {
-                auto lp = state.lap();
-
-                std::atomic<int> remaining{fan_out};
-                for (int i = 0; i < fan_out; ++i)
-                    asio::co_spawn(
-                        ioc, sub_request(clients[base + i], remaining),
-                        asio::detached);
-
-                while (remaining.load(std::memory_order_acquire) > 0)
-                {
-                    t.expires_after(std::chrono::nanoseconds(0));
-                    co_await t.async_wait(asio::deferred);
-                }
+                auto [ec] =
+                    co_await t.async_wait(asio::as_tuple(asio::deferred));
+                (void)ec;
             }
-        }
-        catch (std::exception const&)
-        {
         }
 
         if (parents_done.fetch_add(1, std::memory_order_acq_rel) ==

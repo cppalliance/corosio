@@ -43,13 +43,6 @@ bench::benchmark_suite make_socket_latency_suite();
 template<auto Backend>
 bench::benchmark_suite make_http_server_suite();
 
-/** Create the timer benchmark suite.
-
-    @tparam Backend A backend tag value (e.g., `epoll`).
-*/
-template<auto Backend>
-bench::benchmark_suite make_timer_suite();
-
 /** Create the accept churn benchmark suite.
 
     @tparam Backend A backend tag value (e.g., `epoll`).

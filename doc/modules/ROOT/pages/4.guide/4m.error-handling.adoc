@@ -23,6 +23,7 @@ Code snippets assume:
 
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
+using namespace std::chrono_literals;
 ----
 ====
 
@@ -160,8 +161,8 @@ auto [ec, n] = throw_on_error(co_await capy::read(sock, buffer));
 | `broken_pipe`
 | Write to closed connection
 
-| `timed_out`
-| Operation timed out
+| `capy::cond::timeout`
+| Operation exceeded its deadline
 
 | `network_unreachable`
 | No route to host
@@ -187,6 +188,27 @@ condition, which matches both:
 if (ec == capy::cond::canceled)
     std::cout << "Operation was cancelled\n";
 ----
+
+=== Timeout vs. Cancellation
+
+`corosio::timeout()` races an operation against a deadline and keeps
+these two outcomes distinct. A deadline that elapses first produces
+`capy::cond::timeout`; a stop token that fires first (the coroutine's
+own cancellation, independent of the deadline) produces
+`capy::cond::canceled`, exactly as an unguarded operation would:
+
+[source,cpp]
+----
+auto [ec] = co_await corosio::timeout(sock.connect(ep), 3s);
+if (ec == capy::cond::timeout)
+    std::cout << "Deadline elapsed before connecting\n";
+else if (ec == capy::cond::canceled)
+    std::cout << "Cancelled before the deadline\n";
+----
+
+Never infer a timeout from `capy::cond::canceled`, and never infer a
+cancellation from `capy::cond::timeout`; the two conditions never
+overlap for a single result.
 
 == EOF Handling
 
@@ -303,7 +325,6 @@ capy::task<void> connect_with_retry(
     int max_retries)
 {
     corosio::tcp_socket sock(ioc);
-    corosio::timer delay(ioc);
 
     for (int attempt = 0; attempt < max_retries; ++attempt)
     {
@@ -319,8 +340,9 @@ capy::task<void> connect_with_retry(
         sock.close();
 
         // Wait before retry (exponential backoff)
-        delay.expires_after(std::chrono::seconds(1 << attempt));
-        co_await delay.wait();
+        auto [dec] = co_await corosio::delay(std::chrono::seconds(1 << attempt));
+        if (dec == capy::cond::canceled)
+            co_return;  // Cancellation aborts the retry loop
     }
 
     throw std::runtime_error("Failed to connect after retries");

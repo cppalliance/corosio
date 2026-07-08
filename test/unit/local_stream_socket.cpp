@@ -10,10 +10,10 @@
 // Test that header file is self-contained.
 #include <boost/corosio/local_stream_socket.hpp>
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/timer.hpp>
 #include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -563,9 +563,7 @@ struct local_stream_socket_test
 
         // Schedule a cancel after a brief delay
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             acc.cancel();
         };
         capy::run_async(ex)(canceller());
@@ -603,9 +601,7 @@ struct local_stream_socket_test
             accept_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 

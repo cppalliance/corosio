@@ -168,5 +168,7 @@ Violating them is undefined behavior.
 * **POSIX file I/O** (`stream_file`, `random_access_file`) returns
   `operation_not_supported` on `open()`.
 * **Signal sets** should not be shared across contexts.
-* **Timer cancellation via `stop_token`** from another thread
-  remains safe (the timer service retains its own mutex).
+* **Delay and timeout cancellation via `stop_token`** from another
+  thread is not permitted: the cancel path posts into the scheduler,
+  whose synchronization is disabled in single-threaded mode.
+  Cross-thread cancellation requires a multi-threaded-capable context.

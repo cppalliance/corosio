@@ -24,7 +24,7 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/timer.hpp>
+#include <boost/corosio/delay.hpp>
 
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -178,9 +178,8 @@ struct stop_token_stress_test
                         else if (i % 3 == 1)
                         {
                             // Brief delay then cancel
-                            timer delay(ioc);
-                            delay.expires_after(std::chrono::microseconds(1));
-                            (void)co_await delay.wait();
+                            (void)co_await corosio::delay(
+                                std::chrono::microseconds(1));
                             stop_src.request_stop();
                         }
                         else
@@ -198,9 +197,8 @@ struct stop_token_stress_test
                         {
                             if (read_done.load(std::memory_order_acquire))
                                 break;
-                            timer t(ioc);
-                            t.expires_after(std::chrono::milliseconds(10));
-                            (void)co_await t.wait();
+                            (void)co_await corosio::delay(
+                                std::chrono::milliseconds(10));
                         }
 
                         if (!read_done.load(std::memory_order_acquire))
@@ -213,9 +211,8 @@ struct stop_token_stress_test
                             BOOST_TEST(
                                 read_done.load(std::memory_order_acquire));
                             stop_src.request_stop();
-                            timer t(ioc);
-                            t.expires_after(std::chrono::milliseconds(100));
-                            (void)co_await t.wait();
+                            (void)co_await corosio::delay(
+                                std::chrono::milliseconds(100));
                         }
 
                         ++iterations;
@@ -236,9 +233,7 @@ struct stop_token_stress_test
 
         // Timer to stop the test
         auto stopper = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::seconds(duration));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
         };
 
@@ -328,9 +323,7 @@ struct sync_completion_stress_test
 
         // Timer to stop the test
         auto stopper = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::seconds(duration));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
         };
 
@@ -411,9 +404,8 @@ struct cancel_close_stress_test
                         case 0:
                         {
                             // Yield to let the posted read_coro start
-                            timer yield_t(ioc);
-                            yield_t.expires_after(std::chrono::microseconds(1));
-                            (void)co_await yield_t.wait();
+                            (void)co_await corosio::delay(
+                                std::chrono::microseconds(1));
                             // Cancel via tcp_socket.cancel()
                             s2.cancel();
                             ++cancels;
@@ -447,9 +439,8 @@ struct cancel_close_stress_test
                         {
                             if (read_done.load(std::memory_order_acquire))
                                 break;
-                            timer t(ioc);
-                            t.expires_after(std::chrono::milliseconds(10));
-                            (void)co_await t.wait();
+                            (void)co_await corosio::delay(
+                                std::chrono::milliseconds(10));
                         }
 
                         if (!read_done.load(std::memory_order_acquire))
@@ -463,9 +454,8 @@ struct cancel_close_stress_test
                                 read_done.load(std::memory_order_acquire));
                             // Force cancel
                             s2.cancel();
-                            timer t(ioc);
-                            t.expires_after(std::chrono::milliseconds(100));
-                            (void)co_await t.wait();
+                            (void)co_await corosio::delay(
+                                std::chrono::milliseconds(100));
                         }
 
                         ++iterations;
@@ -482,9 +472,7 @@ struct cancel_close_stress_test
 
         // Timer to stop the test
         auto stopper = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::seconds(duration));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
         };
 
@@ -588,9 +576,7 @@ struct concurrent_ops_stress_test
 
         // Timer to stop the test
         auto stopper = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::seconds(duration));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
 
             // Close all sockets to unblock pending operations
@@ -680,9 +666,7 @@ struct accept_stress_test
                 client.close();
 
                 // Small delay to avoid overwhelming the accept queue
-                timer delay(ioc);
-                delay.expires_after(std::chrono::microseconds(100));
-                (void)co_await delay.wait();
+                (void)co_await corosio::delay(std::chrono::microseconds(100));
             }
         };
 
@@ -691,9 +675,7 @@ struct accept_stress_test
 
         // Timer to stop the test
         auto stopper = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::seconds(duration));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
             acc.close();
         };

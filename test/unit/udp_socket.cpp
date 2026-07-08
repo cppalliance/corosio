@@ -12,7 +12,7 @@
 
 #include <boost/corosio/udp.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/timer.hpp>
+#include <boost/corosio/delay.hpp>
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -514,9 +514,6 @@ struct udp_socket_test
         BOOST_TEST_EQ(ec, std::error_code{});
 
         auto task = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(50));
-
             bool recv_done = false;
             std::error_code recv_ec;
 
@@ -530,12 +527,10 @@ struct udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             sock.cancel();
 
-            timer t2(ioc);
-            t2.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t2.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -556,9 +551,6 @@ struct udp_socket_test
         BOOST_TEST_EQ(ec, std::error_code{});
 
         auto task = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(50));
-
             bool recv_done = false;
             std::error_code recv_ec;
 
@@ -572,12 +564,10 @@ struct udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             sock.close();
 
-            timer t2(ioc);
-            t2.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t2.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -636,9 +626,8 @@ struct udp_socket_test
         };
 
         auto failsafe_task = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(1000));
-            auto [ec] = co_await t.wait();
+            auto [ec] =
+                co_await corosio::delay(std::chrono::milliseconds(1000));
             if (!ec && !recv_done)
             {
                 failsafe_hit = true;
@@ -719,9 +708,7 @@ struct udp_socket_test
             BOOST_TEST_EQ(ec3, std::error_code{});
 
             // Wait for recv to complete
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST_EQ(recv_ec, std::error_code{});
@@ -992,14 +979,10 @@ struct udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             a.cancel();
 
-            timer t2(ioc);
-            t2.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t2.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);

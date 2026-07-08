@@ -8,10 +8,10 @@
 //
 
 #include <boost/corosio/native/native_udp_socket.hpp>
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/native/native_socket_option.hpp>
 #include <boost/corosio/native/native_udp.hpp>
-#include <boost/corosio/timer.hpp>
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -155,9 +155,6 @@ struct native_udp_socket_test
         BOOST_TEST_EQ(ec, std::error_code{});
 
         auto task = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(50));
-
             bool recv_done = false;
             std::error_code recv_ec;
 
@@ -171,12 +168,11 @@ struct native_udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             sock.cancel();
 
-            timer t2(ioc);
-            t2.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t2.wait();
+            // Let the cancellation settle before checking the result.
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -197,9 +193,6 @@ struct native_udp_socket_test
         BOOST_TEST_EQ(ec, std::error_code{});
 
         auto task = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(50));
-
             bool recv_done = false;
             std::error_code recv_ec;
 
@@ -213,12 +206,11 @@ struct native_udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             sock.close();
 
-            timer t2(ioc);
-            t2.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t2.wait();
+            // Let the close settle before checking the result.
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);

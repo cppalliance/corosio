@@ -17,7 +17,6 @@
 #endif
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/timer.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -465,7 +464,6 @@ struct resolver_test
     {
         io_context ioc;
         resolver r(ioc);
-        timer cancel_timer(ioc);
 
         bool completed = false;
         std::error_code result_ec;

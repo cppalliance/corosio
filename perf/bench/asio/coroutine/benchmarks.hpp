@@ -27,9 +27,6 @@ bench::benchmark_suite make_socket_latency_suite();
 /// Create the HTTP server benchmark suite.
 bench::benchmark_suite make_http_server_suite();
 
-/// Create the timer benchmark suite.
-bench::benchmark_suite make_timer_suite();
-
 /// Create the accept churn benchmark suite.
 bench::benchmark_suite make_accept_churn_suite();
 

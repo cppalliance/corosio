@@ -12,7 +12,7 @@
 // Test that header file is self-contained.
 #include <boost/corosio/signal_set.hpp>
 
-#include <boost/corosio/timer.hpp>
+#include <boost/corosio/delay.hpp>
 
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -208,7 +208,6 @@ struct signal_set_test
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT);
-        timer t(ioc);
 
         bool completed      = false;
         int received_signal = 0;
@@ -225,12 +224,11 @@ struct signal_set_test
             wait_task(s, result_ec, received_signal, completed));
 
         // Raise signal after a short delay
-        t.expires_after(std::chrono::milliseconds(10));
-        auto raise_task = [](timer& t_ref) -> capy::task<> {
-            (void)co_await t_ref.wait();
+        auto raise_task = []() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(10));
             std::raise(SIGINT);
         };
-        capy::run_async(ioc.get_executor())(raise_task(t));
+        capy::run_async(ioc.get_executor())(raise_task());
 
         ioc.run();
         BOOST_TEST(completed);
@@ -242,7 +240,6 @@ struct signal_set_test
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGTERM);
-        timer t(ioc);
 
         bool completed      = false;
         int received_signal = 0;
@@ -257,12 +254,11 @@ struct signal_set_test
         capy::run_async(ioc.get_executor())(
             wait_task(s, received_signal, completed));
 
-        t.expires_after(std::chrono::milliseconds(10));
-        auto raise_task = [](timer& t_ref) -> capy::task<> {
-            (void)co_await t_ref.wait();
+        auto raise_task = []() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(10));
             std::raise(SIGTERM);
         };
-        capy::run_async(ioc.get_executor())(raise_task(t));
+        capy::run_async(ioc.get_executor())(raise_task());
 
         ioc.run();
         BOOST_TEST(completed);
@@ -275,7 +271,6 @@ struct signal_set_test
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT);
-        timer cancel_timer(ioc);
 
         bool completed = false;
         std::error_code result_ec;
@@ -289,12 +284,11 @@ struct signal_set_test
         };
         capy::run_async(ioc.get_executor())(wait_task(s, result_ec, completed));
 
-        cancel_timer.expires_after(std::chrono::milliseconds(10));
-        auto cancel_task = [](timer& t_ref, signal_set& s_ref) -> capy::task<> {
-            (void)co_await t_ref.wait();
+        auto cancel_task = [](signal_set& s_ref) -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(10));
             s_ref.cancel();
         };
-        capy::run_async(ioc.get_executor())(cancel_task(cancel_timer, s));
+        capy::run_async(ioc.get_executor())(cancel_task(s));
 
         ioc.run();
         BOOST_TEST(completed);
@@ -399,7 +393,6 @@ struct signal_set_test
         io_context ioc(Backend);
         signal_set s1(ioc, SIGINT);
         signal_set s2(ioc, SIGINT);
-        timer t(ioc);
 
         bool s1_completed = false;
         bool s2_completed = false;
@@ -418,12 +411,11 @@ struct signal_set_test
         capy::run_async(ioc.get_executor())(
             wait_task(s2, s2_signal, s2_completed));
 
-        t.expires_after(std::chrono::milliseconds(10));
-        auto raise_task = [](timer& t_ref) -> capy::task<> {
-            (void)co_await t_ref.wait();
+        auto raise_task = []() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(10));
             std::raise(SIGINT);
         };
-        capy::run_async(ioc.get_executor())(raise_task(t));
+        capy::run_async(ioc.get_executor())(raise_task());
 
         ioc.run();
         BOOST_TEST(s1_completed);
@@ -436,7 +428,6 @@ struct signal_set_test
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT, SIGTERM);
-        timer t(ioc);
 
         bool completed      = false;
         int received_signal = 0;
@@ -452,12 +443,11 @@ struct signal_set_test
             wait_task(s, received_signal, completed));
 
         // Raise SIGTERM (not SIGINT)
-        t.expires_after(std::chrono::milliseconds(10));
-        auto raise_task = [](timer& t_ref) -> capy::task<> {
-            (void)co_await t_ref.wait();
+        auto raise_task = []() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(10));
             std::raise(SIGTERM);
         };
-        capy::run_async(ioc.get_executor())(raise_task(t));
+        capy::run_async(ioc.get_executor())(raise_task());
 
         ioc.run();
         BOOST_TEST(completed);
@@ -498,15 +488,12 @@ struct signal_set_test
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT);
-        timer t(ioc);
 
         int wait_count = 0;
 
-        auto task = [](signal_set& s_ref, timer& t_ref,
-                       int& count_out) -> capy::task<> {
+        auto task = [](signal_set& s_ref, int& count_out) -> capy::task<> {
             // First wait
-            t_ref.expires_after(std::chrono::milliseconds(5));
-            (void)co_await t_ref.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(5));
             std::raise(SIGINT);
 
             auto [ec1, sig1] = co_await s_ref.wait();
@@ -515,8 +502,7 @@ struct signal_set_test
             ++count_out;
 
             // Second wait
-            t_ref.expires_after(std::chrono::milliseconds(5));
-            (void)co_await t_ref.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(5));
             std::raise(SIGINT);
 
             auto [ec2, sig2] = co_await s_ref.wait();
@@ -524,7 +510,7 @@ struct signal_set_test
             BOOST_TEST_EQ(sig2, SIGINT);
             ++count_out;
         };
-        capy::run_async(ioc.get_executor())(task(s, t, wait_count));
+        capy::run_async(ioc.get_executor())(task(s, wait_count));
 
         ioc.run();
         BOOST_TEST_EQ(wait_count, 2);
@@ -569,12 +555,10 @@ struct signal_set_test
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT);
-        timer t(ioc);
 
         int delivered = 0;
 
-        auto task = [](signal_set& s_ref, timer& t_ref,
-                       int& count_out) -> capy::task<> {
+        auto task = [](signal_set& s_ref, int& count_out) -> capy::task<> {
             for (int i = 0; i < 20; ++i)
             {
                 // Raise before waiting: exercises the queued (undelivered)
@@ -587,8 +571,7 @@ struct signal_set_test
 
                 // Raise after a delay while waiting: exercises the live-waiter
                 // path where the drain posts a completion.
-                t_ref.expires_after(std::chrono::milliseconds(1));
-                (void)co_await t_ref.wait();
+                (void)co_await delay(std::chrono::milliseconds(1));
                 std::raise(SIGINT);
                 auto [ec2, sig2] = co_await s_ref.wait();
                 BOOST_TEST(!ec2);
@@ -596,7 +579,7 @@ struct signal_set_test
                 ++count_out;
             }
         };
-        capy::run_async(ioc.get_executor())(task(s, t, delivered));
+        capy::run_async(ioc.get_executor())(task(s, delivered));
 
         ioc.run();
         BOOST_TEST_EQ(delivered, 40);
@@ -608,20 +591,17 @@ struct signal_set_test
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT);
-        timer t(ioc);
 
         bool result_ok = false;
 
-        auto task = [](signal_set& s_ref, timer& t_ref,
-                       bool& ok_out) -> capy::task<> {
-            t_ref.expires_after(std::chrono::milliseconds(5));
-            (void)co_await t_ref.wait();
+        auto task = [](signal_set& s_ref, bool& ok_out) -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(5));
             std::raise(SIGINT);
 
             auto result = co_await s_ref.wait();
             ok_out      = !result.ec;
         };
-        capy::run_async(ioc.get_executor())(task(s, t, result_ok));
+        capy::run_async(ioc.get_executor())(task(s, result_ok));
 
         ioc.run();
         BOOST_TEST(result_ok);
@@ -631,7 +611,6 @@ struct signal_set_test
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT);
-        timer cancel_timer(ioc);
 
         bool result_ok = true;
         std::error_code result_ec;
@@ -644,12 +623,11 @@ struct signal_set_test
         };
         capy::run_async(ioc.get_executor())(wait_task(s, result_ok, result_ec));
 
-        cancel_timer.expires_after(std::chrono::milliseconds(10));
-        auto cancel_task = [](timer& t_ref, signal_set& s_ref) -> capy::task<> {
-            (void)co_await t_ref.wait();
+        auto cancel_task = [](signal_set& s_ref) -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(10));
             s_ref.cancel();
         };
-        capy::run_async(ioc.get_executor())(cancel_task(cancel_timer, s));
+        capy::run_async(ioc.get_executor())(cancel_task(s));
 
         ioc.run();
         BOOST_TEST(!result_ok);
@@ -660,15 +638,13 @@ struct signal_set_test
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT);
-        timer t(ioc);
 
         std::error_code captured_ec;
         int captured_signal = 0;
 
-        auto task = [](signal_set& s_ref, timer& t_ref, std::error_code& ec_out,
+        auto task = [](signal_set& s_ref, std::error_code& ec_out,
                        int& sig_out) -> capy::task<> {
-            t_ref.expires_after(std::chrono::milliseconds(5));
-            (void)co_await t_ref.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(5));
             std::raise(SIGINT);
 
             auto [ec, signum] = co_await s_ref.wait();
@@ -676,7 +652,7 @@ struct signal_set_test
             sig_out           = signum;
         };
         capy::run_async(ioc.get_executor())(
-            task(s, t, captured_ec, captured_signal));
+            task(s, captured_ec, captured_signal));
 
         ioc.run();
         BOOST_TEST(!captured_ec);
@@ -831,7 +807,6 @@ struct signal_set_test
     {
         io_context ioc(Backend);
         signal_set s(ioc);
-        timer t(ioc);
 
         // Add signal with restart flag and verify wait still works
         BOOST_TEST(!s.add(SIGINT, signal_set::restart));
@@ -849,12 +824,11 @@ struct signal_set_test
         capy::run_async(ioc.get_executor())(
             wait_task(s, received_signal, completed));
 
-        t.expires_after(std::chrono::milliseconds(10));
-        auto raise_task = [](timer& t_ref) -> capy::task<> {
-            (void)co_await t_ref.wait();
+        auto raise_task = []() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(10));
             std::raise(SIGINT);
         };
-        capy::run_async(ioc.get_executor())(raise_task(t));
+        capy::run_async(ioc.get_executor())(raise_task());
 
         ioc.run();
         BOOST_TEST(completed);

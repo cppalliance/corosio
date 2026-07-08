@@ -78,6 +78,12 @@ Coroutine Handle::
 A low-level handle to a suspended coroutine, represented by
 `std::coroutine_handle<>`.
 
+== D
+
+Delay::
+A stateless suspension for a duration or until a time point. See
+`corosio::delay()` and xref:4.guide/4h.timers.adoc[Delays and Timeouts].
+
 == E
 
 Endpoint::
@@ -122,7 +128,7 @@ The main event loop in Corosio. Processes asynchronous operations and
 dispatches completions. See `corosio::io_context`.
 
 I/O Object::
-A class representing an I/O resource (socket, timer, etc.). Base class is
+A class representing an I/O resource (socket, resolver, etc.). Base class is
 `corosio::io_object`.
 
 I/O Stream::
@@ -248,8 +254,9 @@ Thread Safety::
 The ability to use an object safely from multiple threads. Individual I/O
 objects are generally not thread-safe.
 
-Timer::
-An I/O object for scheduling delays. See `corosio::timer`.
+Timeout::
+Racing an awaitable against a deadline. See `corosio::timeout()` and
+xref:4.guide/4h.timers.adoc[Delays and Timeouts].
 
 TLS (Transport Layer Security)::
 Cryptographic protocol for secure communication. See `corosio::wolfssl_stream`.
@@ -269,8 +276,8 @@ See xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets].
 == W
 
 Wait::
-An operation that suspends until a condition is met (timer expires, signal
-received, etc.).
+An operation that suspends until a condition is met (a delay elapses, a
+socket becomes ready, a signal is received, etc.).
 
 WolfSSL::
 A compact TLS library used by Corosio for secure streams.

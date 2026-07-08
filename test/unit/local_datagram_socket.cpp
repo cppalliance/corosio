@@ -18,9 +18,9 @@
 // Keep the entire suite POSIX-gated until Windows kernel support lands.
 #if BOOST_COROSIO_POSIX
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/timer.hpp>
 #include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -782,9 +782,7 @@ struct local_datagram_socket_test
             }(s2, recv_ec, recv_done));
 
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             s2.cancel();
         };
         capy::run_async(ex)(canceller());

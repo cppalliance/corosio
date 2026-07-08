@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -10,6 +11,7 @@
 // Test that header is self-contained.
 #include <boost/corosio/wait_type.hpp>
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
@@ -17,7 +19,6 @@
 #include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/timer.hpp>
 #include <boost/corosio/udp_socket.hpp>
 
 #include <boost/corosio/test/socket_pair.hpp>
@@ -25,7 +26,6 @@
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
-#include <boost/capy/error.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -85,9 +85,7 @@ struct wait_test
         BOOST_TEST_EQ(bytes_read, payload.size());
     }
 
-    // wait_type::write completes immediately on a connected socket.
-    // Corosio matches asio's IOCP behavior: writability is always
-    // treated as ready, the wait does not park on a edge transition.
+    // wait_write completes immediately on a freshly connected socket.
     void testWaitWriteImmediate()
     {
         io_context ioc(Backend);
@@ -108,6 +106,92 @@ struct wait_test
 
         BOOST_TEST(wait_done);
         BOOST_TEST(!wait_ec);
+    }
+
+    // UDP wait_read fires when a datagram arrives.
+    void testWaitOnUdp()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        udp_socket recv(ioc);
+        recv.open(udp::v4());
+        auto bec = recv.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!bec);
+        auto port = recv.local_endpoint().port();
+
+        udp_socket send(ioc);
+        send.open(udp::v4());
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await recv.wait(wait_type::read);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        auto sender = [&]() -> capy::task<> {
+            char dg[1] = { 'X' };
+            auto [ec, n] = co_await send.send_to(
+                capy::const_buffer(dg, sizeof(dg)),
+                endpoint(ipv4_address::loopback(), port));
+            (void)ec;
+            (void)n;
+        };
+
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(sender());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!wait_ec);
+    }
+
+    // Acceptor wait_read fires when a client connects; accept then succeeds.
+    void testAcceptorWait()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!bec);
+        auto lec = acc.listen();
+        BOOST_TEST(!lec);
+        auto port = acc.local_endpoint().port();
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+        std::error_code accept_ec;
+        tcp_socket peer(ioc);
+        tcp_socket client(ioc);
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec1] = co_await acc.wait(wait_type::read);
+            wait_ec    = ec1;
+            wait_done  = true;
+            if (ec1)
+                co_return;
+            auto [ec2] = co_await acc.accept(peer);
+            accept_ec  = ec2;
+        };
+        auto connector = [&]() -> capy::task<> {
+            auto [ec] = co_await client.connect(
+                endpoint(ipv4_address::loopback(), port));
+            (void)ec;
+        };
+
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(connector());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!wait_ec);
+        BOOST_TEST(!accept_ec);
+        BOOST_TEST(peer.is_open());
     }
 
     // local_stream_socket wait_read fires when the peer writes.
@@ -182,9 +266,7 @@ struct wait_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -194,92 +276,6 @@ struct wait_test
 
         BOOST_TEST(wait_done);
         BOOST_TEST(wait_ec == capy::cond::canceled);
-    }
-
-    // Acceptor wait_read fires when a client connects; accept then succeeds.
-    void testAcceptorWait()
-    {
-        io_context ioc(Backend);
-        auto ex = ioc.get_executor();
-
-        tcp_acceptor acc(ioc);
-        acc.open();
-        acc.set_option(socket_option::reuse_address(true));
-        auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
-        BOOST_TEST(!bec);
-        auto lec = acc.listen();
-        BOOST_TEST(!lec);
-        auto port = acc.local_endpoint().port();
-
-        std::error_code wait_ec;
-        bool wait_done = false;
-        std::error_code accept_ec;
-        tcp_socket peer(ioc);
-        tcp_socket client(ioc);
-
-        auto waiter = [&]() -> capy::task<> {
-            auto [ec1] = co_await acc.wait(wait_type::read);
-            wait_ec    = ec1;
-            wait_done  = true;
-            if (ec1)
-                co_return;
-            auto [ec2] = co_await acc.accept(peer);
-            accept_ec  = ec2;
-        };
-        auto connector = [&]() -> capy::task<> {
-            auto [ec] = co_await client.connect(
-                endpoint(ipv4_address::loopback(), port));
-            (void)ec;
-        };
-
-        capy::run_async(ex)(waiter());
-        capy::run_async(ex)(connector());
-        ioc.run();
-
-        BOOST_TEST(wait_done);
-        BOOST_TEST(!wait_ec);
-        BOOST_TEST(!accept_ec);
-        BOOST_TEST(peer.is_open());
-    }
-
-    // UDP socket wait_read completes when a datagram arrives.
-    void testWaitOnUdp()
-    {
-        io_context ioc(Backend);
-        auto ex = ioc.get_executor();
-
-        udp_socket recv(ioc);
-        recv.open(udp::v4());
-        auto bec = recv.bind(endpoint(ipv4_address::loopback(), 0));
-        BOOST_TEST(!bec);
-        auto port = recv.local_endpoint().port();
-
-        udp_socket send(ioc);
-        send.open(udp::v4());
-
-        std::error_code wait_ec;
-        bool wait_done = false;
-
-        auto waiter = [&]() -> capy::task<> {
-            auto [ec] = co_await recv.wait(wait_type::read);
-            wait_ec   = ec;
-            wait_done = true;
-        };
-        auto sender = [&]() -> capy::task<> {
-            char dg[1] = { 'X' };
-            auto [ec, n] = co_await send.send_to(
-                capy::const_buffer(dg, sizeof(dg)),
-                endpoint(ipv4_address::loopback(), port));
-            (void)ec;
-            (void)n;
-        };
-
-        capy::run_async(ex)(waiter());
-        capy::run_async(ex)(sender());
-        ioc.run();
-
-        BOOST_TEST(wait_done);
-        BOOST_TEST(!wait_ec);
     }
 
     // Cancel a UDP wait_read while it's parked. On IOCP this exercises
@@ -305,9 +301,7 @@ struct wait_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await delay(std::chrono::milliseconds(20));
             sock.cancel();
         };
 
@@ -323,10 +317,10 @@ struct wait_test
     {
         testWaitReadAndNoConsume();
         testWaitWriteImmediate();
-        testWaitOnLocalStream();
-        testCancellation();
         testAcceptorWait();
+        testWaitOnLocalStream();
         testWaitOnUdp();
+        testCancellation();
         testUdpCancellation();
     }
 };

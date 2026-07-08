@@ -15,9 +15,9 @@
 
 #include <boost/corosio/detail/platform.hpp>
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/timer.hpp>
 #include <boost/corosio/udp.hpp>
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
@@ -179,9 +179,7 @@ struct datagram_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -215,9 +213,7 @@ struct datagram_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -353,9 +349,7 @@ struct datagram_paths_test
         };
         auto reader = [&]() -> capy::task<> {
             // Let the writer fill the kernel queue and park first.
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
 
             char buf[2048];
             while (!writer_done || received < sent)
@@ -436,9 +430,7 @@ struct datagram_paths_test
             writer_done = true;
         };
         auto reader = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
 
             char buf[2048];
             local_endpoint source;
@@ -497,9 +489,7 @@ struct datagram_paths_test
             recv_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -538,9 +528,7 @@ struct datagram_paths_test
             recv_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -592,9 +580,7 @@ struct datagram_paths_test
             send_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -658,9 +644,7 @@ struct datagram_paths_test
             send_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -698,9 +682,7 @@ struct datagram_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -731,9 +713,7 @@ struct datagram_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(20));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 

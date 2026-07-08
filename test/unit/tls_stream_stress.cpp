@@ -18,9 +18,9 @@
 //
 // Tests run for a configurable duration (default 1 second).
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tls_stream.hpp>
-#include <boost/corosio/timer.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -278,9 +278,7 @@ struct tls_concurrent_io_stress_impl
 
         // Stopper: wait for duration then close all sockets
         auto stopper = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::seconds(duration));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
 
             sa1.close();
@@ -342,17 +340,16 @@ struct tls_cancel_handshake_stress_impl
             bool done             = false;
 
             // Failsafe to prevent hangs
-            timer failsafe(ioc);
-            failsafe.expires_after(std::chrono::milliseconds(2000));
+            std::stop_source failsafe_stop;
 
             // Client handshake - will be cancelled mid-flight
             auto client_task = [&client, &client_got_error, &done,
-                                &failsafe]() -> capy::task<> {
+                                &failsafe_stop]() -> capy::task<> {
                 auto [ec] = co_await client.handshake(tls_stream::client);
                 if (ec)
                     client_got_error = true;
                 done = true;
-                failsafe.cancel();
+                failsafe_stop.request_stop();
             };
 
             // Server: wait for ClientHello then trigger cancellation
@@ -363,9 +360,9 @@ struct tls_cancel_handshake_stress_impl
             };
 
             bool failsafe_hit  = false;
-            auto failsafe_task = [&failsafe, &failsafe_hit, &s1,
-                                  &s2]() -> capy::task<> {
-                auto [ec] = co_await failsafe.wait();
+            auto failsafe_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
+                auto [ec] = co_await corosio::delay(
+                    std::chrono::milliseconds(2000));
                 if (!ec)
                 {
                     failsafe_hit = true;
@@ -384,7 +381,7 @@ struct tls_cancel_handshake_stress_impl
 
             capy::run_async(ex, stop_src.get_token())(client_task());
             capy::run_async(ex)(server_task());
-            capy::run_async(ex)(failsafe_task());
+            capy::run_async(ex, failsafe_stop.get_token())(failsafe_task());
 
             ioc.run();
             ioc.restart();

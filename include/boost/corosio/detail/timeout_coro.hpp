@@ -10,12 +10,14 @@
 #ifndef BOOST_COROSIO_DETAIL_TIMEOUT_CORO_HPP
 #define BOOST_COROSIO_DETAIL_TIMEOUT_CORO_HPP
 
+#include <boost/corosio/io_context.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_awaitable_promise_base.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
 #include <coroutine>
+#include <memory_resource>
 #include <stop_token>
 #include <type_traits>
 #include <utility>
@@ -32,11 +34,16 @@
 
    The promise reuses task<>'s transform_awaiter pattern (including
    the MSVC symmetric-transfer workaround) to inject io_env into
-   IoAwaitable co_await expressions. */
+   IoAwaitable co_await expressions.
+
+   The detached frame allocates from the awaiting chain's frame
+   allocator and can outlive that chain, extending the allocator's
+   required lifetime until the io_context drains. This is safe with
+   the default recycling resource. */
 
 namespace boost::corosio::detail {
 
-/** Fire-and-forget coroutine for the timeout side of cancel_at.
+/** Fire-and-forget coroutine backing `timeout()`.
 
     The coroutine awaits a timer and signals a stop_source if the
     timer fires without being cancelled. It self-destroys at
@@ -48,17 +55,27 @@ struct timeout_coro
 {
     struct promise_type : capy::io_awaitable_promise_base<promise_type>
     {
+        io_context::executor_type owned_ex_;
         capy::io_env env_storage_;
 
         /** Store an owned copy of the environment.
 
-            The timeout coroutine can outlive the cancel_at_awaitable
+            The timeout coroutine can outlive the awaiting chain
             that created it, so it must own its env rather than
-            pointing to external storage.
+            pointing to external storage. The executor is owned by
+            value: the chain's env holds only a ref to chain-owned
+            executor storage, and the timer waiter's completion can
+            run after that storage is gone. The ref handed to the
+            waiter points at `owned_ex_` in this frame, which lives
+            until final_suspend, after the waiter has completed.
         */
-        void set_env_owned(capy::io_env env)
+        void set_env_owned(
+            io_context::executor_type ex,
+            std::stop_token token,
+            std::pmr::memory_resource* alloc)
         {
-            env_storage_ = std::move(env);
+            owned_ex_ = ex;
+            env_storage_ = {owned_ex_, std::move(token), alloc};
             set_environment(&env_storage_);
         }
 
@@ -161,7 +178,7 @@ struct timeout_coro
     Wait on the timer. If it fires without cancellation, signal
     the stop source to cancel the paired inner operation.
 
-    @tparam Timer Timer type (`timer` or `native_timer<B>`).
+    @tparam Timer The timer type, typically `detail::timer`.
 
     @param t The timer to wait on (must have expiry set).
     @param src Stop source to signal on timeout.

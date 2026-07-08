@@ -29,8 +29,8 @@ underlying mechanics that inform correct usage.
 More advanced topics build on these foundations. You will encounter patterns for
 building scalable servers, managing connection lifecycles, composing operations
 for reliable data transfer, and securing connections with encryption. The guide
-also covers practical concerns like error handling strategies, timer management,
-signal handling, and name resolution.
+also covers practical concerns like error handling strategies, delays and
+timeouts, signal handling, and name resolution.
 
 Each topic builds naturally on previous concepts, but the sections are designed
 to be read independently. If you already understand a particular area, you can

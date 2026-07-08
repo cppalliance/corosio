@@ -566,12 +566,10 @@ capy::task<void> bad()
     std::this_thread::sleep_for(1s);  // Don't do this!
 }
 
-// RIGHT: use async timer
-capy::task<void> good(corosio::io_context& ioc)
+// RIGHT: suspend with an async delay
+capy::task<void> good()
 {
-    corosio::timer t(ioc);
-    t.expires_after(1s);
-    co_await t.wait();
+    co_await corosio::delay(1s);
 }
 ----
 
@@ -606,10 +604,10 @@ Don't access an object from a coroutine with different executor affinity:
 
 [source,cpp]
 ----
-// Dangerous: timer created on ctx1, used from ex2
-corosio::timer timer(ctx1);
-capy::run_async(ex2)([&timer]() -> capy::task<void> {
-    co_await timer.wait();  // Wrong executor!
+// Dangerous: socket created on ctx1, used from ex2
+corosio::tcp_socket sock(ctx1);
+capy::run_async(ex2)([&sock, ep]() -> capy::task<void> {
+    co_await sock.connect(ep);  // Wrong executor!
 });
 ----
 

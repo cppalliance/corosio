@@ -77,7 +77,6 @@ add_corosio_suites(bench::benchmark_runner& runner, BackendTag)
     runner.add_suite("corosio", corosio_bench::make_socket_throughput_suite<BackendTag{}>());
     runner.add_suite("corosio", corosio_bench::make_socket_latency_suite<BackendTag{}>());
     runner.add_suite("corosio", corosio_bench::make_http_server_suite<BackendTag{}>());
-    runner.add_suite("corosio", corosio_bench::make_timer_suite<BackendTag{}>());
     runner.add_suite("corosio", corosio_bench::make_accept_churn_suite<BackendTag{}>());
     runner.add_suite("corosio", corosio_bench::make_fan_out_suite<BackendTag{}>());
 #if BOOST_COROSIO_POSIX
@@ -94,7 +93,6 @@ add_asio_suites(bench::benchmark_runner& runner)
     runner.add_suite("asio", asio_bench::make_socket_throughput_suite());
     runner.add_suite("asio", asio_bench::make_socket_latency_suite());
     runner.add_suite("asio", asio_bench::make_http_server_suite());
-    runner.add_suite("asio", asio_bench::make_timer_suite());
     runner.add_suite("asio", asio_bench::make_accept_churn_suite());
     runner.add_suite("asio", asio_bench::make_fan_out_suite());
     runner.add_suite("asio", asio_bench::make_local_socket_throughput_suite());
@@ -108,7 +106,6 @@ add_asio_callback_suites(bench::benchmark_runner& runner)
     runner.add_suite("asio_callback", asio_callback_bench::make_socket_throughput_suite());
     runner.add_suite("asio_callback", asio_callback_bench::make_socket_latency_suite());
     runner.add_suite("asio_callback", asio_callback_bench::make_http_server_suite());
-    runner.add_suite("asio_callback", asio_callback_bench::make_timer_suite());
     runner.add_suite("asio_callback", asio_callback_bench::make_accept_churn_suite());
     runner.add_suite("asio_callback", asio_callback_bench::make_fan_out_suite());
     runner.add_suite("asio_callback", asio_callback_bench::make_local_socket_throughput_suite());

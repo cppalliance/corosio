@@ -11,8 +11,8 @@
 #define BOOST_COROSIO_HPP
 
 #include <boost/corosio/backend.hpp>
-#include <boost/corosio/cancel.hpp>
 #include <boost/corosio/connect.hpp>
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/file_base.hpp>
 #include <boost/corosio/host_name.hpp>
@@ -28,7 +28,7 @@
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/timer.hpp>
+#include <boost/corosio/timeout.hpp>
 #include <boost/corosio/udp_socket.hpp>
 
 #include <boost/corosio/local_connect_pair.hpp>

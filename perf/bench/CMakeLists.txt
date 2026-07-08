@@ -27,7 +27,6 @@ add_executable(corosio_bench
     corosio/socket_throughput_bench.cpp
     corosio/socket_latency_bench.cpp
     corosio/http_server_bench.cpp
-    corosio/timer_bench.cpp
     corosio/accept_churn_bench.cpp
     corosio/fan_out_bench.cpp
     corosio/local_socket_throughput_bench.cpp
@@ -57,10 +56,8 @@ if (TARGET Boost::asio)
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/socket_throughput_bench.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/socket_latency_bench.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/http_server_bench.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/timer_bench.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/accept_churn_bench.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/fan_out_bench.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/timer_bench.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/accept_churn_bench.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/callback/fan_out_bench.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/asio/coroutine/local_socket_throughput_bench.cpp

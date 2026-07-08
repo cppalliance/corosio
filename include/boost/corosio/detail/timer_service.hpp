@@ -11,7 +11,7 @@
 #ifndef BOOST_COROSIO_DETAIL_TIMER_SERVICE_HPP
 #define BOOST_COROSIO_DETAIL_TIMER_SERVICE_HPP
 
-#include <boost/corosio/timer.hpp>
+#include <boost/corosio/detail/timer.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
@@ -46,8 +46,8 @@ struct scheduler;
     error output, stop_token, embedded completion_op. Each concurrent
     co_await t.wait() allocates one waiter_node.
 
-    timer_service::implementation holds per-timer state: expiry,
-    heap index, and an intrusive_list of waiter_nodes. Multiple
+    timer::implementation holds per-timer state: expiry, heap
+    index, and an intrusive_list of waiter_nodes. Multiple
     coroutines can wait on the same timer simultaneously.
 
     timer_service owns a min-heap of active timers, a free list
@@ -112,13 +112,11 @@ public:
         }
     };
 
-    struct implementation;
-
 private:
     struct heap_entry
     {
         time_point time_;
-        implementation* timer_;
+        timer::implementation* timer_;
     };
 
     scheduler* sched_ = nullptr;
@@ -126,7 +124,7 @@ private:
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // std:: members, dll-interface
     mutable std::mutex mutex_;
     std::vector<heap_entry> heap_;
-    implementation* free_list_     = nullptr;
+    timer::implementation* free_list_ = nullptr;
     waiter_node* waiter_free_list_ = nullptr;
     callback on_earliest_changed_;
     bool shutting_down_ = false;
@@ -184,7 +182,7 @@ public:
     inline void destroy(io_object::implementation* p) override;
 
     /// Cancel and recycle a timer implementation.
-    inline void destroy_impl(implementation& impl);
+    inline void destroy_impl(timer::implementation& impl);
 
     /// Create or recycle a waiter node.
     inline waiter_node* create_waiter();
@@ -193,19 +191,20 @@ public:
     inline void destroy_waiter(waiter_node* w);
 
     /// Update the timer expiry, cancelling existing waiters.
-    inline std::size_t update_timer(implementation& impl, time_point new_time);
+    inline std::size_t update_timer(
+        timer::implementation& impl, time_point new_time);
 
     /// Insert a waiter into the timer's waiter list and the heap.
-    inline void insert_waiter(implementation& impl, waiter_node* w);
+    inline void insert_waiter(timer::implementation& impl, waiter_node* w);
 
     /// Cancel all waiters on a timer.
-    inline std::size_t cancel_timer(implementation& impl);
+    inline std::size_t cancel_timer(timer::implementation& impl);
 
     /// Cancel a single waiter ( stop_token callback path ).
     inline void cancel_waiter(waiter_node* w);
 
     /// Cancel one waiter on a timer.
-    inline std::size_t cancel_one_waiter(implementation& impl);
+    inline std::size_t cancel_one_waiter(timer::implementation& impl);
 
     /// Complete all waiters whose timers have expired.
     inline std::size_t process_expired();
@@ -218,7 +217,7 @@ private:
         cached_nearest_ns_.store(ns, std::memory_order_release);
     }
 
-    inline void remove_timer_impl(implementation& impl);
+    inline void remove_timer_impl(timer::implementation& impl);
     inline void up_heap(std::size_t index);
     inline void down_heap(std::size_t index);
     inline void swap_heap(std::size_t i1, std::size_t i2);
@@ -249,7 +248,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
     };
 
     // nullptr once removed from timer's waiter list (concurrency marker)
-    timer_service::implementation* impl_ = nullptr;
+    timer::implementation* impl_ = nullptr;
     timer_service* svc_                  = nullptr;
     std::coroutine_handle<> h_;
     capy::continuation* cont_            = nullptr;
@@ -267,37 +266,41 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
     }
 };
 
-struct timer_service::implementation final : timer::implementation
-{
-    using clock_type = std::chrono::steady_clock;
-    using time_point = clock_type::time_point;
-    using duration   = clock_type::duration;
-
-    timer_service* svc_ = nullptr;
-    intrusive_list<waiter_node> waiters_;
-
-    // Free list linkage (reused when impl is on free_list)
-    implementation* next_free_ = nullptr;
-
-    inline explicit implementation(timer_service& svc) noexcept;
-
-    inline std::coroutine_handle<> wait(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        std::stop_token,
-        std::error_code*,
-        capy::continuation*) override;
-};
-
 // Thread-local caches avoid hot-path mutex acquisitions:
 // 1. Impl cache — single-slot, validated by comparing svc_
 // 2. Waiter cache — single-slot, no service affinity
 // All caches are cleared by timer_service_invalidate_cache() during shutdown.
 
-inline thread_local_ptr<timer_service::implementation> tl_cached_impl;
+inline thread_local_ptr<timer::implementation> tl_cached_impl;
 inline thread_local_ptr<waiter_node> tl_cached_waiter;
 
-inline timer_service::implementation*
+// The POD TLS slots above never run destructors, so a short-lived
+// run() thread would leak its cached impl and waiter. Each push
+// arms this owner, whose destructor frees the slots at thread exit.
+// Cached entries are quiescent heap objects (stop callbacks reset,
+// nothing in the heap or free lists) and deletion touches no
+// service state, so it is safe after the owning service is gone
+// (the stale-entry path in try_pop_tl_cache deletes the same way).
+struct tl_cache_owner
+{
+    ~tl_cache_owner()
+    {
+        delete tl_cached_impl.get();
+        tl_cached_impl.set(nullptr);
+
+        delete tl_cached_waiter.get();
+        tl_cached_waiter.set(nullptr);
+    }
+};
+
+inline void
+arm_tl_cache_cleanup() noexcept
+{
+    thread_local tl_cache_owner owner;
+    (void)owner;
+}
+
+inline timer::implementation*
 try_pop_tl_cache(timer_service* svc) noexcept
 {
     auto* impl = tl_cached_impl.get();
@@ -313,10 +316,11 @@ try_pop_tl_cache(timer_service* svc) noexcept
 }
 
 inline bool
-try_push_tl_cache(timer_service::implementation* impl) noexcept
+try_push_tl_cache(timer::implementation* impl) noexcept
 {
     if (!tl_cached_impl.get())
     {
+        arm_tl_cache_cleanup();
         tl_cached_impl.set(impl);
         return true;
     }
@@ -340,6 +344,7 @@ try_push_waiter_tl_cache(waiter_node* w) noexcept
 {
     if (!tl_cached_waiter.get())
     {
+        arm_tl_cache_cleanup();
         tl_cached_waiter.set(w);
         return true;
     }
@@ -358,12 +363,6 @@ timer_service_invalidate_cache() noexcept
 
 // timer_service out-of-class member function definitions
 
-inline timer_service::implementation::implementation(
-    timer_service& svc) noexcept
-    : svc_(&svc)
-{
-}
-
 inline void
 timer_service::shutdown()
 {
@@ -374,11 +373,13 @@ timer_service::shutdown()
     // coroutine-owned timer destructors (triggered by h.destroy()
     // below) cannot re-enter remove_timer_impl() and mutate the
     // vector during iteration.
-    std::vector<implementation*> impls;
+    std::vector<timer::implementation*> impls;
     impls.reserve(heap_.size());
     for (auto& entry : heap_)
     {
-        entry.timer_->heap_index_ = (std::numeric_limits<std::size_t>::max)();
+        entry.timer_->heap_index_.store(
+            (std::numeric_limits<std::size_t>::max)(),
+            std::memory_order_relaxed);
         impls.push_back(entry.timer_);
     }
     heap_.clear();
@@ -424,12 +425,14 @@ timer_service::shutdown()
 inline io_object::implementation*
 timer_service::construct()
 {
-    implementation* impl = try_pop_tl_cache(this);
+    timer::implementation* impl = try_pop_tl_cache(this);
     if (impl)
     {
-        impl->svc_        = this;
-        impl->heap_index_ = (std::numeric_limits<std::size_t>::max)();
-        impl->might_have_pending_waits_ = false;
+        impl->svc_ = this;
+        impl->heap_index_.store(
+            (std::numeric_limits<std::size_t>::max)(),
+            std::memory_order_relaxed);
+        impl->might_have_pending_waits_.store(false, std::memory_order_relaxed);
         return impl;
     }
 
@@ -440,12 +443,14 @@ timer_service::construct()
         free_list_        = impl->next_free_;
         impl->next_free_  = nullptr;
         impl->svc_        = this;
-        impl->heap_index_ = (std::numeric_limits<std::size_t>::max)();
-        impl->might_have_pending_waits_ = false;
+        impl->heap_index_.store(
+            (std::numeric_limits<std::size_t>::max)(),
+            std::memory_order_relaxed);
+        impl->might_have_pending_waits_.store(false, std::memory_order_relaxed);
     }
     else
     {
-        impl = new implementation(*this);
+        impl = new timer::implementation(*this);
     }
     return impl;
 }
@@ -453,11 +458,19 @@ timer_service::construct()
 inline void
 timer_service::destroy(io_object::implementation* p)
 {
-    destroy_impl(static_cast<implementation&>(*p));
+    // During shutdown the drain loop owns every impl and deletes
+    // them directly. A frame destroyed by that loop can unwind a
+    // handle whose impl was freed in an earlier iteration (a
+    // timeout's parent frame owns the timeout timer while
+    // suspended on the inner delay's timer), so bail out before
+    // even downcasting the pointer.
+    if (shutting_down_)
+        return;
+    destroy_impl(static_cast<timer::implementation&>(*p));
 }
 
 inline void
-timer_service::destroy_impl(implementation& impl)
+timer_service::destroy_impl(timer::implementation& impl)
 {
     // During shutdown the impl is owned by the shutdown loop.
     // Re-entering here (from a coroutine-owned timer destructor
@@ -468,7 +481,8 @@ timer_service::destroy_impl(implementation& impl)
 
     cancel_timer(impl);
 
-    if (impl.heap_index_ != (std::numeric_limits<std::size_t>::max)())
+    if (impl.heap_index_.load(std::memory_order_relaxed) !=
+        (std::numeric_limits<std::size_t>::max)())
     {
         std::lock_guard lock(mutex_);
         remove_timer_impl(impl);
@@ -513,11 +527,17 @@ timer_service::destroy_waiter(waiter_node* w)
 }
 
 inline std::size_t
-timer_service::update_timer(implementation& impl, time_point new_time)
+timer_service::update_timer(timer::implementation& impl, time_point new_time)
 {
+    // Gate on the flag, not waiters_: reading the non-atomic list
+    // here would race a concurrent drain. A false flag is safe to
+    // trust pre-lock because every draining critical section stores
+    // it false as its final touch of the impl.
     bool in_heap =
-        (impl.heap_index_ != (std::numeric_limits<std::size_t>::max)());
-    if (!in_heap && impl.waiters_.empty())
+        (impl.heap_index_.load(std::memory_order_relaxed) !=
+         (std::numeric_limits<std::size_t>::max)());
+    if (!in_heap &&
+        !impl.might_have_pending_waits_.load(std::memory_order_relaxed))
         return 0;
 
     bool notify = false;
@@ -532,17 +552,19 @@ timer_service::update_timer(implementation& impl, time_point new_time)
             canceled.push_back(w);
         }
 
-        if (impl.heap_index_ < heap_.size())
+        std::size_t idx = impl.heap_index_.load(std::memory_order_relaxed);
+        if (idx < heap_.size())
         {
-            time_point old_time           = heap_[impl.heap_index_].time_;
-            heap_[impl.heap_index_].time_ = new_time;
+            time_point old_time = heap_[idx].time_;
+            heap_[idx].time_    = new_time;
 
             if (new_time < old_time)
-                up_heap(impl.heap_index_);
+                up_heap(idx);
             else
-                down_heap(impl.heap_index_);
+                down_heap(idx);
 
-            notify = (impl.heap_index_ == 0);
+            notify =
+                (impl.heap_index_.load(std::memory_order_relaxed) == 0);
         }
 
         refresh_cached_nearest();
@@ -563,38 +585,66 @@ timer_service::update_timer(implementation& impl, time_point new_time)
 }
 
 inline void
-timer_service::insert_waiter(implementation& impl, waiter_node* w)
+timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
 {
-    bool notify = false;
+    bool notify      = false;
+    bool lost_cancel = false;
     {
         std::lock_guard lock(mutex_);
-        if (impl.heap_index_ == (std::numeric_limits<std::size_t>::max)())
+        // Publish: from here the waiter is visible to the fire path and
+        // to its own stop callback (impl_ non-null enables cancel_waiter).
+        w->impl_ = &impl;
+        if (impl.heap_index_.load(std::memory_order_relaxed) ==
+            (std::numeric_limits<std::size_t>::max)())
         {
-            impl.heap_index_ = heap_.size();
+            impl.heap_index_.store(heap_.size(), std::memory_order_relaxed);
             heap_.push_back({impl.expiry_, &impl});
             up_heap(heap_.size() - 1);
-            notify = (impl.heap_index_ == 0);
+            notify =
+                (impl.heap_index_.load(std::memory_order_relaxed) == 0);
             refresh_cached_nearest();
         }
         impl.waiters_.push_back(w);
+
+        // Lost-cancel re-check: a stop requested after the canceller was
+        // armed in wait() but before this publication found impl_ null
+        // and returned a no-op. Observe it now and undo the insertion.
+        if (w->token_.stop_requested())
+        {
+            w->impl_ = nullptr;
+            impl.waiters_.remove(w);
+            if (impl.waiters_.empty())
+            {
+                remove_timer_impl(impl);
+                impl.might_have_pending_waits_.store(
+                    false, std::memory_order_relaxed);
+            }
+            refresh_cached_nearest();
+            lost_cancel = true;
+            notify      = false; // insertion undone; nearest unchanged
+        }
     }
     if (notify)
         on_earliest_changed_();
+    if (lost_cancel)
+    {
+        w->ec_value_ = make_error_code(capy::error::canceled);
+        sched_->post(&w->op_);
+    }
 }
 
 inline std::size_t
-timer_service::cancel_timer(implementation& impl)
+timer_service::cancel_timer(timer::implementation& impl)
 {
-    if (!impl.might_have_pending_waits_)
+    if (!impl.might_have_pending_waits_.load(std::memory_order_relaxed))
         return 0;
 
-    // Not in heap and no waiters — just clear the flag
-    if (impl.heap_index_ == (std::numeric_limits<std::size_t>::max)() &&
-        impl.waiters_.empty())
-    {
-        impl.might_have_pending_waits_ = false;
-        return 0;
-    }
+    // No unlocked already-done fast-out here: it would need the
+    // non-atomic waiters_ (a race with concurrent drains), and an
+    // index-only check is lifetime-unsafe because npos is stored
+    // before the drain finishes touching the impl. A stale-true
+    // flag is rare with the stateless API; the locked path below
+    // re-validates.
 
     intrusive_list<waiter_node> canceled;
 
@@ -606,10 +656,11 @@ timer_service::cancel_timer(implementation& impl)
             w->impl_ = nullptr;
             canceled.push_back(w);
         }
+        // Store false as the final touch of the impl under the lock so
+        // update_timer's pre-lock false-flag trust holds unqualified.
+        impl.might_have_pending_waits_.store(false, std::memory_order_relaxed);
         refresh_cached_nearest();
     }
-
-    impl.might_have_pending_waits_ = false;
 
     std::size_t count = 0;
     while (auto* w = canceled.pop_front())
@@ -636,7 +687,8 @@ timer_service::cancel_waiter(waiter_node* w)
         if (impl->waiters_.empty())
         {
             remove_timer_impl(*impl);
-            impl->might_have_pending_waits_ = false;
+            impl->might_have_pending_waits_.store(
+                false, std::memory_order_relaxed);
         }
         refresh_cached_nearest();
     }
@@ -646,9 +698,9 @@ timer_service::cancel_waiter(waiter_node* w)
 }
 
 inline std::size_t
-timer_service::cancel_one_waiter(implementation& impl)
+timer_service::cancel_one_waiter(timer::implementation& impl)
 {
-    if (!impl.might_have_pending_waits_)
+    if (!impl.might_have_pending_waits_.load(std::memory_order_relaxed))
         return 0;
 
     waiter_node* w = nullptr;
@@ -662,7 +714,8 @@ timer_service::cancel_one_waiter(implementation& impl)
         if (impl.waiters_.empty())
         {
             remove_timer_impl(impl);
-            impl.might_have_pending_waits_ = false;
+            impl.might_have_pending_waits_.store(
+                false, std::memory_order_relaxed);
         }
         refresh_cached_nearest();
     }
@@ -683,7 +736,7 @@ timer_service::process_expired()
 
         while (!heap_.empty() && heap_[0].time_ <= now)
         {
-            implementation* t = heap_[0].timer_;
+            timer::implementation* t = heap_[0].timer_;
             remove_timer_impl(*t);
             while (auto* w = t->waiters_.pop_front())
             {
@@ -691,7 +744,8 @@ timer_service::process_expired()
                 w->ec_value_ = {};
                 expired.push_back(w);
             }
-            t->might_have_pending_waits_ = false;
+            t->might_have_pending_waits_.store(
+                false, std::memory_order_relaxed);
         }
 
         refresh_cached_nearest();
@@ -708,23 +762,27 @@ timer_service::process_expired()
 }
 
 inline void
-timer_service::remove_timer_impl(implementation& impl)
+timer_service::remove_timer_impl(timer::implementation& impl)
 {
-    std::size_t index = impl.heap_index_;
+    std::size_t index = impl.heap_index_.load(std::memory_order_relaxed);
     if (index >= heap_.size())
         return; // Not in heap
 
     if (index == heap_.size() - 1)
     {
         // Last element, just pop
-        impl.heap_index_ = (std::numeric_limits<std::size_t>::max)();
+        impl.heap_index_.store(
+            (std::numeric_limits<std::size_t>::max)(),
+            std::memory_order_relaxed);
         heap_.pop_back();
     }
     else
     {
         // Swap with last and reheapify
         swap_heap(index, heap_.size() - 1);
-        impl.heap_index_ = (std::numeric_limits<std::size_t>::max)();
+        impl.heap_index_.store(
+            (std::numeric_limits<std::size_t>::max)(),
+            std::memory_order_relaxed);
         heap_.pop_back();
 
         if (index > 0 && heap_[index].time_ < heap_[(index - 1) / 2].time_)
@@ -773,8 +831,8 @@ timer_service::swap_heap(std::size_t i1, std::size_t i2)
     heap_entry tmp                = heap_[i1];
     heap_[i1]                     = heap_[i2];
     heap_[i2]                     = tmp;
-    heap_[i1].timer_->heap_index_ = i1;
-    heap_[i2].timer_->heap_index_ = i2;
+    heap_[i1].timer_->heap_index_.store(i1, std::memory_order_relaxed);
+    heap_[i2].timer_->heap_index_.store(i2, std::memory_order_relaxed);
 }
 
 // waiter_node out-of-class member function definitions
@@ -851,67 +909,33 @@ waiter_node::completion_op::destroy()
 #pragma GCC diagnostic pop
 #endif
 
-inline std::coroutine_handle<>
-timer_service::implementation::wait(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    std::stop_token token,
-    std::error_code* ec,
-    capy::continuation* cont)
-{
-    // Already-expired fast path — no waiter_node, no mutex.
-    // Post instead of dispatch so the coroutine yields to the
-    // scheduler, allowing other queued work to run.
-    if (heap_index_ == (std::numeric_limits<std::size_t>::max)())
-    {
-        if (expiry_ == (time_point::min)() || expiry_ <= clock_type::now())
-        {
-            if (ec)
-                *ec = {};
-            d.post(*cont);
-            return std::noop_coroutine();
-        }
-    }
-
-    auto* w    = svc_->create_waiter();
-    w->impl_   = this;
-    w->svc_    = svc_;
-    w->h_      = h;
-    w->cont_   = cont;
-    w->d_      = d;
-    w->token_  = std::move(token);
-    w->ec_out_ = ec;
-
-    svc_->insert_waiter(*this, w);
-    might_have_pending_waits_ = true;
-    svc_->get_scheduler().work_started();
-
-    if (w->token_.stop_possible())
-        w->stop_cb_.emplace(w->token_, waiter_node::canceller{w});
-
-    return std::noop_coroutine();
-}
+// timer::implementation::wait() is defined in timer.cpp, not here.
+// It must be a non-inline definition in a translation unit that is
+// always pulled into the link whenever detail::timer is used (every
+// consumer needs timer's constructors from that same object file).
+// An inline definition in this header would only be emitted in
+// translation units that happen to also include this header, which
+// is not guaranteed for every caller of wait_awaitable::await_suspend
+// in timer.hpp (e.g. code that only reaches timer.hpp through
+// delay.hpp, without transitively including a scheduler header).
 
 // Free functions
 
 inline std::size_t
-timer_service_update_expiry(timer::implementation& base)
+timer_service_update_expiry(timer::implementation& impl)
 {
-    auto& impl = static_cast<timer_service::implementation&>(base);
     return impl.svc_->update_timer(impl, impl.expiry_);
 }
 
 inline std::size_t
-timer_service_cancel(timer::implementation& base) noexcept
+timer_service_cancel(timer::implementation& impl) noexcept
 {
-    auto& impl = static_cast<timer_service::implementation&>(base);
     return impl.svc_->cancel_timer(impl);
 }
 
 inline std::size_t
-timer_service_cancel_one(timer::implementation& base) noexcept
+timer_service_cancel_one(timer::implementation& impl) noexcept
 {
-    auto& impl = static_cast<timer_service::implementation&>(base);
     return impl.svc_->cancel_one_waiter(impl);
 }
 

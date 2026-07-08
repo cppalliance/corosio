@@ -7,10 +7,10 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/timer.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -35,11 +35,11 @@ namespace capy    = boost::capy;
     @par Example
     @code
     exponential_backoff backoff(500ms, 30s);
-    timer.expires_after(backoff.next()); // 500ms
-    timer.expires_after(backoff.next()); // 1000ms
-    timer.expires_after(backoff.next()); // 2000ms
+    co_await delay(backoff.next()); // 500ms
+    co_await delay(backoff.next()); // 1000ms
+    co_await delay(backoff.next()); // 2000ms
     backoff.reset();
-    timer.expires_after(backoff.next()); // 500ms
+    co_await delay(backoff.next()); // 500ms
     @endcode
 */
 struct exponential_backoff
@@ -100,11 +100,11 @@ do_session(corosio::tcp_socket& sock)
     disconnects, then reconnection resumes from the initial
     delay.
 
-    The backoff timer is sensitive to the coroutine's stop
+    The backoff delay is sensitive to the coroutine's stop
     token. Cancelling the token (or calling `io_context::stop()`)
     will end the retry loop cleanly.
 
-    @param ioc The I/O context to use for socket and timer
+    @param ioc The I/O context to use for socket and delay
         operations.
     @param ep The endpoint to connect to.
     @param backoff The backoff policy to use between retries.
@@ -119,7 +119,6 @@ connect_with_backoff(
     int max_attempts)
 {
     corosio::tcp_socket sock(ioc);
-    corosio::timer delay(ioc);
     int attempt = 0;
 
     for (;;)
@@ -132,7 +131,7 @@ connect_with_backoff(
             std::cout << "Connected on attempt " << attempt << std::endl;
             co_await do_session(sock);
 
-            // Peer disconnected — restart the retry sequence
+            // Peer disconnected, restart the retry sequence
             sock.close();
             backoff.reset();
             attempt = 0;
@@ -156,9 +155,8 @@ connect_with_backoff(
 
         std::cout << "Retrying in " << wait_for.count() << "ms" << std::endl;
 
-        delay.expires_after(wait_for);
-        auto [timer_ec] = co_await delay.wait();
-        if (timer_ec == capy::cond::canceled)
+        auto [delay_ec] = co_await corosio::delay(wait_for);
+        if (delay_ec == capy::cond::canceled)
         {
             std::cout << "Retry cancelled" << std::endl;
             co_return;
@@ -201,7 +199,7 @@ main(int argc, char* argv[])
     exponential_backoff backoff(500ms, 30s);
 
     // The stop_source lets us cancel the coroutine gracefully
-    // from any thread. When signaled, pending timer and connect
+    // from any thread. When signaled, pending delay and connect
     // operations return cond::canceled, the coroutine's own loop
     // breaks, and it unwinds through normal control flow.
     //

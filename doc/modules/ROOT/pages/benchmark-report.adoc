@@ -25,7 +25,9 @@ Corosio *outperforms Asio coroutines* in handler dispatch (9-50% faster) and *sc
 
 === Where Asio Has an Edge
 
-* *Timer schedule/cancel:* 10× faster (35-38 Mops/s vs 3.44 Mops/s)
+* *Timer schedule/cancel:* 10× faster (35-38 Mops/s vs 3.44 Mops/s).
+  Historical snapshot only; see the NOTE in the Timer Benchmarks
+  section (the standalone timer API has since been removed).
 * *Bidirectional socket throughput at large buffers:* Asio coroutines 2.5× faster than Corosio
 
 === Where They're Equal
@@ -177,6 +179,10 @@ Corosio *outperforms Asio coroutines* in handler dispatch (9-50% faster) and *sc
 |===
 
 === Timer Summary
+
+NOTE: These timer figures are a historical snapshot, not current
+guidance. The standalone timer API was removed; see the NOTE in the
+Timer Benchmarks section.
 
 [cols="2,1,1,1,1", options="header"]
 |===
@@ -671,6 +677,17 @@ Multiple socket pairs operating concurrently (64-byte messages).
 
 == Timer Benchmarks
 
+NOTE: The timer category was removed from the benchmark suite. Corosio's
+stateless delay() and timeout() acquire their timer per wait while Asio
+reuses a caller-owned timer object, so the two sides no longer measure
+comparable work. The figures below are a historical snapshot taken while
+both libraries exposed an equivalent timer object API.
+
+NOTE: The fan-out join primitives are likewise no longer like-for-like
+(corosio's `async_waker` latch versus Asio's parked-timer cancel), so
+those figures compare each library's idiomatic completion signal rather
+than identical mechanisms.
+
 === Timer Schedule/Cancel
 
 Measures the rate of creating and cancelling timers without firing them.
@@ -928,7 +945,7 @@ Asio callbacks achieve the highest raw single-threaded dispatch rate, but this a
 
 === Key Takeaway
 
-For coroutine-based async programming on Windows (IOCP), *Corosio provides equivalent or better performance* compared to Asio coroutines in every category except bidirectional socket throughput and timer schedule/cancel. Corosio's superior multi-threaded scaling makes it particularly well-suited for applications that distribute work across threads. Bidirectional throughput and timer operations are identified areas for future optimization.
+For coroutine-based async programming on Windows (IOCP), *Corosio provides equivalent or better performance* compared to Asio coroutines in every category except bidirectional socket throughput and timer schedule/cancel (a measurement that predates removal of the standalone timer API). Corosio's superior multi-threaded scaling makes it particularly well-suited for applications that distribute work across threads. Bidirectional throughput and timer operations are identified areas for future optimization.
 
 == Appendix: Raw Data
 

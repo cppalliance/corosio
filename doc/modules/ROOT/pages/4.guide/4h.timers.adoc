@@ -8,317 +8,190 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-= Timers
+= Delays and Timeouts
 
-The `timer` class provides asynchronous delays and timeouts. It integrates
-with the I/O context to schedule operations at specific times or after
-durations.
+Corosio schedules delays and deadlines through two free functions,
+`delay()` and `timeout()`. Neither one names an I/O object: there is
+no timer to construct, store as a member, move around, or close.
+Each call returns an awaitable that arms whatever clock resource it
+needs for the duration of a single `co_await`, then releases it. A
+loop that waits repeatedly, like a heartbeat or a retry backoff, just
+calls `delay()` again on the next iteration instead of resetting a
+long-lived object's expiry.
 
 [NOTE]
 ====
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/timer.hpp>
+#include <boost/corosio/delay.hpp>
+#include <boost/corosio/timeout.hpp>
+#include <boost/capy/cond.hpp>
+
 namespace corosio = boost::corosio;
+namespace capy = boost::capy;
 using namespace std::chrono_literals;
 ----
 ====
 
-== Overview
+== Delaying for a Duration
 
-Timers let you pause execution for a duration:
-
-[source,cpp]
-----
-corosio::timer t(ioc);
-t.expires_after(5s);
-co_await t.wait();  // Suspends for 5 seconds
-----
-
-== Construction
+`delay(duration)` suspends the calling coroutine until the given
+duration elapses:
 
 [source,cpp]
 ----
-corosio::io_context ioc;
-corosio::timer t(ioc);  // From execution context
-----
-
-== Setting Expiry Time
-
-=== Relative Time (Duration)
-
-[source,cpp]
-----
-t.expires_after(100ms);      // 100 milliseconds from now
-t.expires_after(5s);         // 5 seconds from now
-t.expires_after(2min);       // 2 minutes from now
-----
-
-Any `std::chrono::duration` type works.
-
-=== Absolute Time (Time Point)
-
-[source,cpp]
-----
-auto deadline = std::chrono::steady_clock::now() + 10s;
-t.expires_at(deadline);
-----
-
-=== Querying Expiry
-
-[source,cpp]
-----
-corosio::timer::time_point when = t.expiry();
-----
-
-== Waiting
-
-The `wait()` operation suspends until the timer expires:
-
-[source,cpp]
-----
-t.expires_after(1s);
-auto [ec] = co_await t.wait();
-
+auto [ec] = co_await corosio::delay(500ms);
 if (!ec)
-    std::cout << "Timer expired normally\n";
+    std::cout << "500ms elapsed\n";
 ----
 
-=== Cancellation
+A zero or negative duration completes synchronously without
+suspending.
 
-`cancel()` cancels all pending waits. `cancel_one()` cancels only the
-oldest pending wait ( FIFO order ). Both return the number of operations
-cancelled:
+== Delaying Until a Time Point
+
+`delay(time_point)` suspends until an absolute `steady_clock` time is
+reached. This is the right tool for periodic work, since it avoids
+the drift that accumulates when each iteration re-measures a relative
+duration from "now":
 
 [source,cpp]
 ----
-std::size_t n = t.cancel();      // Cancel all pending waits
-std::size_t m = t.cancel_one();  // Cancel oldest pending wait (0 or 1)
+auto next = std::chrono::steady_clock::now();
+for (int i = 0; i < 10; ++i)
+{
+    next += 100ms;
+    auto [ec] = co_await corosio::delay(next);
+    if (ec)
+        break;
+    std::cout << "Tick " << i << "\n";
+}
 ----
 
-The cancelled wait completes with an error:
+A time point already in the past also completes synchronously.
+
+== Cancellation
+
+`delay()` honors the stop token of its `co_await` environment. If the
+token is already stopped when the coroutine suspends, or becomes
+stopped while it is waiting, the wait ends early and resumes with
+`capy::cond::canceled`:
 
 [source,cpp]
 ----
-auto [ec] = co_await t.wait();
+auto [ec] = co_await corosio::delay(10s);
 if (ec == capy::cond::canceled)
-    std::cout << "Timer was cancelled\n";
+    std::cout << "Delay was cancelled\n";
 ----
 
-== Type Aliases
+There is no `cancel()` to call directly; cancellation flows entirely
+through the coroutine's stop token, the same mechanism every other
+Corosio operation uses.
+
+== Racing an Operation Against a Deadline
+
+`timeout(op, duration)` starts an awaitable and a deadline together.
+Whichever finishes first decides the outcome:
 
 [source,cpp]
 ----
-using clock_type = std::chrono::steady_clock;
-using time_point = clock_type::time_point;
-using duration = clock_type::duration;
+auto [ec, n] = co_await corosio::timeout(
+    sock.read_some(buffer), 200ms);
+
+if (ec == capy::cond::timeout)
+    std::cout << "No data within 200ms\n";
+else if (!ec)
+    std::cout << "Read " << n << " bytes\n";
 ----
 
-The timer uses `steady_clock` for monotonic timing unaffected by system
-clock adjustments.
+If the inner operation wins, its `io_result` is returned unchanged,
+error or success, payload and all. If the deadline wins, the inner
+operation is cancelled and `timeout()` produces its own result: `ec`
+is `capy::cond::timeout` and any payload (such as a byte count) is
+default-initialized, not whatever the cancelled operation happened
+to leave behind. Because the deadline-win path default-initializes
+that payload, the inner operation's `io_result` payload type must be
+default constructible.
 
-== Resetting Timers
-
-Setting a new expiry cancels any pending waits and returns the number
-cancelled:
+`timeout()` also accepts an absolute deadline:
 
 [source,cpp]
 ----
-t.expires_after(10s);
-// Later, before 10s elapses:
-std::size_t n = t.expires_after(5s);  // Resets to 5s, cancels previous waits
+auto deadline = std::chrono::steady_clock::now() + 5s;
+auto [ec] = co_await corosio::timeout(sock.connect(ep), deadline);
 ----
 
-== Multiple Waiters
+=== Distinguishing Timeout from Cancellation
 
-Multiple coroutines can wait on the same timer concurrently. When the
-timer expires, all waiters complete with success. When cancelled, all
-waiters complete with `capy::cond::canceled`:
-
-[source,cpp]
-----
-capy::task<void> waiter(corosio::timer& t, int id)
-{
-    auto [ec] = co_await t.wait();
-    if (!ec)
-        std::cout << "Waiter " << id << " expired\n";
-}
-
-capy::task<void> multi_wait(corosio::io_context& ioc)
-{
-    corosio::timer t(ioc);
-    t.expires_after(1s);
-
-    // All three coroutines wait on the same timer
-    co_await capy::when_all(
-        waiter(t, 1),
-        waiter(t, 2),
-        waiter(t, 3));
-}
-----
-
-Each waiter has independent stop token cancellation. Cancelling one
-waiter's stop token does not affect the others. `cancel_one()` cancels
-the oldest waiter only.
-
-== Use Cases
-
-=== Simple Delay
-
-[source,cpp]
-----
-capy::task<void> delayed_action(corosio::io_context& ioc)
-{
-    corosio::timer t(ioc);
-    t.expires_after(2s);
-    co_await t.wait();
-
-    std::cout << "2 seconds have passed\n";
-}
-----
-
-=== Periodic Timer
-
-[source,cpp]
-----
-capy::task<void> periodic_task(corosio::io_context& ioc)
-{
-    corosio::timer t(ioc);
-
-    for (int i = 0; i < 10; ++i)
-    {
-        t.expires_after(1s);
-        co_await t.wait();
-        std::cout << "Tick " << i << "\n";
-    }
-}
-----
-
-=== Operation Timeout
-
-[source,cpp]
-----
-capy::task<void> with_timeout(
-    corosio::io_context& ioc,
-    corosio::tcp_socket& sock)
-{
-    corosio::timer timeout(ioc);
-    timeout.expires_after(30s);
-
-    // Start both operations
-    auto read_task = sock.read_some(buffer);
-    auto timeout_task = timeout.wait();
-
-    // In practice, use parallel composition utilities
-    // This is simplified for illustration
-}
-----
-
-NOTE: For proper timeout handling, use Capy's parallel composition utilities
-like `when_any` or cancellation tokens.
-
-=== Rate Limiting
-
-[source,cpp]
-----
-capy::task<void> rate_limited_work(corosio::io_context& ioc)
-{
-    corosio::timer t(ioc);
-    auto next_time = std::chrono::steady_clock::now();
-
-    for (int i = 0; i < 100; ++i)
-    {
-        // Do work
-        process_item(i);
-
-        // Wait until next interval
-        next_time += 100ms;
-        t.expires_at(next_time);
-        auto [ec] = co_await t.wait();
-        if (ec)
-            break;
-    }
-}
-----
-
-Using absolute time points prevents drift in periodic operations.
-
-== Stop Token Cancellation
-
-Timer waits support stop token cancellation through the affine protocol:
-
-[source,cpp]
-----
-// Inside a cancellable task:
-auto [ec] = co_await t.wait();
-// Completes with capy::cond::canceled if stop requested
-----
-
-== Move Semantics
-
-Timers are move-only:
-
-[source,cpp]
-----
-corosio::timer t1(ioc);
-corosio::timer t2 = std::move(t1);  // OK
-
-corosio::timer t3 = t2;  // Error: deleted copy constructor
-----
-
-Move assignment cancels any pending wait on the destination timer.
-
-NOTE: After a move, the destination uses the source's execution context.
-
-== Thread Safety
+A `timeout()` call sits inside whatever stop token its own coroutine
+is awaited under. If that parent token is stopped, the race ends the
+same way an unguarded operation would: the inner awaitable is
+cancelled and `timeout()` reports `capy::cond::canceled`, not
+`capy::cond::timeout`. The two conditions are never ambiguous:
 
 [cols="1,2"]
 |===
-| Operation | Thread Safety
+| Result | Meaning
 
-| Distinct timers
-| Safe from different threads
+| `capy::cond::timeout`
+| The deadline elapsed before the operation completed.
 
-| Same timer
-| NOT safe for concurrent operations
+| `capy::cond::canceled`
+| The coroutine's own stop token fired, independent of the deadline.
 |===
-
-Don't call `wait()`, `expires_after()`, or `cancel()` concurrently on the
-same timer.
-
-== Example: Heartbeat
 
 [source,cpp]
 ----
-capy::task<void> heartbeat(
-    corosio::io_context& ioc,
+auto [ec] = co_await corosio::timeout(sock.connect(ep), 3s);
+if (ec == capy::cond::timeout)
+    std::cout << "Connect attempt timed out\n";
+else if (ec == capy::cond::canceled)
+    std::cout << "Connect attempt cancelled by caller\n";
+----
+
+== Requires an io_context
+
+Both `delay()` and `timeout()` need a clock service to arm, which
+they obtain from the awaiting coroutine's executor. That executor
+must belong to an `io_context`; awaiting either one from any other
+kind of execution context terminates the program, since silently
+skipping the requested delay would be worse than a hard failure.
+
+== Composing with Other Operations
+
+Because `timeout()` takes any awaitable that yields an `io_result`,
+it composes with anything Corosio returns, not just socket reads. A
+connect-with-retry loop pairs `timeout()` for the per-attempt deadline
+with `delay()` for the pause between attempts:
+
+[source,cpp]
+----
+capy::task<>
+connect_with_deadline(
     corosio::tcp_socket& sock,
-    std::atomic<bool>& running)
+    corosio::endpoint ep,
+    int max_attempts)
 {
-    corosio::timer t(ioc);
-
-    while (running)
+    for (int attempt = 0; attempt < max_attempts; ++attempt)
     {
-        t.expires_after(30s);
-        auto [ec] = co_await t.wait();
+        auto [ec] = co_await corosio::timeout(sock.connect(ep), 3s);
+        if (!ec)
+            co_return;
 
-        if (ec)
-            break;
+        if (ec == capy::cond::canceled)
+            co_return;
 
-        // Send heartbeat
-        std::string ping = "PING\r\n";
-        auto [wec, n] = co_await capy::write(
-            sock, capy::const_buffer(ping.data(), ping.size()));
-
-        if (wec)
-            break;
+        sock.close();
+        auto [dec] = co_await corosio::delay(500ms);
+        if (dec == capy::cond::canceled)
+            co_return;
     }
 }
 ----
 
 == Next Steps
 
-* xref:4.guide/4i.signals.adoc[Signal Handling] — Respond to OS signals
-* xref:4.guide/4c.io-context.adoc[I/O Context] — The event loop
-* xref:4.guide/4m.error-handling.adoc[Error Handling] — Cancellation patterns
+* xref:4.guide/4i.signals.adoc[Signal Handling]: respond to OS signals
+* xref:4.guide/4c.io-context.adoc[I/O Context]: the event loop
+* xref:4.guide/4m.error-handling.adoc[Error Handling]: cancellation patterns

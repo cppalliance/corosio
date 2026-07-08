@@ -431,6 +431,6 @@ thread is modifying a `signal_set`.
 
 == Next Steps
 
-* xref:4.guide/4h.timers.adoc[Timers] — Timed operations
+* xref:4.guide/4h.timers.adoc[Delays and Timeouts] — Timed operations
 * xref:4.guide/4c.io-context.adoc[I/O Context] — The event loop
 * xref:../3.tutorials/3a.echo-server.adoc[Echo Server Tutorial] — Server example

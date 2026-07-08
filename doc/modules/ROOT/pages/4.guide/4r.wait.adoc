@@ -21,9 +21,13 @@ Code snippets assume:
 [source,cpp]
 ----
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/timeout.hpp>
 #include <boost/corosio/wait_type.hpp>
+#include <boost/capy/cond.hpp>
 
 namespace corosio = boost::corosio;
+namespace capy = boost::capy;
+using namespace std::chrono_literals;
 ----
 ====
 
@@ -109,8 +113,17 @@ auto waiter = [&]() -> capy::task<> {
 };
 ----
 
-`cancel_after()` composes with `wait()` the same way it does with the
-other socket operations.
+xref:4.guide/4h.timers.adoc[`timeout()`] composes with `wait()` the
+same way it does with the other socket operations, since `wait()`
+yields an `io_result` like any other awaitable:
+
+[source,cpp]
+----
+auto [ec] = co_await corosio::timeout(
+    sock.wait(corosio::wait_type::read), 200ms);
+if (ec == capy::cond::timeout)
+    std::cout << "No readiness within 200ms\n";
+----
 
 == `wait_type::write` Semantics
 

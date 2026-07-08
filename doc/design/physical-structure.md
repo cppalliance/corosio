@@ -157,7 +157,6 @@ private:
 | io_read_file    | io_object                       | read_at(offset, buffers)                   |
 | io_write_file   | io_object                       | write_at(offset, buffers)                  |
 | io_file         | io_read_file, io_write_file     | read_at, write_at (diamond)                |
-| io_timer        | io_object                       | wait(duration), cancel()                   |
 | io_signal_set   | io_object                       | add(signal), wait(), cancel()              |
 | io_file_watch   | io_object                       | watch(path), wait() yielding change events |
 
@@ -306,7 +305,7 @@ private:
 | Type        | Base(s)       | Key Operations                                              |
 | ----------- | ------------- | ----------------------------------------------------------- |
 | process     | io_object     | spawn(), wait_for_exit(); stdin/stdout/stderr are pipe ends |
-| timer       | io_timer      | expires_after(), expires_at(), wait(), cancel()             |
+| delay/timeout | (free functions) | delay(duration/time_point), timeout(op, duration/time_point) |
 | signal_set  | io_signal_set | add(int), remove(int), wait(), cancel()                     |
 | serial_port | io_stream     | Baud rate, parity, flow control options                     |
 | file_watch  | io_file_watch | watch(path), wait() yields change events                    |
@@ -328,7 +327,7 @@ private:
 | Source location     | `src/corosio/src/{class}.cpp` (e.g. `tcp_socket.cpp`)                        |
 | Test files          | `test/unit/{class}.cpp` (e.g. `tcp_socket.cpp`)                              |
 | Platform OS headers | NEVER included at this layer                                                 |
-| Naming convention   | Protocol name, no prefix (e.g. `tcp_socket`, `tcp_acceptor`, `timer`)        |
+| Naming convention   | Protocol name, no prefix (e.g. `tcp_socket`, `tcp_acceptor`, `udp_socket`)   |
 | Member functions    | Inherited from abstract layer + protocol-specific operations                 |
 | Endpoint types      | Protocol-specific (e.g. `corosio::endpoint` for TCP/IP); lives at this layer |
 | Service interface   | `detail::socket_service`, `detail::acceptor_service` etc. in `src/detail/`   |
@@ -404,7 +403,6 @@ private:
 | ------------------------------ | ---------------------------- | ---------------------------- |
 | `native_tcp_socket<Backend>`   | tcp_socket                   | Awaitables inline impl logic |
 | `native_tcp_acceptor<Backend>` | tcp_acceptor                 | Awaitables inline impl logic |
-| `native_timer<Backend>`        | timer                        | Awaitables inline impl logic |
 | `native_signal_set<Backend>`   | signal_set                   | Awaitables inline impl logic |
 | (aliases)                      |                              |                              |
 | epoll_tcp_socket               | = `native_tcp_socket<epoll>` |                              |

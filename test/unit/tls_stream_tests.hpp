@@ -13,6 +13,7 @@
 
 #include "test_utils.hpp"
 #include "stream_tests.hpp"
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tls_stream.hpp>
 #include <boost/corosio/test/mocket.hpp>
@@ -22,6 +23,7 @@
 
 #include <array>
 #include <cstddef>
+#include <stop_token>
 
 #include "test_suite.hpp"
 
@@ -1323,25 +1325,24 @@ testEncryptedKey(StreamFactory make_stream, bool expect_success = true)
     // If the TLS build cannot decrypt the key the handshake stalls
     // with both sides waiting; tear the transport down instead of
     // hanging the suite.
-    timer failsafe(ioc);
-    failsafe.expires_after(std::chrono::seconds(5));
+    std::stop_source failsafe_stop;
 
     auto client_hs = [&]() -> capy::task<> {
         auto [ec]   = co_await client.handshake(stream_type::client);
         client_ec   = ec;
         client_done = true;
         if (server_done)
-            failsafe.cancel();
+            failsafe_stop.request_stop();
     };
     auto server_hs = [&]() -> capy::task<> {
         auto [ec]   = co_await server.handshake(stream_type::server);
         server_ec   = ec;
         server_done = true;
         if (client_done)
-            failsafe.cancel();
+            failsafe_stop.request_stop();
     };
     auto failsafe_task = [&]() -> capy::task<> {
-        auto [ec] = co_await failsafe.wait();
+        auto [ec] = co_await corosio::delay(std::chrono::seconds(5));
         if (!ec)
         {
             failsafe_hit = true;
@@ -1351,7 +1352,8 @@ testEncryptedKey(StreamFactory make_stream, bool expect_success = true)
     };
     capy::run_async(ioc.get_executor())(client_hs());
     capy::run_async(ioc.get_executor())(server_hs());
-    capy::run_async(ioc.get_executor())(failsafe_task());
+    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
+        failsafe_task());
     ioc.run();
 
     BOOST_TEST(client_done);

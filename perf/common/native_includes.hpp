@@ -12,7 +12,6 @@
 
 #include <boost/corosio/native/native_tcp_socket.hpp>
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
-#include <boost/corosio/native/native_timer.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
 
 // Suite factory instantiation — returns benchmark_suite by value

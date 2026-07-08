@@ -233,10 +233,9 @@ int main()
 
     // Create I/O objects
     corosio::tcp_socket sock(ioc);
-    corosio::timer timer(ioc);
 
     // Launch initial coroutine
-    capy::run_async(ioc.get_executor())(main_coroutine(sock, timer));
+    capy::run_async(ioc.get_executor())(main_coroutine(sock));
 
     // Run until all work completes
     ioc.run();
@@ -349,4 +348,4 @@ On macOS and FreeBSD, the `io_context` uses kqueue:
 
 * xref:4.guide/4d.sockets.adoc[Sockets] — I/O with TCP sockets
 * xref:4.guide/4e.tcp-acceptor.adoc[Acceptors] — Accept incoming connections
-* xref:4.guide/4h.timers.adoc[Timers] — Async delays and timeouts
+* xref:4.guide/4h.timers.adoc[Delays and Timeouts] — Async delays and timeouts

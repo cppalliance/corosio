@@ -10,11 +10,11 @@
 // Test that header file is self-contained.
 #include <boost/corosio/connect.hpp>
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/timer.hpp>
 
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -264,9 +264,7 @@ struct connect_test
 
         // Must also cancel the acceptor since nothing will ever connect.
         auto cancel_task = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             acc.cancel();
         };
 
@@ -416,9 +414,7 @@ struct connect_test
         };
 
         auto cancel_task = [&]() -> capy::task<> {
-            timer t(ioc);
-            t.expires_after(std::chrono::milliseconds(50));
-            (void)co_await t.wait();
+            (void)co_await corosio::delay(std::chrono::milliseconds(50));
             client.cancel();
         };
 

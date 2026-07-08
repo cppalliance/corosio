@@ -206,8 +206,8 @@ example.
 * `provide` / `expect` are byte sequences only; there is no out-of-band
   signal for "now produce EOF" or "now fail" beyond the matching
   semantics described above.
-* No simulation of network delay; for that, run code under a stop_token
-  with a timer.
+* No simulation of network delay; for that, wrap the operation under
+  test in `corosio::timeout()`, or insert a `corosio::delay()` call.
 * Connection-establishment errors are not simulated — the pair always
   comes back open.
 
