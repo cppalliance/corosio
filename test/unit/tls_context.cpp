@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -85,7 +86,6 @@ struct tls_context_test
         BOOST_TEST(data.verification_mode == tls_verify_mode::none);
         BOOST_TEST_EQ(data.verify_depth, 100);
         BOOST_TEST(!data.use_default_verify_paths);
-        BOOST_TEST(!data.require_ocsp_staple);
         BOOST_TEST(data.revocation == tls_revocation_policy::disabled);
     }
 
@@ -242,19 +242,21 @@ struct tls_context_test
     }
 
     //
-    // PKCS#12 (currently unsupported)
+    // PKCS#12
     //
 
-    void testPkcs12Unsupported()
+    void testPkcs12()
     {
         tls_context ctx;
-        auto ec = ctx.use_pkcs12("not-pkcs12-data", "password");
-        BOOST_TEST(ec);
-        BOOST_TEST(ec == std::make_error_code(std::errc::function_not_supported));
 
-        ec = ctx.use_pkcs12_file("/some/path", "password");
+        // In-memory data is stored and decoded lazily at handshake time,
+        // so the setter itself succeeds regardless of contents.
+        auto ec = ctx.use_pkcs12("not-pkcs12-data", "password");
+        BOOST_TEST(!ec);
+
+        // Loading from a missing file fails at the file layer.
+        ec = ctx.use_pkcs12_file("/nonexistent/path.p12", "password");
         BOOST_TEST(ec);
-        BOOST_TEST(ec == std::make_error_code(std::errc::function_not_supported));
     }
 
     //
@@ -513,26 +515,6 @@ struct tls_context_test
         }
     }
 
-    void testOcspStaple()
-    {
-        tls_context ctx;
-        auto ec = ctx.set_ocsp_staple("\x30\x82\x01\x00 binary ocsp blob");
-        BOOST_TEST(!ec);
-        BOOST_TEST(!detail::get_tls_context_data(ctx).ocsp_staple.empty());
-    }
-
-    void testRequireOcspStaple()
-    {
-        tls_context ctx;
-        BOOST_TEST(!detail::get_tls_context_data(ctx).require_ocsp_staple);
-
-        ctx.set_require_ocsp_staple(true);
-        BOOST_TEST(detail::get_tls_context_data(ctx).require_ocsp_staple);
-
-        ctx.set_require_ocsp_staple(false);
-        BOOST_TEST(!detail::get_tls_context_data(ctx).require_ocsp_staple);
-    }
-
     void testRevocationPolicy()
     {
         tls_context ctx;
@@ -560,7 +542,7 @@ struct tls_context_test
         testUseCertificateFile();
         testUseCertificateChainFile();
         testUsePrivateKeyFile();
-        testPkcs12Unsupported();
+        testPkcs12();
 
         testAddCertificateAuthority();
         testLoadVerifyFile();
@@ -578,8 +560,6 @@ struct tls_context_test
 
         testAddCrl();
         testAddCrlFile();
-        testOcspStaple();
-        testRequireOcspStaple();
         testRevocationPolicy();
     }
 };

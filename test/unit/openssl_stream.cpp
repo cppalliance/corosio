@@ -80,33 +80,6 @@ struct openssl_stream_test
         BOOST_TEST(&mutable_next == &const_next);
     }
 
-    /** Test certificate chain validation (OpenSSL-specific).
-
-        OpenSSL supports sending full certificate chains via
-        use_certificate_chain() and add_extra_chain_cert().
-    */
-    void testCertificateChain()
-    {
-        using namespace test;
-
-        // Server sends full chain
-        {
-            io_context ioc;
-            auto client_ctx = make_rootonly_client_context();
-            auto server_ctx = make_fullchain_server_context();
-            run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
-        }
-
-        // Server sends only entity cert (fails)
-        {
-            io_context ioc;
-            auto client_ctx = make_rootonly_client_context();
-            auto server_ctx = make_chain_server_context();
-            run_tls_test_fail(
-                ioc, client_ctx, server_ctx, make_stream, make_stream);
-        }
-    }
-
     /** Test that OpenSSL errors carry the OpenSSL category (issue #223).
 
         Errors from the OpenSSL error queue must render readable messages,
@@ -141,30 +114,6 @@ struct openssl_stream_test
             BOOST_TEST(client_ec.message().find("Unknown error") ==
                 std::string::npos);
         }
-    }
-
-    /** Test that set_default_verify_paths() is applied without breaking
-        context creation.
-
-        Behaviorally exercising the system trust store would require
-        redirecting it (SSL_CERT_FILE), which is not portable across the CI
-        matrix, so this only asserts the call path runs cleanly: a client
-        that trusts the CA explicitly *and* calls set_default_verify_paths()
-        still completes the handshake. The load-from-path mechanism is
-        covered behaviorally by testAddVerifyPath().
-    */
-    void testDefaultVerifyPaths()
-    {
-        using namespace test;
-
-        io_context ioc;
-        auto client_ctx = make_client_context();
-        // Adding the system store on top of the explicit CA must not break
-        // context creation or verification.
-        client_ctx.set_default_verify_paths(); // NOLINT(bugprone-unused-return-value)
-
-        auto server_ctx = make_server_context();
-        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
 
     /** Test that add_verify_path() loads CAs from a hashed directory.
@@ -216,6 +165,17 @@ struct openssl_stream_test
         test::testCertificateValidation(make_stream);
         test::testSni(make_stream);
         test::testSniCallback(make_stream);
+        test::testAlpnAccessorEmpty(make_stream);
+        test::testAlpn(make_stream, /*alpn_supported=*/true);
+        test::testAlpnNoOverlap(make_stream, /*alpn_supported=*/true);
+        test::testProtocolVersion(make_stream);
+        test::testCiphersuitesTls13(
+            make_stream, "TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384");
+        test::testPkcs12(make_stream);
+        test::testPkcs12Chain(make_stream);
+        test::testCertificateChain(make_stream);
+        test::testDefaultVerifyPaths(make_stream);
+        test::testCrlRevocation(make_stream, /*crl_supported=*/true);
         test::testVerifyCallback(make_stream);
         test::testVerifyCallbackOnSuccess(make_stream);
         test::testMtls(make_stream);
@@ -228,9 +188,7 @@ struct openssl_stream_test
         test::testResetViaHandshake(make_stream, cert_modes);
         test::testResetFuse(make_stream);
 
-        testCertificateChain();
         testErrorCategory();
-        testDefaultVerifyPaths();
         testAddVerifyPath();
         testName();
         testNextLayer();

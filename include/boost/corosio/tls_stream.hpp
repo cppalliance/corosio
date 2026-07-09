@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -170,6 +171,24 @@ public:
             such as "openssl" or "wolfssl".
     */
     virtual std::string_view name() const noexcept = 0;
+
+    /** Returns the ALPN protocol negotiated during the handshake.
+
+        Application-Layer Protocol Negotiation selects a single
+        application protocol (for example `"h2"` or `"http/1.1"`)
+        during the TLS handshake, from the list supplied via
+        @ref tls_context::set_alpn.
+
+        @return The negotiated protocol, or an empty view if no
+            protocol was negotiated, ALPN was not offered, the
+            handshake has not completed, or the backend/build does
+            not support ALPN.
+
+        @par Thread Safety
+        Safe to call after the handshake completes; not safe to call
+        concurrently with a handshake or reset.
+    */
+    virtual std::string_view alpn_protocol() const noexcept { return {}; }
 
 protected:
     tls_stream() = default;

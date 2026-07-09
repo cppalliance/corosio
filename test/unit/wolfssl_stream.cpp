@@ -80,38 +80,6 @@ struct wolfssl_stream_test
         BOOST_TEST(&mutable_next == &const_next);
     }
 
-    /** Test certificate chain validation (WolfSSL-specific).
-
-        WolfSSL has limited certificate chain support compared to OpenSSL.
-        wolfSSL_CTX_add_extra_chain_cert doesn't properly send intermediates
-        during handshake, so fullchain tests are disabled.
-    */
-    void testCertificateChain()
-    {
-        using namespace test;
-
-        // Basic chain test: client trusts both CAs
-        {
-            io_context ioc;
-            auto client_ctx = make_chain_client_context();
-            auto server_ctx = make_chain_server_context();
-            run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
-        }
-
-        // Server sends only entity cert - client trusts only root (fails)
-        {
-            io_context ioc;
-            auto client_ctx = make_rootonly_client_context();
-            auto server_ctx = make_chain_server_context();
-            run_tls_test_fail(
-                ioc, client_ctx, server_ctx, make_stream, make_stream);
-        }
-
-        // Note: Fullchain test disabled for WolfSSL due to
-        // wolfSSL_CTX_add_extra_chain_cert not properly sending
-        // intermediates during handshake.
-    }
-
     /** Test that WolfSSL errors carry the WolfSSL category (issue #223).
 
         Errors from wolfSSL_get_error must render readable messages, not
@@ -189,6 +157,7 @@ struct wolfssl_stream_test
         test::testCertificateValidation(make_stream);
         test::testSni(make_stream);
         test::testSniCallback(make_stream);
+        test::testAlpnAccessorEmpty(make_stream);
         // Whether the linked WolfSSL can honor a verify callback on success
         // (WOLFSSL_ALWAYS_VERIFY_CB) is a build-time property, queried here
         // at runtime so the test needs no WolfSSL headers.
@@ -205,6 +174,19 @@ struct wolfssl_stream_test
             // fails closed rather than let a tightening callback fail open.
             test::testVerifyCallback(make_stream, /*callback_supported=*/false);
         }
+        // ALPN is likewise build-gated (HAVE_ALPN); when absent, offering
+        // protocols fails closed instead of negotiating nothing silently.
+        test::testAlpn(make_stream, wolfssl_supports_alpn());
+        test::testAlpnNoOverlap(make_stream, wolfssl_supports_alpn());
+        test::testProtocolVersion(make_stream);
+        test::testCiphersuitesTls13(
+            make_stream, "TLS13-AES128-GCM-SHA256",
+            "TLS13-AES256-GCM-SHA384");
+        test::testPkcs12(make_stream);
+        test::testPkcs12Chain(make_stream);
+        test::testCertificateChain(make_stream);
+        test::testDefaultVerifyPaths(make_stream);
+        test::testCrlRevocation(make_stream, wolfssl_supports_crl());
         test::testMtls(make_stream);
         test::testMoveSemantics(make_stream);
         test::testAbruptClose(make_stream);
@@ -217,7 +199,6 @@ struct wolfssl_stream_test
         test::testResetViaHandshake(make_stream, cert_modes);
         test::testResetFuse(make_stream);
 
-        testCertificateChain();
         testErrorCategory();
         testAddVerifyPath();
         testName();

@@ -250,34 +250,6 @@ tls_context make_client_with_crl( std::string_view crl_path )
     return ctx;
 }
 
-// Client requiring OCSP stapling
-tls_context make_client_require_ocsp()
-{
-    tls_context ctx;
-
-    must(ctx.set_default_verify_paths());
-    must(ctx.set_verify_mode( tls_verify_mode::peer ));
-
-    // Require server to provide OCSP staple
-    ctx.set_require_ocsp_staple( true );
-
-    return ctx;
-}
-
-// Server with OCSP stapling
-tls_context make_server_with_ocsp( std::string_view ocsp_response )
-{
-    tls_context ctx;
-
-    must(ctx.use_certificate_chain_file( "server.crt" ));
-    must(ctx.use_private_key_file( "server.key", tls_file_format::pem ));
-
-    // Provide pre-fetched OCSP response to clients
-    must(ctx.set_ocsp_staple( ocsp_response ));
-
-    return ctx;
-}
-
 // Strict revocation checking
 tls_context make_hardened_client()
 {
@@ -288,9 +260,6 @@ tls_context make_hardened_client()
 
     // Fail if revocation status cannot be determined
     ctx.set_revocation_policy( tls_revocation_policy::hard_fail );
-
-    // Require OCSP staple from server
-    ctx.set_require_ocsp_staple( true );
 
     return ctx;
 }

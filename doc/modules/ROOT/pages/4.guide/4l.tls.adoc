@@ -56,23 +56,12 @@ Trust anchors can also be supplied explicitly with
 `add_certificate_authority()`, `load_verify_file()`, or `add_verify_path()`,
 and `set_verify_callback()` installs a custom verification hook.
 
-[WARNING]
-.Not yet implemented
-====
-Several other `tls_context` settings are accepted by the API but are *not
-yet wired up* by the OpenSSL or WolfSSL backends in this release. They are
-stored and silently ignored:
-
-* `set_alpn()` — ALPN is never negotiated.
-* `set_min_protocol_version()` / `set_max_protocol_version()` — version
-  bounds are never applied; the range is the native default.
-* `add_crl()` / `add_crl_file()`, `set_ocsp_staple()` /
-  `set_require_ocsp_staple()`, `set_revocation_policy()` — all
-  revocation checking is inert.
-* `use_pkcs12()` / `use_pkcs12_file()` — return
-  `std::errc::function_not_supported`.
-* `set_ciphersuites()` — applied by OpenSSL only; WolfSSL ignores it.
-====
+Protocol version bounds (`set_min_protocol_version()` /
+`set_max_protocol_version()`), cipher suites (`set_ciphersuites()` and
+`set_ciphersuites_tls13()`), ALPN (`set_alpn()`, read back with
+`alpn_protocol()`), PKCS#12 credentials (`use_pkcs12()` /
+`use_pkcs12_file()`), and CRL-based revocation (`add_crl()` /
+`add_crl_file()` with `set_revocation_policy()`) are all supported.
 
 [NOTE]
 ====
@@ -183,9 +172,10 @@ PKCS#12 (`.pfx` or `.p12`) files bundle certificate, key, and chain together:
 ctx.use_pkcs12_file("credentials.pfx", "bundle-password");
 ----
 
-NOTE: PKCS#12 loading is not yet implemented; `use_pkcs12()` and
-`use_pkcs12_file()` return `std::errc::function_not_supported`. Load the
-certificate and key separately for now.
+NOTE: The bundle is decoded when the first stream is created; a malformed
+bundle or wrong passphrase surfaces as a handshake failure. Intermediate
+certificates in the bundle are loaded and sent during the handshake on
+both backends.
 
 === Trust Anchors
 
@@ -238,8 +228,9 @@ ctx.set_min_protocol_version(tls_version::tls_1_3);
 ctx.set_max_protocol_version(tls_version::tls_1_2);
 ----
 
-NOTE: Protocol version bounds are not yet applied by the backends. The
-negotiated range is whatever the native default method provides.
+NOTE: On WolfSSL the ceiling is applied by selecting a version-specific
+method (there is no native set-max call); a window whose minimum exceeds
+its maximum yields a context that fails the handshake.
 
 Available versions:
 
@@ -258,25 +249,36 @@ Available versions:
 
 [source,cpp]
 ----
-// OpenSSL-style cipher string
+// TLS 1.2-and-below cipher list (OpenSSL syntax)
 ctx.set_ciphersuites("ECDHE+AESGCM:ECDHE+CHACHA20");
+// TLS 1.3 cipher suites (configured separately)
+ctx.set_ciphersuites_tls13("TLS_AES_256_GCM_SHA384");
 ----
 
-NOTE: `set_ciphersuites()` is applied by the OpenSSL backend only; the
-WolfSSL backend accepts the string but silently ignores it.
+NOTE: `set_ciphersuites()` covers TLS 1.2 and below; TLS 1.3 suites use
+`set_ciphersuites_tls13()`. Both backends apply them (WolfSSL merges the
+two into one list). Suite *names* differ between backends (OpenSSL
+`TLS_AES_128_GCM_SHA256` vs WolfSSL `TLS13-AES128-GCM-SHA256`). The OpenSSL
+security level is left at the library default; express a lower level
+explicitly with a `@SECLEVEL=` token if required.
 
 ==== ALPN
 
-Application-Layer Protocol Negotiation selects the application protocol:
+Application-Layer Protocol Negotiation selects the application protocol.
+Read the negotiated protocol after the handshake with
+`stream.alpn_protocol()`:
 
 [source,cpp]
 ----
 // Prefer HTTP/2, fall back to HTTP/1.1
 ctx.set_alpn({"h2", "http/1.1"});
+// ... after handshake:
+std::string_view proto = stream.alpn_protocol(); // e.g. "h2", or empty
 ----
 
-NOTE: ALPN is not yet wired up; the protocol list is accepted but never
-negotiated by either backend.
+NOTE: On WolfSSL, ALPN requires a `HAVE_ALPN` build; without it, offering
+protocols fails the handshake with `std::errc::function_not_supported`
+rather than negotiate nothing silently.
 
 === Certificate Verification
 
@@ -361,53 +363,27 @@ Which certificates the callback sees depends on the backend:
 
 === Revocation Checking
 
-WARNING: None of the revocation features below are wired up yet. CRLs
-(`add_crl()` / `add_crl_file()`), OCSP stapling (`set_ocsp_staple()` /
-`set_require_ocsp_staple()`), and `set_revocation_policy()` are all accepted
-but inert. In particular, `set_require_ocsp_staple(true)` does *not* fail the
-handshake when no staple is present, and `soft_fail` / `hard_fail` do not
-change verification behavior.
-
-==== Certificate Revocation Lists
+Revocation is checked against Certificate Revocation Lists (CRLs). CRLs
+are consulted only when a revocation policy other than `disabled` is set.
 
 [source,cpp]
 ----
-// Load CRL from file
+// Load a CRL (PEM or DER), from file or memory
 ctx.add_crl_file("issuer.crl");
-
-// Load CRL from memory
 ctx.add_crl(crl_data);
-----
 
-==== OCSP Stapling
-
-For servers, provide a stapled OCSP response:
-
-[source,cpp]
-----
-ctx.set_ocsp_staple(ocsp_response_data);
-----
-
-For clients, require the server to staple:
-
-[source,cpp]
-----
-ctx.set_require_ocsp_staple(true);
-----
-
-==== Revocation Policy
-
-[source,cpp]
-----
-// Don't check revocation (default)
-ctx.set_revocation_policy(tls_revocation_policy::disabled);
-
-// Check but allow if status unknown
-ctx.set_revocation_policy(tls_revocation_policy::soft_fail);
-
-// Fail if revocation status can't be determined
+// Choose how strict to be
 ctx.set_revocation_policy(tls_revocation_policy::hard_fail);
 ----
+
+Under `soft_fail`, a certificate whose status cannot be determined
+(missing or expired CRL) is accepted, but one that is actually listed as
+revoked is rejected. Under `hard_fail`, an undeterminable status is also
+rejected. `disabled` (the default) skips revocation entirely.
+
+NOTE: On WolfSSL, CRL checking requires a `HAVE_CRL` build; without it,
+supplying a CRL or a non-disabled policy fails the handshake with
+`std::errc::function_not_supported` rather than skip the check silently.
 
 == TLS Streams
 

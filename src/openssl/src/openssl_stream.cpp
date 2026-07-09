@@ -22,6 +22,7 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 #include <openssl/x509.h>
+#include <openssl/pkcs12.h>
 
 #include <algorithm>
 #include <array>
@@ -86,6 +87,30 @@ apply_hostname_verification(SSL* ssl, std::string const& hostname)
     if (auto* param = SSL_get0_param(ssl))
         X509_VERIFY_PARAM_set1_host(param, hostname.c_str(), 0);
 #endif
+}
+
+// Map a portable protocol version to the OpenSSL version constant.
+inline int
+openssl_proto_version(tls_version v) noexcept
+{
+    return v == tls_version::tls_1_3 ? TLS1_3_VERSION : TLS1_2_VERSION;
+}
+
+// Encode a protocol list into ALPN wire format: each entry is a
+// one-byte length followed by that many bytes. Entries longer than 255
+// bytes are skipped (invalid per RFC 7301).
+inline std::string
+build_alpn_wire(std::vector<std::string> const& protocols)
+{
+    std::string wire;
+    for (auto const& p : protocols)
+    {
+        if (p.empty() || p.size() > 255)
+            continue;
+        wire.push_back(static_cast<char>(p.size()));
+        wire.append(p);
+    }
+    return wire;
 }
 
 inline std::error_code
@@ -173,8 +198,10 @@ password_callback(char* buf, int size, int rwflag, void* userdata)
 }
 
 // Trampoline installed via SSL_CTX_set_verify. Recovers the portable
-// context data from the SSL_CTX ex_data (populated for every context),
-// wraps the store context, and delegates to the user's callback.
+// context data from the SSL_CTX ex_data (populated for every context)
+// and applies, in order: the revocation policy's soft-fail downgrade,
+// then the user's verify callback. Installed whenever a verify callback
+// or a non-disabled revocation policy is configured.
 static int
 verify_callback_trampoline(int preverified, X509_STORE_CTX* store_ctx)
 {
@@ -185,23 +212,87 @@ verify_callback_trampoline(int preverified, X509_STORE_CTX* store_ctx)
 
     auto* cd = static_cast<tls_context_data const*>(
         SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), sni_ctx_data_index));
-    if (!cd || !cd->verify_callback)
+    if (!cd)
         return preverified;
 
-    // Expose the current certificate's DER so the callback can inspect it
-    // portably. i2d_X509 allocates; free it after the callback returns.
-    X509* cert         = X509_STORE_CTX_get_current_cert(store_ctx);
-    unsigned char* der = nullptr;
-    int der_len        = cert ? i2d_X509(cert, &der) : 0;
+    bool ok = preverified != 0;
 
-    verify_context vc(
-        store_ctx, der,
-        der_len > 0 ? static_cast<std::size_t>(der_len) : 0);
-    bool const ok = cd->verify_callback(preverified != 0, vc);
+    // Soft-fail revocation: accept certificates whose revocation status
+    // could not be determined (missing/expired CRL), but never downgrade
+    // an actual revocation. hard_fail leaves every CRL error fatal.
+    if (!ok && cd->revocation == tls_revocation_policy::soft_fail)
+    {
+        int const err = X509_STORE_CTX_get_error(store_ctx);
+        if (err == X509_V_ERR_UNABLE_TO_GET_CRL ||
+            err == X509_V_ERR_UNABLE_TO_GET_CRL_ISSUER ||
+            err == X509_V_ERR_CRL_HAS_EXPIRED ||
+            err == X509_V_ERR_CRL_NOT_YET_VALID)
+            ok = true;
+    }
 
-    if (der)
-        OPENSSL_free(der);
+    if (cd->verify_callback)
+    {
+        // Expose the current certificate's DER so the callback can inspect
+        // it portably. i2d_X509 allocates; free it after the callback.
+        X509* cert         = X509_STORE_CTX_get_current_cert(store_ctx);
+        unsigned char* der = nullptr;
+        int der_len        = cert ? i2d_X509(cert, &der) : 0;
+
+        verify_context vc(
+            store_ctx, der,
+            der_len > 0 ? static_cast<std::size_t>(der_len) : 0);
+        ok = cd->verify_callback(ok, vc);
+
+        if (der)
+            OPENSSL_free(der);
+    }
+
     return ok ? 1 : 0;
+}
+
+// Server-side ALPN selection. Chooses the server's most-preferred
+// protocol that the client also offered. On no overlap it sends a fatal
+// no_application_protocol alert (RFC 7301 §3.2).
+//
+// `arg` points at the native context's build-time snapshot of the server
+// preference list (a std::vector<std::string>), so client offer and server
+// selection are both taken from the same immutable snapshot.
+//
+// The selected protocol pointer must stay valid until the callback runs
+// again, so we point *out into the client list `in` (OpenSSL keeps it
+// valid for the connection) rather than into a local buffer.
+static int
+alpn_select_cb(
+    SSL* /* ssl */, unsigned char const** out, unsigned char* outlen,
+    unsigned char const* in, unsigned int inlen, void* arg)
+{
+    auto const* prefs = static_cast<std::vector<std::string> const*>(arg);
+    if (!prefs || prefs->empty())
+        return SSL_TLSEXT_ERR_NOACK; // nothing configured (defensive)
+
+    // Server preference order wins: for each server protocol, look for a
+    // matching entry in the client's offered list.
+    for (auto const& pref : *prefs)
+    {
+        for (unsigned int i = 0; i + 1 <= inlen;)
+        {
+            unsigned int len = in[i];
+            if (i + 1 + len > inlen)
+                break; // malformed
+            if (len == pref.size() &&
+                std::memcmp(in + i + 1, pref.data(), len) == 0)
+            {
+                *out    = in + i + 1;
+                *outlen = static_cast<unsigned char>(len);
+                return SSL_TLSEXT_ERR_OK;
+            }
+            i += 1 + len;
+        }
+    }
+
+    // The server supports ALPN but shares no protocol with the client.
+    // RFC 7301 §3.2: fail the handshake with a fatal alert.
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
 static int
@@ -229,6 +320,22 @@ class openssl_native_context : public native_context_base
 public:
     SSL_CTX* ctx_;
     tls_context_data const* cd_;
+    // Set when a requested configuration could not be applied: an inverted
+    // protocol window (min > max), a cipher list / suite the library
+    // rejected, a protocol-version bound that would not set, or a CRL that
+    // parsed as neither PEM nor DER. Silently proceeding would negotiate an
+    // unexpected version, ignore the requested ciphers, or weaken revocation
+    // (fail-open under soft_fail), so do_handshake refuses the handshake.
+    bool setup_failed_ = false;
+    // ALPN offer in wire format (length-prefixed), encoded once from the
+    // immutable protocol list. The client sets it per-SSL each handshake;
+    // caching it here avoids re-encoding and re-allocating per connection.
+    std::string alpn_wire_;
+    // Server preference snapshot, captured at build time so the select
+    // callback matches against the same immutable list the client offers
+    // from (see alpn_select_cb). Its address is handed to OpenSSL as the
+    // callback arg, so it must outlive the SSL_CTX (it does — same object).
+    std::vector<std::string> alpn_snapshot_;
 
     explicit openssl_native_context(tls_context_data const& cd)
         : ctx_(nullptr)
@@ -248,11 +355,34 @@ public:
         if (cd.servername_callback)
             SSL_CTX_set_tlsext_servername_callback(ctx_, sni_callback);
 
+        // ALPN server-side selection. The callback only fires when this
+        // context is used as a server; the client offer (encoded once here)
+        // is set per-SSL from alpn_wire_. Snapshot the preference list so the
+        // callback and the client offer share one immutable source.
+        if (!cd.alpn_protocols.empty())
+        {
+            alpn_snapshot_ = cd.alpn_protocols;
+            SSL_CTX_set_alpn_select_cb(ctx_, alpn_select_cb, &alpn_snapshot_);
+            alpn_wire_ = build_alpn_wire(cd.alpn_protocols);
+        }
+
         SSL_CTX_set_mode(ctx_, SSL_MODE_ENABLE_PARTIAL_WRITE);
         SSL_CTX_set_mode(ctx_, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 #if defined(SSL_MODE_RELEASE_BUFFERS)
         SSL_CTX_set_mode(ctx_, SSL_MODE_RELEASE_BUFFERS);
 #endif
+
+        // Enforce the configured protocol version window (role-agnostic).
+        // An inverted window (min > max) admits no protocol; fail closed
+        // rather than silently negotiate an unexpected version.
+        if (cd.min_version > cd.max_version)
+            setup_failed_ = true;
+        if (!SSL_CTX_set_min_proto_version(
+                ctx_, openssl_proto_version(cd.min_version)))
+            setup_failed_ = true;
+        if (!SSL_CTX_set_max_proto_version(
+                ctx_, openssl_proto_version(cd.max_version)))
+            setup_failed_ = true;
 
         int verify_mode_flag = SSL_VERIFY_NONE;
         if (cd.verification_mode == tls_verify_mode::peer)
@@ -260,11 +390,78 @@ public:
         else if (cd.verification_mode == tls_verify_mode::require_peer)
             verify_mode_flag =
                 SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+        // The trampoline runs the revocation soft-fail downgrade and the
+        // user callback, so install it if either is configured.
+        bool const need_trampoline =
+            cd.verify_callback ||
+            cd.revocation != tls_revocation_policy::disabled;
         SSL_CTX_set_verify(
             ctx_, verify_mode_flag,
-            cd.verify_callback ? &verify_callback_trampoline : nullptr);
+            need_trampoline ? &verify_callback_trampoline : nullptr);
 
-        if (!cd.entity_certificate.empty())
+        // PKCS#12 bundle: decode cert + key + chain directly into the
+        // context. This is an alternative credential source; the PEM/DER
+        // fields below are only consulted when no bundle is supplied.
+        if (!cd.pkcs12_data.empty())
+        {
+            // A bundle that fails to decode or parse (wrong passphrase,
+            // malformed) must not leave the context silently credential-less:
+            // a client using PKCS#12 for mTLS would then fail open against a
+            // verify_mode::peer server. Fail closed like every other setup
+            // error.
+            BIO* bio = BIO_new_mem_buf(
+                cd.pkcs12_data.data(),
+                static_cast<int>(cd.pkcs12_data.size()));
+            if (!bio)
+                setup_failed_ = true;
+            else
+            {
+                PKCS12* p12 = d2i_PKCS12_bio(bio, nullptr);
+                if (!p12)
+                    setup_failed_ = true;
+                else
+                {
+                    EVP_PKEY* pkey        = nullptr;
+                    X509* cert            = nullptr;
+                    STACK_OF(X509)* chain = nullptr;
+                    if (PKCS12_parse(
+                            p12, cd.pkcs12_password.c_str(), &pkey, &cert,
+                            &chain))
+                    {
+                        if (cert)
+                            SSL_CTX_use_certificate(ctx_, cert);
+                        if (pkey)
+                            SSL_CTX_use_PrivateKey(ctx_, pkey);
+                        if (chain)
+                            for (int i = 0; i < sk_X509_num(chain); ++i)
+                            {
+                                // add_extra_chain_cert takes ownership of the
+                                // dup only on success; free it (and fail
+                                // closed) otherwise so a partial chain isn't
+                                // sent silently.
+                                X509* dup = X509_dup(sk_X509_value(chain, i));
+                                if (!dup ||
+                                    !SSL_CTX_add_extra_chain_cert(ctx_, dup))
+                                {
+                                    X509_free(dup);
+                                    setup_failed_ = true;
+                                }
+                            }
+                    }
+                    else
+                        setup_failed_ = true;
+                    EVP_PKEY_free(pkey);
+                    X509_free(cert);
+                    if (chain)
+                        sk_X509_pop_free(chain, X509_free);
+                    PKCS12_free(p12);
+                }
+                ERR_clear_error();
+                BIO_free(bio);
+            }
+        }
+
+        if (cd.pkcs12_data.empty() && !cd.entity_certificate.empty())
         {
             BIO* bio = BIO_new_mem_buf(
                 cd.entity_certificate.data(),
@@ -285,7 +482,7 @@ public:
             }
         }
 
-        if (!cd.certificate_chain.empty())
+        if (cd.pkcs12_data.empty() && !cd.certificate_chain.empty())
         {
             BIO* bio = BIO_new_mem_buf(
                 cd.certificate_chain.data(),
@@ -311,7 +508,7 @@ public:
             }
         }
 
-        if (!cd.private_key.empty())
+        if (cd.pkcs12_data.empty() && !cd.private_key.empty())
         {
             BIO* bio = BIO_new_mem_buf(
                 cd.private_key.data(), static_cast<int>(cd.private_key.size()));
@@ -365,13 +562,65 @@ public:
             SSL_CTX_load_verify_locations(ctx_, nullptr, path.c_str());
         ERR_clear_error();
 
+        // Certificate revocation via CRLs. Load any supplied CRLs and, when
+        // a revocation policy is active, enable leaf CRL checking. soft_fail
+        // vs hard_fail is applied in the verify trampoline. CRL_CHECK (leaf
+        // only) is used so a missing CRL for a trusted root is not itself an
+        // error.
+        if (cd.revocation != tls_revocation_policy::disabled)
+        {
+            for (auto const& crl_data : cd.crls)
+            {
+                BIO* bio = BIO_new_mem_buf(
+                    crl_data.data(), static_cast<int>(crl_data.size()));
+                if (!bio)
+                {
+                    setup_failed_ = true;
+                    continue;
+                }
+                // Accept PEM or DER (the documented contract). Try PEM first,
+                // then rewind and try DER.
+                X509_CRL* crl =
+                    PEM_read_bio_X509_CRL(bio, nullptr, nullptr, nullptr);
+                if (!crl)
+                {
+                    BIO_reset(bio);
+                    crl = d2i_X509_CRL_bio(bio, nullptr);
+                }
+                if (crl)
+                {
+                    X509_STORE_add_crl(store, crl);
+                    X509_CRL_free(crl);
+                }
+                else
+                {
+                    // A supplied CRL that parses as neither PEM nor DER must
+                    // not be silently dropped; record it so the handshake
+                    // fails closed rather than weakening revocation.
+                    setup_failed_ = true;
+                }
+                BIO_free(bio);
+            }
+            X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK);
+            ERR_clear_error();
+        }
+
         SSL_CTX_set_verify_depth(ctx_, cd.verify_depth);
 
-        if (!cd.ciphersuites.empty())
-        {
-            SSL_CTX_set_security_level(ctx_, 0);
-            SSL_CTX_set_cipher_list(ctx_, cd.ciphersuites.c_str());
-        }
+        // Cipher configuration. TLS 1.2-and-below use the cipher list;
+        // TLS 1.3 uses the separate ciphersuites API. The security level
+        // is deliberately left at the library default: a weak cipher
+        // string should fail loudly rather than be silently permitted via
+        // a forced @SECLEVEL=0. Callers that genuinely need a lower level
+        // can express it in the cipher string (e.g. "...:@SECLEVEL=0").
+        // A cipher string the library rejects must not silently fall back to
+        // the default suites; fail closed instead.
+        if (!cd.ciphersuites.empty() &&
+            !SSL_CTX_set_cipher_list(ctx_, cd.ciphersuites.c_str()))
+            setup_failed_ = true;
+        if (!cd.ciphersuites_tls13.empty() &&
+            !SSL_CTX_set_ciphersuites(ctx_, cd.ciphersuites_tls13.c_str()))
+            setup_failed_ = true;
     }
 
     ~openssl_native_context() override
@@ -381,12 +630,18 @@ public:
     }
 };
 
-inline SSL_CTX*
-get_openssl_context(tls_context_data const& cd)
+inline openssl_native_context*
+get_openssl_native_context(tls_context_data const& cd)
 {
     static char key;
     auto* p = cd.find(&key, [&] { return new openssl_native_context(cd); });
-    return static_cast<openssl_native_context*>(p)->ctx_;
+    return static_cast<openssl_native_context*>(p);
+}
+
+SSL_CTX*
+get_openssl_context(tls_context_data const& cd)
+{
+    return get_openssl_native_context(cd)->ctx_;
 }
 
 } // namespace detail
@@ -398,6 +653,9 @@ struct openssl_stream::impl
     SSL* ssl_     = nullptr;
     BIO* ext_bio_ = nullptr;
     bool used_    = false;
+
+    // ALPN protocol negotiated during the handshake (empty if none).
+    std::string alpn_selected_;
 
     std::vector<char> in_buf_;
     std::vector<char> out_buf_;
@@ -435,7 +693,18 @@ struct openssl_stream::impl
         auto& cd = detail::get_tls_context_data(ctx_);
         apply_hostname_verification(ssl_, cd.hostname);
 
+        alpn_selected_.clear();
         used_ = false;
+    }
+
+    // Record the ALPN protocol selected during the handshake, if any.
+    void capture_alpn()
+    {
+        unsigned char const* data = nullptr;
+        unsigned int len          = 0;
+        SSL_get0_alpn_selected(ssl_, &data, &len);
+        if (data && len)
+            alpn_selected_.assign(reinterpret_cast<char const*>(data), len);
     }
 
     capy::task<std::error_code> flush_output()
@@ -635,10 +904,35 @@ struct openssl_stream::impl
 
     capy::io_task<> do_handshake(int type)
     {
+        // A requested configuration could not be applied when the native
+        // context was built (inverted protocol window, rejected cipher/
+        // version, or an unparseable CRL). Refuse the handshake rather than
+        // proceed with weakened or unexpected settings.
+        auto* nc = detail::get_openssl_native_context(
+            detail::get_tls_context_data(ctx_));
+        if (nc->setup_failed_)
+            co_return std::make_error_code(std::errc::invalid_argument);
+
         if (used_)
             reset();
 
         std::error_code ec;
+
+        // Client offers its ALPN protocol list; the server selects via the
+        // context callback. Role is only known here, so set the pre-encoded
+        // wire offer per-SSL.
+        if (type == openssl_stream::client && !nc->alpn_wire_.empty())
+        {
+            // SSL_set_alpn_protos uses the inverted convention: 0 = success.
+            // A non-zero return (allocation failure) means the offer was not
+            // installed; fail closed rather than negotiate nothing silently.
+            if (SSL_set_alpn_protos(
+                    ssl_,
+                    reinterpret_cast<unsigned char const*>(
+                        nc->alpn_wire_.data()),
+                    static_cast<unsigned int>(nc->alpn_wire_.size())) != 0)
+                co_return std::make_error_code(std::errc::invalid_argument);
+        }
 
         while (true)
         {
@@ -652,7 +946,8 @@ struct openssl_stream::impl
             if (ret == 1)
             {
                 used_ = true;
-                ec    = co_await flush_output();
+                capture_alpn();
+                ec = co_await flush_output();
                 co_return {ec};
             }
             else
@@ -866,6 +1161,12 @@ std::string_view
 openssl_stream::name() const noexcept
 {
     return "openssl";
+}
+
+std::string_view
+openssl_stream::alpn_protocol() const noexcept
+{
+    return impl_->alpn_selected_;
 }
 
 } // namespace boost::corosio

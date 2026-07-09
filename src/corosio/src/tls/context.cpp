@@ -18,6 +18,25 @@
 
 namespace boost::corosio {
 
+namespace {
+
+// Read an entire file in binary mode into `out`, returning ENOENT if it
+// cannot be opened. Shared by the file-based credential/trust loaders.
+std::error_code
+read_file_contents(std::string_view filename, std::string& out)
+{
+    std::ifstream file(std::string(filename), std::ios::binary);
+    if (!file)
+        return std::error_code(ENOENT, std::generic_category());
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    out = ss.str();
+    return {};
+}
+
+} // namespace
+
 tls_context::tls_context() : impl_(std::make_shared<impl>()) {}
 
 //
@@ -37,13 +56,8 @@ std::error_code
 tls_context::use_certificate_file(
     std::string_view filename, tls_file_format format)
 {
-    std::ifstream file(std::string(filename), std::ios::binary);
-    if (!file)
-        return std::error_code(ENOENT, std::generic_category());
-
-    std::ostringstream ss;
-    ss << file.rdbuf();
-    impl_->entity_certificate = ss.str();
+    if (auto ec = read_file_contents(filename, impl_->entity_certificate); ec)
+        return ec;
     impl_->entity_cert_format = format;
     return {};
 }
@@ -58,14 +72,7 @@ tls_context::use_certificate_chain(std::string_view chain)
 std::error_code
 tls_context::use_certificate_chain_file(std::string_view filename)
 {
-    std::ifstream file(std::string(filename), std::ios::binary);
-    if (!file)
-        return std::error_code(ENOENT, std::generic_category());
-
-    std::ostringstream ss;
-    ss << file.rdbuf();
-    impl_->certificate_chain = ss.str();
-    return {};
+    return read_file_contents(filename, impl_->certificate_chain);
 }
 
 std::error_code
@@ -81,31 +88,34 @@ std::error_code
 tls_context::use_private_key_file(
     std::string_view filename, tls_file_format format)
 {
-    std::ifstream file(std::string(filename), std::ios::binary);
-    if (!file)
-        return std::error_code(ENOENT, std::generic_category());
-
-    std::ostringstream ss;
-    ss << file.rdbuf();
-    impl_->private_key        = ss.str();
+    if (auto ec = read_file_contents(filename, impl_->private_key); ec)
+        return ec;
     impl_->private_key_format = format;
     return {};
 }
 
 std::error_code
-tls_context::use_pkcs12(
-    std::string_view /*data*/, std::string_view /*passphrase*/)
+tls_context::use_pkcs12(std::string_view data, std::string_view passphrase)
 {
-    // TODO: Implement PKCS#12 parsing
-    return std::make_error_code(std::errc::function_not_supported);
+    // assign(ptr, len) rather than std::string(string_view): libstdc++'s
+    // basic_string(const char*, size_t) computes std::distance(s, s + n),
+    // whose one-past-the-end pointer ASan's detect_invalid_pointer_pairs
+    // rejects for a global buffer. assign copies without that subtraction.
+    impl_->pkcs12_data.assign(data.data(), data.size());
+    impl_->pkcs12_password.assign(passphrase.data(), passphrase.size());
+    return {};
 }
 
 std::error_code
 tls_context::use_pkcs12_file(
-    std::string_view /*filename*/, std::string_view /*passphrase*/)
+    std::string_view filename, std::string_view passphrase)
 {
-    // TODO: Implement PKCS#12 file loading
-    return std::make_error_code(std::errc::function_not_supported);
+    if (auto ec = read_file_contents(filename, impl_->pkcs12_data); ec)
+        return ec;
+    // assign(ptr, len), not std::string(passphrase): see the note in
+    // use_pkcs12.
+    impl_->pkcs12_password.assign(passphrase.data(), passphrase.size());
+    return {};
 }
 
 //
@@ -122,13 +132,10 @@ tls_context::add_certificate_authority(std::string_view ca)
 std::error_code
 tls_context::load_verify_file(std::string_view filename)
 {
-    std::ifstream file(std::string(filename), std::ios::binary);
-    if (!file)
-        return std::error_code(ENOENT, std::generic_category());
-
-    std::ostringstream ss;
-    ss << file.rdbuf();
-    impl_->ca_certificates.push_back(ss.str());
+    std::string contents;
+    if (auto ec = read_file_contents(filename, contents); ec)
+        return ec;
+    impl_->ca_certificates.push_back(std::move(contents));
     return {};
 }
 
@@ -172,8 +179,24 @@ tls_context::set_ciphersuites(std::string_view ciphers)
 }
 
 std::error_code
+tls_context::set_ciphersuites_tls13(std::string_view ciphers)
+{
+    impl_->ciphersuites_tls13 = std::string(ciphers);
+    return {};
+}
+
+std::error_code
 tls_context::set_alpn(std::initializer_list<std::string_view> protocols)
 {
+    // Validate before mutating so a bad entry doesn't silently drop part of
+    // the list (or wipe a prior valid configuration). A name must be a
+    // non-empty token no longer than 255 bytes (the ALPN wire length field)
+    // and must not contain a comma (WolfSSL's list separator).
+    for (auto const& p : protocols)
+        if (p.empty() || p.size() > 255 ||
+            p.find(',') != std::string_view::npos)
+            return std::make_error_code(std::errc::invalid_argument);
+
     impl_->alpn_protocols.clear();
     for (auto const& p : protocols)
         impl_->alpn_protocols.emplace_back(p);
@@ -239,27 +262,11 @@ tls_context::add_crl(std::string_view crl)
 std::error_code
 tls_context::add_crl_file(std::string_view filename)
 {
-    std::ifstream file(std::string(filename), std::ios::binary);
-    if (!file)
-        return std::error_code(ENOENT, std::generic_category());
-
-    std::ostringstream ss;
-    ss << file.rdbuf();
-    impl_->crls.push_back(ss.str());
+    std::string contents;
+    if (auto ec = read_file_contents(filename, contents); ec)
+        return ec;
+    impl_->crls.push_back(std::move(contents));
     return {};
-}
-
-std::error_code
-tls_context::set_ocsp_staple(std::string_view response)
-{
-    impl_->ocsp_staple = std::string(response);
-    return {};
-}
-
-void
-tls_context::set_require_ocsp_staple(bool require)
-{
-    impl_->require_ocsp_staple = require;
 }
 
 void

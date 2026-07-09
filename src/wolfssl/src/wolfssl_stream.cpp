@@ -23,6 +23,7 @@
 #include <wolfssl/ssl.h>
 #include <wolfssl/error-ssl.h>
 #include <wolfssl/wolfcrypt/asn_public.h>
+#include <wolfssl/wolfcrypt/pkcs12.h>
 
 #include <algorithm>
 #include <array>
@@ -134,6 +135,26 @@ wolfssl_supports_verify_callback() noexcept
 #endif
 }
 
+bool
+wolfssl_supports_alpn() noexcept
+{
+#if defined(HAVE_ALPN)
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool
+wolfssl_supports_crl() noexcept
+{
+#if defined(HAVE_CRL)
+    return true;
+#else
+    return false;
+#endif
+}
+
 //
 // Native context caching
 //
@@ -162,6 +183,25 @@ wolfssl_sni_callback(WOLFSSL* ssl, int* /* alert */, void* arg)
 
     return 0; // Accept
 }
+
+#if defined(HAVE_CRL)
+// CRL error callback for the soft-fail revocation policy.
+//
+// WolfSSL invokes this ONLY when it cannot determine a certificate's
+// revocation status because no CRL entry was found for it (ret ==
+// CRL_MISSING, or an expired/undecodable CRL). Returning non-zero overrides
+// that error to success. A certificate that is actually listed in a loaded
+// CRL is rejected before this path (CRL_CERT_REVOKED), so it still fails
+// closed. This mirrors OpenSSL's soft_fail: tolerate "status unknown",
+// still reject "revoked".
+static int
+wolfssl_crl_soft_fail_cb(
+    int /*ret*/, WOLFSSL_CRL* /*crl*/, WOLFSSL_CERT_MANAGER* /*cm*/,
+    void* /*ctx*/)
+{
+    return 1; // override missing/unknown-status CRL error -> accept
+}
+#endif
 
 #if defined(WOLFSSL_ALWAYS_VERIFY_CB)
 // WOLFSSL_CTX ex_data slot holding the portable tls_context_data pointer,
@@ -221,6 +261,28 @@ wolfssl_verify_callback(int preverified, WOLFSSL_X509_STORE_CTX* store)
 }
 #endif // WOLFSSL_ALWAYS_VERIFY_CB
 
+// Select the WolfSSL method for a [min,max] version window. WolfSSL has
+// no native set_max_proto_version (that API needs OPENSSL_EXTRA), so the
+// ceiling is expressed by choosing a version-specific method; the floor
+// is additionally enforced via wolfSSL_CTX_SetMinVersion.
+inline WOLFSSL_METHOD*
+wolfssl_method_for(bool server, tls_version min_v, tls_version max_v)
+{
+    if (min_v == tls_version::tls_1_3)
+        return server ? wolfTLSv1_3_server_method()
+                      : wolfTLSv1_3_client_method();
+    if (max_v == tls_version::tls_1_2)
+        return server ? wolfTLSv1_2_server_method()
+                      : wolfTLSv1_2_client_method();
+    return server ? wolfTLS_server_method() : wolfTLS_client_method();
+}
+
+inline int
+wolfssl_min_version_const(tls_version v) noexcept
+{
+    return v == tls_version::tls_1_3 ? WOLFSSL_TLSV1_3 : WOLFSSL_TLSV1_2;
+}
+
 /** Cached WolfSSL contexts owning WOLFSSL_CTX for client and server.
 
     Created on first stream construction for a given tls_context,
@@ -233,8 +295,19 @@ class wolfssl_native_context : public native_context_base
 public:
     WOLFSSL_CTX* client_ctx_;
     WOLFSSL_CTX* server_ctx_;
+    // Set when a requested configuration could not be applied: an inverted
+    // protocol window (min > max), a cipher list the library rejected, a
+    // version floor that would not set, or a CRL that parsed as neither PEM
+    // nor DER. init_ssl_for_role then fails closed rather than negotiate an
+    // unexpected version, ignore the requested ciphers, or weaken revocation
+    // (fail-open under soft_fail).
+    bool setup_failed_ = false;
+    // ALPN protocol list in WolfSSL's comma-separated format, built once
+    // from the immutable protocol list. Installed per-session (client offer
+    // / server candidates); caching it avoids rebuilding per connection.
+    std::string alpn_list_;
 
-    static void
+    void
     apply_common_settings(WOLFSSL_CTX* ctx, tls_context_data const& cd)
     {
         if (!ctx)
@@ -281,9 +354,79 @@ public:
         wolfSSL_CTX_set_verify(ctx, verify_mode_flag, nullptr);
 #endif
 
-        // Apply certificate chain if provided (entity cert + intermediates)
-        // wolfSSL_CTX_use_certificate_chain_buffer loads entity as cert, rest as chain
-        if (!cd.certificate_chain.empty())
+        // PKCS#12 bundle: decode cert + key with the native wolfcrypt API
+        // (the wolfSSL_d2i_PKCS12_bio wrapper needs OPENSSL_EXTRA). CA/chain
+        // entries inside the bundle are loaded and sent during the handshake
+        // (see below), matching the OpenSSL backend.
+        if (!cd.pkcs12_data.empty())
+        {
+            // A bundle that fails to decode or parse (wrong passphrase,
+            // malformed) must not leave the context silently credential-less:
+            // a client using PKCS#12 for mTLS would then fail open against a
+            // verify_mode::peer server. Fail closed like every other setup
+            // error.
+            WC_PKCS12* p12 = wc_PKCS12_new();
+            if (!p12)
+                setup_failed_ = true;
+            else
+            {
+                byte* pkey         = nullptr;
+                word32 pkeySz      = 0;
+                byte* cert         = nullptr;
+                word32 certSz      = 0;
+                WC_DerCertList* ca = nullptr;
+                if (wc_d2i_PKCS12(
+                        reinterpret_cast<byte const*>(cd.pkcs12_data.data()),
+                        static_cast<word32>(cd.pkcs12_data.size()), p12) != 0 ||
+                    wc_PKCS12_parse(
+                        p12, cd.pkcs12_password.c_str(), &pkey, &pkeySz, &cert,
+                        &certSz, &ca) != 0)
+                {
+                    setup_failed_ = true;
+                }
+                else
+                {
+                    if (cert && ca)
+                    {
+                        // Concatenate leaf + chain into one DER blob and load
+                        // it as a chain so the intermediate(s) are sent during
+                        // the handshake (parity with the OpenSSL backend).
+                        std::vector<unsigned char> chain(cert, cert + certSz);
+                        for (WC_DerCertList* n = ca; n; n = n->next)
+                            chain.insert(
+                                chain.end(), n->buffer, n->buffer + n->bufferSz);
+                        if (wolfSSL_CTX_use_certificate_chain_buffer_format(
+                                ctx, chain.data(),
+                                static_cast<long>(chain.size()),
+                                WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS)
+                            setup_failed_ = true;
+                    }
+                    else if (cert)
+                    {
+                        if (wolfSSL_CTX_use_certificate_buffer(
+                                ctx, cert, static_cast<long>(certSz),
+                                WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS)
+                            setup_failed_ = true;
+                    }
+                    if (pkey &&
+                        wolfSSL_CTX_use_PrivateKey_buffer(
+                            ctx, pkey, static_cast<long>(pkeySz),
+                            WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS)
+                        setup_failed_ = true;
+                    if (ca)
+                        wc_FreeCertList(ca, nullptr);
+                    XFREE(pkey, nullptr, DYNAMIC_TYPE_PKCS);
+                    XFREE(cert, nullptr, DYNAMIC_TYPE_PKCS);
+                }
+                wc_PKCS12_free(p12);
+            }
+        }
+
+        // Apply certificate chain if provided (entity cert + intermediates).
+        // These discrete PEM/DER fields are an alternative credential source
+        // to a PKCS#12 bundle; when a bundle was supplied it already loaded
+        // the credential above, so skip them (parity with the OpenSSL path).
+        if (cd.pkcs12_data.empty() && !cd.certificate_chain.empty())
         {
             wolfSSL_CTX_use_certificate_chain_buffer(
                 ctx,
@@ -291,7 +434,7 @@ public:
                     cd.certificate_chain.data()),
                 static_cast<long>(cd.certificate_chain.size()));
         }
-        else if (!cd.entity_certificate.empty())
+        else if (cd.pkcs12_data.empty() && !cd.entity_certificate.empty())
         {
             // Only use single certificate if no chain provided
             int format = (cd.entity_cert_format == tls_file_format::pem)
@@ -304,8 +447,9 @@ public:
                 static_cast<long>(cd.entity_certificate.size()), format);
         }
 
-        // Apply private key if provided
-        if (!cd.private_key.empty())
+        // Apply private key if provided (skipped when a PKCS#12 bundle
+        // already supplied the credential, as above).
+        if (cd.pkcs12_data.empty() && !cd.private_key.empty())
         {
             if (cd.password_callback)
             {
@@ -381,8 +525,72 @@ public:
         for (auto const& path : cd.verify_paths)
             wolfSSL_CTX_load_verify_locations(ctx, nullptr, path.c_str());
 
+        // Enforce the version floor. The method chosen in the ctor sets the
+        // ceiling; SetMinVersion pins the floor (the range method would
+        // otherwise permit older versions the build still supports). An
+        // inverted window (min > max) is silently reduced to a min-only
+        // context by wolfssl_method_for, so catch it explicitly and fail
+        // closed rather than negotiate an unexpected version.
+        if (cd.min_version > cd.max_version)
+            setup_failed_ = true;
+        if (wolfSSL_CTX_SetMinVersion(
+                ctx, wolfssl_min_version_const(cd.min_version)) !=
+            WOLFSSL_SUCCESS)
+            setup_failed_ = true;
+
         // Apply verify depth
         wolfSSL_CTX_set_verify_depth(ctx, cd.verify_depth);
+
+        // Cipher configuration. WolfSSL accepts TLS 1.2 and TLS 1.3 suite
+        // names in a single colon-separated list, so merge both fields.
+        if (!cd.ciphersuites.empty() || !cd.ciphersuites_tls13.empty())
+        {
+            std::string list = cd.ciphersuites;
+            if (!cd.ciphersuites_tls13.empty())
+            {
+                if (!list.empty())
+                    list.push_back(':');
+                list.append(cd.ciphersuites_tls13);
+            }
+            // A cipher list the library rejects must not silently fall back
+            // to the default suites; fail closed instead.
+            if (wolfSSL_CTX_set_cipher_list(ctx, list.c_str()) !=
+                WOLFSSL_SUCCESS)
+                setup_failed_ = true;
+        }
+
+#if defined(HAVE_CRL)
+        // Certificate revocation via CRLs (fuller builds only; when HAVE_CRL
+        // is absent, init_ssl_for_role fails closed instead).
+        if (cd.revocation != tls_revocation_policy::disabled)
+        {
+            if (wolfSSL_CTX_EnableCRL(ctx, WOLFSSL_CRL_CHECK) !=
+                WOLFSSL_SUCCESS)
+                setup_failed_ = true;
+            for (auto const& crl : cd.crls)
+            {
+                auto const* buf =
+                    reinterpret_cast<unsigned char const*>(crl.data());
+                auto const sz = static_cast<long>(crl.size());
+                // Accept PEM or DER (the documented contract): try PEM, then
+                // DER. A supplied CRL that parses as neither must not be
+                // silently dropped, so record it for a fail-closed handshake.
+                if (wolfSSL_CTX_LoadCRLBuffer(
+                        ctx, buf, sz, WOLFSSL_FILETYPE_PEM) != WOLFSSL_SUCCESS &&
+                    wolfSSL_CTX_LoadCRLBuffer(
+                        ctx, buf, sz, WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS)
+                    setup_failed_ = true;
+            }
+            // soft_fail tolerates an undeterminable revocation status (no CRL
+            // loaded for a cert) the way OpenSSL does. Without this, WolfSSL's
+            // WOLFSSL_CRL_CHECK hard-fails with CRL_MISSING; the callback
+            // downgrades that to success while still rejecting a cert that a
+            // loaded CRL actually revokes.
+            if (cd.revocation == tls_revocation_policy::soft_fail)
+                wolfSSL_CTX_SetCRL_ErrorCb(
+                    ctx, &detail::wolfssl_crl_soft_fail_cb, nullptr);
+        }
+#endif
     }
 
     tls_context_data const* cd_; // For SNI callback access
@@ -392,12 +600,24 @@ public:
         , server_ctx_(nullptr)
         , cd_(&cd)
     {
-        // Create separate contexts for client and server
-        client_ctx_ = wolfSSL_CTX_new(wolfTLS_client_method());
-        server_ctx_ = wolfSSL_CTX_new(wolfTLS_server_method());
+        // Create separate contexts for client and server, choosing the
+        // method that honors the configured protocol version window.
+        client_ctx_ = wolfSSL_CTX_new(
+            wolfssl_method_for(false, cd.min_version, cd.max_version));
+        server_ctx_ = wolfSSL_CTX_new(
+            wolfssl_method_for(true, cd.min_version, cd.max_version));
 
         apply_common_settings(client_ctx_, cd);
         apply_common_settings(server_ctx_, cd);
+
+        // Encode the ALPN protocol list once (comma-separated); each session
+        // installs it via wolfSSL_UseALPN in init_ssl_for_role.
+        for (auto const& p : cd.alpn_protocols)
+        {
+            if (!alpn_list_.empty())
+                alpn_list_.push_back(',');
+            alpn_list_.append(p);
+        }
 
         // Set SNI callback on server context if provided
         if (server_ctx_ && cd.servername_callback)
@@ -440,6 +660,9 @@ struct wolfssl_stream::impl
     tls_context ctx_;
     WOLFSSL* ssl_ = nullptr;
     bool used_    = false;
+
+    // ALPN protocol negotiated during the handshake (empty if none).
+    std::string alpn_selected_;
 
     // Buffers for read operations
     std::vector<char> read_in_buf_;
@@ -503,7 +726,20 @@ struct wolfssl_stream::impl
         write_in_len_  = 0;
         write_out_len_ = 0;
         current_op_    = nullptr;
+        alpn_selected_.clear();
         used_          = false;
+    }
+
+    // Record the ALPN protocol selected during the handshake, if any.
+    void capture_alpn()
+    {
+#if defined(HAVE_ALPN)
+        char* name       = nullptr;
+        unsigned short sz = 0;
+        if (wolfSSL_ALPN_GetProtocol(ssl_, &name, &sz) == WOLFSSL_SUCCESS &&
+            name && sz)
+            alpn_selected_.assign(name, sz);
+#endif
     }
 
     // WolfSSL I/O Callbacks
@@ -867,6 +1103,7 @@ struct wolfssl_stream::impl
             {
                 // Handshake completed successfully
                 used_ = true;
+                capture_alpn();
                 // Flush any remaining output
                 if (read_out_len_ > 0)
                 {
@@ -1105,6 +1342,13 @@ struct wolfssl_stream::impl
                 wolfSSL_get_error(nullptr, 0), wolfssl_category());
         }
 
+        // A requested configuration could not be applied when the native
+        // context was built (inverted protocol window, rejected cipher/
+        // version, or an unparseable CRL). Fail closed rather than proceed
+        // with weakened or unexpected settings.
+        if (native->setup_failed_)
+            return std::make_error_code(std::errc::invalid_argument);
+
         // Select appropriate context based on role
         WOLFSSL_CTX* native_ctx = (type == wolfssl_stream::client)
             ? native->client_ctx_
@@ -1155,6 +1399,46 @@ struct wolfssl_stream::impl
             return std::make_error_code(std::errc::function_not_supported);
 #endif
         }
+
+        // ALPN. Both client (offer) and server (candidate list) install
+        // the same protocol list; WolfSSL negotiates from it.
+        if (!cd.alpn_protocols.empty())
+        {
+#if defined(HAVE_ALPN)
+            // FAILED_ON_MISMATCH: on no shared protocol the server aborts the
+            // handshake with a fatal no_application_protocol alert (RFC 7301
+            // §3.2), matching the OpenSSL backend. A non-success return means
+            // the offer was not installed; fail closed rather than proceed.
+            if (wolfSSL_UseALPN(
+                    ssl_, native->alpn_list_.data(),
+                    static_cast<unsigned int>(native->alpn_list_.size()),
+                    WOLFSSL_ALPN_FAILED_ON_MISMATCH) != WOLFSSL_SUCCESS)
+                return std::make_error_code(std::errc::invalid_argument);
+#else
+            // This WolfSSL build cannot negotiate ALPN. An application that
+            // offered protocols (and may read alpn_protocol() expecting a
+            // result) must not silently proceed with none; fail closed.
+            // Rebuild WolfSSL with HAVE_ALPN to enable ALPN.
+            wolfSSL_free(ssl_);
+            ssl_ = nullptr;
+            return std::make_error_code(std::errc::function_not_supported);
+#endif
+        }
+
+#if !defined(HAVE_CRL)
+        // Revocation via CRL requires a WolfSSL build with HAVE_CRL. When a
+        // policy actually requests checking, fail closed rather than skip it
+        // silently. Gate on the policy alone: a CRL supplied while the policy
+        // stays disabled is inert by contract (consulted only when the policy
+        // is not disabled), so that config must work here as it does
+        // everywhere else.
+        if (cd.revocation != tls_revocation_policy::disabled)
+        {
+            wolfSSL_free(ssl_);
+            ssl_ = nullptr;
+            return std::make_error_code(std::errc::function_not_supported);
+        }
+#endif
 
         // Apply per-session config (SNI + hostname verification) from context
         if (type == wolfssl_stream::client && !cd.hostname.empty())
@@ -1244,6 +1528,12 @@ std::string_view
 wolfssl_stream::name() const noexcept
 {
     return "wolfssl";
+}
+
+std::string_view
+wolfssl_stream::alpn_protocol() const noexcept
+{
+    return impl_->alpn_selected_;
 }
 
 } // namespace boost::corosio

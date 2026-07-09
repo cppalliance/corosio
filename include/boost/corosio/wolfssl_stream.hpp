@@ -191,6 +191,9 @@ public:
     /// Return the TLS backend name ("wolfssl").
     std::string_view name() const noexcept override;
 
+    /// Return the ALPN protocol negotiated during the handshake, or empty.
+    std::string_view alpn_protocol() const noexcept override;
+
 protected:
     capy::io_task<std::size_t> do_read_some(
         capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers) override;
@@ -236,6 +239,35 @@ wolfssl_category() noexcept;
 */
 BOOST_COROSIO_DECL bool
 wolfssl_supports_verify_callback() noexcept;
+
+/** Report whether this WolfSSL build can negotiate ALPN.
+
+    ALPN requires a WolfSSL built with `HAVE_ALPN`. On a build without
+    it, offering protocols via @ref tls_context::set_alpn fails the
+    handshake with `std::errc::function_not_supported` rather than
+    silently negotiating nothing.
+
+    @return `true` if ALPN is supported by this build, `false` if
+        offering protocols will cause the handshake to fail.
+
+    @see tls_context::set_alpn, tls_stream::alpn_protocol
+*/
+BOOST_COROSIO_DECL bool
+wolfssl_supports_alpn() noexcept;
+
+/** Report whether this WolfSSL build can check certificate revocation.
+
+    CRL checking requires a WolfSSL built with `HAVE_CRL`. On a build
+    without it, supplying a CRL or a revocation policy fails the handshake
+    with `std::errc::function_not_supported` rather than silently skipping
+    revocation.
+
+    @return `true` if revocation checking is supported by this build.
+
+    @see tls_context::add_crl, tls_context::set_revocation_policy
+*/
+BOOST_COROSIO_DECL bool
+wolfssl_supports_crl() noexcept;
 
 } // namespace boost::corosio
 

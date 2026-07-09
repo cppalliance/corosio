@@ -191,6 +191,9 @@ public:
     /// Return the TLS backend name ("openssl").
     std::string_view name() const noexcept override;
 
+    /// Return the ALPN protocol negotiated during the handshake, or empty.
+    std::string_view alpn_protocol() const noexcept override;
+
 protected:
     capy::io_task<std::size_t> do_read_some(
         capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers) override;

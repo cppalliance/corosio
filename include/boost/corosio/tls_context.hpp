@@ -474,13 +474,13 @@ public:
 
         @param passphrase The password protecting the bundle.
 
-        @return Success, or an error if the bundle could not be parsed
-            or the passphrase is incorrect.
+        @return Success. The bundle is recorded and decoded into the
+            certificate, private key, and chain when the native context is
+            first built; a malformed bundle or wrong passphrase surfaces as
+            a handshake failure.
 
-        @note Not yet implemented in this release; returns
-            `std::errc::function_not_supported`. Load the certificate
-            and key separately via `use_certificate_chain()` and
-            `use_private_key()` instead.
+        @note Intermediate certificates inside the bundle are loaded and
+            sent during the handshake on both backends.
 
         @see use_pkcs12_file
     */
@@ -498,13 +498,13 @@ public:
 
         @param passphrase The password protecting the file.
 
-        @return Success, or an error if the file could not be read,
-            parsed, or the passphrase is incorrect.
+        @return Success, or an error if the file could not be read. The
+            bundle is decoded when the native context is first built; a
+            malformed bundle or wrong passphrase surfaces as a handshake
+            failure.
 
-        @note Not yet implemented in this release; returns
-            `std::errc::function_not_supported`. Load the certificate
-            and key separately via `use_certificate_chain_file()` and
-            `use_private_key_file()` instead.
+        @note Intermediate certificates inside the bundle are loaded and
+            sent during the handshake on both backends.
 
         @par Example
         @code
@@ -634,10 +634,6 @@ public:
         @return Success, or an error if the version is not supported
             by the backend.
 
-        @note Not yet applied by the backends in this release; the bound
-            is accepted but has no effect. The negotiated range is
-            whatever the native default method provides.
-
         @par Example
         @code
         // Require TLS 1.3 minimum
@@ -658,9 +654,10 @@ public:
         @return Success, or an error if the version is not supported
             by the backend.
 
-        @note Not yet applied by the backends in this release; the bound
-            is accepted but has no effect. The negotiated range is
-            whatever the native default method provides.
+        @note On WolfSSL the ceiling is applied by selecting a
+            version-specific method (no native set-max API exists); an
+            invalid window where the minimum exceeds the maximum yields a
+            context that fails the handshake.
 
         @see set_min_protocol_version
     */
@@ -682,13 +679,34 @@ public:
         ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" );
         @endcode
 
-        @note For TLS 1.3, use `set_ciphersuites_tls13()` on backends
-            that distinguish between TLS 1.2 and 1.3 cipher configuration.
-
-        @note Applied by the OpenSSL backend only in this release; the
-            WolfSSL backend accepts the string but silently ignores it.
+        @note This configures cipher suites for TLS 1.2 and below. For
+            TLS 1.3, use @ref set_ciphersuites_tls13.
     */
     std::error_code set_ciphersuites(std::string_view ciphers);
+
+    /** Set the allowed TLS 1.3 cipher suites.
+
+        TLS 1.3 uses a distinct, fixed set of cipher suites configured
+        separately from earlier versions. The format is a colon-separated
+        list of TLS 1.3 suite names.
+
+        @param ciphers The TLS 1.3 cipher suite list.
+
+        @return Success, or an error if the cipher string is invalid.
+
+        @par Example
+        @code
+        ctx.set_ciphersuites_tls13(
+            "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256" );
+        @endcode
+
+        @note On the WolfSSL backend, TLS 1.2 and TLS 1.3 suites share a
+            single cipher list; this call and @ref set_ciphersuites are
+            merged into one list.
+
+        @see set_ciphersuites
+    */
+    std::error_code set_ciphersuites_tls13(std::string_view ciphers);
 
     /** Set the ALPN protocol list.
 
@@ -703,8 +721,11 @@ public:
 
         @return Success, or an error if ALPN configuration fails.
 
-        @note Not yet applied by the backends in this release; the
-            protocol list is accepted but ALPN is never negotiated.
+        @note Read the negotiated protocol after the handshake via
+            @ref tls_stream::alpn_protocol. On WolfSSL, ALPN requires a
+            build with `HAVE_ALPN`; without it, offering protocols fails
+            the handshake with `std::errc::function_not_supported` rather
+            than negotiate nothing silently.
 
         @par Example
         @code
@@ -896,8 +917,11 @@ public:
 
         @return Success, or an error if the CRL could not be parsed.
 
-        @note Not yet applied by the backends in this release; the CRL is
-            accepted but never used during verification.
+        @note CRLs are consulted only when a revocation policy is set via
+            @ref set_revocation_policy. On WolfSSL, CRL checking requires a
+            build with `HAVE_CRL`; without it, supplying a CRL or a
+            revocation policy fails the handshake with
+            `std::errc::function_not_supported`.
 
         @see add_crl_file
         @see set_revocation_policy
@@ -914,8 +938,9 @@ public:
         @return Success, or an error if the file could not be read
             or the CRL is invalid.
 
-        @note Not yet applied by the backends in this release; the CRL is
-            accepted but never used during verification.
+        @note CRLs are consulted only when a revocation policy is set via
+            @ref set_revocation_policy (WolfSSL requires a `HAVE_CRL`
+            build).
 
         @par Example
         @code
@@ -927,50 +952,10 @@ public:
     */
     std::error_code add_crl_file(std::string_view filename);
 
-    /** Set the OCSP staple response for server-side stapling.
-
-        For servers, provides a pre-fetched OCSP response to send
-        to clients during the handshake. This proves the server's
-        certificate hasn't been revoked without requiring the client
-        to contact the OCSP responder.
-
-        The OCSP response must be periodically refreshed (typically
-        every few hours to days) before it expires.
-
-        @param response The DER-encoded OCSP response.
-
-        @return Success, or an error if the response is invalid.
-
-        @note Not yet applied by the backends in this release; the
-            response is accepted but never stapled into the handshake.
-
-        @note This is a server-side operation. Clients use
-            `set_require_ocsp_staple()` to require stapled responses.
-    */
-    std::error_code set_ocsp_staple(std::string_view response);
-
-    /** Require OCSP stapling from the server.
-
-        For clients, requires the server to provide a stapled OCSP
-        response proving its certificate hasn't been revoked. If
-        the server doesn't provide a stapled response, the handshake
-        fails.
-
-        @param require Whether to require OCSP stapling.
-
-        @note Not yet applied by the backends in this release; the flag
-            is accepted but has no effect. Setting it to `true` does not
-            make the handshake fail when no staple is present.
-
-        @note Not all servers support OCSP stapling. Enable this only
-            when connecting to servers known to support it.
-    */
-    void set_require_ocsp_staple(bool require);
-
     /** Set the certificate revocation checking policy.
 
         Controls how certificate revocation status is checked during
-        verification. This affects both CRL and OCSP checking.
+        verification via CRLs.
 
         @param policy The revocation checking policy.
 
@@ -983,9 +968,14 @@ public:
         ctx.set_revocation_policy( tls_revocation_policy::soft_fail );
         @endcode
 
-        @note Not yet applied by the backends in this release; the policy
-            is accepted but has no effect. `soft_fail` and `hard_fail` do
-            not change verification behavior.
+        @note Revocation is checked via CRLs supplied with @ref add_crl /
+            @ref add_crl_file. `soft_fail` accepts a certificate whose
+            status cannot be determined (missing/expired CRL) but rejects
+            one that is actually revoked; `hard_fail` also rejects unknown
+            status. OCSP-based revocation is not available (see the TLS
+            guide). On WolfSSL a non-disabled policy requires a `HAVE_CRL`
+            build, else the handshake fails with
+            `std::errc::function_not_supported`.
 
         @see tls_revocation_policy
         @see add_crl

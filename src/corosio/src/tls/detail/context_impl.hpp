@@ -47,6 +47,10 @@ struct tls_context_data
     std::string private_key;
     tls_file_format private_key_format = tls_file_format::pem;
 
+    // PKCS#12 bundle (decoded by the backend into cert/key/chain).
+    std::string pkcs12_data;
+    std::string pkcs12_password;
+
     // Trust anchors
 
     std::vector<std::string> ca_certificates;
@@ -57,7 +61,8 @@ struct tls_context_data
 
     tls_version min_version = tls_version::tls_1_2;
     tls_version max_version = tls_version::tls_1_3;
-    std::string ciphersuites;
+    std::string ciphersuites;       // TLS 1.2 and below (cipher list)
+    std::string ciphersuites_tls13; // TLS 1.3 ciphersuites
     std::vector<std::string> alpn_protocols;
 
     // Verification
@@ -74,8 +79,6 @@ struct tls_context_data
     // Revocation
 
     std::vector<std::string> crls;
-    std::string ocsp_staple;
-    bool require_ocsp_staple         = false;
     tls_revocation_policy revocation = tls_revocation_policy::disabled;
 
     // Password

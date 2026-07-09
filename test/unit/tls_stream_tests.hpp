@@ -468,6 +468,498 @@ testSniCallback(StreamFactory make_stream)
     }
 }
 
+/** A freshly constructed stream reports no negotiated ALPN protocol.
+
+    The accessor must return an empty view before any handshake, on
+    every backend (including builds without ALPN support).
+*/
+template<typename StreamFactory>
+void
+testAlpnAccessorEmpty(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto ctx      = make_client_context();
+    auto stream   = make_stream(m1, ctx);
+    BOOST_TEST(stream.alpn_protocol().empty());
+    m1.close(); // NOLINT(bugprone-unused-return-value)
+    m2.close(); // NOLINT(bugprone-unused-return-value)
+}
+
+/** Test CRL-based revocation.
+
+    The server presents a leaf that a CRL revokes.
+
+    When @p crl_supported (OpenSSL, or WolfSSL built with HAVE_CRL):
+      1. hard_fail with the CRL loaded rejects the revoked leaf.
+      2. soft_fail with no CRL loaded accepts (status unknown is allowed).
+    Otherwise (WolfSSL without HAVE_CRL): any revocation request fails the
+    handshake with function_not_supported rather than skip the check.
+
+    On every build, a CRL that parses as neither PEM nor DER fails the
+    handshake closed rather than being silently dropped (which would let
+    soft_fail accept a peer the missing CRL might have revoked).
+*/
+template<typename StreamFactory>
+void
+testCrlRevocation(StreamFactory make_stream, bool crl_supported)
+{
+    auto revoked_server = []() {
+        tls_context ctx;
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.use_certificate(revoked_leaf_cert_pem, tls_file_format::pem);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.use_private_key(revoked_leaf_key_pem, tls_file_format::pem);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.set_verify_mode(tls_verify_mode::none);
+        return ctx;
+    };
+    auto revoking_client = [](tls_revocation_policy policy, bool load_crl) {
+        tls_context ctx;
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.add_certificate_authority(root_ca_cert_pem);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.set_verify_mode(tls_verify_mode::peer);
+        if (load_crl)
+            ctx.add_crl(revoked_crl_pem); // NOLINT(bugprone-unused-return-value)
+        ctx.set_revocation_policy(policy);
+        return ctx;
+    };
+
+    if (crl_supported)
+    {
+        // 1. hard_fail + CRL -> revoked leaf rejected.
+        {
+            io_context ioc;
+            auto client_ctx =
+                revoking_client(tls_revocation_policy::hard_fail, true);
+            auto server_ctx = revoked_server();
+            run_tls_test_fail(
+                ioc, client_ctx, server_ctx, make_stream, make_stream);
+        }
+        // 2. soft_fail + no CRL -> unknown status accepted.
+        {
+            io_context ioc;
+            auto client_ctx =
+                revoking_client(tls_revocation_policy::soft_fail, false);
+            auto server_ctx = revoked_server();
+            run_tls_test(
+                ioc, client_ctx, server_ctx, make_stream, make_stream);
+        }
+    }
+    else
+    {
+        io_context ioc;
+        auto client_ctx =
+            revoking_client(tls_revocation_policy::hard_fail, true);
+        auto server_ctx = revoked_server();
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // A supplied CRL that parses as neither PEM nor DER must fail the
+    // handshake, never silently downgrade to accepting the peer. This holds
+    // on every build: a HAVE_CRL backend rejects the unparseable CRL, and a
+    // backend without CRL support rejects any revocation request outright.
+    // Uses soft_fail specifically: without the fail-closed guard, soft_fail
+    // would treat the missing (dropped) CRL as "status unknown" and accept.
+    {
+        io_context ioc;
+        tls_context client_ctx;
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.add_certificate_authority(root_ca_cert_pem);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.set_verify_mode(tls_verify_mode::peer);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.add_crl("this is not a valid PEM or DER CRL");
+        client_ctx.set_revocation_policy(tls_revocation_policy::soft_fail);
+        auto server_ctx = revoked_server();
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // A CRL supplied while the policy stays disabled is inert by contract
+    // (consulted only when the policy is not disabled). This config must
+    // work on every build — including a WolfSSL build without HAVE_CRL,
+    // which must not reject a revocation feature that was never requested.
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.add_crl(revoked_crl_pem); // policy left disabled
+        auto server_ctx = make_server_context();
+        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+}
+
+/** Test loading server credentials from a PKCS#12 bundle.
+
+    1. A server context whose cert and key come from a PKCS#12 blob
+       completes a handshake with a client that trusts the CA.
+    2. A wrong passphrase loads no credentials, so the handshake fails.
+    3. A bundle takes precedence over discrete cert/key fields (which are
+       ignored when a bundle is present).
+    4. A client whose bundle fails to decode fails the handshake closed
+       rather than silently proceeding with no credential (fail-open mTLS).
+
+    Both backends decode PKCS#12 natively (OpenSSL PKCS12_parse, WolfSSL
+    wc_PKCS12_parse), so no capability branching is needed.
+*/
+template<typename StreamFactory>
+void
+testPkcs12(StreamFactory make_stream)
+{
+    std::string_view const p12(
+        reinterpret_cast<char const*>(server_p12), sizeof(server_p12));
+
+    // 1. Correct passphrase: credentials load, handshake succeeds.
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        tls_context server_ctx;
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.use_pkcs12(p12, p12_password);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.set_verify_mode(tls_verify_mode::none);
+        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // 2. Wrong passphrase: nothing loads, handshake fails.
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        tls_context server_ctx;
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.use_pkcs12(p12, "wrong-password");
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.set_verify_mode(tls_verify_mode::none);
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // 3. A PKCS#12 bundle takes precedence over discrete cert/key fields.
+    //    The bundle holds a valid, trusted credential; the discrete cert is
+    //    an expired self-signed one the client would reject. The handshake
+    //    succeeds only if the bundle's credential is used — i.e. the discrete
+    //    fields are ignored when a bundle is present.
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        tls_context server_ctx;
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.use_pkcs12(p12, p12_password);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.use_certificate(expired_cert_pem, tls_file_format::pem);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.use_private_key(expired_key_pem, tls_file_format::pem);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.set_verify_mode(tls_verify_mode::none);
+        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // 4. A client whose PKCS#12 credential fails to decode must fail closed,
+    //    not silently proceed with no certificate. The server verifies the
+    //    peer with `peer` (not `require_peer`), so a client that lost its
+    //    identity would otherwise complete the handshake — the fail-open the
+    //    review flagged. A wrong passphrase makes the bundle fail to parse.
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.use_pkcs12(p12, "wrong-password");
+        auto server_ctx = make_server_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.set_verify_mode(tls_verify_mode::peer);
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+}
+
+/** Test that the intermediate chain inside a PKCS#12 bundle is loaded
+    and sent during the handshake.
+
+    The server loads a bundle containing leaf + key + intermediate. The
+    client trusts only the root CA, so verification succeeds only if the
+    server presents the intermediate — i.e. the bundle's chain was loaded,
+    not just the leaf.
+*/
+template<typename StreamFactory>
+void
+testPkcs12Chain(StreamFactory make_stream)
+{
+    std::string_view const p12(
+        reinterpret_cast<char const*>(server_chain_p12),
+        sizeof(server_chain_p12));
+
+    io_context ioc;
+    auto client_ctx = make_rootonly_client_context();
+    tls_context server_ctx;
+    // NOLINTNEXTLINE(bugprone-unused-return-value)
+    server_ctx.use_pkcs12(p12, p12_password);
+    // NOLINTNEXTLINE(bugprone-unused-return-value)
+    server_ctx.set_verify_mode(tls_verify_mode::none);
+    run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+}
+
+/** Certificate-chain delivery: the server must send its intermediate.
+
+    Both backends load a full chain (leaf + intermediate) and send the
+    intermediate during the handshake, so a client that trusts only the
+    root CA can complete the path. A server that presents only its leaf
+    cannot, since the client lacks the intermediate to bridge to the root.
+
+    1. Server sends the full chain, client trusts only the root -> succeeds.
+    2. Server sends the leaf only, client trusts only the root -> fails.
+
+    The intermediate carries a critical basicConstraints extension so that
+    WolfSSL (which enforces RFC 5280 strictly) accepts it as a CA, matching
+    OpenSSL.
+*/
+template<typename StreamFactory>
+void
+testCertificateChain(StreamFactory make_stream)
+{
+    // Server sends the full chain; client trusting only the root succeeds.
+    {
+        io_context ioc;
+        auto client_ctx = make_rootonly_client_context();
+        auto server_ctx = make_fullchain_server_context();
+        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // Server sends only the leaf; the client cannot build the path -> fails.
+    {
+        io_context ioc;
+        auto client_ctx = make_rootonly_client_context();
+        auto server_ctx = make_chain_server_context();
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+}
+
+/** set_default_verify_paths() applies cleanly on top of an explicit CA.
+
+    Both backends can add the system trust store (OpenSSL:
+    SSL_CTX_set_default_verify_paths; WolfSSL: wolfSSL_CTX_load_system_CA_certs
+    where the build enables it, otherwise a no-op). Behaviorally exercising
+    the system store would require redirecting it per-platform, which is not
+    portable across the CI matrix, so this asserts only that the call path
+    runs cleanly: a client trusting the test CA explicitly *and* adding the
+    system store still completes the handshake. The load-from-path mechanism
+    is covered behaviorally by each backend's add_verify_path test.
+*/
+template<typename StreamFactory>
+void
+testDefaultVerifyPaths(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto client_ctx = make_client_context();
+    // Adding the system store on top of the explicit CA must not break
+    // context creation or verification.
+    // NOLINTNEXTLINE(bugprone-unused-return-value)
+    client_ctx.set_default_verify_paths();
+
+    auto server_ctx = make_server_context();
+    run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+}
+
+/** Test that TLS 1.3 cipher suite selection is applied.
+
+    1. Both peers restricted to @p suite_a -> handshake succeeds.
+    2. Client restricted to @p suite_a, server to @p suite_b (disjoint)
+       -> no common suite, handshake fails.
+    3. An unparseable cipher string fails the handshake closed (setup_failed_)
+       rather than silently reverting to the default suites.
+
+    Suite names differ between backends (OpenSSL `TLS_AES_128_GCM_SHA256`
+    vs WolfSSL `TLS13-AES128-GCM-SHA256`), so the caller supplies them.
+*/
+template<typename StreamFactory>
+void
+testCiphersuitesTls13(
+    StreamFactory make_stream, char const* suite_a, char const* suite_b)
+{
+    auto make_ctx = [&](auto base, char const* suite) {
+        auto ctx = base();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.set_min_protocol_version(tls_version::tls_1_3);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.set_ciphersuites_tls13(suite);
+        return ctx;
+    };
+
+    // 1. Matching suite succeeds.
+    {
+        io_context ioc;
+        auto client_ctx = make_ctx(make_client_context, suite_a);
+        auto server_ctx = make_ctx(make_server_context, suite_a);
+        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // 2. Disjoint suites fail.
+    {
+        io_context ioc;
+        auto client_ctx = make_ctx(make_client_context, suite_a);
+        auto server_ctx = make_ctx(make_server_context, suite_b);
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // 3. A cipher string the library rejects fails closed, rather than
+    //    silently falling back to the default suites.
+    {
+        io_context ioc;
+        auto client_ctx = make_ctx(make_client_context, "not-a-real-suite");
+        auto server_ctx = make_server_context();
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+}
+
+/** Test that protocol version bounds are enforced.
+
+    1. Both peers pinned to TLS 1.3 -> handshake succeeds.
+    2. Client capped at TLS 1.2 while the server requires TLS 1.3 ->
+       no common version, handshake fails.
+
+    Both backends support version bounds natively, so no capability
+    branching is needed.
+*/
+template<typename StreamFactory>
+void
+testProtocolVersion(StreamFactory make_stream)
+{
+    // 1. TLS 1.3 on both sides succeeds.
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.set_min_protocol_version(tls_version::tls_1_3);
+        auto server_ctx = make_server_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.set_min_protocol_version(tls_version::tls_1_3);
+        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // 2. Version window mismatch fails: client max 1.2, server min 1.3.
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.set_max_protocol_version(tls_version::tls_1_2);
+        auto server_ctx = make_server_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        server_ctx.set_min_protocol_version(tls_version::tls_1_3);
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+
+    // 3. An inverted window on one context (min 1.3 > max 1.2) admits no
+    //    protocol; the handshake must fail closed rather than silently
+    //    negotiate an unexpected version.
+    {
+        io_context ioc;
+        auto client_ctx = make_client_context();
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.set_min_protocol_version(tls_version::tls_1_3);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        client_ctx.set_max_protocol_version(tls_version::tls_1_2);
+        auto server_ctx = make_server_context();
+        run_tls_test_fail(
+            ioc, client_ctx, server_ctx, make_stream, make_stream);
+    }
+}
+
+/** Test ALPN negotiation end-to-end.
+
+    Client and server both offer `{ "h2", "http/1.1" }`.
+
+    @param alpn_supported Whether the backend build can negotiate ALPN.
+        When true, the handshake succeeds and both peers report `"h2"`.
+        When false (e.g. WolfSSL without `HAVE_ALPN`), offering ALPN must
+        fail the handshake with `function_not_supported` rather than
+        silently negotiate nothing.
+*/
+template<typename StreamFactory>
+void
+testAlpn(StreamFactory make_stream, bool alpn_supported)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+    auto client_ctx = make_client_context();
+    // NOLINTNEXTLINE(bugprone-unused-return-value)
+    client_ctx.set_alpn({"h2", "http/1.1"});
+    auto server_ctx = make_server_context();
+    // NOLINTNEXTLINE(bugprone-unused-return-value)
+    server_ctx.set_alpn({"h2", "http/1.1"});
+
+    auto client       = make_stream(m1, client_ctx);
+    auto server       = make_stream(m2, server_ctx);
+    using stream_type = std::remove_reference_t<decltype(server)>;
+
+    std::error_code cec, sec;
+    auto hc = [&]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(stream_type::client);
+        cec       = ec;
+    };
+    auto hs = [&]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(stream_type::server);
+        sec       = ec;
+    };
+    capy::run_async(ioc.get_executor())(hc());
+    capy::run_async(ioc.get_executor())(hs());
+    ioc.run();
+
+    if (alpn_supported)
+    {
+        BOOST_TEST(!cec);
+        BOOST_TEST(!sec);
+        BOOST_TEST(client.alpn_protocol() == "h2");
+        BOOST_TEST(server.alpn_protocol() == "h2");
+    }
+    else
+    {
+        // Fail-closed: offering ALPN a build cannot honor must not
+        // silently proceed.
+        BOOST_TEST(
+            cec == std::errc::function_not_supported ||
+            sec == std::errc::function_not_supported);
+    }
+
+    m1.close(); // NOLINT(bugprone-unused-return-value)
+    m2.close(); // NOLINT(bugprone-unused-return-value)
+}
+
+/** ALPN with no common protocol fails the handshake (RFC 7301 §3.2).
+
+    Client offers `{"h2"}`, server offers `{"http/1.1"}`. A server that
+    supports ALPN but shares no protocol with the client must abort with a
+    fatal `no_application_protocol` alert, so both peers see the handshake
+    fail.
+
+    @param alpn_supported Whether the backend build can negotiate ALPN. When
+        false (e.g. WolfSSL without `HAVE_ALPN`) offering ALPN already fails
+        closed regardless of overlap — that path is covered by @ref testAlpn —
+        so this test only runs when ALPN is available.
+*/
+template<typename StreamFactory>
+void
+testAlpnNoOverlap(StreamFactory make_stream, bool alpn_supported)
+{
+    if (!alpn_supported)
+        return;
+
+    io_context ioc;
+    auto client_ctx = make_client_context();
+    // NOLINTNEXTLINE(bugprone-unused-return-value)
+    client_ctx.set_alpn({"h2"});
+    auto server_ctx = make_server_context();
+    // NOLINTNEXTLINE(bugprone-unused-return-value)
+    server_ctx.set_alpn({"http/1.1"});
+    run_tls_test_fail(ioc, client_ctx, server_ctx, make_stream, make_stream);
+}
+
 /** Test the certificate verification callback (portable contract).
 
     Exercises the guarantees that hold on every backend that supports the
