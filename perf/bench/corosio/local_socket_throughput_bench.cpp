@@ -195,7 +195,7 @@ bench_unix_throughput_lockless(bench::state& state)
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
     socket_type writer(ioc), reader(ioc);
     if (auto ec = corosio::connect_pair(writer, reader))
@@ -259,7 +259,7 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
     socket_type sock1(ioc), sock2(ioc);
     if (auto ec = corosio::connect_pair(sock1, sock2))

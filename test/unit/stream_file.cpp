@@ -535,7 +535,9 @@ struct stream_file_test
         // POSIX file I/O requires the shared thread pool; in single-threaded
         // mode the service short-circuits with operation_not_supported.
         temp_file tmp("sf_st_", "data");
-        io_context ioc(Backend, 1);
+        io_context_options opts;
+        opts.locking = locking_mode::unsafe;
+        io_context ioc(Backend, opts, 1);
         stream_file f(ioc);
 
         bool caught = false;
@@ -548,6 +550,37 @@ struct stream_file_test
             caught = (e.code() == std::errc::operation_not_supported);
         }
         BOOST_TEST(caught);
+    }
+
+    void testOpenUnsafeIoStillSupported()
+    {
+#if BOOST_COROSIO_HAS_IO_URING
+        if constexpr (std::is_same_v<
+                std::remove_const_t<decltype(Backend)>, io_uring_t>)
+            return;
+#endif
+        // The unsafe_io tier keeps scheduler locking on, so the shared file
+        // thread pool remains available: open() must succeed (matching asio,
+        // whose file restriction keys on the scheduler lock, not UNSAFE_IO).
+        temp_file tmp("sf_st_io_", "data");
+        io_context_options opts;
+        opts.locking = locking_mode::unsafe_io;
+        io_context ioc(Backend, opts, 1);
+        stream_file f(ioc);
+
+        bool opened = false;
+        std::error_code caught_ec;
+        try
+        {
+            f.open(tmp.path, file_base::read_only);
+            opened = true;
+        }
+        catch (std::system_error const& e)
+        {
+            caught_ec = e.code();
+        }
+        BOOST_TEST(opened);
+        BOOST_TEST(caught_ec != std::errc::operation_not_supported);
     }
 #endif
 
@@ -839,6 +872,7 @@ struct stream_file_test
         testWriteEmptyBuffer();
 #if BOOST_COROSIO_POSIX
         testOpenSingleThreadedNotSupported();
+        testOpenUnsafeIoStillSupported();
 #endif
         testTruncate();
 

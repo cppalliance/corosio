@@ -84,21 +84,18 @@ public:
     void work_started() noexcept override;
     void work_finished() noexcept override;
 
-    /** Enable or disable single-threaded (lockless) mode.
-
-        When enabled, the dispatch mutex becomes a no-op.
-        Cross-thread post() is undefined behavior.
-    */
-    void configure_single_threaded(bool v) noexcept override
+    // IOCP has only the dispatch mutex; reactor_io_locking and one_thread do
+    // not apply (the completion port provides its own synchronization).
+    void configure_threading(threading_config cfg) noexcept override
     {
-        single_threaded_ = v;
-        dispatch_mutex_.set_enabled(!v);
+        scheduler_locking_disabled_ = !cfg.scheduler_locking;
+        dispatch_mutex_.set_enabled(cfg.scheduler_locking);
     }
 
-    /// Return true if single-threaded (lockless) mode is active.
-    bool is_single_threaded() const noexcept override
+    /// Return true when scheduler locking is disabled (fully-lockless tier).
+    bool scheduler_locking_disabled() const noexcept override
     {
-        return single_threaded_;
+        return scheduler_locking_disabled_;
     }
 
     /** Signal that an overlapped I/O operation is now pending.
@@ -124,7 +121,7 @@ private:
     mutable long stopped_;
     long stop_event_posted_;
     mutable long dispatch_required_;
-    bool single_threaded_ = false;
+    bool scheduler_locking_disabled_ = false;
 
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // std::/detail:: members, dll-interface

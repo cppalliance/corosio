@@ -225,7 +225,7 @@ select_scheduler::register_descriptor(
     desc->registered_events = reactor_event_read | reactor_event_write;
     desc->fd                = fd;
     desc->scheduler_        = this;
-    desc->mutex.set_enabled(!single_threaded_);
+    desc->mutex.set_enabled(reactor_io_locking_);
     desc->ready_events_.store(0, std::memory_order_relaxed);
 
     {

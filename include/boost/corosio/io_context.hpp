@@ -26,6 +26,42 @@
 
 namespace boost::corosio {
 
+/** Locking-safety tier for an @ref io_context.
+
+    Selects which internal locks the scheduler and reactor elide, trading
+    thread-safety guarantees for reduced synchronization overhead. This is
+    the analog of Boost.Asio's `SAFE` / `UNSAFE_IO` / `UNSAFE` concurrency
+    hint constants. The tier is chosen explicitly, not derived from the
+    `concurrency_hint`. (The reverse does apply: a lockless tier reduces the
+    effective hint used for performance tuning to 1.)
+
+    @see io_context_options::locking
+*/
+enum class locking_mode
+{
+    /** Full thread safety (default). All locks enabled; equivalent to
+        Boost.Asio's `SAFE`/`DEFAULT`. Any thread may use the context. */
+    safe,
+
+    /** Disable only the per-descriptor I/O locks; keep scheduler locking.
+        Equivalent to Boost.Asio's `UNSAFE_IO`. The context must be run
+        and driven by a single thread, but resolver and POSIX file
+        services remain available (they rely on scheduler locking, which
+        stays on). */
+    unsafe_io,
+
+    /** Disable all locking (fully lockless). Equivalent to Boost.Asio's
+        `UNSAFE`.
+
+        @par Restrictions
+        - Only one thread may call `run()` (or any run variant).
+        - Posting work from another thread is undefined behavior.
+        - DNS resolution returns `operation_not_supported`.
+        - POSIX file I/O returns `operation_not_supported`.
+        - Signal sets should not be shared across contexts. */
+    unsafe
+};
+
 /** Runtime tuning options for @ref io_context.
 
     All fields have defaults that match the library's built-in
@@ -97,26 +133,10 @@ struct io_context_options
     */
     unsigned thread_pool_size = 1;
 
-    /** Enable single-threaded mode (disable scheduler locking).
-
-        When true, the scheduler skips all mutex lock/unlock and
-        condition variable operations on the hot path. This
-        eliminates synchronization overhead when only one thread
-        calls `run()`.
-
-        @par Restrictions
-        - Only one thread may call `run()` (or any run variant).
-        - Posting work from another thread is undefined behavior.
-        - DNS resolution returns `operation_not_supported`.
-        - POSIX file I/O returns `operation_not_supported`.
-        - Signal sets should not be shared across contexts.
-
-        @note Constructing an `io_context` with `concurrency_hint == 1`
-            automatically enables single-threaded mode regardless of
-            this field's value, matching asio's convention. To opt out,
-            pass `concurrency_hint > 1`.
+    /** Thread-safety tier. See @ref locking_mode for the tiers and their
+        restrictions.
     */
-    bool single_threaded = false;
+    locking_mode locking = locking_mode::safe;
 
     /** Enable IORING_SETUP_SQPOLL on the io_uring backend.
 
@@ -126,7 +146,7 @@ struct io_context_options
         path. Most useful for sustained traffic. Idle thread parks
         after `sq_thread_idle_ms` of no activity.
 
-        Independent of `single_threaded`. Default: off.
+        Independent of `locking`. Default: off.
 
         Ignored on non-io_uring backends.
     */
@@ -158,6 +178,16 @@ struct io_context_options
 
 namespace detail {
 class timer_service;
+
+/** Return the hint used for performance tuning: the lockless tiers are
+    single-threaded, so their effective hint is 1 whatever the caller passed.
+*/
+inline unsigned
+effective_concurrency_hint(
+    io_context_options const& opts, unsigned hint) noexcept
+{
+    return opts.locking == locking_mode::safe ? hint : 1u;
+}
 } // namespace detail
 
 /** An I/O context for running asynchronous operations.
@@ -196,8 +226,9 @@ class timer_service;
 
     @par Thread Safety
     Distinct objects: Safe.@n
-    Shared objects: Safe, if using a concurrency hint greater
-    than 1.
+    Shared objects: Safe, unless the context was constructed with a
+    lockless @ref io_context_options::locking tier (`unsafe_io` or
+    `unsafe`), in which case a single thread must drive it.
 
     @see epoll_t, select_t, kqueue_t, iocp_t
 */
@@ -211,8 +242,11 @@ class BOOST_COROSIO_DECL io_context : public capy::execution_context
         io_context_options const& opts,
         unsigned concurrency_hint);
 
-    /// Switch the scheduler to single-threaded (lockless) mode.
-    void configure_single_threaded_();
+    /** Apply only the decomposed threading configuration (locking tiers).
+        Used by the plain constructors, which — unlike the options
+        constructors — deliberately leave the reactor budget at its defaults
+        rather than engaging the multi-thread post-everything heuristic. */
+    void apply_threading_(io_context_options const& opts);
 
 protected:
     detail::scheduler* sched_;
@@ -223,11 +257,10 @@ public:
 
     /** Construct with default concurrency and platform backend.
 
-        Uses `std::thread::hardware_concurrency()` clamped to a minimum
-        of 2 as the concurrency hint, so the default constructor never
-        silently engages single-threaded mode (see
-        @ref io_context_options::single_threaded). Pass an explicit
-        `concurrency_hint == 1` to opt into single-threaded mode.
+        Uses `std::thread::hardware_concurrency()` (floored to 1, in
+        case it reports 0) as the concurrency hint, and the default
+        @ref locking_mode::safe tier. Select a lockless tier via
+        @ref io_context_options::locking.
     */
     io_context();
 
@@ -266,8 +299,9 @@ public:
     {
         (void)backend;
         sched_ = &Backend::construct(*this, concurrency_hint);
-        if (concurrency_hint == 1)
-            configure_single_threaded_();
+        // Apply threading config only (locking tier). Unlike the options
+        // ctor, the plain path leaves the reactor budget at its defaults.
+        apply_threading_(io_context_options{});
     }
 
     /** Construct with an explicit backend tag and runtime options.
@@ -290,8 +324,11 @@ public:
     {
         (void)backend;
         apply_options_pre_(opts);
-        sched_ = &Backend::construct(*this, concurrency_hint);
-        apply_options_post_(opts, concurrency_hint);
+        // Effective hint (1 for lockless tiers); see effective_concurrency_hint.
+        unsigned const eff =
+            detail::effective_concurrency_hint(opts, concurrency_hint);
+        sched_ = &Backend::construct(*this, eff);
+        apply_options_post_(opts, eff);
     }
 
     ~io_context();

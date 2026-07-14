@@ -80,12 +80,13 @@ corosio::native_io_context<corosio::epoll> ioc(opts);
   blocking file I/O and DNS resolution.  Ignored on IOCP where
   file I/O uses native overlapped I/O.
 
-| `single_threaded`
-| false
+| `locking`
+| `locking_mode::safe`
 | all
-| Disable all scheduler mutex and condition variable operations.
-  Eliminates synchronization overhead when only one thread calls
-  `run()`.  See <<single-threaded-mode>> for restrictions.
+| Locking-safety tier: `safe` (default, full thread safety),
+  `unsafe_io` (per-descriptor I/O locks off), or `unsafe` (all locks
+  off).  Governs the thread-safety contract.  See
+  <<single-threaded-mode>> for the tiers and their restrictions.
 |===
 
 Options that do not apply to the active backend are silently ignored.
@@ -144,31 +145,73 @@ and DNS resolution use a shared thread pool.
 * *No file I/O*: leave at 1 (the pool is created lazily).
 
 [#single-threaded-mode]
-=== Single-Threaded Mode (`single_threaded`)
+=== Locking Tiers (`locking`)
 
-Disables all mutex and condition variable operations inside the
-scheduler and per-socket descriptor states.  This eliminates
-15-25% of overhead on the post-and-dispatch hot path.
+The `locking` option selects which internal locks the scheduler and
+reactor elide, trading thread-safety guarantees for reduced
+synchronization overhead.  It governs the thread-safety contract,
+independently of the `concurrency_hint` (see
+<<concurrency-hint-and-locking>>).
+
+[cols="1,3"]
+|===
+| Tier | Behavior
+
+| `locking_mode::safe` (default)
+| Full thread safety.  All locks enabled; any thread may use the
+  context.
+
+| `locking_mode::unsafe_io`
+| Disables only the per-descriptor I/O locks; scheduler locking stays
+  on.  A single thread must run and drive the context, but DNS
+  resolution and POSIX file I/O remain available (they rely on
+  scheduler locking).
+
+| `locking_mode::unsafe`
+| Disables all locking.  Eliminates 15-25% of overhead on the
+  post-and-dispatch hot path.  Imposes the full restrictions below.
+|===
 
 [source,cpp]
 ----
 corosio::io_context_options opts;
-opts.single_threaded = true;
+opts.locking = corosio::locking_mode::unsafe;
 
 corosio::io_context ioc(opts);
 ioc.run();  // only one thread may call this
 ----
 
-WARNING: Single-threaded mode imposes hard restrictions.
+WARNING: The `unsafe` and `unsafe_io` tiers impose hard restrictions.
 Violating them is undefined behavior.
 
 * Only **one thread** may call `run()` (or any run/poll variant).
 * **Posting work from another thread** is undefined behavior.
-* **DNS resolution** returns `operation_not_supported`.
-* **POSIX file I/O** (`stream_file`, `random_access_file`) returns
-  `operation_not_supported` on `open()`.
 * **Signal sets** should not be shared across contexts.
-* **Delay and timeout cancellation via `stop_token`** from another
-  thread is not permitted: the cancel path posts into the scheduler,
-  whose synchronization is disabled in single-threaded mode.
-  Cross-thread cancellation requires a multi-threaded-capable context.
+* **Delay and timeout cancellation via `stop_token`** from another thread
+  is not permitted: the cancel path posts into the scheduler, whose locking
+  these tiers disable. Cross-thread cancellation requires the `safe` tier.
+
+The `unsafe` tier additionally makes:
+
+* **DNS resolution** return `operation_not_supported`.
+* **POSIX file I/O** (`stream_file`, `random_access_file`) return
+  `operation_not_supported` on `open()`.
+
+These two services stay available under `unsafe_io` because they rely
+on scheduler locking, which that tier keeps enabled.
+
+[NOTE]
+====
+These tiers correspond to Boost.Asio's `SAFE` / `UNSAFE_IO` / `UNSAFE`
+concurrency-hint constants, exposed here as a dedicated option separate
+from the `concurrency_hint`.
+====
+
+[#concurrency-hint-and-locking]
+==== Concurrency hint and locking tier
+
+The `concurrency_hint` is a performance tuning value indicating how many
+threads are expected to call `run()`; it tunes the reactor inline-completion
+budget defaults and, on IOCP, the completion-port concurrency.  A lockless
+tier is single-threaded, so its effective hint for that tuning is `1`
+regardless of the value passed.

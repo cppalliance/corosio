@@ -132,7 +132,7 @@ bench_sequential_churn_lockless(bench::state& state)
     using acceptor_type = corosio::native_tcp_acceptor<Backend>;
 
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
     acceptor_type acc(ioc);
     acc.open();
@@ -397,7 +397,7 @@ bench_burst_churn_lockless(bench::state& state)
     state.counters["burst_size"] = burst_size;
 
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
     acceptor_type acc(ioc);
     acc.open();

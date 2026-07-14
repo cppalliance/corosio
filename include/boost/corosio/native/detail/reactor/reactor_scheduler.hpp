@@ -258,28 +258,28 @@ public:
         return inline_budget_initial_;
     }
 
-    /// Return true if single-threaded (lockless) mode is active.
-    bool is_single_threaded() const noexcept override
+    /// Return true when scheduler locking is disabled (fully-lockless tier).
+    bool scheduler_locking_disabled() const noexcept override
     {
-        return single_threaded_;
+        return scheduler_locking_disabled_;
     }
 
-    /** Enable or disable single-threaded (lockless) mode.
-
-        When enabled, all scheduler mutex and condition variable
-        operations become no-ops. Cross-thread post() is
-        undefined behavior.
-    */
-    void configure_single_threaded(bool v) noexcept override
+    void configure_threading(threading_config cfg) noexcept override
     {
-        single_threaded_ = v;
-        mutex_.set_enabled(!v);
-        cond_.set_enabled(!v);
+        scheduler_locking_disabled_ = !cfg.scheduler_locking;
+        // reactor_io_locking takes effect at descriptor registration (see the
+        // register_descriptor overrides), not here.
+        reactor_io_locking_ = cfg.reactor_io_locking;
+        one_thread_         = cfg.one_thread;
+        mutex_.set_enabled(cfg.scheduler_locking);
+        cond_.set_enabled(cfg.scheduler_locking);
     }
 
 protected:
     timer_service* timer_svc_ = nullptr;
-    bool single_threaded_ = false;
+    bool scheduler_locking_disabled_ = false;
+    bool reactor_io_locking_ = true;
+    bool one_thread_ = false;
 
     reactor_scheduler() = default;
 
@@ -912,7 +912,9 @@ reactor_scheduler::do_one(
             task_interrupted_ = task_timeout_us == 0;
             task_running_.store(true, std::memory_order_release);
 
-            if (more_handlers)
+            // Wake a peer to take the pending handlers while this thread
+            // polls the reactor; skipped when one_thread_ (no peer exists).
+            if (more_handlers && !one_thread_)
                 unlock_and_signal_one(lock);
 
             try
@@ -937,11 +939,16 @@ reactor_scheduler::do_one(
         {
             bool more = !completed_ops_.empty();
 
-            if (more)
+            if (more && !one_thread_)
+            {
+                // Wake a peer for the remaining work; unassisted if none
+                // was parked to take it.
                 ctx->unassisted = !unlock_and_signal_one(lock);
+            }
             else
             {
-                ctx->unassisted = false;
+                // No peer to wake (one_thread_, or nothing more queued).
+                ctx->unassisted = more;
                 lock.unlock();
             }
 

@@ -17,6 +17,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -121,6 +123,66 @@ make_atomic_coro(std::atomic<int>& counter)
 {
     auto c                 = []() -> atomic_counter_coro { co_return; }();
     c.h.promise().counter_ = &counter;
+    return c;
+}
+
+// Shared state for the peer-utilization barrier (see testHintOneWakesPeers).
+struct gate_state
+{
+    std::mutex              mtx;
+    std::condition_variable cv;
+    int                     active     = 0;  // gates currently in the barrier
+    int                     peak       = 0;  // max concurrent gates observed
+    int                     release_at = 0;  // release once this many overlap
+};
+
+// Coroutine that, when resumed, blocks until `release_at` gates are running
+// concurrently (or a deadline elapses). Observing peak >= 2 requires two
+// gates to run on distinct run threads at once, i.e. a parked peer must have
+// been woken. Note we release at 2 rather than the gate count: one run thread
+// is always occupied servicing the reactor poll, so full N-way overlap is not
+// expected.
+struct gate_coro
+{
+    struct promise_type
+    {
+        gate_state* st = nullptr;
+
+        gate_coro get_return_object()
+        {
+            return {std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_never  final_suspend() noexcept { return {}; }
+
+        void return_void()
+        {
+            std::unique_lock<std::mutex> lk(st->mtx);
+            int cur = ++st->active;
+            if (cur > st->peak)
+                st->peak = cur;
+            if (st->active >= st->release_at)
+                st->cv.notify_all();
+            else
+                st->cv.wait_for(lk, std::chrono::seconds(2),
+                    [&] { return st->active >= st->release_at; });
+            --st->active;
+        }
+
+        void unhandled_exception() { std::terminate(); }
+    };
+
+    std::coroutine_handle<promise_type> h;
+
+    operator std::coroutine_handle<>() const { return h; }
+};
+
+inline gate_coro
+make_gate(gate_state& st)
+{
+    auto c            = []() -> gate_coro { co_return; }();
+    c.h.promise().st  = &st;
     return c;
 }
 
@@ -299,9 +361,46 @@ struct io_context_test
 
     void testConstructionSingleThreaded()
     {
-        // concurrency_hint == 1 enables single-threaded mode automatically.
+        // Lockless mode is enabled solely by opts.locking; the concurrency
+        // hint is unrelated to the safety contract.
         io_context_options opts;
-        opts.single_threaded = true;
+        opts.locking = locking_mode::unsafe;
+        io_context ioc(Backend, opts, 1);
+        BOOST_TEST(!ioc.stopped());
+
+        int counter = 0;
+        auto ex     = ioc.get_executor();
+        post_coro(ex, make_coro(counter));
+        std::size_t n = ioc.run();
+        BOOST_TEST(n == 1);
+        BOOST_TEST(counter == 1);
+    }
+
+    // A lockless tier normalizes the effective concurrency hint to 1 for
+    // downstream tuning (reactor budget heuristic, IOCP concurrency),
+    // regardless of the hint the caller passed; the safe tier passes it
+    // through unchanged. (Independent of Backend; runs per backend harmlessly.)
+    void testEffectiveConcurrencyHint()
+    {
+        io_context_options opts;
+
+        opts.locking = locking_mode::safe;
+        BOOST_TEST(detail::effective_concurrency_hint(opts, 8) == 8u);
+        BOOST_TEST(detail::effective_concurrency_hint(opts, 1) == 1u);
+
+        opts.locking = locking_mode::unsafe_io;
+        BOOST_TEST(detail::effective_concurrency_hint(opts, 8) == 1u);
+
+        opts.locking = locking_mode::unsafe;
+        BOOST_TEST(detail::effective_concurrency_hint(opts, 8) == 1u);
+    }
+
+    void testConstructionUnsafeIo()
+    {
+        // The unsafe_io tier elides only per-descriptor I/O locks; the
+        // scheduler still runs work normally on its single thread.
+        io_context_options opts;
+        opts.locking = locking_mode::unsafe_io;
         io_context ioc(Backend, opts, 1);
         BOOST_TEST(!ioc.stopped());
 
@@ -642,6 +741,81 @@ struct io_context_test
         BOOST_TEST(counter.load() == total_handlers);
     }
 
+    void testHintOneIsThreadSafe()
+    {
+        // Regression for #310: a plain concurrency_hint of 1 must NOT
+        // enable lockless mode. Cross-thread post() into a hint==1
+        // context must remain thread-safe (TSan-clean); lockless mode is
+        // reachable only via io_context_options::locking.
+        io_context ioc(Backend, 1);
+        auto ex = ioc.get_executor();
+        std::atomic<int> counter{0};
+        constexpr int num_threads         = 4;
+        constexpr int handlers_per_thread = 100;
+        constexpr int total_handlers      = num_threads * handlers_per_thread;
+
+        // Post handlers from multiple threads concurrently.
+        std::vector<std::thread> posters;
+        posters.reserve(num_threads);
+        for (int t = 0; t < num_threads; ++t)
+        {
+            posters.emplace_back([&ex, &counter]() {
+                for (int i = 0; i < handlers_per_thread; ++i)
+                    post_coro(ex, make_atomic_coro(counter));
+            });
+        }
+        for (auto& t : posters)
+            t.join();
+
+        // Run with multiple threads.
+        std::vector<std::thread> runners;
+        runners.reserve(num_threads);
+        for (int t = 0; t < num_threads; ++t)
+            runners.emplace_back([&ioc]() { ioc.run(); });
+        for (auto& t : runners)
+            t.join();
+
+        BOOST_TEST(counter.load() == total_handlers);
+    }
+
+    void testHintOneWakesPeers()
+    {
+        // Regression: at concurrency_hint == 1 in the default (safe) tier,
+        // multiple run() threads must still be utilized. Internally-generated
+        // work has to wake parked peers — the one_thread wake-elision must NOT
+        // be engaged by the hint (only by a lockless tier). Each gate holds
+        // until two gates overlap, so peak >= 2 is reachable only if a parked
+        // peer is woken; if the hint wrongly elides peer wakeups the gates run
+        // sequentially (each times out) and peak stays 1.
+        constexpr int num_gates   = 4;
+        constexpr int num_threads = 4;
+        io_context ioc(Backend, 1);
+
+        gate_state st;
+        st.release_at = 2;
+
+        // A leader runs on one thread, lets the other run() threads park,
+        // then generates the gates from inside the loop (internal work).
+        auto leader = [](io_context::executor_type ex,
+                         gate_state& state, int gates) -> capy::task<> {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            for (int i = 0; i < gates; ++i)
+                ex.post(make_gate(state));
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(
+            leader(ioc.get_executor(), st, num_gates));
+
+        std::vector<std::thread> runners;
+        runners.reserve(num_threads);
+        for (int t = 0; t < num_threads; ++t)
+            runners.emplace_back([&ioc]() { ioc.run(); });
+        for (auto& t : runners)
+            t.join();
+
+        BOOST_TEST(st.peak >= 2);
+    }
+
     void testMultithreadedStress()
     {
         // Stress test: multiple iterations of post-then-run with multiple threads
@@ -794,6 +968,8 @@ struct io_context_test
         testConstructionWithOptions();
         testConstructionWithThreadPoolSize();
         testConstructionSingleThreaded();
+        testConstructionUnsafeIo();
+        testEffectiveConcurrencyHint();
         testGetExecutor();
         testRun();
         testRunOne();
@@ -809,6 +985,8 @@ struct io_context_test
         testRunOneForWithOutstandingWork();
         testExecutorRunningInThisThread();
         testMultithreaded();
+        testHintOneIsThreadSafe();
+        testHintOneWakesPeers();
         testMultithreadedStress();
         testMultithreadedNotifyAndWaitFor();
         testWhenAllSetEvent();

@@ -330,7 +330,9 @@ struct resolver_test
     {
         // Single-threaded contexts disable the resolver thread pool and
         // surface operation_not_supported instead of dispatching work.
-        io_context ioc(1);
+        io_context_options opts;
+        opts.locking = locking_mode::unsafe;
+        io_context ioc(opts, 1);
         resolver r(ioc);
 
         bool completed = false;
@@ -359,7 +361,9 @@ struct resolver_test
 
     void testReverseResolveSingleThreadedNotSupported()
     {
-        io_context ioc(1);
+        io_context_options opts;
+        opts.locking = locking_mode::unsafe;
+        io_context ioc(opts, 1);
         resolver r(ioc);
 
         bool completed = false;
@@ -382,6 +386,35 @@ struct resolver_test
 #else
         BOOST_TEST(!result_ec);
 #endif
+    }
+
+    void testResolveUnsafeIoStillSupported()
+    {
+        // The unsafe_io tier disables only the per-descriptor I/O locks;
+        // scheduler locking stays on, so the resolver thread pool remains
+        // available (matching asio, whose resolver restriction keys on the
+        // scheduler lock, not UNSAFE_IO). Resolution must NOT short-circuit
+        // with operation_not_supported.
+        io_context_options opts;
+        opts.locking = locking_mode::unsafe_io;
+        io_context ioc(opts, 1);
+        resolver r(ioc);
+
+        bool completed = false;
+        std::error_code result_ec;
+
+        auto task = [](resolver& r_ref,
+                       std::error_code& ec_out, bool& done) -> capy::task<> {
+            auto [ec, res] = co_await r_ref.resolve("localhost", "80");
+            ec_out = ec;
+            done   = true;
+            (void)res;
+        };
+        capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(result_ec != std::errc::operation_not_supported);
     }
 
     void testResolveInvalidFlagsCombination()
@@ -1079,6 +1112,7 @@ struct resolver_test
         testResolveWithVariedFlags();
         testResolveSingleThreadedNotSupported();
         testReverseResolveSingleThreadedNotSupported();
+        testResolveUnsafeIoStillSupported();
         testReverseResolveDatagramFlag();
 
         // Cancellation

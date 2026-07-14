@@ -170,21 +170,30 @@ pre_create_services(
     (void)opts;
 }
 
-// Apply runtime tuning to the scheduler after construction.
-//
-// Concurrency-hint heuristic for budget defaults: when the io_context is
-// constructed with concurrency_hint > 1 AND the user has not customized
-// the budget settings (i.e. they remain at the struct defaults), we
-// disable the inline-completion fast path. Multi-thread workloads
-// benefit from "always-post" because cross-thread work-stealing wins
-// over chained dispatch on the originating thread. Single-thread (or
-// any custom budget) keeps the user/library setting unchanged.
+// Map the locking tier to the scheduler's threading facilities. one_thread is
+// set only for the lockless tiers, where a single run thread is guaranteed.
+detail::scheduler::threading_config
+make_threading_config(io_context_options const& opts)
+{
+    detail::scheduler::threading_config cfg;
+    cfg.scheduler_locking  = opts.locking != locking_mode::unsafe;
+    cfg.reactor_io_locking = opts.locking == locking_mode::safe;
+    cfg.one_thread         = opts.locking != locking_mode::safe;
+    return cfg;
+}
+
+// Apply runtime tuning after construction. `concurrency_hint` is the effective
+// hint (normalized to 1 for lockless tiers). Budget heuristic: with default
+// budgets and hint > 1, disable the inline-completion fast path so multi-thread
+// runs post everything for cross-thread work-stealing.
 void
 apply_scheduler_options(
     detail::scheduler& sched,
     io_context_options const& opts,
     unsigned concurrency_hint)
 {
+    sched.configure_threading(make_threading_config(opts));
+
 #if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || BOOST_COROSIO_HAS_SELECT
     // dynamic_cast — when io_uring is also linked, the runtime probe may
     // have selected io_uring_scheduler instead of a reactor_scheduler.
@@ -192,7 +201,7 @@ apply_scheduler_options(
             dynamic_cast<detail::reactor_scheduler*>(&sched))
     {
         // Detect "user kept the defaults" by comparing all three to the
-        // io_context_options-defined struct defaults.
+        // io_context-options-defined struct defaults.
         io_context_options defaults;
         bool budget_at_defaults =
             opts.inline_budget_initial == defaults.inline_budget_initial &&
@@ -216,8 +225,6 @@ apply_scheduler_options(
             init,
             max,
             ua);
-        if (opts.single_threaded)
-            reactor->configure_single_threaded(true);
     }
 #endif
 
@@ -225,18 +232,10 @@ apply_scheduler_options(
     if (auto* uring_sched =
             dynamic_cast<detail::io_uring_scheduler*>(&sched))
     {
-        if (opts.single_threaded)
-            uring_sched->configure_single_threaded(true);
         if (opts.enable_sqpoll)
             uring_sched->configure_sqpoll(
                 true, opts.sq_thread_idle_ms, opts.sq_thread_cpu);
     }
-#endif
-
-#if BOOST_COROSIO_HAS_IOCP
-    auto& iocp_sched = static_cast<detail::win_scheduler&>(sched);
-    if (opts.single_threaded)
-        iocp_sched.configure_single_threaded(true);
 #endif
 
     (void)sched;
@@ -258,19 +257,10 @@ construct_default(capy::execution_context& ctx, unsigned concurrency_hint)
 #endif
 }
 
-// Tie concurrency_hint == 1 to single_threaded (asio precedent).
-io_context_options
-normalize_options(io_context_options opts, unsigned concurrency_hint)
-{
-    if (concurrency_hint == 1)
-        opts.single_threaded = true;
-    return opts;
-}
-
 } // anonymous namespace
 
 io_context::io_context()
-    : io_context(std::max(2u, std::thread::hardware_concurrency()))
+    : io_context(std::max(1u, std::thread::hardware_concurrency()))
 {
 }
 
@@ -278,8 +268,9 @@ io_context::io_context(unsigned concurrency_hint)
     : capy::execution_context(this)
     , sched_(&construct_default(*this, concurrency_hint))
 {
-    if (concurrency_hint == 1)
-        configure_single_threaded_();
+    // Threading config only; the plain path leaves the reactor budget at its
+    // defaults (no options-ctor budget heuristic).
+    apply_threading_(io_context_options{});
 }
 
 io_context::io_context(
@@ -288,10 +279,13 @@ io_context::io_context(
     : capy::execution_context(this)
     , sched_(nullptr)
 {
-    auto opts = normalize_options(opts_in, concurrency_hint);
-    pre_create_services(*this, opts);
-    sched_ = &construct_default(*this, concurrency_hint);
-    apply_scheduler_options(*sched_, opts, concurrency_hint);
+    pre_create_services(*this, opts_in);
+    // Computed before construct_default so IOCP's completion port is created
+    // with the effective concurrency.
+    unsigned const eff =
+        detail::effective_concurrency_hint(opts_in, concurrency_hint);
+    sched_ = &construct_default(*this, eff);
+    apply_scheduler_options(*sched_, opts_in, eff);
 }
 
 void
@@ -305,18 +299,13 @@ io_context::apply_options_post_(
     io_context_options const& opts_in,
     unsigned concurrency_hint)
 {
-    auto opts = normalize_options(opts_in, concurrency_hint);
-    apply_scheduler_options(*sched_, opts, concurrency_hint);
+    apply_scheduler_options(*sched_, opts_in, concurrency_hint);
 }
 
 void
-io_context::configure_single_threaded_()
+io_context::apply_threading_(io_context_options const& opts_in)
 {
-    // Dispatched through the scheduler base's virtual override; avoids
-    // unsafe downcasts when the active backend is io_uring rather than
-    // reactor (on Linux both BOOST_COROSIO_HAS_EPOLL and the io_uring
-    // backend may be enabled simultaneously).
-    sched_->configure_single_threaded(true);
+    sched_->configure_threading(make_threading_config(opts_in));
 }
 
 io_context::~io_context()

@@ -68,10 +68,12 @@ public:
         return pool_;
     }
 
-    /** Return true if single-threaded mode is active. */
-    bool single_threaded() const noexcept
+    /// True when the resolver thread pool is unavailable: the `unsafe` tier,
+    /// whose lockless scheduler cannot accept the pool's cross-thread
+    /// completions.
+    bool resolver_unavailable() const noexcept
     {
-        return sched_->is_single_threaded();
+        return sched_->scheduler_locking_disabled();
     }
 
 private:
@@ -378,7 +380,7 @@ posix_resolver::resolve(
     std::error_code* ec,
     resolver_results* out)
 {
-    if (svc_.single_threaded())
+    if (svc_.resolver_unavailable())
     {
         *ec = std::make_error_code(std::errc::operation_not_supported);
         op_.cont.h = h;
@@ -424,7 +426,7 @@ posix_resolver::reverse_resolve(
     std::error_code* ec,
     reverse_resolver_result* result_out)
 {
-    if (svc_.single_threaded())
+    if (svc_.resolver_unavailable())
     {
         *ec = std::make_error_code(std::errc::operation_not_supported);
         reverse_op_.cont.h = h;

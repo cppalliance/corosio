@@ -255,13 +255,17 @@ public:
         completed_ops_.push(op);
     }
 
-    /// Single-threaded mode toggle (matches reactor_scheduler API).
-    void configure_single_threaded(bool v) noexcept override
+    void configure_threading(threading_config cfg) noexcept override
     {
-        single_threaded_ = v;
-        dispatch_mutex_.set_enabled(!v);
-        ring_mutex_.set_enabled(!v);
-        cond_.set_enabled(!v);
+        scheduler_locking_disabled_ = !cfg.scheduler_locking;
+        // reactor_io_locking off also drives SINGLE_ISSUER/DEFER_TASKRUN and
+        // the eventfd wake elision (see lazy_init_ring_unlocked and
+        // interrupt_reactor). one_thread is unused: the leader-follower wake
+        // model is not gated on it.
+        reactor_io_locking_ = cfg.reactor_io_locking;
+        dispatch_mutex_.set_enabled(cfg.scheduler_locking);
+        ring_mutex_.set_enabled(cfg.reactor_io_locking);
+        cond_.set_enabled(cfg.scheduler_locking);
     }
 
     /** Configure SQPOLL parameters.
@@ -289,8 +293,11 @@ public:
         sq_thread_cpu_     = cpu;
     }
 
-    /// Return true if single-threaded (lockless) mode is active.
-    bool is_single_threaded() const noexcept override { return single_threaded_; }
+    /// Return true when scheduler locking is disabled (fully-lockless tier).
+    bool scheduler_locking_disabled() const noexcept override
+    {
+        return scheduler_locking_disabled_;
+    }
 
 private:
     // ring_ + wakeup_eventfd_ are mutable so lazy_init_ring() (called
@@ -334,7 +341,8 @@ private:
     // Leader-follower flag: true while a thread is blocked in
     // io_uring_submit_and_wait_timeout. Protected by dispatch_mutex_.
     mutable bool                      task_running_   = false;
-    bool                              single_threaded_ = false;
+    bool                              scheduler_locking_disabled_ = false;
+    bool                              reactor_io_locking_ = true;
     bool                              enable_sqpoll_     = false;
     unsigned                          sq_thread_idle_ms_ = 0;
     int                               sq_thread_cpu_     = -1;
@@ -401,8 +409,8 @@ private:
     static constexpr unsigned long    drain_cqes_kick_ns    = 1'000'000;
 
     // ring_inited_ goes true once on first run/poll/submit. The init is
-    // deferred from the constructor so configure_single_threaded(true)
-    // can take effect before io_uring_queue_init_params chooses flags.
+    // deferred from the constructor so configure_threading() can take
+    // effect before io_uring_queue_init_params chooses flags.
     mutable std::once_flag            ring_init_once_;
     mutable bool                      ring_inited_ = false;
 
@@ -460,7 +468,8 @@ inline void
 io_uring_scheduler::lazy_init_ring_unlocked() const
 {
     io_uring_params params{};
-    if (single_threaded_)
+    // The unsafe_io and unsafe tiers guarantee a single ring submitter.
+    if (!reactor_io_locking_)
     {
         // SINGLE_ISSUER promises the kernel one submitter thread,
         // letting it skip internal SQ locking. DEFER_TASKRUN tells
@@ -498,7 +507,7 @@ io_uring_scheduler::lazy_init_ring_unlocked() const
         // submission becomes a userspace-only memory store. Combines
         // with SINGLE_ISSUER (the kernel accepts that pair) but NOT
         // with DEFER_TASKRUN (kernel returns -EINVAL); the
-        // single_threaded_ branch above suppresses DEFER_TASKRUN
+        // reactor-I/O-lockless branch above suppresses DEFER_TASKRUN
         // when SQPOLL is also set. Idle timeout 0 means kernel
         // default (1ms); we only forward when explicitly set so
         // the kernel default is preserved.
@@ -653,10 +662,12 @@ io_uring_scheduler::interrupt_reactor() const noexcept
     if (!ring_inited_)
         return;
 
-    // Single-thread: the user's coroutines run on the leader thread,
-    // so when interrupt_reactor is called from user code the leader
-    // is not in kernel wait — there is nothing to wake.
-    if (single_threaded_)
+    // Lockless tiers (reactor-I/O locking off): cross-thread post() is
+    // forbidden, so interrupt_reactor is only ever reached from the leader
+    // thread's own coroutines — it is not in kernel wait, nothing to wake.
+    // Under the safe tier (including concurrency_hint == 1) cross-thread
+    // post() is allowed, so the eventfd write below must always fire.
+    if (!reactor_io_locking_)
         return;
 
     // Multi-thread: write the eventfd unconditionally. CAS-coalescing

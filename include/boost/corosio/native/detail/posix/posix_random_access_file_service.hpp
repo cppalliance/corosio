@@ -81,7 +81,9 @@ public:
         std::filesystem::path const& path,
         file_base::flags mode) override
     {
-        if (sched_->is_single_threaded())
+        // Unavailable in the unsafe tier: the file thread pool completes
+        // cross-thread, which the lockless scheduler cannot accept.
+        if (sched_->scheduler_locking_disabled())
             return std::make_error_code(std::errc::operation_not_supported);
         return static_cast<posix_random_access_file&>(impl).open_file(
             path, mode);

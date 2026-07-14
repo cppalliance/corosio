@@ -53,27 +53,33 @@ corosio::io_context ioc;
 ----
 
 Creates an `io_context` with a concurrency hint of
-`std::max(2u, std::thread::hardware_concurrency())` — the default constructor
-never selects single-threaded mode. Single-threaded (lockless) mode is keyed
-on a `concurrency_hint` of exactly `1`; pass `1` explicitly to opt into it.
+`std::max(1u, std::thread::hardware_concurrency())` and the default, fully
+thread-safe locking tier. Thread safety is governed by the `locking` option
+(see xref:4.guide/4c2.configuration.adoc#single-threaded-mode[Locking Tiers]).
 
 === With Concurrency Hint
 
 [source,cpp]
 ----
-corosio::io_context ioc(1);  // Single-threaded, no synchronization
-corosio::io_context ioc(4);  // Up to 4 threads, thread-safe
+corosio::io_context ioc(1);  // one thread expected to call run()
+corosio::io_context ioc(4);  // up to 4 threads expected to call run()
 ----
 
-The concurrency hint affects:
+The concurrency hint is a performance tuning value indicating how many threads
+are expected to call `run()`. It tunes:
 
-* Internal synchronization strategy
-* On Windows, the hint is passed to `CreateIoCompletionPort` as
+* The reactor's inline-completion budget defaults: a multi-thread context favors
+  posting completions for cross-thread work-stealing, while a single-thread
+  context keeps the inline fast path.
+* On Windows, it is passed to `CreateIoCompletionPort` as
   `NumberOfConcurrentThreads`, bounding how many completion threads may run
   concurrently. It is not a library-managed thread pool, and it is distinct
   from `thread_pool_size`.
 
-Use `1` for single-threaded programs to avoid synchronization overhead.
+The hint does not affect thread safety, which is governed by the `locking`
+tier. To reduce synchronization overhead in a single-threaded program, select a
+lockless `locking` tier (see
+xref:4.guide/4c2.configuration.adoc#single-threaded-mode[Locking Tiers]).
 
 == Running the Event Loop
 
@@ -244,8 +250,9 @@ int main()
 
 == Thread Safety
 
-The `io_context` can be used from multiple threads when constructed with
-a concurrency hint greater than 1:
+The `io_context` is thread-safe by default, regardless of the concurrency hint:
+multiple threads may call `run()` concurrently, and any thread may `post()` work
+into it.
 
 [source,cpp]
 ----
@@ -260,7 +267,10 @@ for (auto& t : threads)
 ----
 
 Multiple threads can call `run()` concurrently. The `io_context` distributes
-work across threads.
+work across threads. The one exception is a lockless `locking` tier: constructing
+with `io_context_options::locking` set to `unsafe_io` or `unsafe` drops these
+guarantees (see
+xref:4.guide/4c2.configuration.adoc#single-threaded-mode[Locking Tiers]).
 
 WARNING: Individual I/O objects (sockets, timers) are not thread-safe.
 Don't access the same socket from multiple threads without synchronization.

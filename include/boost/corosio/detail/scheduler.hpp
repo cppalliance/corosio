@@ -97,13 +97,25 @@ struct BOOST_COROSIO_DECL scheduler
     */
     virtual void register_signal_reader(int read_fd) { (void)read_fd; }
 
-    /// True if the scheduler is configured for single-threaded use.
-    /// Default false; overridden by backends that support the mode.
-    virtual bool is_single_threaded() const noexcept { return false; }
+    /// Decomposed threading configuration applied via @ref configure_threading.
+    struct threading_config
+    {
+        /// Scheduler mutex/condvar enabled. Off only in the `unsafe` tier.
+        bool scheduler_locking  = true;
+        /// Per-descriptor (reactor) or ring (io_uring) I/O lock enabled.
+        /// Off in the `unsafe_io` and `unsafe` tiers.
+        bool reactor_io_locking = true;
+        /// A single run thread is guaranteed (a lockless tier): elide
+        /// inter-run-thread wakeups.
+        bool one_thread         = false;
+    };
 
-    /// Enable or disable single-threaded mode. Default no-op for
-    /// backends that don't support the mode.
-    virtual void configure_single_threaded(bool) noexcept {}
+    /// True in the fully-lockless (`unsafe`) tier. The resolver and POSIX
+    /// file services gate their `operation_not_supported` result on this.
+    virtual bool scheduler_locking_disabled() const noexcept { return false; }
+
+    /// Apply @ref threading_config. Default no-op.
+    virtual void configure_threading(threading_config) noexcept {}
 };
 
 } // namespace boost::corosio::detail

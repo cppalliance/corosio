@@ -332,7 +332,7 @@ bench_fork_join_lockless(bench::state& state)
     state.counters["fan_out"] = fan_out;
 
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
 
     std::vector<socket_type> clients;
@@ -403,7 +403,7 @@ bench_nested_lockless(bench::state& state)
     state.counters["subs_per_group"] = subs_per_group;
 
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
 
     std::vector<socket_type> clients;
@@ -487,7 +487,7 @@ bench_concurrent_parents_lockless(bench::state& state)
     state.counters["fan_out"]     = fan_out;
 
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
 
     std::vector<socket_type> clients;

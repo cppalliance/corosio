@@ -265,7 +265,7 @@ epoll_scheduler::register_descriptor(int fd, reactor_descriptor_state* desc) con
     desc->registered_events = ev.events;
     desc->fd                = fd;
     desc->scheduler_        = this;
-    desc->mutex.set_enabled(!single_threaded_);
+    desc->mutex.set_enabled(reactor_io_locking_);
     desc->ready_events_.store(0, std::memory_order_relaxed);
 
     conditionally_enabled_mutex::scoped_lock lock(desc->mutex);

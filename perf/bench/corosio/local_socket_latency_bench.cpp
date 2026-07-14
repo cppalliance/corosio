@@ -167,7 +167,7 @@ bench_unix_pingpong_latency_lockless(bench::state& state)
     state.counters["message_size"] = static_cast<double>(message_size);
 
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
     socket_type client(ioc), server(ioc);
     if (auto ec = corosio::connect_pair(client, server))
@@ -201,7 +201,7 @@ bench_unix_concurrent_latency_lockless(bench::state& state)
     state.counters["num_pairs"] = num_pairs;
 
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
 
     std::vector<socket_type> clients;

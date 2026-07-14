@@ -263,7 +263,7 @@ void
 bench_single_threaded_lockless(bench::state& state)
 {
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
 
     corosio::native_io_context<Backend> ioc(opts, 1);
     auto ex                  = ioc.get_executor();
@@ -295,7 +295,7 @@ void
 bench_interleaved_lockless(bench::state& state)
 {
     corosio::io_context_options opts;
-    opts.single_threaded = true;
+    opts.locking = corosio::locking_mode::unsafe;
 
     int handlers_per_iteration = 100;
 
