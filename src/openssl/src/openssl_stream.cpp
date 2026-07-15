@@ -12,6 +12,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/ex/async_mutex.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/write.hpp>
 
@@ -119,9 +120,10 @@ normalize_openssl_shutdown_read_error(std::error_code ec) noexcept
     if (!ec)
         return ec;
 
-    if (ec == make_error_code(capy::error::eof) ||
-        ec == make_error_code(capy::error::canceled) ||
-        ec == std::errc::connection_reset ||
+    // A peer that closed without a proper close_notify is a truncated stream.
+    // Cancellation is deliberately excluded: a stopped shutdown must surface as
+    // canceled, not stream_truncated.
+    if (ec == capy::cond::eof || ec == std::errc::connection_reset ||
         ec == std::errc::connection_aborted || ec == std::errc::broken_pipe)
         return make_error_code(capy::error::stream_truncated);
 
@@ -802,7 +804,7 @@ struct openssl_stream::impl
                         ec = co_await read_input();
                         if (ec)
                         {
-                            if (ec == make_error_code(capy::error::eof))
+                            if (ec == capy::cond::eof)
                             {
                                 if (SSL_get_shutdown(ssl_) &
                                     SSL_RECEIVED_SHUTDOWN)

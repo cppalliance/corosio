@@ -12,6 +12,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/ex/async_mutex.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/write.hpp>
 
@@ -876,7 +877,7 @@ struct wolfssl_stream::impl
                         auto [rec, rn] = co_await s_->read_some(rbuf);
                         if (rec)
                         {
-                            if (rec == make_error_code(capy::error::eof))
+                            if (rec == capy::cond::eof)
                             {
                                 // Check if we got a proper TLS shutdown
                                 if (has_peer_shutdown(ssl_))
@@ -1293,7 +1294,15 @@ struct wolfssl_stream::impl
                     capy::async_mutex::lock_guard io_guard(&io_cm_);
                     auto [rec, rn] = co_await s_->read_some(rbuf);
                     if (rec)
-                        break; // EOF or socket error during shutdown read - acceptable
+                    {
+                        // EOF or a socket error during the shutdown read is
+                        // acceptable, but a cancel must be surfaced so a stopped
+                        // shutdown reports canceled. Compare by condition so 
+                        // both representations of the cancel match.
+                        if (rec == capy::cond::canceled)
+                            ec = rec;
+                        break;
+                    }
                     read_in_len_ += rn;
                 }
                 else if (err == WOLFSSL_ERROR_WANT_WRITE)

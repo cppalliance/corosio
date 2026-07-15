@@ -25,9 +25,9 @@ namespace boost::corosio {
     Starts the awaitable with an interposed stop token and arms a
     timer. If the awaitable finishes first, its result is returned
     as-is (success, error, or exception). If the deadline passes
-    first, the awaitable is cancelled and an `io_result` with
-    `ec == capy::error::timeout` and default-initialized payload
-    is produced.
+    first, the awaitable is cancelled and an `io_result` whose
+    `ec` compares equal to `capy::cond::timeout` (with a
+    default-initialized payload) is produced.
 
     Exceptions from the inner awaitable always propagate; they are
     never swallowed by the timer.

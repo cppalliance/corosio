@@ -2315,6 +2315,145 @@ run_stop_token_read_test(
         s2.close();
 }
 
+/** How the shutdown read is cancelled in run_shutdown_cancel_test. */
+enum class shutdown_cancel_mode
+{
+    // Cancel the whole task via std::stop_token. The pending socket read then
+    // completes with the generic std::errc::operation_canceled.
+    stop_token,
+    // Cancel just the socket via socket.cancel(). The pending read completes
+    // with the capy-category capy::error::canceled.
+    socket_cancel
+};
+
+/** Run a test for cancellation during TLS shutdown.
+
+    Regression test for cppalliance/corosio#301: cancelling a TLS task while it
+    is blocked reading the peer's close_notify during shutdown must surface
+    cond::canceled, not cond::stream_truncated (OpenSSL) and not a silent
+    success (WolfSSL).
+
+    Both cancel representations are exercised via @p mode (see
+    shutdown_cancel_mode): OpenSSL's normalize historically folded the
+    capy-category form into stream_truncated, so only socket_cancel reproduced
+    that bug, while WolfSSL swallowed either form. cond::canceled matches both.
+
+    The test is deterministic: the client initiates shutdown (sending its own
+    close_notify); the server reads that close_notify (proving the client's
+    write has landed) and then yields via a short delay so the io_context
+    resumes the client past its flush and parks it blocking on the peer read.
+    Only then does the server trigger cancellation, guaranteeing it hits the
+    shutdown *read*. The server never sends its own close_notify and never
+    closes the socket, so the client stays blocked until cancelled.
+*/
+template<typename ClientStreamFactory, typename ServerStreamFactory>
+void
+run_shutdown_cancel_test(
+    io_context& ioc,
+    tls_context client_ctx,
+    tls_context server_ctx,
+    ClientStreamFactory make_client,
+    ServerStreamFactory make_server,
+    shutdown_cancel_mode mode)
+{
+    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+
+    auto client = make_client(s1, client_ctx);
+    auto server = make_server(s2, server_ctx);
+
+    // Handshake phase
+    auto client_hs = [&client]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(
+            std::remove_reference_t<decltype(client)>::client);
+        BOOST_TEST(!ec);
+    };
+
+    auto server_hs = [&server]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(
+            std::remove_reference_t<decltype(server)>::server);
+        BOOST_TEST(!ec);
+    };
+
+    capy::run_async(ioc.get_executor())(client_hs());
+    capy::run_async(ioc.get_executor())(server_hs());
+
+    ioc.run();
+    ioc.restart();
+
+    // Shutdown cancellation phase
+    std::stop_source stop_src;
+    std::error_code shutdown_ec;
+    bool shutdown_done = false;
+
+    // Failsafe deadline - 2000ms allows headroom for CI with coverage instrumentation
+    std::stop_source failsafe_stop;
+
+    auto client_shutdown = [&client, &shutdown_ec, &shutdown_done,
+                            &failsafe_stop]() -> capy::task<> {
+        auto [ec]     = co_await client.shutdown();
+        shutdown_ec   = ec;
+        shutdown_done = true;
+        failsafe_stop.request_stop();
+    };
+
+    // See the function docstring for why the drain + short delay is needed to
+    // land the cancellation on the shutdown read rather than the close_notify
+    // write.
+    auto server_drain_then_cancel = [&server, &stop_src, &s1,
+                                     mode]() -> capy::task<> {
+        char buf[64];
+        auto [ec, n] =
+            co_await server.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+        (void)ec;
+        (void)n;
+        auto [dec] = co_await corosio::delay(
+            std::chrono::milliseconds(20 * failsafe_scale));
+        (void)dec;
+        if (mode == shutdown_cancel_mode::socket_cancel)
+            s1.cancel();
+        else
+            stop_src.request_stop();
+    };
+
+    bool failsafe_hit  = false;
+    auto failsafe_task = [&failsafe_hit, &shutdown_done, &s1,
+                          &s2]() -> capy::task<> {
+        auto [ec] = co_await corosio::delay(
+            std::chrono::milliseconds(2000 * failsafe_scale));
+        if (!ec && !shutdown_done)
+        {
+            failsafe_hit = true;
+            if (s1.is_open())
+            {
+                s1.cancel();
+                s1.close();
+            }
+            if (s2.is_open())
+            {
+                s2.cancel();
+                s2.close();
+            }
+        }
+    };
+
+    // The client task carries the stop token in both modes; only stop_token
+    // mode requests a stop, so socket_cancel mode is unaffected by it.
+    capy::run_async(ioc.get_executor(), stop_src.get_token())(
+        client_shutdown());
+    capy::run_async(ioc.get_executor())(server_drain_then_cancel());
+    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
+        failsafe_task());
+    ioc.run();
+
+    BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
+    BOOST_TEST(shutdown_ec == capy::cond::canceled);
+
+    if (s1.is_open())
+        s1.close();
+    if (s2.is_open())
+        s2.close();
+}
+
 /** Run a test for stop token cancellation during write.
 
     Tests that cooperative cancellation via std::stop_token correctly

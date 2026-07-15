@@ -342,6 +342,27 @@ testStopTokenCancellation(StreamFactory make_stream)
     }
 }
 
+/** Test cancellation during shutdown (cppalliance/corosio#301).
+
+    Exercises both cancellation representations (stop token and socket cancel),
+    which reach the shutdown read as different error codes; both must surface
+    cond::canceled.
+*/
+template<typename StreamFactory>
+void
+testShutdownCancel(StreamFactory make_stream)
+{
+    for (auto mode : {shutdown_cancel_mode::socket_cancel,
+                      shutdown_cancel_mode::stop_token})
+    {
+        io_context ioc;
+        auto [client_ctx, server_ctx] =
+            make_contexts(context_mode::separate_cert);
+        run_shutdown_cancel_test(
+            ioc, client_ctx, server_ctx, make_stream, make_stream, mode);
+    }
+}
+
 /** Test socket error propagation. */
 template<typename StreamFactory>
 void

@@ -161,6 +161,7 @@ struct openssl_stream_test
         test::testTlsShutdown(make_stream, cert_modes);
         test::testStreamTruncated(make_stream, cert_modes);
         test::testStopTokenCancellation(make_stream);
+        test::testShutdownCancel(make_stream);
         test::testSocketErrorPropagation(make_stream);
         test::testCertificateValidation(make_stream);
         test::testSni(make_stream);
