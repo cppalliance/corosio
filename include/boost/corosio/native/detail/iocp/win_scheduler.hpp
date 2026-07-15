@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -358,10 +359,14 @@ win_scheduler::work_finished() noexcept
 inline void
 win_scheduler::on_pending(overlapped_op* op) const
 {
-    // CAS: try to set ready_ from 0 to 1.
-    // If the old value was 1, GQCS already grabbed this op and stored
-    // results — we need to re-post so do_one() can dispatch it.
-    if (::InterlockedCompareExchange(&op->ready_, 1, 0) == 1)
+    // If the CAS fails (ready_ was already 1), the completer got here first
+    // and stored the results — re-post so do_one() can dispatch. The acquire
+    // on failure makes those payload writes visible, so the re-posted op
+    // carries valid dwError / bytes_transferred.
+    long expected = 0;
+    if (!op->ready_.compare_exchange_strong(
+            expected, 1,
+            std::memory_order_acq_rel, std::memory_order_acquire))
     {
         if (!::PostQueuedCompletionStatus(
                 iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
@@ -376,10 +381,12 @@ win_scheduler::on_pending(overlapped_op* op) const
 inline void
 win_scheduler::on_completion(overlapped_op* op, DWORD error, DWORD bytes) const
 {
-    // Sync completion: pack results into op and post for dispatch.
-    op->ready_            = 1;
+    // Synchronous-completion path. Write the payload before the release store
+    // to ready_ so the GQCS thread that dequeues the key_result_stored post
+    // sees both fields once it observes ready_ == 1.
     op->dwError           = error;
     op->bytes_transferred = bytes;
+    op->ready_.store(1, std::memory_order_release);
 
     if (!::PostQueuedCompletionStatus(
             iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
@@ -575,24 +582,28 @@ win_scheduler::do_one(unsigned long timeout_ms)
             {
                 auto* ov_op = overlapped_to_op(overlapped);
 
-                // If key_result_stored, results are pre-stored in op fields
-                if (key == key_result_stored)
-                {
-                    bytes = ov_op->bytes_transferred;
-                    err   = ov_op->dwError;
-                }
+                // key_io carries fresh kernel results — publish them before
+                // the CAS so that losing the race (old value 0) still leaves
+                // valid data for the on_pending() re-post. For key_result_stored
+                // the payload was already written and released (by the completer
+                // in on_pending, or by on_completion), so we must not overwrite
+                // it.
+                if (key == key_io)
+                    ov_op->store_result(bytes, err);
 
-                // Store GQCS results so on_pending() re-post has valid data
-                ov_op->store_result(bytes, err);
-
-                // CAS: try to set ready_ from 0 to 1.
-                // If old value was 1, the initiator already returned
-                // (on_pending/on_completion set it) — safe to dispatch.
-                // If old value was 0, the initiator hasn't returned yet —
-                // skip dispatch; on_pending() will re-post.
-                if (::InterlockedCompareExchange(&ov_op->ready_, 1, 0) == 1)
+                // If old value was 1 the initiator already returned — dispatch.
+                // The acquire pairs with the publisher's release so the payload
+                // reads in complete() are ordered after the store that produced
+                // them. If old value was 0 the initiator hasn't returned yet;
+                // skip and let on_pending() re-post.
+                long expected = 0;
+                if (!ov_op->ready_.compare_exchange_strong(
+                        expected, 1,
+                        std::memory_order_acq_rel,
+                        std::memory_order_acquire))
                 {
-                    ov_op->complete(this, bytes, err);
+                    ov_op->complete(
+                        this, ov_op->bytes_transferred, ov_op->dwError);
                     work_finished();
                     return 1;
                 }

@@ -90,9 +90,9 @@ struct iocp_shutdown_test
             void* ioc = ctx.iocp_handle();
 
             auto* op              = new test_overlapped_op(destroyed);
-            op->ready_            = 1;
             op->dwError           = 0;
             op->bytes_transferred = 42;
+            op->ready_.store(1, std::memory_order_relaxed);
 
             ex.on_work_started();
 
@@ -122,9 +122,9 @@ struct iocp_shutdown_test
                 ioc, 0, detail::key_io, static_cast<LPOVERLAPPED>(io_op));
 
             auto* stored_op    = new test_overlapped_op(stored_destroyed);
-            stored_op->ready_  = 1;
             stored_op->dwError = 0;
             stored_op->bytes_transferred = 0;
+            stored_op->ready_.store(1, std::memory_order_relaxed);
             ex.on_work_started();
             ::PostQueuedCompletionStatus(
                 ioc, 0, detail::key_result_stored,

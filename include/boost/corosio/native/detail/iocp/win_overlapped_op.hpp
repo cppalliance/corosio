@@ -49,7 +49,13 @@ struct overlapped_op
     /** Function pointer type for cancellation hook. */
     using cancel_func_type = void (*)(overlapped_op*) noexcept;
 
-    long ready_ = 0;
+    /** Completion handshake between the I/O initiator and the GQCS completer,
+        and the release/acquire barrier that publishes the payload: the plain
+        `dwError` / `bytes_transferred` fields are written before a release
+        store to `ready_` and read after an acquiring load, so they need no
+        atomicity of their own. The CAS protocol lives at the access sites in
+        win_scheduler.hpp. */
+    std::atomic<long> ready_{0};
     DWORD dwError           = 0;
     DWORD bytes_transferred = 0;
     cancel_func_type cancel_func_ = nullptr;
@@ -71,7 +77,7 @@ struct overlapped_op
     void reset() noexcept
     {
         reset_overlapped();
-        ready_            = 0;
+        ready_.store(0, std::memory_order_relaxed);
         dwError           = 0;
         bytes_transferred = 0;
         empty_buffer      = false;

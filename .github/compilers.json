@@ -108,6 +108,20 @@
       "b2_toolset": "msvc-14.4",
       "generator": "Visual Studio 17 2022",
       "is_latest": true
+    },
+    {
+      "version": "14.34",
+      "cxxstd": "20",
+      "latest_cxxstd": "20",
+      "runs_on": "windows-11-arm",
+      "b2_toolset": "msvc-14.3"
+    },
+    {
+      "version": "14.44",
+      "cxxstd": "20",
+      "latest_cxxstd": "20",
+      "runs_on": "windows-11-arm",
+      "b2_toolset": "msvc-14.4"
     }
   ],
   "clang-cl": [

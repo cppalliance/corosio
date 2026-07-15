@@ -251,8 +251,12 @@ jobs:
           vcpkgJsonGlob: '**/corosio-root/vcpkg.json'
           runVcpkgInstall: true
 
+      # ARM Windows legs skip vcpkg entirely (see Setup vcpkg gate above), so
+      # there is no installed tree to resolve here. They build without TLS;
+      # the boost_corosio_openssl/wolfssl targets become <build>no and the TLS
+      # tests are skipped.
       - name: Set vcpkg paths (Windows)
-        if: ${{ matrix.windows }}
+        if: ${{ matrix.windows && !contains(matrix.runs-on, 'arm') }}
         id: vcpkg-paths-windows
         shell: bash
         run: |
@@ -399,7 +403,7 @@ jobs:
       # WolfSSL reads WOLFSSL_INCLUDE and WOLFSSL_LIBRARY_PATH env vars automatically
       # Linux uses system OpenSSL which B2 finds automatically
       - name: Create B2 user-config for OpenSSL (Windows)
-        if: ${{ matrix.windows }}
+        if: ${{ matrix.windows && !contains(matrix.runs-on, 'arm') }}
         shell: bash
         run: |
           openssl_root="${{ steps.vcpkg-paths-windows.outputs.openssl_root }}"
