@@ -687,7 +687,7 @@ public:
 
         @par Preconditions
         - At least one endpoint bound via @ref bind.
-        - Workers provided to the constructor.
+        - Workers provided via @ref set_workers.
         - If restarting, @ref join must have completed first.
 
         @par Effects
