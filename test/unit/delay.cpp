@@ -341,6 +341,38 @@ struct delay_test
         BOOST_TEST_EQ(destroyed, 3);
     }
 
+    void testShutdownDrainsPostedCompletion()
+    {
+        // A cancelled delay posts its completion op to the scheduler
+        // ready queue; the io_context destructs before running it, so
+        // the scheduler drain must destroy the suspended frame through
+        // the queued op rather than the timer service's heap drain.
+        int destroyed = 0;
+        std::stop_source src;
+
+        {
+            io_context ioc(Backend);
+
+            auto task = [](int& counter) -> capy::task<> {
+                struct guard
+                {
+                    int& c_;
+                    ~guard() { ++c_; }
+                };
+                guard g{counter};
+                auto [ec] = co_await delay(std::chrono::hours(1));
+                (void)ec;
+            };
+
+            capy::run_async(ioc.get_executor(), src.get_token())(
+                task(destroyed));
+            ioc.poll();
+            src.request_stop();
+        }
+
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
     void testNarrowRepDurationClamp()
     {
         // A narrow-rep duration must survive the overflow clamp intact.
@@ -565,6 +597,7 @@ struct delay_test
         testConcurrentDelaysHeapRemoval();
         testShutdownWithSuspendedDelay();
         testShutdownDrainsHeapWaiters();
+        testShutdownDrainsPostedCompletion();
         testNarrowRepDurationClamp();
         testNegativeExtremeDurationCompletes();
         testPositiveExtremeDurationArmsThenCancels();

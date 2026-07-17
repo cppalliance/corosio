@@ -59,25 +59,16 @@ timer::do_update_expiry()
 // wherever a detail::timer is used (every such user also needs timer's
 // constructors, defined in this same translation unit).
 std::coroutine_handle<>
-timer::implementation::wait(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    std::stop_token token,
-    std::error_code* ec,
-    capy::continuation* cont)
+timer::implementation::wait(waiter_node& w)
 {
-    // Already-expired fast path — no waiter_node, no mutex.
+    // Already-expired fast path — no publication, no mutex.
     // Post instead of dispatch so the coroutine yields to the
     // scheduler, allowing other queued work to run.
-    if (heap_index_.load(std::memory_order_relaxed) == npos)
+    if (already_expired())
     {
-        if (expiry_ == (time_point::min)() || expiry_ <= clock_type::now())
-        {
-            if (ec)
-                *ec = {};
-            d.post(*cont);
-            return std::noop_coroutine();
-        }
+        w.ec_ = {};
+        w.d_.post(w.cont_);
+        return std::noop_coroutine();
     }
 
     // Publication-last invariant: fully initialize the waiter, count
@@ -88,24 +79,82 @@ timer::implementation::wait(
     // null impl_ and is a safe no-op. To avoid losing such an early
     // cancel, insert_waiter() re-checks stop_requested() under the lock
     // and completes as canceled if it fires in this window.
-    auto* w    = svc_->create_waiter();
-    w->impl_   = nullptr;
-    w->svc_    = svc_;
-    w->h_      = h;
-    w->cont_   = cont;
-    w->d_      = d;
-    w->token_  = std::move(token);
-    w->ec_out_ = ec;
+    w.impl_ = nullptr;
+    w.svc_  = svc_;
 
     might_have_pending_waits_.store(true, std::memory_order_relaxed);
     svc_->get_scheduler().work_started();
 
-    if (w->token_.stop_possible())
-        w->stop_cb_.emplace(w->token_, waiter_node::canceller{w});
+    if (w.token_->stop_possible())
+        w.arm_stop_cb();
 
-    svc_->insert_waiter(*this, w);
+    svc_->insert_waiter(*this, &w);
 
     return std::noop_coroutine();
+}
+
+// completion_op and canceller definitions live here, non-inline, for
+// the same reason wait() does: the inline waiter_node constructor in
+// timer.hpp references do_complete and the vtable from translation
+// units that never include timer_service.hpp.
+
+void
+waiter_node::canceller::operator()() const
+{
+    waiter_->svc_->cancel_waiter(waiter_);
+}
+
+void
+waiter_node::completion_op::do_complete(
+    [[maybe_unused]] void* owner,
+    scheduler_op* base,
+    std::uint32_t,
+    std::uint32_t)
+{
+    // owner is always non-null here. The destroy path (owner == nullptr)
+    // is unreachable because completion_op overrides destroy() directly,
+    // bypassing scheduler_op::destroy() which would call func_(nullptr, ...).
+    BOOST_COROSIO_ASSERT(owner);
+    static_cast<completion_op*>(base)->operator()();
+}
+
+void
+waiter_node::completion_op::operator()()
+{
+    // The node lives in the resuming coroutine's frame: posting the
+    // continuation is the last access, since the frame (and node)
+    // may complete and die on another thread immediately after.
+    auto* w = waiter_;
+    w->reset_stop_cb();
+    auto d      = w->d_;
+    auto& sched = w->svc_->get_scheduler();
+    d.post(w->cont_);
+    sched.work_finished();
+}
+
+void
+waiter_node::completion_op::destroy()
+{
+    // Called during scheduler shutdown drain when this completion_op is
+    // in the scheduler's ready queue (posted by cancel_timer() or
+    // process_expired()). Balances the work_started() from
+    // implementation::wait(). The scheduler drain loop separately
+    // balances the work_started() from post(). On IOCP both decrements
+    // are required for outstanding_work_ to reach zero; on other
+    // backends this is harmless.
+    //
+    // This override also prevents scheduler_op::destroy() from calling
+    // do_complete(nullptr, ...). See also: timer_service::shutdown()
+    // which drains waiters still in the timer heap (the other path).
+    // Destroying the frame also ends the node's storage, so it is
+    // the last access.
+    auto* w = waiter_;
+    w->reset_stop_cb();
+    auto h      = std::exchange(w->h_, {});
+    auto& sched = w->svc_->get_scheduler();
+    sched.work_finished();
+    if (h)
+        h.destroy();
 }
 
 } // namespace boost::corosio::detail

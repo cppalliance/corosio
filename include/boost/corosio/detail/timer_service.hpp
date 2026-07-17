@@ -27,7 +27,6 @@
 #include <cstddef>
 #include <limits>
 #include <mutex>
-#include <optional>
 #include <stop_token>
 #include <utility>
 #include <vector>
@@ -42,36 +41,39 @@ struct scheduler;
 
     Data Structures
     ---------------
-    waiter_node holds per-waiter state: coroutine handle, executor,
-    error output, stop_token, embedded completion_op. Each concurrent
-    co_await t.wait() allocates one waiter_node.
+    waiter_node (defined in timer.hpp) holds per-waiter state:
+    coroutine handle, executor, error output, embedded
+    completion_op. Each concurrent co_await t.wait() embeds one
+    waiter_node in the awaitable on the suspended coroutine's
+    frame — waits perform no allocation.
 
     timer::implementation holds per-timer state: expiry, heap
     index, and an intrusive_list of waiter_nodes. Multiple
     coroutines can wait on the same timer simultaneously.
 
-    timer_service owns a min-heap of active timers, a free list
-    of recycled impls, and a free list of recycled waiter_nodes. The
-    heap is ordered by expiry time; the scheduler queries
-    nearest_expiry() to set the epoll/timerfd timeout.
+    timer_service owns a min-heap of active timers and a free list
+    of recycled impls. The heap is ordered by expiry time; the
+    scheduler queries nearest_expiry() to set the epoll/timerfd
+    timeout.
 
     Optimization Strategy
     ---------------------
     1. Deferred heap insertion — expires_after() stores the expiry
        but does not insert into the heap. Insertion happens in wait().
     2. Thread-local impl cache — single-slot per-thread cache.
-    3. Embedded completion_op — eliminates heap allocation per fire/cancel.
+    3. Frame-resident waiter_node with embedded completion_op —
+       eliminates heap allocation per wait/fire/cancel.
     4. Cached nearest expiry — atomic avoids mutex in nearest_expiry().
     5. might_have_pending_waits_ flag — skips lock when no wait issued.
-    6. Thread-local waiter cache — single-slot per-thread cache.
 
     Concurrency
     -----------
     stop_token callbacks can fire from any thread. The impl_
     pointer on waiter_node is used as a "still in list" marker.
+    A waiter_node's storage is the suspended coroutine's frame:
+    every completion path must finish touching the node before
+    posting the continuation or destroying the handle.
 */
-
-struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node;
 
 inline void timer_service_invalidate_cache() noexcept;
 
@@ -125,7 +127,6 @@ private:
     mutable std::mutex mutex_;
     std::vector<heap_entry> heap_;
     timer::implementation* free_list_ = nullptr;
-    waiter_node* waiter_free_list_ = nullptr;
     callback on_earliest_changed_;
     bool shutting_down_ = false;
     // Avoids mutex in nearest_expiry() and empty()
@@ -184,12 +185,6 @@ public:
     /// Cancel and recycle a timer implementation.
     inline void destroy_impl(timer::implementation& impl);
 
-    /// Create or recycle a waiter node.
-    inline waiter_node* create_waiter();
-
-    /// Return a waiter node to the cache or free list.
-    inline void destroy_waiter(waiter_node* w);
-
     /// Update the timer expiry, cancelling existing waiters.
     inline std::size_t update_timer(
         timer::implementation& impl, time_point new_time);
@@ -200,10 +195,10 @@ public:
     /// Cancel all waiters on a timer.
     inline std::size_t cancel_timer(timer::implementation& impl);
 
-    /// Cancel a single waiter ( stop_token callback path ).
+    /// Cancel one specific waiter ( stop_token callback path ).
     inline void cancel_waiter(waiter_node* w);
 
-    /// Cancel one waiter on a timer.
+    /// Cancel the oldest pending waiter on a timer ( FIFO ).
     inline std::size_t cancel_one_waiter(timer::implementation& impl);
 
     /// Complete all waiters whose timers have expired.
@@ -223,73 +218,25 @@ private:
     inline void swap_heap(std::size_t i1, std::size_t i2);
 };
 
-struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
-    : intrusive_list<waiter_node>::node
-{
-    // Embedded completion op — avoids heap allocation per fire/cancel
-    struct completion_op final : scheduler_op
-    {
-        waiter_node* waiter_ = nullptr;
-
-        static void do_complete(
-            void* owner, scheduler_op* base, std::uint32_t, std::uint32_t);
-
-        completion_op() noexcept : scheduler_op(&do_complete) {}
-
-        void operator()() override;
-        void destroy() override;
-    };
-
-    // Per-waiter stop_token cancellation
-    struct canceller
-    {
-        waiter_node* waiter_;
-        void operator()() const;
-    };
-
-    // nullptr once removed from timer's waiter list (concurrency marker)
-    timer::implementation* impl_ = nullptr;
-    timer_service* svc_                  = nullptr;
-    std::coroutine_handle<> h_;
-    capy::continuation* cont_            = nullptr;
-    capy::executor_ref d_;
-    std::error_code* ec_out_ = nullptr;
-    std::stop_token token_;
-    std::optional<std::stop_callback<canceller>> stop_cb_;
-    completion_op op_;
-    std::error_code ec_value_;
-    waiter_node* next_free_ = nullptr;
-
-    waiter_node() noexcept
-    {
-        op_.waiter_ = this;
-    }
-};
-
-// Thread-local caches avoid hot-path mutex acquisitions:
-// 1. Impl cache — single-slot, validated by comparing svc_
-// 2. Waiter cache — single-slot, no service affinity
-// All caches are cleared by timer_service_invalidate_cache() during shutdown.
+// Thread-local cache avoids hot-path mutex acquisitions:
+// single-slot impl cache, validated by comparing svc_. Cleared by
+// timer_service_invalidate_cache() during shutdown.
 
 inline thread_local_ptr<timer::implementation> tl_cached_impl;
-inline thread_local_ptr<waiter_node> tl_cached_waiter;
 
-// The POD TLS slots above never run destructors, so a short-lived
-// run() thread would leak its cached impl and waiter. Each push
-// arms this owner, whose destructor frees the slots at thread exit.
-// Cached entries are quiescent heap objects (stop callbacks reset,
-// nothing in the heap or free lists) and deletion touches no
-// service state, so it is safe after the owning service is gone
-// (the stale-entry path in try_pop_tl_cache deletes the same way).
+// The POD TLS slot above never runs destructors, so a short-lived
+// run() thread would leak its cached impl. Each push arms this
+// owner, whose destructor frees the slot at thread exit. A cached
+// entry is a quiescent heap object (nothing in the heap or free
+// list) and deletion touches no service state, so it is safe after
+// the owning service is gone (the stale-entry path in
+// try_pop_tl_cache deletes the same way).
 struct tl_cache_owner
 {
     ~tl_cache_owner()
     {
         delete tl_cached_impl.get();
         tl_cached_impl.set(nullptr);
-
-        delete tl_cached_waiter.get();
-        tl_cached_waiter.set(nullptr);
     }
 };
 
@@ -327,38 +274,11 @@ try_push_tl_cache(timer::implementation* impl) noexcept
     return false;
 }
 
-inline waiter_node*
-try_pop_waiter_tl_cache() noexcept
-{
-    auto* w = tl_cached_waiter.get();
-    if (w)
-    {
-        tl_cached_waiter.set(nullptr);
-        return w;
-    }
-    return nullptr;
-}
-
-inline bool
-try_push_waiter_tl_cache(waiter_node* w) noexcept
-{
-    if (!tl_cached_waiter.get())
-    {
-        arm_tl_cache_cleanup();
-        tl_cached_waiter.set(w);
-        return true;
-    }
-    return false;
-}
-
 inline void
 timer_service_invalidate_cache() noexcept
 {
     delete tl_cached_impl.get();
     tl_cached_impl.set(nullptr);
-
-    delete tl_cached_waiter.get();
-    tl_cached_waiter.set(nullptr);
 }
 
 // timer_service out-of-class member function definitions
@@ -395,12 +315,12 @@ timer_service::shutdown()
     {
         while (auto* w = impl->waiters_.pop_front())
         {
-            w->stop_cb_.reset();
+            w->reset_stop_cb();
             auto h = std::exchange(w->h_, {});
             sched_->work_finished();
+            // Destroying the frame also ends the node's storage
             if (h)
                 h.destroy();
-            delete w;
         }
         delete impl;
     }
@@ -412,14 +332,6 @@ timer_service::shutdown()
         delete free_list_;
         free_list_ = next;
     }
-
-    // Delete free-listed waiters
-    while (waiter_free_list_)
-    {
-        auto* next = waiter_free_list_->next_free_;
-        delete waiter_free_list_;
-        waiter_free_list_ = next;
-    }
 }
 
 inline io_object::implementation*
@@ -428,7 +340,10 @@ timer_service::construct()
     timer::implementation* impl = try_pop_tl_cache(this);
     if (impl)
     {
-        impl->svc_ = this;
+        impl->svc_    = this;
+        // Reset expiry_ too: a recycled impl must behave like a fresh
+        // one, whose default expiry reads as already elapsed
+        impl->expiry_ = {};
         impl->heap_index_.store(
             (std::numeric_limits<std::size_t>::max)(),
             std::memory_order_relaxed);
@@ -443,6 +358,7 @@ timer_service::construct()
         free_list_        = impl->next_free_;
         impl->next_free_  = nullptr;
         impl->svc_        = this;
+        impl->expiry_     = {};
         impl->heap_index_.store(
             (std::numeric_limits<std::size_t>::max)(),
             std::memory_order_relaxed);
@@ -497,42 +413,14 @@ timer_service::destroy_impl(timer::implementation& impl)
     free_list_      = &impl;
 }
 
-inline waiter_node*
-timer_service::create_waiter()
-{
-    if (auto* w = try_pop_waiter_tl_cache())
-        return w;
-
-    std::lock_guard lock(mutex_);
-    if (waiter_free_list_)
-    {
-        auto* w           = waiter_free_list_;
-        waiter_free_list_ = w->next_free_;
-        w->next_free_     = nullptr;
-        return w;
-    }
-
-    return new waiter_node();
-}
-
-inline void
-timer_service::destroy_waiter(waiter_node* w)
-{
-    if (try_push_waiter_tl_cache(w))
-        return;
-
-    std::lock_guard lock(mutex_);
-    w->next_free_     = waiter_free_list_;
-    waiter_free_list_ = w;
-}
-
 inline std::size_t
 timer_service::update_timer(timer::implementation& impl, time_point new_time)
 {
     // Gate on the flag, not waiters_: reading the non-atomic list
     // here would race a concurrent drain. A false flag is safe to
-    // trust pre-lock because every draining critical section stores
-    // it false as its final touch of the impl.
+    // trust pre-lock: wait() stores it true before publishing, and
+    // it is cleared only under the mutex when the waiter list is
+    // empty, so false implies no published waiters.
     bool in_heap =
         (impl.heap_index_.load(std::memory_order_relaxed) !=
          (std::numeric_limits<std::size_t>::max)());
@@ -573,7 +461,7 @@ timer_service::update_timer(timer::implementation& impl, time_point new_time)
     std::size_t count = 0;
     while (auto* w = canceled.pop_front())
     {
-        w->ec_value_ = make_error_code(capy::error::canceled);
+        w->ec_ = make_error_code(capy::error::canceled);
         sched_->post(&w->op_);
         ++count;
     }
@@ -609,7 +497,7 @@ timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
         // Lost-cancel re-check: a stop requested after the canceller was
         // armed in wait() but before this publication found impl_ null
         // and returned a no-op. Observe it now and undo the insertion.
-        if (w->token_.stop_requested())
+        if (w->token_->stop_requested())
         {
             w->impl_ = nullptr;
             impl.waiters_.remove(w);
@@ -628,7 +516,7 @@ timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
         on_earliest_changed_();
     if (lost_cancel)
     {
-        w->ec_value_ = make_error_code(capy::error::canceled);
+        w->ec_ = make_error_code(capy::error::canceled);
         sched_->post(&w->op_);
     }
 }
@@ -665,7 +553,7 @@ timer_service::cancel_timer(timer::implementation& impl)
     std::size_t count = 0;
     while (auto* w = canceled.pop_front())
     {
-        w->ec_value_ = make_error_code(capy::error::canceled);
+        w->ec_ = make_error_code(capy::error::canceled);
         sched_->post(&w->op_);
         ++count;
     }
@@ -678,7 +566,9 @@ timer_service::cancel_waiter(waiter_node* w)
 {
     {
         std::lock_guard lock(mutex_);
-        // Already removed by cancel_timer or process_expired
+        // Already removed by another drain: cancel_timer,
+        // cancel_one_waiter, update_timer, process_expired, or
+        // insert_waiter's lost-cancel recheck
         if (!w->impl_)
             return;
         auto* impl = w->impl_;
@@ -693,7 +583,7 @@ timer_service::cancel_waiter(waiter_node* w)
         refresh_cached_nearest();
     }
 
-    w->ec_value_ = make_error_code(capy::error::canceled);
+    w->ec_ = make_error_code(capy::error::canceled);
     sched_->post(&w->op_);
 }
 
@@ -720,7 +610,7 @@ timer_service::cancel_one_waiter(timer::implementation& impl)
         refresh_cached_nearest();
     }
 
-    w->ec_value_ = make_error_code(capy::error::canceled);
+    w->ec_ = make_error_code(capy::error::canceled);
     sched_->post(&w->op_);
     return 1;
 }
@@ -740,8 +630,8 @@ timer_service::process_expired()
             remove_timer_impl(*t);
             while (auto* w = t->waiters_.pop_front())
             {
-                w->impl_     = nullptr;
-                w->ec_value_ = {};
+                w->impl_ = nullptr;
+                w->ec_   = {};
                 expired.push_back(w);
             }
             t->might_have_pending_waits_.store(
@@ -835,79 +725,9 @@ timer_service::swap_heap(std::size_t i1, std::size_t i2)
     heap_[i2].timer_->heap_index_.store(i2, std::memory_order_relaxed);
 }
 
-// waiter_node out-of-class member function definitions
-
-inline void
-waiter_node::canceller::operator()() const
-{
-    waiter_->svc_->cancel_waiter(waiter_);
-}
-
-inline void
-waiter_node::completion_op::do_complete(
-    [[maybe_unused]] void* owner,
-    scheduler_op* base,
-    std::uint32_t,
-    std::uint32_t)
-{
-    // owner is always non-null here. The destroy path (owner == nullptr)
-    // is unreachable because completion_op overrides destroy() directly,
-    // bypassing scheduler_op::destroy() which would call func_(nullptr, ...).
-    BOOST_COROSIO_ASSERT(owner);
-    static_cast<completion_op*>(base)->operator()();
-}
-
-inline void
-waiter_node::completion_op::operator()()
-{
-    auto* w = waiter_;
-    w->stop_cb_.reset();
-    if (w->ec_out_)
-        *w->ec_out_ = w->ec_value_;
-
-    auto* cont  = w->cont_;
-    auto d      = w->d_;
-    auto* svc   = w->svc_;
-    auto& sched = svc->get_scheduler();
-
-    svc->destroy_waiter(w);
-
-    d.post(*cont);
-    sched.work_finished();
-}
-
-// GCC 14 false-positive: inlining ~optional<stop_callback> through
-// delete loses track that stop_cb_ was already .reset() above.
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-inline void
-waiter_node::completion_op::destroy()
-{
-    // Called during scheduler shutdown drain when this completion_op is
-    // in the scheduler's ready queue (posted by cancel_timer() or
-    // process_expired()). Balances the work_started() from
-    // implementation::wait(). The scheduler drain loop separately
-    // balances the work_started() from post(). On IOCP both decrements
-    // are required for outstanding_work_ to reach zero; on other
-    // backends this is harmless.
-    //
-    // This override also prevents scheduler_op::destroy() from calling
-    // do_complete(nullptr, ...). See also: timer_service::shutdown()
-    // which drains waiters still in the timer heap (the other path).
-    auto* w = waiter_;
-    w->stop_cb_.reset();
-    auto h      = std::exchange(w->h_, {});
-    auto& sched = w->svc_->get_scheduler();
-    delete w;
-    sched.work_finished();
-    if (h)
-        h.destroy();
-}
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
+// waiter_node's completion_op and canceller members are defined in
+// timer.cpp alongside implementation::wait(), for the same reason
+// wait() lives there (see below).
 
 // timer::implementation::wait() is defined in timer.cpp, not here.
 // It must be a non-inline definition in a translation unit that is
