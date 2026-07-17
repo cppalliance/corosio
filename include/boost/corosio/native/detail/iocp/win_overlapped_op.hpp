@@ -33,6 +33,72 @@
 
 namespace boost::corosio::detail {
 
+/** Convert an IOCP completion's raw error to std::error_code, disambiguating
+    ERROR_NETNAME_DELETED by operation kind and surfacing the remote-connection
+    error family as portable std::errc conditions.
+
+    IOCP delivers ERROR_NETNAME_DELETED both when a local closesocket() cancels
+    a pending op (already handled by the cancelled flag before this is reached)
+    and when the peer hard-closes with a RST. A NETNAME_DELETED that survives
+    the cancelled check is therefore a genuine remote reset, and the correct
+    surface depends on the operation: connection_reset for stream read/write,
+    connection_aborted for accept (mirroring Asio's per-op mapping).
+
+    Why generic_category / std::errc rather than a native code: which raw
+    Windows code std::system_category maps to a given std::errc condition
+    depends on the standard library. MSVC's STL maps the WSA-range socket
+    codes (WSAECONNRESET 10054, WSAECONNREFUSED 10061, ...) to the std::errc
+    conditions but not their 12xx Win32 counterparts; libstdc++ (MinGW) does
+    the exact opposite -- it maps the Win32 12xx codes but not the WSA range.
+    So no single system_category code compares equal to e.g.
+    std::errc::connection_refused on both toolchains. Returning the condition
+    itself via std::make_error_code (generic_category) sidesteps the
+    divergence: it compares equal to the matching std::errc on every standard
+    library, mirroring what the POSIX backends yield from errno. The trade-off
+    is a generic (less Windows-specific) message string.
+
+    Both the WSA and Win32 forms are accepted because the delivered form
+    varies by operation: a WSASend/WSARecv completion surfaces the Winsock
+    code directly (e.g. WSAECONNRESET 10054), whereas a ConnectEx failure is
+    completed with an NTSTATUS and GetQueuedCompletionStatus reports the Win32
+    code RtlNtStatusToDosError derives from it (e.g. ERROR_CONNECTION_REFUSED
+    1225). This normalization lives here, in the IOCP layer, rather than in
+    the platform-neutral make_err. All other codes defer to make_err.
+
+    @param dwError     The Windows error code (DWORD).
+    @param accept_path True on the accept completion path.
+    @return The corresponding std::error_code.
+*/
+inline std::error_code
+iocp_make_err(DWORD dwError, bool accept_path) noexcept
+{
+    // A pending op hit by a remote RST completes with ERROR_NETNAME_DELETED;
+    // its portable meaning depends on the operation (reset vs aborted).
+    if (dwError == ERROR_NETNAME_DELETED)
+        return std::make_error_code(accept_path
+            ? std::errc::connection_aborted
+            : std::errc::connection_reset);
+
+    switch (dwError)
+    {
+    case WSAECONNRESET:                                    // 10054
+        return std::make_error_code(std::errc::connection_reset);
+    case WSAECONNREFUSED: case ERROR_CONNECTION_REFUSED:   // 10061 / 1225
+        return std::make_error_code(std::errc::connection_refused);
+    case WSAECONNABORTED: case ERROR_CONNECTION_ABORTED:   // 10053 / 1236
+        return std::make_error_code(std::errc::connection_aborted);
+    case WSAENETUNREACH:  case ERROR_NETWORK_UNREACHABLE:  // 10051 / 1231
+        return std::make_error_code(std::errc::network_unreachable);
+    case WSAEHOSTUNREACH: case ERROR_HOST_UNREACHABLE:     // 10065 / 1232
+        return std::make_error_code(std::errc::host_unreachable);
+    case WSAETIMEDOUT:    case ERROR_SEM_TIMEOUT:          // 10060 / 121
+        return std::make_error_code(std::errc::timed_out);
+    default:
+        break;
+    }
+    return make_err(dwError);
+}
+
 /** Base class for IOCP overlapped operations.
 
     Derives from both OVERLAPPED (for Windows IOCP) and scheduler_op
@@ -117,7 +183,8 @@ struct overlapped_op
         decode_io_result(
             ec_out,
             cancelled.load(std::memory_order_acquire),
-            dwError != 0 ? make_err(dwError) : std::error_code{},
+            dwError != 0 ? iocp_make_err(dwError, /*accept_path=*/false)
+                         : std::error_code{},
             is_read, static_cast<std::size_t>(bytes_transferred),
             empty_buffer);
 

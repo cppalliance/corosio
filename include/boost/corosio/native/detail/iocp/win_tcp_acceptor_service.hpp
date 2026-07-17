@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -235,7 +236,7 @@ accept_op::do_complete(
         if (op->cancelled.load(std::memory_order_acquire))
             *op->ec_out = capy::error::canceled;
         else if (op->dwError != 0)
-            *op->ec_out = make_err(op->dwError);
+            *op->ec_out = iocp_make_err(op->dwError, /*accept_path=*/true);
         else
             *op->ec_out = {};
     }
@@ -774,11 +775,19 @@ win_tcp_socket_internal::cancel() noexcept
 inline void
 win_tcp_socket_internal::close_socket() noexcept
 {
-    // Tear down any aux-reactor-parked wait op before closing the
-    // SOCKET handle. Otherwise the reactor would keep polling a
-    // dangling fd (and on a Winsock SOCKET-id reuse the wrong fd
-    // could be polled briefly). The cancel happens-before the
-    // closesocket below.
+    // Flag every op cancelled before tearing down the handle. closesocket()
+    // can complete a pending overlapped op with ERROR_NETNAME_DELETED (not the
+    // MSDN-documented ERROR_OPERATION_ABORTED), which iocp_make_err now maps to
+    // connection_reset -- so a locally-closed op must be short-circuited to
+    // canceled via the flag rather than relying on the raw error, exactly as
+    // cancel() does. The store happens-before the completion is decoded.
+    conn_.request_cancel();
+    rd_.request_cancel();
+    wr_.request_cancel();
+    // wt_ is parked in the aux reactor (no overlapped outstanding), so it also
+    // needs an explicit reactor deregister before the SOCKET handle is closed;
+    // otherwise the reactor would keep polling a dangling fd (and on a Winsock
+    // SOCKET-id reuse the wrong fd could be polled briefly).
     wt_.request_cancel();
     svc_.scheduler().cancel_wait_if_constructed(&wt_);
 
@@ -1433,6 +1442,10 @@ win_tcp_acceptor_internal::cancel() noexcept
 inline void
 win_tcp_acceptor_internal::close_socket() noexcept
 {
+    // Flag the accept op cancelled before closing so a closesocket-delivered
+    // ERROR_NETNAME_DELETED is short-circuited to canceled rather than mapped
+    // to connection_aborted by iocp_make_err (see win_tcp_socket close_socket).
+    acc_.request_cancel();
     // Tear down any aux-reactor-parked wait op first.
     wt_.request_cancel();
     svc_.scheduler().cancel_wait_if_constructed(&wt_);

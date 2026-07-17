@@ -117,7 +117,8 @@ public:
     }
 
 protected:
-    // Override in derived to add pre-close logic (e.g. kqueue linger reset)
+    // Override in derived to add pre-close logic. No backend currently needs
+    // it; the hooks exist so a trait can run fd-level teardown before close.
     void pre_shutdown(Impl*) noexcept {}
     void pre_destroy(Impl*) noexcept {}
 

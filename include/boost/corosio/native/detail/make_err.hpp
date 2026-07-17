@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -52,13 +53,14 @@ make_err(int errn) noexcept
 
 /** Convert a Windows error code to std::error_code.
 
-    Maps ERROR_OPERATION_ABORTED, ERROR_CANCELLED, and
-    ERROR_NETNAME_DELETED to capy::error::canceled.
-    Maps ERROR_HANDLE_EOF to capy::error::eof.
+    Maps ERROR_OPERATION_ABORTED and ERROR_CANCELLED to
+    capy::error::canceled, and ERROR_HANDLE_EOF to capy::error::eof.
+    Every other code passes through std::system_category().
 
-    ERROR_NETNAME_DELETED (64) is what IOCP actually delivers
-    when closesocket() cancels pending overlapped I/O, despite
-    MSDN documenting ERROR_OPERATION_ABORTED for that case.
+    ERROR_NETNAME_DELETED (64) is deliberately not mapped here: IOCP
+    delivers it both for a local closesocket() that cancels pending I/O
+    and for a remote RST, so it can only be disambiguated per operation
+    kind at the IOCP decode sites (see iocp_make_err in win_overlapped_op).
 
     @param dwError The Windows error code (DWORD).
     @return The corresponding std::error_code.
@@ -69,8 +71,7 @@ make_err(unsigned long dwError) noexcept
     if (dwError == 0)
         return {};
 
-    if (dwError == ERROR_OPERATION_ABORTED || dwError == ERROR_CANCELLED ||
-        dwError == ERROR_NETNAME_DELETED)
+    if (dwError == ERROR_OPERATION_ABORTED || dwError == ERROR_CANCELLED)
         return capy::error::canceled;
 
     if (dwError == ERROR_HANDLE_EOF)

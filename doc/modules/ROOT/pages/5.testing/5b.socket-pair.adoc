@@ -131,10 +131,10 @@ xref:5.testing/5c.patterns.adoc[Testing Patterns].
 * Slower than `mocket` for byte-level assertions.
 * Timing is not deterministic; use stop_tokens or timers for cancellation
   paths.
-* On Linux, `SO_LINGER(true, 0)` causes `close()` to send `RST`, which
-  may surface as `cond::connection_reset` on the other end depending on
-  the order of operations. If a test asserts on a clean shutdown
-  sequence, set `Linger=false`.
+* `SO_LINGER(true, 0)` (the default `Linger=true`) causes `close()` to send
+  `RST`, which surfaces on the other end as `std::errc::connection_reset` on
+  every backend. Exact timing is not deterministic, so assert on the error
+  condition rather than a clean shutdown sequence, or set `Linger=false`.
 
 == Next Steps
 

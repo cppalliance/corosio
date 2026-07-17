@@ -45,18 +45,16 @@ struct kqueue_traits
 
     static constexpr bool needs_write_notification = false;
 
-    /* macOS kqueue workaround: RST doesn't reliably trigger EV_EOF.
-       If the user sets SO_LINGER, we clear it before close so the
-       destructor doesn't block and close() sends FIN instead of RST.
-
-       The hook tracks whether the user explicitly set SO_LINGER via
-       set_option(). On pre_shutdown/pre_destroy, if the flag is set,
-       we reset linger to off before the fd is closed.
-    */
+    // No per-socket state or lifecycle hooks: the stream socket hook is a
+    // plain setsockopt passthrough, like epoll/select. SO_LINGER in particular
+    // is passed through unmodified. An abortive close (SO_LINGER{on,0}) thus
+    // sends a RST, which the peer's kqueue reports as EV_EOF carrying
+    // ECONNRESET in fflags -- so the peer surfaces connection_reset rather than
+    // a graceful eof, consistent with the other backends (#304). A positive
+    // linger timeout is likewise honored, so close() with unsent data blocks
+    // up to that timeout, as POSIX specifies.
     struct stream_socket_hook
     {
-        bool user_set_linger_ = false;
-
         std::error_code on_set_option(
             int fd, int level, int optname,
             void const* data, std::size_t size) noexcept
@@ -65,37 +63,10 @@ struct kqueue_traits
                     fd, level, optname, data,
                     static_cast<socklen_t>(size)) != 0)
                 return make_err(errno);
-
-            if (level == SOL_SOCKET && optname == SO_LINGER &&
-                size >= sizeof(struct ::linger))
-                user_set_linger_ =
-                    static_cast<struct ::linger const*>(data)->l_onoff != 0;
-
             return {};
         }
-
-        void pre_shutdown(int fd) noexcept
-        {
-            reset_linger(fd);
-        }
-
-        void pre_destroy(int fd) noexcept
-        {
-            reset_linger(fd);
-        }
-
-    private:
-        void reset_linger(int fd) noexcept
-        {
-            if (user_set_linger_ && fd >= 0)
-            {
-                struct ::linger lg;
-                lg.l_onoff  = 0;
-                lg.l_linger = 0;
-                ::setsockopt(fd, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
-            }
-            user_set_linger_ = false;
-        }
+        static void pre_shutdown(int) noexcept {}
+        static void pre_destroy(int) noexcept {}
     };
 
     struct write_policy

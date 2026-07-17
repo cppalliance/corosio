@@ -152,7 +152,7 @@ local_stream_accept_op::do_complete(
         if (op->cancelled.load(std::memory_order_acquire))
             *op->ec_out = capy::error::canceled;
         else if (op->dwError != 0)
-            *op->ec_out = make_err(op->dwError);
+            *op->ec_out = iocp_make_err(op->dwError, /*accept_path=*/true);
         else
             *op->ec_out = {};
     }
@@ -325,6 +325,10 @@ win_local_stream_acceptor_internal::wait(
 inline void
 win_local_stream_acceptor_internal::close_socket() noexcept
 {
+    // Flag the accept op cancelled before closing so a closesocket-delivered
+    // ERROR_NETNAME_DELETED is short-circuited to canceled rather than mapped
+    // to connection_aborted by iocp_make_err (see win_tcp_socket close_socket).
+    acc_.request_cancel();
     wt_.request_cancel();
     svc_.scheduler().cancel_wait_if_constructed(&wt_);
 

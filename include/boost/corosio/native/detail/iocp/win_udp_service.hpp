@@ -745,6 +745,14 @@ win_udp_socket_internal::cancel() noexcept
 inline void
 win_udp_socket_internal::close_socket() noexcept
 {
+    // Flag every op cancelled before closing so a closesocket-delivered
+    // ERROR_NETNAME_DELETED is short-circuited to canceled rather than mapped
+    // to connection_reset by iocp_make_err (see win_tcp_socket close_socket).
+    wr_.request_cancel();
+    rd_.request_cancel();
+    conn_.request_cancel();
+    send_wr_.request_cancel();
+    recv_rd_.request_cancel();
     wt_.request_cancel();
     svc_.scheduler().cancel_wait_if_constructed(&wt_);
 
