@@ -416,21 +416,6 @@ struct tls_context_test
         BOOST_TEST_EQ(detail::get_tls_context_data(ctx).verify_depth, 5);
     }
 
-    void testHostname()
-    {
-        tls_context ctx;
-        BOOST_TEST_EQ(detail::get_tls_context_data(ctx).hostname, std::string());
-
-        ctx.set_hostname("api.example.com");
-        BOOST_TEST_EQ(detail::get_tls_context_data(ctx).hostname,
-                      std::string("api.example.com"));
-
-        // Overwrite
-        ctx.set_hostname("other.example.com");
-        BOOST_TEST_EQ(detail::get_tls_context_data(ctx).hostname,
-                      std::string("other.example.com"));
-    }
-
     void testServernameCallback()
     {
         tls_context ctx;
@@ -554,7 +539,6 @@ struct tls_context_test
         testAlpn();
 
         testVerifyModeAndDepth();
-        testHostname();
         testServernameCallback();
         testPasswordCallback();
 

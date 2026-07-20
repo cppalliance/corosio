@@ -77,16 +77,18 @@ tls_method_compat() noexcept
 inline void
 apply_hostname_verification(SSL* ssl, std::string const& hostname)
 {
-    if (hostname.empty())
-        return;
+    // SSL_clear retains a previously applied name; an empty hostname
+    // must clear SNI and the verify-param host or a reset stream
+    // would leak the old peer's name into the next handshake
+    char const* name = hostname.empty() ? nullptr : hostname.c_str();
 
-    SSL_set_tlsext_host_name(ssl, hostname.c_str());
+    SSL_set_tlsext_host_name(ssl, name);
 
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
-    SSL_set1_host(ssl, hostname.c_str());
+    SSL_set1_host(ssl, name);
 #else
     if (auto* param = SSL_get0_param(ssl))
-        X509_VERIFY_PARAM_set1_host(param, hostname.c_str(), 0);
+        X509_VERIFY_PARAM_set1_host(param, name, 0);
 #endif
 }
 
@@ -656,6 +658,9 @@ struct openssl_stream::impl
     BIO* ext_bio_ = nullptr;
     bool used_    = false;
 
+    // Per-stream SNI/verification hostname, set via set_hostname().
+    std::string hostname_;
+
     // ALPN protocol negotiated during the handshake (empty if none).
     std::string alpn_selected_;
 
@@ -686,14 +691,17 @@ struct openssl_stream::impl
         // Preserves SSL* and BIO pair, releases session state
         SSL_clear(ssl_);
 
+        // SSL_clear() retains the negotiated session so a subsequent
+        // handshake on this SSL* can resume it. Resumed handshakes skip
+        // certificate/hostname re-verification, which would let a changed
+        // set_hostname() go unchecked after reset(); drop it to force a
+        // full handshake.
+        SSL_set_session(ssl_, nullptr);
+
         // Drain stale data from the external BIO
         char drain[1024];
         while (BIO_ctrl_pending(ext_bio_) > 0)
             BIO_read(ext_bio_, drain, sizeof(drain));
-
-        // SSL_clear clears per-session settings; reapply hostname
-        auto& cd = detail::get_tls_context_data(ctx_);
-        apply_hostname_verification(ssl_, cd.hostname);
 
         alpn_selected_.clear();
         used_ = false;
@@ -918,6 +926,8 @@ struct openssl_stream::impl
         if (used_)
             reset();
 
+        apply_hostname_verification(ssl_, hostname_);
+
         std::error_code ec;
 
         // Client offers its ALPN protocol list; the server selects via the
@@ -1077,8 +1087,6 @@ struct openssl_stream::impl
 
         SSL_set_bio(ssl_, int_bio, int_bio);
 
-        apply_hostname_verification(ssl_, cd.hostname);
-
         return {};
     }
 };
@@ -1157,6 +1165,12 @@ void
 openssl_stream::reset()
 {
     impl_->reset();
+}
+
+void
+openssl_stream::set_hostname(std::string_view hostname)
+{
+    impl_->hostname_ = hostname;
 }
 
 std::string_view

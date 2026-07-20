@@ -222,12 +222,6 @@ tls_context::set_verify_depth(int depth)
 }
 
 void
-tls_context::set_hostname(std::string_view hostname)
-{
-    impl_->hostname = std::string(hostname);
-}
-
-void
 tls_context::set_servername_callback_impl(
     std::function<bool(std::string_view)> callback)
 {

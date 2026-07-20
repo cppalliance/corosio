@@ -49,7 +49,10 @@ and checks the hostname:
 tls_context ctx;
 ctx.set_default_verify_paths();              // trust the system CAs
 ctx.set_verify_mode(tls_verify_mode::peer);  // require + verify the peer
-ctx.set_hostname("example.com");             // SNI + hostname check
+
+corosio::tcp_socket sock(ioc);
+corosio::wolfssl_stream secure(&sock, ctx);
+secure.set_hostname("example.com");          // SNI + hostname check
 ----
 
 Trust anchors can also be supplied explicitly with
@@ -80,7 +83,6 @@ The typical flow:
 ----
 // 1. Configure a context
 tls_context ctx;
-ctx.set_hostname("api.example.com");
 if (auto ec = ctx.set_default_verify_paths(); ec)
     throw std::system_error(ec);
 if (auto ec = ctx.set_verify_mode(tls_verify_mode::peer); ec)
@@ -94,6 +96,7 @@ if (auto [ec] = co_await sock.connect(endpoint); ec)
 
 // 3. Wrap the connected socket (pointer form; does not take ownership)
 corosio::wolfssl_stream secure(&sock, ctx);
+secure.set_hostname("api.example.com");
 if (auto [ec] = co_await secure.handshake(wolfssl_stream::client); ec)
     throw std::system_error(ec);
 
@@ -301,11 +304,11 @@ For HTTPS clients, use `peer`. For servers requiring client certificates
 
 ==== Hostname Verification (SNI)
 
-For clients, set the expected server hostname:
+For clients, set the expected server hostname on the stream:
 
 [source,cpp]
 ----
-ctx.set_hostname("api.example.com");
+secure.set_hostname("api.example.com");
 ----
 
 This does two things:
@@ -629,7 +632,6 @@ capy::task<void> https_get(
 
     // Configure TLS
     tls_context ctx;
-    ctx.set_hostname(hostname);
     if (auto ec = ctx.set_default_verify_paths(); ec)
         throw std::system_error(ec);
     if (auto ec = ctx.set_verify_mode(tls_verify_mode::peer); ec)
@@ -637,6 +639,7 @@ capy::task<void> https_get(
 
     // Wrap the connected socket (pointer form) and handshake
     corosio::wolfssl_stream secure(&sock, ctx);
+    secure.set_hostname(hostname);
     if (auto [ec] = co_await secure.handshake(wolfssl_stream::client); ec)
         throw std::system_error(ec);
 
@@ -746,7 +749,6 @@ server's CA explicitly with `load_verify_file()` instead.
 tls_context client_ctx;
 client_ctx.set_default_verify_paths();
 client_ctx.set_verify_mode(tls_verify_mode::peer);
-client_ctx.set_hostname("server.example.com");
 
 // Provide client certificate
 client_ctx.use_certificate_file("client.crt", tls_file_format::pem);

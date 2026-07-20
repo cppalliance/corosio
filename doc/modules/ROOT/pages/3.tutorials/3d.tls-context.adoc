@@ -346,11 +346,11 @@ Typical usage:
 
 === Hostname Verification
 
-For clients, set the expected server hostname:
+For clients, set the expected server hostname on the stream before the handshake:
 
 [source,cpp]
 ----
-ctx.set_hostname( "api.example.com" );
+secure.set_hostname( "api.example.com" );
 ----
 
 This enables:
@@ -570,10 +570,10 @@ tls_context make_https_client_context()
 
 // Usage with TLS stream
 tls_context ctx = make_https_client_context();
-ctx.set_hostname("api.example.com");  // Set before creating stream
 
 // Pointer form wraps the connected socket without taking ownership
 corosio::wolfssl_stream secure( &sock, ctx );
+secure.set_hostname( "api.example.com" );
 co_await secure.handshake( corosio::wolfssl_stream::client );
 ----
 

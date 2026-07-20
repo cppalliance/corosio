@@ -51,7 +51,6 @@ namespace boost::corosio {
     @par Example
     @code
     tls_context ctx;
-    ctx.set_hostname("example.com");
     ctx.set_verify_mode(tls_verify_mode::peer);
 
     corosio::tcp_socket sock(ioc);
@@ -59,6 +58,7 @@ namespace boost::corosio {
 
     // Reference mode - sock must outlive tls
     corosio::openssl_stream tls(&sock, ctx);
+    tls.set_hostname("example.com");
     auto [ec] = co_await tls.handshake(openssl_stream::client);
 
     // Or owning mode - tls owns the socket
@@ -169,12 +169,17 @@ public:
 
         Clears internal buffers and session data so the stream
         can perform a new handshake on the same underlying
-        connection.
+        connection. The previous session is discarded and never
+        resumed, so a handshake after `reset()` is always a full
+        handshake.
 
         @par Preconditions
         No TLS operation may be in progress on this stream.
     */
     void reset() override;
+
+    /// Set the peer hostname for SNI and certificate verification.
+    void set_hostname(std::string_view hostname) override;
 
     /// Return the underlying stream.
     capy::any_stream& next_layer() noexcept override

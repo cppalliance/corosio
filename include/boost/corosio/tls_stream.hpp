@@ -145,6 +145,30 @@ public:
     */
     virtual void reset() = 0;
 
+    /** Set the peer hostname for SNI and certificate verification.
+
+        Configures the hostname sent in the TLS Server Name
+        Indication extension and matched against the peer
+        certificate during verification. The value takes effect
+        at the next `handshake()`; an established session is not
+        affected. It persists across `reset()`, so a stream reused
+        to reach a different host must set the new name before
+        handshaking again.
+
+        An empty hostname (the default) disables SNI and hostname
+        verification.
+
+        @note The hostname is meaningful for client handshakes;
+        backends may ignore it when handshaking as a server.
+
+        @par Postconditions
+        The next `handshake()` uses `hostname` for SNI and
+        certificate verification, or neither if it is empty.
+
+        @param hostname The peer hostname, or empty to disable.
+    */
+    virtual void set_hostname(std::string_view hostname) = 0;
+
     /** Returns a reference to the underlying stream.
 
         Provides access to the type-erased underlying stream for

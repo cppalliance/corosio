@@ -69,7 +69,6 @@ struct tls_context_data
 
     tls_verify_mode verification_mode = tls_verify_mode::none;
     int verify_depth                  = 100;
-    std::string hostname;
     std::function<bool(bool, verify_context&)> verify_callback;
 
     // SNI (Server Name Indication)

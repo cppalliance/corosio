@@ -50,9 +50,6 @@ tls_context make_https_client()
     // Verify the server certificate
     must(ctx.set_verify_mode( tls_verify_mode::peer ));
 
-    // Set the hostname for SNI and certificate verification
-    ctx.set_hostname( "api.example.com" );
-
     return ctx;
 }
 
@@ -65,7 +62,6 @@ tls_context make_pinned_ca_client( std::string_view ca_pem )
     must(ctx.add_certificate_authority( ca_pem ));
 
     must(ctx.set_verify_mode( tls_verify_mode::peer ));
-    ctx.set_hostname( "internal.example.com" );
 
     return ctx;
 }

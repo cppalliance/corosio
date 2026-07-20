@@ -274,7 +274,6 @@ capy::task<void> run_https_client(
 
     // Configure the TLS context
     corosio::tls_context ctx;
-    ctx.set_hostname(hostname);
     if (auto ec = ctx.set_default_verify_paths(); ec)
         throw std::system_error(ec);
     if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer); ec)
@@ -282,6 +281,7 @@ capy::task<void> run_https_client(
 
     // Wrap the connected socket without taking ownership (pointer form)
     corosio::wolfssl_stream secure(&s, ctx);
+    secure.set_hostname(hostname);
     if (auto [ec] = co_await secure.handshake(
             corosio::wolfssl_stream::client); ec)
         throw std::system_error(ec);

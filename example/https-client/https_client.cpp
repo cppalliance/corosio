@@ -78,7 +78,6 @@ run_client(
 
     // Configure TLS context
     corosio::tls_context ctx;
-    ctx.set_hostname(hostname);
     if (auto ec = ctx.set_default_verify_paths(); ec)
         throw std::system_error(ec);
     if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer); ec)
@@ -86,6 +85,7 @@ run_client(
 
     // Wrap socket in TLS stream
     corosio::wolfssl_stream secure(&s, ctx);
+    secure.set_hostname(hostname);
 
     // Perform TLS handshake
     if (auto [ec] = co_await secure.handshake(corosio::wolfssl_stream::client); ec)

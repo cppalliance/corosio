@@ -419,20 +419,29 @@ testSni(StreamFactory make_stream)
     // Correct hostname succeeds
     {
         io_context ioc;
-        auto client_ctx = make_client_context();
-        client_ctx.set_hostname("www.example.com");
-        auto server_ctx = make_server_context();
-        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+        auto client_ctx    = make_client_context();
+        auto server_ctx    = make_server_context();
+        auto with_hostname = [&](auto& s, tls_context const& ctx) {
+            auto tls = make_stream(s, ctx);
+            tls.set_hostname("www.example.com");
+            return tls;
+        };
+        run_tls_test(
+            ioc, client_ctx, server_ctx, with_hostname, make_stream);
     }
 
     // Wrong hostname fails
     {
         io_context ioc;
-        auto client_ctx = make_client_context();
-        client_ctx.set_hostname("wrong.example.com");
-        auto server_ctx = make_server_context();
+        auto client_ctx    = make_client_context();
+        auto server_ctx    = make_server_context();
+        auto with_hostname = [&](auto& s, tls_context const& ctx) {
+            auto tls = make_stream(s, ctx);
+            tls.set_hostname("wrong.example.com");
+            return tls;
+        };
         run_tls_test_fail(
-            ioc, client_ctx, server_ctx, make_stream, make_stream);
+            ioc, client_ctx, server_ctx, with_hostname, make_stream);
     }
 }
 
@@ -444,8 +453,12 @@ testSniCallback(StreamFactory make_stream)
     // SNI callback accepts hostname
     {
         io_context ioc;
-        auto client_ctx = make_client_context();
-        client_ctx.set_hostname("www.example.com");
+        auto client_ctx    = make_client_context();
+        auto with_hostname = [&](auto& s, tls_context const& ctx) {
+            auto tls = make_stream(s, ctx);
+            tls.set_hostname("www.example.com");
+            return tls;
+        };
 
         auto server_ctx = make_server_context();
         server_ctx.set_servername_callback(
@@ -453,14 +466,19 @@ testSniCallback(StreamFactory make_stream)
                 return hostname == "www.example.com";
             });
 
-        run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
+        run_tls_test(
+            ioc, client_ctx, server_ctx, with_hostname, make_stream);
     }
 
     // SNI callback rejects hostname
     {
         io_context ioc;
-        auto client_ctx = make_client_context();
-        client_ctx.set_hostname("www.example.com");
+        auto client_ctx    = make_client_context();
+        auto with_hostname = [&](auto& s, tls_context const& ctx) {
+            auto tls = make_stream(s, ctx);
+            tls.set_hostname("www.example.com");
+            return tls;
+        };
 
         auto server_ctx = make_server_context();
         server_ctx.set_servername_callback(
@@ -469,7 +487,7 @@ testSniCallback(StreamFactory make_stream)
             });
 
         run_tls_test_fail(
-            ioc, client_ctx, server_ctx, make_stream, make_stream);
+            ioc, client_ctx, server_ctx, with_hostname, make_stream);
     }
 
     // Client sends no SNI: the server callback is never consulted and
@@ -489,6 +507,206 @@ testSniCallback(StreamFactory make_stream)
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
         BOOST_TEST(!invoked);
     }
+}
+
+namespace hostname_test_detail {
+
+// One handshake round with a clean close_notify exchange so the
+// transport is empty for the next round. On handshake failure the
+// mockets are closed to unblock the peer.
+//
+// m1 and m2 are independently typed: make_mocket_pair returns a
+// (mocket, peer socket) pair, not two mockets of the same type.
+template<typename Stream, typename Mocket1, typename Mocket2>
+void
+run_hostname_round(
+    io_context& ioc,
+    Stream& client,
+    Stream& server,
+    Mocket1& m1,
+    Mocket2& m2,
+    bool expect_ok)
+{
+    std::error_code client_ec;
+    std::error_code server_ec;
+
+    auto hs_client = [&]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(tls_stream::client);
+        client_ec = ec;
+        if (ec)
+        {
+            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close(); // NOLINT(bugprone-unused-return-value)
+        }
+    };
+    auto hs_server = [&]() -> capy::task<> {
+        auto [ec] = co_await server.handshake(tls_stream::server);
+        server_ec = ec;
+    };
+
+    capy::run_async(ioc.get_executor())(hs_client());
+    capy::run_async(ioc.get_executor())(hs_server());
+    ioc.run();
+    ioc.restart();
+
+    if (expect_ok)
+    {
+        BOOST_TEST(!client_ec);
+        BOOST_TEST(!server_ec);
+        if (client_ec || server_ec)
+            return;
+
+        auto sd_client = [&]() -> capy::task<> {
+            (void)co_await client.shutdown();
+        };
+        auto sd_server = [&]() -> capy::task<> {
+            char drain[32];
+            (void)co_await server.read_some(
+                capy::mutable_buffer(drain, sizeof(drain)));
+            (void)co_await server.shutdown();
+        };
+        capy::run_async(ioc.get_executor())(sd_client());
+        capy::run_async(ioc.get_executor())(sd_server());
+        ioc.run();
+        ioc.restart();
+    }
+    else
+    {
+        // The server's error after a client-side verification abort is
+        // backend- and timing-dependent, so only the client is asserted.
+        BOOST_TEST(client_ec != std::error_code());
+    }
+}
+
+} // namespace hostname_test_detail
+
+/** A hostname set once persists across reset(): SNI is sent on
+    every subsequent handshake, not just the first. */
+template<typename StreamFactory>
+void
+testHostnamePersistence(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+    auto client_ctx = make_client_context();
+    auto server_ctx = make_server_context();
+
+    std::size_t sni_count = 0;
+    server_ctx.set_servername_callback(
+        [&sni_count](std::string_view hostname) -> bool {
+            if (hostname == "www.example.com")
+                ++sni_count;
+            return true;
+        });
+
+    auto client = make_stream(m1, client_ctx);
+    auto server = make_stream(m2, server_ctx);
+
+    client.set_hostname("www.example.com");
+
+    hostname_test_detail::run_hostname_round(
+        ioc, client, server, m1, m2, true);
+    client.reset();
+    server.reset();
+    hostname_test_detail::run_hostname_round(
+        ioc, client, server, m1, m2, true);
+
+    BOOST_TEST_EQ(sni_count, 2u);
+
+    m1.close(); // NOLINT(bugprone-unused-return-value)
+    m2.close(); // NOLINT(bugprone-unused-return-value)
+}
+
+/** A new hostname set after reset() takes effect on the next
+    handshake: the server sees the new SNI name and verification
+    is enforced against it. */
+template<typename StreamFactory>
+void
+testHostnameRedirect(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+    auto client_ctx = make_client_context();
+    auto server_ctx = make_server_context();
+
+    std::vector<std::string> seen;
+    server_ctx.set_servername_callback(
+        [&seen](std::string_view hostname) -> bool {
+            seen.emplace_back(hostname);
+            return true;
+        });
+
+    auto client = make_stream(m1, client_ctx);
+    auto server = make_stream(m2, server_ctx);
+
+    // Round 1: name matches the certificate
+    client.set_hostname("www.example.com");
+    hostname_test_detail::run_hostname_round(
+        ioc, client, server, m1, m2, true);
+
+    client.reset();
+    server.reset();
+
+    // Round 2: new name is sent in SNI and fails verification
+    // against the old certificate
+    client.set_hostname("api.example.com");
+    hostname_test_detail::run_hostname_round(
+        ioc, client, server, m1, m2, false);
+
+    BOOST_TEST_EQ(seen.size(), 2u);
+    if (seen.size() == 2u)
+    {
+        BOOST_TEST_EQ(seen[0], "www.example.com");
+        BOOST_TEST_EQ(seen[1], "api.example.com");
+    }
+
+    if (m1.is_open())
+        m1.close(); // NOLINT(bugprone-unused-return-value)
+    if (m2.is_open())
+        m2.close(); // NOLINT(bugprone-unused-return-value)
+}
+
+/** set_hostname("") after reset() disables SNI and verification:
+    the next handshake sends no SNI, so the servername callback is
+    not consulted and the handshake still succeeds. */
+template<typename StreamFactory>
+void
+testHostnameClear(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+    auto client_ctx = make_client_context();
+    auto server_ctx = make_server_context();
+
+    std::size_t sni_count = 0;
+    server_ctx.set_servername_callback(
+        [&sni_count](std::string_view) -> bool {
+            ++sni_count;
+            return true;
+        });
+
+    auto client = make_stream(m1, client_ctx);
+    auto server = make_stream(m2, server_ctx);
+
+    client.set_hostname("www.example.com");
+    hostname_test_detail::run_hostname_round(
+        ioc, client, server, m1, m2, true);
+
+    client.reset();
+    server.reset();
+
+    client.set_hostname("");
+    hostname_test_detail::run_hostname_round(
+        ioc, client, server, m1, m2, true);
+
+    // Only round 1 sent SNI
+    BOOST_TEST_EQ(sni_count, 1u);
+
+    m1.close(); // NOLINT(bugprone-unused-return-value)
+    m2.close(); // NOLINT(bugprone-unused-return-value)
 }
 
 /** A freshly constructed stream reports no negotiated ALPN protocol.

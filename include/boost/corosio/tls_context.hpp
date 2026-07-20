@@ -244,10 +244,10 @@ tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
     corosio::tls_context ctx;
     ctx.set_default_verify_paths();
     ctx.set_verify_mode( corosio::tls_verify_mode::peer );
-    ctx.set_hostname( "example.com" );
 
     // Use with a TLS stream
     corosio::openssl_stream secure( &sock, ctx );
+    secure.set_hostname( "example.com" );
     co_await secure.handshake( corosio::tls_stream::client );
     @endcode
 
@@ -593,7 +593,7 @@ public:
         The system store is loaded when the native context is first built
         from this context. For a verified-safe client, combine this with
         `set_verify_mode( tls_verify_mode::peer )` and, when connecting by
-        name, `set_hostname()`.
+        name, `tls_stream::set_hostname()`.
 
         @return Success. The request is recorded and applied when the
             native context is built; if the system store cannot be loaded
@@ -611,7 +611,6 @@ public:
         // Trust the same CAs as the system
         ctx.set_default_verify_paths();
         ctx.set_verify_mode( tls_verify_mode::peer );
-        ctx.set_hostname( "example.com" );
         @endcode
 
         @see load_verify_file
@@ -836,28 +835,6 @@ public:
     template<typename Callback>
     std::error_code set_verify_callback(Callback callback);
 
-    /** Set the expected server hostname for verification.
-
-        For client connections, sets the hostname that the server
-        certificate must match. This enables:
-
-        1. SNI (Server Name Indication) — tells the server which
-           certificate to present (for virtual hosting)
-        2. Hostname verification — validates the certificate's
-           Subject Alternative Name or Common Name matches
-
-        @param hostname The expected server hostname.
-
-        @par Example
-        @code
-        ctx.set_hostname( "api.example.com" );
-        @endcode
-
-        @note This is typically required for HTTPS clients to ensure
-            they're connecting to the intended server.
-    */
-    void set_hostname(std::string_view hostname);
-
     /** Set a callback for Server Name Indication (SNI).
 
         For server connections, this callback is invoked during the TLS
@@ -886,7 +863,7 @@ public:
             create separate contexts and select the appropriate one before
             creating the TLS stream.
 
-        @see set_hostname
+        @see tls_stream::set_hostname
     */
     template<typename Callback>
     void set_servername_callback(Callback callback);

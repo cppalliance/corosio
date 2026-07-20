@@ -662,6 +662,9 @@ struct wolfssl_stream::impl
     WOLFSSL* ssl_ = nullptr;
     bool used_    = false;
 
+    // Per-stream SNI/verification hostname, set via set_hostname().
+    std::string hostname_;
+
     // ALPN protocol negotiated during the handshake (empty if none).
     std::string alpn_selected_;
 
@@ -1449,16 +1452,16 @@ struct wolfssl_stream::impl
         }
 #endif
 
-        // Apply per-session config (SNI + hostname verification) from context
-        if (type == wolfssl_stream::client && !cd.hostname.empty())
+        // Apply per-session config (SNI + hostname verification)
+        if (type == wolfssl_stream::client && !hostname_.empty())
         {
             // Set SNI extension so server knows which cert to present
             wolfSSL_UseSNI(
-                ssl_, WOLFSSL_SNI_HOST_NAME, cd.hostname.data(),
-                static_cast<unsigned short>(cd.hostname.size()));
+                ssl_, WOLFSSL_SNI_HOST_NAME, hostname_.data(),
+                static_cast<unsigned short>(hostname_.size()));
 
             // Enable hostname verification (checks CN/SAN in peer cert)
-            wolfSSL_check_domain_name(ssl_, cd.hostname.c_str());
+            wolfSSL_check_domain_name(ssl_, hostname_.c_str());
         }
 
         return {};
@@ -1531,6 +1534,12 @@ void
 wolfssl_stream::reset()
 {
     impl_->reset();
+}
+
+void
+wolfssl_stream::set_hostname(std::string_view hostname)
+{
+    impl_->hostname_ = hostname;
 }
 
 std::string_view
