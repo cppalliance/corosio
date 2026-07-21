@@ -709,6 +709,90 @@ testHostnameClear(StreamFactory make_stream)
     m2.close(); // NOLINT(bugprone-unused-return-value)
 }
 
+/** An IP-literal hostname is matched against the certificate's
+    iPAddress entries and is not sent as SNI; a mismatched literal
+    fails verification. On a build that cannot match iPAddress
+    entries the handshake fails closed instead. */
+template<typename StreamFactory>
+void
+testHostnameIpLiteral(StreamFactory make_stream, bool ip_supported)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+    tls_context client_ctx;
+    client_ctx.add_certificate_authority(
+        test::server_ip_cert_pem); // NOLINT(bugprone-unused-return-value)
+    client_ctx.set_verify_mode(
+        tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
+
+    tls_context server_ctx;
+    server_ctx.use_certificate(
+        test::server_ip_cert_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    server_ctx.use_private_key(
+        test::server_ip_key_pem,
+        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+    server_ctx.set_verify_mode(
+        tls_verify_mode::none); // NOLINT(bugprone-unused-return-value)
+
+    std::size_t sni_count = 0;
+    server_ctx.set_servername_callback(
+        [&sni_count](std::string_view) -> bool {
+            ++sni_count;
+            return true;
+        });
+
+    auto client = make_stream(m1, client_ctx);
+    auto server = make_stream(m2, server_ctx);
+
+    client.set_hostname("127.0.0.1");
+
+    if (!ip_supported)
+    {
+        // The build cannot parse iPAddress entries; the handshake
+        // must fail closed rather than skip verification.
+        std::error_code client_ec;
+        auto hs_client = [&]() -> capy::task<> {
+            auto [ec] = co_await client.handshake(tls_role::client);
+            client_ec = ec;
+            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close(); // NOLINT(bugprone-unused-return-value)
+        };
+        auto hs_server = [&]() -> capy::task<> {
+            (void)co_await server.handshake(tls_role::server);
+        };
+        capy::run_async(ioc.get_executor())(hs_client());
+        capy::run_async(ioc.get_executor())(hs_server());
+        ioc.run();
+
+        BOOST_TEST(client_ec == std::errc::function_not_supported);
+        BOOST_TEST_EQ(sni_count, 0u);
+        return;
+    }
+
+    // Round 1: the literal matches the certificate's iPAddress entry.
+    // The CN is not an IP, so success proves the IP-SAN path.
+    hostname_test_detail::run_hostname_round(
+        ioc, client, server, m1, m2, true);
+
+    // RFC 6066 excludes literals from SNI
+    BOOST_TEST_EQ(sni_count, 0u);
+
+    client.reset();
+    server.reset();
+
+    // Round 2: a different literal fails verification
+    client.set_hostname("192.0.2.1");
+    hostname_test_detail::run_hostname_round(
+        ioc, client, server, m1, m2, false);
+
+    if (m1.is_open())
+        m1.close(); // NOLINT(bugprone-unused-return-value)
+    if (m2.is_open())
+        m2.close(); // NOLINT(bugprone-unused-return-value)
+}
+
 /** A freshly constructed stream reports no negotiated ALPN protocol.
 
     The accessor must return an empty view before any handshake, on

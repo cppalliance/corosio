@@ -166,6 +166,13 @@ public:
         An empty hostname (the default) disables SNI and hostname
         verification.
 
+        If `hostname` is an IP literal (IPv4 or IPv6), it is matched
+        against the certificate's iPAddress entries instead of its
+        DNS names, and no SNI is sent (RFC 6066 excludes literals).
+        A backend build that cannot match iPAddress entries fails the
+        handshake with `std::errc::function_not_supported` rather
+        than skip verification.
+
         @note The hostname is meaningful for client handshakes;
         backends may ignore it when handshaking as a server.
 

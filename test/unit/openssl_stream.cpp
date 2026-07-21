@@ -169,6 +169,7 @@ struct openssl_stream_test
         test::testHostnamePersistence(make_stream);
         test::testHostnameRedirect(make_stream);
         test::testHostnameClear(make_stream);
+        test::testHostnameIpLiteral(make_stream, /*ip_supported=*/true);
         test::testAlpnAccessorEmpty(make_stream);
         test::testAlpn(make_stream, /*alpn_supported=*/true);
         test::testAlpnNoOverlap(make_stream, /*alpn_supported=*/true);

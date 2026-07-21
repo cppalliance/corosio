@@ -272,6 +272,25 @@ wolfssl_supports_alpn() noexcept;
 BOOST_COROSIO_DECL bool
 wolfssl_supports_crl() noexcept;
 
+/** Report whether this WolfSSL build can verify IP-literal hostnames.
+
+    Matching an IP literal against a certificate's iPAddress entries
+    requires a WolfSSL built with both `OPENSSL_EXTRA` (routes the
+    address into the verify parameters the certificate check consults)
+    and `WOLFSSL_IP_ALT_NAME` (records iPAddress entries during
+    parsing). On a build lacking either, `wolfSSL_check_ip_address`
+    reports success but verification silently checks nothing, so a
+    handshake with an IP literal set via @ref tls_stream::set_hostname
+    fails with `std::errc::function_not_supported` rather than proceed
+    unverified.
+
+    @return `true` if IP-literal verification is supported by this build.
+
+    @see tls_stream::set_hostname
+*/
+BOOST_COROSIO_DECL bool
+wolfssl_supports_ip_alt_name() noexcept;
+
 } // namespace boost::corosio
 
 #endif

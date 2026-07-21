@@ -317,6 +317,10 @@ This does two things:
    to present (important for virtual hosting)
 2. Verifies the server certificate matches this hostname
 
+An IP literal (IPv4 or IPv6) is verified against the certificate's
+iPAddress entries instead of its DNS names, and no SNI is sent
+(RFC 6066 excludes literals).
+
 ==== Verification Depth
 
 Limit the certificate chain depth:

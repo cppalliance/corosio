@@ -108,6 +108,71 @@ inline constexpr char const* server_key_pem =
     "nOMOU6XI4lO9Xge/QDEN4Y2R\n"
     "-----END PRIVATE KEY-----\n";
 
+// Self-signed server certificate with an iPAddress SAN only.
+// The CN is deliberately not an IP so hostname checks cannot
+// succeed via CN fallback; only the IP-SAN path matches.
+// Subject: C=US, ST=CA, L=Los Angeles, O=Corosio, CN=corosio-ip-test
+// SAN: IP:127.0.0.1
+// Command:
+//   openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem
+//       -days 10000 -nodes
+//       -subj "/C=US/ST=CA/L=Los Angeles/O=Corosio/CN=corosio-ip-test"
+//       -addext "subjectAltName=IP:127.0.0.1"
+inline constexpr char const* server_ip_cert_pem =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIDrDCCApSgAwIBAgIUL29ePiWtHFp225p0PpXCfX3Uic4wDQYJKoZIhvcNAQEL\n"
+    "BQAwXDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkNBMRQwEgYDVQQHDAtMb3MgQW5n\n"
+    "ZWxlczEQMA4GA1UECgwHQ29yb3NpbzEYMBYGA1UEAwwPY29yb3Npby1pcC10ZXN0\n"
+    "MCAXDTI2MDcyMTE1NTQxNVoYDzIwNTMxMjA2MTU1NDE1WjBcMQswCQYDVQQGEwJV\n"
+    "UzELMAkGA1UECAwCQ0ExFDASBgNVBAcMC0xvcyBBbmdlbGVzMRAwDgYDVQQKDAdD\n"
+    "b3Jvc2lvMRgwFgYDVQQDDA9jb3Jvc2lvLWlwLXRlc3QwggEiMA0GCSqGSIb3DQEB\n"
+    "AQUAA4IBDwAwggEKAoIBAQDTOzWcoMa44QpwSpJCqqZysMe1oUVRpocaRiTd436u\n"
+    "E79i9n3zBAJKrR0LL0J2TjcZcn6lcyyiAfdpmEgqht6KSIb7YzTuC3fsKi8b1bfk\n"
+    "AGPpw9cQrC4ESK+ppsa5QQbW1gpnUDsJ25o6wHUBJFYO60M54oDfi8+WGUNtzGk3\n"
+    "IHmvyFJQqghxhDCLRfDIAc3EdIFG6XcPiY6r/LelDCiVH3Odc2/Cn9iM25MVkG4a\n"
+    "SajfhOLejZkBqYKmygPm1RVc6buLEo5hd+Uw2LKc3rytEIeFgAMLhl66FeMt/sGy\n"
+    "xjTasrBs3qdd2lH6ddnZPgWKYc1BpNZ0LrYrFfJRqy2rAgMBAAGjZDBiMB0GA1Ud\n"
+    "DgQWBBTQwjj9zLFhE81MWLg5zi1QEhRokjAfBgNVHSMEGDAWgBTQwjj9zLFhE81M\n"
+    "WLg5zi1QEhRokjAPBgNVHRMBAf8EBTADAQH/MA8GA1UdEQQIMAaHBH8AAAEwDQYJ\n"
+    "KoZIhvcNAQELBQADggEBACw47fx00D/oBlGWT6JhWwpfY2kNUiBaZDny1qz8Tf0j\n"
+    "5uVnfuuCuZDwsqNwTPMmvG9C34F54GMXlQ/vb9v9YIk3RArTeNyCgJxEC+eY6+g+\n"
+    "lO/g0QBRxCSE2JnHTJkNvflgz8NazYrkHs+fu/i3ug6mWkFHx4fh7BaR0Zb602H5\n"
+    "NN8/mGbuBJ0TlvmuwKSgsgYDb3InP3g6Od+gOaSmdsrX7RnyAN9gYugbz0tG6DfW\n"
+    "oEYzCupdAcUNuYCFmVkiOTjAK8qds6422rwkVwF2gaIJ5dF+fH6U0qu75jI/D5lo\n"
+    "faUtSby6prrqx+YjlYaVZzH+OT8iVpnqqfqKjXUQTfU=\n"
+    "-----END CERTIFICATE-----\n";
+
+// Matches server_ip_cert_pem above (RSA 2048-bit)
+inline constexpr char const* server_ip_key_pem =
+    "-----BEGIN PRIVATE KEY-----\n"
+    "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDTOzWcoMa44Qpw\n"
+    "SpJCqqZysMe1oUVRpocaRiTd436uE79i9n3zBAJKrR0LL0J2TjcZcn6lcyyiAfdp\n"
+    "mEgqht6KSIb7YzTuC3fsKi8b1bfkAGPpw9cQrC4ESK+ppsa5QQbW1gpnUDsJ25o6\n"
+    "wHUBJFYO60M54oDfi8+WGUNtzGk3IHmvyFJQqghxhDCLRfDIAc3EdIFG6XcPiY6r\n"
+    "/LelDCiVH3Odc2/Cn9iM25MVkG4aSajfhOLejZkBqYKmygPm1RVc6buLEo5hd+Uw\n"
+    "2LKc3rytEIeFgAMLhl66FeMt/sGyxjTasrBs3qdd2lH6ddnZPgWKYc1BpNZ0LrYr\n"
+    "FfJRqy2rAgMBAAECggEAYxmlRm2brgNOnW4u/n4Hh0lu+MTHu83wFqCQDVX9CfiT\n"
+    "0v8oCgp4dMaRGL08Zjq92P+BcWf+qadYhz79pI4P/DqYsXpSy9evlKoZ3eo/0wVn\n"
+    "2rWZweW11Saw21w2YZWjesmCqgPXHwHbcvL2Men1QhyYNqEQq1BxvM7vdqTvO//y\n"
+    "4PW17k630gzTaVreM6t/Yf2KJXqeb0+42tRvgN+BhybCKj2uNhC/R08A/Rr+A461\n"
+    "p2rXo0YP+6NSJBP/00qz7EI6aAqfu37Q8MRNwqAb+pub1CQpBwGOSqIa3uNWuEuh\n"
+    "2/Cct/qMjuH39yt0anMevApvrNYsDZwtZotQsErb2QKBgQD21wVSKQdDXEnKQ7jA\n"
+    "M2gWbTqrnJm8awWYjm0sBpzF+yN0enCuOpsBflavJQ2WtV2k7VWKOhBBQxPtwgdI\n"
+    "FatDElO5yQz2XgShkYML+IJnufsMh8ZrKZ/gcW3rQyNDmkz36CheeWhdQyTpGAEv\n"
+    "dvq8pM0SOpAOOEAXkNl4Z9G7lwKBgQDbEegV6RofSfWwfN52tL3K2DJQqlR+BYEB\n"
+    "F8exeYaaY38csbHqOQFfot6kccOqr/EPKP2wf2h1fu3sJ74Hv3U2NDAOvoZQ3d7Q\n"
+    "5LR0dBIkWlrbhEYCmHfnmRcofc9QmvS6bq+D6RgNGJTDwOo/vrojGGjuBbEnaz83\n"
+    "HMg+PGFxDQKBgQDLMsrAjeHaw9hC12j5X9gpzhVkPHAaOYfLxEN+4JqiKFFRi5HC\n"
+    "+5+qpRQ67ie3jund4TpvpcjH0K5RJU7VOnFXr3iZEjbHgTISxzS34AWJ2gIemI7w\n"
+    "nL1uCDJSX1xiRF1kHwtMamlNjP6PnCEtr6ZNMOVYQjlgW1H3lFhR1DVFVQKBgDdZ\n"
+    "KNgQUudA2nBCvDolpCYRxXSX9Ez6uwM5rNxsJdPv+3eWdasFyBEPp0zI6XTAixkX\n"
+    "dDEZn5y/+wDFcb+nYcfWG6Y+ANWBmQASKH2brdG9emMn4kBZoUHEbhNu5egpnldU\n"
+    "C8g6Jjd41G042nZMi96+FhS9H2skL46PGRCQVNYpAoGBAMlKXlcaVlb6Jf5tcQOe\n"
+    "unY8LjSgAtwZJ9XQ0FAA82j+6oIndSB7AMkPu3mpKGV96cdhdxakGluXpKG2AC8J\n"
+    "CDPJTLBEuU/DxEXME1wQ9o3w1RPpi1rE1k8kMVOcS0WZHhGrnyM3vMJuUmo1/Zk/\n"
+    "43t2LygWhN+nrUbjLDRyTl7O\n"
+    "-----END PRIVATE KEY-----\n";
+
 // Different self-signed CA for "wrong CA" test scenarios
 // Subject: CN=localhost
 // Valid: 2023-01-01 to 2033-01-01 (self-signed)

@@ -19,6 +19,9 @@
 // Internal context implementation
 #include "src/tls/detail/context_impl.hpp"
 
+#include <boost/corosio/ipv4_address.hpp>
+#include <boost/corosio/ipv6_address.hpp>
+
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/bio.h>
@@ -74,6 +77,15 @@ tls_method_compat() noexcept
 #endif
 }
 
+// Whether the peer name is an IP literal rather than a DNS name.
+inline bool
+is_ip_literal(std::string const& s) noexcept
+{
+    ipv4_address v4;
+    ipv6_address v6;
+    return !parse_ipv4_address(s, v4) || !parse_ipv6_address(s, v6);
+}
+
 inline void
 apply_hostname_verification(SSL* ssl, std::string const& hostname)
 {
@@ -82,14 +94,23 @@ apply_hostname_verification(SSL* ssl, std::string const& hostname)
     // would leak the old peer's name into the next handshake
     char const* name = hostname.empty() ? nullptr : hostname.c_str();
 
-    SSL_set_tlsext_host_name(ssl, name);
+    // RFC 6066 excludes IP literals from SNI, and a literal must match
+    // the certificate's iPAddress entries rather than its DNS names.
+    // The unused field is cleared so a reset stream cannot carry the
+    // previous target's matching rule.
+    bool const is_ip = name && is_ip_literal(hostname);
+    char const* dns_name = is_ip ? nullptr : name;
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-    SSL_set1_host(ssl, name);
-#else
+    SSL_set_tlsext_host_name(ssl, dns_name);
+
     if (auto* param = SSL_get0_param(ssl))
-        X509_VERIFY_PARAM_set1_host(param, name, 0);
-#endif
+    {
+        X509_VERIFY_PARAM_set1_host(param, dns_name, 0);
+        if (is_ip)
+            X509_VERIFY_PARAM_set1_ip_asc(param, name);
+        else
+            X509_VERIFY_PARAM_set1_ip(param, nullptr, 0);
+    }
 }
 
 // Map a portable protocol version to the OpenSSL version constant.

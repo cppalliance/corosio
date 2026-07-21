@@ -161,6 +161,10 @@ struct wolfssl_stream_test
         test::testHostnamePersistence(make_stream);
         test::testHostnameRedirect(make_stream);
         test::testHostnameClear(make_stream);
+        // IP-literal matching is build-gated (WOLFSSL_IP_ALT_NAME);
+        // when absent, an IP-literal hostname fails closed.
+        test::testHostnameIpLiteral(
+            make_stream, wolfssl_supports_ip_alt_name());
         test::testAlpnAccessorEmpty(make_stream);
         // Whether the linked WolfSSL can honor a verify callback on success
         // (WOLFSSL_ALWAYS_VERIFY_CB) is a build-time property, queried here

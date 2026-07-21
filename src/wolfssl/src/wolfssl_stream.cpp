@@ -19,6 +19,9 @@
 // Internal context implementation
 #include "src/tls/detail/context_impl.hpp"
 
+#include <boost/corosio/ipv4_address.hpp>
+#include <boost/corosio/ipv6_address.hpp>
+
 // Include WolfSSL options first to get proper feature detection
 #include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
@@ -93,6 +96,15 @@ is_zero_return_error(int err) noexcept
     return err == WOLFSSL_ERROR_ZERO_RETURN;
 }
 
+// Whether the peer name is an IP literal rather than a DNS name.
+inline bool
+is_ip_literal(std::string const& s) noexcept
+{
+    ipv4_address v4;
+    ipv6_address v6;
+    return !parse_ipv4_address(s, v4) || !parse_ipv6_address(s, v6);
+}
+
 inline bool
 has_peer_shutdown(WOLFSSL* ssl) noexcept
 {
@@ -150,6 +162,16 @@ bool
 wolfssl_supports_crl() noexcept
 {
 #if defined(HAVE_CRL)
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool
+wolfssl_supports_ip_alt_name() noexcept
+{
+#if defined(OPENSSL_EXTRA) && defined(WOLFSSL_IP_ALT_NAME)
     return true;
 #else
     return false;
@@ -1455,13 +1477,42 @@ struct wolfssl_stream::impl
         // Apply per-session config (SNI + hostname verification)
         if (role == tls_role::client && !hostname_.empty())
         {
-            // Set SNI extension so server knows which cert to present
-            wolfSSL_UseSNI(
-                ssl_, WOLFSSL_SNI_HOST_NAME, hostname_.data(),
-                static_cast<unsigned short>(hostname_.size()));
+            if (is_ip_literal(hostname_))
+            {
+                // RFC 6066 excludes IP literals from SNI; the literal
+                // must match the certificate's iPAddress entries.
+                // Enforcement needs both flags: OPENSSL_EXTRA routes
+                // the address into the verify params that the cert
+                // check consults, and WOLFSSL_IP_ALT_NAME makes the
+                // parser record iPAddress entries at all. Without
+                // either, wolfSSL_check_ip_address still returns
+                // success and verification silently checks nothing.
+#if defined(OPENSSL_EXTRA) && defined(WOLFSSL_IP_ALT_NAME)
+                if (wolfSSL_check_ip_address(ssl_, hostname_.c_str())
+                    != WOLFSSL_SUCCESS)
+                {
+                    wolfSSL_free(ssl_);
+                    ssl_ = nullptr;
+                    return std::make_error_code(
+                        std::errc::function_not_supported);
+                }
+#else
+                wolfSSL_free(ssl_);
+                ssl_ = nullptr;
+                return std::make_error_code(
+                    std::errc::function_not_supported);
+#endif
+            }
+            else
+            {
+                // Set SNI extension so server knows which cert to present
+                wolfSSL_UseSNI(
+                    ssl_, WOLFSSL_SNI_HOST_NAME, hostname_.data(),
+                    static_cast<unsigned short>(hostname_.size()));
 
-            // Enable hostname verification (checks CN/SAN in peer cert)
-            wolfSSL_check_domain_name(ssl_, hostname_.c_str());
+                // Enable hostname verification (checks CN/SAN in peer cert)
+                wolfSSL_check_domain_name(ssl_, hostname_.c_str());
+            }
         }
 
         return {};
