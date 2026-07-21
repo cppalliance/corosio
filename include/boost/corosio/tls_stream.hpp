@@ -22,6 +22,21 @@
 
 namespace boost::corosio {
 
+/** TLS handshake role.
+
+    Specifies whether to perform the TLS handshake as a client or server.
+
+    @see tls_stream::handshake
+*/
+enum class tls_role
+{
+    /// Perform handshake as the connecting client.
+    client,
+
+    /// Perform handshake as the accepting server.
+    server
+};
+
 /** Abstract base class for TLS streams.
 
     This class provides a runtime-polymorphic interface for TLS
@@ -47,13 +62,6 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL tls_stream
 {
 public:
-    /// Identify the TLS handshake role.
-    enum handshake_type
-    {
-        client, ///< Perform handshaking as a client.
-        server  ///< Perform handshaking as a server.
-    };
-
     /// Destroy the TLS stream.
     virtual ~tls_stream() = default;
 
@@ -105,11 +113,11 @@ public:
         For server connections, this waits for the ClientHello and
         sends the server's response.
 
-        @param type The type of handshaking to perform (client or server).
+        @param role The handshake role, client or server.
 
         @return An awaitable yielding `(error_code)`.
     */
-    virtual capy::io_task<> handshake(handshake_type type) = 0;
+    virtual capy::io_task<> handshake(tls_role role) = 0;
 
     /** Perform a graceful TLS shutdown asynchronously.
 

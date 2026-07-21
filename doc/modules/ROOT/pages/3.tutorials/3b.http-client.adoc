@@ -283,7 +283,7 @@ capy::task<void> run_https_client(
     corosio::wolfssl_stream secure(&s, ctx);
     secure.set_hostname(hostname);
     if (auto [ec] = co_await secure.handshake(
-            corosio::wolfssl_stream::client); ec)
+            corosio::tls_role::client); ec)
         throw std::system_error(ec);
 
     co_await do_request(secure, hostname);

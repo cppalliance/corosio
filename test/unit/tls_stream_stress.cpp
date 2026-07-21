@@ -98,12 +98,12 @@ struct tls_session_cycle_stress_impl
             std::error_code cec, sec;
 
             auto hs_client = [&client, &cec]() -> capy::task<> {
-                auto [ec] = co_await client.handshake(tls_stream::client);
+                auto [ec] = co_await client.handshake(tls_role::client);
                 cec       = ec;
             };
 
             auto hs_server = [&server, &sec]() -> capy::task<> {
-                auto [ec] = co_await server.handshake(tls_stream::server);
+                auto [ec] = co_await server.handshake(tls_role::server);
                 sec       = ec;
             };
 
@@ -192,11 +192,11 @@ struct tls_concurrent_io_stress_impl
         {
             std::error_code cec, sec;
             auto hsc = [&client_a, &cec]() -> capy::task<> {
-                auto [ec] = co_await client_a.handshake(tls_stream::client);
+                auto [ec] = co_await client_a.handshake(tls_role::client);
                 cec       = ec;
             };
             auto hss = [&server_a, &sec]() -> capy::task<> {
-                auto [ec] = co_await server_a.handshake(tls_stream::server);
+                auto [ec] = co_await server_a.handshake(tls_role::server);
                 sec       = ec;
             };
             capy::run_async(ex)(hsc());
@@ -213,11 +213,11 @@ struct tls_concurrent_io_stress_impl
         {
             std::error_code cec, sec;
             auto hsc = [&client_b, &cec]() -> capy::task<> {
-                auto [ec] = co_await client_b.handshake(tls_stream::client);
+                auto [ec] = co_await client_b.handshake(tls_role::client);
                 cec       = ec;
             };
             auto hss = [&server_b, &sec]() -> capy::task<> {
-                auto [ec] = co_await server_b.handshake(tls_stream::server);
+                auto [ec] = co_await server_b.handshake(tls_role::server);
                 sec       = ec;
             };
             capy::run_async(ex)(hsc());
@@ -345,7 +345,7 @@ struct tls_cancel_handshake_stress_impl
             // Client handshake - will be cancelled mid-flight
             auto client_task = [&client, &client_got_error, &done,
                                 &failsafe_stop]() -> capy::task<> {
-                auto [ec] = co_await client.handshake(tls_stream::client);
+                auto [ec] = co_await client.handshake(tls_role::client);
                 if (ec)
                     client_got_error = true;
                 done = true;

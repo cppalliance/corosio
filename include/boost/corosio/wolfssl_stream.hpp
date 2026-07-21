@@ -59,7 +59,7 @@ namespace boost::corosio {
     // Reference mode - sock must outlive tls
     corosio::wolfssl_stream tls(&sock, ctx);
     tls.set_hostname("example.com");
-    auto [ec] = co_await tls.handshake(wolfssl_stream::client);
+    auto [ec] = co_await tls.handshake(tls_role::client);
 
     // Or owning mode - tls owns the socket
     corosio::wolfssl_stream tls2(std::move(sock), ctx);
@@ -145,11 +145,11 @@ public:
         The underlying stream must be connected. No other
         TLS operation may be in progress on this stream.
 
-        @param type The handshake role (client or server).
+        @param role The handshake role, client or server.
 
         @return An awaitable yielding `(error_code)`.
     */
-    capy::io_task<> handshake(handshake_type type) override;
+    capy::io_task<> handshake(tls_role role) override;
 
     /** Shut down the TLS session asynchronously.
 

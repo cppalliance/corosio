@@ -88,7 +88,7 @@ run_client(
     secure.set_hostname(hostname);
 
     // Perform TLS handshake
-    if (auto [ec] = co_await secure.handshake(corosio::wolfssl_stream::client); ec)
+    if (auto [ec] = co_await secure.handshake(corosio::tls_role::client); ec)
         throw std::system_error(ec);
 
     co_await do_request(secure, hostname);

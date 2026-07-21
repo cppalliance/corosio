@@ -97,7 +97,7 @@ if (auto [ec] = co_await sock.connect(endpoint); ec)
 // 3. Wrap the connected socket (pointer form; does not take ownership)
 corosio::wolfssl_stream secure(&sock, ctx);
 secure.set_hostname("api.example.com");
-if (auto [ec] = co_await secure.handshake(wolfssl_stream::client); ec)
+if (auto [ec] = co_await secure.handshake(tls_role::client); ec)
     throw std::system_error(ec);
 
 // 4. Use encrypted I/O
@@ -404,18 +404,18 @@ the `capy::Stream` concept, so composed operations like `capy::read` and
 
 [source,cpp]
 ----
+enum class tls_role { client, server };
+
 class tls_stream
 {
 public:
-    enum handshake_type { client, server };
-
     template<capy::MutableBufferSequence B>
     auto read_some(B const& buffers);     // Decrypt and read
 
     template<capy::ConstBufferSequence B>
     auto write_some(B const& buffers);    // Encrypt and write
 
-    virtual capy::io_task<> handshake(handshake_type type) = 0;
+    virtual capy::io_task<> handshake(tls_role role) = 0;
     virtual capy::io_task<> shutdown() = 0;
 
     virtual capy::any_stream& next_layer() noexcept = 0;  // Underlying stream
@@ -467,7 +467,7 @@ Before encrypted communication, perform the TLS handshake:
 
 [source,cpp]
 ----
-auto [ec] = co_await secure.handshake(tls_stream::client);
+auto [ec] = co_await secure.handshake(tls_role::client);
 if (ec)
 {
     std::cerr << "Handshake failed: " << ec.message() << "\n";
@@ -479,7 +479,7 @@ if (ec)
 
 [source,cpp]
 ----
-auto [ec] = co_await secure.handshake(tls_stream::server);
+auto [ec] = co_await secure.handshake(tls_role::server);
 ----
 
 === Handshake Errors
@@ -640,7 +640,7 @@ capy::task<void> https_get(
     // Wrap the connected socket (pointer form) and handshake
     corosio::wolfssl_stream secure(&sock, ctx);
     secure.set_hostname(hostname);
-    if (auto [ec] = co_await secure.handshake(wolfssl_stream::client); ec)
+    if (auto [ec] = co_await secure.handshake(tls_role::client); ec)
         throw std::system_error(ec);
 
     // Send HTTP request
@@ -707,7 +707,7 @@ capy::task<void> handle_tls_client(
     // Owning form: the handler owns the socket, so move it in
     corosio::wolfssl_stream secure(std::move(sock), ctx);
 
-    auto [ec] = co_await secure.handshake(wolfssl_stream::server);
+    auto [ec] = co_await secure.handshake(tls_role::server);
     if (ec)
         co_return;
 

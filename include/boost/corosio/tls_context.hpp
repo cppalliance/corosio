@@ -26,21 +26,6 @@ namespace boost::corosio {
 // Enumerations
 //
 
-/** TLS handshake role.
-
-    Specifies whether to perform the TLS handshake as a client or server.
-
-    @see stream::handshake
-*/
-enum class tls_role
-{
-    /// Perform handshake as the connecting client.
-    client,
-
-    /// Perform handshake as the accepting server.
-    server
-};
-
 /** TLS protocol version.
 
     Specifies the minimum or maximum TLS protocol version to use
@@ -248,7 +233,7 @@ tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
     // Use with a TLS stream
     corosio::openssl_stream secure( &sock, ctx );
     secure.set_hostname( "example.com" );
-    co_await secure.handshake( corosio::tls_stream::client );
+    co_await secure.handshake( corosio::tls_role::client );
     @endcode
 
     @see tls_role

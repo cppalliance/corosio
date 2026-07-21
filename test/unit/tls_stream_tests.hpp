@@ -63,12 +63,12 @@ testHandshakeFuse(StreamFactory make_stream)
             std::error_code server_ec;
 
             auto client_task = [&]() -> capy::task<> {
-                auto [ec] = co_await client.handshake(tls_stream::client);
+                auto [ec] = co_await client.handshake(tls_role::client);
                 client_ec = ec;
             };
 
             auto server_task = [&]() -> capy::task<> {
-                auto [ec] = co_await server.handshake(tls_stream::server);
+                auto [ec] = co_await server.handshake(tls_role::server);
                 server_ec = ec;
             };
 
@@ -113,7 +113,7 @@ testReadWriteFuse(StreamFactory make_stream)
             auto test_data = corosio::test::scaled_test_data(max_size);
 
             auto client_task = [&]() -> capy::task<> {
-                auto [ec] = co_await client.handshake(tls_stream::client);
+                auto [ec] = co_await client.handshake(tls_role::client);
                 BOOST_TEST(!ec);
                 if (ec)
                     co_return;
@@ -135,7 +135,7 @@ testReadWriteFuse(StreamFactory make_stream)
             };
 
             auto server_task = [&]() -> capy::task<> {
-                auto [ec] = co_await server.handshake(tls_stream::server);
+                auto [ec] = co_await server.handshake(tls_role::server);
                 BOOST_TEST(!ec);
                 if (ec)
                     co_return;
@@ -192,7 +192,7 @@ testShutdownFuse(StreamFactory make_stream)
             auto server = make_stream(m2, server_ctx);
 
             auto client_task = [&]() -> capy::task<> {
-                auto [ec] = co_await client.handshake(tls_stream::client);
+                auto [ec] = co_await client.handshake(tls_role::client);
                 BOOST_TEST(!ec);
                 if (ec)
                     co_return;
@@ -202,7 +202,7 @@ testShutdownFuse(StreamFactory make_stream)
             };
 
             auto server_task = [&]() -> capy::task<> {
-                auto [ec] = co_await server.handshake(tls_stream::server);
+                auto [ec] = co_await server.handshake(tls_role::server);
                 BOOST_TEST(!ec);
                 if (ec)
                     co_return;
@@ -531,7 +531,7 @@ run_hostname_round(
     std::error_code server_ec;
 
     auto hs_client = [&]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(tls_stream::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         client_ec = ec;
         if (ec)
         {
@@ -540,7 +540,7 @@ run_hostname_round(
         }
     };
     auto hs_server = [&]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(tls_stream::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         server_ec = ec;
     };
 
@@ -1135,17 +1135,16 @@ testAlpn(StreamFactory make_stream, bool alpn_supported)
     // NOLINTNEXTLINE(bugprone-unused-return-value)
     server_ctx.set_alpn({"h2", "http/1.1"});
 
-    auto client       = make_stream(m1, client_ctx);
-    auto server       = make_stream(m2, server_ctx);
-    using stream_type = std::remove_reference_t<decltype(server)>;
+    auto client = make_stream(m1, client_ctx);
+    auto server = make_stream(m2, server_ctx);
 
     std::error_code cec, sec;
     auto hc = [&]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(stream_type::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         cec       = ec;
     };
     auto hs = [&]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(stream_type::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         sec       = ec;
     };
     capy::run_async(ioc.get_executor())(hc());
@@ -1261,13 +1260,12 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
                 [](bool preverified, verify_context&) -> bool {
                     return preverified;
                 });
-            auto client       = make_stream(m1, client_ctx);
-            using stream_type = std::remove_reference_t<decltype(client)>;
+            auto client = make_stream(m1, client_ctx);
 
             std::error_code ec1;
             std::error_code ec2;
             auto attempt = [&](std::error_code& out) -> capy::task<> {
-                auto [ec] = co_await client.handshake(stream_type::client);
+                auto [ec] = co_await client.handshake(tls_role::client);
                 out = ec;
             };
             capy::run_async(ioc.get_executor())(attempt(ec1));
@@ -1419,15 +1417,14 @@ testMoveSemantics(StreamFactory make_stream)
 
     auto client_pre = make_stream(m1, client_ctx);
     auto client_orig{std::move(client_pre)};
-    auto server       = make_stream(m2, server_ctx);
-    using stream_type = std::remove_reference_t<decltype(server)>;
+    auto server = make_stream(m2, server_ctx);
 
     auto client_hs = [&]() -> capy::task<> {
-        auto [ec] = co_await client_orig.handshake(stream_type::client);
+        auto [ec] = co_await client_orig.handshake(tls_role::client);
         BOOST_TEST(!ec);
     };
     auto server_hs = [&]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(stream_type::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         BOOST_TEST(!ec);
     };
     capy::run_async(ioc.get_executor())(client_hs());
@@ -1481,16 +1478,15 @@ testAbruptClose(StreamFactory make_stream)
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
 
-    auto client       = make_stream(m1, client_ctx);
-    auto server       = make_stream(m2, server_ctx);
-    using stream_type = std::remove_reference_t<decltype(server)>;
+    auto client = make_stream(m1, client_ctx);
+    auto server = make_stream(m2, server_ctx);
 
     auto client_hs = [&]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(stream_type::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         BOOST_TEST(!ec);
     };
     auto server_hs = [&]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(stream_type::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         BOOST_TEST(!ec);
     };
     capy::run_async(ioc.get_executor())(client_hs());
@@ -1553,9 +1549,8 @@ testEncryptedKey(StreamFactory make_stream, bool expect_success = true)
     bool callback_invoked = false;
     auto server_ctx = make_encrypted_key_server_context(callback_invoked);
 
-    auto client       = make_stream(m1, client_ctx);
-    auto server       = make_stream(m2, server_ctx);
-    using stream_type = std::remove_reference_t<decltype(server)>;
+    auto client = make_stream(m1, client_ctx);
+    auto server = make_stream(m2, server_ctx);
 
     bool client_done = false, server_done = false;
     bool failsafe_hit = false;
@@ -1567,14 +1562,14 @@ testEncryptedKey(StreamFactory make_stream, bool expect_success = true)
     std::stop_source failsafe_stop;
 
     auto client_hs = [&]() -> capy::task<> {
-        auto [ec]   = co_await client.handshake(stream_type::client);
+        auto [ec]   = co_await client.handshake(tls_role::client);
         client_ec   = ec;
         client_done = true;
         if (server_done)
             failsafe_stop.request_stop();
     };
     auto server_hs = [&]() -> capy::task<> {
-        auto [ec]   = co_await server.handshake(stream_type::server);
+        auto [ec]   = co_await server.handshake(tls_role::server);
         server_ec   = ec;
         server_done = true;
         if (client_done)
@@ -1626,22 +1621,21 @@ testInvalidContextHandshake(StreamFactory make_stream)
     // NOLINTNEXTLINE(bugprone-unused-return-value)
     server_ctx.set_verify_mode(tls_verify_mode::none);
 
-    auto client       = make_stream(m1, client_ctx);
-    auto server       = make_stream(m2, server_ctx);
-    using stream_type = std::remove_reference_t<decltype(server)>;
+    auto client = make_stream(m1, client_ctx);
+    auto server = make_stream(m2, server_ctx);
 
     bool client_done = false, server_done = false;
     std::error_code client_ec, server_ec;
 
     auto client_hs = [&]() -> capy::task<> {
-        auto [ec]   = co_await client.handshake(stream_type::client);
+        auto [ec]   = co_await client.handshake(tls_role::client);
         client_ec   = ec;
         client_done = true;
         // Unblock the server if it is still waiting on the transport.
         m1.close(); // NOLINT(bugprone-unused-return-value)
     };
     auto server_hs = [&]() -> capy::task<> {
-        auto [ec]   = co_await server.handshake(stream_type::server);
+        auto [ec]   = co_await server.handshake(tls_role::server);
         server_ec   = ec;
         server_done = true;
         m2.close(); // NOLINT(bugprone-unused-return-value)
@@ -1717,11 +1711,11 @@ testReset(StreamFactory make_stream, std::array<context_mode, N> const& modes)
 
             // Handshake
             auto hs_client = [&]() -> capy::task<> {
-                auto [ec] = co_await client.handshake(tls_stream::client);
+                auto [ec] = co_await client.handshake(tls_role::client);
                 client_ec = ec;
             };
             auto hs_server = [&]() -> capy::task<> {
-                auto [ec] = co_await server.handshake(tls_stream::server);
+                auto [ec] = co_await server.handshake(tls_role::server);
                 server_ec = ec;
             };
 
@@ -1813,11 +1807,11 @@ testResetViaHandshake(
             std::error_code server_ec;
 
             auto hs_client = [&]() -> capy::task<> {
-                auto [ec] = co_await client.handshake(tls_stream::client);
+                auto [ec] = co_await client.handshake(tls_role::client);
                 client_ec = ec;
             };
             auto hs_server = [&]() -> capy::task<> {
-                auto [ec] = co_await server.handshake(tls_stream::server);
+                auto [ec] = co_await server.handshake(tls_role::server);
                 server_ec = ec;
             };
 
@@ -1907,11 +1901,11 @@ testResetFuse(StreamFactory make_stream)
             {
                 std::error_code cec, sec;
                 auto hsc = [&]() -> capy::task<> {
-                    auto [ec] = co_await client.handshake(tls_stream::client);
+                    auto [ec] = co_await client.handshake(tls_role::client);
                     cec       = ec;
                 };
                 auto hss = [&]() -> capy::task<> {
-                    auto [ec] = co_await server.handshake(tls_stream::server);
+                    auto [ec] = co_await server.handshake(tls_role::server);
                     sec       = ec;
                 };
                 capy::run_async(ioc.get_executor())(hsc());
@@ -1947,11 +1941,11 @@ testResetFuse(StreamFactory make_stream)
             {
                 std::error_code cec, sec;
                 auto hsc = [&]() -> capy::task<> {
-                    auto [ec] = co_await client.handshake(tls_stream::client);
+                    auto [ec] = co_await client.handshake(tls_role::client);
                     cec       = ec;
                 };
                 auto hss = [&]() -> capy::task<> {
-                    auto [ec] = co_await server.handshake(tls_stream::server);
+                    auto [ec] = co_await server.handshake(tls_role::server);
                     sec       = ec;
                 };
                 capy::run_async(ioc.get_executor())(hsc());

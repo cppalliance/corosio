@@ -912,7 +912,7 @@ struct openssl_stream::impl
         co_return {std::error_code{}, total_written};
     }
 
-    capy::io_task<> do_handshake(int type)
+    capy::io_task<> do_handshake(tls_role role)
     {
         // A requested configuration could not be applied when the native
         // context was built (inverted protocol window, rejected cipher/
@@ -933,7 +933,7 @@ struct openssl_stream::impl
         // Client offers its ALPN protocol list; the server selects via the
         // context callback. Role is only known here, so set the pre-encoded
         // wire offer per-SSL.
-        if (type == openssl_stream::client && !nc->alpn_wire_.empty())
+        if (role == tls_role::client && !nc->alpn_wire_.empty())
         {
             // SSL_set_alpn_protos uses the inverted convention: 0 = success.
             // A non-zero return (allocation failure) means the offer was not
@@ -950,7 +950,7 @@ struct openssl_stream::impl
         {
             ERR_clear_error();
             int ret;
-            if (type == openssl_stream::client)
+            if (role == tls_role::client)
                 ret = SSL_connect(ssl_);
             else
                 ret = SSL_accept(ssl_);
@@ -1150,9 +1150,9 @@ openssl_stream::do_write_some(
 }
 
 capy::io_task<>
-openssl_stream::handshake(handshake_type type)
+openssl_stream::handshake(tls_role role)
 {
-    co_return co_await impl_->do_handshake(type);
+    co_return co_await impl_->do_handshake(role);
 }
 
 capy::io_task<>

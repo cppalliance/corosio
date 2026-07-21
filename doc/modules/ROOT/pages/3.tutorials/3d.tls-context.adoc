@@ -574,7 +574,7 @@ tls_context ctx = make_https_client_context();
 // Pointer form wraps the connected socket without taking ownership
 corosio::wolfssl_stream secure( &sock, ctx );
 secure.set_hostname( "api.example.com" );
-co_await secure.handshake( corosio::wolfssl_stream::client );
+co_await secure.handshake( corosio::tls_role::client );
 ----
 
 === TLS Server Context

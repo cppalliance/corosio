@@ -1401,14 +1401,12 @@ run_tls_test(
     // Store lambdas in named variables before invoking - anonymous lambda + immediate
     // invocation pattern [...](){}() can cause capture corruption with run_async
     auto client_task = [&client]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         BOOST_TEST(!ec);
     };
 
     auto server_task = [&server]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(
-            std::remove_reference_t<decltype(server)>::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         BOOST_TEST(!ec);
     };
 
@@ -1462,14 +1460,12 @@ run_tls_test_no_shutdown(
     // Store lambdas in named variables before invoking - anonymous lambda + immediate
     // invocation pattern [...](){}() can cause capture corruption with run_async
     auto client_task = [&client]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         BOOST_TEST(!ec);
     };
 
     auto server_task = [&server]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(
-            std::remove_reference_t<decltype(server)>::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         BOOST_TEST(!ec);
     };
 
@@ -1533,8 +1529,7 @@ run_tls_test_fail(
     auto client_task = [&client, &client_failed, &client_done, &server_done,
                         &failsafe_stop, &s1, &s2,
                         client_ec_out]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         if (client_ec_out)
             *client_ec_out = ec;
         if (ec)
@@ -1559,8 +1554,7 @@ run_tls_test_fail(
 
     auto server_task = [&server, &server_failed, &server_done, &client_done,
                         &failsafe_stop, &s1, &s2]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(
-            std::remove_reference_t<decltype(server)>::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         if (ec)
         {
             server_failed = true;
@@ -1649,14 +1643,12 @@ run_tls_shutdown_test(
 
     // Handshake phase
     auto client_hs = [&client]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         BOOST_TEST(!ec);
     };
 
     auto server_hs = [&server]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(
-            std::remove_reference_t<decltype(server)>::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         BOOST_TEST(!ec);
     };
 
@@ -1763,14 +1755,12 @@ run_tls_truncation_test(
 
     // Handshake phase
     auto client_hs = [&client]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         BOOST_TEST(!ec);
     };
 
     auto server_hs = [&server]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(
-            std::remove_reference_t<decltype(server)>::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         BOOST_TEST(!ec);
     };
 
@@ -2078,8 +2068,7 @@ run_connection_reset_test(
 
     auto client_task = [&client, &client_failed,
                         &failsafe_stop]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         // Should fail because server closed socket
         if (ec)
             client_failed = true;
@@ -2164,8 +2153,7 @@ run_stop_token_handshake_test(
     // Client handshake - will be cancelled while waiting for ServerHello
     auto client_task = [&client, &client_got_error,
                         &failsafe_stop]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         if (ec)
             client_got_error = true;
         failsafe_stop.request_stop();
@@ -2239,14 +2227,12 @@ run_stop_token_read_test(
 
     // Handshake phase
     auto client_hs = [&client]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         BOOST_TEST(!ec);
     };
 
     auto server_hs = [&server]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(
-            std::remove_reference_t<decltype(server)>::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         BOOST_TEST(!ec);
     };
 
@@ -2363,14 +2349,12 @@ run_shutdown_cancel_test(
 
     // Handshake phase
     auto client_hs = [&client]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         BOOST_TEST(!ec);
     };
 
     auto server_hs = [&server]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(
-            std::remove_reference_t<decltype(server)>::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         BOOST_TEST(!ec);
     };
 
@@ -2479,14 +2463,12 @@ run_stop_token_write_test(
 
     // Handshake phase
     auto client_hs = [&client]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         BOOST_TEST(!ec);
     };
 
     auto server_hs = [&server]() -> capy::task<> {
-        auto [ec] = co_await server.handshake(
-            std::remove_reference_t<decltype(server)>::server);
+        auto [ec] = co_await server.handshake(tls_role::server);
         BOOST_TEST(!ec);
     };
 
@@ -2600,8 +2582,7 @@ run_socket_cancel_test(
     // Client starts handshake - will be cancelled
     auto client_task = [&client, &client_got_error,
                         &failsafe_stop]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(
-            std::remove_reference_t<decltype(client)>::client);
+        auto [ec] = co_await client.handshake(tls_role::client);
         if (ec)
             client_got_error = true;
         failsafe_stop.request_stop();

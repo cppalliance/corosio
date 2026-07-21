@@ -1073,7 +1073,7 @@ struct wolfssl_stream::impl
         co_return {std::error_code{}, total_written};
     }
 
-    capy::io_task<> do_handshake(int type)
+    capy::io_task<> do_handshake(tls_role role)
     {
         if (used_)
             reset();
@@ -1081,7 +1081,7 @@ struct wolfssl_stream::impl
         std::error_code ec;
 
         // Initialize SSL object for the specified role (deferred from construction)
-        ec = init_ssl_for_role(type);
+        ec = init_ssl_for_role(role);
         if (ec)
             co_return {ec};
 
@@ -1096,9 +1096,9 @@ struct wolfssl_stream::impl
             op.want_read  = false;
             op.want_write = false;
 
-            // Call appropriate handshake function based on type
+            // Call appropriate handshake function based on role
             int ret;
-            if (type == wolfssl_stream::client)
+            if (role == tls_role::client)
                 ret = wolfSSL_connect(ssl_);
             else
                 ret = wolfSSL_accept(ssl_);
@@ -1339,7 +1339,7 @@ struct wolfssl_stream::impl
 
     // Initialization
 
-    std::error_code init_ssl_for_role(int type)
+    std::error_code init_ssl_for_role(tls_role role)
     {
         // Already initialized?
         if (ssl_)
@@ -1362,7 +1362,7 @@ struct wolfssl_stream::impl
             return std::make_error_code(std::errc::invalid_argument);
 
         // Select appropriate context based on role
-        WOLFSSL_CTX* native_ctx = (type == wolfssl_stream::client)
+        WOLFSSL_CTX* native_ctx = (role == tls_role::client)
             ? native->client_ctx_
             : native->server_ctx_;
 
@@ -1453,7 +1453,7 @@ struct wolfssl_stream::impl
 #endif
 
         // Apply per-session config (SNI + hostname verification)
-        if (type == wolfssl_stream::client && !hostname_.empty())
+        if (role == tls_role::client && !hostname_.empty())
         {
             // Set SNI extension so server knows which cert to present
             wolfSSL_UseSNI(
@@ -1519,9 +1519,9 @@ wolfssl_stream::do_write_some(
 }
 
 capy::io_task<>
-wolfssl_stream::handshake(handshake_type type)
+wolfssl_stream::handshake(tls_role role)
 {
-    co_return co_await impl_->do_handshake(type);
+    co_return co_await impl_->do_handshake(role);
 }
 
 capy::io_task<>
