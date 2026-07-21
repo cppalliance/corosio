@@ -161,6 +161,7 @@ struct wolfssl_stream_test
         test::testHostnamePersistence(make_stream);
         test::testHostnameRedirect(make_stream);
         test::testHostnameClear(make_stream);
+        test::testHostnameRetryAfterFailure(make_stream);
         // IP-literal matching is build-gated (WOLFSSL_IP_ALT_NAME);
         // when absent, an IP-literal hostname fails closed.
         test::testHostnameIpLiteral(

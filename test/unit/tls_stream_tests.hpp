@@ -709,6 +709,89 @@ testHostnameClear(StreamFactory make_stream)
     m2.close(); // NOLINT(bugprone-unused-return-value)
 }
 
+/** A hostname set after a failed handshake attempt takes effect on
+    the retry, without an intervening reset(): the failed attempt
+    must not pin the old name or the dead session into the next
+    handshake. */
+template<typename StreamFactory>
+void
+testHostnameRetryAfterFailure(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+    auto client_ctx = make_client_context();
+    auto server_ctx = make_server_context();
+
+    std::vector<std::string> seen;
+    server_ctx.set_servername_callback(
+        [&seen](std::string_view hostname) -> bool {
+            seen.emplace_back(hostname);
+            return true;
+        });
+
+    auto client = make_stream(m1, client_ctx);
+    auto server = make_stream(m2, server_ctx);
+
+    // Round 1: a staged fatal alert record fails the client handshake
+    // deterministically, after its hello is already on the wire.
+    client.set_hostname("stale.example.com");
+    m1.provide(std::string("\x15\x03\x03\x00\x02\x02\x28", 7));
+
+    std::error_code hs_ec;
+    auto hs = [&]() -> capy::task<> {
+        auto [ec] = co_await client.handshake(tls_role::client);
+        hs_ec = ec;
+    };
+    capy::run_async(ioc.get_executor())(hs());
+    ioc.run();
+    ioc.restart();
+    BOOST_TEST(hs_ec != std::error_code());
+
+    // Drain the stale hello (one TLS record) from the raw peer socket
+    // so the server handshake below starts on a clean transport.
+    auto drain = [&]() -> capy::task<> {
+        unsigned char hdr[5];
+        std::size_t got = 0;
+        while (got < sizeof(hdr))
+        {
+            auto [ec, n] = co_await m2.read_some(capy::mutable_buffer(
+                hdr + got, sizeof(hdr) - got));
+            if (ec)
+                co_return;
+            got += n;
+        }
+        std::vector<char> body(
+            (std::size_t(hdr[3]) << 8) | std::size_t(hdr[4]));
+        got = 0;
+        while (got < body.size())
+        {
+            auto [ec, n] = co_await m2.read_some(capy::mutable_buffer(
+                body.data() + got, body.size() - got));
+            if (ec)
+                co_return;
+            got += n;
+        }
+    };
+    capy::run_async(ioc.get_executor())(drain());
+    ioc.run();
+    ioc.restart();
+
+    // Round 2: the new name must take effect without reset()
+    client.set_hostname("www.example.com");
+    hostname_test_detail::run_hostname_round(
+        ioc, client, server, m1, m2, true);
+
+    // The server only ever saw the retry's SNI; the stale hello was
+    // consumed above, before the server stream touched the transport.
+    BOOST_TEST_EQ(seen.size(), 1u);
+    if (seen.size() == 1u)
+        BOOST_TEST_EQ(seen[0], "www.example.com");
+
+    m1.close(); // NOLINT(bugprone-unused-return-value)
+    m2.close(); // NOLINT(bugprone-unused-return-value)
+}
+
 /** An IP-literal hostname is matched against the certificate's
     iPAddress entries and is not sent as SNI; a mismatched literal
     fails verification. On a build that cannot match iPAddress
@@ -720,21 +803,18 @@ testHostnameIpLiteral(StreamFactory make_stream, bool ip_supported)
     io_context ioc;
     auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
 
+    // NOLINTBEGIN(bugprone-unused-return-value)
     tls_context client_ctx;
-    client_ctx.add_certificate_authority(
-        test::server_ip_cert_pem); // NOLINT(bugprone-unused-return-value)
-    client_ctx.set_verify_mode(
-        tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
+    client_ctx.add_certificate_authority(test::server_ip_cert_pem);
+    client_ctx.set_verify_mode(tls_verify_mode::peer);
 
     tls_context server_ctx;
     server_ctx.use_certificate(
-        test::server_ip_cert_pem,
-        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
+        test::server_ip_cert_pem, tls_file_format::pem);
     server_ctx.use_private_key(
-        test::server_ip_key_pem,
-        tls_file_format::pem); // NOLINT(bugprone-unused-return-value)
-    server_ctx.set_verify_mode(
-        tls_verify_mode::none); // NOLINT(bugprone-unused-return-value)
+        test::server_ip_key_pem, tls_file_format::pem);
+    server_ctx.set_verify_mode(tls_verify_mode::none);
+    // NOLINTEND(bugprone-unused-return-value)
 
     std::size_t sni_count = 0;
     server_ctx.set_servername_callback(

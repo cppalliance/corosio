@@ -86,7 +86,7 @@ is_ip_literal(std::string const& s) noexcept
     return !parse_ipv4_address(s, v4) || !parse_ipv6_address(s, v6);
 }
 
-inline void
+inline bool
 apply_hostname_verification(SSL* ssl, std::string const& hostname)
 {
     // SSL_clear retains a previously applied name; an empty hostname
@@ -101,16 +101,18 @@ apply_hostname_verification(SSL* ssl, std::string const& hostname)
     bool const is_ip = name && is_ip_literal(hostname);
     char const* dns_name = is_ip ? nullptr : name;
 
-    SSL_set_tlsext_host_name(ssl, dns_name);
+    if (SSL_set_tlsext_host_name(ssl, dns_name) != 1)
+        return false;
 
-    if (auto* param = SSL_get0_param(ssl))
-    {
-        X509_VERIFY_PARAM_set1_host(param, dns_name, 0);
-        if (is_ip)
-            X509_VERIFY_PARAM_set1_ip_asc(param, name);
-        else
-            X509_VERIFY_PARAM_set1_ip(param, nullptr, 0);
-    }
+    auto* param = SSL_get0_param(ssl);
+    if (!param)
+        return name == nullptr;
+
+    if (X509_VERIFY_PARAM_set1_host(param, dns_name, 0) != 1)
+        return false;
+    if (is_ip)
+        return X509_VERIFY_PARAM_set1_ip_asc(param, name) == 1;
+    return X509_VERIFY_PARAM_set1_ip(param, nullptr, 0) == 1;
 }
 
 // Map a portable protocol version to the OpenSSL version constant.
@@ -677,7 +679,10 @@ struct openssl_stream::impl
     tls_context ctx_;
     SSL* ssl_     = nullptr;
     BIO* ext_bio_ = nullptr;
-    bool used_    = false;
+
+    // A handshake was attempted (successfully or not); the stream
+    // must be reset before the next handshake.
+    bool used_ = false;
 
     // Per-stream SNI/verification hostname, set via set_hostname().
     std::string hostname_;
@@ -947,7 +952,22 @@ struct openssl_stream::impl
         if (used_)
             reset();
 
-        apply_hostname_verification(ssl_, hostname_);
+        // A failed attempt leaves the SSL in a dead state; any attempt,
+        // not just a completed handshake, consumes the stream so the
+        // next handshake() starts fresh.
+        used_ = true;
+
+        // The hostname applies to client handshakes only; a server
+        // handshake clears any name left by a prior client-role
+        // handshake so client certificates are never hostname-matched.
+        std::string const no_name;
+        if (!apply_hostname_verification(
+                ssl_, role == tls_role::client ? hostname_ : no_name))
+        {
+            // Fail closed rather than handshake without the requested
+            // name check.
+            co_return std::make_error_code(std::errc::invalid_argument);
+        }
 
         std::error_code ec;
 
@@ -978,7 +998,6 @@ struct openssl_stream::impl
 
             if (ret == 1)
             {
-                used_ = true;
                 capture_alpn();
                 ec = co_await flush_output();
                 co_return {ec};

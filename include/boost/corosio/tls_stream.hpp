@@ -113,6 +113,11 @@ public:
         For server connections, this waits for the ClientHello and
         sends the server's response.
 
+        A handshake attempt, successful or not, consumes the stream
+        state: a subsequent call behaves as if `reset()` had been
+        called first and performs a fresh handshake using the
+        current configuration.
+
         @param role The handshake role, client or server.
 
         @return An awaitable yielding `(error_code)`.
@@ -173,12 +178,12 @@ public:
         handshake with `std::errc::function_not_supported` rather
         than skip verification.
 
-        @note The hostname is meaningful for client handshakes;
-        backends may ignore it when handshaking as a server.
-
         @par Postconditions
         The next `handshake()` uses `hostname` for SNI and
         certificate verification, or neither if it is empty.
+
+        @note The hostname is used for client handshakes only;
+        it is ignored when handshaking as a server.
 
         @param hostname The peer hostname, or empty to disable.
     */

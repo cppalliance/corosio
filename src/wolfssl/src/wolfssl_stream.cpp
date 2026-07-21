@@ -682,7 +682,10 @@ struct wolfssl_stream::impl
     capy::any_stream* s_;
     tls_context ctx_;
     WOLFSSL* ssl_ = nullptr;
-    bool used_    = false;
+
+    // A handshake was attempted (successfully or not); the stream
+    // must be reset before the next handshake.
+    bool used_ = false;
 
     // Per-stream SNI/verification hostname, set via set_hostname().
     std::string hostname_;
@@ -1100,6 +1103,12 @@ struct wolfssl_stream::impl
         if (used_)
             reset();
 
+        // A failed attempt leaves ssl_ in a dead state that would also
+        // skip re-initialization (and a rechanged hostname) on retry;
+        // any attempt, not just a completed handshake, consumes the
+        // stream so the next handshake() starts fresh.
+        used_ = true;
+
         std::error_code ec;
 
         // Initialize SSL object for the specified role (deferred from construction)
@@ -1128,7 +1137,6 @@ struct wolfssl_stream::impl
             if (ret == WOLFSSL_SUCCESS)
             {
                 // Handshake completed successfully
-                used_ = true;
                 capture_alpn();
                 // Flush any remaining output
                 if (read_out_len_ > 0)
@@ -1506,12 +1514,22 @@ struct wolfssl_stream::impl
             else
             {
                 // Set SNI extension so server knows which cert to present
-                wolfSSL_UseSNI(
+                int ret = wolfSSL_UseSNI(
                     ssl_, WOLFSSL_SNI_HOST_NAME, hostname_.data(),
                     static_cast<unsigned short>(hostname_.size()));
 
                 // Enable hostname verification (checks CN/SAN in peer cert)
-                wolfSSL_check_domain_name(ssl_, hostname_.c_str());
+                if (ret == WOLFSSL_SUCCESS)
+                    ret = wolfSSL_check_domain_name(ssl_, hostname_.c_str());
+
+                if (ret != WOLFSSL_SUCCESS)
+                {
+                    // Fail closed rather than handshake without the
+                    // requested name check.
+                    wolfSSL_free(ssl_);
+                    ssl_ = nullptr;
+                    return std::make_error_code(std::errc::invalid_argument);
+                }
             }
         }
 
