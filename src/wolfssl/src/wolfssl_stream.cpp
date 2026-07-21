@@ -1492,17 +1492,25 @@ struct wolfssl_stream::impl
                 // Enforcement needs both flags: OPENSSL_EXTRA routes
                 // the address into the verify params that the cert
                 // check consults, and WOLFSSL_IP_ALT_NAME makes the
-                // parser record iPAddress entries at all. Without
-                // either, wolfSSL_check_ip_address still returns
-                // success and verification silently checks nothing.
+                // parser record iPAddress entries at all.
 #if defined(OPENSSL_EXTRA) && defined(WOLFSSL_IP_ALT_NAME)
-                if (wolfSSL_check_ip_address(ssl_, hostname_.c_str())
-                    != WOLFSSL_SUCCESS)
+                // Install via the verify params directly, not
+                // wolfSSL_check_ip_address: that wrapper reports
+                // success even when enforcement is compiled out, and
+                // binding these OPENSSL_EXTRA-only symbols makes a
+                // run against a downgraded WolfSSL fail at load
+                // rather than skip the check silently.
+                WOLFSSL_X509_VERIFY_PARAM* vp = wolfSSL_get0_param(ssl_);
+                if (!vp ||
+                    wolfSSL_X509_VERIFY_PARAM_set1_ip_asc(
+                        vp, hostname_.c_str()) != WOLFSSL_SUCCESS)
                 {
+                    // Fail closed rather than handshake without the
+                    // requested name check.
                     wolfSSL_free(ssl_);
                     ssl_ = nullptr;
                     return std::make_error_code(
-                        std::errc::function_not_supported);
+                        std::errc::invalid_argument);
                 }
 #else
                 wolfSSL_free(ssl_);
