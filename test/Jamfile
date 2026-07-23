@@ -8,3 +8,4 @@
 #
 
 build-project unit ;
+build-project doc ;

@@ -18,12 +18,7 @@ management.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/endpoint.hpp>
-#include <boost/capy/buffers.hpp>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+include::example$snippets/4d_sockets.cpp[tag=assume]
 ----
 ====
 
@@ -33,15 +28,7 @@ A socket represents one end of a TCP connection:
 
 [source,cpp]
 ----
-corosio::tcp_socket s(ioc);
-s.open();
-
-auto [ec] = co_await s.connect(
-    corosio::endpoint(corosio::ipv4_address::loopback(), 8080));
-
-char buf[1024];
-auto [read_ec, n] = co_await s.read_some(
-    capy::mutable_buffer(buf, sizeof(buf)));
+include::example$snippets/4d_sockets.cpp[tag=overview,indent=0]
 ----
 
 == Construction
@@ -50,12 +37,7 @@ Sockets are constructed from an execution context or executor:
 
 [source,cpp]
 ----
-// From io_context
-corosio::tcp_socket s1(ioc);
-
-// From executor
-auto ex = ioc.get_executor();
-corosio::tcp_socket s2(ex);
+include::example$snippets/4d_sockets.cpp[tag=construct,indent=0]
 ----
 
 The socket doesn't own system resources until `open()` is called.
@@ -68,8 +50,7 @@ Creates the underlying TCP socket:
 
 [source,cpp]
 ----
-s.open();  // Creates IPv4 TCP socket, associates with the platform
-           // reactor (IOCP on Windows, epoll/kqueue/select on POSIX)
+include::example$snippets/4d_sockets.cpp[tag=open,indent=0]
 ----
 
 This allocates a socket handle and registers it with the I/O backend.
@@ -81,7 +62,7 @@ Releases socket resources:
 
 [source,cpp]
 ----
-s.close();  // Cancels pending ops, closes socket
+include::example$snippets/4d_sockets.cpp[tag=close,indent=0]
 ----
 
 Any pending operations complete with `capy::error::canceled`; test for it
@@ -93,8 +74,7 @@ Check if the socket is open:
 
 [source,cpp]
 ----
-if (s.is_open())
-    // Socket ready for I/O
+include::example$snippets/4d_sockets.cpp[tag=is_open,indent=0]
 ----
 
 == Connecting
@@ -103,7 +83,7 @@ The `connect()` operation initiates a TCP connection:
 
 [source,cpp]
 ----
-auto [ec] = co_await s.connect(endpoint);
+include::example$snippets/4d_sockets.cpp[tag=connect,indent=0]
 ----
 
 This returns an `io_result<>` that you can unpack with structured bindings.
@@ -135,8 +115,7 @@ For simpler code when errors are fatal:
 
 [source,cpp]
 ----
-if (auto [ec] = co_await s.connect(endpoint); ec)
-    throw std::system_error(ec);  // Throws on error
+include::example$snippets/4d_sockets.cpp[tag=connect_throw,indent=0]
 ----
 
 === Range-Based Connect
@@ -147,18 +126,7 @@ each in order, returning on the first success:
 
 [source,cpp]
 ----
-#include <boost/corosio/connect.hpp>
-
-corosio::resolver r(ioc);
-auto [rec, results] = co_await r.resolve("www.boost.org", "80");
-if (rec)
-    co_return;
-
-corosio::tcp_socket s(ioc);
-auto [cec, ep] = co_await corosio::connect(s, results);
-if (cec)
-    co_return;
-// `ep` is the endpoint that accepted the connection.
+include::example$snippets/4d_sockets.cpp[tag=connect_range,indent=0]
 ----
 
 Between attempts the socket is closed so the next `connect()` auto-opens with
@@ -170,12 +138,7 @@ socket's endpoint type:
 
 [source,cpp]
 ----
-template<class Socket, std::ranges::input_range Range>
-    requires std::convertible_to<
-        std::ranges::range_reference_t<Range>,
-        typename Socket::endpoint_type>
-capy::task<capy::io_result<typename Socket::endpoint_type>>
-connect(Socket& s, Range endpoints);
+include::example$snippets/4d_sockets.cpp[tag=connect_signature]
 ----
 
 On success, returns the connected endpoint. On all-fail, returns the error
@@ -189,12 +152,7 @@ each attempt. Returning `false` skips the candidate:
 
 [source,cpp]
 ----
-auto [ec, ep] = co_await corosio::connect(
-    s,
-    results,
-    [](std::error_code const&, corosio::endpoint const& e) {
-        return e.is_v4();  // IPv4 only.
-    });
+include::example$snippets/4d_sockets.cpp[tag=connect_condition,indent=0]
 ----
 
 ==== Iterator Overload
@@ -204,9 +162,7 @@ success, or `end` on failure:
 
 [source,cpp]
 ----
-auto [ec, it] = co_await corosio::connect(s, v.begin(), v.end());
-if (!ec)
-    std::cout << "connected to index " << (it - v.begin()) << "\n";
+include::example$snippets/4d_sockets.cpp[tag=connect_iterator,indent=0]
 ----
 
 Both overloads accept an optional connect condition as a trailing argument.
@@ -219,9 +175,7 @@ Reads available data:
 
 [source,cpp]
 ----
-char buf[1024];
-auto [ec, n] = co_await s.read_some(
-    capy::mutable_buffer(buf, sizeof(buf)));
+include::example$snippets/4d_sockets.cpp[tag=read_some,indent=0]
 ----
 
 This completes when _any_ data is available. The returned `n` may be less
@@ -233,10 +187,7 @@ When the peer closes the connection:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await s.read_some(buf);
-
-if (ec == capy::cond::eof)
-    // Connection closed normally
+include::example$snippets/4d_sockets.cpp[tag=read_eof,indent=0]
 ----
 
 EOF is signaled only by `ec == capy::cond::eof`. A successful read with
@@ -249,8 +200,7 @@ Use the `capy::read()` free function to fill a buffer completely:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await capy::read(s, buf);
-// n == buffer_size(buf) or error occurred
+include::example$snippets/4d_sockets.cpp[tag=read_all,indent=0]
 ----
 
 See xref:4.guide/4g.composed-operations.adoc[Composed Operations] for details.
@@ -263,9 +213,7 @@ Writes some data:
 
 [source,cpp]
 ----
-std::string msg = "Hello";
-auto [ec, n] = co_await s.write_some(
-    capy::const_buffer(msg.data(), msg.size()));
+include::example$snippets/4d_sockets.cpp[tag=write_some,indent=0]
 ----
 
 This completes when _any_ data is written. The returned `n` may be less
@@ -277,8 +225,7 @@ Use the `capy::write()` free function:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await capy::write(s, buf);
-// n == buffer_size(buf) or error occurred
+include::example$snippets/4d_sockets.cpp[tag=write_all,indent=0]
 ----
 
 == Cancellation
@@ -289,7 +236,7 @@ Cancel pending operations:
 
 [source,cpp]
 ----
-s.cancel();
+include::example$snippets/4d_sockets.cpp[tag=cancel,indent=0]
 ----
 
 All outstanding operations complete with `capy::error::canceled`; test for it
@@ -301,16 +248,14 @@ Operations support `std::stop_token` through the affine protocol:
 
 [source,cpp]
 ----
-// Inside a capy::jcancellable_task:
-auto [ec, n] = co_await s.read_some(buf);
-// Automatically cancelled if stop is requested
+include::example$snippets/4d_sockets.cpp[tag=stop_token,indent=0]
 ----
 
 == Move Semantics
 
 Sockets are move-only:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 corosio::tcp_socket s1(ioc);
 corosio::tcp_socket s2 = std::move(s1);  // OK
@@ -322,16 +267,16 @@ Move assignment closes any existing socket:
 
 [source,cpp]
 ----
-s1 = std::move(s2);  // Closes s1's socket if open, then moves s2
+include::example$snippets/4d_sockets.cpp[tag=move_assign,indent=0]
 ----
 
 NOTE: After a move, the destination uses the source's execution context.
 
 == The io_stream Interface
 
-`socket` inherits from `io_stream`, which provides:
+`tcp_socket` inherits from `io_stream`, which provides:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 class io_stream : public io_object
 {
@@ -348,14 +293,7 @@ This enables polymorphic use:
 
 [source,cpp]
 ----
-capy::task<void> send_data(corosio::io_stream& stream)
-{
-    co_await capy::write(stream, some_buffer);
-}
-
-// Works with socket, wolfssl_stream, or any io_stream
-corosio::tcp_socket sock(ioc);
-co_await send_data(sock);
+include::example$snippets/4d_sockets.cpp[tag=io_stream_poly,indent=0]
 ----
 
 == Buffer Sequences
@@ -364,16 +302,7 @@ Read and write operations accept buffer sequences:
 
 [source,cpp]
 ----
-// Single buffer
-capy::mutable_buffer buf(data, size);
-co_await s.read_some(buf);
-
-// Multiple buffers (scatter/gather I/O)
-std::array<capy::mutable_buffer, 2> bufs = {
-    capy::mutable_buffer(header, header_size),
-    capy::mutable_buffer(body, body_size)
-};
-co_await s.read_some(bufs);
+include::example$snippets/4d_sockets.cpp[tag=buffer_sequences,indent=0]
 ----
 
 See xref:4.guide/4n.buffers.adoc[Buffer Sequences] for details.
@@ -398,28 +327,7 @@ socket. But don't start two reads or two writes concurrently.
 
 [source,cpp]
 ----
-capy::task<void> echo_client(corosio::io_context& ioc)
-{
-    corosio::tcp_socket s(ioc);
-    s.open();
-
-    if (auto [ec] = co_await s.connect(
-            corosio::endpoint(corosio::ipv4_address::loopback(), 8080)); ec)
-        throw std::system_error(ec);
-
-    std::string msg = "Hello, server!";
-    if (auto [ec, n] = co_await capy::write(
-            s, capy::const_buffer(msg.data(), msg.size())); ec)
-        throw std::system_error(ec);
-
-    char buf[1024];
-    auto [ec, n] = co_await s.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
-
-    if (!ec)
-        std::cout << "Server replied: "
-                  << std::string_view(buf, n) << "\n";
-}
+include::example$snippets/4d_sockets.cpp[tag=echo_client]
 ----
 
 == Next Steps

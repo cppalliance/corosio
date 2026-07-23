@@ -13,3 +13,4 @@ if(NOT TARGET tests)
 endif()
 
 add_subdirectory(unit)
+add_subdirectory(doc)

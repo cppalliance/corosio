@@ -516,7 +516,7 @@ jobs:
           generator: ${{ matrix.generator }}
           generator-toolset: ${{ matrix.generator-toolset }}
           build-type: ${{ matrix.build-type }}
-          build-target: boost_corosio_tests
+          build-target: tests
           run-tests: true
           cxxstd: ${{ matrix.cmake-cxxstd || matrix.cxxstd }}
           cc:  ${{ steps.setup-cpp.outputs.cc || matrix.cc }}

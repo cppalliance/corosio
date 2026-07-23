@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+// tag::assume[]
 #include <boost/corosio.hpp>
 #include <system_error>
 #include <boost/capy/task.hpp>
@@ -15,31 +16,43 @@
 #include <boost/capy/error.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>
+
+// end::assume[]
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <string_view>
 
+// tag::assume[]
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
+// end::assume[]
 
+// tag::build_request[]
+std::string build_request(std::string_view host)
+{
+    return "GET / HTTP/1.1\r\n"
+           "Host: " + std::string(host) + "\r\n"
+           "Connection: close\r\n"
+           "\r\n";
+}
+// end::build_request[]
+
+// tag::do_request[]
 // Coroutine that performs the HTTP GET request
 capy::task<void>
 do_request(
     corosio::io_stream& stream,
     std::string_view host)
 {
-    // Build and send the HTTP request
-    std::string request =
-        "GET / HTTP/1.1\r\n"
-        "Host: " + std::string(host) + "\r\n"
-        "Connection: close\r\n"
-        "\r\n";
+    // Build and send the request
+    std::string request = build_request(host);
     if (auto [ec, n] = co_await capy::write(
             stream, capy::const_buffer(request.data(), request.size())); ec)
         throw std::system_error(ec);
 
     // Read the entire response until EOF, one fixed chunk at a time
+    // tag::read_loop[]
     std::string response;
     for (;;)
     {
@@ -55,10 +68,13 @@ do_request(
             break;
         }
     }
+    // end::read_loop[]
 
     std::cout << response << std::endl;
 }
+// end::do_request[]
 
+// tag::run_client[]
 // Parent coroutine that creates and connects the socket
 capy::task<void>
 run_client(
@@ -75,7 +91,9 @@ run_client(
 
     co_await do_request(s, addr.to_string());
 }
+// end::run_client[]
 
+// tag::main[]
 int
 main(int argc, char* argv[])
 {
@@ -113,3 +131,4 @@ main(int argc, char* argv[])
 
     return EXIT_SUCCESS;
 }
+// end::main[]

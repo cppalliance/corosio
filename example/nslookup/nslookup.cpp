@@ -7,18 +7,23 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+// tag::assume[]
 #include <boost/corosio.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/run_async.hpp>
 
+// end::assume[]
 #include <cstdlib>
 #include <iostream>
 #include <string_view>
 
+// tag::assume[]
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
+// end::assume[]
 
 // Coroutine that performs the DNS lookup
+// tag::lookup[]
 capy::task<void>
 do_lookup(
     corosio::io_context& ioc,
@@ -56,7 +61,9 @@ do_lookup(
 
     std::cout << "\nTotal: " << results.size() << " addresses\n";
 }
+// end::lookup[]
 
+// tag::main[]
 int
 main(int argc, char* argv[])
 {
@@ -81,3 +88,4 @@ main(int argc, char* argv[])
 
     return EXIT_SUCCESS;
 }
+// end::main[]

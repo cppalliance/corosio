@@ -18,11 +18,7 @@ scenarios. Each recipe is a small standalone block; copy and adapt.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/test/mocket.hpp>
-#include <boost/corosio/test/socket_pair.hpp>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+include::example$snippets/5c_patterns.cpp[tag=assume]
 ----
 ====
 
@@ -33,18 +29,7 @@ with `expect()` and assert on `close()` at the end:
 
 [source,cpp]
 ----
-corosio::io_context ioc;
-auto [m, peer] = corosio::test::make_mocket_pair(ioc);
-
-m.expect("GET /api/v1/users HTTP/1.1\r\n\r\n");
-
-auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
-    co_await my_http_get(m_ref, "/api/v1/users");
-};
-capy::run_async(ioc.get_executor())(task(m));
-ioc.run();
-
-auto ec = m.close();   // !ec means everything was written
+include::example$snippets/5c_patterns.cpp[tag=request_format,indent=0]
 ----
 
 == Staging Server Responses
@@ -54,16 +39,7 @@ When a function under test must consume canned bytes, stage them with
 
 [source,cpp]
 ----
-m.provide(
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Length: 5\r\n"
-    "\r\n"
-    "Hello");
-
-auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
-    auto response = co_await my_http_read(m_ref);
-    // assert on parsed response
-};
+include::example$snippets/5c_patterns.cpp[tag=staged_response,indent=0]
 ----
 
 == Simulating Chunked / Partial I/O
@@ -73,19 +49,7 @@ much as the kernel had. Force short reads to flush out that bug:
 
 [source,cpp]
 ----
-auto [m, peer] = corosio::test::make_mocket_pair(ioc, {}, /*max_read_size=*/4);
-
-m.provide("ABCDEFGH");
-
-auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
-    std::string acc;
-    char buf[16];
-    for (int i = 0; i < 2; ++i)
-    {
-        auto [ec, n] = co_await m_ref.read_some(capy::make_buffer(buf));
-        acc.append(buf, n);   // n == 4 each time
-    }
-};
+include::example$snippets/5c_patterns.cpp[tag=chunked_reads,indent=0]
 ----
 
 The same applies to `max_write_size` for write-loop testing.
@@ -103,11 +67,7 @@ higher-level stream, drive the mocket directly instead of layering on
 
 [source,cpp]
 ----
-auto [m, peer] = corosio::test::make_mocket_pair(ioc);
-
-// Pass m.socket() into a TLS stream or other layer in production code:
-corosio::tcp_socket& under = m.socket();
-// e.g., openssl_stream tls(&under, tls_ctx);
+include::example$snippets/5c_patterns.cpp[tag=layering,indent=0]
 ----
 
 This is the right tool when the bytes you want to stage are below a
@@ -121,20 +81,7 @@ When fidelity matters more than determinism — for example, exercising
 
 [source,cpp]
 ----
-corosio::io_context ioc;
-auto [s1, s2] = corosio::test::make_socket_pair(ioc);
-
-auto task = [](corosio::tcp_socket& a, corosio::tcp_socket& b)
-    -> capy::task<> {
-    auto [wec, wn] =
-        co_await a.write_some(capy::const_buffer("payload", 7));
-
-    char buf[16] = {};
-    auto [ec, n] = co_await b.read_some(capy::make_buffer(buf));
-    // buf[0..n] == "payload"
-};
-capy::run_async(ioc.get_executor())(task(s1, s2));
-ioc.run();
+include::example$snippets/5c_patterns.cpp[tag=end_to_end,indent=0]
 ----
 
 == Deterministic Close-Verification
@@ -144,10 +91,7 @@ Always call `close()` on the mocket at the end of a test that uses
 
 [source,cpp]
 ----
-auto ec = m.close();
-// ec == capy::error::test_failure means leftover provide() data was
-// never read, or expect() data was never written. Either way, the test
-// would have passed silently without this check.
+include::example$snippets/5c_patterns.cpp[tag=close_verification,indent=0]
 ----
 
 This is the line that catches "the test passed because the code under

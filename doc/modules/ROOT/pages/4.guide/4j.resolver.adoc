@@ -18,10 +18,7 @@ asynchronous interface.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/resolver.hpp>
-#include <boost/capy/read.hpp>
-#include <boost/capy/write.hpp>
-namespace corosio = boost::corosio;
+include::example$snippets/4j_resolver.cpp[tag=assume]
 ----
 ====
 
@@ -29,22 +26,14 @@ namespace corosio = boost::corosio;
 
 [source,cpp]
 ----
-corosio::resolver r(ioc);
-auto [ec, results] = co_await r.resolve("www.example.com", "https");
-
-for (auto const& entry : results)
-{
-    auto ep = entry.get_endpoint();
-    std::cout << ep.v4_address().to_string() << ":" << ep.port() << "\n";
-}
+include::example$snippets/4j_resolver.cpp[tag=overview,indent=0]
 ----
 
 == Construction
 
 [source,cpp]
 ----
-corosio::io_context ioc;
-corosio::resolver r(ioc);  // From execution context
+include::example$snippets/4j_resolver.cpp[tag=construction,indent=0]
 ----
 
 == Resolving Names
@@ -53,7 +42,7 @@ corosio::resolver r(ioc);  // From execution context
 
 [source,cpp]
 ----
-auto [ec, results] = co_await r.resolve("www.example.com", "80");
+include::example$snippets/4j_resolver.cpp[tag=basic_resolution,indent=0]
 ----
 
 The host can be:
@@ -72,10 +61,7 @@ The service can be:
 
 [source,cpp]
 ----
-auto [ec, results] = co_await r.resolve(
-    "www.example.com",
-    "https",
-    corosio::resolve_flags::address_configured);
+include::example$snippets/4j_resolver.cpp[tag=with_flags,indent=0]
 ----
 
 == Resolve Flags
@@ -119,11 +105,7 @@ Flags can be combined:
 
 [source,cpp]
 ----
-auto flags =
-    corosio::resolve_flags::numeric_host |
-    corosio::resolve_flags::numeric_service;
-
-auto [ec, results] = co_await r.resolve("127.0.0.1", "8080", flags);
+include::example$snippets/4j_resolver.cpp[tag=combined_flags,indent=0]
 ----
 
 == Working with Results
@@ -134,22 +116,12 @@ indexing, and so on):
 
 [source,cpp]
 ----
-using resolver_results = std::vector<resolver_entry>;
+include::example$snippets/4j_resolver.cpp[tag=results_alias,indent=0]
 ----
 
 [source,cpp]
 ----
-for (auto const& entry : results)
-{
-    corosio::endpoint ep = entry.get_endpoint();
-
-    if (ep.is_v4())
-        std::cout << "IPv4: " << ep.v4_address().to_string();
-    else
-        std::cout << "IPv6: " << ep.v6_address().to_string();
-
-    std::cout << ":" << ep.port() << "\n";
-}
+include::example$snippets/4j_resolver.cpp[tag=iterate_results,indent=0]
 ----
 
 [NOTE]
@@ -165,18 +137,7 @@ takes the range by value — such as `corosio::connect` — pass an rvalue
 
 [source,cpp]
 ----
-class resolver_entry
-{
-public:
-    corosio::endpoint get_endpoint() const;
-
-    // Implicit conversion to endpoint
-    operator corosio::endpoint() const;
-
-    // Query strings used in the resolution
-    std::string const& host_name() const;
-    std::string const& service_name() const;
-};
+include::example$snippets/4j_resolver.cpp[tag=entry_synopsis,indent=0]
 ----
 
 == Connecting to Resolved Addresses
@@ -185,37 +146,7 @@ Try each address until one works:
 
 [source,cpp]
 ----
-capy::task<void> connect_to_service(
-    corosio::io_context& ioc,
-    std::string_view host,
-    std::string_view service)
-{
-    corosio::resolver r(ioc);
-    auto [resolve_ec, results] = co_await r.resolve(host, service);
-
-    if (resolve_ec)
-        throw std::system_error(resolve_ec);
-
-    if (results.empty())
-        throw std::runtime_error("No addresses found");
-
-    corosio::tcp_socket sock(ioc);
-    sock.open();
-
-    std::error_code last_error;
-    for (auto const& entry : results)
-    {
-        auto [ec] = co_await sock.connect(entry.get_endpoint());
-        if (!ec)
-            co_return;  // Connected successfully
-
-        last_error = ec;
-        sock.close();
-        sock.open();
-    }
-
-    throw std::system_error(last_error);
-}
+include::example$snippets/4j_resolver.cpp[tag=connect_to_service]
 ----
 
 == Cancellation
@@ -226,7 +157,7 @@ Cancel pending resolution:
 
 [source,cpp]
 ----
-r.cancel();
+include::example$snippets/4j_resolver.cpp[tag=cancel,indent=0]
 ----
 
 The in-flight resolution completes with `capy::cond::canceled` (the
@@ -264,17 +195,14 @@ Match it with:
 
 [source,cpp]
 ----
-if (ec == capy::cond::canceled)
-{
-    // resolution was cancelled
-}
+include::example$snippets/4j_resolver.cpp[tag=match_canceled,indent=0]
 ----
 
 == Move Semantics
 
 Resolvers are move-only:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 corosio::resolver r1(ioc);
 corosio::resolver r2 = std::move(r1);  // OK
@@ -305,19 +233,7 @@ undefined behavior.
 
 [source,cpp]
 ----
-// CORRECT: Sequential resolves on same resolver
-auto [ec1, r1] = co_await resolver.resolve("host1", "80");
-auto [ec2, r2] = co_await resolver.resolve("host2", "80");
-
-// CORRECT: Parallel resolves with separate resolver instances
-corosio::resolver r1(ioc), r2(ioc);
-// In separate coroutines:
-auto [ec1, res1] = co_await r1.resolve("host1", "80");
-auto [ec2, res2] = co_await r2.resolve("host2", "80");
-
-// WRONG: Concurrent resolves on same resolver - UNDEFINED BEHAVIOR
-auto f1 = resolver.resolve("host1", "80");
-auto f2 = resolver.resolve("host2", "80");  // BAD: overlaps with f1
+include::example$snippets/4j_resolver.cpp[tag=single_inflight,indent=0]
 ----
 
 If you need to resolve multiple hostnames concurrently, create a separate
@@ -327,54 +243,7 @@ resolver instance for each.
 
 [source,cpp]
 ----
-capy::task<void> http_get(
-    corosio::io_context& ioc,
-    std::string_view hostname)
-{
-    // Resolve hostname
-    corosio::resolver r(ioc);
-    auto [resolve_ec, results] = co_await r.resolve(hostname, "80");
-
-    if (resolve_ec)
-    {
-        std::cerr << "Resolution failed: " << resolve_ec.message() << "\n";
-        co_return;
-    }
-
-    // Connect to first address
-    corosio::tcp_socket sock(ioc);
-    sock.open();
-
-    for (auto const& entry : results)
-    {
-        auto [ec] = co_await sock.connect(entry);
-        if (!ec)
-            break;
-    }
-
-    if (!sock.is_open())
-    {
-        std::cerr << "Failed to connect\n";
-        co_return;
-    }
-
-    // Send HTTP request
-    std::string request =
-        "GET / HTTP/1.1\r\n"
-        "Host: " + std::string(hostname) + "\r\n"
-        "Connection: close\r\n"
-        "\r\n";
-
-    if (auto [ec, n] = co_await capy::write(
-            sock, capy::const_buffer(request.data(), request.size())); ec)
-        throw std::system_error(ec);
-
-    // Read response
-    std::string response;
-    co_await capy::read(sock, response);
-
-    std::cout << response << "\n";
-}
+include::example$snippets/4j_resolver.cpp[tag=http_get]
 ----
 
 == Platform Notes

@@ -24,13 +24,7 @@ long-lived object's expiry.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/delay.hpp>
-#include <boost/corosio/timeout.hpp>
-#include <boost/capy/cond.hpp>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
-using namespace std::chrono_literals;
+include::example$snippets/4h_timers.cpp[tag=assume]
 ----
 ====
 
@@ -41,9 +35,7 @@ duration elapses:
 
 [source,cpp]
 ----
-auto [ec] = co_await corosio::delay(500ms);
-if (!ec)
-    std::cout << "500ms elapsed\n";
+include::example$snippets/4h_timers.cpp[tag=delay_duration,indent=0]
 ----
 
 A zero or negative duration completes synchronously without
@@ -58,15 +50,7 @@ duration from "now":
 
 [source,cpp]
 ----
-auto next = std::chrono::steady_clock::now();
-for (int i = 0; i < 10; ++i)
-{
-    next += 100ms;
-    auto [ec] = co_await corosio::delay(next);
-    if (ec)
-        break;
-    std::cout << "Tick " << i << "\n";
-}
+include::example$snippets/4h_timers.cpp[tag=delay_timepoint,indent=0]
 ----
 
 A time point already in the past also completes synchronously.
@@ -80,9 +64,7 @@ stopped while it is waiting, the wait ends early and resumes with
 
 [source,cpp]
 ----
-auto [ec] = co_await corosio::delay(10s);
-if (ec == capy::cond::canceled)
-    std::cout << "Delay was cancelled\n";
+include::example$snippets/4h_timers.cpp[tag=delay_cancel,indent=0]
 ----
 
 There is no `cancel()` to call directly; cancellation flows entirely
@@ -96,13 +78,7 @@ Whichever finishes first decides the outcome:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await corosio::timeout(
-    sock.read_some(buffer), 200ms);
-
-if (ec == capy::cond::timeout)
-    std::cout << "No data within 200ms\n";
-else if (!ec)
-    std::cout << "Read " << n << " bytes\n";
+include::example$snippets/4h_timers.cpp[tag=timeout_read,indent=0]
 ----
 
 If the inner operation wins, its `io_result` is returned unchanged,
@@ -118,8 +94,7 @@ default constructible.
 
 [source,cpp]
 ----
-auto deadline = std::chrono::steady_clock::now() + 5s;
-auto [ec] = co_await corosio::timeout(sock.connect(ep), deadline);
+include::example$snippets/4h_timers.cpp[tag=timeout_deadline,indent=0]
 ----
 
 === Distinguishing Timeout from Cancellation
@@ -143,11 +118,7 @@ cancelled and `timeout()` reports `capy::cond::canceled`, not
 
 [source,cpp]
 ----
-auto [ec] = co_await corosio::timeout(sock.connect(ep), 3s);
-if (ec == capy::cond::timeout)
-    std::cout << "Connect attempt timed out\n";
-else if (ec == capy::cond::canceled)
-    std::cout << "Connect attempt cancelled by caller\n";
+include::example$snippets/4h_timers.cpp[tag=timeout_vs_cancel,indent=0]
 ----
 
 == Requires an io_context
@@ -167,27 +138,7 @@ with `delay()` for the pause between attempts:
 
 [source,cpp]
 ----
-capy::task<>
-connect_with_deadline(
-    corosio::tcp_socket& sock,
-    corosio::endpoint ep,
-    int max_attempts)
-{
-    for (int attempt = 0; attempt < max_attempts; ++attempt)
-    {
-        auto [ec] = co_await corosio::timeout(sock.connect(ep), 3s);
-        if (!ec)
-            co_return;
-
-        if (ec == capy::cond::canceled)
-            co_return;
-
-        sock.close();
-        auto [dec] = co_await corosio::delay(500ms);
-        if (dec == capy::cond::canceled)
-            co_return;
-    }
-}
+include::example$snippets/4h_timers.cpp[tag=connect_retry]
 ----
 
 == Next Steps

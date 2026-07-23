@@ -19,10 +19,7 @@ byte-level staging in xref:5.testing/5a.mocket.adoc[`mocket`] cannot reproduce.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/test/socket_pair.hpp>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+include::example$snippets/5b_socket_pair.cpp[tag=assume]
 ----
 ====
 
@@ -30,11 +27,7 @@ namespace capy = boost::capy;
 
 [source,cpp]
 ----
-template<class Socket   = corosio::tcp_socket,
-         class Acceptor = corosio::tcp_acceptor,
-         bool Linger    = true>
-std::pair<Socket, Socket>
-make_socket_pair(corosio::io_context& ctx);
+include::example$snippets/5b_socket_pair.cpp[tag=signature]
 ----
 
 The function:
@@ -47,27 +40,15 @@ The function:
 Both sockets come back `is_open()` and ready to use.
 
 If bind, listen, accept, or connect fails, `make_socket_pair` throws
-`std::runtime_error` with the underlying `error_code::message()`
-appended.
+`std::runtime_error` naming the failing step; the underlying
+`error_code::message()` appears in the exception text for bind and
+listen failures, and on `stderr` for accept and connect failures.
 
 == Round Trip
 
 [source,cpp]
 ----
-corosio::io_context ioc;
-
-auto [s1, s2] = corosio::test::make_socket_pair(ioc);
-
-auto task = [](corosio::tcp_socket& a, corosio::tcp_socket& b)
-    -> capy::task<> {
-    co_await a.write_some(capy::const_buffer("ping", 4));
-
-    char buf[8] = {};
-    auto [ec, n] = co_await b.read_some(capy::make_buffer(buf));
-    // buf[0..n] == "ping"
-};
-capy::run_async(ioc.get_executor())(task(s1, s2));
-ioc.run();
+include::example$snippets/5b_socket_pair.cpp[tag=round_trip,indent=0]
 ----
 
 == The `Linger` Template Parameter
@@ -83,10 +64,7 @@ shutdown:
 
 [source,cpp]
 ----
-auto [s1, s2] = corosio::test::make_socket_pair<
-    corosio::tcp_socket,
-    corosio::tcp_acceptor,
-    /*Linger=*/false>(ioc);
+include::example$snippets/5b_socket_pair.cpp[tag=linger_false,indent=0]
 ----
 
 == When to Use vs. `mocket`

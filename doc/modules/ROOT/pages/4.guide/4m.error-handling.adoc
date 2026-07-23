@@ -17,13 +17,7 @@ error code alongside any values produced by the operation.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio.hpp>
-#include <boost/capy/error.hpp>
-#include <system_error>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
-using namespace std::chrono_literals;
+include::example$snippets/4m_error_handling.cpp[tag=assume]
 ----
 ====
 
@@ -40,14 +34,7 @@ check for errors by testing `ec`.
 
 [source,cpp]
 ----
-// Void result (connect, handshake)
-io_result<>                    // Contains: ec
-
-// Single value (read_some, write_some)
-io_result<std::size_t>         // Contains: ec, n (bytes transferred)
-
-// Typed result (resolve)
-io_result<resolver_results>    // Contains: ec, results
+include::example$snippets/4m_error_handling.cpp[tag=result_shapes,indent=0]
 ----
 
 == Structured Bindings Pattern
@@ -56,17 +43,7 @@ Use structured bindings to extract results:
 
 [source,cpp]
 ----
-// Void result
-auto [ec] = co_await sock.connect(endpoint);
-if (ec)
-    std::cerr << "Connect failed: " << ec.message() << "\n";
-
-// Value result
-auto [ec, n] = co_await sock.read_some(buffer);
-if (ec)
-    std::cerr << "Read failed: " << ec.message() << "\n";
-else
-    std::cout << "Read " << n << " bytes\n";
+include::example$snippets/4m_error_handling.cpp[tag=structured_bindings,indent=0]
 ----
 
 This pattern gives you full control over error handling.
@@ -77,11 +54,7 @@ You can also bind the whole result and read its members:
 
 [source,cpp]
 ----
-auto result = co_await sock.connect(endpoint);
-if (!result.ec)
-    std::cout << "Connected successfully\n";
-else
-    std::cerr << "Failed: " << result.ec.message() << "\n";
+include::example$snippets/4m_error_handling.cpp[tag=direct_members,indent=0]
 ----
 
 The payload lives in `result.values`; for single-value results, prefer
@@ -94,10 +67,7 @@ test `ec` and throw explicitly:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await sock.read_some(buffer);
-if (ec)
-    throw std::system_error(ec);
-// 'n' bytes were read
+include::example$snippets/4m_error_handling.cpp[tag=throw_explicit,indent=0]
 ----
 
 This keeps error handling explicit and avoids hidden control flow.
@@ -113,12 +83,7 @@ This keeps error handling explicit and avoids hidden control flow.
 
 [source,cpp]
 ----
-auto [ec, n] = co_await sock.read_some(buf);
-if (ec == capy::cond::eof)
-{
-    std::cout << "End of stream after " << n << " bytes\n";
-    // Not an exceptional condition
-}
+include::example$snippets/4m_error_handling.cpp[tag=inspect_eof,indent=0]
 ----
 
 === Throw When:
@@ -130,15 +95,7 @@ if (ec == capy::cond::eof)
 
 [source,cpp]
 ----
-auto throw_on_error = [](auto result) {
-    if (result.ec)
-        throw std::system_error(result.ec);
-    return result;
-};
-
-throw_on_error(co_await sock.connect(endpoint));
-throw_on_error(co_await capy::write(sock, request));
-auto [ec, n] = throw_on_error(co_await capy::read(sock, buffer));
+include::example$snippets/4m_error_handling.cpp[tag=throw_style,indent=0]
 ----
 
 == Common Error Codes
@@ -185,8 +142,7 @@ condition, which matches both:
 
 [source,cpp]
 ----
-if (ec == capy::cond::canceled)
-    std::cout << "Operation was cancelled\n";
+include::example$snippets/4m_error_handling.cpp[tag=canceled_condition,indent=0]
 ----
 
 === Timeout vs. Cancellation
@@ -199,11 +155,7 @@ own cancellation, independent of the deadline) produces
 
 [source,cpp]
 ----
-auto [ec] = co_await corosio::timeout(sock.connect(ep), 3s);
-if (ec == capy::cond::timeout)
-    std::cout << "Deadline elapsed before connecting\n";
-else if (ec == capy::cond::canceled)
-    std::cout << "Cancelled before the deadline\n";
+include::example$snippets/4m_error_handling.cpp[tag=timeout_vs_cancel,indent=0]
 ----
 
 Never infer a timeout from `capy::cond::canceled`, and never infer a
@@ -216,26 +168,14 @@ End-of-stream is signaled by the `capy::cond::eof` condition:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await capy::read(stream, buffer);
-if (ec == capy::cond::eof)
-{
-    std::cout << "Stream ended, read " << n << " bytes total\n";
-    // This is often expected, not an error
-}
-else if (ec)
-{
-    std::cerr << "Unexpected error: " << ec.message() << "\n";
-}
+include::example$snippets/4m_error_handling.cpp[tag=eof_expected,indent=0]
 ----
 
 When you throw on read errors, filter out EOF if it is expected:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await capy::read(stream, response);
-if (ec && ec != capy::cond::eof)
-    throw std::system_error(ec);
-// EOF is expected when server closes connection
+include::example$snippets/4m_error_handling.cpp[tag=eof_filtered,indent=0]
 ----
 
 == Partial Success
@@ -244,13 +184,7 @@ Some operations may partially succeed before an error:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await capy::write(stream, large_buffer);
-if (ec)
-{
-    std::cerr << "Error after writing " << n << " of "
-              << buffer_size(large_buffer) << " bytes\n";
-    // Can potentially resume from here
-}
+include::example$snippets/4m_error_handling.cpp[tag=partial_success,indent=0]
 ----
 
 The composed operations (`read()`, `write()`) return the total bytes
@@ -262,11 +196,7 @@ Corosio uses `std::error_code`, which supports categories:
 
 [source,cpp]
 ----
-if (ec.category() == std::system_category())
-    // Operating system error
-
-if (ec.category() == std::generic_category())
-    // Portable POSIX-style error
+include::example$snippets/4m_error_handling.cpp[tag=error_categories,indent=0]
 ----
 
 Capy's own errors (`eof`, `canceled`) don't expose a public category accessor;
@@ -278,16 +208,7 @@ Use error conditions for portable comparison:
 
 [source,cpp]
 ----
-// Specific error (platform-dependent)
-if (ec == std::errc::connection_refused)
-    // ...
-
-// Error condition (portable)
-if (ec == capy::cond::canceled)
-    // Matches any cancellation error
-
-if (ec == capy::cond::eof)
-    // Matches end-of-stream
+include::example$snippets/4m_error_handling.cpp[tag=compare_errors,indent=0]
 ----
 
 == Exception Safety in Coroutines
@@ -296,20 +217,7 @@ When using exceptions in coroutines, caught exceptions don't leak:
 
 [source,cpp]
 ----
-capy::task<void> safe_operation()
-{
-    try
-    {
-        auto [ec] = co_await sock.connect(endpoint);
-        if (ec)
-            throw std::system_error(ec);
-    }
-    catch (std::system_error const& e)
-    {
-        std::cerr << "Connect failed: " << e.what() << "\n";
-        // Exception handled here, doesn't propagate
-    }
-}
+include::example$snippets/4m_error_handling.cpp[tag=exception_safety,indent=0]
 ----
 
 Uncaught exceptions in a task are stored and rethrown when the task is
@@ -319,34 +227,7 @@ awaited.
 
 [source,cpp]
 ----
-capy::task<void> connect_with_retry(
-    corosio::io_context& ioc,
-    corosio::endpoint ep,
-    int max_retries)
-{
-    corosio::tcp_socket sock(ioc);
-
-    for (int attempt = 0; attempt < max_retries; ++attempt)
-    {
-        sock.open();
-        auto [ec] = co_await sock.connect(ep);
-
-        if (!ec)
-            co_return;  // Success
-
-        std::cerr << "Attempt " << (attempt + 1)
-                  << " failed: " << ec.message() << "\n";
-
-        sock.close();
-
-        // Wait before retry (exponential backoff)
-        auto [dec] = co_await corosio::delay(std::chrono::seconds(1 << attempt));
-        if (dec == capy::cond::canceled)
-            co_return;  // Cancellation aborts the retry loop
-    }
-
-    throw std::runtime_error("Failed to connect after retries");
-}
+include::example$snippets/4m_error_handling.cpp[tag=robust_connect]
 ----
 
 == Next Steps

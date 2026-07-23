@@ -19,18 +19,7 @@ switching between them mid-coroutine with `capy::run()`.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/io_context.hpp>
-#include <boost/corosio/tcp_acceptor.hpp>
-#include <boost/corosio/tcp_socket.hpp>
-#include <boost/capy/buffers.hpp>
-#include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/ex/run.hpp>
-#include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/task.hpp>
-#include <boost/capy/write.hpp>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+include::example$hash-server/hash_server.cpp[tag=assume]
 ----
 ====
 
@@ -62,20 +51,7 @@ work justifies leaving the event loop.
 
 [source,cpp]
 ----
-capy::task<std::uint64_t>
-compute_fnv1a( char const* data, std::size_t len )
-{
-    constexpr std::uint64_t basis = 14695981039346656037ULL;
-    constexpr std::uint64_t prime = 1099511628211ULL;
-
-    std::uint64_t h = basis;
-    for (std::size_t i = 0; i < len; ++i)
-    {
-        h ^= static_cast<unsigned char>( data[i] );
-        h *= prime;
-    }
-    co_return h;
-}
+include::example$hash-server/hash_server.cpp[tag=hash_function]
 ----
 
 This is a `capy::task` — a lazy coroutine that doesn't start until someone
@@ -88,38 +64,7 @@ Each client connection is handled by a single coroutine:
 
 [source,cpp]
 ----
-capy::task<>
-do_session(
-    corosio::tcp_socket sock,
-    capy::thread_pool& pool )
-{
-    char buf[4096];
-
-    // 1. Read data from client (on io_context)
-    auto [ec, n] = co_await sock.read_some(
-        capy::mutable_buffer( buf, sizeof( buf ) ) );
-
-    if (ec)
-    {
-        sock.close();
-        co_return;
-    }
-
-    // 2. Switch to thread pool for CPU-bound hash computation,
-    //    then automatically resume on io_context when done
-    auto hash = co_await capy::run( pool.get_executor() )(
-        compute_fnv1a( buf, n ) );
-
-    // 3. Send hex result back to client (on io_context)
-    auto result = to_hex( hash ) + "\n";
-    auto [wec, wn] = co_await capy::write(
-        sock,
-        capy::const_buffer( result.data(), result.size() ) );
-    (void)wec;
-    (void)wn;
-
-    sock.close();
-}
+include::example$hash-server/hash_server.cpp[tag=session]
 ----
 
 Three things happen in sequence, but on two different executors:
@@ -142,8 +87,7 @@ When you write:
 
 [source,cpp]
 ----
-auto hash = co_await capy::run( pool.get_executor() )(
-    compute_fnv1a( buf, n ) );
+include::example$hash-server/hash_server.cpp[tag=run_switch,indent=0]
 ----
 
 Behind the scenes:
@@ -169,23 +113,7 @@ The accept loop creates a socket per connection and spawns a session:
 
 [source,cpp]
 ----
-capy::task<>
-do_accept(
-    corosio::io_context& ioc,
-    corosio::tcp_acceptor& acc,
-    capy::thread_pool& pool )
-{
-    for (;;)
-    {
-        corosio::tcp_socket peer( ioc );
-        auto [ec] = co_await acc.accept( peer );
-        if (ec)
-            break;
-
-        capy::run_async( ioc.get_executor() )(
-            do_session( std::move( peer ), pool ) );
-    }
-}
+include::example$hash-server/hash_server.cpp[tag=accept]
 ----
 
 `run_async` is fire-and-forget — each session runs independently on the
@@ -196,29 +124,7 @@ connection.
 
 [source,cpp]
 ----
-int main( int argc, char* argv[] )
-{
-    if (argc != 2)
-    {
-        std::cerr << "Usage: hash_server <port>\n";
-        return 1;
-    }
-
-    auto port = static_cast<std::uint16_t>( std::atoi( argv[1] ) );
-
-    corosio::io_context ioc;
-    capy::thread_pool pool( 4 );
-
-    corosio::tcp_acceptor acc( ioc, corosio::endpoint( port ) );
-
-    std::cout << "Hash server listening on port " << port << "\n";
-
-    capy::run_async( ioc.get_executor() )(
-        do_accept( ioc, acc, pool ) );
-
-    ioc.run();
-    pool.join();
-}
+include::example$hash-server/hash_server.cpp[tag=main]
 ----
 
 The `io_context` drives all network I/O on the main thread. The thread pool

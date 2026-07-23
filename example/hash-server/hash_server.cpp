@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+// tag::assume[]
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
@@ -17,15 +18,19 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/write.hpp>
 
+// end::assume[]
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 
+// tag::assume[]
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
+// end::assume[]
 
 /// Compute FNV-1a hash on the thread pool.
+// tag::hash_function[]
 capy::task<std::uint64_t>
 compute_fnv1a( char const* data, std::size_t len )
 {
@@ -40,6 +45,7 @@ compute_fnv1a( char const* data, std::size_t len )
     }
     co_return h;
 }
+// end::hash_function[]
 
 /// Format a 64-bit value as 16 lowercase hex characters.
 std::string
@@ -56,6 +62,7 @@ to_hex( std::uint64_t v )
 }
 
 /// Handle a single client connection.
+// tag::session[]
 capy::task<>
 do_session(
     corosio::tcp_socket sock,
@@ -75,8 +82,10 @@ do_session(
 
     // Switch to thread pool for CPU-bound hash computation,
     // then automatically resume on io_context when done
+    // tag::run_switch[]
     auto hash = co_await capy::run( pool.get_executor() )(
         compute_fnv1a( buf, n ) );
+    // end::run_switch[]
 
     // Send hex result back to client (on io_context)
     auto result = to_hex( hash ) + "\n";
@@ -88,8 +97,10 @@ do_session(
 
     sock.close();
 }
+// end::session[]
 
 /// Accept loop — spawns a session coroutine per connection.
+// tag::accept[]
 capy::task<>
 do_accept(
     corosio::io_context& ioc,
@@ -108,7 +119,9 @@ do_accept(
             do_session( std::move( peer ), pool ) );
     }
 }
+// end::accept[]
 
+// tag::main[]
 int
 main( int argc, char* argv[] )
 {
@@ -145,3 +158,4 @@ main( int argc, char* argv[] )
 
     return EXIT_SUCCESS;
 }
+// end::main[]

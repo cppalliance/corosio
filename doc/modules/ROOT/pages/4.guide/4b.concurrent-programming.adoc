@@ -65,12 +65,7 @@ operations:
 
 [source,cpp]
 ----
-int counter = 0;
-
-// Task 1                  // Task 2
-++counter;                 ++counter;
-// Both read 0, both write 1
-// Expected: 2, Actual: 1 (data race)
+include::example$snippets/4b_concurrent_programming.cpp[tag=race_condition,indent=0]
 ----
 
 The `++counter` operation isn't atomic—it reads, modifies, then writes. If two
@@ -82,11 +77,7 @@ The pattern read → modify → write is a classic source of races:
 
 [source,cpp]
 ----
-if (resource_available)      // Read
-{
-    resource_available = false; // Write
-    use_resource();
-}
+include::example$snippets/4b_concurrent_programming.cpp[tag=read_modify_write,indent=0]
 ----
 
 If two tasks check `resource_available` simultaneously, both may see `true`
@@ -130,14 +121,7 @@ hold it at a time:
 
 [source,cpp]
 ----
-std::mutex m;
-int counter = 0;
-
-void increment()
-{
-    std::lock_guard lock(m);
-    ++counter; // Safe: only one thread at a time
-}
+include::example$snippets/4b_concurrent_programming.cpp[tag=mutex_protection]
 ----
 
 The region between lock acquisition and release is a _critical section_.
@@ -146,7 +130,7 @@ The region between lock acquisition and release is a _critical section_.
 
 When tasks acquire multiple locks, they risk deadlock:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Thread 1               // Thread 2
 lock(mutex_a);            lock(mutex_b);
@@ -179,11 +163,7 @@ An event loop processes one event at a time:
 
 [source,cpp]
 ----
-while (!stopped)
-{
-    wait_for_event();     // Blocks until I/O completes
-    handle_event();       // Run the handler
-}
+include::example$snippets/4b_concurrent_programming.cpp[tag=event_loop,indent=0]
 ----
 
 Events might be: "data arrived on socket X," "timer expired," "new connection
@@ -248,19 +228,7 @@ the coroutine resumes—possibly on a different thread.
 
 [source,cpp]
 ----
-capy::task<void> handle_client(corosio::tcp_socket sock)
-{
-    char buf[1024];
-
-    auto [ec, n] = co_await sock.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
-    // Suspends here until data arrives
-
-    if (ec)
-        co_return;  // Exit on error
-
-    // Process data...
-}
+include::example$snippets/4b_concurrent_programming.cpp[tag=suspension_points]
 ----
 
 Between `co_await` and resumption, no code in this coroutine runs. Other
@@ -314,8 +282,7 @@ necessarily the thread that started the operation.
 
 [source,cpp]
 ----
-capy::run_async(ioc.get_executor())(my_coroutine());
-// my_coroutine resumes through ioc's executor
+include::example$snippets/4b_concurrent_programming.cpp[tag=executor_affinity,indent=0]
 ----
 
 If `io_context::run()` is called from one thread, resumptions happen on that
@@ -359,7 +326,7 @@ waits. This provides mutual exclusion without explicit locks.
 With mutexes, synchronization is explicit—you lock before accessing shared data.
 With strands, synchronization is structural—all access goes through the strand.
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 // Mutex approach: explicit locking at every access
 std::mutex m;
@@ -401,15 +368,7 @@ sequential `co_await`s naturally serialize:
 
 [source,cpp]
 ----
-capy::task<void> session(corosio::tcp_socket sock)
-{
-    // All code in this coroutine runs sequentially
-    auto [ec, n] = co_await sock.read_some(buf);
-    // No other code in this coroutine runs until above completes
-
-    co_await sock.write_some(response);
-    // Still sequential
-}
+include::example$snippets/4b_concurrent_programming.cpp[tag=strand_session]
 ----
 
 With a single-threaded `io_context`, coroutines sharing that executor can
@@ -443,14 +402,7 @@ For CPU utilization or higher throughput:
 
 [source,cpp]
 ----
-corosio::io_context ioc(4);  // Hint: 4 threads
-
-std::vector<std::thread> threads;
-for (int i = 0; i < 4; ++i)
-    threads.emplace_back([&ioc] { ioc.run(); });
-
-for (auto& t : threads)
-    t.join();
+include::example$snippets/4b_concurrent_programming.cpp[tag=multi_threaded_run,indent=0]
 ----
 
 With multiple threads:
@@ -483,21 +435,7 @@ The simplest pattern: each client gets a coroutine.
 
 [source,cpp]
 ----
-capy::task<void> accept_loop(
-    corosio::io_context& ioc,
-    corosio::tcp_acceptor& acc)
-{
-    for (;;)
-    {
-        corosio::tcp_socket peer(ioc);
-        auto [ec] = co_await acc.accept(peer);
-        if (ec) break;
-
-        // Spawn independent coroutine for this client
-        capy::run_async(ioc.get_executor())(
-            handle_client(std::move(peer)));
-    }
-}
+include::example$snippets/4b_concurrent_programming.cpp[tag=accept_loop]
 ----
 
 Each `handle_client` coroutine runs independently. The accept loop continues
@@ -515,22 +453,9 @@ For bounded resource usage, use a fixed pool of workers:
 
 [source,cpp]
 ----
-struct worker
-{
-    corosio::tcp_socket sock;
-    std::string buf;
-    bool in_use = false;
+include::example$snippets/4b_concurrent_programming.cpp[tag=worker_pool]
 
-    explicit worker(corosio::io_context& ioc) : sock(ioc) {}
-};
-
-// Preallocate workers
-std::vector<worker> workers;
-workers.reserve(max_workers);
-for (int i = 0; i < max_workers; ++i)
-    workers.emplace_back(ioc);
-
-// Assign connections to free workers
+include::example$snippets/4b_concurrent_programming.cpp[tag=worker_pool_use,indent=0]
 ----
 
 Corosio's `tcp_server` class implements this pattern—see
@@ -542,12 +467,7 @@ For multi-stage processing, chain coroutines:
 
 [source,cpp]
 ----
-capy::task<void> pipeline(corosio::tcp_socket sock)
-{
-    auto message = co_await read_message(sock);
-    auto result = co_await process(message);
-    co_await write_response(sock, result);
-}
+include::example$snippets/4b_concurrent_programming.cpp[tag=pipeline]
 ----
 
 Each stage suspends independently, allowing other coroutines to run.
@@ -560,17 +480,7 @@ Never block inside a coroutine:
 
 [source,cpp]
 ----
-// WRONG: blocks the entire io_context
-capy::task<void> bad()
-{
-    std::this_thread::sleep_for(1s);  // Don't do this!
-}
-
-// RIGHT: suspend with an async delay
-capy::task<void> good()
-{
-    co_await corosio::delay(1s);
-}
+include::example$snippets/4b_concurrent_programming.cpp[tag=blocking]
 ----
 
 Blocking calls (sleep, mutex lock, synchronous I/O) prevent other coroutines
@@ -582,17 +492,7 @@ Spawned coroutines must not hold references to destroyed objects:
 
 [source,cpp]
 ----
-// WRONG: socket destroyed while coroutine runs
-{
-    corosio::tcp_socket sock(ioc);
-    capy::run_async(ex)(use_socket(sock));  // Takes reference!
-}  // sock destroyed here, coroutine still running
-
-// RIGHT: move socket into coroutine
-{
-    corosio::tcp_socket sock(ioc);
-    capy::run_async(ex)(use_socket(std::move(sock)));
-}  // OK, coroutine owns the socket
+include::example$snippets/4b_concurrent_programming.cpp[tag=dangling_reference,indent=0]
 ----
 
 A coroutine may outlive the scope that spawned it. Ensure captured data lives
@@ -604,11 +504,7 @@ Don't access an object from a coroutine with different executor affinity:
 
 [source,cpp]
 ----
-// Dangerous: socket created on ctx1, used from ex2
-corosio::tcp_socket sock(ctx1);
-capy::run_async(ex2)([&sock, ep]() -> capy::task<void> {
-    co_await sock.connect(ep);  // Wrong executor!
-});
+include::example$snippets/4b_concurrent_programming.cpp[tag=cross_executor,indent=0]
 ----
 
 Keep I/O objects with the coroutines that use them.

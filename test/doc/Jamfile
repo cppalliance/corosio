@@ -1,0 +1,43 @@
+#
+# Copyright (c) 2026 Steve Gerbino
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio
+#
+
+import testing ;
+
+project boost/corosio/test/doc
+    : requirements
+      <library>/boost/corosio//boost_corosio
+      <include>../..
+      <target-os>windows:<define>_WIN32_WINNT=0x0602
+      <warnings>extra
+      <warnings-as-errors>on
+      # GCC mis-analyzes the structured-binding-from-co_await idiom in
+      # coroutine frames; see test/unit/Jamfile.
+      <toolset>gcc:<cxxflags>-Wno-maybe-uninitialized
+    ;
+
+run [ glob snippets/*.cpp ]
+    ../../../capy/extra/test_suite/test_main.cpp
+    ../../../capy/extra/test_suite/test_suite.cpp
+    : : : <include>../../../capy/extra/test_suite
+    : boost_corosio_doc_tests ;
+
+# Bug-demo programs are compiled but never run.
+local compile-only = 4k_tcp_server_echo index_page_connect quick_start_echo ;
+
+for local f in [ glob programs/*.cpp ]
+{
+    if $(f:B) in $(compile-only)
+    {
+        compile $(f) : : doc_$(f:B) ;
+    }
+    else
+    {
+        run $(f) : target-name doc_$(f:B) ;
+    }
+}

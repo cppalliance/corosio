@@ -27,6 +27,7 @@
 
 using namespace boost::corosio;
 
+// tag::must[]
 // Throw std::system_error if an operation reported a failure.
 static void
 must(std::error_code ec)
@@ -34,11 +35,13 @@ must(std::error_code ec)
     if (ec)
         throw std::system_error(ec);
 }
+// end::must[]
 
 //
 // HTTPS Client Context
 //
 
+// tag::https_client[]
 // Basic HTTPS client that trusts system CAs
 tls_context make_https_client()
 {
@@ -50,8 +53,12 @@ tls_context make_https_client()
     // Verify the server certificate
     must(ctx.set_verify_mode( tls_verify_mode::peer ));
 
+    // Modern TLS only
+    must(ctx.set_min_protocol_version( tls_version::tls_1_2 ));
+
     return ctx;
 }
+// end::https_client[]
 
 // HTTPS client with pinned CA (don't trust system store)
 tls_context make_pinned_ca_client( std::string_view ca_pem )
@@ -84,6 +91,7 @@ tls_context make_http2_client()
 // TLS Server Context
 //
 
+// tag::basic_server[]
 // Basic TLS server (no client verification)
 tls_context make_basic_server()
 {
@@ -98,6 +106,7 @@ tls_context make_basic_server()
 
     return ctx;
 }
+// end::basic_server[]
 
 // mTLS server (requires client certificates)
 tls_context make_mtls_server()
@@ -157,6 +166,7 @@ tls_context make_server_encrypted_key()
 // mTLS Client Context
 //
 
+// tag::mtls_client[]
 // Client with client certificate for mTLS
 tls_context make_mtls_client()
 {
@@ -172,6 +182,7 @@ tls_context make_mtls_client()
 
     return ctx;
 }
+// end::mtls_client[]
 
 //
 // Protocol Version Configuration

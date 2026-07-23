@@ -17,8 +17,7 @@ explains how to use buffers effectively.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/capy/buffers.hpp>
-namespace capy = boost::capy;
+include::example$snippets/4n_buffers.cpp[tag=assume]
 ----
 ====
 
@@ -30,8 +29,7 @@ A writable region of memory:
 
 [source,cpp]
 ----
-char data[1024];
-capy::mutable_buffer buf(data, sizeof(data));
+include::example$snippets/4n_buffers.cpp[tag=mutable_buffer,indent=0]
 ----
 
 === const_buffer
@@ -40,8 +38,7 @@ A read-only region of memory:
 
 [source,cpp]
 ----
-std::string msg = "Hello";
-capy::const_buffer buf(msg.data(), msg.size());
+include::example$snippets/4n_buffers.cpp[tag=const_buffer,indent=0]
 ----
 
 == Creating Buffers
@@ -50,32 +47,21 @@ capy::const_buffer buf(msg.data(), msg.size());
 
 [source,cpp]
 ----
-char data[1024];
-capy::mutable_buffer mbuf(data, sizeof(data));
-
-const char* str = "Hello";
-capy::const_buffer cbuf(str, 5);
+include::example$snippets/4n_buffers.cpp[tag=from_raw_arrays,indent=0]
 ----
 
 === From std::string
 
 [source,cpp]
 ----
-std::string s = "Hello, World!";
-
-// Writable (be careful with string invalidation)
-capy::mutable_buffer mbuf(s.data(), s.size());
-
-// Read-only
-capy::const_buffer cbuf(s.data(), s.size());
+include::example$snippets/4n_buffers.cpp[tag=from_string,indent=0]
 ----
 
 === From std::vector
 
 [source,cpp]
 ----
-std::vector<char> vec(1024);
-capy::mutable_buffer buf(vec.data(), vec.size());
+include::example$snippets/4n_buffers.cpp[tag=from_vector,indent=0]
 ----
 
 == Buffer Sequences
@@ -88,8 +74,7 @@ A single buffer is a valid buffer sequence:
 
 [source,cpp]
 ----
-capy::mutable_buffer buf(data, size);
-co_await sock.read_some(buf);  // Works directly
+include::example$snippets/4n_buffers.cpp[tag=single_buffer,indent=0]
 ----
 
 === Multiple Buffers
@@ -98,18 +83,7 @@ Use arrays or vectors of buffers:
 
 [source,cpp]
 ----
-// Array of buffers
-std::array<capy::mutable_buffer, 2> bufs = {
-    capy::mutable_buffer(header, header_size),
-    capy::mutable_buffer(body, body_size)
-};
-co_await sock.read_some(bufs);
-
-// Vector of buffers
-std::vector<capy::const_buffer> send_bufs;
-send_bufs.push_back(capy::const_buffer(header.data(), header.size()));
-send_bufs.push_back(capy::const_buffer(body.data(), body.size()));
-co_await sock.write_some(send_bufs);
+include::example$snippets/4n_buffers.cpp[tag=multi_buffer,indent=0]
 ----
 
 == Buffer Sequence Concepts
@@ -118,13 +92,7 @@ Corosio uses concepts from Capy:
 
 [source,cpp]
 ----
-// Readable buffers (for writing to sockets)
-template<capy::ConstBufferSequence ConstBufferSequence>
-auto write_some(ConstBufferSequence const& buffers);
-
-// Writable buffers (for reading from sockets)
-template<capy::MutableBufferSequence MutableBufferSequence>
-auto read_some(MutableBufferSequence const& buffers);
+include::example$snippets/4n_buffers.cpp[tag=sequence_concepts]
 ----
 
 A type satisfies these concepts if it's iterable and yields buffer types.
@@ -135,36 +103,39 @@ Get the total size of a buffer sequence:
 
 [source,cpp]
 ----
-std::array<capy::mutable_buffer, 2> bufs = {...};
-std::size_t total = capy::buffer_size(bufs);
+include::example$snippets/4n_buffers.cpp[tag=buffer_size,indent=0]
 ----
 
 == buffer_slice
 
-`capy::buffer_slice` returns a view over a byte range of a buffer sequence.
-It exposes the bytes not yet transferred via `data()` and advances past
-completed bytes with `remove_prefix(n)`:
+`capy::buffer_slice` returns a byte sub-range of a buffer sequence, as a
+value. The result is itself a buffer sequence, so it can be passed directly
+to any I/O operation:
 
 [source,cpp]
 ----
-#include <boost/capy/buffers/buffer_slice.hpp>
+include::example$snippets/4n_buffers.cpp[tag=buffer_slice_include]
+include::example$snippets/4n_buffers.cpp[tag=buffer_slice,indent=0]
+----
 
-std::array<capy::mutable_buffer, 2> bufs = {
-    capy::mutable_buffer(header, 16),
-    capy::mutable_buffer(body, 1024)
-};
+Except for the single-buffer case, the result borrows the underlying
+sequence, which must outlive the slice.
 
-auto slice = capy::buffer_slice(bufs);
+== consuming_buffers
 
-// After reading 20 bytes:
-auto [ec, n] = co_await sock.read_some(slice.data());
-slice.remove_prefix(n);  // Advance past the bytes read
+When transferring data incrementally, `capy::consuming_buffers` is a cursor
+that tracks progress through a sequence. It exposes the bytes not yet
+transferred via `data()` and advances past completed bytes with
+`consume(n)`:
 
-// slice.data() now represents the remaining unread portion
+[source,cpp]
+----
+include::example$snippets/4n_buffers.cpp[tag=consuming_buffers_include]
+include::example$snippets/4n_buffers.cpp[tag=consuming_buffers,indent=0]
 ----
 
 This is used internally by `read()` and `write()` but can be used directly.
-The underlying sequence must outlive the slice and any sequence obtained from
+The underlying sequence must outlive the cursor and any view obtained from
 its `data()`.
 
 == buffer_param
@@ -173,18 +144,9 @@ The `buffer_param` class type-erases buffer sequences:
 
 [source,cpp]
 ----
-#include <boost/corosio/detail/buffer_param.hpp>
-
-void accept_any_buffer(corosio::buffer_param buffers)
-{
-    capy::mutable_buffer temp[8];
-    std::size_t n = buffers.copy_to(temp, 8);
-    // Use temp[0..n-1]
-}
-
-// Works with any buffer sequence (implicit conversion)
-std::array<capy::mutable_buffer, 2> bufs = {...};
-accept_any_buffer(bufs);
+include::example$snippets/4n_buffers.cpp[tag=buffer_param_include]
+include::example$snippets/4n_buffers.cpp[tag=buffer_param]
+include::example$snippets/4n_buffers.cpp[tag=buffer_param_call,indent=0]
 ----
 
 This enables non-templated code to work with any buffer type.
@@ -198,25 +160,7 @@ operation:
 
 [source,cpp]
 ----
-// WRONG: buffer outlives string
-capy::task<void> bad_example(corosio::tcp_socket& sock)
-{
-    capy::const_buffer buf;
-    {
-        std::string temp = "Hello";
-        buf = capy::const_buffer(temp.data(), temp.size());
-    }  // temp destroyed here!
-
-    co_await sock.write_some(buf);  // Undefined behavior
-}
-
-// CORRECT: keep storage alive
-capy::task<void> good_example(corosio::tcp_socket& sock)
-{
-    std::string msg = "Hello";
-    co_await sock.write_some(
-        capy::const_buffer(msg.data(), msg.size()));
-}
+include::example$snippets/4n_buffers.cpp[tag=lifetime]
 ----
 
 === String Invalidation
@@ -225,12 +169,7 @@ Be careful when using `std::string` as buffer storage:
 
 [source,cpp]
 ----
-std::string s = "Hello";
-capy::mutable_buffer buf(s.data(), s.size());
-
-s += " World";  // May reallocate, invalidating buf!
-
-// Use buf here: UNDEFINED BEHAVIOR
+include::example$snippets/4n_buffers.cpp[tag=string_invalidation,indent=0]
 ----
 
 Either:
@@ -247,55 +186,21 @@ Multiple buffers can be used for efficient scatter/gather operations:
 
 [source,cpp]
 ----
-struct message_header { ... };
-char body[1024];
-
-std::array<capy::mutable_buffer, 2> read_bufs = {
-    capy::mutable_buffer(&header, sizeof(header)),
-    capy::mutable_buffer(body, sizeof(body))
-};
-
-auto [ec, n] = co_await sock.read_some(read_bufs);
-// Data fills header first, then body
+include::example$snippets/4n_buffers.cpp[tag=scatter_read,indent=0]
 ----
 
 === Writing from Multiple Buffers (Gather)
 
 [source,cpp]
 ----
-std::string header = "HTTP/1.1 200 OK\r\n\r\n";
-std::string body = "Hello, World!";
-
-std::array<capy::const_buffer, 2> write_bufs = {
-    capy::const_buffer(header.data(), header.size()),
-    capy::const_buffer(body.data(), body.size())
-};
-
-auto [ec, n] = co_await sock.write_some(write_bufs);
-// Sends header followed by body in a single operation
+include::example$snippets/4n_buffers.cpp[tag=gather_write,indent=0]
 ----
 
 == Example: Reading a Fixed-Size Header
 
 [source,cpp]
 ----
-struct packet_header
-{
-    std::uint32_t magic;
-    std::uint32_t length;
-};
-
-capy::task<packet_header> read_header(corosio::io_stream& stream)
-{
-    packet_header header;
-    auto [ec, n] = co_await capy::read(
-        stream, capy::mutable_buffer(&header, sizeof(header)));
-
-    if (ec)
-        throw std::system_error(ec);
-
-    return header;
-}
+include::example$snippets/4n_buffers.cpp[tag=read_header]
 ----
 
 == Next Steps

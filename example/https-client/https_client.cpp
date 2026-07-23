@@ -8,7 +8,9 @@
 //
 
 #include <boost/corosio.hpp>
+// tag::tls_include[]
 #include <boost/corosio/wolfssl_stream.hpp>
+// end::tls_include[]
 #include <system_error>
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -25,18 +27,23 @@
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
 
+std::string build_request(std::string_view host)
+{
+    return "GET / HTTP/1.1\r\n"
+           "Host: " + std::string(host) + "\r\n"
+           "Connection: close\r\n"
+           "\r\n";
+}
+
+// tag::tls_client[]
 // Coroutine that performs the HTTPS GET request
 capy::task<void>
 do_request(
     corosio::tls_stream& stream,
     std::string_view host)
 {
-    // Build and send the HTTP request
-    std::string request =
-        "GET / HTTP/1.1\r\n"
-        "Host: " + std::string(host) + "\r\n"
-        "Connection: close\r\n"
-        "\r\n";
+    // Build and send the request
+    std::string request = build_request(host);
     if (auto [ec, n] = co_await capy::write(
             stream, capy::const_buffer(request.data(), request.size())); ec)
         throw std::system_error(ec);
@@ -83,19 +90,22 @@ run_client(
     if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer); ec)
         throw std::system_error(ec);
 
-    // Wrap socket in TLS stream
+    // tag::tls_wrap[]
+    // Wrap the connected socket without taking ownership (pointer form)
     corosio::wolfssl_stream secure(&s, ctx);
     secure.set_hostname(hostname);
 
     // Perform TLS handshake
     if (auto [ec] = co_await secure.handshake(corosio::tls_role::client); ec)
         throw std::system_error(ec);
+    // end::tls_wrap[]
 
     co_await do_request(secure, hostname);
 
-    if( auto [ec] = co_await secure.shutdown(); ec)
+    if (auto [ec] = co_await secure.shutdown(); ec)
         throw std::system_error(ec);
 }
+// end::tls_client[]
 
 int
 main(int argc, char* argv[])

@@ -19,20 +19,7 @@ for graceful shutdown.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/delay.hpp>
-#include <boost/corosio/endpoint.hpp>
-#include <boost/corosio/io_context.hpp>
-#include <boost/corosio/tcp_socket.hpp>
-#include <boost/capy/buffers.hpp>
-#include <boost/capy/cond.hpp>
-#include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/task.hpp>
-
-#include <stop_token>
-#include <thread>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+include::example$reconnect/reconnect.cpp[tag=assume]
 ----
 ====
 
@@ -64,37 +51,7 @@ configured maximum:
 
 [source,cpp]
 ----
-struct exponential_backoff
-{
-    using duration = std::chrono::milliseconds;
-
-private:
-    duration initial_;
-    duration delay_;
-    duration max_;
-
-public:
-    exponential_backoff(duration initial, duration max) noexcept
-        : initial_(initial)
-        , delay_(initial)
-        , max_(max)
-    {
-    }
-
-    /// Return the current delay and advance to the next.
-    duration next() noexcept
-    {
-        auto current = (std::min)(delay_, max_);
-        delay_       = (std::min)(delay_ * 2, max_);
-        return current;
-    }
-
-    /// Restart the sequence from the initial delay.
-    void reset() noexcept
-    {
-        delay_ = initial_;
-    }
-};
+include::example$reconnect/reconnect.cpp[tag=backoff]
 ----
 
 With an initial delay of 500ms and a 30s cap, calling `next()` produces:
@@ -110,20 +67,7 @@ Once connected, the client reads data until the peer disconnects:
 
 [source,cpp]
 ----
-capy::task<>
-do_session(corosio::tcp_socket& sock)
-{
-    char buf[4096];
-    for (;;)
-    {
-        auto [ec, n] =
-            co_await sock.read_some(capy::mutable_buffer(buf, sizeof buf));
-        if (ec)
-            break;
-        std::cout.write(buf, static_cast<std::streamsize>(n));
-        std::cout.flush();
-    }
-}
+include::example$reconnect/reconnect.cpp[tag=session]
 ----
 
 This is the same read loop you would find in any echo client. The interesting
@@ -136,58 +80,7 @@ backoff policy for the next delay, calls `delay()`, and tries again:
 
 [source,cpp]
 ----
-capy::task<>
-connect_with_backoff(
-    corosio::io_context& ioc,
-    corosio::endpoint ep,
-    exponential_backoff backoff,
-    int max_attempts)
-{
-    corosio::tcp_socket sock(ioc);
-    int attempt = 0;
-
-    for (;;)
-    {
-        ++attempt;
-
-        auto [ec] = co_await sock.connect(ep);
-        if (!ec)
-        {
-            std::cout << "Connected on attempt " << attempt << std::endl;
-            co_await do_session(sock);
-
-            // Peer disconnected, restart the retry sequence
-            sock.close();
-            backoff.reset();
-            attempt = 0;
-            std::cout << "Disconnected, reconnecting..." << std::endl;
-            continue;
-        }
-
-        sock.close();
-
-        std::cout << "Attempt " << attempt << " failed: " << ec.message()
-                  << std::endl;
-
-        if (max_attempts > 0 && attempt >= max_attempts)
-        {
-            std::cout << "Giving up after " << attempt << " attempts"
-                      << std::endl;
-            co_return;
-        }
-
-        auto wait_for = backoff.next();
-
-        std::cout << "Retrying in " << wait_for.count() << "ms" << std::endl;
-
-        auto [delay_ec] = co_await corosio::delay(wait_for);
-        if (delay_ec == capy::cond::canceled)
-        {
-            std::cout << "Retry cancelled" << std::endl;
-            co_return;
-        }
-    }
-}
+include::example$reconnect/reconnect.cpp[tag=reconnect_loop]
 ----
 
 There are two exit conditions:
@@ -212,13 +105,7 @@ use a stop token:
 
 [source,cpp]
 ----
-std::stop_source stop_src;
-
-capy::run_async(ioc.get_executor(), stop_src.get_token())(
-    connect_with_backoff(ioc, ep, backoff, 10));
-
-// Later, from any thread:
-stop_src.request_stop();
+include::example$snippets/3f_reconnect.cpp[tag=stop_token_shutdown,indent=0]
 ----
 
 When the stop source is signaled:
@@ -264,54 +151,7 @@ executes the coroutine's own cleanup code.
 
 [source,cpp]
 ----
-int
-main(int argc, char* argv[])
-{
-    if (argc != 3)
-    {
-        std::cerr << "Usage: reconnect <ip-address> <port>\n";
-        return EXIT_FAILURE;
-    }
-
-    corosio::ipv4_address addr;
-    if (auto ec = corosio::parse_ipv4_address(argv[1], addr); ec)
-    {
-        std::cerr << "Invalid IP address: " << argv[1] << "\n";
-        return EXIT_FAILURE;
-    }
-
-    auto port = static_cast<std::uint16_t>(std::atoi(argv[2]));
-
-    corosio::io_context ioc;
-
-    using namespace std::chrono_literals;
-    exponential_backoff backoff(500ms, 30s);
-
-    // The stop_source lets us cancel the coroutine gracefully from any
-    // thread. When signaled, pending delay and connect operations return
-    // cond::canceled, the coroutine's own loop breaks, and it unwinds
-    // through normal control flow.
-    //
-    // Contrast with io_context::stop(), which yanks the event loop out
-    // from under suspended coroutines without giving them a chance to
-    // observe cancellation. stop() is safe (pending operations are
-    // cleaned up during destruction), but coroutine-internal cleanup
-    // logic is bypassed.
-    std::stop_source stop_src;
-
-    capy::run_async(ioc.get_executor(), stop_src.get_token())(
-        connect_with_backoff(ioc, corosio::endpoint(addr, port), backoff, 10));
-
-    // Run the event loop on a background thread so main
-    // can signal cancellation after a timeout.
-    std::thread worker([&ioc] { ioc.run(); });
-
-    std::this_thread::sleep_for(5s);
-    stop_src.request_stop();
-    worker.join();
-
-    return EXIT_SUCCESS;
-}
+include::example$reconnect/reconnect.cpp[tag=main]
 ----
 
 The event loop runs on a background thread. After five seconds the main

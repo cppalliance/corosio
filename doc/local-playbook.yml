@@ -19,6 +19,7 @@ ui:
 
 antora:
   extensions:
+    - require: '@antora/collector-extension'
     - require: '@cppalliance/antora-cpp-tagfiles-extension'
       cpp-tagfiles:
         using-namespaces:

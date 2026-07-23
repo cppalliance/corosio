@@ -7,17 +7,22 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+// tag::assume[]
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/write.hpp>
 
+// end::assume[]
 #include <cstdlib>
 #include <iostream>
 
+// tag::assume[]
 namespace corosio = boost::corosio;
 namespace capy = boost::capy;
+// end::assume[]
 
+// tag::worker_class[]
 class echo_worker : public corosio::tcp_server::worker_base
 {
     corosio::io_context& ctx_;
@@ -41,24 +46,30 @@ public:
         launch(ctx_.get_executor(), do_session());
     }
 
-    capy::task<> do_session()
-    {
-        for (;;)
-        {
-            auto [ec, n] = co_await sock_.read_some(
-                capy::mutable_buffer(buf_, sizeof buf_));
-
-            auto [wec, wn] = co_await capy::write(
-                sock_, capy::const_buffer(buf_, n));
-
-            if (wec || ec)
-                break;
-        }
-
-        sock_.close();
-    }
+    capy::task<> do_session();
 };
+// end::worker_class[]
 
+// tag::session[]
+capy::task<> echo_worker::do_session()
+{
+    for (;;)
+    {
+        auto [ec, n] = co_await sock_.read_some(
+            capy::mutable_buffer(buf_, sizeof buf_));
+
+        auto [wec, wn] = co_await capy::write(
+            sock_, capy::const_buffer(buf_, n));
+
+        if (wec || ec)
+            break;
+    }
+
+    sock_.close();
+}
+// end::session[]
+
+// tag::server[]
 inline auto
 make_echo_workers(corosio::io_context& ctx, int n)
 {
@@ -78,7 +89,9 @@ public:
         set_workers(make_echo_workers(ctx, max_workers));
     }
 };
+// end::server[]
 
+// tag::main[]
 int main(int argc, char* argv[])
 {
     if (argc != 3)
@@ -132,3 +145,4 @@ int main(int argc, char* argv[])
 
     return EXIT_SUCCESS;
 }
+// end::main[]

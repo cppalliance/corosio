@@ -20,25 +20,18 @@ enabled in multi-threaded mode.
 
 [source,cpp]
 ----
-#include <boost/corosio/io_context.hpp>
+include::example$snippets/4c2_configuration.cpp[tag=options_basic_include]
 
-corosio::io_context_options opts;
-opts.max_events_per_poll = 256;
-opts.inline_budget_max   = 32;
-
-corosio::io_context ioc(opts);
+include::example$snippets/4c2_configuration.cpp[tag=options_basic,indent=0]
 ----
 
 Both `io_context` and `native_io_context` accept options:
 
 [source,cpp]
 ----
-#include <boost/corosio/native/native_io_context.hpp>
+include::example$snippets/4c2_configuration.cpp[tag=options_native_include]
 
-corosio::io_context_options opts;
-opts.max_events_per_poll = 512;
-
-corosio::native_io_context<corosio::epoll> ioc(opts);
+include::example$snippets/4c2_configuration.cpp[tag=options_native,indent=0]
 ----
 
 == Available Options
@@ -174,11 +167,7 @@ independently of the `concurrency_hint` (see
 
 [source,cpp]
 ----
-corosio::io_context_options opts;
-opts.locking = corosio::locking_mode::unsafe;
-
-corosio::io_context ioc(opts);
-ioc.run();  // only one thread may call this
+include::example$snippets/4c2_configuration.cpp[tag=locking_unsafe,indent=0]
 ----
 
 WARNING: The `unsafe` and `unsafe_io` tiers impose hard restrictions.

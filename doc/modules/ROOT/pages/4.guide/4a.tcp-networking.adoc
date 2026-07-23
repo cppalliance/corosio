@@ -620,14 +620,7 @@ Corosio provides the `resolver` class for asynchronous DNS lookups:
 
 [source,cpp]
 ----
-corosio::resolver r(ioc);
-auto [ec, results] = co_await r.resolve("www.example.com", "https");
-
-for (auto const& entry : results)
-{
-    auto ep = entry.get_endpoint();
-    // Try connecting to ep...
-}
+include::example$snippets/4a_tcp_networking.cpp[tag=resolver_lookup,indent=0]
 ----
 
 == Practical Considerations
@@ -680,7 +673,7 @@ Corosio exposes this through `socket_option::no_delay`, set via
 
 [source,cpp]
 ----
-sock.set_option(corosio::socket_option::no_delay(true));
+include::example$snippets/4a_tcp_networking.cpp[tag=no_delay,indent=0]
 ----
 
 === SO_REUSEADDR
@@ -728,11 +721,7 @@ exact amounts:
 
 [source,cpp]
 ----
-// Wrong: might read less than buffer size
-auto [ec, n] = co_await sock.read_some(buf);
-
-// Right: reads until buffer is full or EOF
-auto [ec, n] = co_await capy::read(sock, buf);
+include::example$snippets/4a_tcp_networking.cpp[tag=read_partial,indent=0]
 ----
 
 === Connection Refused

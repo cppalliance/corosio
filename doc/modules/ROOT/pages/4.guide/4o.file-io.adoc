@@ -19,9 +19,7 @@ platforms and use native overlapped I/O on Windows.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/stream_file.hpp>
-#include <boost/corosio/random_access_file.hpp>
-namespace corosio = boost::corosio;
+include::example$snippets/4o_file_io.cpp[tag=assume]
 ----
 ====
 
@@ -35,30 +33,14 @@ so it works with any algorithm that accepts an `io_stream&`.
 
 [source,cpp]
 ----
-corosio::stream_file f(ioc);
-f.open("data.bin", corosio::file_base::read_only);
-
-char buf[4096];
-auto [ec, n] = co_await f.read_some(
-    capy::mutable_buffer(buf, sizeof(buf)));
-
-if (ec == capy::cond::eof)
-    // reached end of file
+include::example$snippets/4o_file_io.cpp[tag=stream_read,indent=0]
 ----
 
 === Writing a File
 
 [source,cpp]
 ----
-corosio::stream_file f(ioc);
-f.open("output.bin",
-    corosio::file_base::write_only
-    | corosio::file_base::create
-    | corosio::file_base::truncate);
-
-std::string data = "hello world";
-auto [ec, n] = co_await f.write_some(
-    capy::const_buffer(data.data(), data.size()));
+include::example$snippets/4o_file_io.cpp[tag=stream_write,indent=0]
 ----
 
 === Seeking
@@ -67,9 +49,7 @@ The file position can be moved with `seek()`:
 
 [source,cpp]
 ----
-f.seek(0, corosio::file_base::seek_set);    // beginning
-f.seek(100, corosio::file_base::seek_cur);  // forward 100 bytes
-f.seek(-10, corosio::file_base::seek_end);  // 10 bytes before end
+include::example$snippets/4o_file_io.cpp[tag=seek,indent=0]
 ----
 
 == Random Access File
@@ -83,24 +63,14 @@ regions of a file.
 
 [source,cpp]
 ----
-corosio::random_access_file f(ioc);
-f.open("data.bin", corosio::file_base::read_only);
-
-char buf[256];
-auto [ec, n] = co_await f.read_some_at(
-    1024,  // byte offset
-    capy::mutable_buffer(buf, sizeof(buf)));
+include::example$snippets/4o_file_io.cpp[tag=read_at,indent=0]
 ----
 
 === Writing at an Offset
 
 [source,cpp]
 ----
-corosio::random_access_file f(ioc);
-f.open("data.bin", corosio::file_base::read_write);
-
-auto [ec, n] = co_await f.write_some_at(
-    512, capy::const_buffer("patched", 7));
+include::example$snippets/4o_file_io.cpp[tag=write_at,indent=0]
 ----
 
 == Open Flags
@@ -125,10 +95,7 @@ Flags are combined with `|`:
 
 [source,cpp]
 ----
-f.open("log.txt",
-    corosio::file_base::write_only
-    | corosio::file_base::create
-    | corosio::file_base::append);
+include::example$snippets/4o_file_io.cpp[tag=open_flags,indent=0]
 ----
 
 == File Metadata
@@ -137,28 +104,37 @@ Both file types provide synchronous metadata operations:
 
 [source,cpp]
 ----
-auto bytes = f.size();       // file size in bytes
-f.resize(1024);              // truncate or extend
-f.sync_data();               // flush data to stable storage
-f.sync_all();                // flush data and metadata
+include::example$snippets/4o_file_io.cpp[tag=metadata,indent=0]
 ----
 
 `stream_file` additionally provides `seek()` for repositioning.
 
 == Native Handle Access
 
-Both file types support adopting and releasing native handles:
+Both file types support releasing and adopting native handles.
+`release()` transfers ownership out of the file object; the caller
+becomes responsible for closing the handle:
 
 [source,cpp]
 ----
-// Release ownership — caller must close the handle
-auto handle = f.release();
-assert(!f.is_open());
-
-// Adopt an existing handle — file takes ownership
-corosio::random_access_file f2(ioc);
-f2.assign(handle);
+include::example$snippets/4o_file_io.cpp[tag=native_release,indent=0]
 ----
+
+`assign()` adopts a handle obtained from the platform's file API, such
+as `open()` or `CreateFile`:
+
+[source,cpp]
+----
+include::example$snippets/4o_file_io.cpp[tag=native_adopt,indent=0]
+----
+
+[NOTE]
+====
+On Windows, `assign` requires a handle that has never been associated
+with an I/O completion port. A handle released from another Corosio
+file object is already associated and cannot be re-adopted there; on
+POSIX platforms no such restriction exists.
+====
 
 == Error Handling
 
@@ -167,15 +143,7 @@ end-of-file return `capy::cond::eof`:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await f.read_some(buf);
-if (ec == capy::cond::eof)
-{
-    // no more data
-}
-else if (ec)
-{
-    // I/O error
-}
+include::example$snippets/4o_file_io.cpp[tag=error_handling,indent=0]
 ----
 
 Opening a nonexistent file with `read_only` throws `std::system_error`.

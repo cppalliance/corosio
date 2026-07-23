@@ -18,13 +18,7 @@ pattern.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/tcp_server.hpp>
-#include <boost/capy/task.hpp>
-#include <boost/capy/buffers.hpp>
-#include <boost/capy/write.hpp>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+include::example$echo-server/echo_server.cpp[tag=assume]
 ----
 ====
 
@@ -51,37 +45,11 @@ This avoids allocation during operation and limits resource usage.
 
 == Worker Implementation
 
-Workers derive from `worker_base` and implement two methods:
+Workers derive from `tcp_server::worker_base` and implement two methods:
 
 [source,cpp]
 ----
-class echo_server : public corosio::tcp_server
-{
-    class worker : public worker_base
-    {
-        corosio::io_context& ctx_;
-        corosio::tcp_socket sock_;
-        char buf_[4096];
-
-    public:
-        explicit worker(corosio::io_context& ctx)
-            : ctx_(ctx)
-            , sock_(ctx)
-        {
-        }
-
-        corosio::tcp_socket& socket() override
-        {
-            return sock_;
-        }
-
-        void run(launcher launch) override
-        {
-            launch(ctx_.get_executor(), do_session());
-        }
-
-        capy::task<> do_session();
-    };
+include::example$echo-server/echo_server.cpp[tag=worker_class]
 ----
 
 Each worker:
@@ -97,22 +65,7 @@ The session coroutine handles one connection:
 
 [source,cpp]
 ----
-capy::task<> echo_server::worker::do_session()
-{
-    for (;;)
-    {
-        auto [ec, n] = co_await sock_.read_some(
-            capy::mutable_buffer(buf_, sizeof buf_));
-
-        auto [wec, wn] = co_await capy::write(
-            sock_, capy::const_buffer(buf_, n));
-
-        if (wec || ec)
-            break;
-    }
-
-    sock_.close();
-}
+include::example$echo-server/echo_server.cpp[tag=session]
 ----
 
 Notice:
@@ -130,23 +83,7 @@ A helper builds the worker pool, then the constructor hands it to
 
 [source,cpp]
 ----
-    static std::vector<std::unique_ptr<worker_base>>
-    make_workers(corosio::io_context& ctx, int n)
-    {
-        std::vector<std::unique_ptr<worker_base>> v;
-        v.reserve(n);
-        for (int i = 0; i < n; ++i)
-            v.push_back(std::make_unique<worker>(ctx));
-        return v;
-    }
-
-public:
-    echo_server(corosio::io_context& ctx, int max_workers)
-        : tcp_server(ctx, ctx.get_executor())
-    {
-        set_workers(make_workers(ctx, max_workers));
-    }
-};
+include::example$echo-server/echo_server.cpp[tag=server]
 ----
 
 Workers are owned polymorphically through `std::unique_ptr<worker_base>`, so
@@ -156,34 +93,7 @@ Workers are owned polymorphically through `std::unique_ptr<worker_base>`, so
 
 [source,cpp]
 ----
-int main(int argc, char* argv[])
-{
-    if (argc != 3)
-    {
-        std::cerr << "Usage: echo_server <port> <max-workers>\n";
-        return 1;
-    }
-
-    auto port = static_cast<std::uint16_t>(std::atoi(argv[1]));
-    int max_workers = std::atoi(argv[2]);
-
-    corosio::io_context ioc;
-
-    echo_server server(ioc, max_workers);
-
-    auto ec = server.bind(corosio::endpoint(port));
-    if (ec)
-    {
-        std::cerr << "Bind failed: " << ec.message() << "\n";
-        return 1;
-    }
-
-    std::cout << "Echo server listening on port " << port
-              << " with " << max_workers << " workers\n";
-
-    server.start();
-    ioc.run();
-}
+include::example$echo-server/echo_server.cpp[tag=main]
 ----
 
 == Key Design Decisions
@@ -208,11 +118,7 @@ The `capy::write()` free function ensures all data is sent:
 
 [source,cpp]
 ----
-// write_some: may write partial data
-auto [ec, n] = co_await sock.write_some(buf);  // n might be < buf.size()
-
-// write: writes all data or fails
-auto [ec, n] = co_await capy::write(sock, buf);  // n == buf.size() or error
+include::example$snippets/3a_echo_server.cpp[tag=composed_write,indent=0]
 ----
 
 For echo servers, we want complete message delivery.
@@ -224,22 +130,14 @@ with advance-then-check, we always act on `n` before inspecting `ec`:
 
 [source,cpp]
 ----
-auto [ec, n] = co_await sock.read_some(buf);
-auto [wec, wn] = co_await capy::write(sock, const_buffer(buf.data(), n));
-if (wec || ec)
-    break;  // Normal termination path
+include::example$snippets/3a_echo_server.cpp[tag=advance_then_check,indent=0]
 ----
 
 With exceptions, EOF would require a try-catch:
 
 [source,cpp]
 ----
-try {
-    auto [ec, n] = co_await sock.read_some(buf);
-    if (ec) throw std::system_error(ec);
-} catch (...) {
-    // EOF is an exception here
-}
+include::example$snippets/3a_echo_server.cpp[tag=exceptions_eof,indent=0]
 ----
 
 == Testing

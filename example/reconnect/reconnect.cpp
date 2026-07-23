@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+// tag::assume[]
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io_context.hpp>
@@ -16,14 +17,17 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+// end::assume[]
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+// tag::assume[]
 #include <stop_token>
 #include <thread>
 
 namespace corosio = boost::corosio;
 namespace capy    = boost::capy;
+// end::assume[]
 
 /** Exponential backoff delay sequence.
 
@@ -42,6 +46,7 @@ namespace capy    = boost::capy;
     co_await delay(backoff.next()); // 500ms
     @endcode
 */
+// tag::backoff[]
 struct exponential_backoff
 {
     using duration = std::chrono::milliseconds;
@@ -74,8 +79,10 @@ public:
         delay_ = initial_;
     }
 };
+// end::backoff[]
 
 /// Read from the socket until the peer disconnects.
+// tag::session[]
 capy::task<>
 do_session(corosio::tcp_socket& sock)
 {
@@ -90,6 +97,7 @@ do_session(corosio::tcp_socket& sock)
         std::cout.flush();
     }
 }
+// end::session[]
 
 /** Connect to an endpoint with exponential backoff.
 
@@ -111,6 +119,7 @@ do_session(corosio::tcp_socket& sock)
     @param max_attempts Maximum connection attempts before
         giving up. Zero means unlimited.
 */
+// tag::reconnect_loop[]
 capy::task<>
 connect_with_backoff(
     corosio::io_context& ioc,
@@ -163,7 +172,9 @@ connect_with_backoff(
         }
     }
 }
+// end::reconnect_loop[]
 
+// tag::main[]
 int
 main(int argc, char* argv[])
 {
@@ -223,3 +234,4 @@ main(int argc, char* argv[])
 
     return EXIT_SUCCESS;
 }
+// end::main[]

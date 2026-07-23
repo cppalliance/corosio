@@ -20,10 +20,7 @@ for byte-level deterministic tests of corosio I/O code.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/test/mocket.hpp>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+include::example$snippets/5a_mocket.cpp[tag=assume]
 ----
 ====
 
@@ -46,9 +43,7 @@ Mockets are created paired with a peer socket, connected via loopback:
 
 [source,cpp]
 ----
-corosio::io_context ioc;
-
-auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+include::example$snippets/5a_mocket.cpp[tag=creating,indent=0]
 ----
 
 `make_mocket_pair` returns `std::pair<basic_mocket<Socket>, Socket>`. The
@@ -62,13 +57,7 @@ Use `provide()` to stage bytes that the mocket itself will hand back from
 
 [source,cpp]
 ----
-m.provide("HTTP/1.1 200 OK\r\n\r\nHello");
-
-auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
-    char buf[64] = {};
-    auto [ec, n] = co_await m_ref.read_some(capy::make_buffer(buf));
-    // buf[0..n] == "HTTP/1.1 200 OK\r\n\r\nHello"
-};
+include::example$snippets/5a_mocket.cpp[tag=provide,indent=0]
 ----
 
 Multiple `provide()` calls append. Reads consume from the front of the
@@ -81,13 +70,7 @@ Use `expect()` to declare bytes that the code under test must write next:
 
 [source,cpp]
 ----
-m.expect("GET / HTTP/1.1\r\n\r\n");
-
-auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
-    auto [ec, n] = co_await m_ref.write_some(
-        capy::const_buffer("GET / HTTP/1.1\r\n\r\n", 18));
-    // ec is empty; n == 18
-};
+include::example$snippets/5a_mocket.cpp[tag=expect,indent=0]
 ----
 
 `write_some` matches the leading bytes of the buffer sequence against the
@@ -107,21 +90,7 @@ transfers:
 
 [source,cpp]
 ----
-// max_read_size = 4, max_write_size = 3 force short transfers.
-auto [m, peer] = corosio::test::make_mocket_pair(ioc, {}, 4, 3);
-
-m.provide("0123456789");
-m.expect("abcdef");
-
-auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
-    char buf[16] = {};
-    auto [rec, rn] = co_await m_ref.read_some(capy::make_buffer(buf));
-    // rn == 4 ("0123")
-
-    auto [wec, wn] = co_await m_ref.write_some(
-        capy::const_buffer("abcdef", 6));
-    // wn == 3 (matched "abc")
-};
+include::example$snippets/5a_mocket.cpp[tag=chunked,indent=0]
 ----
 
 A value of `0` for either size parameter throws `std::logic_error` from
@@ -134,12 +103,7 @@ buffers are empty:
 
 [source,cpp]
 ----
-auto ec = m.close();
-if (ec == capy::error::test_failure)
-{
-    // Either provide() data was never read,
-    // or expect() data was never written.
-}
+include::example$snippets/5a_mocket.cpp[tag=close_check,indent=0]
 ----
 
 Always call `close()` at the end of a test that uses `provide` / `expect`
@@ -159,14 +123,7 @@ etc.), name the specialization explicitly:
 
 [source,cpp]
 ----
-using socket_type   = corosio::native_tcp_socket<backend>;
-using acceptor_type = corosio::native_tcp_acceptor<backend>;
-using mocket_type   = corosio::test::basic_mocket<socket_type>;
-
-corosio::io_context ioc(backend);
-
-auto [m, peer] =
-    corosio::test::make_mocket_pair<socket_type, acceptor_type>(ioc);
+include::example$snippets/5a_mocket.cpp[tag=native,indent=0]
 ----
 
 == Underlying Socket Access
@@ -176,10 +133,7 @@ stack other streams (TLS, framing) on top of a mocket:
 
 [source,cpp]
 ----
-auto [m, peer] = corosio::test::make_mocket_pair(ioc);
-
-corosio::tcp_socket& under = m.socket();
-// Pass `under` into a TLS stream, a custom framing layer, etc.
+include::example$snippets/5a_mocket.cpp[tag=socket_access,indent=0]
 ----
 
 [IMPORTANT]

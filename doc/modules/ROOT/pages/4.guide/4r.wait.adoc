@@ -20,14 +20,7 @@ that data is available or that the descriptor is writable.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/timeout.hpp>
-#include <boost/corosio/wait_type.hpp>
-#include <boost/capy/cond.hpp>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
-using namespace std::chrono_literals;
+include::example$snippets/4r_wait.cpp[tag=assume]
 ----
 ====
 
@@ -37,7 +30,7 @@ Three directions are exposed via the `wait_type` enum:
 
 [source,cpp]
 ----
-enum class wait_type { read, write, error };
+include::example$snippets/4r_wait.cpp[tag=wait_type_enum,indent=0]
 ----
 
 The awaitable yields an `error_code` with no `bytes_transferred`. On
@@ -46,11 +39,7 @@ from it.
 
 [source,cpp]
 ----
-auto [ec] = co_await sock.wait(corosio::wait_type::read);
-if (!ec) {
-    // sock is readable: a subsequent read_some will return data
-    // without blocking.
-}
+include::example$snippets/4r_wait.cpp[tag=wait_read,indent=0]
 ----
 
 == Wrapping a Nonblocking C API
@@ -60,9 +49,10 @@ manage their own buffers on an `O_NONBLOCK` fd. They need a "tell me
 when the fd is ready" primitive that does not steal bytes from the
 stream.
 
-The typical pattern:
+The typical pattern (sketched against a hypothetical libpq
+integration):
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // pq is some PG connection holding a nonblocking socket fd.
 corosio::tcp_socket sock = adopt_fd(ioc, PQsocket(pq));
@@ -88,11 +78,7 @@ blocking:
 
 [source,cpp]
 ----
-auto [wec] = co_await acceptor.wait(corosio::wait_type::read);
-if (wec) co_return;
-
-corosio::tcp_socket peer(ioc);
-auto [aec] = co_await acceptor.accept(peer);
+include::example$snippets/4r_wait.cpp[tag=acceptor_wait,indent=0]
 ----
 
 This is useful when application-level conditions must be checked
@@ -107,10 +93,7 @@ signaling) without holding an `accept()` call open.
 
 [source,cpp]
 ----
-auto waiter = [&]() -> capy::task<> {
-    auto [ec] = co_await sock.wait(corosio::wait_type::read);
-    // ec == capy::cond::canceled if sock.cancel() was invoked
-};
+include::example$snippets/4r_wait.cpp[tag=wait_cancel,indent=0]
 ----
 
 xref:4.guide/4h.timers.adoc[`timeout()`] composes with `wait()` the
@@ -119,10 +102,7 @@ yields an `io_result` like any other awaitable:
 
 [source,cpp]
 ----
-auto [ec] = co_await corosio::timeout(
-    sock.wait(corosio::wait_type::read), 200ms);
-if (ec == capy::cond::timeout)
-    std::cout << "No readiness within 200ms\n";
+include::example$snippets/4r_wait.cpp[tag=wait_timeout,indent=0]
 ----
 
 == `wait_type::write` Semantics

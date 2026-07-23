@@ -19,10 +19,7 @@ TLS connections are established and verified.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/tls_context.hpp>
-
-namespace corosio = boost::corosio;
-using namespace boost::corosio;
+include::example$snippets/3d_tls_context.cpp[tag=assume]
 ----
 ====
 
@@ -59,15 +56,7 @@ them across multiple TLS streams.
 
 [source,cpp]
 ----
-// Create a default context
-tls_context ctx;
-
-// Copy shares the same underlying state
-tls_context ctx2 = ctx;  // ctx and ctx2 share state
-
-// Move transfers ownership
-tls_context ctx3 = std::move( ctx );
-// ctx is now empty
+include::example$snippets/3d_tls_context.cpp[tag=construction,indent=0]
 ----
 
 The default constructor creates a context ready for TLS 1.2 and TLS 1.3
@@ -80,20 +69,7 @@ Most applications follow this pattern:
 
 [source,cpp]
 ----
-tls_context ctx;
-
-// 1. Load credentials (for servers, or clients using client certs)
-ctx.use_certificate_chain_file( "server.crt" );
-ctx.use_private_key_file( "server.key", tls_file_format::pem );
-
-// 2. Configure trust anchors (for verifying peer certificates)
-ctx.set_default_verify_paths();  // Use system CA store
-
-// 3. Set verification mode
-ctx.set_verify_mode( tls_verify_mode::peer );
-
-// 4. Configure protocol options (optional)
-ctx.set_min_protocol_version( tls_version::tls_1_2 );
+include::example$snippets/3d_tls_context.cpp[tag=typical_setup,indent=0]
 ----
 
 == Credential Loading
@@ -109,19 +85,14 @@ from separate PEM files:
 
 [source,cpp]
 ----
-// Load certificate chain (leaf + intermediates)
-ctx.use_certificate_chain_file( "fullchain.pem" );
-
-// Load the matching private key
-ctx.use_private_key_file( "privkey.key", tls_file_format::pem );
+include::example$snippets/3d_tls_context.cpp[tag=load_separate,indent=0]
 ----
 
 For a single certificate without intermediates:
 
 [source,cpp]
 ----
-ctx.use_certificate_file( "server.crt", tls_file_format::pem );
-ctx.use_private_key_file( "server.key", tls_file_format::pem );
+include::example$snippets/3d_tls_context.cpp[tag=load_single,indent=0]
 ----
 
 === Loading from PKCS#12 Bundles
@@ -131,7 +102,7 @@ into a single password-protected file:
 
 [source,cpp]
 ----
-ctx.use_pkcs12_file( "credentials.pfx", "bundle-password" );
+include::example$snippets/3d_tls_context.cpp[tag=pkcs12_file,indent=0]
 ----
 
 NOTE: The bundle is decoded when the first stream is created; a wrong
@@ -146,11 +117,7 @@ manager), use the non-file variants:
 
 [source,cpp]
 ----
-std::string cert_pem = fetch_certificate_from_vault();
-std::string key_pem = fetch_key_from_vault();
-
-ctx.use_certificate_chain( cert_pem );
-ctx.use_private_key( key_pem, tls_file_format::pem );
+include::example$snippets/3d_tls_context.cpp[tag=load_memory,indent=0]
 ----
 
 === DER Format
@@ -159,8 +126,7 @@ For binary DER-encoded files (common in embedded systems):
 
 [source,cpp]
 ----
-ctx.use_certificate_file( "server.der", tls_file_format::der );
-ctx.use_private_key_file( "server.key.der", tls_file_format::der );
+include::example$snippets/3d_tls_context.cpp[tag=der_files,indent=0]
 ----
 
 === Encrypted Private Keys
@@ -179,7 +145,7 @@ For HTTPS clients connecting to public servers, use the system's CA store:
 
 [source,cpp]
 ----
-ctx.set_default_verify_paths();
+include::example$snippets/3d_tls_context.cpp[tag=system_trust,indent=0]
 ----
 
 This uses the operating system's trusted certificates:
@@ -199,8 +165,7 @@ For internal PKI or testing, load a custom CA bundle:
 
 [source,cpp]
 ----
-// Load CA bundle file (may contain multiple CAs)
-ctx.load_verify_file( "/path/to/ca-bundle.crt" );
+include::example$snippets/3d_tls_context.cpp[tag=ca_bundle,indent=0]
 ----
 
 NOTE: With OpenSSL, `load_verify_file()` registers only the *first*
@@ -213,7 +178,7 @@ Add a directory of CA certificates:
 
 [source,cpp]
 ----
-ctx.add_verify_path( "/etc/ssl/certs" );
+include::example$snippets/3d_tls_context.cpp[tag=ca_directory,indent=0]
 ----
 
 NOTE: With OpenSSL the directory must use the hashed-filename layout
@@ -227,13 +192,7 @@ Add CA certificates one at a time:
 
 [source,cpp]
 ----
-// From memory
-std::string internal_ca = load_ca_from_config();
-ctx.add_certificate_authority( internal_ca );
-
-// Multiple CAs
-ctx.add_certificate_authority( root_ca_pem );
-ctx.add_certificate_authority( intermediate_ca_pem );
+include::example$snippets/3d_tls_context.cpp[tag=ca_individual,indent=0]
 ----
 
 === Combining Trust Sources
@@ -242,11 +201,7 @@ You can combine multiple trust sources:
 
 [source,cpp]
 ----
-// Start with system trust store
-ctx.set_default_verify_paths();
-
-// Add an internal CA for corporate servers
-ctx.add_certificate_authority( corporate_ca_pem );
+include::example$snippets/3d_tls_context.cpp[tag=combine_trust,indent=0]
 ----
 
 NOTE: The `set_default_verify_paths()` call above contributes nothing in
@@ -262,12 +217,7 @@ Set minimum and/or maximum TLS versions:
 
 [source,cpp]
 ----
-// Require TLS 1.2 or newer (default)
-ctx.set_min_protocol_version( tls_version::tls_1_2 );
-
-// Require TLS 1.3 only
-ctx.set_min_protocol_version( tls_version::tls_1_3 );
-ctx.set_max_protocol_version( tls_version::tls_1_3 );
+include::example$snippets/3d_tls_context.cpp[tag=version_bounds,indent=0]
 ----
 
 NOTE: On WolfSSL the ceiling is enforced by selecting a version-specific
@@ -281,11 +231,7 @@ are configured separately:
 
 [source,cpp]
 ----
-// TLS 1.2 and below
-ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" );
-
-// TLS 1.3 (distinct API and suite names)
-ctx.set_ciphersuites_tls13( "TLS_AES_256_GCM_SHA384" );
+include::example$snippets/3d_tls_context.cpp[tag=cipher_suites,indent=0]
 ----
 
 NOTE: Both backends apply these (WolfSSL merges the two into a single
@@ -300,18 +246,14 @@ ALPN negotiates the application protocol over TLS. Common uses:
 
 [source,cpp]
 ----
-// HTTP/2 with HTTP/1.1 fallback
-ctx.set_alpn( { "h2", "http/1.1" } );
-
-// gRPC
-ctx.set_alpn( { "h2" } );
+include::example$snippets/3d_tls_context.cpp[tag=alpn_offer,indent=0]
 ----
 
 Read the negotiated protocol from the stream after the handshake:
 
 [source,cpp]
 ----
-std::string_view proto = stream.alpn_protocol(); // "h2", or empty if none
+include::example$snippets/3d_tls_context.cpp[tag=alpn_read,indent=0]
 ----
 
 NOTE: On WolfSSL, ALPN requires a `HAVE_ALPN` build; without it, offering
@@ -328,14 +270,7 @@ Configure how peer certificates are verified during the TLS handshake.
 
 [source,cpp]
 ----
-// Don't verify peer (not recommended for production)
-ctx.set_verify_mode( tls_verify_mode::none );
-
-// Verify peer if certificate is presented
-ctx.set_verify_mode( tls_verify_mode::peer );
-
-// Require and verify peer certificate (mTLS server-side)
-ctx.set_verify_mode( tls_verify_mode::require_peer );
+include::example$snippets/3d_tls_context.cpp[tag=verify_modes,indent=0]
 ----
 
 Typical usage:
@@ -350,7 +285,7 @@ For clients, set the expected server hostname on the stream before the handshake
 
 [source,cpp]
 ----
-secure.set_hostname( "api.example.com" );
+include::example$snippets/3d_tls_context.cpp[tag=set_hostname,indent=0]
 ----
 
 This enables:
@@ -365,8 +300,7 @@ Limit how many intermediate certificates are allowed:
 
 [source,cpp]
 ----
-// Allow up to 3 intermediates (leaf -> 3 intermediates -> root)
-ctx.set_verify_depth( 3 );
+include::example$snippets/3d_tls_context.cpp[tag=verify_depth,indent=0]
 ----
 
 The default (typically 100) is sufficient for most chains.
@@ -381,16 +315,7 @@ the backend's `X509_STORE_CTX*`.
 
 [source,cpp]
 ----
-ctx.set_verify_callback(
-    []( bool preverified, corosio::verify_context& verify_ctx ) -> bool
-    {
-        if( !preverified )
-            return false;                    // chain did not verify
-
-        auto der = verify_ctx.certificate(); // DER of the current cert
-        return der.size() == expected_pin.size() &&
-            std::equal( der.begin(), der.end(), expected_pin.begin() );
-    });
+include::example$snippets/3d_tls_context.cpp[tag=verify_callback,indent=0]
 ----
 
 [NOTE]
@@ -423,14 +348,7 @@ the policy is not `disabled`:
 
 [source,cpp]
 ----
-// Don't check revocation (default)
-ctx.set_revocation_policy( tls_revocation_policy::disabled );
-
-// Accept unknown status, reject a listed (revoked) certificate
-ctx.set_revocation_policy( tls_revocation_policy::soft_fail );
-
-// Also reject when status can't be determined (strict)
-ctx.set_revocation_policy( tls_revocation_policy::hard_fail );
+include::example$snippets/3d_tls_context.cpp[tag=revocation_policy,indent=0]
 ----
 
 === CRL (Certificate Revocation Lists)
@@ -439,14 +357,7 @@ Load CRLs from the CA that issued the certificates you're verifying:
 
 [source,cpp]
 ----
-// From file
-ctx.add_crl_file( "/path/to/issuer.crl" );
-
-// From memory (e.g., fetched via HTTP)
-std::string crl_data = fetch_crl_from_url( crl_url );
-ctx.add_crl( crl_data );
-
-ctx.set_revocation_policy( tls_revocation_policy::hard_fail );
+include::example$snippets/3d_tls_context.cpp[tag=crl_load,indent=0]
 ----
 
 CRLs must be refreshed periodically as they expire.
@@ -469,18 +380,7 @@ is applied on OpenSSL and on WolfSSL builds with `HAVE_CRL`.
 
 [source,cpp]
 ----
-// Bootstrap context: for fetching revocation data
-tls_context bootstrap_ctx;
-bootstrap_ctx.set_default_verify_paths();
-bootstrap_ctx.set_verify_mode( tls_verify_mode::peer );
-bootstrap_ctx.set_revocation_policy( tls_revocation_policy::disabled );
-
-// Hardened context: for sensitive connections
-tls_context hardened_ctx;
-hardened_ctx.set_default_verify_paths();
-hardened_ctx.set_verify_mode( tls_verify_mode::peer );
-hardened_ctx.add_crl_file( "cached.crl" );
-hardened_ctx.set_revocation_policy( tls_revocation_policy::hard_fail );
+include::example$snippets/3d_tls_context.cpp[tag=bootstrap_hardened,indent=0]
 ----
 
 == Password Handling
@@ -492,16 +392,7 @@ Set a password callback before loading encrypted material.
 
 [source,cpp]
 ----
-// Set callback before loading encrypted key
-ctx.set_password_callback(
-    []( std::size_t max_length, tls_password_purpose purpose )
-    {
-        // purpose: for_reading (decrypt) or for_writing (encrypt)
-        return std::string( "my-secret-password" );
-    });
-
-// Now load encrypted private key
-ctx.use_private_key_file( "encrypted.key", tls_file_format::pem );
+include::example$snippets/3d_tls_context.cpp[tag=password_callback,indent=0]
 ----
 
 === Secure Password Handling
@@ -510,16 +401,7 @@ In production, don't hardcode passwords:
 
 [source,cpp]
 ----
-ctx.set_password_callback(
-    []( std::size_t max_length, tls_password_purpose purpose )
-    {
-        // Read from environment
-        if( auto* pw = std::getenv( "TLS_KEY_PASSWORD" ) )
-            return std::string( pw );
-        
-        // Or prompt user
-        return prompt_user_for_password();
-    });
+include::example$snippets/3d_tls_context.cpp[tag=password_env,indent=0]
 ----
 
 === PKCS#12 Passwords
@@ -528,20 +410,27 @@ PKCS#12 files take the password directly (no callback needed):
 
 [source,cpp]
 ----
-ctx.use_pkcs12_file( "credentials.pfx", "bundle-password" );
+include::example$snippets/3d_tls_context.cpp[tag=pkcs12_file,indent=0]
 ----
 
 For PKCS#12 loaded from memory:
 
 [source,cpp]
 ----
-ctx.use_pkcs12( pkcs12_data, "bundle-password" );
+include::example$snippets/3d_tls_context.cpp[tag=pkcs12_memory,indent=0]
 ----
 
 == Complete Examples
 
 This section demonstrates complete, practical configurations for common
-scenarios.
+scenarios, excerpted from the compiled `tls_context_examples` example.
+The examples share a small `must()` helper that turns a reported error
+into an exception:
+
+[source,cpp]
+----
+include::example$tls_context_examples.cpp[tag=must]
+----
 
 === HTTPS Client Context
 
@@ -552,68 +441,30 @@ instead, for example
 
 [source,cpp]
 ----
-tls_context make_https_client_context()
-{
-    tls_context ctx;
-    
-    // Trust system CAs for public websites
-    ctx.set_default_verify_paths();
-    
-    // Verify server certificates
-    ctx.set_verify_mode( tls_verify_mode::peer );
-    
-    // Modern TLS only
-    ctx.set_min_protocol_version( tls_version::tls_1_2 );
-    
-    return ctx;
-}
+include::example$tls_context_examples.cpp[tag=https_client]
+----
 
-// Usage with TLS stream
-tls_context ctx = make_https_client_context();
+To use the context, wrap a connected socket in a TLS stream, set the
+expected hostname, and perform the handshake, as the `https-client`
+example does:
 
-// Pointer form wraps the connected socket without taking ownership
-corosio::wolfssl_stream secure( &sock, ctx );
-secure.set_hostname( "api.example.com" );
-co_await secure.handshake( corosio::tls_role::client );
+[source,cpp]
+----
+include::example$https-client/https_client.cpp[tag=tls_wrap,indent=0]
 ----
 
 === TLS Server Context
 
 [source,cpp]
 ----
-tls_context make_server_context()
-{
-    tls_context ctx;
-    
-    // Load server credentials
-    ctx.use_certificate_chain_file( "fullchain.pem" );
-    ctx.use_private_key_file( "privkey.pem", tls_file_format::pem );
-    
-    // Don't verify client certificates (no mTLS)
-    ctx.set_verify_mode( tls_verify_mode::none );
-    
-    return ctx;
-}
+include::example$tls_context_examples.cpp[tag=basic_server]
 ----
 
 === Mutual TLS (mTLS)
 
 [source,cpp]
 ----
-tls_context make_mtls_client_context()
-{
-    tls_context ctx;
-    
-    // Client credentials for mTLS
-    ctx.use_certificate_chain_file( "client.crt" );
-    ctx.use_private_key_file( "client.key", tls_file_format::pem );
-    
-    // Trust specific CA for server verification
-    ctx.load_verify_file( "server-ca.crt" );
-    ctx.set_verify_mode( tls_verify_mode::peer );
-    
-    return ctx;
-}
+include::example$tls_context_examples.cpp[tag=mtls_client]
 ----
 
 == Error Handling
@@ -623,16 +474,7 @@ to detect errors:
 
 [source,cpp]
 ----
-// Throw on error
-if( auto ec = ctx.use_certificate_file( "cert.pem", tls_file_format::pem ) )
-    throw std::system_error(ec);
-
-// Check error explicitly
-if( auto ec = ctx.load_verify_file( "ca.crt" ) )
-{
-    std::cerr << "Failed to load CA: " << ec.message() << "\n";
-    return;
-}
+include::example$snippets/3d_tls_context.cpp[tag=error_handling,indent=0]
 ----
 
 Common errors include:

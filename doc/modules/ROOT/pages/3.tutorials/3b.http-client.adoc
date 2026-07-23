@@ -18,18 +18,7 @@ composed I/O operations, and the exception-based error handling pattern.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio.hpp>
-#include <boost/corosio/ipv4_address.hpp>
-#include <boost/capy/task.hpp>
-#include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/string_dynamic_buffer.hpp>
-#include <boost/capy/error.hpp>
-#include <boost/capy/read.hpp>
-#include <boost/capy/write.hpp>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+include::example$client/http_client.cpp[tag=assume]
 ----
 ====
 
@@ -52,13 +41,7 @@ HTTP/1.1 requests have a simple text format:
 
 [source,cpp]
 ----
-std::string build_request(std::string_view host)
-{
-    return "GET / HTTP/1.1\r\n"
-           "Host: " + std::string(host) + "\r\n"
-           "Connection: close\r\n"
-           "\r\n";
-}
+include::example$client/http_client.cpp[tag=build_request]
 ----
 
 The `Connection: close` header tells the server to close the connection
@@ -69,56 +52,23 @@ marks the end of the response.
 
 [source,cpp]
 ----
-capy::task<void> do_request(
-    corosio::io_stream& stream,
-    std::string_view host)
-{
-    // Build and send the request
-    std::string request = build_request(host);
-    if (auto [ec, n] = co_await capy::write(
-            stream, capy::const_buffer(request.data(), request.size())); ec)
-        throw std::system_error(ec);
-
-    // Read the entire response
-    std::string response;
-    auto [ec, n] = co_await capy::read(
-        stream, capy::string_dynamic_buffer(&response));
-
-    // Reading into a dynamic buffer completes with success at EOF
-    if (ec && ec != capy::cond::eof)
-        throw std::system_error(ec);
-
-    std::cout << response << std::endl;
-}
+include::example$client/http_client.cpp[tag=do_request]
 ----
 
 Key points:
 
 * The write throws if writing fails
-* `capy::read(stream, capy::string_dynamic_buffer(&response))` reads until EOF
-* Reading into a dynamic buffer completes with *success* at end-of-stream — it
-  returns no error and reports the total bytes read. The `!= capy::cond::eof`
-  check is a harmless defensive guard, not the thing that signals
-  end-of-response
+* Each `capy::read` fills the chunk completely unless the stream ends or
+  fails first; the loop appends whatever arrived and goes around again
+* EOF (`capy::error::eof`) is the expected way the loop ends: the server
+  closes the connection after the response, so it is not treated as a
+  failure
 
 == The Connection Coroutine
 
 [source,cpp]
 ----
-capy::task<void> run_client(
-    corosio::io_context& ioc,
-    corosio::ipv4_address addr,
-    std::uint16_t port)
-{
-    corosio::tcp_socket s(ioc);
-    s.open();
-
-    // Connect (throws on error)
-    if (auto [ec] = co_await s.connect(corosio::endpoint(addr, port)); ec)
-        throw std::system_error(ec);
-
-    co_await do_request(s, addr.to_string());
-}
+include::example$client/http_client.cpp[tag=run_client]
 ----
 
 The socket must be opened before connecting. We pass the socket as an
@@ -130,50 +80,25 @@ shown below.
 
 [source,cpp]
 ----
-int main(int argc, char* argv[])
-{
-    if (argc != 3)
-    {
-        std::cerr << "Usage: http_client <ip-address> <port>\n"
-                  << "Example: http_client 35.190.118.110 80\n";
-        return 1;
-    }
-
-    // Parse IP address
-    corosio::ipv4_address addr;
-    if (auto ec = corosio::parse_ipv4_address(argv[1], addr); ec)
-    {
-        std::cerr << "Invalid IP address: " << argv[1] << "\n";
-        return 1;
-    }
-
-    auto port = static_cast<std::uint16_t>(std::atoi(argv[2]));
-
-    corosio::io_context ioc;
-    capy::run_async(ioc.get_executor())(
-        run_client(ioc, addr, port));
-    ioc.run();
-}
+include::example$client/http_client.cpp[tag=main]
 ----
 
 == Reading Until EOF
 
-Wrapping a `std::string` in `capy::string_dynamic_buffer` lets
-`capy::read` grow it as data arrives, reading until EOF:
+Reading a fixed-size chunk at a time and appending to a `std::string`
+accumulates the whole response, however large it is:
 
 [source,cpp]
 ----
-std::string response;
-auto [ec, n] = co_await capy::read(
-    stream, capy::string_dynamic_buffer(&response));
+include::example$client/http_client.cpp[tag=read_loop,indent=0]
 ----
 
 This:
 
-* Automatically grows the string as needed
-* Completes with *success* (no error) when the connection closes, since the
-  dynamic-buffer read treats EOF as the natural end of the stream
-* Returns the total bytes read in `n`
+* Grows `response` by whatever each read delivers
+* Ends when the connection closes: `capy::read` reports
+  `capy::error::eof` once the server has sent everything
+* Treats any other error as a genuine failure and throws
 
 == Error vs. Exception Patterns
 
@@ -186,20 +111,14 @@ Compare structured bindings:
 
 [source,cpp]
 ----
-auto [ec] = co_await s.connect(ep);
-if (ec)
-{
-    std::cerr << "Connect failed: " << ec.message() << "\n";
-    co_return;
-}
+include::example$snippets/3b_http_client.cpp[tag=error_bindings,indent=0]
 ----
 
 With exceptions:
 
 [source,cpp]
 ----
-if (auto [ec] = co_await s.connect(ep); ec)  // Throw on error
-    throw std::system_error(ec);
+include::example$snippets/3b_http_client.cpp[tag=error_exceptions,indent=0]
 ----
 
 Both are valid. Use exceptions when errors are exceptional; use structured
@@ -238,59 +157,9 @@ A `wolfssl_stream` is not an `io_stream`, so it needs its own
 
 [source,cpp]
 ----
-#include <boost/corosio/wolfssl_stream.hpp>
+include::example$https-client/https_client.cpp[tag=tls_include]
 
-capy::task<void> do_request(
-    corosio::tls_stream& stream,
-    std::string_view host)
-{
-    std::string request = build_request(host);
-    if (auto [ec, n] = co_await capy::write(
-            stream, capy::const_buffer(request.data(), request.size())); ec)
-        throw std::system_error(ec);
-
-    std::string response;
-    auto [ec, n] = co_await capy::read(
-        stream, capy::string_dynamic_buffer(&response));
-    // As with the plain stream, the dynamic-buffer read completes with
-    // success at EOF; this check is a defensive guard.
-    if (ec && ec != capy::cond::eof)
-        throw std::system_error(ec);
-
-    std::cout << response << std::endl;
-}
-
-capy::task<void> run_https_client(
-    corosio::io_context& ioc,
-    corosio::ipv4_address addr,
-    std::uint16_t port,
-    std::string_view hostname)
-{
-    corosio::tcp_socket s(ioc);
-    s.open();
-
-    if (auto [ec] = co_await s.connect(corosio::endpoint(addr, port)); ec)
-        throw std::system_error(ec);
-
-    // Configure the TLS context
-    corosio::tls_context ctx;
-    if (auto ec = ctx.set_default_verify_paths(); ec)
-        throw std::system_error(ec);
-    if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer); ec)
-        throw std::system_error(ec);
-
-    // Wrap the connected socket without taking ownership (pointer form)
-    corosio::wolfssl_stream secure(&s, ctx);
-    secure.set_hostname(hostname);
-    if (auto [ec] = co_await secure.handshake(
-            corosio::tls_role::client); ec)
-        throw std::system_error(ec);
-
-    co_await do_request(secure, hostname);
-
-    if (auto [ec] = co_await secure.shutdown(); ec)
-        throw std::system_error(ec);
-}
+include::example$https-client/https_client.cpp[tag=tls_client]
 ----
 
 The TLS overload mirrors the plain one: `capy::read` and `capy::write`

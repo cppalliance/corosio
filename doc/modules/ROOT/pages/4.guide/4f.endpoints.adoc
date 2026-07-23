@@ -18,11 +18,7 @@ and binding acceptors.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/endpoint.hpp>
-#include <boost/corosio/ipv4_address.hpp>
-#include <boost/corosio/ipv6_address.hpp>
-
-namespace corosio = boost::corosio;
+include::example$snippets/4f_endpoints.cpp[tag=assume]
 ----
 ====
 
@@ -32,14 +28,7 @@ An endpoint combines an address and port:
 
 [source,cpp]
 ----
-// IPv4 endpoint
-corosio::endpoint ep4(corosio::ipv4_address::loopback(), 8080);
-
-// IPv6 endpoint
-corosio::endpoint ep6(corosio::ipv6_address::loopback(), 8080);
-
-// Port only (binds to all interfaces)
-corosio::endpoint bind_ep(8080);
+include::example$snippets/4f_endpoints.cpp[tag=overview,indent=0]
 ----
 
 == Construction
@@ -48,23 +37,21 @@ corosio::endpoint bind_ep(8080);
 
 [source,cpp]
 ----
-auto addr = corosio::ipv4_address::loopback();  // 127.0.0.1
-corosio::endpoint ep(addr, 8080);
+include::example$snippets/4f_endpoints.cpp[tag=from_v4,indent=0]
 ----
 
 === From IPv6 Address and Port
 
 [source,cpp]
 ----
-auto addr = corosio::ipv6_address::loopback();  // ::1
-corosio::endpoint ep(addr, 8080);
+include::example$snippets/4f_endpoints.cpp[tag=from_v6,indent=0]
 ----
 
 === From Port Only
 
 [source,cpp]
 ----
-corosio::endpoint ep(8080);  // IPv4 any address (0.0.0.0)
+include::example$snippets/4f_endpoints.cpp[tag=port_only,indent=0]
 ----
 
 This binds to all network interfaces, useful for servers.
@@ -73,18 +60,14 @@ This binds to all network interfaces, useful for servers.
 
 [source,cpp]
 ----
-corosio::endpoint ep;  // IPv4 any address, port 0
+include::example$snippets/4f_endpoints.cpp[tag=default_ctor,indent=0]
 ----
 
 == Querying Address Type
 
 [source,cpp]
 ----
-if (ep.is_v4())
-    std::cout << "IPv4 address\n";
-
-if (ep.is_v6())
-    std::cout << "IPv6 address\n";
+include::example$snippets/4f_endpoints.cpp[tag=query_type,indent=0]
 ----
 
 == Accessing Components
@@ -93,29 +76,21 @@ if (ep.is_v6())
 
 [source,cpp]
 ----
-std::uint16_t port = ep.port();  // Host byte order
+include::example$snippets/4f_endpoints.cpp[tag=port,indent=0]
 ----
 
 === IPv4 Address
 
 [source,cpp]
 ----
-if (ep.is_v4())
-{
-    corosio::ipv4_address addr = ep.v4_address();
-    std::cout << addr.to_string() << "\n";
-}
+include::example$snippets/4f_endpoints.cpp[tag=v4_address,indent=0]
 ----
 
 === IPv6 Address
 
 [source,cpp]
 ----
-if (ep.is_v6())
-{
-    corosio::ipv6_address addr = ep.v6_address();
-    std::cout << addr.to_string() << "\n";
-}
+include::example$snippets/4f_endpoints.cpp[tag=v6_address,indent=0]
 ----
 
 == Common Address Constants
@@ -124,30 +99,21 @@ if (ep.is_v6())
 
 [source,cpp]
 ----
-// IPv4 loopback: 127.0.0.1
-auto v4_loop = corosio::ipv4_address::loopback();
-
-// IPv6 loopback: ::1
-auto v6_loop = corosio::ipv6_address::loopback();
+include::example$snippets/4f_endpoints.cpp[tag=loopback,indent=0]
 ----
 
 === Any Address
 
 [source,cpp]
 ----
-// IPv4 any: 0.0.0.0 (all interfaces)
-auto v4_any = corosio::ipv4_address::any();
-
-// IPv6 any: :: (all interfaces)
-auto v6_any = corosio::ipv6_address::any();
+include::example$snippets/4f_endpoints.cpp[tag=any,indent=0]
 ----
 
 === Broadcast
 
 [source,cpp]
 ----
-// IPv4 broadcast: 255.255.255.255
-auto v4_bcast = corosio::ipv4_address::broadcast();
+include::example$snippets/4f_endpoints.cpp[tag=broadcast,indent=0]
 ----
 
 == Parsing Addresses
@@ -157,19 +123,7 @@ Parse addresses from strings. Parsing reports failure through an
 
 [source,cpp]
 ----
-// IPv4
-corosio::ipv4_address addr;
-if (auto ec = corosio::parse_ipv4_address("192.168.1.1", addr); !ec)
-{
-    corosio::endpoint ep(addr, 8080);
-}
-
-// IPv6
-corosio::ipv6_address addr6;
-if (auto ec = corosio::parse_ipv6_address("2001:db8::1", addr6); !ec)
-{
-    corosio::endpoint ep(addr6, 8080);
-}
+include::example$snippets/4f_endpoints.cpp[tag=parse_addresses,indent=0]
 ----
 
 You can also parse a full `address:port` string directly into an endpoint
@@ -178,11 +132,7 @@ using `parse_endpoint()`, or the `endpoint` constructor that accepts a
 
 [source,cpp]
 ----
-corosio::endpoint ep;
-if (auto ec = corosio::parse_endpoint("192.168.1.1:8080", ep); !ec)
-{
-    // Use ep...
-}
+include::example$snippets/4f_endpoints.cpp[tag=parse_endpoint,indent=0]
 ----
 
 == Comparison
@@ -191,12 +141,7 @@ Endpoints support equality comparison:
 
 [source,cpp]
 ----
-corosio::endpoint ep1(corosio::ipv4_address::loopback(), 8080);
-corosio::endpoint ep2(corosio::ipv4_address::loopback(), 8080);
-corosio::endpoint ep3(corosio::ipv4_address::loopback(), 9090);
-
-assert(ep1 == ep2);  // Same address and port
-assert(ep1 != ep3);  // Different port
+include::example$snippets/4f_endpoints.cpp[tag=comparison,indent=0]
 ----
 
 == Usage with Sockets
@@ -205,21 +150,14 @@ assert(ep1 != ep3);  // Different port
 
 [source,cpp]
 ----
-corosio::tcp_socket s(ioc);
-s.open();
-
-corosio::endpoint target(
-    corosio::ipv4_address::loopback(), 8080);
-
-auto [ec] = co_await s.connect(target);
+include::example$snippets/4f_endpoints.cpp[tag=connecting,indent=0]
 ----
 
 === Accepting
 
 [source,cpp]
 ----
-// Convenience constructor: open + SO_REUSEADDR + bind + listen
-corosio::tcp_acceptor acc(ioc, corosio::endpoint(8080));  // bind to all interfaces
+include::example$snippets/4f_endpoints.cpp[tag=accepting,indent=0]
 ----
 
 == From Resolver Results
@@ -228,26 +166,14 @@ The resolver returns endpoints:
 
 [source,cpp]
 ----
-corosio::resolver r(ioc);
-auto [ec, results] = co_await r.resolve("www.example.com", "80");
-
-for (auto const& entry : results)
-{
-    corosio::endpoint ep = entry.get_endpoint();
-    // Try connecting to ep...
-}
+include::example$snippets/4f_endpoints.cpp[tag=resolver_results,indent=0]
 ----
 
 Resolver entries implicitly convert to endpoints:
 
 [source,cpp]
 ----
-for (corosio::endpoint ep : results)
-{
-    auto [ec] = co_await s.connect(ep);
-    if (!ec)
-        break;
-}
+include::example$snippets/4f_endpoints.cpp[tag=implicit_conversion,indent=0]
 ----
 
 == Internal Representation

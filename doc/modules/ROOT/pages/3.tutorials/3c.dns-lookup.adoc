@@ -18,12 +18,7 @@ addresses.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio.hpp>
-#include <boost/capy/task.hpp>
-#include <boost/capy/ex/run_async.hpp>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+include::example$nslookup/nslookup.cpp[tag=assume]
 ----
 ====
 
@@ -34,8 +29,7 @@ addresses. The `resolver` class performs this asynchronously:
 
 [source,cpp]
 ----
-corosio::resolver r(ioc);
-auto [ec, results] = co_await r.resolve("www.example.com", "https");
+include::example$snippets/3c_dns_lookup.cpp[tag=resolver_overview,indent=0]
 ----
 
 The second argument is the service name (or port number as a string). It
@@ -45,42 +39,7 @@ determines the port in the returned endpoints.
 
 [source,cpp]
 ----
-capy::task<void> do_lookup(
-    corosio::io_context& ioc,
-    std::string_view host,
-    std::string_view service)
-{
-    corosio::resolver r(ioc);
-
-    auto [ec, results] = co_await r.resolve(host, service);
-    if (ec)
-    {
-        std::cerr << "Resolve failed: " << ec.message() << "\n";
-        co_return;
-    }
-
-    std::cout << "Results for " << host;
-    if (!service.empty())
-        std::cout << ":" << service;
-    std::cout << "\n";
-
-    for (auto const& entry : results)
-    {
-        auto ep = entry.get_endpoint();
-        if (ep.is_v4())
-        {
-            std::cout << "  IPv4: " << ep.v4_address().to_string()
-                      << ":" << ep.port() << "\n";
-        }
-        else
-        {
-            std::cout << "  IPv6: " << ep.v6_address().to_string()
-                      << ":" << ep.port() << "\n";
-        }
-    }
-
-    std::cout << "\nTotal: " << results.size() << " addresses\n";
-}
+include::example$nslookup/nslookup.cpp[tag=lookup]
 ----
 
 == Understanding Results
@@ -97,45 +56,14 @@ The `endpoint` class supports both IPv4 and IPv6:
 
 [source,cpp]
 ----
-auto ep = entry.get_endpoint();
-
-if (ep.is_v4())
-{
-    // IPv4 address
-    corosio::ipv4_address addr = ep.v4_address();
-}
-else
-{
-    // IPv6 address
-    corosio::ipv6_address addr = ep.v6_address();
-}
-
-std::uint16_t port = ep.port();
+include::example$snippets/3c_dns_lookup.cpp[tag=entry_endpoint,indent=0]
 ----
 
 == Main Function
 
 [source,cpp]
 ----
-int main(int argc, char* argv[])
-{
-    if (argc < 2 || argc > 3)
-    {
-        std::cerr << "Usage: nslookup <hostname> [service]\n"
-                  << "Examples:\n"
-                  << "    nslookup www.google.com\n"
-                  << "    nslookup www.google.com https\n"
-                  << "    nslookup localhost 8080\n";
-        return 1;
-    }
-
-    std::string_view host = argv[1];
-    std::string_view service = (argc == 3) ? argv[2] : "";
-
-    corosio::io_context ioc;
-    capy::run_async(ioc.get_executor())(do_lookup(ioc, host, service));
-    ioc.run();
-}
+include::example$nslookup/nslookup.cpp[tag=main]
 ----
 
 == Resolver Flags
@@ -144,10 +72,7 @@ The resolver accepts optional flags to control behavior:
 
 [source,cpp]
 ----
-auto [ec, results] = co_await r.resolve(
-    host, service,
-    corosio::resolve_flags::numeric_host |
-    corosio::resolve_flags::numeric_service);
+include::example$snippets/3c_dns_lookup.cpp[tag=resolve_with_flags,indent=0]
 ----
 
 Available flags:
@@ -181,34 +106,7 @@ After resolving, iterate through results to find a working connection:
 
 [source,cpp]
 ----
-capy::task<void> connect_to_host(
-    corosio::io_context& ioc,
-    std::string_view host,
-    std::string_view service)
-{
-    corosio::resolver r(ioc);
-    auto [resolve_ec, results] = co_await r.resolve(host, service);
-    if (resolve_ec)
-        throw std::system_error(resolve_ec);
-
-    corosio::tcp_socket sock(ioc);
-    sock.open();
-
-    // Try each address until one works
-    std::error_code last_ec;
-    for (auto const& entry : results)
-    {
-        auto [ec] = co_await sock.connect(entry.get_endpoint());
-        if (!ec)
-        {
-            std::cout << "Connected to " << host << "\n";
-            co_return;
-        }
-        last_ec = ec;
-    }
-
-    throw std::system_error(last_ec, "all addresses failed");
-}
+include::example$snippets/3c_dns_lookup.cpp[tag=connect_to_host]
 ----
 
 == Running the Lookup Tool
@@ -238,14 +136,14 @@ Resolver operations support cancellation via `std::stop_token`:
 
 [source,cpp]
 ----
-r.cancel();  // Cancel pending operation
+include::example$snippets/3c_dns_lookup.cpp[tag=resolver_cancel,indent=0]
 ----
 
 A cancelled resolution completes with `capy::cond::canceled` (the
 underlying value is `capy::error::canceled`), so test for it with
 `ec == capy::cond::canceled`.
 
-Or through the affine awaitable protocol when using `capy::jcancellable_task`.
+Or through the affine awaitable protocol, which propagates the stop token from `capy::run_async` to every awaitable in the chain.
 
 == Next Steps
 

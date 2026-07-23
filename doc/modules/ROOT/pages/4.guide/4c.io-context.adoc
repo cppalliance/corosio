@@ -18,8 +18,7 @@ coroutine execution.
 Code snippets assume:
 [source,cpp]
 ----
-#include <boost/corosio/io_context.hpp>
-namespace corosio = boost::corosio;
+include::example$snippets/4c_io_context.cpp[tag=assume]
 ----
 ====
 
@@ -29,11 +28,7 @@ Every Corosio program needs at least one `io_context`:
 
 [source,cpp]
 ----
-corosio::io_context ioc;
-
-// ... create I/O objects and launch coroutines ...
-
-ioc.run();  // Process events until all work completes
+include::example$snippets/4c_io_context.cpp[tag=overview,indent=0]
 ----
 
 The `io_context`:
@@ -49,7 +44,7 @@ The `io_context`:
 
 [source,cpp]
 ----
-corosio::io_context ioc;
+include::example$snippets/4c_io_context.cpp[tag=construct_default,indent=0]
 ----
 
 Creates an `io_context` with a concurrency hint of
@@ -61,8 +56,7 @@ thread-safe locking tier. Thread safety is governed by the `locking` option
 
 [source,cpp]
 ----
-corosio::io_context ioc(1);  // one thread expected to call run()
-corosio::io_context ioc(4);  // up to 4 threads expected to call run()
+include::example$snippets/4c_io_context.cpp[tag=construct_hint,indent=0]
 ----
 
 The concurrency hint is a performance tuning value indicating how many threads
@@ -89,8 +83,7 @@ Processes all pending work until stopped:
 
 [source,cpp]
 ----
-std::size_t n = ioc.run();
-std::cout << "Processed " << n << " handlers\n";
+include::example$snippets/4c_io_context.cpp[tag=run,indent=0]
 ----
 
 This function:
@@ -106,7 +99,7 @@ Processes at most one work item:
 
 [source,cpp]
 ----
-std::size_t n = ioc.run_one();  // Returns 0 or 1
+include::example$snippets/4c_io_context.cpp[tag=run_one,indent=0]
 ----
 
 Useful for manual event loop control or interleaving with other work.
@@ -117,10 +110,7 @@ Process work for a limited time:
 
 [source,cpp]
 ----
-using namespace std::chrono_literals;
-
-auto n = ioc.run_for(100ms);   // Run for 100 milliseconds
-auto m = ioc.run_until(deadline);  // Run until time point
+include::example$snippets/4c_io_context.cpp[tag=run_for,indent=0]
 ----
 
 These return the number of handlers executed within the time limit.
@@ -131,8 +121,7 @@ Process ready work without blocking:
 
 [source,cpp]
 ----
-std::size_t n = ioc.poll();      // All ready handlers
-std::size_t m = ioc.poll_one();  // At most one ready handler
+include::example$snippets/4c_io_context.cpp[tag=poll,indent=0]
 ----
 
 These never block waiting for I/O. Useful for games or GUI applications
@@ -146,7 +135,7 @@ Signal the event loop to stop:
 
 [source,cpp]
 ----
-ioc.stop();
+include::example$snippets/4c_io_context.cpp[tag=stop,indent=0]
 ----
 
 This causes `run()` to return as soon as possible. Pending work remains
@@ -158,8 +147,7 @@ Check if the context has been stopped:
 
 [source,cpp]
 ----
-if (ioc.stopped())
-    std::cout << "Event loop stopped\n";
+include::example$snippets/4c_io_context.cpp[tag=stopped,indent=0]
 ----
 
 === restart()
@@ -168,10 +156,7 @@ Reset the stopped state:
 
 [source,cpp]
 ----
-ioc.stop();
-// ... do something ...
-ioc.restart();
-ioc.run();  // Can run again
+include::example$snippets/4c_io_context.cpp[tag=restart,indent=0]
 ----
 
 You must call `restart()` before calling `run()` again after it returns.
@@ -182,34 +167,14 @@ The `io_context::executor_type` provides the interface for dispatching work:
 
 [source,cpp]
 ----
-auto ex = ioc.get_executor();
-
-// Launch a coroutine
-capy::run_async(ex)(my_coroutine());
-
-// Access the context
-corosio::io_context& ctx = ex.context();
-
-// Check if running inside the event loop
-if (ex.running_in_this_thread())
-    std::cout << "Inside run()\n";
+include::example$snippets/4c_io_context.cpp[tag=executor,indent=0]
 ----
 
 === Executor Operations
 
 [source,cpp]
 ----
-auto ex = ioc.get_executor();
-
-// Dispatch a continuation: symmetric transfer if inside run(),
-// otherwise post. Returns a handle to resume.
-std::coroutine_handle<> next = ex.dispatch(cont);
-
-// Post a continuation: always queue for later execution
-ex.post(cont);
-
-// Post a bare coroutine handle for later execution
-ex.post(handle);
+include::example$snippets/4c_io_context.cpp[tag=executor_ops,indent=0]
 ----
 
 The dispatch operation `ex.dispatch(cont)` enables symmetric transfer when
@@ -222,8 +187,7 @@ efficiently.
 
 [source,cpp]
 ----
-ex.on_work_started();   // Increment work count
-ex.on_work_finished();  // Decrement work count
+include::example$snippets/4c_io_context.cpp[tag=work_tracking,indent=0]
 ----
 
 The event loop runs while the work count is non-zero. I/O objects and
@@ -233,19 +197,7 @@ coroutines track work automatically.
 
 [source,cpp]
 ----
-int main()
-{
-    corosio::io_context ioc;
-
-    // Create I/O objects
-    corosio::tcp_socket sock(ioc);
-
-    // Launch initial coroutine
-    capy::run_async(ioc.get_executor())(main_coroutine(sock));
-
-    // Run until all work completes
-    ioc.run();
-}
+include::example$programs/4c_io_context_typical.cpp[tag=full]
 ----
 
 == Thread Safety
@@ -256,14 +208,7 @@ into it.
 
 [source,cpp]
 ----
-corosio::io_context ioc(4);
-
-std::vector<std::thread> threads;
-for (int i = 0; i < 4; ++i)
-    threads.emplace_back([&ioc] { ioc.run(); });
-
-for (auto& t : threads)
-    t.join();
+include::example$snippets/4c_io_context.cpp[tag=multithreaded,indent=0]
 ----
 
 Multiple threads can call `run()` concurrently. The `io_context` distributes
@@ -289,15 +234,7 @@ that ran the loop, and only then destroy the context.
 
 [source,cpp]
 ----
-corosio::io_context ioc(4);
-
-std::vector<std::thread> threads;
-for (int i = 0; i < 4; ++i)
-    threads.emplace_back([&ioc] { ioc.run(); });
-
-// Join every run() thread before ioc leaves scope.
-for (auto& t : threads)
-    t.join();
+include::example$snippets/4c_io_context.cpp[tag=teardown,indent=0]
 ----
 
 WARNING: `stop()` abandons pending work rather than draining it. Destroying the
@@ -311,12 +248,7 @@ management:
 
 [source,cpp]
 ----
-// Create or get a service
-my_service& svc = ioc.use_service<my_service>();
-
-// Check if service exists
-if (ioc.has_service<my_service>())
-    // ...
+include::example$snippets/4c_io_context.cpp[tag=services,indent=0]
 ----
 
 Services are destroyed when the `io_context` is destroyed.
