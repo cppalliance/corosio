@@ -209,36 +209,10 @@ struct thread_context_guard
 
 } // namespace iocp
 
-inline win_scheduler::win_scheduler(
-    capy::execution_context& ctx, int concurrency_hint)
-    : iocp_(nullptr)
-    , outstanding_work_(0)
-    , stopped_(0)
-    , stop_event_posted_(0)
-    , dispatch_required_(0)
-{
-    // concurrency_hint < 0 means use system default (DWORD(~0) = max)
-    iocp_ = ::CreateIoCompletionPort(
-        INVALID_HANDLE_VALUE, nullptr, 0,
-        static_cast<DWORD>(
-            concurrency_hint >= 0 ? concurrency_hint : DWORD(~0)));
-
-    if (iocp_ == nullptr)
-        detail::throw_system_error(make_err(::GetLastError()));
-
-    // Create timer wakeup mechanism (tries NT native, falls back to thread)
-    timers_ = make_win_timers(iocp_, &dispatch_required_);
-
-    // Connect timer service to scheduler
-    set_timer_service(&get_timer_service(ctx, *this));
-
-    // Initialize resolver service
-    ctx.make_service<win_resolver_service>(*this);
-}
-
-// ~win_scheduler() and shutdown() are defined at the bottom of this
-// header so the unique_ptr<win_wait_reactor>'s deleter and
-// wait_reactor_->stop() see the type complete.
+// The constructor, ~win_scheduler() and shutdown() are defined at the
+// bottom of this header so the unique_ptr<win_wait_reactor>'s deleter
+// and wait_reactor_->stop() see the type complete. The constructor
+// needs it too: its unwind path destroys wait_reactor_.
 
 inline void
 win_scheduler::post(std::coroutine_handle<> h) const
@@ -697,9 +671,9 @@ win_scheduler::update_timeout()
 
 // Defer including the auxiliary wait reactor until the scheduler is
 // fully defined, since the reactor's inline methods call back into
-// win_scheduler. This also gives the dtor and wait_reactor() below a
-// complete win_wait_reactor type for unique_ptr destruction and
-// lazy construction.
+// win_scheduler. This also gives the ctor, dtor and wait_reactor()
+// below a complete win_wait_reactor type for unique_ptr destruction
+// and lazy construction.
 //
 // The macro lets win_wait_reactor.hpp diagnose direct inclusion
 // (which would land it here with win_scheduler still incomplete).
@@ -707,6 +681,33 @@ win_scheduler::update_timeout()
 #include <boost/corosio/native/detail/iocp/win_wait_reactor.hpp>
 
 namespace boost::corosio::detail {
+
+inline win_scheduler::win_scheduler(
+    capy::execution_context& ctx, int concurrency_hint)
+    : iocp_(nullptr)
+    , outstanding_work_(0)
+    , stopped_(0)
+    , stop_event_posted_(0)
+    , dispatch_required_(0)
+{
+    // concurrency_hint < 0 means use system default (DWORD(~0) = max)
+    iocp_ = ::CreateIoCompletionPort(
+        INVALID_HANDLE_VALUE, nullptr, 0,
+        static_cast<DWORD>(
+            concurrency_hint >= 0 ? concurrency_hint : DWORD(~0)));
+
+    if (iocp_ == nullptr)
+        detail::throw_system_error(make_err(::GetLastError()));
+
+    // Create timer wakeup mechanism (tries NT native, falls back to thread)
+    timers_ = make_win_timers(iocp_, &dispatch_required_);
+
+    // Connect timer service to scheduler
+    set_timer_service(&get_timer_service(ctx, *this));
+
+    // Initialize resolver service
+    ctx.make_service<win_resolver_service>(*this);
+}
 
 inline void
 win_scheduler::shutdown()
