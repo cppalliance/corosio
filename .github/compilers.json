@@ -127,7 +127,7 @@
   "clang-cl": [
     {
       "version": "*",
-      "cxxstd": "20",
+      "cxxstd": "20,latest",
       "latest_cxxstd": "20",
       "runs_on": "windows-2022",
       "cxx": "clang++-cl",
