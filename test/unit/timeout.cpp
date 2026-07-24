@@ -18,8 +18,12 @@
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
+#include <boost/capy/io/any_read_stream.hpp>
+#include <boost/capy/io/any_write_stream.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/test/read_stream.hpp>
+#include <boost/capy/test/write_stream.hpp>
 
 #include <array>
 #include <atomic>
@@ -29,6 +33,7 @@
 #include <ratio>
 #include <stdexcept>
 #include <stop_token>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -250,6 +255,79 @@ struct timeout_test
         BOOST_TEST_EQ(value, 42);
     }
 
+    void testReadyInnerCompletesWithoutSuspend()
+    {
+        // An inner op that is already ready at co_await must complete
+        // through timeout() on the non-suspending path: await_suspend
+        // is never driven and no deadline timer is armed.
+        io_context ioc(Backend);
+        bool ok = false;
+        bool suspended = false;
+
+        struct ready_awaitable
+        {
+            int value_;
+            bool* suspended_;
+
+            bool await_ready() const noexcept { return true; }
+            std::coroutine_handle<> await_suspend(
+                std::coroutine_handle<> h, capy::io_env const*)
+            {
+                *suspended_ = true;
+                return h;
+            }
+            capy::io_result<int> await_resume() noexcept
+            {
+                return {{}, value_};
+            }
+        };
+
+        auto t = [](bool& out, bool& susp) -> capy::task<> {
+            auto [ec, v] = co_await timeout(
+                ready_awaitable{42, &susp}, std::chrono::milliseconds(1));
+            out = !ec && v == 42;
+        };
+        capy::run_async(ioc.get_executor())(t(ok, suspended));
+
+        ioc.run();
+        BOOST_TEST(ok);
+        BOOST_TEST(!suspended);
+    }
+
+    void testReadyInnerCanceledNotRemapped()
+    {
+        // A genuine cancellation surfacing from an already-ready inner
+        // op must pass through unchanged: the deadline never fired, so
+        // the canceled-to-timeout remap must not trigger on the
+        // non-suspending path's untouched stop state.
+        io_context ioc(Backend);
+        bool canceled = false;
+
+        struct ready_canceled_awaitable
+        {
+            bool await_ready() const noexcept { return true; }
+            std::coroutine_handle<> await_suspend(
+                std::coroutine_handle<> h, capy::io_env const*)
+            {
+                return h;
+            }
+            capy::io_result<> await_resume() noexcept
+            {
+                return {make_error_code(capy::error::canceled)};
+            }
+        };
+
+        auto t = [](bool& out) -> capy::task<> {
+            auto [ec] = co_await timeout(
+                ready_canceled_awaitable{}, std::chrono::seconds(10));
+            out = (ec == capy::cond::canceled);
+        };
+        capy::run_async(ioc.get_executor())(t(canceled));
+
+        ioc.run();
+        BOOST_TEST(canceled);
+    }
+
     void testTimeoutResultHasDefaultPayload()
     {
         // The inner op only completes when cancelled (returning a
@@ -388,6 +466,116 @@ struct timeout_test
 
         BOOST_TEST(timed_out);
         (void)s2; // held open but silent
+    }
+
+    void testTypeErasedInnerFullProtocol()
+    {
+        // Type-erased stream wrappers construct their cached inner
+        // awaitable inside await_ready; timeout() must drive the full
+        // awaiter protocol or the vtable dispatches into raw storage
+        // and the read yields garbage instead of the provided bytes.
+        io_context ioc(Backend);
+        bool ok = false;
+
+        auto t = [](bool& out) -> capy::task<> {
+            capy::test::read_stream mock;
+            mock.provide("hello world");
+            capy::any_read_stream stream(std::move(mock));
+
+            std::array<char, 64> buf{};
+            auto [ec, n] = co_await timeout(
+                stream.read_some(
+                    capy::mutable_buffer(buf.data(), buf.size())),
+                std::chrono::seconds(10));
+            out = !ec && n == 11 &&
+                std::string_view(buf.data(), n) == "hello world";
+        };
+        capy::run_async(ioc.get_executor())(t(ok));
+
+        ioc.run();
+        BOOST_TEST(ok);
+    }
+
+    void testTypeErasedDeadlineWins()
+    {
+        // The deadline must cancel a genuinely pending read through
+        // the type-erased vtable and resolve as cond::timeout, with
+        // the wrapper tearing down its cached awaitable on the cancel
+        // path. The pointer form exercises non-owning reference mode.
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        auto [s1, s2] = test::make_socket_pair(ioc);
+        bool timed_out = false;
+        std::array<char, 32> buf{};
+
+        auto t = [&]() -> capy::task<> {
+            capy::any_read_stream stream(&s1);
+            auto [ec, n] = co_await timeout(
+                stream.read_some(
+                    capy::mutable_buffer(buf.data(), buf.size())),
+                std::chrono::milliseconds(50));
+            (void)n;
+            timed_out = (ec == capy::cond::timeout);
+        };
+        capy::run_async(ex)(t());
+        ioc.run();
+
+        BOOST_TEST(timed_out);
+        (void)s2; // held open but silent
+    }
+
+    void testNestedTimeoutOverTypeErased()
+    {
+        // Awaiter-protocol forwarding must be transitive: stacked
+        // timeout adapters have to relay await_ready down to the
+        // type-erased wrapper so its setup still runs.
+        io_context ioc(Backend);
+        bool ok = false;
+
+        auto t = [](bool& out) -> capy::task<> {
+            capy::test::read_stream mock;
+            mock.provide("hi");
+            capy::any_read_stream stream(std::move(mock));
+
+            std::array<char, 8> buf{};
+            auto [ec, n] = co_await timeout(
+                timeout(
+                    stream.read_some(
+                        capy::mutable_buffer(buf.data(), buf.size())),
+                    std::chrono::seconds(10)),
+                std::chrono::seconds(10));
+            out = !ec && n == 2 &&
+                std::string_view(buf.data(), n) == "hi";
+        };
+        capy::run_async(ioc.get_executor())(t(ok));
+
+        ioc.run();
+        BOOST_TEST(ok);
+    }
+
+    void testTypeErasedWriteFullProtocol()
+    {
+        // The write-side wrapper shares the construct-in-await_ready
+        // pattern; a timeout-wrapped write must deliver real bytes
+        // into the underlying stream, not dispatch into raw storage.
+        io_context ioc(Backend);
+        bool ok = false;
+
+        auto t = [](bool& out) -> capy::task<> {
+            std::string_view const msg = "hello world";
+            capy::test::write_stream mock;
+            capy::any_write_stream stream(&mock);
+
+            auto [ec, n] = co_await timeout(
+                stream.write_some(
+                    capy::const_buffer(msg.data(), msg.size())),
+                std::chrono::seconds(10));
+            out = !ec && n == msg.size() && mock.data() == msg;
+        };
+        capy::run_async(ioc.get_executor())(t(ok));
+
+        ioc.run();
+        BOOST_TEST(ok);
     }
 
     void testAlreadyStoppedCompletesCanceled()
@@ -565,11 +753,17 @@ struct timeout_test
         testInnerExceptionPropagates();
         testSingleThreadedHint();
         testPayloadPreservedOnInnerWin();
+        testReadyInnerCompletesWithoutSuspend();
+        testReadyInnerCanceledNotRemapped();
         testTimeoutResultHasDefaultPayload();
         testNestedTimeouts();
         testTimeoutAlreadyElapsedDeadline();
         testShutdownWithSuspendedTimeout();
         testTimeoutOverSocket();
+        testTypeErasedInnerFullProtocol();
+        testTypeErasedDeadlineWins();
+        testNestedTimeoutOverTypeErased();
+        testTypeErasedWriteFullProtocol();
         testAlreadyStoppedCompletesCanceled();
         testNonIoContextThrows();
         testNarrowRepDeadlineClamp();

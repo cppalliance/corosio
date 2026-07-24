@@ -137,9 +137,14 @@ struct timeout_awaitable
     timeout_awaitable& operator=(timeout_awaitable const&) = delete;
     timeout_awaitable& operator=(timeout_awaitable&&)      = delete;
 
-    bool await_ready() const noexcept
+    // Forwarding here is load-bearing, not an optimization: awaitables
+    // may perform setup in await_ready (type-erased stream wrappers
+    // construct their cached inner op there), so the full awaiter
+    // protocol must reach inner_ before await_suspend is driven. An
+    // already-ready inner op also skips arming the timer entirely.
+    bool await_ready()
     {
-        return false;
+        return inner_.await_ready();
     }
 
     auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
