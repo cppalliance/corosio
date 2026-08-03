@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+# Copyright (c) 2026 Steve Gerbino
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -39,7 +40,9 @@ else()
     message(WARNING "OpenSSL not found - TLS tests will be skipped")
 endif()
 
-target_include_directories(boost_corosio_tests PRIVATE . ../../)
+# ../../src/corosio lets the engine unit tests include the backend
+# engine headers, which spell their shared includes relative to it.
+target_include_directories(boost_corosio_tests PRIVATE . ../../ ../../src/corosio)
 
 # Register individual tests with CTest
 boost_capy_test_suite_discover_tests(boost_corosio_tests)

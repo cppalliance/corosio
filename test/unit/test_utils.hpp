@@ -176,26 +176,32 @@ inline constexpr char const* server_ip_key_pem =
 // Different self-signed CA for "wrong CA" test scenarios
 // Subject: CN=localhost
 // Valid: 2023-01-01 to 2033-01-01 (self-signed)
-// A different CA that won't verify server_cert_pem
+// A real, different self-signed CA (CA:TRUE) that does not sign
+// server_cert_pem, so both backends load it successfully but reject the
+// server at the handshake (no signer to confirm its certificate).
 // Command:
-//   openssl req -x509 -newkey rsa:2048 -keyout wrong_ca_key.pem -out wrong_ca_cert.pem
-//       -days 3650 -nodes -subj "/CN=localhost"
+//   openssl req -x509 -newkey rsa:2048 -keyout wrong_ca_key.pem
+//       -out wrong_ca_cert.pem -days 7300 -nodes -subj "/CN=Wrong Test CA"
+//       -addext "basicConstraints=critical,CA:TRUE"
 inline constexpr char const* wrong_ca_cert_pem =
     "-----BEGIN CERTIFICATE-----\n"
-    "MIICpDCCAYwCCQDU+pQ4P0jwoDANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAls\n"
-    "b2NhbGhvc3QwHhcNMjMwMTAxMDAwMDAwWhcNMzMwMTAxMDAwMDAwWjAUMRIwEAYD\n"
-    "VQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7\n"
-    "o5e7Xv5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z\n"
-    "5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z\n"
-    "5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z\n"
-    "5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z\n"
-    "5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z\n"
-    "5Z5Z5Z5ZAgMBAAEwDQYJKoZIhvcNAQELBQADggEBADummy0000000000000000000\n"
-    "0000000000000000000000000000000000000000000000000000000000000000000\n"
-    "0000000000000000000000000000000000000000000000000000000000000000000\n"
-    "0000000000000000000000000000000000000000000000000000000000000000000\n"
-    "0000000000000000000000000000000000000000000000000000000000000000000\n"
-    "0000000000000000000000000000000000000000000000=\n"
+    "MIIDETCCAfmgAwIBAgIUb0TIQloicv2ipq+GAe9z5MnIVHowDQYJKoZIhvcNAQEL\n"
+    "BQAwGDEWMBQGA1UEAwwNV3JvbmcgVGVzdCBDQTAeFw0yNjA4MDMxODMwMzJaFw00\n"
+    "NjA3MjkxODMwMzJaMBgxFjAUBgNVBAMMDVdyb25nIFRlc3QgQ0EwggEiMA0GCSqG\n"
+    "SIb3DQEBAQUAA4IBDwAwggEKAoIBAQC+3DBqcfjePUnZeh5oXFD5pYFMuLfvvyGy\n"
+    "svQQUdOz2DEJKhITV460oXB6T0r18x0XVMq1J15d/NrnN2LKOqikHPTMnhBb/j4S\n"
+    "wG8HFaajPD2TM2PonrhibzM1lOLGPs8LMs2U8Sh6uCAjTEzlwBKBB1NCZGnF9jnZ\n"
+    "vo5XCpKFY8wSsKTXJFMza/3Ct0lm2Znt5wzojdC7fO9gKCIpvU/g/n3eWF8Nz2W2\n"
+    "6rWQ0jmpY7nQEf6sRySy5jryR3lNldvOzdgepBv3o4J+H1RtZawUCLmwt4ygz4Oj\n"
+    "DYEWoaOxu6bnTwYjNtff1GI0hNawCTbmter5Kk6OABS0rnWOuXCzAgMBAAGjUzBR\n"
+    "MB0GA1UdDgQWBBRIgAIlF0OVIHX97izxSUMsxFtG9zAfBgNVHSMEGDAWgBRIgAIl\n"
+    "F0OVIHX97izxSUMsxFtG9zAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUA\n"
+    "A4IBAQAViMcVGaE3PyrxAB4apBKdeDuAPqezg5DEDd6R5PdEkLNWXkpDg1io3czv\n"
+    "qsN5S9Bu6lwENGejHqRwwIejxXKyrgJOGJEm4oMUbuc7KnBgiQGXcxQ0k5L3355g\n"
+    "Q/eS8C0rbuxc4JVXh1fdCU23UdvJ2NzgWJ0aqMYcwufnKz6B1C86EHz4ISZ9HtGe\n"
+    "8E83WXl67bV8LBpx4S3j/gG7S/hPPDguuFsrxoRs6/4bY7COk3SqJnek+mVQt7zX\n"
+    "fzL5MCO+YXQ0i0SN9r+OnBYtnHLUf/JFDLUERY3jp8ilyFdFLn4sVHtQd6yKN10T\n"
+    "IXVcdZuIBIxWxaT+Flimpm2eFfAK\n"
     "-----END CERTIFICATE-----\n";
 
 // Expired certificate for testing certificate expiry validation
@@ -1407,6 +1413,21 @@ make_contexts(context_mode mode)
 // Test Coroutines
 //
 
+/** Check an error code, logging its identity on failure.
+
+    `BOOST_TEST(!ec)` records only that the check failed; when triaging
+    a one-off CI failure the category and value are what distinguish a
+    transport error from an engine error.
+*/
+inline void
+expect_ok(std::error_code const& ec, char const* what)
+{
+    if (ec)
+        test_suite::log << what << " failed: [" << ec.category().name()
+            << ":" << ec.value() << "] " << ec.message() << "\n";
+    BOOST_TEST(!ec);
+}
+
 /** Test bidirectional data transfer on connected streams. */
 template<typename StreamA, typename StreamB>
 capy::task<>
@@ -1416,23 +1437,23 @@ test_stream(StreamA& a, StreamB& b)
 
     // Write from a, read from b
     auto [ec1, n1] = co_await a.write_some(capy::const_buffer("hello", 5));
-    BOOST_TEST(!ec1);
+    expect_ok(ec1, "test_stream write a");
     BOOST_TEST_EQ(n1, 5u);
 
     auto [ec2, n2] =
         co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
-    BOOST_TEST(!ec2);
+    expect_ok(ec2, "test_stream read b");
     BOOST_TEST_EQ(n2, 5u);
     BOOST_TEST_EQ(std::string_view(buf, n2), "hello");
 
     // Write from b, read from a
     auto [ec3, n3] = co_await b.write_some(capy::const_buffer("world", 5));
-    BOOST_TEST(!ec3);
+    expect_ok(ec3, "test_stream write b");
     BOOST_TEST_EQ(n3, 5u);
 
     auto [ec4, n4] =
         co_await a.read_some(capy::mutable_buffer(buf, sizeof(buf)));
-    BOOST_TEST(!ec4);
+    expect_ok(ec4, "test_stream read a");
     BOOST_TEST_EQ(n4, 5u);
     BOOST_TEST_EQ(std::string_view(buf, n4), "world");
 }
@@ -1467,12 +1488,12 @@ run_tls_test(
     // invocation pattern [...](){}() can cause capture corruption with run_async
     auto client_task = [&client]() -> capy::task<> {
         auto [ec] = co_await client.handshake(tls_role::client);
-        BOOST_TEST(!ec);
+        expect_ok(ec, "run_tls_test client handshake");
     };
 
     auto server_task = [&server]() -> capy::task<> {
         auto [ec] = co_await server.handshake(tls_role::server);
-        BOOST_TEST(!ec);
+        expect_ok(ec, "run_tls_test server handshake");
     };
 
     capy::run_async(ioc.get_executor())(client_task());

@@ -329,6 +329,7 @@ class basic_mocket<Socket>::read_some_awaitable
     basic_mocket* m_;
     MutableBufferSequence buffers_;
     std::size_t n_ = 0;
+    std::error_code ec_;
     union
     {
         char dummy_;
@@ -353,6 +354,7 @@ public:
         : m_(other.m_)
         , buffers_(std::move(other.buffers_))
         , n_(other.n_)
+        , ec_(other.ec_)
         , sync_(other.sync_)
     {
         if (!sync_)
@@ -369,6 +371,27 @@ public:
 
     bool await_ready()
     {
+        // Fuse injection point: an armed fuse fails this read as if the
+        // transport did, so a fault-injection sweep exercises the error
+        // path of every read the caller issues. Inert outside armed().
+        // A transport reports failure through the result, never by
+        // throwing from read_some, so the fuse's exception phase is
+        // converted to the same error code its error-code phase yields.
+        std::error_code fec;
+        try
+        {
+            fec = m_->fuse_.maybe_fail();
+        }
+        catch (std::system_error const& e)
+        {
+            fec = e.code();
+        }
+        if (fec)
+        {
+            ec_ = fec;
+            n_  = 0;
+            return true;
+        }
         if (!m_->provide_.empty())
         {
             n_ = m_->consume_provide(buffers_);
@@ -388,7 +411,7 @@ public:
     capy::io_result<std::size_t> await_resume()
     {
         if (sync_)
-            return {{}, n_};
+            return {ec_, n_};
         return underlying_.await_resume();
     }
 };
@@ -445,6 +468,27 @@ public:
 
     bool await_ready()
     {
+        // Fuse injection point: an armed fuse fails this write as if the
+        // transport did, so a fault-injection sweep exercises the error
+        // path of every write the caller issues. Inert outside armed().
+        // A transport reports failure through the result, never by
+        // throwing from write_some, so the fuse's exception phase is
+        // converted to the same error code its error-code phase yields.
+        std::error_code fec;
+        try
+        {
+            fec = m_->fuse_.maybe_fail();
+        }
+        catch (std::system_error const& e)
+        {
+            fec = e.code();
+        }
+        if (fec)
+        {
+            ec_ = fec;
+            n_  = 0;
+            return true;
+        }
         if (!m_->expect_.empty())
         {
             if (!m_->validate_expect(buffers_, n_))

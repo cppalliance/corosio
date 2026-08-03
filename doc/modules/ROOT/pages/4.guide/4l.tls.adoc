@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -420,6 +421,9 @@ include::example$snippets/4l_tls.cpp[tag=graceful_shutdown,indent=0]
 Shutdown is optional but recommended. Without it, the peer can't distinguish
 between a graceful close and a truncation attack.
 
+To reuse the stream afterward, call `reset()` to release the session state
+before the next `handshake()`; `handshake()` also performs this implicitly.
+
 == Plain and Encrypted Connections
 
 A `tls_stream` is *not* an `io_stream`, so a function taking `io_stream&`
@@ -501,11 +505,18 @@ include::example$snippets/4l_tls.cpp[tag=mtls_client,indent=0]
 | Safe from different threads
 
 | Same stream
-| NOT safe for concurrent operations
+| One read and one write may overlap (see below)
 |===
 
-Don't perform concurrent read, write, or handshake operations on the same
-TLS stream.
+A TLS stream allows one read operation and one write operation to be in
+flight at the same time. `shutdown()` may overlap a pending read; that
+read completes with an end-of-file error once the peer answers the
+close_notify. Two operations in the same direction, or a handshake
+running alongside any other operation, must not overlap. When the
+`io_context` runs on multiple threads, perform every operation on a
+given stream from within the same `capy::strand` (or otherwise ensure
+they never run concurrently); a single-threaded `io_context` needs no
+strand.
 
 == Building with TLS Libraries
 

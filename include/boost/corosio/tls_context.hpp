@@ -244,8 +244,8 @@ tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
 #endif
 class BOOST_COROSIO_DECL tls_context
 {
-    struct impl;
-    std::shared_ptr<impl> impl_;
+    struct implementation;
+    std::shared_ptr<implementation> impl_;
 
     friend detail::tls_context_data const&
     detail::get_tls_context_data(tls_context const&) noexcept;

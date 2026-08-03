@@ -24,7 +24,7 @@ namespace detail {
 
 /** Abstract base for cached native SSL contexts.
 
-    Stored in context::impl as an intrusive linked list.
+    Stored in context::implementation as an intrusive linked list.
     Each TLS backend derives from this to cache its native
     context handle ( WOLFSSL_CTX*, SSL_CTX*, etc. ).
 */
@@ -133,7 +133,7 @@ struct tls_context_data
     Contains all portable TLS configuration data plus
     cached native SSL contexts as an intrusive list.
 */
-struct tls_context::impl : detail::tls_context_data
+struct tls_context::implementation : detail::tls_context_data
 {};
 
 namespace detail {

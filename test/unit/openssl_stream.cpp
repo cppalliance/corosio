@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -17,6 +18,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <random>
 
 namespace boost::corosio {
 
@@ -29,6 +31,16 @@ struct openssl_stream_factory
     }
 
     auto operator()(corosio::test::mocket& s, tls_context const& ctx) const
+    {
+        return openssl_stream(&s, ctx);
+    }
+
+    auto operator()(test::gated_stream& s, tls_context const& ctx) const
+    {
+        return openssl_stream(&s, ctx);
+    }
+
+    auto operator()(test::partial_error_stream& s, tls_context const& ctx) const
     {
         return openssl_stream(&s, ctx);
     }
@@ -80,7 +92,7 @@ struct openssl_stream_test
         BOOST_TEST(&mutable_next == &const_next);
     }
 
-    /** Test that OpenSSL errors carry the OpenSSL category (issue #223).
+    /** Test that OpenSSL errors carry the OpenSSL category.
 
         Errors from the OpenSSL error queue must render readable messages,
         not "Unknown error <packed code>" via the system category.
@@ -94,7 +106,7 @@ struct openssl_stream_test
         BOOST_TEST(openssl_category().name() ==
             std::string_view("corosio.openssl"));
 
-        // 0x0A000086 is a packed SSL-routines error code (see issue #223).
+        // 0x0A000086 is a packed SSL-routines error code.
         std::error_code ec(0x0A000086, openssl_category());
         std::string msg = ec.message();
         BOOST_TEST(!msg.empty());
@@ -129,8 +141,13 @@ struct openssl_stream_test
     {
         using namespace test;
 
+        // A per-process-unique directory: the cxstd variants of this test
+        // run concurrently, and a shared path would let one process remove
+        // the CA file while another loads it, emptying the trust store and
+        // failing the handshake.
         auto dir = std::filesystem::temp_directory_path() /
-            "corosio_test_capath";
+            ("corosio_test_capath_" +
+                std::to_string(std::random_device{}()));
         std::filesystem::create_directories(dir);
         auto ca_file = dir / "d13e2296.0"; // subject hash of ca_cert_pem
         {
@@ -141,14 +158,16 @@ struct openssl_stream_test
         {
             io_context ioc;
             tls_context client_ctx;
-            client_ctx.add_verify_path(dir.string()); // NOLINT(bugprone-unused-return-value)
-            client_ctx.set_verify_mode(tls_verify_mode::peer); // NOLINT(bugprone-unused-return-value)
+            // NOLINTNEXTLINE(bugprone-unused-return-value)
+            client_ctx.add_verify_path(dir.string());
+            // NOLINTNEXTLINE(bugprone-unused-return-value)
+            client_ctx.set_verify_mode(tls_verify_mode::peer);
 
             auto server_ctx = make_server_context();
             run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
         }
 
-        std::filesystem::remove(ca_file);
+        std::filesystem::remove_all(dir);
     }
 
     void run()
@@ -169,6 +188,17 @@ struct openssl_stream_test
         test::testHostnamePersistence(make_stream);
         test::testHostnameRedirect(make_stream);
         test::testHostnameClear(make_stream);
+        test::testFullDuplex(make_stream);
+        test::testFullDuplexBulk(make_stream);
+        test::testRecordBoundaryTransfer(make_stream);
+        test::testShutdownOverRead(make_stream);
+        test::testShutdownSimultaneousClose(make_stream);
+        test::testPartialReadWithError(make_stream);
+        test::testCancelParkedReader(make_stream);
+        test::testFullDuplexMtStrand(make_stream);
+        test::testDeferredFlushError(make_stream);
+        test::testTlsLifecycleEdges(make_stream);
+        test::testShutdownTruncation(make_stream);
         test::testHostnameRetryAfterFailure(make_stream);
         test::testHostnameIpLiteral(make_stream, /*ip_supported=*/true);
         test::testAlpnAccessorEmpty(make_stream);

@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -55,7 +56,12 @@ enum class tls_role
 
     @par Thread Safety
     Distinct objects: Safe.@n
-    Shared objects: Unsafe.
+    Shared objects: Unsafe, with one exception: one read operation and
+    one write operation may be in flight simultaneously. `shutdown()`
+    may overlap a pending read. When the execution context runs on
+    multiple threads, all operations on one stream must be performed
+    within the same `capy::strand` (or otherwise never run
+    concurrently); a single-threaded context needs no strand.
 
     @see openssl_stream, wolfssl_stream
 */
@@ -77,6 +83,12 @@ public:
         This non-virtual template wrapper satisfies the `capy::Stream`
         concept by delegating to the virtual `do_read_some`.
 
+        @par Thread Safety
+        May run concurrently with one operation in the other
+        direction, subject to the class-level threading contract.
+        Two concurrent operations in the same direction are
+        undefined.
+
         @param buffers The buffer sequence to read data into.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
@@ -96,6 +108,12 @@ public:
         This non-virtual template wrapper satisfies the `capy::Stream`
         concept by delegating to the virtual `do_write_some`.
 
+        @par Thread Safety
+        May run concurrently with one operation in the other
+        direction, subject to the class-level threading contract.
+        Two concurrent operations in the same direction are
+        undefined.
+
         @param buffers The buffer sequence containing data to write.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
@@ -106,7 +124,7 @@ public:
         return do_write_some(buffers);
     }
 
-    /** Perform the TLS handshake asynchronously.
+    /** Asynchronously perform the TLS handshake.
 
         Initiates the TLS handshake process. For client connections,
         this sends the ClientHello and processes the server's response.
@@ -118,16 +136,32 @@ public:
         called first and performs a fresh handshake using the
         current configuration.
 
+        @par Preconditions
+        The underlying stream must be connected. No other TLS
+        operation may be in progress on this stream.
+
         @param role The handshake role, client or server.
 
         @return An awaitable yielding `(error_code)`.
     */
     virtual capy::io_task<> handshake(tls_role role) = 0;
 
-    /** Perform a graceful TLS shutdown asynchronously.
+    /** Asynchronously perform a graceful TLS shutdown.
 
         Initiates the TLS shutdown sequence by sending a close_notify
         alert and waiting for the peer's close_notify response.
+
+        @par Preconditions
+        A handshake must have completed successfully. May overlap
+        a pending read. No concurrent write may be in progress.
+
+        @par Postconditions
+        If the transport ends before the peer's close_notify is
+        received, the result is `capy::error::stream_truncated`, not
+        success: an unannounced close is indistinguishable from a
+        truncation attack and must not be reported as a clean
+        shutdown. A shutdown stopped mid-flight reports canceled;
+        any other transport error propagates unchanged.
 
         @return An awaitable yielding `(error_code)`.
     */
@@ -189,7 +223,7 @@ public:
     */
     virtual void set_hostname(std::string_view hostname) = 0;
 
-    /** Returns a reference to the underlying stream.
+    /** Return a reference to the underlying stream.
 
         Provides access to the type-erased underlying stream for
         operations like cancellation or accessing native handles.
@@ -203,20 +237,20 @@ public:
     */
     virtual capy::any_stream& next_layer() noexcept = 0;
 
-    /** Returns a const reference to the underlying stream.
+    /** Return a const reference to the underlying stream.
 
         @return Const reference to the wrapped stream.
     */
     virtual capy::any_stream const& next_layer() const noexcept = 0;
 
-    /** Returns the name of the TLS backend.
+    /** Return the name of the TLS backend.
 
         @return A string identifying the TLS implementation,
             such as "openssl" or "wolfssl".
     */
     virtual std::string_view name() const noexcept = 0;
 
-    /** Returns the ALPN protocol negotiated during the handshake.
+    /** Return the ALPN protocol negotiated during the handshake.
 
         Application-Layer Protocol Negotiation selects a single
         application protocol (for example `"h2"` or `"http/1.1"`)

@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+# Copyright (c) 2026 Steve Gerbino
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -18,6 +19,9 @@ project boost/corosio/test/unit
       <include>../../../capy/extra/test_suite
       <include>.
       <include>../..
+      # The engine unit tests include the backend engine headers,
+      # which spell their shared includes relative to src/corosio.
+      <include>../../src/corosio
       <target-os>windows:<define>_WIN32_WINNT=0x0602
       <warnings>extra
       <warnings-as-errors>on
@@ -30,7 +34,7 @@ project boost/corosio/test/unit
     ;
 
 # Non-TLS tests (recurses into test/, native/, etc.)
-for local f in [ glob-tree-ex . : *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp iocp_shutdown.cpp ]
+for local f in [ glob-tree-ex . : *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp iocp_shutdown.cpp openssl_engine.cpp wolfssl_engine.cpp cross_engine.cpp ]
 {
     run $(f) ;
 }
@@ -67,6 +71,30 @@ run cross_ssl_stream.cpp
 
 # TLS stream base tests (no specific TLS backend required)
 run tls_stream.cpp ;
+
+# Transport-free engine tests - link the backend that owns the engine
+# (the engine class is exported, so shared builds link too). The
+# vendor library is linked directly because these TUs call native
+# APIs through the engine's native handle.
+run openssl_engine.cpp
+    : : :
+    <library>/boost/corosio//boost_corosio_openssl
+    <library>/openssl//ssl
+    <library>/openssl//crypto
+    ;
+
+run wolfssl_engine.cpp
+    : : :
+    <library>/boost/corosio//boost_corosio_wolfssl
+    <library>/wolfssl//wolfssl
+    ;
+
+# Cross-backend engine interop - needs both backends
+run cross_engine.cpp
+    : : :
+    <library>/boost/corosio//boost_corosio_openssl
+    <library>/boost/corosio//boost_corosio_wolfssl
+    ;
 
 # TLS stress tests - separate targets so each builds when its backend is found
 # (linking both would cause <build>no propagation to skip if either is missing)

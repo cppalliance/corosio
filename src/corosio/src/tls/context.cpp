@@ -37,7 +37,7 @@ read_file_contents(std::string_view filename, std::string& out)
 
 } // namespace
 
-tls_context::tls_context() : impl_(std::make_shared<impl>()) {}
+tls_context::tls_context() : impl_(std::make_shared<implementation>()) {}
 
 //
 // Credential Loading

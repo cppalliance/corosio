@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -8,11 +9,10 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-// WolfSSL Implementation Notes
-// ----------------------------
-// - Anonymous ciphers: "aNULL:eNULL:@SECLEVEL=0" is OpenSSL syntax, doesn't work
-// - WolfSSL anon ciphers require compile-time flags and different cipher string
-// - context_mode::anon skipped; shared_cert and separate_cert modes work
+// WolfSSL has no equivalent to OpenSSL's anonymous cipher string
+// "aNULL:eNULL:@SECLEVEL=0", so context_mode::anon is skipped here;
+// shared_cert and separate_cert modes exercise both backends the
+// same way.
 
 // Test that header file is self-contained.
 #include <boost/corosio/wolfssl_stream.hpp>
@@ -23,6 +23,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <random>
 
 namespace boost::corosio {
 
@@ -35,6 +36,16 @@ struct wolfssl_stream_factory
     }
 
     auto operator()(corosio::test::mocket& s, tls_context const& ctx) const
+    {
+        return wolfssl_stream(&s, ctx);
+    }
+
+    auto operator()(test::gated_stream& s, tls_context const& ctx) const
+    {
+        return wolfssl_stream(&s, ctx);
+    }
+
+    auto operator()(test::partial_error_stream& s, tls_context const& ctx) const
     {
         return wolfssl_stream(&s, ctx);
     }
@@ -80,7 +91,7 @@ struct wolfssl_stream_test
         BOOST_TEST(&mutable_next == &const_next);
     }
 
-    /** Test that WolfSSL errors carry the WolfSSL category (issue #223).
+    /** Test that WolfSSL errors carry the WolfSSL category.
 
         Errors from wolfSSL_get_error must render readable messages, not
         garbage produced by treating the code as an errno value.
@@ -117,8 +128,13 @@ struct wolfssl_stream_test
     {
         using namespace test;
 
+        // A per-process-unique directory: the cxstd variants of this test
+        // run concurrently, and a shared path would let one process remove
+        // the CA file while another loads it, emptying the trust store and
+        // failing the handshake as ASN_NO_SIGNER_E.
         auto dir = std::filesystem::temp_directory_path() /
-            "corosio_wolfssl_capath";
+            ("corosio_wolfssl_capath_" +
+                std::to_string(std::random_device{}()));
         std::filesystem::create_directories(dir);
         auto ca_file = dir / "test_ca.pem";
         {
@@ -138,7 +154,7 @@ struct wolfssl_stream_test
             run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
         }
 
-        std::filesystem::remove(ca_file);
+        std::filesystem::remove_all(dir);
     }
 
     void run()
@@ -161,6 +177,17 @@ struct wolfssl_stream_test
         test::testHostnamePersistence(make_stream);
         test::testHostnameRedirect(make_stream);
         test::testHostnameClear(make_stream);
+        test::testFullDuplex(make_stream);
+        test::testFullDuplexBulk(make_stream);
+        test::testRecordBoundaryTransfer(make_stream);
+        test::testShutdownOverRead(make_stream);
+        test::testShutdownSimultaneousClose(make_stream);
+        test::testPartialReadWithError(make_stream);
+        test::testCancelParkedReader(make_stream);
+        test::testFullDuplexMtStrand(make_stream);
+        test::testDeferredFlushError(make_stream);
+        test::testTlsLifecycleEdges(make_stream);
+        test::testShutdownTruncation(make_stream);
         test::testHostnameRetryAfterFailure(make_stream);
         // IP-literal matching is build-gated (WOLFSSL_IP_ALT_NAME);
         // when absent, an IP-literal hostname fails closed.

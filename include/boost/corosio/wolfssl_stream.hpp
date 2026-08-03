@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -46,7 +47,12 @@ namespace boost::corosio {
 
     @par Thread Safety
     Distinct objects: Safe.@n
-    Shared objects: Unsafe.
+    Shared objects: Unsafe, with one exception: one read operation and
+    one write operation may be in flight simultaneously. `shutdown()`
+    may overlap a pending read. When the execution context runs on
+    multiple threads, all operations on one stream must be performed
+    within the same `capy::strand` (or otherwise never run
+    concurrently); a single-threaded context needs no strand.
 
     @par Example
     @code
@@ -69,12 +75,12 @@ namespace boost::corosio {
 */
 class BOOST_COROSIO_DECL wolfssl_stream final : public tls_stream
 {
-    struct impl;
+    struct implementation;
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // capy::any_stream, dll-interface
     capy::any_stream stream_; // must be first - impl_ holds reference
     BOOST_COROSIO_MSVC_WARNING_POP
-    impl* impl_;
+    implementation* impl_;
 
 public:
     /** Construct a WolfSSL stream (owning mode).
@@ -91,7 +97,7 @@ public:
         requires(!std::same_as<std::decay_t<S>, wolfssl_stream>)
     wolfssl_stream(S stream, tls_context const& ctx)
         : stream_(std::move(stream))
-        , impl_(make_impl(stream_, ctx))
+        , impl_(make_implementation(stream_, ctx))
     {
     }
 
@@ -108,7 +114,7 @@ public:
     template<capy::Stream S>
     wolfssl_stream(S* stream, tls_context const& ctx)
         : stream_(stream)
-        , impl_(make_impl(stream_, ctx))
+        , impl_(make_implementation(stream_, ctx))
     {
     }
 
@@ -135,7 +141,7 @@ public:
     */
     wolfssl_stream& operator=(wolfssl_stream&& other) noexcept;
 
-    /** Perform the TLS handshake asynchronously.
+    /** Asynchronously perform the TLS handshake.
 
         Suspends the calling coroutine until the handshake
         completes, an error occurs, or the operation is
@@ -151,15 +157,23 @@ public:
     */
     capy::io_task<> handshake(tls_role role) override;
 
-    /** Shut down the TLS session asynchronously.
+    /** Asynchronously shut down the TLS session.
 
         Sends a close_notify alert and waits for the peer's
         close_notify response. Supports cancellation via
         stop token.
 
         @par Preconditions
-        A handshake must have completed successfully. No
-        other TLS operation may be in progress on this stream.
+        A handshake must have completed successfully. May overlap
+        a pending read; the read completes with `capy::error::eof`
+        when the peer answers the close_notify. No concurrent write
+        may be in progress.
+
+        @par Postconditions
+        If the transport ends before the peer's close_notify is
+        received, the result is `capy::error::stream_truncated`, not
+        success. A shutdown stopped mid-flight reports canceled; any
+        other transport error propagates unchanged.
 
         @return An awaitable yielding `(error_code)`.
     */
@@ -169,7 +183,9 @@ public:
 
         Clears internal buffers and session data so the stream
         can perform a new handshake on the same underlying
-        connection.
+        connection. The previous session is discarded and never
+        resumed, so a handshake after `reset()` is always a full
+        handshake.
 
         @par Preconditions
         No TLS operation may be in progress on this stream.
@@ -205,7 +221,7 @@ protected:
         capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers) override;
 
 private:
-    static impl* make_impl(capy::any_stream& stream, tls_context const& ctx);
+    static implementation* make_implementation(capy::any_stream& stream, tls_context const& ctx);
 };
 
 /** Return the error category for raw WolfSSL errors.
