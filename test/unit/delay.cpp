@@ -20,6 +20,7 @@
 #include <chrono>
 #include <coroutine>
 #include <cstdint>
+#include <limits>
 #include <ratio>
 #include <stdexcept>
 #include <stop_token>
@@ -30,6 +31,87 @@
 #include "test_suite.hpp"
 
 namespace boost::corosio {
+
+// Test clock driven by a static counter so facade waits complete
+// after a deterministic number of re-check iterations with no
+// wall-clock dependence.
+struct test_clock
+{
+    using rep        = std::int64_t;
+    using period     = std::nano;
+    using duration   = std::chrono::nanoseconds;
+    using time_point = std::chrono::time_point<test_clock>;
+    static constexpr bool is_steady = false;
+
+    static inline std::atomic<std::int64_t> now_ns{0};
+
+    static time_point now() noexcept
+    {
+        return time_point(
+            duration(now_ns.load(std::memory_order_relaxed)));
+    }
+};
+
+// Advances test_clock 1ms per consultation and requests a zero-length
+// steady wait, so each re-check lands on the next reactor pass.
+struct stepping_traits
+{
+    static inline std::atomic<int> calls{0};
+
+    static test_clock::duration
+    to_wait_duration(test_clock::duration)
+    {
+        calls.fetch_add(1, std::memory_order_relaxed);
+        test_clock::now_ns.fetch_add(
+            1'000'000, std::memory_order_relaxed);
+        return {};
+    }
+};
+
+// Requests a wait far longer than any test runs, so cancellation is
+// the only way out.
+struct hold_traits
+{
+    static test_clock::duration
+    to_wait_duration(test_clock::duration)
+    {
+        return std::chrono::seconds(10);
+    }
+};
+
+// Distinct clock type backed by the monotonic clock: routes to the
+// facade ( not the steady fast path ) but advances in real time,
+// exercising default traits end to end.
+struct wall_clock
+{
+    using rep        = std::chrono::steady_clock::rep;
+    using period     = std::chrono::steady_clock::period;
+    using duration   = std::chrono::steady_clock::duration;
+    using time_point = std::chrono::time_point<wall_clock, duration>;
+    static constexpr bool is_steady = true;
+
+    static time_point now() noexcept
+    {
+        return time_point(
+            std::chrono::steady_clock::now().time_since_epoch());
+    }
+};
+
+// Steady time points, of any duration, must keep the zero-iteration
+// awaitable; other clocks route to the facade.
+static_assert(std::same_as<
+    decltype(delay(std::chrono::steady_clock::time_point{})),
+    delay_awaitable>);
+static_assert(std::same_as<
+    decltype(delay(std::chrono::time_point<std::chrono::steady_clock,
+        std::chrono::milliseconds>{})),
+    delay_awaitable>);
+static_assert(std::same_as<
+    decltype(delay(test_clock::time_point{})),
+    clock_delay_awaitable<test_clock, wait_traits<test_clock>>>);
+static_assert(std::same_as<
+    decltype(delay<stepping_traits>(test_clock::time_point{})),
+    clock_delay_awaitable<test_clock, stepping_traits>>);
 
 template<auto Backend>
 struct delay_test
@@ -418,6 +500,24 @@ struct delay_test
         BOOST_TEST(ok);
     }
 
+    void testFloatingNaNDurationCompletes()
+    {
+        // A NaN floating-rep duration must not reach duration_cast;
+        // the clamp treats it as no wait and completes synchronously.
+        io_context ioc(Backend);
+        bool ok = false;
+
+        auto t = [](bool& ok_out) -> capy::task<> {
+            auto [ec] = co_await delay(std::chrono::duration<double>(
+                std::numeric_limits<double>::quiet_NaN()));
+            ok_out = !ec;
+        };
+        capy::run_async(ioc.get_executor())(t(ok));
+
+        ioc.run();
+        BOOST_TEST(ok);
+    }
+
     void testPositiveExtremeDurationArmsThenCancels()
     {
         // hours::max() must clamp and arm a real timer without overflow
@@ -580,6 +680,232 @@ struct delay_test
         }
     }
 
+    void testClockDeadlineCompletes()
+    {
+        io_context ioc(Backend);
+        test_clock::now_ns.store(0);
+        stepping_traits::calls.store(0);
+        bool ok = false;
+
+        auto t = [](bool& ok_out) -> capy::task<> {
+            auto tp = test_clock::now() + std::chrono::milliseconds(5);
+            auto [ec] = co_await delay<stepping_traits>(tp);
+            ok_out = !ec;
+        };
+        capy::run_async(ioc.get_executor())(t(ok));
+
+        ioc.run();
+        BOOST_TEST(ok);
+        // The re-check loop must have run: 5ms of clock at 1ms per
+        // consultation is at least four re-arms after the initial one.
+        BOOST_TEST(stepping_traits::calls.load() >= 4);
+        BOOST_TEST(test_clock::now() >= test_clock::time_point(
+            std::chrono::milliseconds(5)));
+    }
+
+    void testClockPastDeadlineCompletesImmediately()
+    {
+        io_context ioc(Backend);
+        test_clock::now_ns.store(1'000'000'000);
+        stepping_traits::calls.store(0);
+        bool ok = false;
+
+        auto t = [](bool& ok_out) -> capy::task<> {
+            auto tp = test_clock::now() - std::chrono::seconds(1);
+            auto [ec] = co_await delay<stepping_traits>(tp);
+            ok_out = !ec;
+        };
+        capy::run_async(ioc.get_executor())(t(ok));
+
+        ioc.run();
+        BOOST_TEST(ok);
+        // Elapsed deadline resumes inline without consulting traits
+        BOOST_TEST_EQ(stepping_traits::calls.load(), 0);
+    }
+
+    void testClockDefaultTraitsCompletes()
+    {
+        io_context ioc(Backend);
+        bool ok = false;
+
+        auto t = [](bool& ok_out) -> capy::task<> {
+            auto tp = wall_clock::now() + std::chrono::milliseconds(5);
+            auto [ec] = co_await delay(tp);
+            ok_out = !ec && wall_clock::now() >= tp;
+        };
+        capy::run_async(ioc.get_executor())(t(ok));
+
+        ioc.run();
+        BOOST_TEST(ok);
+    }
+
+    void testClockCoarseDurationCompletes()
+    {
+        // A time_point coarser than Clock::duration must convert
+        // ( ceil ) and still complete at or after the deadline.
+        io_context ioc(Backend);
+        test_clock::now_ns.store(0);
+        bool ok = false;
+
+        auto t = [](bool& ok_out) -> capy::task<> {
+            auto tp = std::chrono::time_point<test_clock,
+                std::chrono::milliseconds>(std::chrono::milliseconds(3));
+            auto [ec] = co_await delay<stepping_traits>(tp);
+            ok_out = !ec && test_clock::now() >=
+                test_clock::time_point(std::chrono::milliseconds(3));
+        };
+        capy::run_async(ioc.get_executor())(t(ok));
+
+        ioc.run();
+        BOOST_TEST(ok);
+    }
+
+    void testClockCancellation()
+    {
+        io_context ioc(Backend);
+        test_clock::now_ns.store(0);
+        std::stop_source src;
+        bool canceled = false;
+
+        auto t = [](bool& canceled_out) -> capy::task<> {
+            auto tp = test_clock::now() + std::chrono::hours(1);
+            auto [ec] = co_await delay<hold_traits>(tp);
+            canceled_out = (ec == capy::cond::canceled);
+        };
+        capy::run_async(ioc.get_executor(), src.get_token())(t(canceled));
+
+        // Let the wait suspend, then cancel
+        ioc.run_one();
+        src.request_stop();
+        ioc.run();
+        BOOST_TEST(canceled);
+    }
+
+    void testClockAlreadyStoppedCompletesCanceled()
+    {
+        io_context ioc(Backend);
+        test_clock::now_ns.store(0);
+        std::stop_source src;
+        src.request_stop();
+        bool canceled = false;
+
+        auto t = [](bool& canceled_out) -> capy::task<> {
+            auto tp = test_clock::now() + std::chrono::hours(1);
+            auto [ec] = co_await delay<hold_traits>(tp);
+            canceled_out = (ec == capy::cond::canceled);
+        };
+        capy::run_async(ioc.get_executor(), src.get_token())(t(canceled));
+
+        ioc.run();
+        BOOST_TEST(canceled);
+    }
+
+    void testClockPastDeadlineWithStopRequested()
+    {
+        // Stop must win over an elapsed deadline, mirroring the
+        // steady overloads' ordering.
+        io_context ioc(Backend);
+        test_clock::now_ns.store(1'000'000'000);
+        std::stop_source src;
+        src.request_stop();
+        bool canceled = false;
+
+        auto t = [](bool& canceled_out) -> capy::task<> {
+            auto tp = test_clock::now() - std::chrono::seconds(1);
+            auto [ec] = co_await delay<hold_traits>(tp);
+            canceled_out = (ec == capy::cond::canceled);
+        };
+        capy::run_async(ioc.get_executor(), src.get_token())(t(canceled));
+
+        ioc.run();
+        BOOST_TEST(canceled);
+    }
+
+    void testClockShutdownWithSuspendedWait()
+    {
+        // Destroying the io_context while a facade wait is suspended
+        // must drain the waiter and destroy the frame ( guard runs ),
+        // like any pending steady wait.
+        int destroyed = 0;
+        test_clock::now_ns.store(0);
+
+        {
+            io_context ioc(Backend);
+
+            auto task = [](int& counter) -> capy::task<> {
+                struct guard
+                {
+                    int& c_;
+                    ~guard() { ++c_; }
+                };
+                guard g{counter};
+                auto tp = test_clock::now() + std::chrono::hours(1);
+                auto [ec] = co_await delay<hold_traits>(tp);
+                (void)ec;
+            };
+
+            capy::run_async(ioc.get_executor())(task(destroyed));
+            ioc.poll();
+        }
+
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
+    void testClockRearmStopRace()
+    {
+        // Hammer the rearm/cancel interleavings: race_traits spins the
+        // facade at reactor rate while a foreign thread requests stop
+        // on every waiter. The clock still advances 1us per re-arm, so
+        // the test terminates even if every stop were lost. Every
+        // co_await must complete and the context must drain.
+        struct race_traits
+        {
+            static test_clock::duration
+            to_wait_duration(test_clock::duration)
+            {
+                test_clock::now_ns.fetch_add(
+                    1'000, std::memory_order_relaxed);
+                return {};
+            }
+        };
+
+        constexpr int N = 100;
+
+        for(int iter = 0; iter < 5; ++iter)
+        {
+            io_context ioc(Backend, 2u); // multi-threaded, not hint 1
+            auto ex = ioc.get_executor();
+            test_clock::now_ns.store(0);
+
+            std::atomic<int> completed{0};
+            std::vector<std::stop_source> srcs(N);
+
+            auto task = [](std::atomic<int>& done) -> capy::task<> {
+                auto tp = test_clock::now() +
+                    std::chrono::milliseconds(50);
+                auto [ec] = co_await delay<race_traits>(tp);
+                (void)ec; // success or canceled — both acceptable
+                done.fetch_add(1, std::memory_order_relaxed);
+            };
+
+            for(int i = 0; i < N; ++i)
+                capy::run_async(ex, srcs[i].get_token())(task(completed));
+
+            std::thread stopper([&] {
+                for(auto& s : srcs)
+                    s.request_stop();
+            });
+            std::thread r1([&] { ioc.run(); });
+            std::thread r2([&] { ioc.run(); });
+
+            r1.join();
+            r2.join();
+            stopper.join();
+
+            BOOST_TEST_EQ(completed.load(), N);
+        }
+    }
+
     void run()
     {
         testDurationCompletes();
@@ -600,11 +926,21 @@ struct delay_test
         testShutdownDrainsPostedCompletion();
         testNarrowRepDurationClamp();
         testNegativeExtremeDurationCompletes();
+        testFloatingNaNDurationCompletes();
         testPositiveExtremeDurationArmsThenCancels();
         testMultiTimerExpiryOrder();
         testAbruptStopWithPendingDelays();
         testShutdownReentrantThreeFrames();
         testInitiationStopRace();
+        testClockDeadlineCompletes();
+        testClockPastDeadlineCompletesImmediately();
+        testClockDefaultTraitsCompletes();
+        testClockCoarseDurationCompletes();
+        testClockCancellation();
+        testClockAlreadyStoppedCompletesCanceled();
+        testClockPastDeadlineWithStopRequested();
+        testClockShutdownWithSuspendedWait();
+        testClockRearmStopRace();
     }
 };
 

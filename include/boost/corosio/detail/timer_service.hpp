@@ -479,6 +479,14 @@ timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
     bool lost_cancel = false;
     {
         std::lock_guard lock(mutex_);
+        // Grow before publishing anything, so the push_back below
+        // cannot throw: a failure here leaves the waiter untouched,
+        // the strong guarantee rearm_wait's recovery relies on.
+        if (impl.heap_index_.load(std::memory_order_relaxed) ==
+                (std::numeric_limits<std::size_t>::max)() &&
+            heap_.size() == heap_.capacity())
+            heap_.reserve(
+                heap_.capacity() == 0 ? 16 : 2 * heap_.capacity());
         // Publish: from here the waiter is visible to the fire path and
         // to its own stop callback (impl_ non-null enables cancel_waiter).
         w->impl_ = &impl;

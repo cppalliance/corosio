@@ -157,6 +157,20 @@ public:
         // symbol from outside the corosio DLL.
         BOOST_COROSIO_DECL
         std::coroutine_handle<> wait(waiter_node& w);
+
+        /** Publish a waiter unconditionally.
+
+            Like `wait`, but never takes the elapsed fast path. The
+            fast path posts the continuation directly, bypassing the
+            embedded op; hook-driven waits must observe every
+            completion through the op, where the re-arm hook runs.
+
+            @par Preconditions
+            Same as `wait`.
+
+            @param w The waiter to publish.
+        */
+        std::coroutine_handle<> publish(waiter_node& w);
     };
 
     /// The clock type used for time operations.
@@ -409,6 +423,48 @@ public:
     // Defined below wait_awaitable, which needs timer complete.
     wait_awaitable wait();
 
+    /** Publish a hook-driven wait.
+
+        Bypasses the elapsed fast path so every completion is
+        delivered through the waiter's embedded op, where the
+        re-arm hook is consulted. Used by awaitables that
+        re-publish the waiter to continue a logical wait across
+        several timer expirations.
+
+        @par Preconditions
+        @p w is fully initialized ( handle, executor, stop token,
+        hook fields ) and its storage outlives the wait.
+
+        @param w The waiter to publish.
+
+        @return `std::noop_coroutine()`.
+    */
+    std::coroutine_handle<> publish_wait(waiter_node& w);
+
+    /** Re-arm an already-fired waiter with a new relative expiry.
+
+        Stores the ( saturated ) expiry and re-publishes @p w. The
+        waiter's original work count and stop callback remain in
+        effect. Must only be called from the waiter's re-arm hook,
+        where the waiter has been popped from the service but not
+        yet resumed.
+
+        @par Preconditions
+        The timer has no other waiters — this is what makes the
+        unlocked expiry write race-free.
+
+        Re-publication needs heap capacity and can fail under
+        allocation pressure. On failure the waiter is left exactly as
+        the hook received it, so the caller completes the wait through
+        the normal resume path instead of re-arming.
+
+        @param w The waiter to re-publish.
+        @param d The next expiry relative to now.
+
+        @return `true` if re-published; `false` if allocation failed.
+    */
+    [[nodiscard]] bool rearm_wait(waiter_node& w, duration d) noexcept;
+
 protected:
     explicit timer(handle h) noexcept : io_object(std::move(h)) {}
 
@@ -497,6 +553,18 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
     /// The completion result read by `await_resume`.
     std::error_code ec_;
 
+    // Consulted by the completion op before resuming; lets a
+    // clock-facade wait re-publish itself instead of completing.
+    // Never consulted on the shutdown destroy path. Consulted on
+    // every completion, including cancellation ( `ec_` set ) — the
+    // hook must inspect `w`'s `ec_` and must not re-arm a canceled
+    // waiter. Runs inside the completion path; must not throw.
+    /// Re-arm hook: return true to skip resumption ( wait continues ).
+    bool (*on_fire_)(void*) noexcept = nullptr;
+
+    /// Context passed to `on_fire_` ( the owning awaitable ).
+    void* on_fire_ctx_ = nullptr;
+
     /// The embedded completion op posted to the scheduler.
     completion_op op_;
 
@@ -518,6 +586,24 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
     // to other threads; the node never moves.
     waiter_node(waiter_node const&)            = delete;
     waiter_node& operator=(waiter_node const&) = delete;
+
+    /** Bind the coroutine and its environment before publication.
+
+        The single definition of the fields every wait must populate
+        before the node is published; hook-driven waits additionally
+        set `on_fire_` / `on_fire_ctx_`.
+
+        @param h The coroutine to resume on completion.
+        @param env The awaiting chain's environment; must outlive
+            the suspension.
+    */
+    void bind(std::coroutine_handle<> h, capy::io_env const& env) noexcept
+    {
+        h_      = h;
+        cont_.h = h;
+        d_      = env.executor;
+        token_  = &env.stop_token;
+    }
 
     /** Arm the stop callback.
 
@@ -579,11 +665,11 @@ struct wait_awaitable
         -> std::coroutine_handle<>
     {
         auto& impl = t_.get();
-        w_.h_      = h;
-        w_.cont_.h = h;
-        w_.d_      = env->executor;
+        w_.bind(h, *env);
 
-        // Inline fast path: already expired and not in the heap
+        // Inline fast path: already expired and not in the heap.
+        // Post instead of dispatch so the coroutine yields to the
+        // scheduler, allowing other queued work to run.
         if (impl.already_expired())
         {
             w_.ec_ = {};
@@ -591,7 +677,6 @@ struct wait_awaitable
             return std::noop_coroutine();
         }
 
-        w_.token_ = &env->stop_token;
         return impl.wait(w_);
     }
 };

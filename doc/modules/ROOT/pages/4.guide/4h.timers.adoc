@@ -55,6 +55,31 @@ include::example$snippets/4h_timers.cpp[tag=delay_timepoint,indent=0]
 
 A time point already in the past also completes synchronously.
 
+== Delaying on a Different Clock
+
+`delay(time_point)` also accepts a time point on clocks other than
+`steady_clock` -- for example `std::chrono::system_clock`, when a
+deadline is naturally expressed as wall-clock time rather than a
+monotonic duration:
+
+[source,cpp]
+----
+include::example$snippets/4h_timers.cpp[tag=delay_wallclock,indent=0]
+----
+
+Internally this performs one or more bounded `steady_clock` waits,
+re-reading the clock between them, so an adjustment to the clock is
+observed at the next re-check rather than only at the original
+deadline. Pass a custom traits type as `delay<Traits>(time_point)` to
+bound how quickly such an adjustment is observed:
+
+[source,cpp]
+----
+include::example$snippets/4h_timers.cpp[tag=delay_traits,indent=0]
+
+include::example$snippets/4h_timers.cpp[tag=delay_traits_use,indent=0]
+----
+
 == Cancellation
 
 `delay()` honors the stop token of its `co_await` environment. If the

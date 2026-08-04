@@ -70,7 +70,12 @@ timer::implementation::wait(waiter_node& w)
         w.d_.post(w.cont_);
         return std::noop_coroutine();
     }
+    return publish(w);
+}
 
+std::coroutine_handle<>
+timer::implementation::publish(waiter_node& w)
+{
     // Publication-last invariant: fully initialize the waiter, count
     // its work, and arm cancellation BEFORE insert_waiter() publishes
     // it into the heap/list where a concurrent run() thread can fire
@@ -91,6 +96,36 @@ timer::implementation::wait(waiter_node& w)
     svc_->insert_waiter(*this, &w);
 
     return std::noop_coroutine();
+}
+
+std::coroutine_handle<>
+timer::publish_wait(waiter_node& w)
+{
+    return get().publish(w);
+}
+
+bool
+timer::rearm_wait(waiter_node& w, duration d) noexcept
+{
+    // The single waiter was popped before its op ran, so the impl is
+    // out of the heap with no published waiters: expires_after only
+    // stores the saturated expiry, and writing it is race-free.
+    expires_after(d);
+    auto& impl = get();
+    // The drain that popped the waiter cleared the flag.
+    impl.might_have_pending_waits_.store(true, std::memory_order_relaxed);
+    try
+    {
+        impl.svc_->insert_waiter(impl, &w);
+    }
+    catch(std::bad_alloc const&)
+    {
+        // insert_waiter grows the heap before publishing anything,
+        // so the waiter is untouched and the caller can complete
+        // the wait through the normal resume path.
+        return false;
+    }
+    return true;
 }
 
 // completion_op and canceller definitions live here, non-inline, for
@@ -125,6 +160,12 @@ waiter_node::completion_op::operator()()
     // continuation is the last access, since the frame (and node)
     // may complete and die on another thread immediately after.
     auto* w = waiter_;
+    // A true return means the waiter re-published itself: the frame
+    // stays suspended, the wait's work count stays live, and the
+    // node may already be firing on another thread — no access past
+    // this point.
+    if (w->on_fire_ && w->on_fire_(w->on_fire_ctx_))
+        return;
     w->reset_stop_cb();
     auto d      = w->d_;
     auto& sched = w->svc_->get_scheduler();
