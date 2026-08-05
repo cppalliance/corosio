@@ -60,7 +60,7 @@ timer::implementation::publish(waiter_node& w)
 {
     // Publication-last invariant: fully initialize the waiter, count
     // its work, and arm cancellation BEFORE insert_waiter() publishes
-    // it into the heap/list where a concurrent run() thread can fire
+    // it into the heap/waiter slot where a concurrent run() thread can fire
     // it. impl_ stays null until insert_waiter() sets it under the
     // mutex, so a stop callback that fires early (cancel_waiter) sees a
     // null impl_ and is a safe no-op. To avoid losing such an early

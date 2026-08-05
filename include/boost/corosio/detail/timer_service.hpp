@@ -48,8 +48,10 @@ struct scheduler;
     frame — waits perform no allocation.
 
     timer::implementation holds per-timer state: expiry, heap
-    index, and an intrusive_list of waiter_nodes. Each timer holds
-    at most one waiter.
+    index, and the single published waiter. Each timer holds
+    at most one waiter; process_expired's local cross-timer drain
+    list still threads waiters through their intrusive hooks when
+    collecting several timers' waiters past the lock.
 
     timer_service owns a min-heap of active timers and a free list
     of recycled impls. The heap is ordered by expiry time; the
@@ -185,10 +187,10 @@ public:
     /// Cancel and recycle a timer implementation.
     inline void destroy_impl(timer::implementation& impl);
 
-    /// Insert a waiter into the timer's waiter list and the heap.
+    /// Publish the timer's waiter and insert the timer into the heap.
     inline void insert_waiter(timer::implementation& impl, waiter_node* w);
 
-    /// Cancel all waiters on a timer.
+    /// Cancel the timer's published waiter, if any.
     inline void cancel_timer(timer::implementation& impl);
 
     /// Cancel one specific waiter ( stop_token callback path ).
@@ -306,7 +308,7 @@ timer_service::shutdown()
     // this is harmless.
     for (auto* impl : impls)
     {
-        while (auto* w = impl->waiters_.pop_front())
+        if (auto* w = std::exchange(impl->waiter_, nullptr))
         {
             w->reset_stop_cb();
             auto h = std::exchange(w->h_, {});
@@ -341,6 +343,7 @@ timer_service::construct()
             (std::numeric_limits<std::size_t>::max)(),
             std::memory_order_relaxed);
         impl->might_have_pending_waits_.store(false, std::memory_order_relaxed);
+        BOOST_COROSIO_ASSERT(impl->waiter_ == nullptr);
         return impl;
     }
 
@@ -356,6 +359,7 @@ timer_service::construct()
             (std::numeric_limits<std::size_t>::max)(),
             std::memory_order_relaxed);
         impl->might_have_pending_waits_.store(false, std::memory_order_relaxed);
+        BOOST_COROSIO_ASSERT(impl->waiter_ == nullptr);
     }
     else
     {
@@ -434,21 +438,19 @@ timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
                 (impl.heap_index_.load(std::memory_order_relaxed) == 0);
             refresh_cached_nearest();
         }
-        impl.waiters_.push_back(w);
+        BOOST_COROSIO_ASSERT(impl.waiter_ == nullptr);
+        impl.waiter_ = w;
 
         // Lost-cancel re-check: a stop requested after the canceller was
         // armed in wait() but before this publication found impl_ null
         // and returned a no-op. Observe it now and undo the insertion.
         if (w->token_->stop_requested())
         {
-            w->impl_ = nullptr;
-            impl.waiters_.remove(w);
-            if (impl.waiters_.empty())
-            {
-                remove_timer_impl(impl);
-                impl.might_have_pending_waits_.store(
-                    false, std::memory_order_relaxed);
-            }
+            w->impl_     = nullptr;
+            impl.waiter_ = nullptr;
+            remove_timer_impl(impl);
+            impl.might_have_pending_waits_.store(
+                false, std::memory_order_relaxed);
             refresh_cached_nearest();
             lost_cancel = true;
             notify      = false; // insertion undone; nearest unchanged
@@ -470,32 +472,30 @@ timer_service::cancel_timer(timer::implementation& impl)
         return;
 
     // No unlocked already-done fast-out here: it would need the
-    // non-atomic waiters_ (a race with concurrent drains), and an
+    // non-atomic waiter_ (a race with concurrent drains), and an
     // index-only check is lifetime-unsafe because npos is stored
     // before the drain finishes touching the impl. A stale-true
     // flag is rare with the stateless API; the locked path below
     // re-validates.
 
-    intrusive_list<waiter_node> canceled;
+    waiter_node* canceled = nullptr;
 
     {
         std::lock_guard lock(mutex_);
         remove_timer_impl(impl);
-        while (auto* w = impl.waiters_.pop_front())
-        {
-            w->impl_ = nullptr;
-            canceled.push_back(w);
-        }
+        canceled = std::exchange(impl.waiter_, nullptr);
+        if (canceled)
+            canceled->impl_ = nullptr;
         // Store false as the final touch of the impl under the lock so
         // a pre-lock false-flag check trusts it unqualified.
         impl.might_have_pending_waits_.store(false, std::memory_order_relaxed);
         refresh_cached_nearest();
     }
 
-    while (auto* w = canceled.pop_front())
+    if (canceled)
     {
-        w->ec_ = make_error_code(capy::error::canceled);
-        sched_->post(&w->op_);
+        canceled->ec_ = make_error_code(capy::error::canceled);
+        sched_->post(&canceled->op_);
     }
 }
 
@@ -508,15 +508,12 @@ timer_service::cancel_waiter(waiter_node* w)
         // process_expired, or insert_waiter's lost-cancel recheck
         if (!w->impl_)
             return;
-        auto* impl = w->impl_;
-        w->impl_   = nullptr;
-        impl->waiters_.remove(w);
-        if (impl->waiters_.empty())
-        {
-            remove_timer_impl(*impl);
-            impl->might_have_pending_waits_.store(
-                false, std::memory_order_relaxed);
-        }
+        auto* impl    = w->impl_;
+        w->impl_      = nullptr;
+        impl->waiter_ = nullptr;
+        remove_timer_impl(*impl);
+        impl->might_have_pending_waits_.store(
+            false, std::memory_order_relaxed);
         refresh_cached_nearest();
     }
 
@@ -537,7 +534,7 @@ timer_service::process_expired()
         {
             timer::implementation* t = heap_[0].timer_;
             remove_timer_impl(*t);
-            while (auto* w = t->waiters_.pop_front())
+            if (auto* w = std::exchange(t->waiter_, nullptr))
             {
                 w->impl_ = nullptr;
                 w->ec_   = {};

@@ -39,9 +39,9 @@ namespace boost::corosio::detail {
 // timer_service is defined in timer_service.hpp, which includes this
 // header. waiter_node and wait_awaitable are defined below the timer
 // class: waiter_node stores a timer::implementation*, which cannot be
-// forward-declared as a nested type. intrusive_list only stores
-// waiter_node pointers, so this forward declaration suffices for
-// implementation's data layout.
+// forward-declared as a nested type. implementation stores only a
+// waiter_node pointer, so this forward declaration suffices for its
+// data layout.
 class timer_service;
 struct waiter_node;
 struct wait_awaitable;
@@ -77,7 +77,7 @@ class BOOST_COROSIO_DECL timer : public io_object
 public:
     /** Backend state and wait entry point for a timer.
 
-        Holds per-timer state (expiry, heap position, waiter list) and
+        Holds per-timer state ( expiry, heap position, the single waiter ) and
         the `wait` entry point used by the awaitable returned from
         @ref timer::wait. There is exactly one concrete timer backend,
         so `wait` is a plain member function rather than a virtual
@@ -98,7 +98,7 @@ public:
 
         // heap_index_ and might_have_pending_waits_ are cross-thread
         // hints, not authoritative state: the real state lives in the
-        // heap and waiter list under timer_service::mutex_. Every
+        // heap and the published waiter under timer_service::mutex_. Every
         // unlocked fast-out that reads them is either re-validated under
         // the mutex or safe under a stale value in both directions, and
         // any locked writer / locked reader pair is already ordered by
@@ -108,14 +108,19 @@ public:
         /// Index in the timer service's min-heap, or `npos`.
         std::atomic<std::size_t> heap_index_{npos};
 
+        // false implies waiter_ is null: both are cleared together
+        // under the service mutex.
         /// True if `wait()` has been called since last cancel.
         std::atomic<bool> might_have_pending_waits_{false};
 
         /// The timer service that owns this implementation.
         timer_service* svc_ = nullptr;
 
-        /// Coroutines currently waiting on this timer's expiry.
-        intrusive_list<waiter_node> waiters_;
+        // Exactly one wait may be outstanding: delay and timeout own
+        // a private timer per co_await, and the service's drains rely
+        // on the one-to-one pairing.
+        /// The waiter published on this timer, or `nullptr`.
+        waiter_node* waiter_ = nullptr;
 
         /// Free list linkage, reused when this impl is recycled.
         implementation* next_free_ = nullptr;
@@ -140,10 +145,11 @@ public:
 
         /** Asynchronously wait for the timer to expire.
 
-            Publishes the waiter into the service's heap and waiter
-            list, after which it may complete on any thread. If the
-            timer is already expired and not in the heap, completes
-            by posting the continuation without publishing.
+            Publishes the waiter into the service's heap and the
+            timer's waiter slot, after which it may complete on any
+            thread. If the timer is already expired and not in the
+            heap, completes by posting the continuation without
+            publishing.
 
             @par Preconditions
             @p w is fully initialized, and its storage (the awaitable
@@ -482,7 +488,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
 
     using stop_cb_type = std::stop_callback<canceller>;
 
-    // nullptr once removed from timer's waiter list (concurrency marker)
+    // nullptr once unpublished from the timer ( concurrency marker )
     /// The timer this waiter is published on, or `nullptr`.
     timer::implementation* impl_ = nullptr;
 
