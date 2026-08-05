@@ -52,10 +52,10 @@ struct wait_awaitable;
     awaitable types. The timer can be used to schedule operations
     to occur after a specified duration or at a specific time point.
 
-    Multiple coroutines may wait concurrently on the same timer.
-    When the timer expires, all waiters complete with success. When
-    the timer is cancelled, all waiters complete with an error that
-    compares equal to `capy::cond::canceled`.
+    Each timer carries at most one wait: `delay` and `timeout` own a
+    private timer per `co_await`. When the timer expires the waiter
+    completes with success; a cancelled wait completes with an error
+    that compares equal to `capy::cond::canceled`.
 
     Each timer operation participates in the affine awaitable protocol,
     ensuring coroutines resume on the correct executor.
@@ -301,35 +301,6 @@ public:
     timer(timer const&)            = delete;
     timer& operator=(timer const&) = delete;
 
-    /** Cancel all pending asynchronous wait operations.
-
-        All outstanding operations complete with an error code that
-        compares equal to `capy::cond::canceled`.
-
-        @return The number of operations that were cancelled.
-    */
-    std::size_t cancel()
-    {
-        if (!get().might_have_pending_waits_.load(std::memory_order_relaxed))
-            return 0;
-        return do_cancel();
-    }
-
-    /** Cancel one pending asynchronous wait operation.
-
-        The oldest pending wait is cancelled (FIFO order). It
-        completes with an error code that compares equal to
-        `capy::cond::canceled`.
-
-        @return The number of operations that were cancelled (0 or 1).
-    */
-    std::size_t cancel_one()
-    {
-        if (!get().might_have_pending_waits_.load(std::memory_order_relaxed))
-            return 0;
-        return do_cancel_one();
-    }
-
     /** Return the timer's expiry time as an absolute time.
 
         @return The expiry time point. If no expiry has been set,
@@ -342,34 +313,33 @@ public:
 
     /** Set the timer's expiry time as an absolute time.
 
-        Any pending asynchronous wait operations will be cancelled.
+        @par Preconditions
+        No wait is published on this timer.
 
         @param t The expiry time to be used for the timer.
-
-        @return The number of pending operations that were cancelled.
     */
-    std::size_t expires_at(time_point t)
+    void expires_at(time_point t)
     {
-        auto& impl   = get();
+        auto& impl = get();
+        BOOST_COROSIO_ASSERT(
+            impl.heap_index_.load(std::memory_order_relaxed) ==
+            implementation::npos);
         impl.expiry_ = t;
-        if (impl.heap_index_.load(std::memory_order_relaxed) ==
-                implementation::npos &&
-            !impl.might_have_pending_waits_.load(std::memory_order_relaxed))
-            return 0;
-        return do_update_expiry();
     }
 
     /** Set the timer's expiry time relative to now.
 
-        Any pending asynchronous wait operations will be cancelled.
+        @par Preconditions
+        No wait is published on this timer.
 
         @param d The expiry time relative to now.
-
-        @return The number of pending operations that were cancelled.
     */
-    std::size_t expires_after(duration d)
+    void expires_after(duration d)
     {
         auto& impl = get();
+        BOOST_COROSIO_ASSERT(
+            impl.heap_index_.load(std::memory_order_relaxed) ==
+            implementation::npos);
         if (d <= duration::zero())
             impl.expiry_ = (time_point::min)();
         else
@@ -382,39 +352,29 @@ public:
                 ? (time_point::max)()
                 : now + d;
         }
-        if (impl.heap_index_.load(std::memory_order_relaxed) ==
-                implementation::npos &&
-            !impl.might_have_pending_waits_.load(std::memory_order_relaxed))
-            return 0;
-        return do_update_expiry();
     }
 
     /** Set the timer's expiry time relative to now.
 
         This is a convenience overload that accepts any duration type
-        and converts it to the timer's native duration type. Any
-        pending asynchronous wait operations will be cancelled.
+        and converts it to the timer's native duration type.
 
         @param d The expiry time relative to now.
-
-        @return The number of pending operations that were cancelled.
     */
     template<class Rep, class Period>
-    std::size_t expires_after(std::chrono::duration<Rep, Period> d)
+    void expires_after(std::chrono::duration<Rep, Period> d)
     {
-        return expires_after(std::chrono::duration_cast<duration>(d));
+        expires_after(std::chrono::duration_cast<duration>(d));
     }
 
     /** Wait for the timer to expire.
 
-        Multiple coroutines may wait on the same timer concurrently.
-        When the timer expires, all waiters complete with success.
+        At most one wait may be outstanding at a time.
 
         The operation supports cancellation via `std::stop_token` through
         the affine awaitable protocol. If the associated stop token is
         triggered, only that waiter completes with an error that
-        compares equal to `capy::cond::canceled`; other waiters are
-        unaffected.
+        compares equal to `capy::cond::canceled`.
 
         This timer must outlive the returned awaitable.
 
@@ -469,13 +429,6 @@ protected:
     explicit timer(handle h) noexcept : io_object(std::move(h)) {}
 
 private:
-    // Defined in src/corosio/src/timer.cpp, which includes both this
-    // header and timer_service.hpp, so the timer_service_* free
-    // functions are visible there.
-    std::size_t do_cancel();
-    std::size_t do_cancel_one();
-    std::size_t do_update_expiry();
-
     /// Return the underlying implementation.
     implementation& get() const noexcept
     {

@@ -48,8 +48,8 @@ struct scheduler;
     frame — waits perform no allocation.
 
     timer::implementation holds per-timer state: expiry, heap
-    index, and an intrusive_list of waiter_nodes. Multiple
-    coroutines can wait on the same timer simultaneously.
+    index, and an intrusive_list of waiter_nodes. Each timer holds
+    at most one waiter.
 
     timer_service owns a min-heap of active timers and a free list
     of recycled impls. The heap is ordered by expiry time; the
@@ -185,21 +185,14 @@ public:
     /// Cancel and recycle a timer implementation.
     inline void destroy_impl(timer::implementation& impl);
 
-    /// Update the timer expiry, cancelling existing waiters.
-    inline std::size_t update_timer(
-        timer::implementation& impl, time_point new_time);
-
     /// Insert a waiter into the timer's waiter list and the heap.
     inline void insert_waiter(timer::implementation& impl, waiter_node* w);
 
     /// Cancel all waiters on a timer.
-    inline std::size_t cancel_timer(timer::implementation& impl);
+    inline void cancel_timer(timer::implementation& impl);
 
     /// Cancel one specific waiter ( stop_token callback path ).
     inline void cancel_waiter(waiter_node* w);
-
-    /// Cancel the oldest pending waiter on a timer ( FIFO ).
-    inline std::size_t cancel_one_waiter(timer::implementation& impl);
 
     /// Complete all waiters whose timers have expired.
     inline std::size_t process_expired();
@@ -413,65 +406,6 @@ timer_service::destroy_impl(timer::implementation& impl)
     free_list_      = &impl;
 }
 
-inline std::size_t
-timer_service::update_timer(timer::implementation& impl, time_point new_time)
-{
-    // Gate on the flag, not waiters_: reading the non-atomic list
-    // here would race a concurrent drain. A false flag is safe to
-    // trust pre-lock: wait() stores it true before publishing, and
-    // it is cleared only under the mutex when the waiter list is
-    // empty, so false implies no published waiters.
-    bool in_heap =
-        (impl.heap_index_.load(std::memory_order_relaxed) !=
-         (std::numeric_limits<std::size_t>::max)());
-    if (!in_heap &&
-        !impl.might_have_pending_waits_.load(std::memory_order_relaxed))
-        return 0;
-
-    bool notify = false;
-    intrusive_list<waiter_node> canceled;
-
-    {
-        std::lock_guard lock(mutex_);
-
-        while (auto* w = impl.waiters_.pop_front())
-        {
-            w->impl_ = nullptr;
-            canceled.push_back(w);
-        }
-
-        std::size_t idx = impl.heap_index_.load(std::memory_order_relaxed);
-        if (idx < heap_.size())
-        {
-            time_point old_time = heap_[idx].time_;
-            heap_[idx].time_    = new_time;
-
-            if (new_time < old_time)
-                up_heap(idx);
-            else
-                down_heap(idx);
-
-            notify =
-                (impl.heap_index_.load(std::memory_order_relaxed) == 0);
-        }
-
-        refresh_cached_nearest();
-    }
-
-    std::size_t count = 0;
-    while (auto* w = canceled.pop_front())
-    {
-        w->ec_ = make_error_code(capy::error::canceled);
-        sched_->post(&w->op_);
-        ++count;
-    }
-
-    if (notify)
-        on_earliest_changed_();
-
-    return count;
-}
-
 inline void
 timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
 {
@@ -529,11 +463,11 @@ timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
     }
 }
 
-inline std::size_t
+inline void
 timer_service::cancel_timer(timer::implementation& impl)
 {
     if (!impl.might_have_pending_waits_.load(std::memory_order_relaxed))
-        return 0;
+        return;
 
     // No unlocked already-done fast-out here: it would need the
     // non-atomic waiters_ (a race with concurrent drains), and an
@@ -553,20 +487,16 @@ timer_service::cancel_timer(timer::implementation& impl)
             canceled.push_back(w);
         }
         // Store false as the final touch of the impl under the lock so
-        // update_timer's pre-lock false-flag trust holds unqualified.
+        // a pre-lock false-flag check trusts it unqualified.
         impl.might_have_pending_waits_.store(false, std::memory_order_relaxed);
         refresh_cached_nearest();
     }
 
-    std::size_t count = 0;
     while (auto* w = canceled.pop_front())
     {
         w->ec_ = make_error_code(capy::error::canceled);
         sched_->post(&w->op_);
-        ++count;
     }
-
-    return count;
 }
 
 inline void
@@ -575,8 +505,7 @@ timer_service::cancel_waiter(waiter_node* w)
     {
         std::lock_guard lock(mutex_);
         // Already removed by another drain: cancel_timer,
-        // cancel_one_waiter, update_timer, process_expired, or
-        // insert_waiter's lost-cancel recheck
+        // process_expired, or insert_waiter's lost-cancel recheck
         if (!w->impl_)
             return;
         auto* impl = w->impl_;
@@ -593,34 +522,6 @@ timer_service::cancel_waiter(waiter_node* w)
 
     w->ec_ = make_error_code(capy::error::canceled);
     sched_->post(&w->op_);
-}
-
-inline std::size_t
-timer_service::cancel_one_waiter(timer::implementation& impl)
-{
-    if (!impl.might_have_pending_waits_.load(std::memory_order_relaxed))
-        return 0;
-
-    waiter_node* w = nullptr;
-
-    {
-        std::lock_guard lock(mutex_);
-        w = impl.waiters_.pop_front();
-        if (!w)
-            return 0;
-        w->impl_ = nullptr;
-        if (impl.waiters_.empty())
-        {
-            remove_timer_impl(impl);
-            impl.might_have_pending_waits_.store(
-                false, std::memory_order_relaxed);
-        }
-        refresh_cached_nearest();
-    }
-
-    w->ec_ = make_error_code(capy::error::canceled);
-    sched_->post(&w->op_);
-    return 1;
 }
 
 inline std::size_t
@@ -748,24 +649,6 @@ timer_service::swap_heap(std::size_t i1, std::size_t i2)
 // delay.hpp, without transitively including a scheduler header).
 
 // Free functions
-
-inline std::size_t
-timer_service_update_expiry(timer::implementation& impl)
-{
-    return impl.svc_->update_timer(impl, impl.expiry_);
-}
-
-inline std::size_t
-timer_service_cancel(timer::implementation& impl) noexcept
-{
-    return impl.svc_->cancel_timer(impl);
-}
-
-inline std::size_t
-timer_service_cancel_one(timer::implementation& impl) noexcept
-{
-    return impl.svc_->cancel_one_waiter(impl);
-}
 
 inline timer_service&
 get_timer_service(capy::execution_context& ctx, scheduler& sched)

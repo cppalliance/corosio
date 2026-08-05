@@ -35,24 +35,6 @@ timer::operator=(timer&& other) noexcept
     return *this;
 }
 
-std::size_t
-timer::do_cancel()
-{
-    return detail::timer_service_cancel(get());
-}
-
-std::size_t
-timer::do_cancel_one()
-{
-    return detail::timer_service_cancel_one(get());
-}
-
-std::size_t
-timer::do_update_expiry()
-{
-    return detail::timer_service_update_expiry(get());
-}
-
 // Not inline: wait_awaitable::await_suspend (defined in timer.hpp) calls
 // this from translation units that may never include timer_service.hpp,
 // so this must be the one strong definition the linker can always find
