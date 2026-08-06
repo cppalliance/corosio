@@ -586,6 +586,24 @@ struct wolfssl_engine_test
         testShutdownWantWrite();
         testShutdownZeroReturnNoOutput();
         testHandshakeFatalGarbageInput();
+        testGarbageDerCertificateFailsSetup();
+    }
+
+    // A certificate that does not parse in the declared format must
+    // fail context setup instead of handshaking without an identity.
+    void
+    testGarbageDerCertificateFailsSetup()
+    {
+        tls_context ctx;
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+
+        wssl_engine eng;
+        // Unlike the OpenSSL engine, wolfSSL surfaces setup_error_
+        // directly from init (its check_context() is a no-op).
+        BOOST_TEST(!!eng.init(ctx, tls_role::server, std::string()));
     }
 };
 

@@ -382,13 +382,18 @@ public:
         // These discrete PEM/DER fields are an alternative credential source
         // to a PKCS#12 bundle; when a bundle was supplied it already loaded
         // the credential above, so skip them.
+        // An entity credential that fails to load must not pass silently:
+        // the handshake would run without the identity the caller
+        // configured and fail remotely instead of at setup.
         if (cd.pkcs12_data.empty() && !cd.certificate_chain.empty())
         {
-            wolfSSL_CTX_use_certificate_chain_buffer(
-                ctx,
-                reinterpret_cast<unsigned char const*>(
-                    cd.certificate_chain.data()),
-                static_cast<long>(cd.certificate_chain.size()));
+            if (wolfSSL_CTX_use_certificate_chain_buffer(
+                    ctx,
+                    reinterpret_cast<unsigned char const*>(
+                        cd.certificate_chain.data()),
+                    static_cast<long>(cd.certificate_chain.size())) !=
+                WOLFSSL_SUCCESS)
+                setup_error_ = setup_error_ ? setup_error_ : 1;
         }
         else if (cd.pkcs12_data.empty() && !cd.entity_certificate.empty())
         {
@@ -396,11 +401,13 @@ public:
             int format = (cd.entity_cert_format == tls_file_format::pem)
                 ? WOLFSSL_FILETYPE_PEM
                 : WOLFSSL_FILETYPE_ASN1;
-            wolfSSL_CTX_use_certificate_buffer(
-                ctx,
-                reinterpret_cast<unsigned char const*>(
-                    cd.entity_certificate.data()),
-                static_cast<long>(cd.entity_certificate.size()), format);
+            if (wolfSSL_CTX_use_certificate_buffer(
+                    ctx,
+                    reinterpret_cast<unsigned char const*>(
+                        cd.entity_certificate.data()),
+                    static_cast<long>(cd.entity_certificate.size()),
+                    format) != WOLFSSL_SUCCESS)
+                setup_error_ = setup_error_ ? setup_error_ : 1;
         }
 
         // Apply private key if provided (skipped when a PKCS#12 bundle
@@ -422,10 +429,11 @@ public:
                         static_cast<int>(cd.private_key.size()), der_buf.data(),
                         static_cast<int>(der_buf.size()), password.c_str());
 
-                    if (der_len > 0)
+                    if (der_len <= 0 ||
                         wolfSSL_CTX_use_PrivateKey_buffer(
                             ctx, der_buf.data(), der_len,
-                            WOLFSSL_FILETYPE_ASN1);
+                            WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS)
+                        setup_error_ = setup_error_ ? setup_error_ : 1;
                 }
                 else
                 {
@@ -437,17 +445,23 @@ public:
                         password.c_str(), static_cast<int>(password.size()));
 
                     if (dec_len > 0)
-                        wolfSSL_CTX_use_PrivateKey_buffer(
-                            ctx, der_buf.data(), dec_len,
-                            WOLFSSL_FILETYPE_ASN1);
+                    {
+                        if (wolfSSL_CTX_use_PrivateKey_buffer(
+                                ctx, der_buf.data(), dec_len,
+                                WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS)
+                            setup_error_ = setup_error_ ? setup_error_ : 1;
+                    }
                     else
+                    {
                         // Not encrypted or decryption failed - try loading directly
-                        wolfSSL_CTX_use_PrivateKey_buffer(
-                            ctx,
-                            reinterpret_cast<unsigned char const*>(
-                                cd.private_key.data()),
-                            static_cast<long>(cd.private_key.size()),
-                            WOLFSSL_FILETYPE_ASN1);
+                        if (wolfSSL_CTX_use_PrivateKey_buffer(
+                                ctx,
+                                reinterpret_cast<unsigned char const*>(
+                                    cd.private_key.data()),
+                                static_cast<long>(cd.private_key.size()),
+                                WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS)
+                            setup_error_ = setup_error_ ? setup_error_ : 1;
+                    }
                 }
             }
             else
@@ -455,11 +469,13 @@ public:
                 int format = (cd.private_key_format == tls_file_format::pem)
                     ? WOLFSSL_FILETYPE_PEM
                     : WOLFSSL_FILETYPE_ASN1;
-                wolfSSL_CTX_use_PrivateKey_buffer(
-                    ctx,
-                    reinterpret_cast<unsigned char const*>(
-                        cd.private_key.data()),
-                    static_cast<long>(cd.private_key.size()), format);
+                if (wolfSSL_CTX_use_PrivateKey_buffer(
+                        ctx,
+                        reinterpret_cast<unsigned char const*>(
+                            cd.private_key.data()),
+                        static_cast<long>(cd.private_key.size()), format) !=
+                    WOLFSSL_SUCCESS)
+                    setup_error_ = setup_error_ ? setup_error_ : 1;
             }
         }
 

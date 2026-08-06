@@ -23,6 +23,7 @@
 // The engine header is vendor-free; this single-vendor TU pulls in
 // the real headers itself for the native-handle tests (key update,
 // renegotiation).
+#include <openssl/pem.h>
 #include <openssl/ssl.h>
 
 #include "engine_shuttle.hpp"
@@ -541,6 +542,109 @@ struct openssl_engine_test
         testTruncatedRecordWaitsForInput();
         testCorruptRecordMapsError();
         testPartialPutInputNoLoss();
+        testDerCertificateAndKey();
+        testPasswordTruncation();
+        testGarbageDerCertificateFailsSetup();
+    }
+
+    // Convert a PEM cert/key fixture to DER with OpenSSL itself so the
+    // engine's DER decode branch handles real input.
+    static std::string
+    pem_cert_to_der(char const* pem)
+    {
+        BIO* bio = BIO_new_mem_buf(pem, -1);
+        X509* cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+        BIO_free(bio);
+        if (!cert)
+            return {};
+        unsigned char* der = nullptr;
+        int len = i2d_X509(cert, &der);
+        std::string out;
+        if (len > 0)
+            out.assign(reinterpret_cast<char*>(der), std::size_t(len));
+        OPENSSL_free(der);
+        X509_free(cert);
+        return out;
+    }
+
+    static std::string
+    pem_key_to_der(char const* pem)
+    {
+        BIO* bio = BIO_new_mem_buf(pem, -1);
+        EVP_PKEY* key =
+            PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
+        BIO_free(bio);
+        if (!key)
+            return {};
+        unsigned char* der = nullptr;
+        int len = i2d_PrivateKey(key, &der);
+        std::string out;
+        if (len > 0)
+            out.assign(reinterpret_cast<char*>(der), std::size_t(len));
+        OPENSSL_free(der);
+        EVP_PKEY_free(key);
+        return out;
+    }
+
+    void
+    testDerCertificateAndKey()
+    {
+        auto cert_der = pem_cert_to_der(test::server_cert_pem);
+        auto key_der  = pem_key_to_der(test::server_key_pem);
+        BOOST_TEST(!cert_der.empty());
+        BOOST_TEST(!key_der.empty());
+
+        tls_context server_ctx;
+        BOOST_TEST(!server_ctx.use_certificate(
+            cert_der, tls_file_format::der));
+        BOOST_TEST(!server_ctx.use_private_key(
+            key_der, tls_file_format::der));
+        BOOST_TEST(!server_ctx.set_verify_mode(tls_verify_mode::none));
+
+        auto client_ctx = test::make_client_context();
+        ossl_engine client;
+        ossl_engine server;
+        BOOST_TEST(init_pair(client, server, client_ctx, server_ctx));
+        BOOST_TEST(test::run_engine_handshake(client, server));
+    }
+
+    // A password longer than OpenSSL's callback buffer is truncated,
+    // which then fails the key decrypt; the context build must latch
+    // the failure so the driver refuses the handshake.
+    void
+    testPasswordTruncation()
+    {
+        tls_context ctx;
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.set_password_callback(
+            [](std::size_t, tls_password_purpose) {
+                return std::string(4096, 'x');
+            });
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.use_private_key(
+            test::encrypted_server_key_pem, tls_file_format::pem);
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // A certificate that does not parse in the declared format must
+    // fail context setup instead of handshaking without an identity.
+    void
+    testGarbageDerCertificateFailsSetup()
+    {
+        tls_context ctx;
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
+        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
     }
 };
 

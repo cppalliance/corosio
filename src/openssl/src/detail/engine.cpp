@@ -442,6 +442,9 @@ public:
 
         if (cd.pkcs12_data.empty() && !cd.entity_certificate.empty())
         {
+            // An entity certificate that fails to parse must not pass
+            // silently: the handshake would run without the identity the
+            // caller configured and fail remotely instead of at setup.
             BIO* bio = BIO_new_mem_buf(
                 cd.entity_certificate.data(),
                 static_cast<int>(cd.entity_certificate.size()));
@@ -457,7 +460,15 @@ public:
                     SSL_CTX_use_certificate(ctx_, cert);
                     X509_free(cert);
                 }
+                else
+                {
+                    setup_failed_ = true;
+                }
                 BIO_free(bio);
+            }
+            else
+            {
+                setup_failed_ = true;
             }
         }
 
@@ -506,12 +517,24 @@ public:
                 }
                 else
                     pkey = d2i_PrivateKey_bio(bio, nullptr);
+                // A key that fails to parse or decrypt (wrong or missing
+                // password) must fail setup, not surface later as an
+                // inexplicable handshake error.
                 if (pkey)
                 {
                     SSL_CTX_use_PrivateKey(ctx_, pkey);
                     EVP_PKEY_free(pkey);
                 }
+                else
+                {
+                    setup_failed_ = true;
+                }
                 BIO_free(bio);
+                ERR_clear_error();
+            }
+            else
+            {
+                setup_failed_ = true;
             }
         }
 
