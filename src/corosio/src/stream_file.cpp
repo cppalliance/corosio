@@ -51,6 +51,7 @@ stream_file::open(
     file_base::flags mode,
     std::error_code& ec)
 {
+    ec.clear();
     if (is_open())
         close();
     auto& svc = static_cast<detail::file_service&>(h_.service());
@@ -102,6 +103,7 @@ stream_file::size() const
 std::uint64_t
 stream_file::size(std::error_code& ec) const
 {
+    ec.clear();
     if (!is_open())
         ec = make_error_code(std::errc::bad_file_descriptor);
     return get().size();
@@ -121,6 +123,7 @@ stream_file::resize(std::uint64_t new_size)
 void
 stream_file::resize(std::uint64_t new_size, std::error_code& ec)
 {
+    ec.clear();
     if (!is_open())
         ec = make_error_code(std::errc::bad_file_descriptor);
     get().resize(new_size);
@@ -159,6 +162,7 @@ stream_file::sync_all()
 void
 stream_file::sync_all(std::error_code& ec)
 {
+    ec.clear();
     if (!is_open())
         ec = make_error_code(std::errc::bad_file_descriptor);
     get().sync_all();
@@ -178,6 +182,7 @@ stream_file::release()
 native_handle_type
 stream_file::release(std::error_code& ec)
 {
+    ec.clear();
     if (!is_open())
         ec = make_error_code(std::errc::bad_file_descriptor);
     return get().release();
@@ -207,6 +212,7 @@ std::uint64_t
 stream_file::seek(
     std::int64_t offset, file_base::seek_basis origin, std::error_code& ec)
 {
+    ec.clear();
     if (!is_open())
         ec = make_error_code(std::errc::bad_file_descriptor);
     return get().seek(offset, origin);
