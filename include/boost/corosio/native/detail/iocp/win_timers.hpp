@@ -53,7 +53,6 @@ make_win_timers(void* iocp_handle, long* dispatch_required);
 } // namespace boost::corosio::detail
 
 // Include concrete implementations needed by make_win_timers
-#include <boost/corosio/native/detail/iocp/win_timers_nt.hpp>
 #include <boost/corosio/native/detail/iocp/win_timers_thread.hpp>
 
 namespace boost::corosio::detail {
@@ -61,15 +60,13 @@ namespace boost::corosio::detail {
 inline std::unique_ptr<win_timers>
 make_win_timers(void* iocp_handle, long* dispatch_required)
 {
-    // Thread-based is faster; NT API requires one-shot re-association per
-    // wakeup which tanks performance. See timers_nt.hpp for details.
+    // Thread-based over NtAssociateWaitCompletionPacket: the NT wait
+    // packet is one-shot, so it must be re-associated (SetWaitableTimer
+    // + NtAssociateWaitCompletionPacket) after every scheduler wakeup
+    // even in timer-free workloads, costing ~60% CPU overhead. Skipping
+    // the re-association is not a fix: a spent packet never fires again
+    // and pending timers hang the scheduler.
     return std::make_unique<win_timers_thread>(iocp_handle, dispatch_required);
-
-#if 0
-    // NT native API (Windows 8+)
-    if (auto p = win_timers_nt::try_create(iocp_handle, dispatch_required))
-        return p;
-#endif
 }
 
 } // namespace boost::corosio::detail
