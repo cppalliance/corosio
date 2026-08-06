@@ -74,6 +74,26 @@ struct tcp_acceptor_test
         BOOST_TEST_EQ(acc.is_open(), false);
     }
 
+    void testOptions()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto opt = acc.get_option<socket_option::reuse_address>();
+        BOOST_TEST(opt.value());
+        acc.close();
+
+        tcp_acceptor closed(ioc);
+        BOOST_TEST_THROWS(
+            closed.set_option(socket_option::reuse_address(true)),
+            std::logic_error);
+        BOOST_TEST_THROWS(
+            (void)closed.get_option<socket_option::reuse_address>(),
+            std::logic_error);
+    }
+
     void testMoveConstruct()
     {
         io_context ioc(Backend);
@@ -880,6 +900,7 @@ struct tcp_acceptor_test
     {
         testConstruction();
         testListen();
+        testOptions();
         testMoveConstruct();
         testMoveAssign();
 

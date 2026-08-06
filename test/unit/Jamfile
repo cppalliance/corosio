@@ -34,7 +34,7 @@ project boost/corosio/test/unit
     ;
 
 # Non-TLS tests (recurses into test/, native/, etc.)
-for local f in [ glob-tree-ex . : *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp iocp_shutdown.cpp openssl_engine.cpp wolfssl_engine.cpp cross_engine.cpp ]
+for local f in [ glob-tree-ex . : *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp iocp_shutdown.cpp iocp_error_map.cpp openssl_engine.cpp wolfssl_engine.cpp cross_engine.cpp ]
 {
     run $(f) ;
 }
@@ -44,6 +44,7 @@ for local f in [ glob-tree-ex . : *.cpp : openssl_stream.cpp wolfssl_stream.cpp 
 if [ os.name ] = NT
 {
     run native/iocp/iocp_shutdown.cpp ;
+    run native/iocp/iocp_error_map.cpp ;
 }
 
 # OpenSSL tests - always link against boost_corosio_openssl

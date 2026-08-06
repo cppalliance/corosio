@@ -14,6 +14,7 @@
 #include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_endpoint.hpp>
+#include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -44,6 +45,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <type_traits>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -186,7 +188,6 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(!connect_ec, true);
     }
 
-#if BOOST_COROSIO_POSIX
     void testReadWrite()
     {
         io_context ioc(Backend);
@@ -246,9 +247,7 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(s1.is_open(), true);
         BOOST_TEST_EQ(s2.is_open(), true);
     }
-#endif // BOOST_COROSIO_POSIX
 
-#if BOOST_COROSIO_POSIX
     void testUnlinkExisting()
     {
         io_context ioc(Backend);
@@ -295,7 +294,6 @@ struct local_stream_socket_test
             local_endpoint(path), bind_option::unlink_existing);
         BOOST_TEST_EQ(!ec, true);
     }
-#endif
 
     void testEndpointOrdering()
     {
@@ -383,7 +381,6 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(sock.remote_endpoint().empty(), true);
     }
 
-#if BOOST_COROSIO_POSIX
     void testEndpointsConnected()
     {
         io_context ioc(Backend);
@@ -464,7 +461,7 @@ struct local_stream_socket_test
         bool caught = false;
         try
         {
-            sock.assign(-1);
+            sock.assign(static_cast<native_handle_type>(-1));
         }
         catch (std::logic_error const&)
         {
@@ -528,6 +525,16 @@ struct local_stream_socket_test
                 ec_out = ec;
                 d      = true;
             }(client, local_endpoint(path), result_ec, done));
+
+        // Watchdog: if the platform parks the doomed connect instead
+        // of failing it, retract it so the test reports the miss
+        // instead of hanging the suite.
+        auto watchdog = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            if (!done)
+                client.cancel();
+        };
+        capy::run_async(ex)(watchdog());
 
         ioc.run();
 
@@ -613,9 +620,284 @@ struct local_stream_socket_test
         BOOST_TEST(accept_ec == capy::cond::canceled);
     }
 
+    // wait(wait_type::error) has no immediate-completion path; it
+    // parks until cancel() retracts it. On IOCP this routes through
+    // the auxiliary wait reactor rather than the completion port.
+    void testWaitErrorCancel()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await s1.wait(wait_type::error);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            s1.cancel();
+        };
+
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == capy::cond::canceled);
+    }
+
+    // Socket-wide cancel() of a parked read retracts the in-flight
+    // operation and completes it with capy::cond::canceled.
+    void testCancelPendingRead()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
+
+        std::error_code read_ec;
+        bool read_done = false;
+        char buf[16];
+
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] = co_await s1.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            (void)n;
+            read_ec   = ec;
+            read_done = true;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            s1.cancel();
+        };
+
+        capy::run_async(ex)(reader());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+
+        BOOST_TEST(read_done);
+        BOOST_TEST(read_ec == capy::cond::canceled);
+    }
+
+    // Stop-token cancel of a parked read routes through the per-op
+    // stop callback rather than the socket-wide cancel.
+    void testStopTokenRead()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
+
+        std::stop_source ss;
+        std::error_code read_ec;
+        bool read_done = false;
+        char buf[16];
+
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] = co_await s1.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            (void)n;
+            read_ec   = ec;
+            read_done = true;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            ss.request_stop();
+        };
+
+        capy::run_async(ex, ss.get_token())(reader());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+
+        BOOST_TEST(read_done);
+        BOOST_TEST(read_ec == capy::cond::canceled);
+    }
+
+    // Zero-length reads and writes complete immediately with zero
+    // bytes and no error; a zero-byte stream read is not EOF.
+    void testEmptyBufferOps()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
+
+        std::error_code write_ec, read_ec;
+        std::size_t write_n = 1, read_n = 1;
+
+        auto io = [&]() -> capy::task<> {
+            {
+                auto [ec, n] =
+                    co_await s1.write_some(capy::const_buffer(nullptr, 0));
+                write_ec = ec;
+                write_n  = n;
+            }
+            {
+                auto [ec, n] =
+                    co_await s1.read_some(capy::mutable_buffer(nullptr, 0));
+                read_ec = ec;
+                read_n  = n;
+            }
+        };
+
+        capy::run_async(ex)(io());
+        ioc.run();
+
+        BOOST_TEST(!write_ec);
+        BOOST_TEST_EQ(write_n, 0u);
+        BOOST_TEST(!read_ec);
+        BOOST_TEST_EQ(read_n, 0u);
+    }
+
+    void testOptions()
+    {
+        io_context ioc(Backend);
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
+
+        // AF_UNIX option support varies by platform; the point is to
+        // drive the set/get paths, so accept a system error as a
+        // valid outcome.
+        try
+        {
+            s1.set_option(socket_option::send_buffer_size(16384));
+            auto opt = s1.get_option<socket_option::send_buffer_size>();
+            BOOST_TEST(opt.value() > 0);
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+
+        local_stream_socket closed(ioc);
+        BOOST_TEST_THROWS(
+            closed.set_option(socket_option::send_buffer_size(4096)),
+            std::logic_error);
+        BOOST_TEST_THROWS(
+            (void)closed.get_option<socket_option::send_buffer_size>(),
+            std::logic_error);
+    }
+
+    void testAcceptorOptions()
+    {
+        io_context ioc(Backend);
+        test::temp_socket_dir tmp;
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+
+        // AF_UNIX option support varies by platform; the point is to
+        // drive the set/get paths, so accept a system error as a
+        // valid outcome.
+        try
+        {
+            acc.set_option(socket_option::reuse_address(true));
+            (void)acc.get_option<socket_option::reuse_address>();
+        }
+        catch (std::system_error const&)
+        {
+            BOOST_TEST_PASS();
+        }
+        acc.close();
+
+        local_stream_acceptor closed(ioc);
+        BOOST_TEST_THROWS(
+            closed.set_option(socket_option::reuse_address(true)),
+            std::logic_error);
+        BOOST_TEST_THROWS(
+            (void)closed.get_option<socket_option::reuse_address>(),
+            std::logic_error);
+    }
+
+    // Acceptor wait(wait_type::write) completes immediately: a listener
+    // is always writable by convention.
+    void testAcceptorWaitWrite()
+    {
+#if BOOST_COROSIO_HAS_IO_URING
+        // The immediate-writable convention is a reactor/IOCP behavior;
+        // io_uring's poll never reports a listener writable, so the
+        // wait would park forever.
+        if constexpr (std::is_same_v<
+                std::remove_const_t<decltype(Backend)>, io_uring_t>)
+            return;
+#endif
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        test::temp_socket_dir tmp;
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(tmp.path()));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [wec] = co_await acc.wait(wait_type::write);
+            wait_ec    = wec;
+            wait_done  = true;
+        };
+
+        capy::run_async(ex)(waiter());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!wait_ec);
+    }
+
+    // Acceptor wait(wait_type::read) parks until a cancel retracts it.
+    void testAcceptorWaitReadCancel()
+    {
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        test::temp_socket_dir tmp;
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(tmp.path()));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [wec] = co_await acc.wait(wait_type::read);
+            wait_ec    = wec;
+            wait_done  = true;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            acc.cancel();
+        };
+
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == capy::cond::canceled);
+    }
+
+#if BOOST_COROSIO_POSIX
     // Accept a connection that is already queued in the listen backlog
     // before the io_context ever runs. The accept can then complete on
-    // the immediate path instead of parking a waiter.
+    // the immediate path instead of parking a waiter. Uses raw POSIX
+    // socket calls to connect without driving the io_context.
     void testAcceptPendingConnection()
     {
         io_context ioc(Backend);
@@ -658,6 +940,7 @@ struct local_stream_socket_test
         BOOST_TEST(server.is_open());
         ::close(cfd);
     }
+#endif // BOOST_COROSIO_POSIX
 
     // accept() on an open, bound, but non-listening socket fails with
     // a system error instead of hanging.
@@ -682,6 +965,17 @@ struct local_stream_socket_test
             accept_done = true;
         };
         capy::run_async(ex)(acceptor_task());
+
+        // Watchdog: if the platform parks the accept instead of
+        // failing it, retract it so the test reports the miss
+        // instead of hanging the suite.
+        auto watchdog = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            if (!accept_done)
+                acc.cancel();
+        };
+        capy::run_async(ex)(watchdog());
+
         ioc.run();
 
         BOOST_TEST(accept_done);
@@ -691,6 +985,7 @@ struct local_stream_socket_test
         BOOST_TEST(!server.is_open());
     }
 
+#if BOOST_COROSIO_POSIX
     // Destroy the io_context with an accept still parked; service
     // shutdown must release the waiter without resuming it.
     void testDestroyWithParkedAccept()
@@ -899,7 +1194,6 @@ struct local_stream_socket_test
         testEndpointsClosed();
         testConnectAccept();
         testMoveAccept();
-#if BOOST_COROSIO_POSIX
         testReadWrite();
         testSocketPair();
         testEndpointsConnected();
@@ -910,12 +1204,21 @@ struct local_stream_socket_test
         testConnectToNonexistent();
         testCancelPendingAccept();
         testStopTokenAccept();
+        testWaitErrorCancel();
+        testCancelPendingRead();
+        testStopTokenRead();
+        testEmptyBufferOps();
+        testOptions();
+        testAcceptorOptions();
+        testAcceptorWaitWrite();
+        testAcceptorWaitReadCancel();
+#if BOOST_COROSIO_POSIX
         testAcceptPendingConnection();
+#endif
         testAcceptWithoutListen();
-#if !COROSIO_TEST_HAS_ASAN
+#if BOOST_COROSIO_POSIX && !COROSIO_TEST_HAS_ASAN
         // Abandons a parked coroutine frame by design; see context.hpp.
         testDestroyWithParkedAccept();
-#endif
 #endif
         testAcceptorOnClosedNoOp();
         testAcceptorBindClosedThrows();
@@ -930,19 +1233,14 @@ struct local_stream_socket_test
 #ifdef __linux__
         testAbstractEndpoint();
 #endif
-#if BOOST_COROSIO_POSIX
         testUnlinkExisting();
         testUnlinkNonexistent();
-#endif
         testEndpointOrdering();
         testEndpointStreamOutput();
-#if BOOST_COROSIO_POSIX
         testAvailable();
         testRelease();
-#endif
     }
 
-#if BOOST_COROSIO_POSIX
     void testAvailable()
     {
         io_context ioc(Backend);
@@ -971,13 +1269,9 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(done, true);
         BOOST_TEST_EQ(s2.available(), std::strlen(msg));
     }
-#endif // BOOST_COROSIO_POSIX
 
-#if BOOST_COROSIO_POSIX
-    // Exercises raw POSIX fd ops (::write, ::close) on the released
-    // descriptor. The released-handle semantics are tested via the
-    // platform helpers; skipped on Windows because the analogous
-    // path needs send/closesocket and isn't yet factored.
+    // Writes through the released handle with raw platform calls to
+    // prove ownership actually transferred.
     void testRelease()
     {
         io_context ioc(Backend);
@@ -1003,7 +1297,6 @@ struct local_stream_socket_test
         ::close(handle);
 #endif
     }
-#endif
 
     void testEndpointStreamOutput()
     {

@@ -288,6 +288,33 @@ struct delay_test
         BOOST_TEST_EQ(count, 3);
     }
 
+    // Overlapping delays force multiple live impls; the batch after
+    // they complete draws from both the thread-local cache slot and
+    // the service free list instead of allocating.
+    void testImplRecycling()
+    {
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        int count = 0;
+
+        auto t = [](int& count_out) -> capy::task<> {
+            auto [ec] = co_await delay(std::chrono::milliseconds(1));
+            if(!ec)
+                ++count_out;
+        };
+
+        for(int i = 0; i < 3; ++i)
+            capy::run_async(ex)(t(count));
+        ioc.run();
+        BOOST_TEST_EQ(count, 3);
+
+        ioc.restart();
+        for(int i = 0; i < 2; ++i)
+            capy::run_async(ex)(t(count));
+        ioc.run();
+        BOOST_TEST_EQ(count, 5);
+    }
+
     // Issue: an executor whose context is not an io_context cannot
     // supply a timer service. await_suspend is normally reached only
     // through a noexcept coroutine-resumption path, where the
@@ -918,6 +945,7 @@ struct delay_test
         testPastTimePointWithStopRequested();
         testSingleThreadedHint();
         testSequentialDelays();
+        testImplRecycling();
         testNonIoContextThrows();
         testDelayActuallyWaits();
         testConcurrentDelaysHeapRemoval();
