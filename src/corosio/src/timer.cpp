@@ -20,21 +20,6 @@ timer::timer(capy::execution_context& ctx)
 {
 }
 
-timer::timer(capy::execution_context& ctx, time_point t) : timer(ctx)
-{
-    expires_at(t);
-}
-
-timer::timer(timer&& other) noexcept : io_object(std::move(other)) {}
-
-timer&
-timer::operator=(timer&& other) noexcept
-{
-    if (this != &other)
-        h_ = std::move(other.h_);
-    return *this;
-}
-
 // Not inline: wait_awaitable::await_suspend (defined in timer.hpp) calls
 // this from translation units that may never include timer_service.hpp,
 // so this must be the one strong definition the linker can always find
