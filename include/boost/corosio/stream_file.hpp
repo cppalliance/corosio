@@ -163,6 +163,18 @@ public:
         std::filesystem::path const& path,
         file_base::flags mode = file_base::read_only);
 
+    /** Open a file.
+
+        @param path The filesystem path to open.
+        @param mode Bitmask of @ref file_base::flags specifying
+            access mode and creation behavior.
+        @param ec Output error code.
+    */
+    void open(
+        std::filesystem::path const& path,
+        file_base::flags mode,
+        std::error_code& ec);
+
     /** Close the file.
 
         Releases file resources. Any pending operations complete
@@ -203,6 +215,12 @@ public:
     */
     std::uint64_t size() const;
 
+    /** Return the file size in bytes.
+
+        @param ec Output error code.
+    */
+    std::uint64_t size(std::error_code& ec) const;
+
     /** Resize the file to @p new_size bytes.
 
         @param new_size The new file size.
@@ -210,11 +228,24 @@ public:
     */
     void resize(std::uint64_t new_size);
 
+    /** Resize the file to @p new_size bytes.
+
+        @param new_size The new file size.
+        @param ec Output error code.
+    */
+    void resize(std::uint64_t new_size, std::error_code& ec);
+
     /** Synchronize file data to stable storage.
 
         @throws std::system_error on failure.
     */
     void sync_data();
+
+    /** Synchronize file data to stable storage.
+
+        @param ec Output error code.
+    */
+    void sync_data(std::error_code& ec);
 
     /** Synchronize file data and metadata to stable storage.
 
@@ -222,14 +253,31 @@ public:
     */
     void sync_all();
 
+    /** Synchronize file data and metadata to stable storage.
+
+        @param ec Output error code.
+    */
+    void sync_all(std::error_code& ec);
+
     /** Release ownership of the native handle.
 
         The file object becomes not-open. The caller is
         responsible for closing the returned handle.
 
         @return The native file descriptor or handle.
+        @throws std::system_error on failure.
     */
     native_handle_type release();
+
+    /** Release ownership of the native handle.
+
+        The file object becomes not-open. The caller is
+        responsible for closing the returned handle.
+
+        @param ec Output error code.
+        @return The native file descriptor or handle.
+    */
+    native_handle_type release(std::error_code& ec);
 
     /** Adopt an existing native handle.
 
@@ -237,7 +285,6 @@ public:
         The file object takes ownership of the handle.
 
         @param handle The native file descriptor or handle.
-        @throws std::system_error on failure.
     */
     void assign(native_handle_type handle);
 
@@ -251,6 +298,18 @@ public:
     std::uint64_t
     seek(std::int64_t offset,
          file_base::seek_basis origin = file_base::seek_set);
+
+    /** Move the file position.
+
+        @param offset Signed offset from @p origin.
+        @param origin The reference point for the seek.
+        @param ec Output error code.
+        @return The new absolute position.
+    */
+    std::uint64_t
+    seek(std::int64_t offset,
+         file_base::seek_basis origin,
+	 std::error_code& ec);
 
 protected:
     /// Default-construct (for derived types that initialize io_object directly).
