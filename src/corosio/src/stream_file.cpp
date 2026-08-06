@@ -49,16 +49,12 @@ void
 stream_file::open(
     std::filesystem::path const& path,
     file_base::flags mode,
-    std::error_code& oec)
+    std::error_code& ec)
 {
     if (is_open())
         close();
-    auto& svc          = static_cast<detail::file_service&>(h_.service());
-    std::error_code ec = svc.open_file(get(), path, mode);
-    if (oec)
-    {
-        oec = ec;
-    }
+    auto& svc = static_cast<detail::file_service&>(h_.service());
+    ec        = svc.open_file(get(), path, mode);
 }
 
 void
