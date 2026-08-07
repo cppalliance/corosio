@@ -985,7 +985,6 @@ struct local_stream_socket_test
         BOOST_TEST(!server.is_open());
     }
 
-#if BOOST_COROSIO_POSIX
     // Destroy the io_context with an accept still parked; service
     // shutdown must release the waiter without resuming it.
     void testDestroyWithParkedAccept()
@@ -1013,7 +1012,28 @@ struct local_stream_socket_test
         (void)ioc.run_one();
         BOOST_TEST_PASS();
     }
-#endif // BOOST_COROSIO_POSIX
+
+    // Destroy the io_context with a read still parked on a connected
+    // pair; the socket service's shutdown must drain the abandoned
+    // operation without resuming it.
+    void testDestroyWithParkedRead()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
+
+        char buf[16];
+        auto reader = [&]() -> capy::task<> {
+            (void)co_await s1.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+        };
+        capy::run_async(ex)(reader());
+
+        (void)ioc.run_one();
+        BOOST_TEST_PASS();
+    }
 
     void testAcceptorOnClosedNoOp()
     {
@@ -1216,9 +1236,10 @@ struct local_stream_socket_test
         testAcceptPendingConnection();
 #endif
         testAcceptWithoutListen();
-#if BOOST_COROSIO_POSIX && !COROSIO_TEST_HAS_ASAN
-        // Abandons a parked coroutine frame by design; see context.hpp.
+#if !COROSIO_TEST_HAS_ASAN
+        // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithParkedAccept();
+        testDestroyWithParkedRead();
 #endif
         testAcceptorOnClosedNoOp();
         testAcceptorBindClosedThrows();

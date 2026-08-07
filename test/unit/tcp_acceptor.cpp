@@ -16,6 +16,7 @@
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/wait_type.hpp>
 
+#include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -182,6 +183,54 @@ struct tcp_acceptor_test
 
         ioc.run();
         acc.close();
+    }
+
+    // Destroy the io_context with a read still parked on a connected
+    // socket; service shutdown must drain the abandoned operation
+    // without resuming it.
+    void testDestroyWithParkedRead()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        // Bind to loopback explicitly: connecting to a wildcard-bound
+        // listener's 0.0.0.0 address only works on some platforms.
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto ep = endpoint(
+            ipv4_address::loopback(), acc.local_endpoint().port());
+
+        tcp_socket server(ioc);
+        tcp_socket client(ioc);
+
+        capy::run_async(ex)(
+            [](tcp_acceptor& a, tcp_socket& s) -> capy::task<> {
+                (void)co_await a.accept(s);
+            }(acc, server));
+        capy::run_async(ex)(
+            [](tcp_socket& s, endpoint e) -> capy::task<> {
+                (void)co_await s.connect(e);
+            }(client, ep));
+        ioc.run();
+        BOOST_TEST(server.is_open());
+        BOOST_TEST(client.is_open());
+
+        ioc.restart();
+
+        char buf[16];
+        auto reader = [&]() -> capy::task<> {
+            (void)co_await server.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+        };
+        capy::run_async(ex)(reader());
+
+        (void)ioc.run_one();
+        BOOST_TEST_PASS();
     }
 
     void testCloseWhilePendingAccept()
@@ -867,6 +916,7 @@ struct tcp_acceptor_test
         BOOST_TEST(accept_ec);
         BOOST_TEST(!peer.is_open());
     }
+#endif // !_WIN32
 
     // Destroy the io_context with an accept still parked; service
     // shutdown must release the waiter without resuming it.
@@ -894,7 +944,6 @@ struct tcp_acceptor_test
         (void)ioc.run_one();
         BOOST_TEST_PASS();
     }
-#endif
 
     void run()
     {
@@ -907,6 +956,11 @@ struct tcp_acceptor_test
         // Cancellation
         testCancelAccept();
         testCloseWhilePendingAccept();
+#if !COROSIO_TEST_HAS_ASAN
+        // Abandon parked coroutine frames by design; see context.hpp.
+        testDestroyWithParkedAccept();
+        testDestroyWithParkedRead();
+#endif
 
         // IPv6
         testListenV6();
@@ -942,10 +996,6 @@ struct tcp_acceptor_test
 #ifndef _WIN32
         testAcceptPendingConnection();
         testAcceptWithoutListen();
-#if !COROSIO_TEST_HAS_ASAN
-        // Abandons a parked coroutine frame by design; see context.hpp.
-        testDestroyWithParkedAccept();
-#endif
 #endif
     }
 };
