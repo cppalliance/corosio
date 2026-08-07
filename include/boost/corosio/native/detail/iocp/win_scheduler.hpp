@@ -802,6 +802,42 @@ win_scheduler::shutdown()
             }
         }
     }
+
+    // Final sweep: packets can sit in the port or deferred queue
+    // without a pending_io_ count (posted directly against the
+    // handle). Destroy them so service teardown does not free state
+    // they still reference.
+    for (;;)
+    {
+        op_queue ops;
+        {
+            std::lock_guard<win_mutex> lock(dispatch_mutex_);
+            ops.splice(completed_ops_);
+        }
+        while (auto* h = ops.pop())
+            h->destroy();
+
+        DWORD bytes;
+        ULONG_PTR key;
+        LPOVERLAPPED overlapped;
+        ::GetQueuedCompletionStatus(iocp_, &bytes, &key, &overlapped, 0);
+        if (!overlapped)
+            break;
+        if (key == key_posted)
+        {
+            reinterpret_cast<scheduler_op*>(overlapped)->destroy();
+        }
+        else if (key == key_continuation)
+        {
+            auto* c = reinterpret_cast<capy::continuation*>(overlapped);
+            if (c->h)
+                c->h.destroy();
+        }
+        else
+        {
+            overlapped_to_op(overlapped)->destroy();
+        }
+    }
 }
 
 inline win_scheduler::~win_scheduler()
