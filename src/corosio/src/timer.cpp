@@ -146,10 +146,8 @@ waiter_node::completion_op::destroy()
     // Called during scheduler shutdown drain when this completion_op is
     // in the scheduler's ready queue (posted by cancel_timer() or
     // process_expired()). Balances the work_started() from
-    // implementation::wait(). The scheduler drain loop separately
-    // balances the work_started() from post(). On IOCP both decrements
-    // are required for outstanding_work_ to reach zero; on other
-    // backends this is harmless.
+    // implementation::wait(), keeping the run-loop counter sane; no
+    // shutdown path waits on that counter.
     //
     // This override also prevents scheduler_op::destroy() from calling
     // do_complete(nullptr, ...). See also: timer_service::shutdown()

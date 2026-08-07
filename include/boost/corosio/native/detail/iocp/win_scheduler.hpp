@@ -119,6 +119,14 @@ private:
     timer_service* timer_svc_ = nullptr;
     void* iocp_;
     mutable long outstanding_work_;
+
+    // Packets in flight to the completion port that reference
+    // overlapped-op memory: kernel completions owed after a pending
+    // submission, plus successful stored-result posts. Shutdown reaps
+    // until this is zero before the services free op storage. The
+    // run-loop counter cannot serve that role: frames abandoned at
+    // teardown never return their work-guard credits.
+    mutable long pending_io_ = 0;
     mutable long stopped_;
     long stop_event_posted_;
     mutable long dispatch_required_;
@@ -334,13 +342,28 @@ win_scheduler::on_pending(overlapped_op* op) const
     // and stored the results — re-post so do_one() can dispatch. The acquire
     // on failure makes those payload writes visible, so the re-posted op
     // carries valid dwError / bytes_transferred.
+    //
+    // pending_io_ counts the packet that will dispatch this op: on CAS
+    // success the kernel's own completion will find ready_ == 1 and
+    // dispatch; on CAS failure the kernel's packet was consumed as a
+    // skip (uncounted) and the re-post is the dispatching packet. A
+    // failed re-post falls back to the deferred queue, which holds the
+    // op memory itself — no packet, no count.
     long expected = 0;
-    if (!op->ready_.compare_exchange_strong(
+    if (op->ready_.compare_exchange_strong(
             expected, 1,
             std::memory_order_acq_rel, std::memory_order_acquire))
     {
-        if (!::PostQueuedCompletionStatus(
+        ::InterlockedIncrement(&pending_io_);
+    }
+    else
+    {
+        if (::PostQueuedCompletionStatus(
                 iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
+        {
+            ::InterlockedIncrement(&pending_io_);
+        }
+        else
         {
             std::lock_guard<win_mutex> lock(dispatch_mutex_);
             completed_ops_.push(op);
@@ -359,8 +382,12 @@ win_scheduler::on_completion(overlapped_op* op, DWORD error, DWORD bytes) const
     op->bytes_transferred = bytes;
     op->ready_.store(1, std::memory_order_release);
 
-    if (!::PostQueuedCompletionStatus(
+    if (::PostQueuedCompletionStatus(
             iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
+    {
+        ::InterlockedIncrement(&pending_io_);
+    }
+    else
     {
         std::lock_guard<win_mutex> lock(dispatch_mutex_);
         completed_ops_.push(op);
@@ -573,6 +600,7 @@ win_scheduler::do_one(unsigned long timeout_ms)
                         std::memory_order_acq_rel,
                         std::memory_order_acquire))
                 {
+                    ::InterlockedDecrement(&pending_io_);
                     ov_op->complete(
                         this, ov_op->bytes_transferred, ov_op->dwError);
                     work_finished();
@@ -725,12 +753,15 @@ win_scheduler::shutdown()
         timer_svc_->shutdown();
 
     // Same problem for the auxiliary wait reactor: ops parked in it
-    // hold work_started credit. Stop the reactor early so its loop
-    // drains them as cancelled and the work counter can reach zero.
+    // owe completion packets. Stop the reactor early so its loop
+    // posts them as cancelled and the pending count can reach zero.
     if (wait_reactor_ready_.load(std::memory_order_acquire))
         wait_reactor_->stop();
 
-    while (::InterlockedExchangeAdd(&outstanding_work_, 0) > 0)
+    // Reap every packet still owed to the port before the services
+    // free the op memory those packets reference. Work-guard credits,
+    // posted handlers, and queued continuations have no bearing here.
+    while (::InterlockedExchangeAdd(&pending_io_, 0) > 0)
     {
         op_queue ops;
         {
@@ -738,42 +769,36 @@ win_scheduler::shutdown()
             ops.splice(completed_ops_);
         }
 
-        if (!ops.empty())
+        // Deferred-queue entries are process-owned (failed-post
+        // fallbacks and posted handlers); no packet references them.
+        while (auto* h = ops.pop())
+            h->destroy();
+
+        DWORD bytes;
+        ULONG_PTR key;
+        LPOVERLAPPED overlapped;
+        ::GetQueuedCompletionStatus(
+            iocp_, &bytes, &key, &overlapped,
+            iocp::shutdown_drain_timeout_ms);
+        if (overlapped)
         {
-            while (auto* h = ops.pop())
+            if (key == key_posted)
             {
-                ::InterlockedDecrement(&outstanding_work_);
-                h->destroy();
+                auto* op = reinterpret_cast<scheduler_op*>(overlapped);
+                op->destroy();
             }
-        }
-        else
-        {
-            DWORD bytes;
-            ULONG_PTR key;
-            LPOVERLAPPED overlapped;
-            ::GetQueuedCompletionStatus(
-                iocp_, &bytes, &key, &overlapped,
-                iocp::shutdown_drain_timeout_ms);
-            if (overlapped)
+            else if (key == key_continuation)
             {
-                ::InterlockedDecrement(&outstanding_work_);
-                if (key == key_posted)
-                {
-                    auto* op = reinterpret_cast<scheduler_op*>(overlapped);
-                    op->destroy();
-                }
-                else if (key == key_continuation)
-                {
-                    // Drain without resuming: destroy the parked frame.
-                    auto* c = reinterpret_cast<capy::continuation*>(overlapped);
-                    if (c->h)
-                        c->h.destroy();
-                }
-                else
-                {
-                    auto* op = overlapped_to_op(overlapped);
-                    op->destroy();
-                }
+                // Drain without resuming: destroy the parked frame.
+                auto* c = reinterpret_cast<capy::continuation*>(overlapped);
+                if (c->h)
+                    c->h.destroy();
+            }
+            else
+            {
+                ::InterlockedDecrement(&pending_io_);
+                auto* op = overlapped_to_op(overlapped);
+                op->destroy();
             }
         }
     }
