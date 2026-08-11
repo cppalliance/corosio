@@ -1192,7 +1192,9 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(ep.path().size(), local_endpoint::max_path_length);
     }
 
-#ifdef __linux__
+    // local_endpoint is a value type: constructing and classifying an
+    // abstract address needs no kernel support, so this runs on every
+    // platform even though only Linux can bind one.
     void testAbstractEndpoint()
     {
         std::string abs_path(1, '\0');
@@ -1200,6 +1202,21 @@ struct local_stream_socket_test
         local_endpoint ep(abs_path);
         BOOST_TEST(ep.is_abstract());
         BOOST_TEST_EQ(ep.empty(), false);
+    }
+
+#ifdef _WIN32
+    // Windows AF_UNIX has no abstract namespace; bind must refuse the
+    // endpoint instead of silently binding something else.
+    void testAbstractBindRejected()
+    {
+        io_context ioc(Backend);
+        std::string abs_path(1, '\0');
+        abs_path += "corosio_test_abstract_bind";
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(abs_path));
+        BOOST_TEST(ec == std::errc::operation_not_supported);
     }
 #endif
 
@@ -1251,8 +1268,9 @@ struct local_stream_socket_test
         testEndpointTooLongThrows();
         testEndpointTooLongNoThrow();
         testEndpointMaxPathLength();
-#ifdef __linux__
         testAbstractEndpoint();
+#ifdef _WIN32
+        testAbstractBindRejected();
 #endif
         testUnlinkExisting();
         testUnlinkNonexistent();
@@ -1335,8 +1353,8 @@ struct local_stream_socket_test
             BOOST_TEST_EQ(os.str(), std::string(""));
         }
 
-#ifdef __linux__
-        // Abstract socket
+        // Abstract socket: formatting is value-type behavior, so it
+        // is exercised on every platform.
         {
             std::string abs_path(1, '\0');
             abs_path += "test_name";
@@ -1344,7 +1362,6 @@ struct local_stream_socket_test
             os << local_endpoint(abs_path);
             BOOST_TEST_EQ(os.str(), std::string("[abstract:test_name]"));
         }
-#endif
     }
 };
 
