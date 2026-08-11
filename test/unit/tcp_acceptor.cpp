@@ -33,6 +33,9 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#else
+// Raw-socket backlog setup in testAcceptPendingConnection.
+#include <boost/corosio/native/detail/iocp/win_windows.hpp>
 #endif
 
 #include "context.hpp"
@@ -839,7 +842,6 @@ struct tcp_acceptor_test
         BOOST_TEST(accept_ec == capy::cond::canceled);
     }
 
-#ifndef _WIN32
     // Accept a connection that is already queued in the listen backlog
     // before the io_context ever runs. The accept can then complete on
     // the immediate path instead of parking a waiter.
@@ -857,9 +859,15 @@ struct tcp_acceptor_test
         auto port = acc.local_endpoint().port();
 
         // Raw blocking connect: completes via the kernel's listen
-        // backlog without the io_context running.
+        // backlog without the io_context running. The io_context above
+        // has already initialized the socket layer.
+#ifdef _WIN32
+        SOCKET cfd = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(cfd != INVALID_SOCKET);
+#else
         int cfd = ::socket(AF_INET, SOCK_STREAM, 0);
         BOOST_TEST(cfd >= 0);
+#endif
         sockaddr_in sa{};
         sa.sin_family      = AF_INET;
         sa.sin_port        = htons(port);
@@ -883,7 +891,11 @@ struct tcp_acceptor_test
         BOOST_TEST(accept_done);
         BOOST_TEST(!accept_ec);
         BOOST_TEST(peer.is_open());
+#ifdef _WIN32
+        ::closesocket(cfd);
+#else
         ::close(cfd);
+#endif
     }
 
     // accept() on an open, bound, but non-listening socket fails with
@@ -908,6 +920,17 @@ struct tcp_acceptor_test
             accept_done = true;
         };
         capy::run_async(ex)(acceptor_task());
+
+        // Watchdog: if the platform parks the accept instead of
+        // failing it, retract it so the test reports the miss
+        // instead of hanging the suite.
+        auto watchdog = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            if (!accept_done)
+                acc.cancel();
+        };
+        capy::run_async(ex)(watchdog());
+
         ioc.run();
 
         BOOST_TEST(accept_done);
@@ -916,7 +939,6 @@ struct tcp_acceptor_test
         BOOST_TEST(accept_ec);
         BOOST_TEST(!peer.is_open());
     }
-#endif // !_WIN32
 
     // Destroy the io_context with an accept still parked; service
     // shutdown must release the waiter without resuming it.
@@ -993,10 +1015,8 @@ struct tcp_acceptor_test
 
         // Waiter lifecycle
         testStopTokenAccept();
-#ifndef _WIN32
         testAcceptPendingConnection();
         testAcceptWithoutListen();
-#endif
     }
 };
 
