@@ -351,10 +351,11 @@ struct delay_test
 
     void testConcurrentDelaysHeapRemoval()
     {
-        // Several concurrent delays at interleaved deadlines; the
-        // middle ones are canceled through their own stop tokens,
-        // exercising heap middle-removal. All must complete with the
-        // expected disposition.
+        // Several concurrent delays; the far-future ones are canceled
+        // through their own stop tokens, exercising heap interior
+        // removal. The cancel targets sit hours out so no slowdown
+        // (sanitizers, valgrind) can expire them before the stop
+        // requests land; only the two short delays ever fire.
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
@@ -362,27 +363,28 @@ struct delay_test
         int ok = 0;
         int canceled = 0;
 
-        // Deadlines interleaved (5,4,3,2,1 ms); cancel the middle
-        // three (3,4,5 ms) so removals land in the heap interior.
-        auto d = [](int ms, int& ok_out, int& cancel_out) -> capy::task<> {
-            auto [ec] = co_await delay(std::chrono::milliseconds(ms));
+        auto d = [](std::chrono::nanoseconds dur, int& ok_out,
+                    int& cancel_out) -> capy::task<> {
+            auto [ec] = co_await delay(dur);
             if (ec == capy::cond::canceled)
                 ++cancel_out;
             else if (!ec)
                 ++ok_out;
         };
 
-        capy::run_async(ex, s1.get_token())(d(1, ok, canceled));
-        capy::run_async(ex, s2.get_token())(d(2, ok, canceled));
-        capy::run_async(ex, s3.get_token())(d(3, ok, canceled));
-        capy::run_async(ex, s4.get_token())(d(4, ok, canceled));
-        capy::run_async(ex, s5.get_token())(d(5, ok, canceled));
+        using namespace std::chrono_literals;
+        capy::run_async(ex, s1.get_token())(d(1ms, ok, canceled));
+        capy::run_async(ex, s2.get_token())(d(2ms, ok, canceled));
+        capy::run_async(ex, s3.get_token())(d(1h, ok, canceled));
+        capy::run_async(ex, s4.get_token())(d(2h, ok, canceled));
+        capy::run_async(ex, s5.get_token())(d(3h, ok, canceled));
 
-        // Let all five suspend into the heap, then cancel the middle
-        // three before any fires.
+        // Let all five suspend into the heap, then cancel the hour
+        // delays; removing the 2h entry lands between its neighbors,
+        // in the heap interior.
         ioc.poll();
-        s3.request_stop();
         s4.request_stop();
+        s3.request_stop();
         s5.request_stop();
 
         ioc.run();
