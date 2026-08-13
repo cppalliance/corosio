@@ -287,9 +287,12 @@ public:
 
     /** Shared readiness-wait dispatch.
 
-        Registers a wait op for the requested direction. Does not
-        perform any I/O syscall — completion is signalled when the
-        reactor delivers the matching edge event.
+        `wait_type::write` completes immediately. Read and error
+        waits probe the descriptor with a zero-timeout `poll()` and
+        complete at once if the condition already holds; otherwise
+        the op re-probes under the descriptor mutex and parks,
+        completing when a reactor event arrives and a fresh probe
+        confirms the condition.
     */
     std::coroutine_handle<> do_wait(
         std::coroutine_handle<>,
@@ -1024,17 +1027,13 @@ reactor_datagram_socket<
 
     WaitOp* op_ptr;
     reactor_op_base** desc_slot_ptr;
-    bool* ready_flag_ptr;
     bool* cancel_flag_ptr;
     std::uint32_t event;
-
-    bool dummy_ready = false; // no cached edge for error waits
 
     if (w == wait_type::read)
     {
         op_ptr          = &wait_rd_;
         desc_slot_ptr   = &this->desc_state_.wait_read_op;
-        ready_flag_ptr  = &this->desc_state_.read_ready;
         cancel_flag_ptr = &this->desc_state_.wait_read_cancel_pending;
         event           = reactor_event_read;
     }
@@ -1042,12 +1041,38 @@ reactor_datagram_socket<
     {
         op_ptr          = &wait_er_;
         desc_slot_ptr   = &this->desc_state_.wait_error_op;
-        ready_flag_ptr  = &dummy_ready;
         cancel_flag_ptr = &this->desc_state_.wait_error_cancel_pending;
         event           = reactor_event_error;
     }
 
-    auto& op      = *op_ptr;
+    auto& op = *op_ptr;
+
+    // Speculative probe, mirroring the speculative read: an
+    // edge-triggered reactor cannot report a condition that already
+    // holds, so a wait initiated on an already-ready socket would
+    // otherwise park forever.
+    int perr = 0;
+    if (WaitOp::probe(this->fd_, event, perr))
+    {
+        if (this->svc_.scheduler().try_consume_inline_budget())
+        {
+            *ec       = perr ? make_err(perr) : std::error_code{};
+            op.cont.h = h;
+            return dispatch_coro(ex, op.cont);
+        }
+        op.reset();
+        op.wait_event = event;
+        op.h          = h;
+        op.ex         = ex;
+        op.ec_out     = ec;
+        op.fd         = this->fd_;
+        op.start(token, static_cast<Derived*>(this));
+        op.impl_ptr   = this->shared_from_this();
+        op.complete(perr, 0);
+        this->svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
     op.reset();
     op.wait_event = event;
     op.h          = h;
@@ -1057,8 +1082,14 @@ reactor_datagram_socket<
     op.start(token, static_cast<Derived*>(this));
     op.impl_ptr   = this->shared_from_this();
 
+    // Force register_op's ready path so the wait op re-probes under
+    // the descriptor mutex before parking. An edge consumed between
+    // the speculative probe above and the park (a concurrent short
+    // read, or an error event dispatched to an empty slot) would
+    // otherwise leave the wait parked on a ready socket.
+    bool force_probe = true;
     this->register_op(
-        op, *desc_slot_ptr, *ready_flag_ptr, *cancel_flag_ptr,
+        op, *desc_slot_ptr, force_probe, *cancel_flag_ptr,
         false);
     return std::noop_coroutine();
 }

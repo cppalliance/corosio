@@ -313,6 +313,251 @@ struct wait_test
         BOOST_TEST(wait_ec == capy::cond::canceled);
     }
 
+    // A short read that leaves bytes buffered consumes the readiness
+    // edge; a subsequent wait_read must still complete because data
+    // remains available.
+    void testWaitReadAfterShortRead()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        std::error_code read_ec;
+        std::size_t bytes_read = 0;
+        std::error_code wait_ec;
+        bool wait_done = false;
+        char first = 0;
+        std::array<char, 8> rest{};
+        std::size_t rest_n = 0;
+
+        auto reader = [&]() -> capy::task<> {
+            auto [ec1, n1] =
+                co_await s1.read_some(capy::mutable_buffer(&first, 1));
+            read_ec    = ec1;
+            bytes_read = n1;
+            auto [ec2] = co_await s1.wait(wait_type::read);
+            wait_ec    = ec2;
+            wait_done  = true;
+            if (ec2)
+                co_return;
+            auto [ec3, n3] = co_await s1.read_some(
+                capy::mutable_buffer(rest.data(), rest.size()));
+            (void)ec3;
+            rest_n = n3;
+        };
+        auto writer = [&]() -> capy::task<> {
+            auto [ec, n] = co_await s2.write_some(capy::const_buffer("xy", 2));
+            (void)ec;
+            (void)n;
+        };
+
+        capy::run_async(ex)(reader());
+        capy::run_async(ex)(writer());
+        ioc.run();
+
+        BOOST_TEST(!read_ec);
+        BOOST_TEST_EQ(bytes_read, 1u);
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!wait_ec);
+        BOOST_TEST_EQ(first, 'x');
+        BOOST_TEST_EQ(rest_n, 1u);
+        BOOST_TEST_EQ(rest[0], 'y');
+    }
+
+    // Draining the socket with a speculative read leaves a cached
+    // readiness edge behind; a subsequent wait_read must park on the
+    // now-empty socket instead of completing on the stale edge. A
+    // second socket pair sequences the cancel strictly after the wait
+    // is parked.
+    void testWaitReadParksAfterDrain()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [t1, t2] = test::make_socket_pair(ioc);
+
+        std::size_t drained_n = 0;
+        std::error_code wait_ec;
+        bool wait_done   = false;
+        bool cancel_sent = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await s1.wait(wait_type::read);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        auto driver = [&]() -> capy::task<> {
+            // Latch a readiness edge on s1 with no read op parked...
+            auto [wec, wn] = co_await s2.write_some(
+                capy::const_buffer("xy", 2));
+            (void)wec;
+            (void)wn;
+            // ...drain it, typically on the speculative success path...
+            std::array<char, 8> buf{};
+            auto [rec, rn] = co_await s1.read_some(
+                capy::mutable_buffer(buf.data(), buf.size()));
+            (void)rec;
+            drained_n = rn;
+            // ...then park the wait before the release signal exists.
+            // Spawning here queues the wait initiation ahead of every
+            // completion the "go" write can generate, so the cancel is
+            // ordered after the park on FIFO schedulers and completion
+            // ports alike.
+            capy::run_async(ex)(waiter());
+            auto [sec, sn] = co_await t2.write_some(
+                capy::const_buffer("go", 2));
+            (void)sec;
+            (void)sn;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            char c[2];
+            auto [ec, n] = co_await t1.read_some(
+                capy::mutable_buffer(c, sizeof(c)));
+            (void)ec;
+            (void)n;
+            cancel_sent = true;
+            s1.cancel();
+        };
+
+        capy::run_async(ex)(canceller());
+        capy::run_async(ex)(driver());
+        ioc.run();
+
+        BOOST_TEST_EQ(drained_n, 2u);
+        BOOST_TEST(cancel_sent);
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == capy::cond::canceled);
+    }
+
+    // A parked recv consumes the readiness edge but only the first of
+    // two buffered datagrams; a subsequent wait_read must complete
+    // while the second datagram remains.
+    void testWaitReadSecondDatagram()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        udp_socket recv(ioc);
+        recv.open(udp::v4());
+        auto bec = recv.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!bec);
+        auto port = recv.local_endpoint().port();
+
+        udp_socket send(ioc);
+        send.open(udp::v4());
+
+        std::size_t first_n = 0;
+        std::error_code wait_ec;
+        bool wait_done = false;
+
+        auto receiver = [&]() -> capy::task<> {
+            char dg[4];
+            endpoint source;
+            auto [ec, n] = co_await recv.recv_from(
+                capy::mutable_buffer(dg, sizeof(dg)), source);
+            (void)ec;
+            first_n = n;
+            auto [wec] = co_await recv.wait(wait_type::read);
+            wait_ec   = wec;
+            wait_done = true;
+        };
+        auto sender = [&]() -> capy::task<> {
+            char a[1] = { 'a' };
+            char b[1] = { 'b' };
+            endpoint dst(ipv4_address::loopback(), port);
+            auto [e1, n1] = co_await send.send_to(
+                capy::const_buffer(a, sizeof(a)), dst);
+            (void)e1;
+            (void)n1;
+            auto [e2, n2] = co_await send.send_to(
+                capy::const_buffer(b, sizeof(b)), dst);
+            (void)e2;
+            (void)n2;
+        };
+
+        capy::run_async(ex)(receiver());
+        capy::run_async(ex)(sender());
+        ioc.run();
+
+        BOOST_TEST_EQ(first_n, 1u);
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!wait_ec);
+    }
+
+    // Draining the only buffered datagram on the speculative path
+    // leaves a stale readiness edge; a subsequent wait_read must park
+    // on the empty socket instead of completing on the stale edge.
+    void testWaitUdpParksAfterDrain()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        udp_socket rsock(ioc);
+        rsock.open(udp::v4());
+        auto bec = rsock.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!bec);
+
+        udp_socket ssock(ioc);
+        ssock.open(udp::v4());
+
+        auto [t1, t2] = test::make_socket_pair(ioc);
+
+        std::size_t drained_n = 0;
+        std::error_code wait_ec;
+        bool wait_done   = false;
+        bool cancel_sent = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await rsock.wait(wait_type::read);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        auto driver = [&]() -> capy::task<> {
+            // Latch a readiness edge on rsock with no recv parked...
+            char dg[1] = { 'x' };
+            auto [wec, wn] = co_await ssock.send_to(
+                capy::const_buffer(dg, sizeof(dg)),
+                rsock.local_endpoint());
+            (void)wec;
+            (void)wn;
+            // ...drain it, typically on the speculative success path...
+            char buf[4];
+            endpoint source;
+            auto [rec, rn] = co_await rsock.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            (void)rec;
+            drained_n = rn;
+            // ...then park the wait before the release signal exists.
+            // Spawning here queues the wait initiation ahead of every
+            // completion the "go" write can generate, so the cancel is
+            // ordered after the park on FIFO schedulers and completion
+            // ports alike.
+            capy::run_async(ex)(waiter());
+            auto [sec, sn] = co_await t2.write_some(
+                capy::const_buffer("go", 2));
+            (void)sec;
+            (void)sn;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            char c[2];
+            auto [ec, n] = co_await t1.read_some(
+                capy::mutable_buffer(c, sizeof(c)));
+            (void)ec;
+            (void)n;
+            cancel_sent = true;
+            rsock.cancel();
+        };
+
+        capy::run_async(ex)(canceller());
+        capy::run_async(ex)(driver());
+        ioc.run();
+
+        BOOST_TEST_EQ(drained_n, 1u);
+        BOOST_TEST(cancel_sent);
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == capy::cond::canceled);
+    }
+
     void run()
     {
         testWaitReadAndNoConsume();
@@ -320,11 +565,54 @@ struct wait_test
         testAcceptorWait();
         testWaitOnLocalStream();
         testWaitOnUdp();
+        testWaitReadAfterShortRead();
+        testWaitReadParksAfterDrain();
+        testWaitReadSecondDatagram();
+        testWaitUdpParksAfterDrain();
         testCancellation();
         testUdpCancellation();
     }
 };
 
 COROSIO_BACKEND_TESTS(wait_test, "boost.corosio.wait")
+
+// Reactor-only: the readiness probe is shared by epoll/kqueue/select;
+// the proactor backends resolve closed-socket waits through their own
+// submission paths.
+template<auto Backend>
+struct wait_closed_test
+{
+    // Waiting on a socket that was never opened must fail instead of
+    // parking forever on a descriptor the reactor has never seen.
+    void testWaitOnUnopenedSocket()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        tcp_socket sock(ioc);
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await sock.wait(wait_type::read);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+
+        capy::run_async(ex)(waiter());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == std::errc::bad_file_descriptor);
+    }
+
+    void run()
+    {
+        testWaitOnUnopenedSocket();
+    }
+};
+
+COROSIO_REACTOR_BACKEND_TESTS(wait_closed_test, "boost.corosio.wait_closed")
 
 } // namespace boost::corosio

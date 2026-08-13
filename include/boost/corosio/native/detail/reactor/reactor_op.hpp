@@ -10,6 +10,7 @@
 #ifndef BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_OP_HPP
 #define BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_OP_HPP
 
+#include <boost/corosio/native/detail/reactor/reactor_events.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_op_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/corosio/endpoint.hpp>
@@ -21,6 +22,7 @@
 #include <stop_token>
 
 #include <errno.h>
+#include <poll.h>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -147,21 +149,19 @@ struct reactor_connect_op : Base
 
 /** Readiness-only wait operation.
 
-    Does not perform any I/O syscall. Completion is signalled by
-    the reactor delivering the requested edge event; reactor_descriptor_state
-    calls complete() directly and never invokes perform_io().
+    Completion is decided by probing the descriptor with a
+    zero-timeout `poll()`, never by the reactor's cached edge
+    events: a speculative read can drain the socket without
+    touching the reactor (stale edge), and a short read can
+    consume the edge while data remains buffered (missing edge).
+    `perform_io()` runs the probe and reports `EAGAIN` when the
+    condition does not currently hold, which keeps the op parked.
 
     @tparam Base The backend's base op type.
 */
 template<class Base>
 struct reactor_wait_op : Base
 {
-    /* Mirror of reactor_event_read from reactor_descriptor_state.hpp.
-       Including that header from here would create an include cycle
-       (descriptor_state -> reactor_op_base; reactor_op -> reactor_op_base),
-       so we carry the value locally. Both must stay in sync. */
-    static constexpr std::uint32_t read_event = 0x001;
-
     /// Which event bit this wait targets (reactor_event_read/write/error).
     std::uint32_t wait_event = 0;
 
@@ -173,15 +173,71 @@ struct reactor_wait_op : Base
 
     bool is_read_operation() const noexcept override
     {
-        return wait_event == read_event;
+        return wait_event == reactor_event_read;
     }
 
-    /* perform_io() should never be called for a wait op — readiness
-       IS the completion. Overridden here to satisfy the virtual and
-       produce a safe result if called defensively. */
+    /** Check whether the waited-for condition currently holds.
+
+        Zero-timeout `poll()` probe. `POLLERR`/`POLLHUP` count as
+        ready for every wait type: the wait must not park on a
+        socket whose next I/O would fail immediately. The probe is
+        side-effect free — in particular it never reads `SO_ERROR`,
+        which is consume-on-read and belongs to whichever operation
+        observes the failure next.
+
+        @param fd The descriptor to probe.
+        @param event The event bit to probe for (read/write/error).
+        @param err Receives the probe failure, if any.
+
+        @return `true` if the condition holds or the probe failed.
+    */
+    static bool probe(int fd, std::uint32_t event, int& err) noexcept
+    {
+        // poll() silently ignores negative fds; without this guard a
+        // wait on a never-opened or closed socket parks forever.
+        if (fd < 0)
+        {
+            err = EBADF;
+            return true;
+        }
+
+        pollfd pfd{};
+        pfd.fd = fd;
+        if (event == reactor_event_read)
+            pfd.events = POLLIN;
+        else if (event == reactor_event_write)
+            pfd.events = POLLOUT;
+        else
+            pfd.events = POLLPRI;
+
+        int r;
+        do
+        {
+            r = ::poll(&pfd, 1, 0);
+        }
+        while (r < 0 && errno == EINTR);
+
+        if (r < 0)
+        {
+            // Complete with the probe failure rather than park forever.
+            // EAGAIN must not escape here: callers treat it as the
+            // stay-parked sentinel, and poll() can fail with it on
+            // BSD/macOS under transient resource pressure.
+            err = (errno == EAGAIN || errno == EWOULDBLOCK)
+                ? ENOMEM
+                : errno;
+            return true;
+        }
+        return r != 0;
+    }
+
     void perform_io() noexcept override
     {
-        this->complete(0, 0);
+        int err = 0;
+        if (probe(this->fd, wait_event, err))
+            this->complete(err, 0);
+        else
+            this->complete(EAGAIN, 0);
     }
 };
 

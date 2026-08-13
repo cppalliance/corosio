@@ -98,10 +98,18 @@ void
 complete_wait_op(Op& op)
 {
     op.stop_cb.reset();
+    // scheduler_ is null until the descriptor is registered; a wait
+    // completed by the initiation probe (e.g. EBADF on a never-opened
+    // socket) has no registration to reset a budget for.
     if (op.socket_impl_)
-        op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
+    {
+        if (auto* sched = op.socket_impl_->desc_state_.scheduler_)
+            sched->reset_inline_budget();
+    }
     else if (auto* sched = op.acceptor_impl_->desc_state_.scheduler_)
+    {
         sched->reset_inline_budget();
+    }
 
     // Wait reports only success/cancel/error — no bytes, no EOF.
     decode_io_result(

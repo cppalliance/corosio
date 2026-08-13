@@ -10,6 +10,7 @@
 #ifndef BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_DESCRIPTOR_STATE_HPP
 #define BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_DESCRIPTOR_STATE_HPP
 
+#include <boost/corosio/native/detail/reactor/reactor_events.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_op_base.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
 #include <boost/corosio/detail/ready_queue.hpp>
@@ -24,12 +25,6 @@
 #include <sys/socket.h>
 
 namespace boost::corosio::detail {
-
-/// Shared reactor event constants.
-/// These match epoll numeric values; kqueue maps its events to the same.
-static constexpr std::uint32_t reactor_event_read  = 0x001;
-static constexpr std::uint32_t reactor_event_write = 0x004;
-static constexpr std::uint32_t reactor_event_error = 0x008;
 
 /** Per-descriptor state shared across reactor backends.
 
@@ -205,11 +200,28 @@ reactor_descriptor_state::invoke_deferred_io()
                 read_ready = true;
             }
 
-            // Complete any parked wait-for-read regardless of read_op presence.
+            // The event does not prove the socket is still readable: a
+            // parked read op above may have drained it, or a speculative
+            // read consumed the data before this dispatch ran. The wait
+            // op's perform_io() re-probes and reports EAGAIN to stay
+            // parked.
             if (wait_read_op)
             {
-                wait_read_op->complete(err, 0);
-                local_ops.push(std::exchange(wait_read_op, nullptr));
+                auto* wo = wait_read_op;
+                if (err)
+                    wo->complete(err, 0);
+                else
+                    wo->perform_io();
+
+                if (wo->errn == EAGAIN || wo->errn == EWOULDBLOCK)
+                {
+                    wo->errn = 0;
+                }
+                else
+                {
+                    wait_read_op = nullptr;
+                    local_ops.push(wo);
+                }
             }
         }
         if (ev & reactor_event_write)
@@ -246,11 +258,24 @@ reactor_descriptor_state::invoke_deferred_io()
             if (!had_write_op)
                 write_ready = true;
 
-            // Complete any parked wait-for-write regardless of write_op presence.
+            // Same re-probe discipline as the wait-for-read dispatch.
             if (wait_write_op)
             {
-                wait_write_op->complete(err, 0);
-                local_ops.push(std::exchange(wait_write_op, nullptr));
+                auto* wo = wait_write_op;
+                if (err)
+                    wo->complete(err, 0);
+                else
+                    wo->perform_io();
+
+                if (wo->errn == EAGAIN || wo->errn == EWOULDBLOCK)
+                {
+                    wo->errn = 0;
+                }
+                else
+                {
+                    wait_write_op = nullptr;
+                    local_ops.push(wo);
+                }
             }
         }
         // Complete a parked wait-for-error on any error condition.
