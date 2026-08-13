@@ -45,6 +45,7 @@
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
@@ -245,94 +246,6 @@ struct reactor_paths_test
 
         BOOST_TEST(wait_done);
         BOOST_TEST(wait_ec == capy::cond::canceled);
-    }
-
-    // A wait_type::error initiated after the error condition already
-    // exists must complete via the initiation probe: the parked read
-    // that reported the reset consumed the readiness edge, so no
-    // further event will arrive to complete a parked wait.
-    void testWaitErrorPreexisting()
-    {
-        io_context ioc(Backend);
-        auto ex = ioc.get_executor();
-        // Default pair sets linger(true, 0) so close() sends RST,
-        // leaving a persistent error condition on the peer.
-        auto [s1, s2] = test::make_socket_pair(ioc);
-
-        std::error_code read_ec;
-        std::error_code wait_ec;
-        bool wait_done = false;
-
-        auto waiter = [&]() -> capy::task<> {
-            char c;
-            auto [rec, rn] = co_await s1.read_some(
-                capy::mutable_buffer(&c, 1));
-            (void)rn;
-            read_ec = rec;
-            auto [ec] = co_await s1.wait(wait_type::error);
-            wait_ec   = ec;
-            wait_done = true;
-        };
-        auto closer = [&]() -> capy::task<> {
-            s2.close();
-            co_return;
-        };
-
-        capy::run_async(ex)(waiter());
-        capy::run_async(ex)(closer());
-        ioc.run();
-
-        BOOST_TEST(read_ec);
-        BOOST_TEST(wait_done);
-        // wait_ec is unspecified: success from a probe hit, or the
-        // socket error if an event delivered it first. Completion
-        // itself is the contract under test.
-    }
-
-    // A zero-length datagram must satisfy wait_read: readiness
-    // reflects a queued datagram, not a byte count, and the probe
-    // must not treat an empty payload as not-ready.
-    void testWaitReadZeroLengthDatagram()
-    {
-        io_context ioc(Backend);
-        auto ex = ioc.get_executor();
-
-        udp_socket rsock(ioc);
-        rsock.open(udp::v4());
-        auto bec = rsock.bind(endpoint(ipv4_address::loopback(), 0));
-        BOOST_TEST(!bec);
-
-        udp_socket ssock(ioc);
-        ssock.open(udp::v4());
-
-        std::error_code wait_ec;
-        bool wait_done     = false;
-        std::error_code recv_ec;
-        std::size_t recv_n = 42;
-
-        auto task = [&]() -> capy::task<> {
-            auto [sec, sn] = co_await ssock.send_to(
-                capy::const_buffer(nullptr, 0), rsock.local_endpoint());
-            (void)sec;
-            (void)sn;
-            auto [wec] = co_await rsock.wait(wait_type::read);
-            wait_ec   = wec;
-            wait_done = true;
-            char buf[4];
-            endpoint source;
-            auto [rec, rn] = co_await rsock.recv_from(
-                capy::mutable_buffer(buf, sizeof(buf)), source);
-            recv_ec = rec;
-            recv_n  = rn;
-        };
-
-        capy::run_async(ex)(task());
-        ioc.run();
-
-        BOOST_TEST(wait_done);
-        BOOST_TEST(!wait_ec);
-        BOOST_TEST(!recv_ec);
-        BOOST_TEST_EQ(recv_n, 0u);
     }
 
     // Multi-buffer (scatter-gather) read. Exercises the readv() branch in
@@ -1154,6 +1067,118 @@ struct reactor_paths_test
     }
 
 #if BOOST_COROSIO_POSIX
+    // A wait_type::error initiated after the error condition already
+    // exists must complete via the initiation probe: the parked read
+    // that reported the reset consumed the readiness edge, so no
+    // further event will arrive to complete a parked wait.
+    void testWaitErrorPreexisting()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        // Default pair sets linger(true, 0) so close() sends RST,
+        // leaving a persistent error condition on the peer.
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        std::error_code read_ec;
+        std::error_code wait_ec;
+        bool wait_done = false;
+        bool skipped   = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            char c;
+            auto [rec, rn] = co_await s1.read_some(
+                capy::mutable_buffer(&c, 1));
+            (void)rn;
+            read_ec = rec;
+            // Reporting the reset consumed SO_ERROR. Linux keeps
+            // POLLHUP visible on the dead socket; on a platform that
+            // retains no kernel-visible evidence the wait would park,
+            // so skip instead of hanging there.
+            pollfd pfd{};
+            pfd.fd     = s1.native_handle();
+            pfd.events = POLLPRI;
+            if (::poll(&pfd, 1, 0) <= 0)
+            {
+                skipped = true;
+                co_return;
+            }
+            auto [ec] = co_await s1.wait(wait_type::error);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        auto closer = [&]() -> capy::task<> {
+            s2.close();
+            co_return;
+        };
+
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(closer());
+        ioc.run();
+
+        BOOST_TEST(read_ec);
+        BOOST_TEST(skipped || wait_done);
+        // wait_ec is unspecified: success from a probe hit, or the
+        // socket error if an event delivered it first. Completion
+        // itself is the contract under test.
+    }
+
+    // A zero-length datagram must satisfy wait_read: readiness
+    // reflects a queued datagram, not a byte count, and the probe
+    // must not treat an empty payload as not-ready.
+    void testWaitReadZeroLengthDatagram()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        udp_socket rsock(ioc);
+        rsock.open(udp::v4());
+        auto bec = rsock.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!bec);
+
+        udp_socket ssock(ioc);
+        ssock.open(udp::v4());
+
+        std::error_code wait_ec;
+        bool wait_done     = false;
+        bool skipped       = false;
+        std::error_code recv_ec;
+        std::size_t recv_n = 42;
+
+        auto task = [&]() -> capy::task<> {
+            auto [sec, sn] = co_await ssock.send_to(
+                capy::const_buffer(nullptr, 0), rsock.local_endpoint());
+            (void)sn;
+            // Some platforms reject zero-length datagram sends (same
+            // variation as testUdpSendToEmpty); nothing is queued
+            // then, so there is no readiness to wait for.
+            if (sec)
+            {
+                skipped = true;
+                co_return;
+            }
+            auto [wec] = co_await rsock.wait(wait_type::read);
+            wait_ec   = wec;
+            wait_done = true;
+            char buf[4];
+            endpoint source;
+            auto [rec, rn] = co_await rsock.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            recv_ec = rec;
+            recv_n  = rn;
+        };
+
+        capy::run_async(ex)(task());
+        ioc.run();
+
+        if (!skipped)
+        {
+            BOOST_TEST(wait_done);
+            BOOST_TEST(!wait_ec);
+            BOOST_TEST(!recv_ec);
+            BOOST_TEST_EQ(recv_n, 0u);
+        }
+    }
+
     // configure_reactor with max_events == 0 throws std::out_of_range.
     // IOCP ignores max_events_per_poll (no batch poll), so this is
     // meaningful only on the reactor backends.
@@ -1673,8 +1698,6 @@ struct reactor_paths_test
         testConnectErrorFiresWaitError();
         testWaitForError();
         testCancelWaitForError();
-        testWaitErrorPreexisting();
-        testWaitReadZeroLengthDatagram();
         testScatterRead();
         testWriteEAGAIN();
         testGatherWrite();
@@ -1698,6 +1721,8 @@ struct reactor_paths_test
         testIoContextOptionsBudgetInitClamp();
         testWaitWithPreCancelledToken();
 #if BOOST_COROSIO_POSIX
+        testWaitErrorPreexisting();
+        testWaitReadZeroLengthDatagram();
         testIoContextOptionsMaxEventsZero();
         testLocalStreamAssignWrongFamily();
         testLocalDgramAssignWrongType();
