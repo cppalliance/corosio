@@ -1110,12 +1110,55 @@ struct reactor_paths_test
         BOOST_TEST(accept_ec == capy::cond::canceled);
     }
 
+    // configure_reactor with budget_init > budget_max clamps.
+    void testIoContextOptionsBudgetInitClamp()
+    {
+        io_context_options opts;
+        opts.inline_budget_initial = 100;
+        opts.inline_budget_max     = 5;
+        opts.unassisted_budget     = 200;
+        io_context ioc(Backend, opts);
+        // Construction succeeds; values are silently clamped.
+        BOOST_TEST(true);
+    }
+
+    // Issue wait() with an already-stopped token. Exercises the
+    // op.cancelled.load() == true branch in reactor_acceptor::do_wait.
+    void testWaitWithPreCancelledToken()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+
+        std::stop_source ss;
+        ss.request_stop(); // Already stopped before the wait registers.
+        std::error_code wait_ec;
+        bool wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await acc.wait(wait_type::read);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+
+        capy::run_async(ex, ss.get_token())(waiter());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == capy::cond::canceled);
+    }
+
+#if BOOST_COROSIO_POSIX
     // configure_reactor with max_events == 0 throws std::out_of_range.
-    // IOCP ignores max_events_per_poll (no batch poll), so only test
-    // on reactor backends.
+    // IOCP ignores max_events_per_poll (no batch poll), so this is
+    // meaningful only on the reactor backends.
     void testIoContextOptionsMaxEventsZero()
     {
-#if BOOST_COROSIO_POSIX
         io_context_options opts;
         opts.max_events_per_poll = 0;
         bool threw = false;
@@ -1129,22 +1172,8 @@ struct reactor_paths_test
             threw = true;
         }
         BOOST_TEST(threw);
-#endif
     }
 
-    // configure_reactor with budget_init > budget_max clamps.
-    void testIoContextOptionsBudgetInitClamp()
-    {
-        io_context_options opts;
-        opts.inline_budget_initial = 100;
-        opts.inline_budget_max     = 5;
-        opts.unassisted_budget     = 200;
-        io_context ioc(Backend, opts);
-        // Construction succeeds; values are silently clamped.
-        BOOST_TEST(true);
-    }
-
-#if BOOST_COROSIO_POSIX
     // Assign a non-AF_UNIX fd to a local_stream_socket: validation
     // returns EAFNOSUPPORT (do_assign_fd::ss_family != AF_UNIX path).
     void testLocalStreamAssignWrongFamily()
@@ -1194,40 +1223,6 @@ struct reactor_paths_test
             ::close(fd);
         BOOST_TEST(threw);
     }
-#endif
-
-    // Issue wait() with an already-stopped token. Exercises the
-    // op.cancelled.load() == true branch in reactor_acceptor::do_wait.
-    void testWaitWithPreCancelledToken()
-    {
-        io_context ioc(Backend);
-        auto ex = ioc.get_executor();
-
-        tcp_acceptor acc(ioc);
-        acc.open();
-        acc.set_option(socket_option::reuse_address(true));
-        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
-        BOOST_TEST(!acc.listen());
-
-        std::stop_source ss;
-        ss.request_stop(); // Already stopped before the wait registers.
-        std::error_code wait_ec;
-        bool wait_done = false;
-
-        auto waiter = [&]() -> capy::task<> {
-            auto [ec] = co_await acc.wait(wait_type::read);
-            wait_ec   = ec;
-            wait_done = true;
-        };
-
-        capy::run_async(ex, ss.get_token())(waiter());
-        ioc.run();
-
-        BOOST_TEST(wait_done);
-        BOOST_TEST(wait_ec == capy::cond::canceled);
-    }
-
-#if BOOST_COROSIO_POSIX
     // Local stream socket wait_type::error then cancel. Exercises the
     // local-endpoint specialization of reactor_stream_socket.
     void testLocalStreamWaitErrorCancel()
@@ -1700,14 +1695,12 @@ struct reactor_paths_test
         testStopTokenUdpRecv();
         testStopTokenUdpRecvFrom();
         testStopTokenAcceptorAccept();
-        testIoContextOptionsMaxEventsZero();
         testIoContextOptionsBudgetInitClamp();
-#if BOOST_COROSIO_POSIX
-        testLocalStreamAssignWrongFamily();
-        testLocalDgramAssignWrongType();
-#endif
         testWaitWithPreCancelledToken();
 #if BOOST_COROSIO_POSIX
+        testIoContextOptionsMaxEventsZero();
+        testLocalStreamAssignWrongFamily();
+        testLocalDgramAssignWrongType();
         testLocalStreamWaitErrorCancel();
         testLocalStreamWaitWrite();
         testLocalStreamScatterRead();
