@@ -227,6 +227,10 @@ reactor_descriptor_state::invoke_deferred_io()
         if (ev & reactor_event_write)
         {
             bool had_write_op = (connect_op || write_op);
+            // A writable event on a socket still in SYN_SENT (e.g. the
+            // spurious pre-connect readiness of a fresh socket) must
+            // not complete the connect; perform_io() reports EAGAIN
+            // until a peer is actually established.
             if (connect_op)
             {
                 auto* cn = connect_op;
@@ -234,8 +238,16 @@ reactor_descriptor_state::invoke_deferred_io()
                     cn->complete(err, 0);
                 else
                     cn->perform_io();
-                connect_op = nullptr;
-                local_ops.push(cn);
+
+                if (cn->errn == EAGAIN || cn->errn == EWOULDBLOCK)
+                {
+                    cn->errn = 0;
+                }
+                else
+                {
+                    connect_op = nullptr;
+                    local_ops.push(cn);
+                }
             }
             if (write_op)
             {

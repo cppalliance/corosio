@@ -45,6 +45,7 @@
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 
+#include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -1067,6 +1068,117 @@ struct reactor_paths_test
     }
 
 #if BOOST_COROSIO_POSIX
+    // A connect held in SYN_SENT (backlog-full loopback listener drops
+    // the SYN) must stay pending: SO_ERROR reads 0 while the handshake
+    // is in flight, and a completion decided from that alone reports a
+    // false success. The fresh socket's spurious writable event
+    // (raised at registration, delivered after the connect parks)
+    // drives the stale entry into the connect completion check.
+    void testConnectPendingNotFalselyCompleted()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        // Raw listener with a full accept queue: listen(fd, 0) admits
+        // one connection; the filler occupies it, so further SYNs are
+        // dropped and the victim connect stays in SYN_SENT.
+        int lst = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(lst >= 0);
+        sockaddr_in addr{};
+        addr.sin_family      = AF_INET;
+        // htonl/ntohs are macros on the BSDs; they must stay unqualified.
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port        = 0;
+        BOOST_TEST(
+            ::bind(lst, reinterpret_cast<sockaddr*>(&addr),
+                   sizeof(addr)) == 0);
+        BOOST_TEST(::listen(lst, 0) == 0);
+        socklen_t alen = sizeof(addr);
+        BOOST_TEST(
+            ::getsockname(lst, reinterpret_cast<sockaddr*>(&addr),
+                          &alen) == 0);
+
+        // Occupy the queue. Platform variation is tolerated: if the
+        // filler is refused, the victim will be refused too, which the
+        // assertions below accept — only a false success is a failure.
+        int filler = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(filler >= 0);
+        (void)::connect(
+            filler, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+
+        auto port = ntohs(addr.sin_port);
+
+        tcp_socket sock(ioc);
+        sock.open();
+
+        auto [t1, t2] = test::make_socket_pair(ioc);
+
+        std::error_code conn_ec;
+        bool conn_done   = false;
+        bool cancel_sent = false;
+
+        // The parked read sequences the cancel strictly after the
+        // driver's connect has initiated: t1 only becomes readable
+        // from the driver's own "go" write, and the canceller's wake
+        // is processed only after the driver has parked.
+        auto canceller = [&]() -> capy::task<> {
+            char c[2];
+            auto [ec, n] = co_await t1.read_some(
+                capy::mutable_buffer(c, sizeof(c)));
+            (void)ec;
+            (void)n;
+            // Drain the ready queue before cancelling: a falsely
+            // completed connect is already posted at this point, and
+            // cancelling first would mark the op cancelled and mask
+            // the wrong ec at delivery. Let it deliver, then cancel
+            // the (correctly) parked op.
+            (void)co_await corosio::delay(std::chrono::milliseconds(1));
+            cancel_sent = true;
+            sock.cancel();
+        };
+        auto driver = [&]() -> capy::task<> {
+            // Yield through one reactor cycle with no op parked so the
+            // fresh socket's spurious writable event is dispatched and
+            // latched before the connect begins.
+            (void)co_await corosio::delay(std::chrono::milliseconds(1));
+            auto [sec, sn] = co_await t2.write_some(
+                capy::const_buffer("go", 2));
+            (void)sec;
+            (void)sn;
+            auto [ec] = co_await sock.connect(
+                endpoint(ipv4_address::loopback(), port));
+            conn_ec   = ec;
+            conn_done = true;
+        };
+
+        capy::run_async(ex)(canceller());
+        capy::run_async(ex)(driver());
+        ioc.run();
+
+        // Outcomes vary by how the platform treats the full queue:
+        // canceled where the SYN is silently held (Linux), a genuine
+        // connect error where it refuses, or a genuine success where
+        // the handshake machinery answers regardless (BSDs) — there
+        // the held-in-flight scenario is unconstructible. The bug
+        // under test is uniquely a success with no established peer.
+        bool false_success = false;
+        if (!conn_ec)
+        {
+            sockaddr_storage peer{};
+            socklen_t plen = sizeof(peer);
+            false_success =
+                ::getpeername(
+                    sock.native_handle(),
+                    reinterpret_cast<sockaddr*>(&peer), &plen) != 0;
+        }
+        BOOST_TEST(cancel_sent);
+        BOOST_TEST(conn_done);
+        BOOST_TEST(!false_success);
+
+        ::close(filler);
+        ::close(lst);
+    }
+
     // A wait_type::error initiated after the error condition already
     // exists must complete via the initiation probe: the parked read
     // that reported the reset consumed the readiness edge, so no
@@ -1721,6 +1833,7 @@ struct reactor_paths_test
         testIoContextOptionsBudgetInitClamp();
         testWaitWithPreCancelledToken();
 #if BOOST_COROSIO_POSIX
+        testConnectPendingNotFalselyCompleted();
         testWaitErrorPreexisting();
         testWaitReadZeroLengthDatagram();
         testIoContextOptionsMaxEventsZero();

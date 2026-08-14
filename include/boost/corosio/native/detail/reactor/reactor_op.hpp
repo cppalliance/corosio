@@ -139,6 +139,37 @@ struct reactor_connect_op : Base
 
     void perform_io() noexcept override
     {
+        // A readiness notification does not prove the handshake
+        // finished: fresh sockets raise a spurious writable event,
+        // and a cached edge can trigger this check while the connect
+        // is still in flight — where SO_ERROR also reads 0. Probe
+        // writability first and report EAGAIN to stay parked;
+        // SO_ERROR decides only once the socket is actually writable.
+        pollfd pfd{};
+        pfd.fd     = this->fd;
+        pfd.events = POLLOUT;
+        int r;
+        do
+        {
+            r = ::poll(&pfd, 1, 0);
+        }
+        while (r < 0 && errno == EINTR);
+
+        if (r == 0)
+        {
+            this->complete(EAGAIN, 0);
+            return;
+        }
+        if (r < 0)
+        {
+            // EAGAIN must not escape: it is the stay-parked sentinel.
+            this->complete(
+                (errno == EAGAIN || errno == EWOULDBLOCK) ? ENOMEM
+                                                          : errno,
+                0);
+            return;
+        }
+
         int err       = 0;
         socklen_t len = sizeof(err);
         if (::getsockopt(this->fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
