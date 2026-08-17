@@ -141,6 +141,16 @@ public:
         /// Return the platform socket descriptor.
         virtual native_handle_type native_handle() const noexcept = 0;
 
+        /** Release ownership of the native socket handle.
+
+            Deregisters the socket from the backend and cancels
+            pending operations without closing the descriptor. The
+            caller takes ownership.
+
+            @return The native handle.
+        */
+        virtual native_handle_type release_socket() noexcept = 0;
+
         /** Request cancellation of pending asynchronous operations.
 
             All outstanding operations complete with operation_canceled error.
@@ -431,6 +441,49 @@ public:
         None. May be called on closed sockets.
     */
     native_handle_type native_handle() const noexcept;
+
+    /** Assign an existing native socket to this object.
+
+        Adopts a TCP socket created outside the library — received
+        from another process, inherited, or made natively — and
+        registers it with the backend. The socket must be a stream
+        socket in the `AF_INET` or `AF_INET6` family. Adoption never
+        alters the descriptor's flags or options: on POSIX the fd
+        must already be non-blocking, and on Windows the socket must
+        be overlapped-capable.
+
+        If this object is already open, pending operations complete
+        with `errc::operation_canceled` and the held socket is
+        closed before the new one is adopted.
+
+        @par Exception Safety
+        Strong guarantee on validation failure: the object is
+        unchanged. If backend registration fails, the object either
+        retains its previous socket or is left closed, depending on
+        the backend. In all failure cases the caller retains
+        ownership of `fd`.
+
+        @param fd The native socket to adopt. On success the object
+            owns it and will close it.
+
+        @throws std::system_error On validation or registration
+            failure.
+    */
+    void assign(native_handle_type fd);
+
+    /** Release ownership of the native socket handle.
+
+        Deregisters the socket from the backend and cancels pending
+        operations without closing the descriptor. The caller takes
+        ownership of the returned handle.
+
+        @return The native handle.
+
+        @throws std::logic_error if the socket is not open.
+
+        @post is_open() == false
+    */
+    native_handle_type release();
 
     /** Disable sends or receives on the socket.
 

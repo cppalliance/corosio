@@ -56,6 +56,12 @@ class kqueue_tcp_socket final
 public:
     explicit kqueue_tcp_socket(kqueue_tcp_service& svc) noexcept
         : base_type(svc) {}
+
+    native_handle_type release_socket() noexcept override
+    {
+        hook_ = {};
+        return this->do_release_socket();
+    }
 };
 
 class kqueue_local_stream_socket final
@@ -94,6 +100,11 @@ class kqueue_udp_socket final
 public:
     explicit kqueue_udp_socket(kqueue_udp_service& svc) noexcept
         : base_type(svc) {}
+
+    native_handle_type release_socket() noexcept override
+    {
+        return this->do_release_socket();
+    }
 };
 
 class kqueue_local_datagram_socket final

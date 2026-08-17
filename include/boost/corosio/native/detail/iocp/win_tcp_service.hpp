@@ -98,6 +98,20 @@ public:
     std::error_code
     open_socket(win_tcp_socket_internal& impl, int family, int type, int protocol);
 
+    /** Adopt an existing socket handle into an implementation.
+
+        Validates family and type before touching the held socket,
+        then associates the new socket with the IOCP. On success the
+        impl takes ownership and will close the handle; on failure
+        the caller retains ownership.
+
+        @param impl The socket implementation internal to assign to.
+        @param fd The native socket handle to adopt.
+        @return Error code, or success.
+    */
+    std::error_code
+    assign_socket(win_tcp_socket_internal& impl, native_handle_type fd);
+
     /** Bind a stream socket to a local endpoint.
 
         @param impl The socket implementation internal to bind.

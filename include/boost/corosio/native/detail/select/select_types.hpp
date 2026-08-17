@@ -56,6 +56,12 @@ class select_tcp_socket final
 public:
     explicit select_tcp_socket(select_tcp_service& svc) noexcept
         : base_type(svc) {}
+
+    native_handle_type release_socket() noexcept override
+    {
+        hook_ = {};
+        return this->do_release_socket();
+    }
 };
 
 class select_local_stream_socket final
@@ -94,6 +100,11 @@ class select_udp_socket final
 public:
     explicit select_udp_socket(select_udp_service& svc) noexcept
         : base_type(svc) {}
+
+    native_handle_type release_socket() noexcept override
+    {
+        return this->do_release_socket();
+    }
 };
 
 class select_local_datagram_socket final

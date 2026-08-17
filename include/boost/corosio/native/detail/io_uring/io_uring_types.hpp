@@ -380,6 +380,22 @@ public:
     // native_handle() / set_option() / get_option() are inherited from
     // native_socket_base.
 
+    native_handle_type release_socket() noexcept override
+    {
+        // Flush while the fd is still open so the kernel resolves
+        // pending SQEs before the caller can close and recycle the
+        // number (same reasoning as close_socket).
+        if (fd_ >= 0)
+            sched_->cancel_and_flush(fd_);
+        int fd = fd_;
+        fd_    = -1;
+        local_endpoint_  = endpoint{};
+        remote_endpoint_ = endpoint{};
+        local_endpoint_state_.store(
+            endpoint_state::unresolved, std::memory_order_release);
+        return fd;
+    }
+
     void cancel() noexcept override
     {
         if (fd_ >= 0)
@@ -505,6 +521,57 @@ public:
             int one = 1;
             ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one));
         }
+        return {};
+    }
+
+    /** Adopt a pre-created fd into an impl.
+
+        Takes ownership of `fd` on success; the caller retains
+        ownership on failure.
+
+        @param impl The socket implementation to assign to.
+        @param fd   A valid, open, non-blocking IP stream fd.
+        @return Error code on failure, empty on success.
+    */
+    std::error_code assign_socket(
+        tcp_socket::implementation& impl,
+        native_handle_type fd) override
+    {
+        auto& sock = static_cast<io_uring_tcp_socket&>(impl);
+        int nfd = static_cast<int>(fd);
+        if (nfd >= 0 && nfd == sock.fd_)
+            return std::make_error_code(std::errc::invalid_argument);
+        if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, true))
+            return ec;
+
+        if (sock.fd_ >= 0)
+        {
+            sched_->cancel_and_flush(sock.fd_);
+            ::close(sock.fd_);
+        }
+        sock.fd_ = nfd;
+
+        sock.local_endpoint_  = endpoint{};
+        sock.remote_endpoint_ = endpoint{};
+
+        sockaddr_storage local{};
+        socklen_t local_len = sizeof(local);
+        if (::getsockname(sock.fd_,
+                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+        {
+            sock.local_endpoint_ = sockaddr_to_endpoint(local);
+            sock.family_         = local.ss_family;
+        }
+        sock.local_endpoint_state_.store(
+            io_uring_tcp_socket::endpoint_state::resolved,
+            std::memory_order_release);
+
+        sockaddr_storage remote{};
+        socklen_t remote_len = sizeof(remote);
+        if (::getpeername(sock.fd_,
+                reinterpret_cast<sockaddr*>(&remote), &remote_len) == 0)
+            sock.remote_endpoint_ = sockaddr_to_endpoint(remote);
+
         return {};
     }
 
@@ -1774,6 +1841,20 @@ public:
     // native_handle / is_open / set_option / get_option / local_endpoint
     // are inherited from native_socket_base.
 
+    native_handle_type release_socket() noexcept override
+    {
+        // Flush while the fd is still open so the kernel resolves
+        // pending SQEs before the caller can close and recycle the
+        // number (same reasoning as close_socket).
+        if (fd_ >= 0)
+            sched_->cancel_and_flush(fd_);
+        int fd = fd_;
+        fd_    = -1;
+        local_endpoint_  = endpoint{};
+        remote_endpoint_ = endpoint{};
+        return fd;
+    }
+
     void cancel() noexcept override
     {
         if (fd_ >= 0)
@@ -2063,6 +2144,54 @@ public:
             int one = 1;
             ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one));
         }
+        return {};
+    }
+
+    /** Adopt a pre-created fd into an impl.
+
+        Takes ownership of `fd` on success; the caller retains
+        ownership on failure.
+
+        @param impl The socket implementation to assign to.
+        @param fd   A valid, open, non-blocking IP datagram fd.
+        @return Error code on failure, empty on success.
+    */
+    std::error_code assign_socket(
+        udp_socket::implementation& impl,
+        native_handle_type fd) override
+    {
+        auto& sock = static_cast<io_uring_udp_socket&>(impl);
+        int nfd = static_cast<int>(fd);
+        if (nfd >= 0 && nfd == sock.fd_)
+            return std::make_error_code(std::errc::invalid_argument);
+        if (auto ec = validate_socket_fd(nfd, SOCK_DGRAM, true))
+            return ec;
+
+        if (sock.fd_ >= 0)
+        {
+            sched_->cancel_and_flush(sock.fd_);
+            ::close(sock.fd_);
+        }
+        sock.fd_ = nfd;
+
+        sock.local_endpoint_  = endpoint{};
+        sock.remote_endpoint_ = endpoint{};
+
+        sockaddr_storage local{};
+        socklen_t local_len = sizeof(local);
+        if (::getsockname(sock.fd_,
+                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+        {
+            sock.local_endpoint_ = sockaddr_to_endpoint(local);
+            sock.family_         = local.ss_family;
+        }
+
+        sockaddr_storage remote{};
+        socklen_t remote_len = sizeof(remote);
+        if (::getpeername(sock.fd_,
+                reinterpret_cast<sockaddr*>(&remote), &remote_len) == 0)
+            sock.remote_endpoint_ = sockaddr_to_endpoint(remote);
+
         return {};
     }
 

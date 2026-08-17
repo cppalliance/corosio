@@ -61,6 +61,31 @@ tcp_socket::open_for_family(int family, int type, int protocol)
         detail::throw_system_error(ec, "tcp_socket::open");
 }
 
+void
+tcp_socket::assign(native_handle_type fd)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    auto& svc          = static_cast<detail::win_tcp_service&>(h_.service());
+    auto& wrapper      = static_cast<tcp_socket::implementation&>(*h_.get());
+    std::error_code ec = svc.assign_socket(
+        *static_cast<detail::win_tcp_socket&>(wrapper).get_internal(), fd);
+#else
+    auto& svc          = static_cast<detail::tcp_service&>(h_.service());
+    std::error_code ec = svc.assign_socket(
+        static_cast<tcp_socket::implementation&>(*h_.get()), fd);
+#endif
+    if (ec)
+        detail::throw_system_error(ec, "tcp_socket::assign");
+}
+
+native_handle_type
+tcp_socket::release()
+{
+    if (!is_open())
+        detail::throw_logic_error("release: socket not open");
+    return get().release_socket();
+}
+
 std::error_code
 tcp_socket::bind(endpoint ep)
 {

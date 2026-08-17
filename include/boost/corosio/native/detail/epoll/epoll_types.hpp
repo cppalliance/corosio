@@ -56,6 +56,12 @@ class epoll_tcp_socket final
 public:
     explicit epoll_tcp_socket(epoll_tcp_service& svc) noexcept
         : base_type(svc) {}
+
+    native_handle_type release_socket() noexcept override
+    {
+        hook_ = {};
+        return this->do_release_socket();
+    }
 };
 
 class epoll_local_stream_socket final
@@ -94,6 +100,11 @@ class epoll_udp_socket final
 public:
     explicit epoll_udp_socket(epoll_udp_service& svc) noexcept
         : base_type(svc) {}
+
+    native_handle_type release_socket() noexcept override
+    {
+        return this->do_release_socket();
+    }
 };
 
 class epoll_local_datagram_socket final

@@ -22,13 +22,155 @@
 
 #include <chrono>
 #include <cstring>
+#include <stdexcept>
 #include <stop_token>
+#include <system_error>
+
+#if BOOST_COROSIO_POSIX
+// Raw socket creation for the assign()/release() adoption tests.
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#else
+#include <boost/corosio/native/detail/iocp/win_windows.hpp>
+#include <ws2tcpip.h> // sockaddr_in6, in6addr_loopback
+#endif
 
 #include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
 namespace {
+
+#if BOOST_COROSIO_HAS_IOCP
+constexpr native_handle_type invalid_native_socket =
+    static_cast<native_handle_type>(~0ull);
+#else
+constexpr native_handle_type invalid_native_socket =
+    static_cast<native_handle_type>(-1);
+#endif
+
+// Create a socket the way an adopting caller would: outside the
+// library, already in the mode the backend needs, and owned by the
+// caller until assign() succeeds.
+native_handle_type
+make_native_socket(int family, int type)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    return static_cast<native_handle_type>(::WSASocketW(
+        family, type, 0, nullptr, 0, WSA_FLAG_OVERLAPPED));
+#else
+    int fd = ::socket(family, type, 0);
+    if (fd >= 0)
+    {
+        int flags = ::fcntl(fd, F_GETFL);
+        ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    }
+    return static_cast<native_handle_type>(fd);
+#endif
+}
+
+void
+close_native_socket(native_handle_type h)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    ::closesocket(static_cast<SOCKET>(h));
+#else
+    ::close(static_cast<int>(h));
+#endif
+}
+
+// True while the descriptor is still open, i.e. a rejected assign
+// left it with the caller.
+bool
+native_socket_valid(native_handle_type h)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    int type = 0;
+    int len  = static_cast<int>(sizeof(type));
+    return ::getsockopt(
+               static_cast<SOCKET>(h), SOL_SOCKET, SO_TYPE,
+               reinterpret_cast<char*>(&type), &len) == 0;
+#else
+    return ::fcntl(static_cast<int>(h), F_GETFD) >= 0;
+#endif
+}
+
+// Fill a sockaddr_storage with a loopback address for `port`.
+std::size_t
+fill_loopback(sockaddr_storage& storage, std::uint16_t port, bool v6)
+{
+    storage = sockaddr_storage{};
+    if (v6)
+    {
+        auto* sa6        = reinterpret_cast<sockaddr_in6*>(&storage);
+        sa6->sin6_family = AF_INET6;
+        sa6->sin6_port   = htons(port);
+        sa6->sin6_addr   = in6addr_loopback;
+        return sizeof(sockaddr_in6);
+    }
+    auto* sa4            = reinterpret_cast<sockaddr_in*>(&storage);
+    sa4->sin_family      = AF_INET;
+    sa4->sin_port        = htons(port);
+    sa4->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    return sizeof(sockaddr_in);
+}
+
+// Bind to an ephemeral loopback port and report it.
+bool
+native_bind_loopback(native_handle_type h, bool v6, std::uint16_t& port_out)
+{
+    sockaddr_storage storage{};
+    std::size_t len = fill_loopback(storage, 0, v6);
+#if BOOST_COROSIO_HAS_IOCP
+    SOCKET s = static_cast<SOCKET>(h);
+    if (::bind(
+            s, reinterpret_cast<sockaddr const*>(&storage),
+            static_cast<int>(len)) != 0)
+        return false;
+    int name_len = static_cast<int>(sizeof(storage));
+#else
+    int s = static_cast<int>(h);
+    if (::bind(
+            s, reinterpret_cast<sockaddr const*>(&storage),
+            static_cast<socklen_t>(len)) != 0)
+        return false;
+    socklen_t name_len = sizeof(storage);
+#endif
+    if (::getsockname(
+            s, reinterpret_cast<sockaddr*>(&storage), &name_len) != 0)
+        return false;
+    port_out = v6
+        ? ntohs(reinterpret_cast<sockaddr_in6*>(&storage)->sin6_port)
+        : ntohs(reinterpret_cast<sockaddr_in*>(&storage)->sin_port);
+    return true;
+}
+
+// Send a datagram through a descriptor the library no longer owns.
+bool
+native_send_to_loopback(
+    native_handle_type h,
+    std::uint16_t      port,
+    bool               v6,
+    char const*        data,
+    std::size_t        len)
+{
+    sockaddr_storage storage{};
+    std::size_t addr_len = fill_loopback(storage, port, v6);
+#if BOOST_COROSIO_HAS_IOCP
+    return ::sendto(
+               static_cast<SOCKET>(h), data, static_cast<int>(len), 0,
+               reinterpret_cast<sockaddr const*>(&storage),
+               static_cast<int>(addr_len)) == static_cast<int>(len);
+#else
+    return ::sendto(
+               static_cast<int>(h), data, len, 0,
+               reinterpret_cast<sockaddr const*>(&storage),
+               static_cast<socklen_t>(addr_len)) ==
+           static_cast<ssize_t>(len);
+#endif
+}
 
 template<auto Backend>
 struct udp_socket_test
@@ -1203,6 +1345,359 @@ struct udp_socket_test
         sock.close();
     }
 
+    // Adopt a natively created bound datagram socket and round-trip a
+    // datagram through the library in both directions.
+    void testAssignBoundSocket()
+    {
+        io_context ioc(Backend);
+
+        udp_socket peer(ioc);
+        peer.open();
+        auto ec = peer.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto peer_ep = peer.local_endpoint();
+
+        auto nfd = make_native_socket(AF_INET, SOCK_DGRAM);
+        BOOST_TEST(nfd != invalid_native_socket);
+        std::uint16_t nport = 0;
+        BOOST_TEST(native_bind_loopback(nfd, false, nport));
+
+        udp_socket adopted(ioc);
+        adopted.assign(nfd);
+        BOOST_TEST(adopted.is_open());
+        BOOST_TEST(adopted.native_handle() == nfd);
+        BOOST_TEST_EQ(adopted.local_endpoint().port(), nport);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char const msg[] = "adopted";
+            auto [ec1, n1]   = co_await adopted.send_to(
+                capy::const_buffer(msg, sizeof(msg)), peer_ep);
+            BOOST_TEST(!ec1);
+            BOOST_TEST_EQ(n1, sizeof(msg));
+
+            char buf[64] = {};
+            endpoint source;
+            auto [ec2, n2] = co_await peer.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            BOOST_TEST(!ec2);
+            BOOST_TEST_EQ(n2, sizeof(msg));
+            BOOST_TEST_EQ(source.port(), nport);
+
+            // Reverse direction through the adopted socket.
+            char const reply[] = "back";
+            auto [ec3, n3]     = co_await peer.send_to(
+                capy::const_buffer(reply, sizeof(reply)), source);
+            BOOST_TEST(!ec3);
+            (void)n3;
+
+            char buf2[64] = {};
+            endpoint from;
+            auto [ec4, n4] = co_await adopted.recv_from(
+                capy::mutable_buffer(buf2, sizeof(buf2)), from);
+            BOOST_TEST(!ec4);
+            BOOST_TEST_EQ(n4, sizeof(reply));
+            done = (std::strcmp(buf2, "back") == 0);
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    // Rejection matrix: bad handle, wrong type, wrong family, self.
+    void testAssignRejections()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        auto expect_throw = [&](native_handle_type h) {
+            bool threw = false;
+            try
+            {
+                sock.assign(h);
+            }
+            catch (std::system_error const&)
+            {
+                threw = true;
+            }
+            BOOST_TEST(threw);
+        };
+
+        expect_throw(invalid_native_socket);
+        BOOST_TEST(!sock.is_open());
+
+        auto st = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(st != invalid_native_socket);
+        expect_throw(st);
+        BOOST_TEST(native_socket_valid(st)); // caller keeps it
+        close_native_socket(st);
+
+#if BOOST_COROSIO_POSIX
+        auto un = make_native_socket(AF_UNIX, SOCK_DGRAM);
+        BOOST_TEST(un != invalid_native_socket);
+        expect_throw(un);
+        BOOST_TEST(native_socket_valid(un));
+        close_native_socket(un);
+#endif
+
+        sock.open(udp::v4());
+        expect_throw(sock.native_handle());
+        BOOST_TEST(sock.is_open());
+        sock.close();
+    }
+
+    // A failed assign over an open socket leaves it functional.
+    void testAssignFailureKeepsSocket()
+    {
+        io_context ioc(Backend);
+
+        udp_socket peer(ioc);
+        peer.open();
+        auto ec = peer.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto peer_ep = peer.local_endpoint();
+
+        udp_socket sock(ioc);
+        sock.open();
+        ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto before = sock.native_handle();
+
+        auto st = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(st != invalid_native_socket);
+        bool threw = false;
+        try
+        {
+            sock.assign(st);
+        }
+        catch (std::system_error const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(threw);
+        BOOST_TEST(native_socket_valid(st));
+        close_native_socket(st);
+
+        BOOST_TEST(sock.is_open());
+        BOOST_TEST(sock.native_handle() == before);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char const msg[] = "intact";
+            auto [ec1, n1]   = co_await sock.send_to(
+                capy::const_buffer(msg, sizeof(msg)), peer_ep);
+            BOOST_TEST(!ec1);
+
+            char buf[64] = {};
+            endpoint source;
+            auto [ec2, n2] = co_await peer.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            BOOST_TEST(!ec2);
+            done = (n2 == n1);
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    // Assign over an open socket cancels its pending operations and
+    // leaves the adopted descriptor usable.
+    void testAssignOverOpenCancelsPending()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        udp_socket peer(ioc);
+        peer.open();
+        auto ec = peer.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto peer_ep = peer.local_endpoint();
+
+        udp_socket sock(ioc);
+        sock.open();
+        ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+
+        auto nfd = make_native_socket(AF_INET, SOCK_DGRAM);
+        BOOST_TEST(nfd != invalid_native_socket);
+        std::uint16_t nport = 0;
+        BOOST_TEST(native_bind_loopback(nfd, false, nport));
+
+        std::error_code recv_ec;
+        bool recv_done = false;
+        bool delivered = false;
+        char buf[64];
+        endpoint source;
+
+        auto receiver = [&]() -> capy::task<> {
+            auto [rec, rn] = co_await sock.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            (void)rn;
+            recv_ec   = rec;
+            recv_done = true;
+        };
+        auto adopter = [&]() -> capy::task<> {
+            sock.assign(nfd);
+            char const msg[] = "after";
+            auto [ec1, n1]   = co_await sock.send_to(
+                capy::const_buffer(msg, sizeof(msg)), peer_ep);
+            BOOST_TEST(!ec1);
+
+            char in[64] = {};
+            endpoint from;
+            auto [ec2, n2] = co_await peer.recv_from(
+                capy::mutable_buffer(in, sizeof(in)), from);
+            BOOST_TEST(!ec2);
+            delivered = (n2 == n1 && from.port() == nport);
+        };
+
+        // run_async runs inline to the first suspend, so spawning the
+        // receiver first is what guarantees the recv is parked when
+        // assign() runs.
+        capy::run_async(ex)(receiver());
+        capy::run_async(ex)(adopter());
+        ioc.run();
+
+        BOOST_TEST(recv_done);
+        BOOST_TEST(recv_ec == capy::cond::canceled);
+        BOOST_TEST(sock.is_open());
+        BOOST_TEST(sock.native_handle() == nfd);
+        BOOST_TEST(delivered);
+    }
+
+    // release() hands ownership to the caller only after pending
+    // operations have been cancelled, and the descriptor is still
+    // bound to its port.
+    void testRelease()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        udp_socket peer(ioc);
+        peer.open();
+        auto ec = peer.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto peer_port = peer.local_endpoint().port();
+
+        udp_socket sock(ioc);
+        sock.open();
+        ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto sock_port = sock.local_endpoint().port();
+
+        std::error_code recv_ec;
+        bool recv_done = false;
+        char buf[64];
+        endpoint source;
+        auto released = invalid_native_socket;
+
+        auto receiver = [&]() -> capy::task<> {
+            auto [rec, rn] = co_await sock.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            (void)rn;
+            recv_ec   = rec;
+            recv_done = true;
+        };
+        auto releaser = [&]() -> capy::task<> {
+            released = sock.release();
+            co_return;
+        };
+
+        capy::run_async(ex)(receiver());
+        capy::run_async(ex)(releaser());
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST(recv_done);
+        BOOST_TEST(recv_ec == capy::cond::canceled);
+        BOOST_TEST(!sock.is_open());
+        BOOST_TEST(released != invalid_native_socket);
+
+        char const msg[] = "released";
+        BOOST_TEST(native_send_to_loopback(
+            released, peer_port, false, msg, sizeof(msg)));
+
+        bool got = false;
+        auto peeker = [&]() -> capy::task<> {
+            char in[64] = {};
+            endpoint from;
+            auto [rec, rn] = co_await peer.recv_from(
+                capy::mutable_buffer(in, sizeof(in)), from);
+            BOOST_TEST(!rec);
+            got = (rn == sizeof(msg) && from.port() == sock_port);
+        };
+        capy::run_async(ex)(peeker());
+        ioc.run();
+        BOOST_TEST(got);
+
+        close_native_socket(released);
+    }
+
+    void testReleaseClosedThrows()
+    {
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+
+        bool caught = false;
+        try
+        {
+            (void)sock.release();
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    // v6 adoption: the cached endpoint must report v6.
+    void testAssignV6()
+    {
+        io_context ioc(Backend);
+
+        udp_socket peer(ioc);
+        peer.open(udp::v6());
+        auto ec = peer.bind(endpoint(ipv6_address::loopback(), 0));
+        if (ec)
+            return; // no IPv6 loopback on this host
+        auto peer_ep = peer.local_endpoint();
+
+        auto nfd = make_native_socket(AF_INET6, SOCK_DGRAM);
+        if (nfd == invalid_native_socket)
+            return;
+        std::uint16_t nport = 0;
+        if (!native_bind_loopback(nfd, true, nport))
+        {
+            close_native_socket(nfd);
+            return;
+        }
+
+        udp_socket adopted(ioc);
+        adopted.assign(nfd);
+        BOOST_TEST(adopted.is_open());
+        BOOST_TEST(adopted.local_endpoint().is_v6());
+        BOOST_TEST_EQ(adopted.local_endpoint().port(), nport);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char const msg[] = "v6adopt";
+            auto [ec1, n1]   = co_await adopted.send_to(
+                capy::const_buffer(msg, sizeof(msg)), peer_ep);
+            BOOST_TEST(!ec1);
+
+            char buf[64] = {};
+            endpoint source;
+            auto [ec2, n2] = co_await peer.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), source);
+            BOOST_TEST(!ec2);
+            BOOST_TEST(source.is_v6());
+            done = (n2 == n1);
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     void run()
     {
         testConstruction();
@@ -1248,6 +1743,15 @@ struct udp_socket_test
         testMulticastInterfaceV6();
         testBufferSizeBoundary();
         testWrongProtocolNoDelayOnUdp();
+
+        // Adoption and release
+        testAssignBoundSocket();
+        testAssignRejections();
+        testAssignFailureKeepsSocket();
+        testAssignOverOpenCancelsPending();
+        testRelease();
+        testReleaseClosedThrows();
+        testAssignV6();
     }
 };
 

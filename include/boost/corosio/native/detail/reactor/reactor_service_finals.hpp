@@ -188,6 +188,13 @@ public:
             family, type, protocol, true);
     }
 
+    std::error_code assign_socket(
+        tcp_socket::implementation& impl, native_handle_type fd) override
+    {
+        return do_assign_fd<Traits>(
+            static_cast<SocketFinal*>(&impl), fd, SOCK_STREAM, true);
+    }
+
     std::error_code bind_socket(
         tcp_socket::implementation& impl, endpoint ep) override
     {
@@ -280,6 +287,13 @@ public:
         return do_open_socket<Traits>(
             static_cast<SocketFinal*>(&impl),
             family, type, protocol, true);
+    }
+
+    std::error_code assign_socket(
+        udp_socket::implementation& impl, native_handle_type fd) override
+    {
+        return do_assign_fd<Traits>(
+            static_cast<SocketFinal*>(&impl), fd, SOCK_DGRAM, true);
     }
 
     std::error_code bind_datagram(

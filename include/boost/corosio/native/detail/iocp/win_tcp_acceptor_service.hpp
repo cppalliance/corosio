@@ -898,6 +898,21 @@ win_tcp_socket::native_handle() const noexcept
     return static_cast<native_handle_type>(internal_->native_handle());
 }
 
+inline native_handle_type
+win_tcp_socket::release_socket() noexcept
+{
+    SOCKET s = internal_->socket_;
+    if (s != INVALID_SOCKET)
+    {
+        internal_->cancel();
+        internal_->socket_          = INVALID_SOCKET;
+        internal_->family_          = AF_UNSPEC;
+        internal_->local_endpoint_  = endpoint{};
+        internal_->remote_endpoint_ = endpoint{};
+    }
+    return static_cast<native_handle_type>(s);
+}
+
 inline std::error_code
 win_tcp_socket::set_option(
     int level, int optname, void const* data, std::size_t size) noexcept
@@ -1079,6 +1094,60 @@ win_tcp_service::open_socket(
 
     impl.socket_ = sock;
     impl.family_ = family;
+    return {};
+}
+
+inline std::error_code
+win_tcp_service::assign_socket(
+    win_tcp_socket_internal& impl, native_handle_type fd)
+{
+    SOCKET sock = static_cast<SOCKET>(fd);
+    if (sock == INVALID_SOCKET)
+        return make_err(WSAENOTSOCK);
+    if (sock == impl.socket_)
+        return std::make_error_code(std::errc::invalid_argument);
+
+    // SO_PROTOCOL_INFOW works on an unbound socket, unlike getsockname
+    // (WSAEINVAL until bind/connect names it) -- an adopted socket may
+    // have reached connected state without an explicit bind.
+    WSAPROTOCOL_INFOW proto_info{};
+    int proto_len = sizeof(proto_info);
+    if (::getsockopt(
+            sock, SOL_SOCKET, SO_PROTOCOL_INFOW,
+            reinterpret_cast<char*>(&proto_info), &proto_len) != 0)
+        return make_err(::WSAGetLastError());
+    if (proto_info.iAddressFamily != AF_INET &&
+        proto_info.iAddressFamily != AF_INET6)
+        return make_err(WSAEAFNOSUPPORT);
+    if (proto_info.iSocketType != SOCK_STREAM)
+        return make_err(WSAEPROTOTYPE);
+
+    // Associate before releasing the held socket: on IOCP nothing
+    // shares descriptor state the way the reactor path does, so a
+    // failed association must not cost the caller their old socket.
+    HANDLE result = ::CreateIoCompletionPort(
+        reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
+    if (result == nullptr)
+        return make_err(::GetLastError());
+
+    impl.close_socket();
+    impl.socket_ = sock;
+    impl.family_ = proto_info.iAddressFamily;
+
+    endpoint local_ep, remote_ep;
+    sockaddr_storage local_storage{};
+    int local_len = sizeof(local_storage);
+    if (::getsockname(
+            sock, reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
+        local_ep = detail::from_sockaddr(local_storage);
+    sockaddr_storage remote_storage{};
+    int remote_len = sizeof(remote_storage);
+    if (::getpeername(
+            sock, reinterpret_cast<sockaddr*>(&remote_storage),
+            &remote_len) == 0)
+        remote_ep = detail::from_sockaddr(remote_storage);
+    impl.set_endpoints(local_ep, remote_ep);
+
     return {};
 }
 

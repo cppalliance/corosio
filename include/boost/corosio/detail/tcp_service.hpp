@@ -49,6 +49,22 @@ public:
         int type,
         int protocol) = 0;
 
+    /** Assign an existing native socket handle to a socket.
+
+        Adopts a pre-created socket handle. On success the impl
+        takes ownership and will close the handle. On failure the
+        caller retains ownership and must close it. If the impl is
+        already open, its pending operations are cancelled and the
+        held socket is closed before the new one is adopted.
+
+        @param impl The socket implementation to assign to.
+        @param fd The native socket handle to adopt.
+        @return Error code on failure, empty on success.
+    */
+    virtual std::error_code assign_socket(
+        tcp_socket::implementation& impl,
+        native_handle_type fd) = 0;
+
     /** Bind a stream socket to a local endpoint.
 
         @param impl The socket implementation to bind.

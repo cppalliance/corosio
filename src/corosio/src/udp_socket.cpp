@@ -45,6 +45,24 @@ udp_socket::open_for_family(int family, int type, int protocol)
 }
 
 void
+udp_socket::assign(native_handle_type fd)
+{
+    auto& svc          = static_cast<detail::udp_service&>(h_.service());
+    std::error_code ec = svc.assign_socket(
+        static_cast<udp_socket::implementation&>(*h_.get()), fd);
+    if (ec)
+        detail::throw_system_error(ec, "udp_socket::assign");
+}
+
+native_handle_type
+udp_socket::release()
+{
+    if (!is_open())
+        detail::throw_logic_error("release: socket not open");
+    return get().release_socket();
+}
+
+void
 udp_socket::close()
 {
     if (!is_open())
