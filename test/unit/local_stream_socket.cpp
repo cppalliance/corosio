@@ -29,6 +29,7 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_POSIX
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -469,6 +470,71 @@ struct local_stream_socket_test
         }
         BOOST_TEST(caught);
     }
+
+#if BOOST_COROSIO_POSIX
+    // A rejected fd must remain owned and usable by the caller
+    // (validation happens before any state is touched).
+    void testAssignRejectedFdStaysOpen()
+    {
+#if BOOST_COROSIO_HAS_IO_URING
+        // io_uring's adopt path performs no validation yet.
+        if constexpr (std::is_same_v<
+                std::remove_const_t<decltype(Backend)>, io_uring_t>)
+            return;
+#endif
+        io_context ioc(Backend);
+        local_stream_socket sock(ioc);
+        int fds[2];
+        BOOST_TEST(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);
+        bool threw = false;
+        try
+        {
+            sock.assign((native_handle_type)fds[0]);
+        }
+        catch (std::system_error const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(threw);
+        // fd still valid: fcntl succeeds
+        BOOST_TEST(::fcntl(fds[0], F_GETFD) >= 0);
+        BOOST_TEST(!sock.is_open());
+        ::close(fds[0]);
+        ::close(fds[1]);
+    }
+#endif
+
+#if BOOST_COROSIO_HAS_EPOLL
+    // Adopting an fd the reactor already tracks must fail with an
+    // error, not terminate. epoll reports EEXIST; kqueue and select
+    // accept re-registration, so only epoll is asserted.
+    void testAssignDuplicateFdErrors()
+    {
+        if constexpr (std::is_same_v<
+                std::remove_const_t<decltype(Backend)>, epoll_t>)
+        {
+            io_context ioc(Backend);
+            local_stream_socket a(ioc);
+            local_stream_socket b(ioc);
+            int fds[2];
+            BOOST_TEST(::socketpair(
+                AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds) == 0);
+            a.assign((native_handle_type)fds[0]);
+            bool threw = false;
+            try
+            {
+                b.assign((native_handle_type)fds[0]);
+            }
+            catch (std::system_error const&)
+            {
+                threw = true;
+            }
+            BOOST_TEST(threw);
+            BOOST_TEST(a.is_open());
+            ::close(fds[1]);
+        }
+    }
+#endif
 
     void testReleaseClosedThrows()
     {
@@ -1236,6 +1302,12 @@ struct local_stream_socket_test
         testEndpointsConnected();
         testShutdown();
         testAssignAlreadyOpenThrows();
+#if BOOST_COROSIO_POSIX
+        testAssignRejectedFdStaysOpen();
+#endif
+#if BOOST_COROSIO_HAS_EPOLL
+        testAssignDuplicateFdErrors();
+#endif
         testReleaseClosedThrows();
         testAvailableClosedThrows();
         testConnectToNonexistent();

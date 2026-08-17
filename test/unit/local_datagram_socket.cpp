@@ -32,7 +32,10 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <type_traits>
 
+#include <fcntl.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "context.hpp"
@@ -689,6 +692,36 @@ struct local_datagram_socket_test
         BOOST_TEST(caught);
     }
 
+    // A rejected fd must remain owned and usable by the caller
+    // (validation happens before any state is touched).
+    void testAssignRejectedFdStaysOpen()
+    {
+#if BOOST_COROSIO_HAS_IO_URING
+        // io_uring's adopt path performs no validation yet.
+        if constexpr (std::is_same_v<
+                std::remove_const_t<decltype(Backend)>, io_uring_t>)
+            return;
+#endif
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+        int fds[2];
+        BOOST_TEST(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
+        bool threw = false;
+        try
+        {
+            sock.assign((native_handle_type)fds[0]);
+        }
+        catch (std::system_error const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(threw);
+        BOOST_TEST(::fcntl(fds[0], F_GETFD) >= 0);
+        BOOST_TEST(!sock.is_open());
+        ::close(fds[0]);
+        ::close(fds[1]);
+    }
+
     void testRelease()
     {
         io_context ioc(Backend);
@@ -809,6 +842,7 @@ struct local_datagram_socket_test
         testAvailableClosedThrows();
         testAvailable();
         testAssignAlreadyOpenThrows();
+        testAssignRejectedFdStaysOpen();
         testRelease();
         testSendOnClosedThrows();
         testCancelPendingRecv();

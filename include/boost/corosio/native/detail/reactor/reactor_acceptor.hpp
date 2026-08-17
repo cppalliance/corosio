@@ -227,7 +227,8 @@ public:
         a successful listen() call.
 
         @param backlog The listen backlog.
-        @return The error code from listen(), or success.
+        @return The error code from listen() or from reactor
+        registration, or success.
     */
     std::error_code do_listen(int backlog);
 };
@@ -469,8 +470,7 @@ reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, En
     if (::listen(fd_, backlog) < 0)
         return make_err(errno);
 
-    svc_.scheduler().register_descriptor(fd_, &desc_state_);
-    return {};
+    return svc_.scheduler().register_descriptor(fd_, &desc_state_);
 }
 
 template<

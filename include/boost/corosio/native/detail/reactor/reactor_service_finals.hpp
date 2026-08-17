@@ -66,7 +66,11 @@ do_open_socket(
         return ec;
     }
 
-    socket_impl->init_and_register(fd);
+    if (auto ec = socket_impl->init_and_register(fd))
+    {
+        ::close(fd);
+        return ec;
+    }
     return {};
 }
 
@@ -75,31 +79,38 @@ std::error_code
 do_assign_fd(
     SocketFinal* socket_impl,
     int fd,
-    int expected_type) noexcept
+    int expected_type,
+    bool is_ip) noexcept
 {
     if (fd < 0)
         return make_err(EBADF);
 
-    socket_impl->close_socket();
+    if (fd == socket_impl->native_handle())
+        return std::make_error_code(std::errc::invalid_argument);
 
-    // Validate that fd is actually an AF_UNIX socket of the expected type.
+    // Validate before touching the held socket: a failed assign must
+    // leave the object unchanged and the caller owning the fd.
+    sockaddr_storage st{};
+    socklen_t st_len = sizeof(st);
+    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&st), &st_len) != 0)
+        return make_err(errno);
+    if (is_ip)
     {
-        sockaddr_storage st{};
-        socklen_t st_len = sizeof(st);
-        if (::getsockname(
-                fd, reinterpret_cast<sockaddr*>(&st), &st_len) != 0)
-            return make_err(errno);
-        if (st.ss_family != AF_UNIX)
+        if (st.ss_family != AF_INET && st.ss_family != AF_INET6)
             return make_err(EAFNOSUPPORT);
-
-        int sock_type = 0;
-        socklen_t opt_len = sizeof(sock_type);
-        if (::getsockopt(
-                fd, SOL_SOCKET, SO_TYPE, &sock_type, &opt_len) != 0)
-            return make_err(errno);
-        if (sock_type != expected_type)
-            return make_err(EPROTOTYPE);
     }
+    else if (st.ss_family != AF_UNIX)
+    {
+        return make_err(EAFNOSUPPORT);
+    }
+
+    int sock_type = 0;
+    socklen_t opt_len = sizeof(sock_type);
+    if (::getsockopt(fd, SOL_SOCKET, SO_TYPE,
+            &sock_type, &opt_len) != 0)
+        return make_err(errno);
+    if (sock_type != expected_type)
+        return make_err(EPROTOTYPE);
 
     // Adopt-only: do not mutate the caller's fd flags. Callers
     // pass fds they have already configured (e.g., from socketpair
@@ -107,7 +118,10 @@ do_assign_fd(
     if (auto ec = Traits::validate_assigned_fd(fd))
         return ec;
 
-    socket_impl->init_and_register(fd);
+    socket_impl->close_socket();
+
+    if (auto ec = socket_impl->init_and_register(fd))
+        return ec;
 
     // Best-effort: refresh endpoint caches.
     using endpoint_type = std::remove_cvref_t<
@@ -245,10 +259,11 @@ public:
     }
 
     std::error_code assign_socket(
-        local_stream_socket::implementation& impl, int fd) override
+        local_stream_socket::implementation& impl,
+        native_handle_type fd) override
     {
         return do_assign_fd<Traits>(
-            static_cast<SocketFinal*>(&impl), fd, SOCK_STREAM);
+            static_cast<SocketFinal*>(&impl), fd, SOCK_STREAM, false);
     }
 };
 
@@ -328,10 +343,11 @@ public:
     }
 
     std::error_code assign_socket(
-        local_datagram_socket::implementation& impl, int fd) override
+        local_datagram_socket::implementation& impl,
+        native_handle_type fd) override
     {
         return do_assign_fd<Traits>(
-            static_cast<SocketFinal*>(&impl), fd, SOCK_DGRAM);
+            static_cast<SocketFinal*>(&impl), fd, SOCK_DGRAM, false);
     }
 
     std::error_code bind_socket(

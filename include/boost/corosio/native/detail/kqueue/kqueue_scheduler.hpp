@@ -131,9 +131,11 @@ public:
         @param fd The file descriptor to register.
         @param desc Pointer to the caller-owned reactor_descriptor_state.
 
-        @throws std::system_error if kevent(EV_ADD) fails.
+        @return The error if kevent(EV_ADD) fails, otherwise a default
+        constructed error code.
     */
-    void register_descriptor(int fd, reactor_descriptor_state* desc) const;
+    std::error_code
+    register_descriptor(int fd, reactor_descriptor_state* desc) const;
 
     /** Deregister a persistently registered descriptor.
 
@@ -148,7 +150,8 @@ public:
     /// Watch the read end of the POSIX signal self-pipe (see scheduler.hpp).
     void register_signal_reader(int read_fd) override
     {
-        register_descriptor(read_fd, signal_pipe_reader_.arm());
+        if (auto ec = register_descriptor(read_fd, signal_pipe_reader_.arm()))
+            detail::throw_system_error(ec, "kevent (register)");
     }
 
 private:
@@ -236,7 +239,7 @@ kqueue_scheduler::configure_reactor(
     event_buffer_.resize(max_events_per_poll_);
 }
 
-inline void
+inline std::error_code
 kqueue_scheduler::register_descriptor(int fd, reactor_descriptor_state* desc) const
 {
     struct kevent changes[2];
@@ -248,7 +251,7 @@ kqueue_scheduler::register_descriptor(int fd, reactor_descriptor_state* desc) co
         EV_ADD | EV_CLEAR, 0, 0, desc);
 
     if (::kevent(kq_fd_, changes, 2, nullptr, 0, nullptr) < 0)
-        detail::throw_system_error(make_err(errno), "kevent (register)");
+        return make_err(errno);
 
     desc->registered_events = reactor_event_read | reactor_event_write;
     desc->fd                = fd;
@@ -260,6 +263,7 @@ kqueue_scheduler::register_descriptor(int fd, reactor_descriptor_state* desc) co
     desc->impl_ref_.reset();
     desc->read_ready  = false;
     desc->write_ready = false;
+    return {};
 }
 
 inline void

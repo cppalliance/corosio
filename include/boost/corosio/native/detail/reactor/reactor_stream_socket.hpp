@@ -272,6 +272,14 @@ public:
         remote_endpoint_ = Endpoint{};
     }
 
+    /// Release ownership of the descriptor and drop the cached peer.
+    native_handle_type do_release_socket() noexcept
+    {
+        auto fd = base_type::do_release_socket();
+        remote_endpoint_ = Endpoint{};
+        return fd;
+    }
+
 private:
     // CRTP callbacks for reactor_basic_socket cancel/close
 

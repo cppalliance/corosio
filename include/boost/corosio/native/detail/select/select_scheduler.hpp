@@ -41,6 +41,7 @@
 #include <cstdint>
 #include <limits>
 #include <mutex>
+#include <new>
 #include <unordered_map>
 
 namespace boost::corosio::detail {
@@ -109,8 +110,12 @@ public:
 
         @param fd The file descriptor to register.
         @param desc Pointer to descriptor state for this fd.
+
+        @return The error if the fd cannot be tracked, otherwise a
+        default constructed error code.
     */
-    void register_descriptor(int fd, reactor_descriptor_state* desc) const;
+    std::error_code
+    register_descriptor(int fd, reactor_descriptor_state* desc) const;
 
     /** Deregister a persistently registered descriptor.
 
@@ -129,7 +134,8 @@ public:
     /// Watch the read end of the POSIX signal self-pipe (see scheduler.hpp).
     void register_signal_reader(int read_fd) override
     {
-        register_descriptor(read_fd, signal_pipe_reader_.arm());
+        if (auto ec = register_descriptor(read_fd, signal_pipe_reader_.arm()))
+            detail::throw_system_error(ec, "select: register");
     }
 
 private:
@@ -215,12 +221,12 @@ select_scheduler::shutdown()
         interrupt_reactor();
 }
 
-inline void
+inline std::error_code
 select_scheduler::register_descriptor(
     int fd, reactor_descriptor_state* desc) const
 {
     if (fd < 0 || fd >= FD_SETSIZE)
-        detail::throw_system_error(make_err(EINVAL), "select: fd out of range");
+        return make_err(EMFILE);
 
     desc->registered_events = reactor_event_read | reactor_event_write;
     desc->fd                = fd;
@@ -237,12 +243,20 @@ select_scheduler::register_descriptor(
 
     {
         mutex_type::scoped_lock lock(mutex_);
-        registered_descs_[fd] = desc;
+        try
+        {
+            registered_descs_[fd] = desc;
+        }
+        catch (std::bad_alloc const&)
+        {
+            return make_err(ENOMEM);
+        }
         if (fd > max_fd_)
             max_fd_ = fd;
     }
 
     interrupt_reactor();
+    return {};
 }
 
 inline void

@@ -172,7 +172,9 @@ complete_connect_op(Op& op)
     @tparam SocketImpl The concrete socket implementation type.
     @tparam AcceptorImpl The concrete acceptor implementation type.
     @param acceptor_impl The acceptor that accepted the connection.
-    @param accepted_fd The accepted file descriptor (set to -1 on success).
+    @param accepted_fd The accepted file descriptor. Cleared to -1
+        once the socket impl owns it, which includes the registration
+        failure that destroys the impl and closes the fd with it.
     @param peer_storage The peer address from accept().
     @param impl_out Output pointer for the new socket impl.
     @param ec_out Output pointer for any error.
@@ -205,7 +207,15 @@ setup_accepted_socket(
         impl.desc_state_.write_op   = nullptr;
         impl.desc_state_.connect_op = nullptr;
     }
-    socket_svc->scheduler().register_descriptor(accepted_fd, &impl.desc_state_);
+    if (auto ec = socket_svc->scheduler().register_descriptor(
+            accepted_fd, &impl.desc_state_))
+    {
+        // destroy() closes the fd the impl already owns.
+        accepted_fd = -1;
+        socket_svc->destroy(&impl);
+        *ec_out = ec;
+        return false;
+    }
 
     using ep_type = decltype(acceptor_impl->local_endpoint());
     impl.set_endpoints(

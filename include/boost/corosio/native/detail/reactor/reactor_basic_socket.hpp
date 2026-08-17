@@ -83,8 +83,17 @@ public:
 
     ~reactor_basic_socket() override = default;
 
-    /// Assign the fd, initialize descriptor state, and register with the reactor.
-    void init_and_register(int fd) noexcept
+    /** Assign the fd, initialize descriptor state, and register with
+        the reactor.
+
+        @param fd The descriptor to adopt.
+
+        @return The error if the reactor rejects the descriptor, in
+        which case the implementation is left closed and the caller
+        retains ownership of @a fd; otherwise a default constructed
+        error code.
+    */
+    std::error_code init_and_register(int fd) noexcept
     {
         fd_ = fd;
         desc_state_.fd = fd;
@@ -94,7 +103,16 @@ public:
             desc_state_.write_op   = nullptr;
             desc_state_.connect_op = nullptr;
         }
-        svc_.scheduler().register_descriptor(fd, &desc_state_);
+        if (auto ec = svc_.scheduler().register_descriptor(fd, &desc_state_))
+        {
+            // Undo the partial state so a failed adopt is
+            // indistinguishable from a closed implementation.
+            fd_ = -1;
+            desc_state_.fd = -1;
+            desc_state_.registered_events = 0;
+            return ec;
+        }
+        return {};
     }
 
     /** Register an op with the reactor.

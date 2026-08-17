@@ -79,17 +79,27 @@ reactor_acceptor_impl<Derived, Traits, Service, SocketFinal, AccImplBase, Endpoi
                     impl.desc_state_.write_op   = nullptr;
                     impl.desc_state_.connect_op = nullptr;
                 }
-                socket_svc->scheduler().register_descriptor(
+                auto reg_ec = socket_svc->scheduler().register_descriptor(
                     accepted, &impl.desc_state_);
+                if (reg_ec)
+                {
+                    // destroy() closes the fd the impl already owns.
+                    socket_svc->destroy(&impl);
+                    *ec = reg_ec;
+                    if (impl_out)
+                        *impl_out = nullptr;
+                }
+                else
+                {
+                    impl.set_endpoints(
+                        this->local_endpoint_,
+                        from_sockaddr_as(
+                            peer_storage, peer_addrlen, Endpoint{}));
 
-                impl.set_endpoints(
-                    this->local_endpoint_,
-                    from_sockaddr_as(
-                        peer_storage, peer_addrlen, Endpoint{}));
-
-                *ec = {};
-                if (impl_out)
-                    *impl_out = &impl;
+                    *ec = {};
+                    if (impl_out)
+                        *impl_out = &impl;
+                }
             }
             else
             {

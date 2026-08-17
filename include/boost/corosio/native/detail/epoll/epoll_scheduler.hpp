@@ -113,8 +113,12 @@ public:
 
         @param fd The file descriptor to register.
         @param desc Pointer to descriptor data (stored in epoll_event.data.ptr).
+
+        @return The error if registration fails, otherwise a default
+        constructed error code.
     */
-    void register_descriptor(int fd, reactor_descriptor_state* desc) const;
+    std::error_code
+    register_descriptor(int fd, reactor_descriptor_state* desc) const;
 
     /** Deregister a persistently registered descriptor.
 
@@ -125,7 +129,8 @@ public:
     /// Watch the read end of the POSIX signal self-pipe (see scheduler.hpp).
     void register_signal_reader(int read_fd) override
     {
-        register_descriptor(read_fd, signal_pipe_reader_.arm());
+        if (auto ec = register_descriptor(read_fd, signal_pipe_reader_.arm()))
+            detail::throw_system_error(ec, "epoll_ctl (register)");
     }
 
 private:
@@ -252,7 +257,7 @@ epoll_scheduler::configure_reactor(
     event_buffer_.resize(max_events_per_poll_);
 }
 
-inline void
+inline std::error_code
 epoll_scheduler::register_descriptor(int fd, reactor_descriptor_state* desc) const
 {
     epoll_event ev{};
@@ -260,7 +265,7 @@ epoll_scheduler::register_descriptor(int fd, reactor_descriptor_state* desc) con
     ev.data.ptr = desc;
 
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0)
-        detail::throw_system_error(make_err(errno), "epoll_ctl (register)");
+        return make_err(errno);
 
     desc->registered_events = ev.events;
     desc->fd                = fd;
@@ -272,6 +277,7 @@ epoll_scheduler::register_descriptor(int fd, reactor_descriptor_state* desc) con
     desc->impl_ref_.reset();
     desc->read_ready  = false;
     desc->write_ready = false;
+    return {};
 }
 
 inline void
