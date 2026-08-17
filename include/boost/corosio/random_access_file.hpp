@@ -163,7 +163,7 @@ public:
             return false;
         }
 
-        capy::io_result<std::size_t> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
         {
             return {ec_, bytes_};
         }
@@ -204,7 +204,7 @@ public:
             return false;
         }
 
-        capy::io_result<std::size_t> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
         {
             return {ec_, bytes_};
         }

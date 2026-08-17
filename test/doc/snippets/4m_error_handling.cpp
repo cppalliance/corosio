@@ -139,12 +139,12 @@ direct_members(
 {
     // tag::direct_members[]
     auto result = co_await sock.connect(endpoint);
-    if (!result.ec)
+    if (!std::get<0>(result))
         std::cout << "Connected successfully\n";
     else
-        std::cerr << "Failed: " << result.ec.message() << "\n";
+        std::cerr << "Failed: " << std::get<0>(result).message() << "\n";
     // end::direct_members[]
-    out = result.ec;
+    out = std::get<0>(result);
 }
 
 capy::task<>
@@ -189,8 +189,8 @@ throw_style(
 {
     // tag::throw_style[]
     auto throw_on_error = [](auto result) {
-        if (result.ec)
-            throw std::system_error(result.ec);
+        if (std::get<0>(result))
+            throw std::system_error(std::get<0>(result));
         return result;
     };
 
@@ -406,9 +406,9 @@ struct error_handling_test
         // Typed result (resolve)
         io_result<resolver_results> r3;  // Contains: ec, results
         // end::result_shapes[]
-        BOOST_TEST(!r1.ec);
-        BOOST_TEST(!r2.ec);
-        BOOST_TEST(!r3.ec);
+        BOOST_TEST(!std::get<0>(r1));
+        BOOST_TEST(!std::get<0>(r2));
+        BOOST_TEST(!std::get<0>(r3));
     }
 
     void

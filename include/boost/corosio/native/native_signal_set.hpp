@@ -74,7 +74,7 @@ class native_signal_set : public signal_set
             return token_.stop_requested();
         }
 
-        capy::io_result<int> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<int> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {capy::error::canceled, 0};

@@ -238,10 +238,10 @@ struct timeout_awaitable
         // landing in the same window as the deadline firing is
         // reported as a timeout.
         if (fired && !parent &&
-            r.ec == capy::cond::canceled)
+            std::get<0>(r) == capy::cond::canceled)
         {
             std::remove_cvref_t<decltype(r)> t{};
-            t.ec = make_error_code(capy::error::timeout);
+            std::get<0>(t) = make_error_code(capy::error::timeout);
             return t;
         }
         return r;

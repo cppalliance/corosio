@@ -647,7 +647,7 @@ struct resolver_test
             auto result = co_await r_ref.resolve(
                 "127.0.0.1", "80",
                 resolve_flags::numeric_host | resolve_flags::numeric_service);
-            ok_out = !result.ec;
+            ok_out = !std::get<0>(result);
         };
         capy::run_async(ioc.get_executor())(task(r, result_ok));
 
@@ -668,8 +668,8 @@ struct resolver_test
                        std::error_code& ec_out) -> capy::task<> {
             auto result = co_await r_ref.resolve(
                 "not-a-valid-ip", "80", resolve_flags::numeric_host);
-            error_out = static_cast<bool>(result.ec);
-            ec_out    = result.ec;
+            error_out = static_cast<bool>(std::get<0>(result));
+            ec_out    = std::get<0>(result);
         };
         capy::run_async(ioc.get_executor())(task(r, got_error, result_ec));
 

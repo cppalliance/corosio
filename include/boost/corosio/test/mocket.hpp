@@ -408,7 +408,7 @@ public:
         return underlying_.await_suspend(std::forward<Args>(args)...);
     }
 
-    capy::io_result<std::size_t> await_resume()
+    [[nodiscard]] capy::io_result<std::size_t> await_resume()
     {
         if (sync_)
             return {ec_, n_};
@@ -509,7 +509,7 @@ public:
         return underlying_.await_suspend(std::forward<Args>(args)...);
     }
 
-    capy::io_result<std::size_t> await_resume()
+    [[nodiscard]] capy::io_result<std::size_t> await_resume()
     {
         if (sync_)
             return {ec_, n_};

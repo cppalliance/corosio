@@ -117,7 +117,7 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
             return token_.stop_requested();
         }
 
-        capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled)};
@@ -155,7 +155,7 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
             return token_.stop_requested();
         }
 
-        capy::io_result<tcp_socket> await_resume() noexcept
+        [[nodiscard]] capy::io_result<tcp_socket> await_resume() noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled),

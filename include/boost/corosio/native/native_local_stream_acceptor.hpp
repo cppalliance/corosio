@@ -94,7 +94,7 @@ class native_local_stream_acceptor : public local_stream_acceptor
             return token_.stop_requested();
         }
 
-        capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled)};
@@ -131,7 +131,7 @@ class native_local_stream_acceptor : public local_stream_acceptor
             return token_.stop_requested();
         }
 
-        capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled)};
@@ -167,7 +167,7 @@ class native_local_stream_acceptor : public local_stream_acceptor
             return token_.stop_requested();
         }
 
-        capy::io_result<native_local_stream_socket<Backend>>
+        [[nodiscard]] capy::io_result<native_local_stream_socket<Backend>>
         await_resume() const noexcept
         {
             if (token_.stop_requested())

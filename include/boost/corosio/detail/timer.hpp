@@ -531,7 +531,7 @@ struct wait_awaitable
     // Cancellation surfaces through w_.ec_: the stop_token path in
     // wait() completes the waiter with error::canceled written to
     // it, so there is no separate token to consult here.
-    capy::io_result<> await_resume() const noexcept
+    [[nodiscard]] capy::io_result<> await_resume() const noexcept
     {
         return {w_.ec_};
     }

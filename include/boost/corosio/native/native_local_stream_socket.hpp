@@ -105,7 +105,7 @@ class native_local_stream_socket : public local_stream_socket
             return token_.stop_requested();
         }
 
-        capy::io_result<std::size_t> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled), 0};
@@ -143,7 +143,7 @@ class native_local_stream_socket : public local_stream_socket
             return token_.stop_requested();
         }
 
-        capy::io_result<std::size_t> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled), 0};
@@ -178,7 +178,7 @@ class native_local_stream_socket : public local_stream_socket
             return token_.stop_requested();
         }
 
-        capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled)};
@@ -214,7 +214,7 @@ class native_local_stream_socket : public local_stream_socket
             return token_.stop_requested();
         }
 
-        capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled)};

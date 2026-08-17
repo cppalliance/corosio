@@ -218,7 +218,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
             return token_.stop_requested();
         }
 
-        capy::io_result<resolver_results> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<resolver_results> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled), {}};
@@ -257,7 +257,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
             return token_.stop_requested();
         }
 
-        capy::io_result<reverse_resolver_result> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<reverse_resolver_result> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled), {}};

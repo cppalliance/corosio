@@ -87,7 +87,7 @@ class native_tcp_acceptor : public tcp_acceptor
             return token_.stop_requested();
         }
 
-        capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled)};
@@ -123,7 +123,7 @@ class native_tcp_acceptor : public tcp_acceptor
             return token_.stop_requested();
         }
 
-        capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled)};
@@ -160,7 +160,7 @@ class native_tcp_acceptor : public tcp_acceptor
             return token_.stop_requested();
         }
 
-        capy::io_result<tcp_socket> await_resume() noexcept
+        [[nodiscard]] capy::io_result<tcp_socket> await_resume() noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled),

@@ -182,7 +182,7 @@ public:
     }
 
     /// Return empty on expiry, `error::canceled` if stop won.
-    capy::io_result<> await_resume() noexcept
+    [[nodiscard]] capy::io_result<> await_resume() noexcept
     {
         if(canceled_)
             return {capy::error::canceled};
@@ -312,7 +312,7 @@ public:
     }
 
     /// Return empty on deadline, `error::canceled` if stop won.
-    capy::io_result<> await_resume() noexcept
+    [[nodiscard]] capy::io_result<> await_resume() noexcept
     {
         if(canceled_)
             return {capy::error::canceled};

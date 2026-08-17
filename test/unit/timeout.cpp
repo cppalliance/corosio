@@ -58,7 +58,7 @@ struct payload_awaitable
     }
     capy::io_result<int> await_resume() noexcept
     {
-        return {{}, value_};
+        return {std::error_code(), value_};
     }
 };
 
@@ -278,7 +278,7 @@ struct timeout_test
             }
             capy::io_result<int> await_resume() noexcept
             {
-                return {{}, value_};
+                return {std::error_code(), value_};
             }
         };
 
