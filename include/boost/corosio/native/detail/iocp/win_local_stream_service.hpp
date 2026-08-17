@@ -950,20 +950,50 @@ win_local_stream_service::assign_socket(
     auto& wrapper = static_cast<win_local_stream_socket&>(impl);
     auto& internal = *wrapper.get_internal();
 
-    internal.close_socket();
-
     SOCKET sock = static_cast<SOCKET>(fd);
+    if (sock == INVALID_SOCKET)
+        return make_err(WSAENOTSOCK);
+    if (sock == internal.socket_)
+        return std::make_error_code(std::errc::invalid_argument);
 
+    // SO_PROTOCOL_INFOW works on an unbound socket, unlike getsockname
+    // (WSAEINVAL until bind/connect names it) -- connect_pair hands in
+    // a socket that reached connected state without an explicit bind.
+    WSAPROTOCOL_INFOW proto_info{};
+    int proto_len = sizeof(proto_info);
+    if (::getsockopt(sock, SOL_SOCKET, SO_PROTOCOL_INFOW,
+            reinterpret_cast<char*>(&proto_info), &proto_len) != 0)
+        return make_err(::WSAGetLastError());
+    if (proto_info.iAddressFamily != AF_UNIX)
+        return make_err(WSAEAFNOSUPPORT);
+    if (proto_info.iSocketType != SOCK_STREAM)
+        return make_err(WSAEPROTOTYPE);
+
+    // Associate before releasing the held socket: on IOCP nothing
+    // shares descriptor state the way the reactor path does, so a
+    // failed association must not cost the caller their old socket.
     HANDLE result = ::CreateIoCompletionPort(
-        reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
-
+        reinterpret_cast<HANDLE>(sock),
+        static_cast<HANDLE>(iocp_), key_io, 0);
     if (result == nullptr)
-    {
-        DWORD dwError = ::GetLastError();
-        return make_err(dwError);
-    }
+        return make_err(::GetLastError());
 
+    internal.close_socket();
     internal.socket_ = sock;
+
+    sockaddr_storage local{};
+    int local_len = sizeof(local);
+    corosio::local_endpoint lep{}, rep{};
+    if (::getsockname(sock,
+            reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+        lep = from_sockaddr_local(local, static_cast<socklen_t>(local_len));
+    sockaddr_storage remote{};
+    int remote_len = sizeof(remote);
+    if (::getpeername(sock,
+            reinterpret_cast<sockaddr*>(&remote), &remote_len) == 0)
+        rep = from_sockaddr_local(remote, static_cast<socklen_t>(remote_len));
+    internal.local_endpoint_  = lep;
+    internal.remote_endpoint_ = rep;
     return {};
 }
 

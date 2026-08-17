@@ -30,6 +30,7 @@
 
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/validate_fd.hpp>
 
 #include <system_error>
 #include <type_traits>
@@ -82,35 +83,15 @@ do_assign_fd(
     int expected_type,
     bool is_ip) noexcept
 {
-    if (fd < 0)
-        return make_err(EBADF);
-
-    if (fd == socket_impl->native_handle())
+    // fd >= 0 guard: an unset socket_impl reports native_handle() == -1,
+    // and a caller-supplied -1 must fail as a bad fd, not a self-assign.
+    if (fd >= 0 && fd == socket_impl->native_handle())
         return std::make_error_code(std::errc::invalid_argument);
 
     // Validate before touching the held socket: a failed assign must
     // leave the object unchanged and the caller owning the fd.
-    sockaddr_storage st{};
-    socklen_t st_len = sizeof(st);
-    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&st), &st_len) != 0)
-        return make_err(errno);
-    if (is_ip)
-    {
-        if (st.ss_family != AF_INET && st.ss_family != AF_INET6)
-            return make_err(EAFNOSUPPORT);
-    }
-    else if (st.ss_family != AF_UNIX)
-    {
-        return make_err(EAFNOSUPPORT);
-    }
-
-    int sock_type = 0;
-    socklen_t opt_len = sizeof(sock_type);
-    if (::getsockopt(fd, SOL_SOCKET, SO_TYPE,
-            &sock_type, &opt_len) != 0)
-        return make_err(errno);
-    if (sock_type != expected_type)
-        return make_err(EPROTOTYPE);
+    if (auto ec = validate_socket_fd(fd, expected_type, is_ip))
+        return ec;
 
     // Adopt-only: do not mutate the caller's fd flags. Callers
     // pass fds they have already configured (e.g., from socketpair

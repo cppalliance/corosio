@@ -472,16 +472,29 @@ struct local_stream_socket_test
     }
 
 #if BOOST_COROSIO_POSIX
+    // Backend validation, not just the front-end guard: a bad fd must
+    // be rejected on every backend.
+    void testAssignBadFdThrows()
+    {
+        io_context ioc(Backend);
+        local_stream_socket sock(ioc);
+        bool threw = false;
+        try
+        {
+            sock.assign((native_handle_type)-1);
+        }
+        catch (std::system_error const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(threw);
+        BOOST_TEST(!sock.is_open());
+    }
+
     // A rejected fd must remain owned and usable by the caller
     // (validation happens before any state is touched).
     void testAssignRejectedFdStaysOpen()
     {
-#if BOOST_COROSIO_HAS_IO_URING
-        // io_uring's adopt path performs no validation yet.
-        if constexpr (std::is_same_v<
-                std::remove_const_t<decltype(Backend)>, io_uring_t>)
-            return;
-#endif
         io_context ioc(Backend);
         local_stream_socket sock(ioc);
         int fds[2];
@@ -1303,6 +1316,7 @@ struct local_stream_socket_test
         testShutdown();
         testAssignAlreadyOpenThrows();
 #if BOOST_COROSIO_POSIX
+        testAssignBadFdThrows();
         testAssignRejectedFdStaysOpen();
 #endif
 #if BOOST_COROSIO_HAS_EPOLL

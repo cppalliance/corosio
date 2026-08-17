@@ -27,6 +27,7 @@
 #include <boost/corosio/native/detail/native_socket_base.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/msg_flags.hpp>
+#include <boost/corosio/native/detail/validate_fd.hpp>
 #include <boost/corosio/detail/local_datagram_service.hpp>
 #include <boost/corosio/detail/local_stream_acceptor_service.hpp>
 #include <boost/corosio/detail/local_stream_service.hpp>
@@ -1244,12 +1245,18 @@ public:
         native_handle_type fd) override
     {
         auto& sock = static_cast<io_uring_local_stream_socket&>(impl);
+        int nfd = static_cast<int>(fd);
+        if (nfd >= 0 && nfd == sock.fd_)
+            return std::make_error_code(std::errc::invalid_argument);
+        if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, false))
+            return ec;
+
         if (sock.fd_ >= 0)
         {
             sched_->cancel_and_flush(sock.fd_);
             ::close(sock.fd_);
         }
-        sock.fd_ = static_cast<int>(fd);
+        sock.fd_ = nfd;
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
@@ -2612,12 +2619,18 @@ public:
         native_handle_type fd) override
     {
         auto& sock = static_cast<io_uring_local_datagram_socket&>(impl);
+        int nfd = static_cast<int>(fd);
+        if (nfd >= 0 && nfd == sock.fd_)
+            return std::make_error_code(std::errc::invalid_argument);
+        if (auto ec = validate_socket_fd(nfd, SOCK_DGRAM, false))
+            return ec;
+
         if (sock.fd_ >= 0)
         {
             sched_->cancel_and_flush(sock.fd_);
             ::close(sock.fd_);
         }
-        sock.fd_ = static_cast<int>(fd);
+        sock.fd_ = nfd;
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
