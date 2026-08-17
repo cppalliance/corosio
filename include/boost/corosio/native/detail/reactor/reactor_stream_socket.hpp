@@ -247,12 +247,12 @@ public:
 
     /** Shared readiness-wait dispatch.
 
-        `wait_type::write` completes immediately. Read and error
-        waits probe the descriptor with a zero-timeout `poll()` and
-        complete at once if the condition already holds; otherwise
-        the op re-probes under the descriptor mutex and parks,
-        completing when a reactor event arrives and a fresh probe
-        confirms the condition.
+        Every wait type probes the descriptor with a zero-timeout
+        `poll()` and completes at once if the condition already
+        holds; otherwise the op re-probes under the descriptor mutex
+        and parks, completing when a reactor event arrives and a
+        fresh probe confirms the condition. A write wait therefore
+        completes only while a non-blocking write can make progress.
     */
     std::coroutine_handle<> do_wait(
         std::coroutine_handle<>,
@@ -645,33 +645,6 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
         std::stop_token const& token,
         std::error_code* ec)
 {
-    // wait_type::write completes immediately on a connected socket,
-    // matching asio's behavior on IOCP. Corosio's reactor backends use
-    // edge-triggered EPOLLOUT, which would never fire on an already-
-    // writable socket; an immediate completion is also a more useful
-    // contract than parking until a non-writable -> writable transition.
-    if (w == wait_type::write)
-    {
-        auto& op = wait_wr_;
-        if (this->svc_.scheduler().try_consume_inline_budget())
-        {
-            *ec               = std::error_code{};
-            op.cont.h = h;
-            return dispatch_coro(ex, op.cont);
-        }
-        op.reset();
-        op.wait_event = reactor_event_write;
-        op.h          = h;
-        op.ex         = ex;
-        op.ec_out     = ec;
-        op.fd         = this->fd_;
-        op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
-        op.complete(0, 0);
-        this->svc_.post(&op);
-        return std::noop_coroutine();
-    }
-
     // Pick refs up-front to avoid duplicating the register_op call.
     WaitOp* op_ptr;
     reactor_op_base** desc_slot_ptr;
@@ -684,6 +657,13 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
         desc_slot_ptr   = &this->desc_state_.wait_read_op;
         cancel_flag_ptr = &this->desc_state_.wait_read_cancel_pending;
         event           = reactor_event_read;
+    }
+    else if (w == wait_type::write)
+    {
+        op_ptr          = &wait_wr_;
+        desc_slot_ptr   = &this->desc_state_.wait_write_op;
+        cancel_flag_ptr = &this->desc_state_.wait_write_cancel_pending;
+        event           = reactor_event_write;
     }
     else // wait_type::error
     {
@@ -737,7 +717,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
     // otherwise leave the wait parked on a ready socket.
     bool force_probe = true;
     this->register_op(op, *desc_slot_ptr, force_probe, *cancel_flag_ptr,
-                      false);
+                      event == reactor_event_write);
     return std::noop_coroutine();
 }
 

@@ -94,9 +94,9 @@ struct write_op : overlapped_op
     Completion conveys an error_code only (no bytes_transferred).
     wait_type::read posts a zero-byte WSARecv: the kernel signals
     completion when data arrives without consuming it.
-    wait_type::write short-circuits through the scheduler queue.
-    wait_type::error parks the op in the auxiliary select reactor
-    until the kernel reports an error condition.
+    wait_type::write and wait_type::error park the op in the
+    auxiliary poll reactor until the socket becomes writable or the
+    kernel reports an error condition.
 */
 struct wait_op : overlapped_op
 {

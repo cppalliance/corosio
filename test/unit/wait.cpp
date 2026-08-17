@@ -30,14 +30,199 @@
 #include <boost/capy/task.hpp>
 
 #include <array>
+#include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <string_view>
 #include <system_error>
+
+#if BOOST_COROSIO_POSIX
+// Raw descriptor access for the write-backpressure tests.
+#include <poll.h>
+#include <sys/socket.h>
+#else
+#include <boost/corosio/native/detail/iocp/win_windows.hpp>
+#include <ws2tcpip.h>
+#endif
 
 #include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
+namespace {
+
+/// Return true if the descriptor currently accepts a non-blocking write.
+bool
+socket_writable(native_handle_type fd) noexcept
+{
+#if BOOST_COROSIO_POSIX
+    ::pollfd pfd{};
+    pfd.fd     = static_cast<int>(fd);
+    pfd.events = POLLOUT;
+    return ::poll(&pfd, 1, 0) == 1 && (pfd.revents & POLLOUT) != 0;
+#else
+    WSAPOLLFD pfd{};
+    pfd.fd     = static_cast<SOCKET>(fd);
+    pfd.events = POLLWRNORM;
+    return ::WSAPoll(&pfd, 1, 0) == 1 && (pfd.revents & POLLWRNORM) != 0;
+#endif
+}
+
+/// Shrink a socket buffer so the peer's window closes after a few writes.
+void
+shrink_socket_buffer(native_handle_type fd, int optname) noexcept
+{
+    int size = 4096;
+#if BOOST_COROSIO_POSIX
+    ::setsockopt(
+        static_cast<int>(fd), SOL_SOCKET, optname, &size, sizeof(size));
+#else
+    ::setsockopt(
+        static_cast<SOCKET>(fd), SOL_SOCKET, optname,
+        reinterpret_cast<char const*>(&size), sizeof(size));
+#endif
+}
+
+/** Fill the descriptor's send buffer until the peer's window closes.
+
+    A single refusal is not proof of a stall: bytes still in flight
+    can free space again without the peer reading anything, which
+    would let a write wait complete with no drain. Keep writing until
+    a poll probe agrees the socket is unwritable.
+
+    @param fd The descriptor to fill.
+
+    @return The number of bytes accepted, or zero if the platform
+    kept accepting past the cap or never settled into a stall.
+*/
+std::size_t
+fill_send_buffer(native_handle_type fd)
+{
+    constexpr std::size_t cap      = 1u << 22;
+    constexpr int         spin_max = 1000;
+
+    char        blob[4096] = {};
+    std::size_t filled     = 0;
+    int         spins      = 0;
+
+#if !BOOST_COROSIO_POSIX
+    // Overlapped sockets are blocking by default; a full send buffer
+    // would stall the test thread instead of refusing the write.
+    u_long nonblocking = 1;
+    ::ioctlsocket(static_cast<SOCKET>(fd), FIONBIO, &nonblocking);
+#endif
+
+    for (;;)
+    {
+#if BOOST_COROSIO_POSIX
+#if defined(MSG_NOSIGNAL)
+        constexpr int flags = MSG_DONTWAIT | MSG_NOSIGNAL;
+#else
+        constexpr int flags = MSG_DONTWAIT;
+#endif
+        auto n = ::send(static_cast<int>(fd), blob, sizeof(blob), flags);
+        bool refused = n < 0;
+        if (refused)
+        {
+            BOOST_TEST(errno == EAGAIN || errno == EWOULDBLOCK);
+        }
+#else
+        auto n = ::send(
+            static_cast<SOCKET>(fd), blob, static_cast<int>(sizeof(blob)), 0);
+        bool refused = n == SOCKET_ERROR;
+        if (refused)
+        {
+            BOOST_TEST(::WSAGetLastError() == WSAEWOULDBLOCK);
+        }
+#endif
+        if (refused)
+        {
+            if (!socket_writable(fd))
+                break;
+            if (++spins > spin_max)
+            {
+                // Refusals the poll keeps disagreeing with never
+                // establish a stall, so the caller has nothing to
+                // test: report no fill and let it skip.
+                filled = 0;
+                break;
+            }
+            continue;
+        }
+        spins = 0;
+        filled += static_cast<std::size_t>(n);
+        if (filled > cap)
+        {
+            filled = 0;
+            break;
+        }
+    }
+
+#if !BOOST_COROSIO_POSIX
+    nonblocking = 0;
+    ::ioctlsocket(static_cast<SOCKET>(fd), FIONBIO, &nonblocking);
+#endif
+    return filled;
+}
+
+/** Create a connected pair whose socket buffers are pinned small.
+
+    The receive window is negotiated during the handshake, and buffer
+    options set on an established socket no longer bind it: Darwin in
+    particular keeps growing the receive side, so a "full" send buffer
+    drains again without the peer reading anything. Shrinking the
+    listener and the client before the handshake makes the
+    backpressure real on every platform.
+*/
+std::pair<tcp_socket, tcp_socket>
+make_backpressured_pair(io_context& ioc)
+{
+    auto ex = ioc.get_executor();
+
+    std::error_code accept_ec;
+    std::error_code connect_ec;
+    bool accept_done  = false;
+    bool connect_done = false;
+
+    tcp_acceptor acc(ioc);
+    acc.open();
+    acc.set_option(socket_option::reuse_address(true));
+    shrink_socket_buffer(acc.native_handle(), SO_SNDBUF);
+    shrink_socket_buffer(acc.native_handle(), SO_RCVBUF);
+    auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+    BOOST_TEST(!bec);
+    auto lec = acc.listen();
+    BOOST_TEST(!lec);
+    auto port = acc.local_endpoint().port();
+
+    tcp_socket s1(ioc);
+    tcp_socket s2(ioc);
+    s2.open();
+    shrink_socket_buffer(s2.native_handle(), SO_SNDBUF);
+    shrink_socket_buffer(s2.native_handle(), SO_RCVBUF);
+
+    auto acceptor_task = [&]() -> capy::task<> {
+        auto [ec] = co_await acc.accept(s1);
+        accept_ec   = ec;
+        accept_done = true;
+    };
+    auto connect_task = [&]() -> capy::task<> {
+        auto [ec] =
+            co_await s2.connect(endpoint(ipv4_address::loopback(), port));
+        connect_ec   = ec;
+        connect_done = true;
+    };
+    capy::run_async(ex)(acceptor_task());
+    capy::run_async(ex)(connect_task());
+    ioc.run();
+    ioc.restart();
+
+    BOOST_TEST(accept_done && !accept_ec);
+    BOOST_TEST(connect_done && !connect_ec);
+    return {std::move(s1), std::move(s2)};
+}
+
+} // namespace
 
 template<auto Backend>
 struct wait_test
@@ -85,8 +270,9 @@ struct wait_test
         BOOST_TEST_EQ(bytes_read, payload.size());
     }
 
-    // wait_write completes immediately on a freshly connected socket.
-    void testWaitWriteImmediate()
+    // A freshly connected socket probes writable, so wait_write
+    // completes without waiting for anything to drain.
+    void testWaitWriteReady()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
@@ -106,6 +292,104 @@ struct wait_test
 
         BOOST_TEST(wait_done);
         BOOST_TEST(!wait_ec);
+    }
+
+    // wait_write must park while the send buffer is full: completing
+    // immediately turns an external "retry when writable" flush loop
+    // into a busy spin exactly when the socket is backpressured.
+    void testWaitWriteParksUntilDrained()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        auto [s1, s2] = make_backpressured_pair(ioc);
+
+        auto filled = fill_send_buffer(s1.native_handle());
+        if (filled == 0)
+            return; // the platform refuses to backpressure
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+        bool drained   = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            for (;;)
+            {
+                auto [ec] = co_await s1.wait(wait_type::write);
+                wait_ec   = ec;
+                wait_done = true;
+                if (ec)
+                    break;
+                // The contract under test: a completed write wait
+                // means a non-blocking write can make progress right
+                // now. Checked on every wake, because the kernel may
+                // free send space on its own (window probes, buffer
+                // compaction) — such a wake is a true writability
+                // report, just not the drain we sequenced. Re-wait
+                // until the peer has actually taken bytes.
+                BOOST_TEST(socket_writable(s1.native_handle()));
+                if (drained)
+                    break;
+            }
+        };
+        auto drainer = [&]() -> capy::task<> {
+            std::array<char, 8192> sink{};
+            std::size_t got = 0;
+            while (got < filled)
+            {
+                auto [ec, n] = co_await s2.read_some(
+                    capy::mutable_buffer(sink.data(), sink.size()));
+                if (ec)
+                    break;
+                got += n;
+                drained = true;
+            }
+        };
+
+        // Spawn order is park order: the wait must be outstanding
+        // before the drain reopens the window.
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(drainer());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!wait_ec);
+        BOOST_TEST(drained);
+    }
+
+    // Cancelling a parked write wait completes it as canceled instead
+    // of leaving the op in the descriptor's write-wait slot.
+    void testWaitWriteCancel()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        auto [s1, s2] = make_backpressured_pair(ioc);
+
+        if (fill_send_buffer(s1.native_handle()) == 0)
+            return; // the platform refuses to backpressure
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await s1.wait(wait_type::write);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        // Spawn order is park order: the waiter's turn parks the wait
+        // before the canceller's turn runs, and the cancel lands one
+        // scheduler iteration later — no window for a kernel that
+        // frees send-buffer space on its own.
+        auto canceller = [&]() -> capy::task<> {
+            s1.cancel();
+            co_return;
+        };
+
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == capy::cond::canceled);
     }
 
     // UDP wait_read fires when a datagram arrives.
@@ -561,7 +845,9 @@ struct wait_test
     void run()
     {
         testWaitReadAndNoConsume();
-        testWaitWriteImmediate();
+        testWaitWriteReady();
+        testWaitWriteParksUntilDrained();
+        testWaitWriteCancel();
         testAcceptorWait();
         testWaitOnLocalStream();
         testWaitOnUdp();

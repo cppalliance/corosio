@@ -125,9 +125,9 @@ public:
 
     /** Interrupt the reactor so it rebuilds its fd_sets.
 
-        Called when a write or connect op is registered after
-        the reactor's snapshot was taken. Without this, select()
-        may block not watching for writability on the fd.
+        Called when a write, connect, or write-wait op is registered
+        after the reactor's snapshot was taken. Without this,
+        select() may block not watching for writability on the fd.
     */
     void notify_reactor() const;
 
@@ -338,7 +338,9 @@ select_scheduler::run_task(
     // Record which fds need write monitoring to avoid a hot loop:
     // select is level-triggered so writable sockets (nearly always
     // writable) would cause select() to return immediately every
-    // iteration if unconditionally added to write_fds.
+    // iteration if unconditionally added to write_fds. Membership
+    // stays opt-in: a parked write wait opts in the same way a
+    // parked write or connect op does.
     struct fd_entry
     {
         int fd;
@@ -356,7 +358,8 @@ select_scheduler::run_task(
             snapshot[snapshot_count].fd   = fd;
             snapshot[snapshot_count].desc = desc;
             snapshot[snapshot_count].needs_write =
-                (desc->write_op || desc->connect_op);
+                (desc->write_op || desc->connect_op ||
+                 desc->wait_write_op);
             ++snapshot_count;
         }
     }

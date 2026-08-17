@@ -713,17 +713,12 @@ win_udp_socket_internal::wait(
 
     svc_.work_started();
 
-    if (w == wait_type::write)
-    {
-        svc_.on_completion(&op, 0, 0);
-        return std::noop_coroutine();
-    }
-
-    // Datagram wait_read and wait_error route through the auxiliary
-    // select reactor: there's no IOCP-native primitive for "datagram
+    // Every datagram wait routes through the auxiliary select
+    // reactor: there's no IOCP-native primitive for "datagram
     // readable without dequeuing the message" (zero-byte WSARecvFrom
-    // would discard the next datagram), and wait_error needs the
-    // reactor for the kernel-error signal in any case.
+    // would discard the next datagram), wait_write must report real
+    // writability rather than transfer bytes, and wait_error needs
+    // the reactor for the kernel-error signal in any case.
     svc_.scheduler().wait_reactor().register_wait(socket_, w, &op);
     return std::noop_coroutine();
 }

@@ -107,32 +107,38 @@ include::example$snippets/4r_wait.cpp[tag=wait_timeout,indent=0]
 
 == `wait_type::write` Semantics
 
-`wait(wait_type::write)` always completes immediately with success on
-a connected socket. This matches asio's behavior on the IOCP backend
-and gives a consistent contract across all corosio backends. The
-intended use is: "I want to know I can write now," not "I want to
-park until the send buffer drains after backpressure."
+`wait(wait_type::write)` completes when the socket can accept a
+non-blocking write. On a socket that is not backpressured this is
+immediate; once the send buffer is full the wait parks until the peer
+drains enough of it for a write to make progress again.
 
-Backpressure on the send path is already surfaced by `write_some()`
-returning fewer bytes than requested (or `EAGAIN`-equivalent
-behavior); use that signal rather than `wait(wait_type::write)` to
-react to a full send buffer.
+That is the signal an external flush loop needs: code that owns its
+own buffers and retries "when the socket is writable" would busy-spin
+if the wait completed unconditionally, precisely when the socket is
+congested. Code that hands its buffers to `write_some()` does not need
+`wait(wait_type::write)` at all — `write_some()` already parks on the
+same condition.
+
+Acceptors are the exception: `wait(wait_type::write)` on an acceptor
+completes immediately on the reactor and IOCP backends and never
+completes on `io_uring`, because writability has no meaning for a
+listening socket. Do not use it.
 
 == Backend Notes
 
-On Linux (epoll) and BSD/macOS (kqueue) the read and error waits
-register interest in the fd's read or error event without performing
-any I/O syscall. On the select backend the same registration
-semantics apply through the select-loop's fd sets. Write waits
-short-circuit and never enter the reactor (see above).
+On Linux (epoll) and BSD/macOS (kqueue) a wait registers interest in
+the fd's read, write, or error event without performing any I/O
+syscall. On the select backend the same registration semantics apply
+through the select-loop's fd sets, whose write set includes fds with a
+parked write wait.
 
 On Windows (IOCP), stream-socket `wait_read` uses a zero-byte
 `WSARecv`: the kernel signals completion when data is available
 without consuming bytes. All other waits (datagram-read,
-acceptor-read, error-wait) route through an auxiliary `WSAPoll`-based
-reactor that runs on a dedicated thread and bridges into the IOCP
-via `PostQueuedCompletionStatus`. The public API is uniform across
-platforms.
+acceptor-read, write-wait, error-wait) route through an auxiliary
+`WSAPoll`-based reactor that runs on a dedicated thread and bridges
+into the IOCP via `PostQueuedCompletionStatus`. The public API is
+uniform across platforms.
 
 == See Also
 

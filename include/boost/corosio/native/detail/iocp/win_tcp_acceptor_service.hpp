@@ -713,14 +713,6 @@ win_tcp_socket_internal::wait(
 
     svc_.work_started();
 
-    if (w == wait_type::write)
-    {
-        // Match asio's IOCP behavior and corosio's reactor contract:
-        // wait_type::write completes immediately on a connected socket.
-        svc_.on_completion(&op, 0, 0);
-        return std::noop_coroutine();
-    }
-
     if (w == wait_type::read)
     {
         // Zero-byte WSARecv: kernel signals completion when data is
@@ -752,7 +744,10 @@ win_tcp_socket_internal::wait(
         return std::noop_coroutine();
     }
 
-    // wait_type::error: route through the auxiliary select reactor.
+    // wait_type::write and wait_type::error: route through the
+    // auxiliary poll reactor. There is no overlapped primitive for
+    // "the send buffer has room" that does not also transfer bytes,
+    // and a write wait must report real writability.
     svc_.scheduler().wait_reactor().register_wait(socket_, w, &op);
     return std::noop_coroutine();
 }
@@ -1533,6 +1528,9 @@ win_tcp_acceptor_internal::wait(
 
     svc_.work_started();
 
+    // Acceptors complete wait_type::write immediately: writability
+    // has no meaning for a listening socket, and parking would never
+    // wake. Documented in the wait guide.
     if (w == wait_type::write)
     {
         svc_.on_completion(&op, 0, 0);

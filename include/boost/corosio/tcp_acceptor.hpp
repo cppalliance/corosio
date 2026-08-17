@@ -441,6 +441,11 @@ public:
         subsequent @ref accept will succeed without blocking.
         No connection is consumed.
 
+        @note `wait_type::write` is not usable on an acceptor:
+        writability carries no meaning for a listening socket, so
+        the wait completes immediately on the reactor and IOCP
+        backends and never completes on io_uring.
+
         @param w The wait direction.
 
         @return An awaitable that completes with `io_result<>`.

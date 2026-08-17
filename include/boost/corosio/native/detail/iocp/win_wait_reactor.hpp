@@ -44,9 +44,10 @@ namespace boost::corosio::detail {
 
     IOCP has no native primitive for socket readiness without I/O.
     For cases where a zero-byte WSARecv won't work (datagram-read,
-    acceptor-read, error-wait), this reactor runs a dedicated thread
-    using WSAPoll to detect readiness and posts a synthetic completion
-    to the owning IOCP scheduler via win_scheduler::on_completion().
+    acceptor-read, write-wait, error-wait), this reactor runs a
+    dedicated thread using WSAPoll to detect readiness and posts a
+    synthetic completion to the owning IOCP scheduler via
+    win_scheduler::on_completion().
 
     The same dispatch path used by overlapped I/O then delivers the
     completion to the user's coroutine, so the public API is uniform

@@ -212,6 +212,10 @@ public:
         `wait_type::read`, completion signals that an incoming
         connection is pending and a subsequent accept will
         succeed without blocking.
+
+        `wait_type::write` completes immediately here: writability
+        carries no meaning for a listening socket, and the io_uring
+        backend never completes it at all. It is not a usable wait.
     */
     std::coroutine_handle<> do_wait(
         std::coroutine_handle<>,
@@ -523,7 +527,9 @@ reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, En
         std::stop_token const& token,
         std::error_code* ec)
 {
-    // wait_type::write completes immediately (see reactor_stream_socket::do_wait).
+    // Acceptors complete wait_type::write immediately: writability
+    // has no meaning for a listening socket, and parking would never
+    // wake. Documented in the wait guide.
     if (w == wait_type::write)
     {
         auto& op = wait_wr_;

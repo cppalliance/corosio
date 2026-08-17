@@ -314,6 +314,9 @@ win_local_stream_acceptor_internal::wait(
 
     svc_.work_started();
 
+    // Acceptors complete wait_type::write immediately: writability
+    // has no meaning for a listening socket, and parking would never
+    // wake. Documented in the wait guide.
     if (w == wait_type::write)
     {
         svc_.on_completion(&op, 0, 0);

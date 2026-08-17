@@ -100,9 +100,9 @@ struct native_tcp_socket_test
         BOOST_TEST_PASS();
     }
 
-    // Exercise the shadowed wait() awaitable. On a connected socket
-    // wait_type::write resolves immediately on every backend (IOCP
-    // matches asio's "writable is always ready" semantics).
+    // Exercise the shadowed wait() awaitable. A connected socket with
+    // an empty send buffer probes writable, so wait_type::write
+    // resolves without parking on every backend.
     void testWait()
     {
         io_context ioc(Backend);

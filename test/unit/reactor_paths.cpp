@@ -481,7 +481,8 @@ struct reactor_paths_test
         BOOST_TEST(wait_ec == capy::cond::canceled);
     }
 
-    // UDP wait_type::write completes immediately.
+    // An unbackpressured UDP socket probes writable, so wait_type::write
+    // completes without parking.
     void testUdpWaitWrite()
     {
         io_context ioc(Backend);
@@ -1391,7 +1392,8 @@ struct reactor_paths_test
         BOOST_TEST(wait_ec == capy::cond::canceled);
     }
 
-    // Local stream socket wait_type::write completes immediately.
+    // A connected local stream probes writable, so wait_type::write
+    // completes without parking.
     void testLocalStreamWaitWrite()
     {
         io_context ioc(Backend);
@@ -1531,7 +1533,8 @@ struct reactor_paths_test
         BOOST_TEST(wait_ec == capy::cond::canceled);
     }
 
-    // Local datagram wait_type::write immediate completion.
+    // An unbackpressured local datagram socket probes writable, so
+    // wait_type::write completes without parking.
     void testLocalDgramWaitWrite()
     {
         io_context ioc(Backend);

@@ -248,8 +248,8 @@ struct native_local_stream_socket_test
     }
 
     // Exercise the shadowed wait() awaitable on the socket: a
-    // connected stream is always writable, so wait_type::write
-    // resolves immediately on every backend.
+    // connected stream with an empty send buffer probes writable, so
+    // wait_type::write resolves without parking on every backend.
     void testSocketWait()
     {
         io_context ioc(Backend);
