@@ -1364,6 +1364,7 @@ struct local_stream_socket_test
         testEndpointStreamOutput();
         testAvailable();
         testRelease();
+        testReleaseCancelsPendingRead();
     }
 
     void testAvailable()
@@ -1420,6 +1421,57 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(handle >= 0, true);
         BOOST_TEST_EQ(::write(handle, msg, std::strlen(msg)) > 0, true);
         ::close(handle);
+#endif
+    }
+
+    // release() hands ownership to the caller only after pending
+    // operations have been cancelled, so no completion can resolve
+    // against the descriptor number once the caller recycles it.
+    void testReleaseCancelsPendingRead()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
+
+        std::error_code read_ec;
+        bool read_done = false;
+        char buf[16];
+#if BOOST_COROSIO_HAS_IOCP
+        auto released = static_cast<native_handle_type>(~0ull);
+#else
+        auto released = static_cast<native_handle_type>(-1);
+#endif
+
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] = co_await s1.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            (void)n;
+            read_ec   = ec;
+            read_done = true;
+        };
+        auto releaser = [&]() -> capy::task<> {
+            released = s1.release();
+            co_return;
+        };
+
+        // run_async runs inline to the first suspend, so spawning the
+        // reader first is what guarantees the read is parked when
+        // release() runs.
+        capy::run_async(ex)(reader());
+        capy::run_async(ex)(releaser());
+        ioc.run();
+
+        BOOST_TEST(read_done);
+        BOOST_TEST(read_ec == capy::cond::canceled);
+        BOOST_TEST_EQ(s1.is_open(), false);
+
+#if BOOST_COROSIO_HAS_IOCP
+        ::closesocket(static_cast<SOCKET>(released));
+#else
+        BOOST_TEST_EQ(released >= 0, true);
+        ::close(released);
 #endif
     }
 

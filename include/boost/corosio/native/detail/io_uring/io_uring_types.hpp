@@ -1131,6 +1131,11 @@ public:
 
     native_handle_type release_socket() noexcept override
     {
+        // Flush while the fd is still open so the kernel resolves
+        // pending SQEs before the caller can close and recycle the
+        // number (same reasoning as close_socket).
+        if (fd_ >= 0)
+            sched_->cancel_and_flush(fd_);
         int fd = fd_;
         fd_ = -1;
         local_endpoint_  = corosio::local_endpoint{};
@@ -2294,6 +2299,11 @@ public:
 
     native_handle_type release_socket() noexcept override
     {
+        // Flush while the fd is still open so the kernel resolves
+        // pending SQEs before the caller can close and recycle the
+        // number (same reasoning as close_socket).
+        if (fd_ >= 0)
+            sched_->cancel_and_flush(fd_);
         int fd = fd_;
         fd_ = -1;
         local_endpoint_  = corosio::local_endpoint{};
