@@ -16,6 +16,8 @@
 #include <boost/corosio/io/io_stream.hpp>
 #include <boost/corosio/tls_context.hpp>
 #include <boost/corosio/tls_stream.hpp>
+#include <boost/corosio/detail/native_handle.hpp>
+#include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -29,6 +31,15 @@
 #include <type_traits>
 #include <vector>
 
+#if BOOST_COROSIO_POSIX
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#else
+#include <boost/corosio/native/detail/iocp/win_windows.hpp>
+#include <ws2tcpip.h>
+#endif
+
 // Valgrind slows execution ~10-20x; scale failsafe timeouts to avoid
 // false failures when BOOST_NO_STRESS_TEST is defined.
 #ifdef BOOST_NO_STRESS_TEST
@@ -38,6 +49,87 @@ inline constexpr int failsafe_scale = 1;
 #endif
 
 namespace boost::corosio::test {
+
+//
+// Raw native sockets for the assign()/release() adoption tests
+//
+
+#if BOOST_COROSIO_HAS_IOCP
+inline constexpr native_handle_type invalid_native_socket =
+    static_cast<native_handle_type>(~0ull);
+#else
+inline constexpr native_handle_type invalid_native_socket =
+    static_cast<native_handle_type>(-1);
+#endif
+
+/** Create a socket the way an adopting caller would: outside the
+    library, owned by the caller until assign() succeeds.
+
+    @param family Address family.
+    @param type Socket type.
+    @return The new descriptor, or @ref invalid_native_socket.
+*/
+inline native_handle_type
+make_native_socket(int family, int type)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    return static_cast<native_handle_type>(::WSASocketW(
+        family, type, 0, nullptr, 0, WSA_FLAG_OVERLAPPED));
+#else
+    return static_cast<native_handle_type>(::socket(family, type, 0));
+#endif
+}
+
+/** Put a descriptor in the mode the backend needs before adoption.
+
+    Adoption never touches descriptor flags, so the caller must hand
+    in a socket that is already configured.
+
+    @param h The descriptor to configure.
+*/
+inline void
+make_native_adoptable(native_handle_type h)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    (void)h; // WSA_FLAG_OVERLAPPED is set at creation
+#else
+    int fd    = static_cast<int>(h);
+    int flags = ::fcntl(fd, F_GETFL);
+    ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+#endif
+}
+
+/// Close a descriptor the library does not own.
+inline void
+close_native_socket(native_handle_type h)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    ::closesocket(static_cast<SOCKET>(h));
+#else
+    ::close(static_cast<int>(h));
+#endif
+}
+
+/** Check whether a descriptor is still open.
+
+    A rejected assign must leave the descriptor with the caller.
+
+    @param h The descriptor to probe.
+    @return True while the descriptor is still open.
+*/
+inline bool
+native_socket_valid(native_handle_type h)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    int type = 0;
+    int len  = static_cast<int>(sizeof(type));
+    return ::getsockopt(
+               static_cast<SOCKET>(h), SOL_SOCKET, SO_TYPE,
+               reinterpret_cast<char*>(&type), &len) == 0;
+#else
+    return ::fcntl(static_cast<int>(h), F_GETFD) >= 0;
+#endif
+}
 
 //
 // Embedded Test Certificates

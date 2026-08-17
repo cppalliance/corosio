@@ -25,6 +25,7 @@
 
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 namespace boost::corosio::detail {
 
@@ -74,6 +75,21 @@ struct uring_multi_accept_op : io_uring_op
             reinterpret_cast<sockaddr*>(&self->peer_storage),
             &self->peer_len,
             SOCK_NONBLOCK | SOCK_CLOEXEC);
+    }
+
+    /** Dispose of a connection the kernel accepted for a retired
+        arming.
+
+        The acceptor that armed this op has moved to another
+        descriptor, so no waiter will ever take delivery. The fd is
+        already installed in the process table — dropping the CQE
+        without closing it leaks it for the life of the process.
+    */
+    static void do_retired_cqe(
+        io_uring_op* /*base*/, int res, unsigned /*flags*/) noexcept
+    {
+        if (res >= 0)
+            ::close(res);
     }
 
     static void do_cqe(io_uring_op* base, int res, unsigned flags,

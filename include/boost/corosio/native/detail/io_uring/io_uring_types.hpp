@@ -840,6 +840,48 @@ public:
         return {};
     }
 
+    /** Adopt an already-listening descriptor.
+
+        @param impl The acceptor implementation to assign to.
+        @param fd   The native socket to adopt.
+        @return Error code on failure, empty on success.
+    */
+    std::error_code assign_socket(
+        tcp_acceptor::implementation& impl, native_handle_type fd) override
+    {
+        auto& acc = static_cast<io_uring_tcp_acceptor&>(impl);
+        int   nfd = static_cast<int>(fd);
+        if (nfd >= 0 && nfd == acc.fd_)
+            return std::make_error_code(std::errc::invalid_argument);
+        if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, true))
+            return ec;
+
+        if (acc.fd_ >= 0)
+        {
+            sched_->cancel_and_flush(acc.fd_);
+            acc.drain_waiters_only();
+            ::close(acc.fd_);
+            acc.fd_ = -1;
+        }
+
+        // Unconditional: release_socket() also leaves the op in flight,
+        // and it clears fd_ before returning.
+        acc.retire_multishot();
+
+        acc.adopt_listening_fd(nfd);
+
+        acc.local_endpoint_ = endpoint{};
+        sockaddr_storage local{};
+        socklen_t        local_len = sizeof(local);
+        if (::getsockname(
+                nfd, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+            acc.local_endpoint_ = sockaddr_to_endpoint(local);
+
+        if (fd_is_listening(nfd))
+            acc.start_multishot();
+        return {};
+    }
+
     /** Bind an open acceptor and capture the local endpoint.
 
         @param impl The acceptor implementation to bind.
@@ -881,6 +923,7 @@ public:
         auto& acc = static_cast<io_uring_tcp_acceptor&>(impl);
         if (::listen(acc.fd_, backlog) < 0)
             return make_err(errno);
+        acc.prepare_listen_arm();
         acc.start_multishot();
         return {};
     }
@@ -1374,11 +1417,10 @@ public:
 /** Local-stream (Unix domain) acceptor for io_uring.
 
     Inherits all multishot machinery (parked-fd queue, waiter queue,
-    CQE drain on destruction) from `io_uring_multishot_acceptor_base`.
-    Adds only the `accept()` override, the `adopt_thunk` static that
-    wraps an accepted fd via `io_uring_local_stream_service::adopt_fd`,
-    and `release_socket()` (a pure virtual in
-    `local_stream_acceptor::implementation` absent from the base).
+    descriptor release, CQE drain on destruction) from
+    `io_uring_multishot_acceptor_base`. Adds only the `accept()`
+    override and the `adopt_thunk` static that wraps an accepted fd
+    via `io_uring_local_stream_service::adopt_fd`.
 */
 class BOOST_COROSIO_DECL io_uring_local_stream_acceptor final
     : public io_uring_multishot_acceptor_base<
@@ -1442,29 +1484,6 @@ public:
         }
         io_uring_submit_op(*this->sched_, &wait_op_);
         return std::noop_coroutine();
-    }
-
-    // release_socket() is pure virtual in local_stream_acceptor::implementation
-    // but not in tcp_acceptor::implementation, so the base does not cover it.
-    native_handle_type release_socket() noexcept override
-    {
-        // Mirror the service close() path: cancel the multishot SQE and
-        // break the multi_op_ -> impl_ptr (shared_ptr<this>) cycle that
-        // start_multishot established. Without this, the cycle keeps the
-        // acceptor and its multi_op_ alive after the caller takes the fd,
-        // which LeakSanitizer reports on process exit. Caller still owns
-        // the returned fd, so we do NOT ::close it here.
-        if (this->fd_ >= 0)
-        {
-            this->sched_->cancel_and_flush(this->fd_);
-            this->drain_waiters_only();
-            if (this->multi_op_)
-                this->multi_op_->impl_ptr.reset();
-        }
-        int fd = this->fd_;
-        this->fd_ = -1;
-        this->local_endpoint_ = corosio::local_endpoint{};
-        return fd;
     }
 
     static io_object::implementation* adopt_thunk(
@@ -1590,6 +1609,49 @@ public:
         return {};
     }
 
+    /** Adopt an already-listening descriptor.
+
+        @param impl The acceptor implementation to assign to.
+        @param fd   The native socket to adopt.
+        @return Error code on failure, empty on success.
+    */
+    std::error_code assign_socket(
+        local_stream_acceptor::implementation& impl,
+        native_handle_type fd) override
+    {
+        auto& acc = static_cast<io_uring_local_stream_acceptor&>(impl);
+        int   nfd = static_cast<int>(fd);
+        if (nfd >= 0 && nfd == acc.fd_)
+            return std::make_error_code(std::errc::invalid_argument);
+        if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, false))
+            return ec;
+
+        if (acc.fd_ >= 0)
+        {
+            sched_->cancel_and_flush(acc.fd_);
+            acc.drain_waiters_only();
+            ::close(acc.fd_);
+            acc.fd_ = -1;
+        }
+
+        // Unconditional: release_socket() also leaves the op in flight,
+        // and it clears fd_ before returning.
+        acc.retire_multishot();
+
+        acc.adopt_listening_fd(nfd);
+
+        acc.local_endpoint_ = corosio::local_endpoint{};
+        sockaddr_storage local{};
+        socklen_t        local_len = sizeof(local);
+        if (::getsockname(
+                nfd, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+            acc.local_endpoint_ = sockaddr_to_local_endpoint(local, local_len);
+
+        if (fd_is_listening(nfd))
+            acc.start_multishot();
+        return {};
+    }
+
     /** Bind an open acceptor and capture the local endpoint.
 
         @param impl The acceptor implementation to bind.
@@ -1631,6 +1693,7 @@ public:
         auto& acc = static_cast<io_uring_local_stream_acceptor&>(impl);
         if (::listen(acc.fd_, backlog) < 0)
             return make_err(errno);
+        acc.prepare_listen_arm();
         acc.start_multishot();
         return {};
     }

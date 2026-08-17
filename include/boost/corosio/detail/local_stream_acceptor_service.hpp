@@ -54,6 +54,21 @@ public:
         int type,
         int protocol) = 0;
 
+    /** Adopt an existing listening socket.
+
+        Validates @p fd, closes any socket the implementation already
+        holds, and registers the adopted descriptor with the backend.
+        Listen state is not verified.
+
+        @param impl The acceptor implementation to assign to.
+        @param fd The native socket to adopt. Ownership transfers only
+            on success.
+        @return Error code on failure, empty on success.
+    */
+    virtual std::error_code assign_socket(
+        local_stream_acceptor::implementation& impl,
+        native_handle_type fd) = 0;
+
     /** Bind an open acceptor to a local endpoint.
 
         @pre @p impl was opened via open_acceptor_socket().

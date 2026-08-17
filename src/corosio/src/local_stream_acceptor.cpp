@@ -53,6 +53,31 @@ local_stream_acceptor::open(local_stream proto)
         detail::throw_system_error(ec, "local_stream_acceptor::open");
 }
 
+void
+local_stream_acceptor::assign(native_handle_type fd)
+{
+    auto& svc =
+        static_cast<detail::local_stream_acceptor_service&>(h_.service());
+    auto ec = svc.assign_socket(
+        static_cast<local_stream_acceptor::implementation&>(*h_.get()), fd);
+    if (ec)
+        detail::throw_system_error(ec, "local_stream_acceptor::assign");
+}
+
+native_handle_type
+local_stream_acceptor::native_handle() const noexcept
+{
+    if (!is_open())
+    {
+#if BOOST_COROSIO_HAS_IOCP
+        return static_cast<native_handle_type>(~0ull); // INVALID_SOCKET
+#else
+        return -1;
+#endif
+    }
+    return get().native_handle();
+}
+
 std::error_code
 local_stream_acceptor::bind(corosio::local_endpoint ep, bind_option opt)
 {

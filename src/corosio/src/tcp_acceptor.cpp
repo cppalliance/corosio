@@ -66,6 +66,42 @@ tcp_acceptor::open(tcp proto)
         detail::throw_system_error(ec, "tcp_acceptor::open");
 }
 
+void
+tcp_acceptor::assign(native_handle_type fd)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    auto& svc = static_cast<detail::win_tcp_acceptor_service&>(h_.service());
+#else
+    auto& svc = static_cast<detail::tcp_acceptor_service&>(h_.service());
+#endif
+    std::error_code ec = svc.assign_socket(
+        *static_cast<tcp_acceptor::implementation*>(h_.get()), fd);
+    if (ec)
+        detail::throw_system_error(ec, "tcp_acceptor::assign");
+}
+
+native_handle_type
+tcp_acceptor::release()
+{
+    if (!is_open())
+        detail::throw_logic_error("release: acceptor not open");
+    return get().release_socket();
+}
+
+native_handle_type
+tcp_acceptor::native_handle() const noexcept
+{
+    if (!is_open())
+    {
+#if BOOST_COROSIO_HAS_IOCP
+        return static_cast<native_handle_type>(~0ull); // INVALID_SOCKET
+#else
+        return -1;
+#endif
+    }
+    return get().native_handle();
+}
+
 std::error_code
 tcp_acceptor::bind(endpoint ep)
 {

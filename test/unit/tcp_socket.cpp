@@ -49,70 +49,16 @@
 
 #include "context.hpp"
 #include "test_suite.hpp"
+#include "test_utils.hpp"
 
 namespace boost::corosio {
 namespace {
 
-#if BOOST_COROSIO_HAS_IOCP
-constexpr native_handle_type invalid_native_socket =
-    static_cast<native_handle_type>(~0ull);
-#else
-constexpr native_handle_type invalid_native_socket =
-    static_cast<native_handle_type>(-1);
-#endif
-
-// Create a socket the way an adopting caller would: outside the
-// library, owned by the caller until assign() succeeds.
-native_handle_type
-make_native_socket(int family, int type)
-{
-#if BOOST_COROSIO_HAS_IOCP
-    return static_cast<native_handle_type>(::WSASocketW(
-        family, type, 0, nullptr, 0, WSA_FLAG_OVERLAPPED));
-#else
-    return static_cast<native_handle_type>(::socket(family, type, 0));
-#endif
-}
-
-void
-close_native_socket(native_handle_type h)
-{
-#if BOOST_COROSIO_HAS_IOCP
-    ::closesocket(static_cast<SOCKET>(h));
-#else
-    ::close(static_cast<int>(h));
-#endif
-}
-
-// True while the descriptor is still open, i.e. a rejected assign
-// left it with the caller.
-bool
-native_socket_valid(native_handle_type h)
-{
-#if BOOST_COROSIO_HAS_IOCP
-    int type = 0;
-    int len  = static_cast<int>(sizeof(type));
-    return ::getsockopt(
-               static_cast<SOCKET>(h), SOL_SOCKET, SO_TYPE,
-               reinterpret_cast<char*>(&type), &len) == 0;
-#else
-    return ::fcntl(static_cast<int>(h), F_GETFD) >= 0;
-#endif
-}
-
-// Adoption never touches descriptor flags, so the caller must hand in
-// a socket that is already in the mode the backend needs.
-void
-make_native_adoptable(native_handle_type h)
-{
-#if BOOST_COROSIO_HAS_IOCP
-    (void)h; // WSA_FLAG_OVERLAPPED is set at creation
-#else
-    int fd    = static_cast<int>(h);
-    int flags = ::fcntl(fd, F_GETFL);
-    ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-#endif
-}
+using test::close_native_socket;
+using test::invalid_native_socket;
+using test::make_native_adoptable;
+using test::make_native_socket;
+using test::native_socket_valid;
 
 // Blocking connect: on loopback the handshake completes against the
 // listen backlog without the io_context running.

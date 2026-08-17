@@ -173,11 +173,6 @@ public:
     explicit epoll_local_stream_acceptor(
         epoll_local_stream_acceptor_service& svc) noexcept
         : base_type(svc) {}
-
-    native_handle_type release_socket() noexcept override
-    {
-        return this->do_release_socket();
-    }
 };
 
 // --- Services ---

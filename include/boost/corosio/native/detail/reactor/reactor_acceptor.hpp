@@ -91,9 +91,15 @@ public:
     ~reactor_acceptor() override = default;
 
     /// Return the underlying file descriptor.
-    int native_handle() const noexcept
+    native_handle_type native_handle() const noexcept override
     {
         return fd_;
+    }
+
+    /// Release and return the native handle without closing it.
+    native_handle_type release_socket() noexcept override
+    {
+        return do_release_socket();
     }
 
     /// Return the cached local endpoint.
@@ -151,6 +157,32 @@ public:
             desc_state_.wait_write_op = nullptr;
             desc_state_.wait_error_op = nullptr;
         }
+    }
+
+    /** Assign the fd, initialize descriptor state, and register with
+        the reactor.
+
+        Adoption skips `do_listen`, so the registration it performs
+        has to happen here instead.
+
+        @param fd The already-listening descriptor to adopt.
+
+        @return The error if the reactor rejects the descriptor, in
+        which case the implementation is left closed and the caller
+        retains ownership of @a fd; otherwise a default constructed
+        error code.
+    */
+    std::error_code init_and_register(int fd) noexcept
+    {
+        init_acceptor_fd(fd);
+        if (auto ec = svc_.scheduler().register_descriptor(fd, &desc_state_))
+        {
+            fd_                           = -1;
+            desc_state_.fd                = -1;
+            desc_state_.registered_events = 0;
+            return ec;
+        }
+        return {};
     }
 
     /// Return a reference to the owning service.

@@ -39,63 +39,16 @@
 
 #include "context.hpp"
 #include "test_suite.hpp"
+#include "test_utils.hpp"
 
 namespace boost::corosio {
 namespace {
 
-#if BOOST_COROSIO_HAS_IOCP
-constexpr native_handle_type invalid_native_socket =
-    static_cast<native_handle_type>(~0ull);
-#else
-constexpr native_handle_type invalid_native_socket =
-    static_cast<native_handle_type>(-1);
-#endif
-
-// Create a socket the way an adopting caller would: outside the
-// library, already in the mode the backend needs, and owned by the
-// caller until assign() succeeds.
-native_handle_type
-make_native_socket(int family, int type)
-{
-#if BOOST_COROSIO_HAS_IOCP
-    return static_cast<native_handle_type>(::WSASocketW(
-        family, type, 0, nullptr, 0, WSA_FLAG_OVERLAPPED));
-#else
-    int fd = ::socket(family, type, 0);
-    if (fd >= 0)
-    {
-        int flags = ::fcntl(fd, F_GETFL);
-        ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    }
-    return static_cast<native_handle_type>(fd);
-#endif
-}
-
-void
-close_native_socket(native_handle_type h)
-{
-#if BOOST_COROSIO_HAS_IOCP
-    ::closesocket(static_cast<SOCKET>(h));
-#else
-    ::close(static_cast<int>(h));
-#endif
-}
-
-// True while the descriptor is still open, i.e. a rejected assign
-// left it with the caller.
-bool
-native_socket_valid(native_handle_type h)
-{
-#if BOOST_COROSIO_HAS_IOCP
-    int type = 0;
-    int len  = static_cast<int>(sizeof(type));
-    return ::getsockopt(
-               static_cast<SOCKET>(h), SOL_SOCKET, SO_TYPE,
-               reinterpret_cast<char*>(&type), &len) == 0;
-#else
-    return ::fcntl(static_cast<int>(h), F_GETFD) >= 0;
-#endif
-}
+using test::close_native_socket;
+using test::invalid_native_socket;
+using test::make_native_adoptable;
+using test::make_native_socket;
+using test::native_socket_valid;
 
 // Fill a sockaddr_storage with a loopback address for `port`.
 std::size_t
@@ -1361,6 +1314,7 @@ struct udp_socket_test
         BOOST_TEST(nfd != invalid_native_socket);
         std::uint16_t nport = 0;
         BOOST_TEST(native_bind_loopback(nfd, false, nport));
+        make_native_adoptable(nfd);
 
         udp_socket adopted(ioc);
         adopted.assign(nfd);
@@ -1522,6 +1476,7 @@ struct udp_socket_test
         BOOST_TEST(nfd != invalid_native_socket);
         std::uint16_t nport = 0;
         BOOST_TEST(native_bind_loopback(nfd, false, nport));
+        make_native_adoptable(nfd);
 
         std::error_code recv_ec;
         bool recv_done = false;
@@ -1671,6 +1626,7 @@ struct udp_socket_test
             close_native_socket(nfd);
             return;
         }
+        make_native_adoptable(nfd);
 
         udp_socket adopted(ioc);
         adopted.assign(nfd);

@@ -39,6 +39,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <mutex>
+#include <vector>
 
 #include <errno.h>
 #include <poll.h>
@@ -223,6 +226,65 @@ public:
     */
     void cancel_and_flush(int fd) noexcept;
 
+    /** Take ownership of an op the kernel may still complete.
+
+        For member-owned ops (e.g. a multishot accept arming) whose
+        owner goes away on a *non-terminal* path — the owning acceptor
+        adopting a different descriptor, say. Draining the op's CQEs
+        there is not an option: `drain_cqes_for` consumes without
+        dispatching, which is only tolerable while the whole context
+        is being torn down.
+
+        The op stays allocated, and its `user_data` therefore stays
+        reserved, until the kernel delivers its terminal CQE. That is
+        what keeps a freshly submitted op from aliasing the retired
+        one. `process_completions` routes a retired op's CQEs to its
+        `retire_func` and frees the op on the terminal CQE; anything
+        still outstanding is released when the scheduler is destroyed,
+        after `io_uring_queue_exit`.
+
+        @par Invariant
+        Retirement state — the `retired` flag, and every owner
+        back-pointer @p prepare clears — is written and read only
+        under `ring_mutex_`. `process_completions` runs the whole CQE
+        dispatch under that mutex, so taking it here is the only thing
+        that orders this publication against a leader mid-dispatch.
+        Everything is therefore done inside one critical section:
+        @p prepare runs, the flag is set, and the op moves into the
+        retired list before the mutex is released.
+
+        @par Thread Safety
+        Safe to call from any thread. Takes `ring_mutex_` then
+        `retired_mutex_`, the same order `release_retired_op` uses.
+        Callers must hold neither.
+
+        @pre After @p prepare runs, @p slot must hold no reference back
+            to its owner (`impl_ptr` cleared, back-pointers nulled).
+            `release_retired_op` deletes the op from inside the CQE
+            loop with `ring_mutex_` held, so its destructor must not
+            re-enter the scheduler or touch the owner.
+
+        @param slot The owner's pointer to the op. Emptied on return;
+            ignored if already empty.
+        @param prepare Invoked as `prepare(*slot)` under `ring_mutex_`
+            to clear back-pointers and install a `retire_func`. Must
+            not take `ring_mutex_` or post work.
+    */
+    template<class Op, class PrepareFn>
+    void retire_op(std::unique_ptr<Op>& slot, PrepareFn prepare) noexcept
+    {
+        // Interrupt first so a leader parked in the kernel drops
+        // ring_mutex_ promptly, as cancel_and_flush does.
+        interrupt_reactor();
+        lock_type lock(ring_mutex_);
+        if (!slot)
+            return;
+        prepare(*slot);
+        slot->retired = true;
+        std::lock_guard<std::mutex> retired_lock(retired_mutex_);
+        retired_ops_.push_back(std::move(slot));
+    }
+
     /** Drain pending CQEs for a specific op's `user_data`.
 
         Submits an ASYNC_CANCEL by user_data to short-circuit any
@@ -231,6 +293,13 @@ public:
         freed safely. Used by member-owned ops (e.g.
         `uring_multi_accept_op`) whose destructor cannot tolerate
         outstanding CQEs.
+
+        @warning Teardown paths only. Every CQE this walks is consumed
+        and none are dispatched, so an unrelated op completing inside
+        the drain window loses its handler and its coroutine never
+        resumes. That is only tolerable when the owning object is
+        being destroyed. To retire a still-live op on a non-terminal
+        path, use @ref retire_op instead.
 
         @par Thread Safety
         Safe to call from any thread. Internally takes `ring_mutex_`
@@ -349,6 +418,20 @@ private:
 
     int                               cancel_sentinel_ = 0;
     mutable std::atomic<bool>         wakeup_armed_{false};
+
+    // Ops adopted by retire_op, kept alive so the kernel never sees
+    // their user_data reused. Declared before ring_ is exited only in
+    // the sense that the destructor body runs io_uring_queue_exit
+    // first; the vector is then destroyed with the rest of the members,
+    // by which point the kernel can no longer reference these ops.
+    // A plain std::mutex (not the conditionally-enabled mutex_type):
+    // retirement happens on user threads regardless of the threading
+    // configuration. Leaf lock — nothing else is taken under it.
+    mutable std::mutex                retired_mutex_;
+    std::vector<std::unique_ptr<io_uring_op>> retired_ops_;
+
+    /// Free a retired op once its terminal CQE has been consumed.
+    void release_retired_op(io_uring_op* op) noexcept;
 
     // Signal self-pipe integration. The read end is watched via a multishot
     // POLL SQE tagged with &signal_pipe_sentinel_ (distinct from nullptr =
@@ -1256,12 +1339,31 @@ io_uring_scheduler::process_completions()
         else
         {
             auto* iop = static_cast<io_uring_op*>(ud);
-            (*iop->cqe_func)(iop, cqe->res, cqe->flags, local_ops);
-            // Decrement inflight on the terminal CQE only — multishot
-            // ops (acceptor) hold the SQE alive across F_MORE CQEs and
-            // free it only when F_MORE is cleared.
-            if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                ++inflight_dec;
+            if (iop->retired)
+            {
+                // The owner handed this op to retire_op and is no
+                // longer listening. Never dispatch cqe_func — the
+                // handler's output pointers and coroutine are gone.
+                // retire_func disposes of whatever the result owns
+                // (an accepted descriptor, say), since only the op
+                // type knows what `res` means.
+                if (iop->retire_func)
+                    (*iop->retire_func)(iop, cqe->res, cqe->flags);
+                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
+                {
+                    ++inflight_dec;
+                    release_retired_op(iop);
+                }
+            }
+            else
+            {
+                (*iop->cqe_func)(iop, cqe->res, cqe->flags, local_ops);
+                // Decrement inflight on the terminal CQE only — multishot
+                // ops (acceptor) hold the SQE alive across F_MORE CQEs and
+                // free it only when F_MORE is cleared.
+                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
+                    ++inflight_dec;
+            }
         }
         ++consumed;
     }
@@ -1379,6 +1481,29 @@ io_uring_scheduler::cancel_and_flush(int fd) noexcept
     // Flush while fd is still open so the kernel resolves the file
     // from the fd number before the caller closes and recycles it.
     io_uring_submit(&ring_);
+}
+
+inline void
+io_uring_scheduler::release_retired_op(io_uring_op* op) noexcept
+{
+    // Called from the CQE loop with ring_mutex_ held; takes
+    // retired_mutex_ under it, matching retire_op's order. Deleting
+    // here is safe only because retire_op requires the op to hold no
+    // reference back to its owner, so ~op cannot re-enter the
+    // scheduler or touch a destroyed acceptor.
+    std::unique_ptr<io_uring_op> owned;
+    {
+        std::lock_guard<std::mutex> lock(retired_mutex_);
+        for (auto it = retired_ops_.begin(); it != retired_ops_.end(); ++it)
+        {
+            if (it->get() == op)
+            {
+                owned = std::move(*it);
+                retired_ops_.erase(it);
+                break;
+            }
+        }
+    }
 }
 
 inline void

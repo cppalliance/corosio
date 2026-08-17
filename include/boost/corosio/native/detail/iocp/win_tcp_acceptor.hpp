@@ -159,6 +159,9 @@ public:
     bool is_open() const noexcept override;
     void cancel() noexcept override;
 
+    native_handle_type native_handle() const noexcept override;
+    native_handle_type release_socket() noexcept override;
+
     std::error_code set_option(
         int level,
         int optname,

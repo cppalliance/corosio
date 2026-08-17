@@ -55,6 +55,10 @@ public:
         local_stream_acceptor::implementation& impl,
         int family, int type, int protocol) override;
 
+    std::error_code assign_socket(
+        local_stream_acceptor::implementation& impl,
+        native_handle_type fd) override;
+
     std::error_code
     bind_acceptor(
         local_stream_acceptor::implementation& impl,
@@ -502,6 +506,14 @@ win_local_stream_acceptor::cancel() noexcept
 }
 
 inline native_handle_type
+win_local_stream_acceptor::native_handle() const noexcept
+{
+    if (!internal_)
+        return static_cast<native_handle_type>(INVALID_SOCKET);
+    return static_cast<native_handle_type>(internal_->native_handle());
+}
+
+inline native_handle_type
 win_local_stream_acceptor::release_socket() noexcept
 {
     if (!internal_)
@@ -606,6 +618,15 @@ win_local_stream_acceptor_service::open_acceptor_socket(
     auto* internal =
         static_cast<win_local_stream_acceptor&>(impl).get_internal();
     return svc_.open_acceptor_socket(*internal, family, type, protocol);
+}
+
+inline std::error_code
+win_local_stream_acceptor_service::assign_socket(
+    local_stream_acceptor::implementation& impl, native_handle_type fd)
+{
+    auto* internal =
+        static_cast<win_local_stream_acceptor&>(impl).get_internal();
+    return svc_.assign_acceptor_socket(*internal, fd);
 }
 
 inline std::error_code

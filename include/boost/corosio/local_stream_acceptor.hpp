@@ -384,6 +384,48 @@ public:
     */
     native_handle_type release();
 
+    /** Get the native socket handle.
+
+        @return The native socket handle, or -1/INVALID_SOCKET if not
+            open.
+
+        @par Preconditions
+        None. May be called on closed acceptors.
+    */
+    native_handle_type native_handle() const noexcept;
+
+    /** Assign an existing native socket to this acceptor.
+
+        Adopts a listening socket created outside the library —
+        received from a service manager, inherited, or made natively —
+        and registers it with the backend. The socket must be a
+        listening stream socket in the local IPC family. Adoption
+        never alters the descriptor's flags or options: on POSIX the
+        fd must already be non-blocking, and on Windows the socket
+        must be overlapped-capable.
+
+        Adoption does not verify listen state; @ref accept reports the
+        error if the socket is not listening.
+
+        If this object is already open, pending operations complete
+        with `errc::operation_canceled` and the held socket is closed
+        before the new one is adopted.
+
+        @par Exception Safety
+        Strong guarantee on validation failure: the object is
+        unchanged. If backend registration fails, the object either
+        retains its previous socket or is left closed, depending on
+        the backend. In all failure cases the caller retains
+        ownership of `fd`.
+
+        @param fd The native socket to adopt. On success the object
+            owns it and will close it.
+
+        @throws std::system_error On validation or registration
+            failure.
+    */
+    void assign(native_handle_type fd);
+
     /** Return the local endpoint the acceptor is bound to.
 
         Returns a default-constructed (empty) endpoint if the
@@ -489,6 +531,9 @@ public:
 
         /// Return whether the underlying socket is open.
         virtual bool is_open() const noexcept = 0;
+
+        /// Return the native handle, or the platform sentinel if closed.
+        virtual native_handle_type native_handle() const noexcept = 0;
 
         /// Release and return the native handle without closing.
         virtual native_handle_type release_socket() noexcept = 0;

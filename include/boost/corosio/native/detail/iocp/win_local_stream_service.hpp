@@ -88,6 +88,10 @@ public:
         win_local_stream_acceptor_internal& impl,
         int family, int type, int protocol);
 
+    std::error_code assign_acceptor_socket(
+        win_local_stream_acceptor_internal& impl,
+        native_handle_type fd);
+
     std::error_code bind_acceptor(
         win_local_stream_acceptor_internal& impl,
         corosio::local_endpoint ep);
@@ -1118,6 +1122,50 @@ win_local_stream_service::open_acceptor_socket(
     }
 
     impl.socket_ = sock;
+    return {};
+}
+
+inline std::error_code
+win_local_stream_service::assign_acceptor_socket(
+    win_local_stream_acceptor_internal& impl, native_handle_type fd)
+{
+    SOCKET sock = static_cast<SOCKET>(fd);
+    if (sock == INVALID_SOCKET)
+        return make_err(WSAENOTSOCK);
+    if (sock == impl.socket_)
+        return std::make_error_code(std::errc::invalid_argument);
+
+    // SO_PROTOCOL_INFOW works on an unbound socket, unlike getsockname
+    // (WSAEINVAL until bind names it).
+    WSAPROTOCOL_INFOW proto_info{};
+    int proto_len = sizeof(proto_info);
+    if (::getsockopt(sock, SOL_SOCKET, SO_PROTOCOL_INFOW,
+            reinterpret_cast<char*>(&proto_info), &proto_len) != 0)
+        return make_err(::WSAGetLastError());
+    if (proto_info.iAddressFamily != AF_UNIX)
+        return make_err(WSAEAFNOSUPPORT);
+    if (proto_info.iSocketType != SOCK_STREAM)
+        return make_err(WSAEPROTOTYPE);
+
+    // Associate before releasing the held socket: on IOCP nothing
+    // shares descriptor state the way the reactor path does, so a
+    // failed association must not cost the caller their old socket.
+    HANDLE result = ::CreateIoCompletionPort(
+        reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
+    if (result == nullptr)
+        return make_err(::GetLastError());
+
+    impl.close_socket();
+    impl.socket_ = sock;
+
+    sockaddr_storage local{};
+    int local_len = sizeof(local);
+    corosio::local_endpoint lep{};
+    if (::getsockname(
+            sock, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+        lep = from_sockaddr_local(local, static_cast<socklen_t>(local_len));
+    impl.set_local_endpoint(lep);
+
     return {};
 }
 

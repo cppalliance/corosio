@@ -154,6 +154,43 @@ do_open_acceptor(
     return {};
 }
 
+// Acceptor twin of do_assign_fd: always SOCK_STREAM, and refreshes
+// only the local endpoint because listeners have no peer. Listen
+// state is not verified; accept() surfaces the error naturally if
+// the descriptor is not listening.
+template<class Traits, class AccFinal>
+std::error_code
+do_assign_acceptor_fd(AccFinal* acc_impl, int fd, bool is_ip) noexcept
+{
+    if (fd >= 0 && fd == acc_impl->native_handle())
+        return std::make_error_code(std::errc::invalid_argument);
+
+    if (auto ec = validate_socket_fd(fd, SOCK_STREAM, is_ip))
+        return ec;
+
+    if (auto ec = Traits::validate_assigned_fd(fd))
+        return ec;
+
+    acc_impl->close_socket();
+
+    if (auto ec = acc_impl->init_and_register(fd))
+        return ec;
+
+    using endpoint_type = std::remove_cvref_t<
+        decltype(acc_impl->local_endpoint())>;
+
+    endpoint_type local_ep{};
+    sockaddr_storage local_storage{};
+    socklen_t local_len = sizeof(local_storage);
+    if (::getsockname(
+            fd, reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
+        local_ep = from_sockaddr_as(local_storage, local_len, endpoint_type{});
+
+    acc_impl->set_local_endpoint(local_ep);
+
+    return {};
+}
+
 // ============================================================
 // TCP service
 // ============================================================
@@ -392,6 +429,15 @@ public:
         return do_open_acceptor<Traits>(
             static_cast<AccFinal*>(&impl),
             family, type, protocol,
+            std::is_same_v<Endpoint, endpoint>);
+    }
+
+    std::error_code assign_socket(
+        typename AccFinal::impl_base_type& impl,
+        native_handle_type fd) override
+    {
+        return do_assign_acceptor_fd<Traits>(
+            static_cast<AccFinal*>(&impl), fd,
             std::is_same_v<Endpoint, endpoint>);
     }
 

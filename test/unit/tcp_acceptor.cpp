@@ -22,26 +22,144 @@
 #include <boost/capy/task.hpp>
 
 #include <chrono>
+#include <cstdint>
 #include <stdexcept>
 #include <stop_token>
+#include <system_error>
 
 #ifndef _WIN32
 // For the SO_REUSEPORT guard around testReusePort. The corosio public
 // option header is platform-agnostic and does not expose this macro.
 // netinet/in.h and unistd.h support the raw-socket backlog setup in
-// testAcceptPendingConnection.
+// testAcceptPendingConnection; fcntl.h supports the adoption tests.
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #else
 // Raw-socket backlog setup in testAcceptPendingConnection.
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
+#include <ws2tcpip.h> // sockaddr_in6, in6addr_loopback
 #endif
 
 #include "context.hpp"
 #include "test_suite.hpp"
+#include "test_utils.hpp"
 
 namespace boost::corosio {
+namespace {
+
+using test::close_native_socket;
+using test::invalid_native_socket;
+using test::make_native_adoptable;
+using test::make_native_socket;
+using test::native_socket_valid;
+
+// Fill a sockaddr_storage with a loopback address for `port`.
+std::size_t
+fill_loopback(sockaddr_storage& storage, std::uint16_t port, bool v6)
+{
+    storage = sockaddr_storage{};
+    if (v6)
+    {
+        auto* sa6        = reinterpret_cast<sockaddr_in6*>(&storage);
+        sa6->sin6_family = AF_INET6;
+        sa6->sin6_port   = htons(port);
+        sa6->sin6_addr   = in6addr_loopback;
+        return sizeof(sockaddr_in6);
+    }
+    auto* sa4            = reinterpret_cast<sockaddr_in*>(&storage);
+    sa4->sin_family      = AF_INET;
+    sa4->sin_port        = htons(port);
+    sa4->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    return sizeof(sockaddr_in);
+}
+
+// Build the listening descriptor a socket-activation supervisor would
+// hand over: bound, listening, and already in the mode the backend
+// needs. Returns invalid_native_socket when the family is unusable.
+native_handle_type
+make_native_listener(bool v6, std::uint16_t& port)
+{
+    auto h = make_native_socket(v6 ? AF_INET6 : AF_INET, SOCK_STREAM);
+    if (h == invalid_native_socket)
+        return h;
+
+    sockaddr_storage storage{};
+    auto len = fill_loopback(storage, 0, v6);
+#if BOOST_COROSIO_HAS_IOCP
+    SOCKET s = static_cast<SOCKET>(h);
+    if (::bind(s, reinterpret_cast<sockaddr const*>(&storage),
+            static_cast<int>(len)) != 0 ||
+        ::listen(s, 4) != 0)
+    {
+        close_native_socket(h);
+        return invalid_native_socket;
+    }
+    int name_len = static_cast<int>(sizeof(storage));
+#else
+    int s = static_cast<int>(h);
+    if (::bind(s, reinterpret_cast<sockaddr const*>(&storage),
+            static_cast<socklen_t>(len)) != 0 ||
+        ::listen(s, 4) != 0)
+    {
+        close_native_socket(h);
+        return invalid_native_socket;
+    }
+    socklen_t name_len = sizeof(storage);
+#endif
+    storage = sockaddr_storage{};
+    if (::getsockname(
+            s, reinterpret_cast<sockaddr*>(&storage), &name_len) != 0)
+    {
+        close_native_socket(h);
+        return invalid_native_socket;
+    }
+    port = v6
+        ? ntohs(reinterpret_cast<sockaddr_in6 const*>(&storage)->sin6_port)
+        : ntohs(reinterpret_cast<sockaddr_in const*>(&storage)->sin_port);
+
+    make_native_adoptable(h);
+    return h;
+}
+
+// Blocking connect: on loopback the handshake completes against the
+// listen backlog without the io_context running.
+bool
+native_connect_loopback(native_handle_type h, std::uint16_t port, bool v6)
+{
+    sockaddr_storage storage{};
+    auto len = fill_loopback(storage, port, v6);
+#if BOOST_COROSIO_HAS_IOCP
+    return ::connect(
+               static_cast<SOCKET>(h),
+               reinterpret_cast<sockaddr const*>(&storage),
+               static_cast<int>(len)) == 0;
+#else
+    return ::connect(
+               static_cast<int>(h),
+               reinterpret_cast<sockaddr const*>(&storage),
+               static_cast<socklen_t>(len)) == 0;
+#endif
+}
+
+// Take ownership of a released listener the way a caller would: clear
+// the non-blocking flag the library set, then accept.
+native_handle_type
+native_accept_blocking(native_handle_type h)
+{
+#if BOOST_COROSIO_HAS_IOCP
+    return static_cast<native_handle_type>(
+        ::accept(static_cast<SOCKET>(h), nullptr, nullptr));
+#else
+    int fd    = static_cast<int>(h);
+    int flags = ::fcntl(fd, F_GETFL);
+    ::fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
+    return static_cast<native_handle_type>(::accept(fd, nullptr, nullptr));
+#endif
+}
+
+} // namespace
 
 // Acceptor-specific tests
 // Focus: acceptor construction, basic interface, and cancellation
@@ -967,6 +1085,291 @@ struct tcp_acceptor_test
         BOOST_TEST_PASS();
     }
 
+    void testNativeHandle()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        // Closed: returns the platform sentinel.
+        BOOST_TEST(acc.native_handle() == invalid_native_socket);
+
+        acc.open();
+        BOOST_TEST(acc.native_handle() != invalid_native_socket);
+        acc.close();
+        BOOST_TEST(acc.native_handle() == invalid_native_socket);
+    }
+
+    // Drive one connect + accept + byte exchange through `acc`, which
+    // must already be listening on the loopback `port`. Runs `ioc` to
+    // completion; the connecting peer is spawned after the acceptor so
+    // the accept is parked before the connect lands.
+    bool acceptOneThrough(
+        io_context& ioc, tcp_acceptor& acc, std::uint16_t port, bool v6)
+    {
+        tcp_socket client(ioc);
+        bool done = false;
+
+        auto server = [&]() -> capy::task<> {
+            auto [aec, peer] = co_await acc.accept();
+            BOOST_TEST(!aec);
+            char in[8];
+            auto [rec, rn] =
+                co_await peer.read_some(capy::mutable_buffer(in, sizeof(in)));
+            BOOST_TEST(!rec);
+            done = (rn == 4);
+        };
+        auto sender = [&]() -> capy::task<> {
+            auto [cec] = co_await client.connect(
+                v6 ? endpoint(ipv6_address::loopback(), port)
+                   : endpoint(ipv4_address::loopback(), port));
+            BOOST_TEST(!cec);
+            char const out[] = "ping";
+            auto [wec, wn] =
+                co_await client.write_some(capy::const_buffer(out, 4));
+            BOOST_TEST(!wec);
+            (void)wn;
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(server());
+        capy::run_async(ex)(sender());
+        ioc.run();
+        return done;
+    }
+
+    // Socket activation: adopt a natively created listening descriptor
+    // and accept a corosio connection through it.
+    void testAssignListeningSocket()
+    {
+        io_context ioc(Backend);
+
+        std::uint16_t port = 0;
+        auto lfd = make_native_listener(false, port);
+        BOOST_TEST(lfd != invalid_native_socket);
+        BOOST_TEST(port != 0);
+
+        tcp_acceptor acc(ioc);
+        acc.assign(lfd);
+        BOOST_TEST(acc.is_open());
+        BOOST_TEST(acc.native_handle() == lfd);
+        BOOST_TEST_EQ(acc.local_endpoint().port(), port);
+
+        BOOST_TEST(acceptOneThrough(ioc, acc, port, false));
+    }
+
+    // Adopting over an acceptor that is already listening must retire
+    // the in-flight accept machinery for the descriptor being replaced,
+    // not leave it aliased onto the newly adopted one.
+    void testAssignOverListeningAcceptor()
+    {
+        io_context ioc(Backend);
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto old_port = acc.local_endpoint().port();
+
+        // Pump once so the listen-time accept arming is live in the
+        // kernel before the descriptor is swapped underneath it.
+        (void)ioc.poll();
+        ioc.restart();
+
+        std::uint16_t port = 0;
+        auto lfd = make_native_listener(false, port);
+        BOOST_TEST(lfd != invalid_native_socket);
+        BOOST_TEST(port != old_port);
+
+        acc.assign(lfd);
+        BOOST_TEST(acc.is_open());
+        BOOST_TEST(acc.native_handle() == lfd);
+        BOOST_TEST_EQ(acc.local_endpoint().port(), port);
+
+        BOOST_TEST(acceptOneThrough(ioc, acc, port, false));
+    }
+
+    // release() then assign() on the SAME object: the released
+    // descriptor's accept machinery must be retired before the adopted
+    // one is armed.
+    void testAssignAfterRelease()
+    {
+        io_context ioc(Backend);
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        auto released = acc.release();
+        BOOST_TEST(!acc.is_open());
+        BOOST_TEST(released != invalid_native_socket);
+        close_native_socket(released);
+
+        std::uint16_t port = 0;
+        auto lfd = make_native_listener(false, port);
+        BOOST_TEST(lfd != invalid_native_socket);
+
+        acc.assign(lfd);
+        BOOST_TEST(acc.is_open());
+        BOOST_TEST(acc.native_handle() == lfd);
+        BOOST_TEST_EQ(acc.local_endpoint().port(), port);
+
+        BOOST_TEST(acceptOneThrough(ioc, acc, port, false));
+    }
+
+    // release() then open()/bind()/listen() on the SAME object: the
+    // shutdown state release() leaves behind must not follow the
+    // acceptor onto its next descriptor, or every connection the
+    // kernel hands back is dropped on arrival.
+    void testListenAfterRelease()
+    {
+        io_context ioc(Backend);
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        // Pump once so the listen-time accept arming is live in the
+        // kernel before release() retires it.
+        (void)ioc.poll();
+        ioc.restart();
+
+        auto released = acc.release();
+        BOOST_TEST(!acc.is_open());
+        BOOST_TEST(released != invalid_native_socket);
+        close_native_socket(released);
+
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        BOOST_TEST(acc.is_open());
+        auto port = acc.local_endpoint().port();
+        BOOST_TEST(port != 0);
+
+        BOOST_TEST(acceptOneThrough(ioc, acc, port, false));
+    }
+
+    // Rejection matrix: bad handle, wrong type, wrong family, self.
+    void testAssignRejections()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        auto expect_throw = [&](native_handle_type h) {
+            bool threw = false;
+            try
+            {
+                acc.assign(h);
+            }
+            catch (std::system_error const&)
+            {
+                threw = true;
+            }
+            BOOST_TEST(threw);
+        };
+
+        expect_throw(invalid_native_socket);
+        BOOST_TEST(!acc.is_open());
+
+        auto dg = make_native_socket(AF_INET, SOCK_DGRAM);
+        BOOST_TEST(dg != invalid_native_socket);
+        expect_throw(dg);
+        BOOST_TEST(native_socket_valid(dg)); // caller keeps it
+        close_native_socket(dg);
+
+#if BOOST_COROSIO_POSIX
+        auto un = make_native_socket(AF_UNIX, SOCK_STREAM);
+        BOOST_TEST(un != invalid_native_socket);
+        expect_throw(un);
+        BOOST_TEST(native_socket_valid(un));
+        close_native_socket(un);
+#endif
+
+        acc.open();
+        expect_throw(acc.native_handle());
+        BOOST_TEST(acc.is_open());
+        acc.close();
+    }
+
+    // release() hands the listening descriptor back; it still accepts.
+    void testRelease()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto port = acc.local_endpoint().port();
+
+        auto released = acc.release();
+        BOOST_TEST(!acc.is_open());
+        BOOST_TEST(released != invalid_native_socket);
+
+        auto client = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(client != invalid_native_socket);
+        BOOST_TEST(native_connect_loopback(client, port, false));
+
+        auto peer = native_accept_blocking(released);
+        BOOST_TEST(peer != invalid_native_socket);
+
+        close_native_socket(peer);
+        close_native_socket(client);
+        close_native_socket(released);
+    }
+
+    void testReleaseClosedThrows()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+
+        bool caught = false;
+        try
+        {
+            (void)acc.release();
+        }
+        catch (std::logic_error const&)
+        {
+            caught = true;
+        }
+        BOOST_TEST(caught);
+    }
+
+    // Adopting a v6 listener must seed the endpoint cache as v6: the
+    // IOCP accept path sizes its address buffers from that cache.
+    void testAssignV6Listener()
+    {
+        io_context ioc(Backend);
+
+        std::uint16_t port = 0;
+        auto lfd = make_native_listener(true, port);
+        if (lfd == invalid_native_socket)
+            return; // no IPv6 loopback on this host
+
+        tcp_acceptor acc(ioc);
+        acc.assign(lfd);
+        BOOST_TEST(acc.is_open());
+        BOOST_TEST(acc.local_endpoint().is_v6());
+        BOOST_TEST_EQ(acc.local_endpoint().port(), port);
+
+        BOOST_TEST(acceptOneThrough(ioc, acc, port, true));
+    }
+
     void run()
     {
         testConstruction();
@@ -1017,6 +1420,17 @@ struct tcp_acceptor_test
         testStopTokenAccept();
         testAcceptPendingConnection();
         testAcceptWithoutListen();
+
+        // Descriptor adoption
+        testNativeHandle();
+        testAssignListeningSocket();
+        testAssignOverListeningAcceptor();
+        testAssignAfterRelease();
+        testListenAfterRelease();
+        testAssignRejections();
+        testRelease();
+        testReleaseClosedThrows();
+        testAssignV6Listener();
     }
 };
 

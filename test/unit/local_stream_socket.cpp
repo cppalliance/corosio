@@ -1208,13 +1208,195 @@ struct local_stream_socket_test
 
         BOOST_TEST_EQ(acc.is_open(), true);
         auto h = acc.release();
-        (void)h;
         BOOST_TEST_EQ(acc.is_open(), false);
 
-#if BOOST_COROSIO_POSIX
+#if BOOST_COROSIO_HAS_IOCP
+        ::closesocket(static_cast<SOCKET>(h));
+#else
         if (static_cast<int>(h) >= 0)
             ::close(static_cast<int>(h));
 #endif
+    }
+
+    void testAcceptorNativeHandle()
+    {
+        io_context ioc(Backend);
+        local_stream_acceptor acc(ioc);
+
+#if BOOST_COROSIO_HAS_IOCP
+        auto const invalid = static_cast<native_handle_type>(~0ull);
+#else
+        auto const invalid = static_cast<native_handle_type>(-1);
+#endif
+        BOOST_TEST(acc.native_handle() == invalid);
+
+        acc.open();
+        BOOST_TEST(acc.native_handle() != invalid);
+        acc.close();
+        BOOST_TEST(acc.native_handle() == invalid);
+    }
+
+    // Drive one connect + accept + byte exchange through `acc`, which
+    // must already be listening on `path`. Runs `ioc` to completion;
+    // the connecting peer is spawned after the acceptor so the accept
+    // is parked before the connect lands.
+    bool acceptOneThroughLocal(
+        io_context& ioc, local_stream_acceptor& acc, std::string const& path)
+    {
+        local_stream_socket peer(ioc);
+        local_stream_socket client(ioc);
+        bool done = false;
+
+        auto server = [&]() -> capy::task<> {
+            auto [aec] = co_await acc.accept(peer);
+            BOOST_TEST(!aec);
+            char in[8];
+            auto [rec, rn] =
+                co_await peer.read_some(capy::mutable_buffer(in, sizeof(in)));
+            BOOST_TEST(!rec);
+            done = (rn == 4);
+        };
+        auto sender = [&]() -> capy::task<> {
+            auto [cec] = co_await client.connect(local_endpoint(path));
+            BOOST_TEST(!cec);
+            char const out[] = "ping";
+            auto [wec, wn] =
+                co_await client.write_some(capy::const_buffer(out, 4));
+            BOOST_TEST(!wec);
+            (void)wn;
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(server());
+        capy::run_async(ex)(sender());
+        ioc.run();
+        return done;
+    }
+
+    // Adopting over a listening acceptor must retire the accept
+    // machinery for the descriptor being replaced, not leave it
+    // aliased onto the newly adopted one.
+    void testAcceptorAssignOverListening()
+    {
+        io_context ioc(Backend);
+        test::temp_socket_dir held_dir;
+        test::temp_socket_dir adopted_dir;
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(held_dir.path()));
+        BOOST_TEST_EQ(!ec, true);
+        ec = acc.listen();
+        BOOST_TEST_EQ(!ec, true);
+
+        // Source the replacement descriptor from a second acceptor.
+        local_stream_acceptor donor(ioc);
+        donor.open();
+        ec = donor.bind(local_endpoint(adopted_dir.path()));
+        BOOST_TEST_EQ(!ec, true);
+        ec = donor.listen();
+        BOOST_TEST_EQ(!ec, true);
+        auto h = donor.release();
+
+        acc.assign(h);
+        BOOST_TEST_EQ(acc.is_open(), true);
+        BOOST_TEST(acc.native_handle() == h);
+        BOOST_TEST_EQ(acc.local_endpoint().path(), adopted_dir.path());
+
+        BOOST_TEST(acceptOneThroughLocal(ioc, acc, adopted_dir.path()));
+    }
+
+    // release() then assign() on the SAME object: the released
+    // descriptor's accept machinery must be retired before the adopted
+    // one is armed.
+    void testAcceptorAssignAfterRelease()
+    {
+        io_context ioc(Backend);
+        test::temp_socket_dir first_dir;
+        test::temp_socket_dir second_dir;
+
+        local_stream_acceptor acc(ioc);
+        acc.open();
+        auto ec = acc.bind(local_endpoint(first_dir.path()));
+        BOOST_TEST_EQ(!ec, true);
+        ec = acc.listen();
+        BOOST_TEST_EQ(!ec, true);
+
+        auto released = acc.release();
+        BOOST_TEST_EQ(acc.is_open(), false);
+#if BOOST_COROSIO_HAS_IOCP
+        ::closesocket(static_cast<SOCKET>(released));
+#else
+        if (static_cast<int>(released) >= 0)
+            ::close(static_cast<int>(released));
+#endif
+
+        local_stream_acceptor donor(ioc);
+        donor.open();
+        ec = donor.bind(local_endpoint(second_dir.path()));
+        BOOST_TEST_EQ(!ec, true);
+        ec = donor.listen();
+        BOOST_TEST_EQ(!ec, true);
+
+        acc.assign(donor.release());
+        BOOST_TEST_EQ(acc.is_open(), true);
+        BOOST_TEST_EQ(acc.local_endpoint().path(), second_dir.path());
+
+        BOOST_TEST(acceptOneThroughLocal(ioc, acc, second_dir.path()));
+    }
+
+    // A released listener round-trips into a fresh acceptor and keeps
+    // serving connections.
+    void testAcceptorAssignFromRelease()
+    {
+        io_context ioc(Backend);
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+
+        local_stream_acceptor first(ioc);
+        first.open();
+        auto ec = first.bind(local_endpoint(path));
+        BOOST_TEST_EQ(!ec, true);
+        ec = first.listen();
+        BOOST_TEST_EQ(!ec, true);
+
+        auto h = first.release();
+        BOOST_TEST_EQ(first.is_open(), false);
+
+        local_stream_acceptor acc(ioc);
+        acc.assign(h);
+        BOOST_TEST_EQ(acc.is_open(), true);
+        BOOST_TEST(acc.native_handle() == h);
+        BOOST_TEST_EQ(acc.local_endpoint().path(), path);
+
+        local_stream_socket peer(ioc);
+        local_stream_socket client(ioc);
+        auto ex   = ioc.get_executor();
+        bool done = false;
+
+        auto server = [&]() -> capy::task<> {
+            auto [aec] = co_await acc.accept(peer);
+            BOOST_TEST(!aec);
+            char in[8];
+            auto [rec, rn] =
+                co_await peer.read_some(capy::mutable_buffer(in, sizeof(in)));
+            BOOST_TEST(!rec);
+            done = (rn == 4);
+        };
+        auto sender = [&]() -> capy::task<> {
+            auto [cec] = co_await client.connect(local_endpoint(path));
+            BOOST_TEST(!cec);
+            char const out[] = "ping";
+            auto [wec, wn] =
+                co_await client.write_some(capy::const_buffer(out, 4));
+            BOOST_TEST(!wec);
+            (void)wn;
+        };
+
+        capy::run_async(ex)(server());
+        capy::run_async(ex)(sender());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     void testAcceptorLocalEndpoint()
@@ -1350,6 +1532,10 @@ struct local_stream_socket_test
         testAcceptorAcceptClosedThrows();
         testAcceptorReleaseClosedThrows();
         testAcceptorReleaseOpen();
+        testAcceptorNativeHandle();
+        testAcceptorAssignFromRelease();
+        testAcceptorAssignOverListening();
+        testAcceptorAssignAfterRelease();
         testAcceptorLocalEndpoint();
         testEndpointTooLongThrows();
         testEndpointTooLongNoThrow();

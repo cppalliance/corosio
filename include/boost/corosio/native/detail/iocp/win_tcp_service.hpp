@@ -146,6 +146,20 @@ public:
     std::error_code open_acceptor_socket(
         win_tcp_acceptor_internal& impl, int family, int type, int protocol);
 
+    /** Adopt an existing listening socket into an acceptor.
+
+        Validates the socket, associates it with the IOCP, and only
+        then releases the socket the acceptor already held. Listen
+        state is not verified.
+
+        @param impl The acceptor implementation internal.
+        @param fd The native socket to adopt. Ownership transfers only
+            on success.
+        @return Error code, or success.
+    */
+    std::error_code assign_acceptor_socket(
+        win_tcp_acceptor_internal& impl, native_handle_type fd);
+
     /** Bind an open acceptor to a local endpoint.
 
         @param impl The acceptor implementation internal.
