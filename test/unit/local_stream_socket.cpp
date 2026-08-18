@@ -898,18 +898,10 @@ struct local_stream_socket_test
             std::logic_error);
     }
 
-    // Acceptor wait(wait_type::write) completes immediately: a listener
-    // is always writable by convention.
+    // Acceptor wait(wait_type::write) fails uniformly on every
+    // backend: writability carries no meaning for a listener.
     void testAcceptorWaitWrite()
     {
-#if BOOST_COROSIO_HAS_IO_URING
-        // The immediate-writable convention is a reactor/IOCP behavior;
-        // io_uring's poll never reports a listener writable, so the
-        // wait would park forever.
-        if constexpr (std::is_same_v<
-                std::remove_const_t<decltype(Backend)>, io_uring_t>)
-            return;
-#endif
         io_context ioc(Backend);
         auto ex   = ioc.get_executor();
         test::temp_socket_dir tmp;
@@ -934,7 +926,7 @@ struct local_stream_socket_test
         ioc.run();
 
         BOOST_TEST(wait_done);
-        BOOST_TEST(!wait_ec);
+        BOOST_TEST(wait_ec == std::errc::operation_not_supported);
     }
 
     // Acceptor wait(wait_type::read) parks until a cancel retracts it.

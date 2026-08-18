@@ -46,6 +46,11 @@ make_err(int errn) noexcept
     if (errn == ECANCELED)
         return capy::error::canceled;
 
+    // Part of the portable wait contract; system_category's condition
+    // mapping varies by C++ runtime.
+    if (errn == ENOTSUP)
+        return std::make_error_code(std::errc::operation_not_supported);
+
     return std::error_code(errn, std::system_category());
 }
 
@@ -76,6 +81,11 @@ make_err(unsigned long dwError) noexcept
 
     if (dwError == ERROR_HANDLE_EOF)
         return capy::error::eof;
+
+    // Part of the portable wait contract; system_category's condition
+    // mapping for WSA codes varies by toolchain.
+    if (dwError == WSAEOPNOTSUPP)
+        return std::make_error_code(std::errc::operation_not_supported);
 
     return std::error_code(static_cast<int>(dwError), std::system_category());
 }

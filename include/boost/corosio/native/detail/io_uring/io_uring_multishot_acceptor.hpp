@@ -94,6 +94,9 @@ protected:
         /// The stop callback is armed before the node is queued, so
         /// cancel_waiter must not unlink a node it never queued.
         bool                                                 queued = false;
+        /// A readiness wait rather than an accept: completion
+        /// observes a pending connection without consuming it.
+        bool                                                 peek = false;
         std::optional<std::stop_callback<waiter_canceller>>  stop_cb;
     };
 
@@ -104,6 +107,11 @@ protected:
     mutable std::mutex                           mutex_;
     intrusive_list<ready_fd_node>                ready_fds_;
     intrusive_list<waiter_node>                  waiters_;
+    /// Single parked readiness wait (guarded by `mutex_`). Multishot
+    /// accepting drains the kernel queue instantly, so a listener's
+    /// readiness lives in `ready_fds_`, not in `poll()`; the wait is
+    /// completed by the next delivery instead of a kernel poll.
+    waiter_node*                                 read_wait_ = nullptr;
     std::unique_ptr<uring_multi_accept_op>       multi_op_;
     bool                                         closing_ = false;
     /// Bumped whenever an arming is retired. A re-arm posted for an
@@ -221,6 +229,11 @@ public:
             // on_accept_cqe_impl to surface operation_aborted.
             while (auto* w = waiters_.pop_front())
                 drained.push_back(w);
+            if (read_wait_)
+            {
+                drained.push_back(read_wait_);
+                read_wait_ = nullptr;
+            }
         }
 
         while (auto* w = drained.pop_front())
@@ -237,6 +250,90 @@ public:
             sched_->post(op);
             sched_->work_finished();
         }
+    }
+
+    /** Park a readiness wait, or complete it if a connection is
+        already queued.
+
+        Multishot accepting consumes the kernel queue as connections
+        arrive, so a poll on the listener never reports it readable;
+        readiness is the impl's ready queue plus future deliveries.
+    */
+    void park_read_wait(
+        std::coroutine_handle<> h,
+        capy::executor_ref      ex,
+        std::stop_token const&  token,
+        std::error_code*        ec) noexcept
+    {
+        bool ready   = false;
+        bool aborted = false;
+        {
+            std::lock_guard lk(mutex_);
+            if (closing_)
+            {
+                aborted = true;
+            }
+            else if (!ready_fds_.empty())
+            {
+                ready = true;
+            }
+        }
+        if (ready || aborted)
+        {
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept initiation path: OOM => std::terminate is the intended behavior
+            auto* op   = new uring_accept_op();
+            op->h      = h;
+            op->ex     = ex;
+            op->ec_out = ec;
+            if (aborted)
+                op->cancelled.store(true, std::memory_order_release);
+            sched_->post(op);
+            return;
+        }
+
+        // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept initiation path: OOM => std::terminate is the intended behavior
+        auto* w   = new waiter_node{};
+        w->h      = h;
+        w->ex     = ex;
+        w->ec_out = ec;
+        w->owner  = static_cast<Derived*>(this);
+        w->peek   = true;
+
+        // Same protocol as accept parking: arm the callback before
+        // the node is visible and outside `mutex_` (a pre-stopped
+        // token invokes the canceller synchronously, and the
+        // canceller takes `mutex_`).
+        if (token.stop_possible())
+            w->stop_cb.emplace(token, waiter_canceller{w});
+
+        bool was_cancelled = false;
+        {
+            std::lock_guard lk(mutex_);
+            if (w->cancelled.load(std::memory_order_acquire) || closing_)
+            {
+                was_cancelled = true;
+            }
+            else if (ready_fds_.empty())
+            {
+                w->queued = true;
+                sched_->work_started();
+                read_wait_ = w;
+                return;
+            }
+            // else: a connection arrived while the callback was armed;
+            // complete as ready below.
+        }
+
+        w->stop_cb.reset();
+        // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept initiation path: OOM => std::terminate is the intended behavior
+        auto* op   = new uring_accept_op();
+        op->h      = w->h;
+        op->ex     = w->ex;
+        op->ec_out = w->ec_out;
+        if (was_cancelled)
+            op->cancelled.store(true, std::memory_order_release);
+        delete w;
+        sched_->post(op);
     }
 
     std::error_code set_option(
@@ -529,9 +626,18 @@ public:
             std::lock_guard lk(mutex_);
             if (closing_) return;  // on_accept_cqe_impl will drain with closing_ set
             if (!w->queued)
-                return;  // not in waiters_ yet; dispatch_or_queue
-                         // observes `cancelled` and completes the op
-            waiters_.remove(w);
+                return;  // not queued yet; the parking path observes
+                         // `cancelled` and completes the op
+            if (w->peek)
+            {
+                if (read_wait_ != w)
+                    return;  // already claimed by a delivery
+                read_wait_ = nullptr;
+            }
+            else
+            {
+                waiters_.remove(w);
+            }
         }
         // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — stop-token callback: noexcept, OOM => std::terminate is the intended behavior
         auto* op = new uring_accept_op();
@@ -560,10 +666,21 @@ protected:
     {
         bool was_closing = false;
         waiter_node* matched = nullptr;
+        waiter_node* claimed_peek = nullptr;
         intrusive_list<waiter_node> closing_waiters;
         {
             std::lock_guard lk(mutex_);
             was_closing = closing_;
+            if (!was_closing && new_fd >= 0 && read_wait_ &&
+                !read_wait_->cancelled.exchange(
+                    true, std::memory_order_acq_rel))
+            {
+                // A parked readiness wait observes the delivery
+                // without consuming it; the connection still flows
+                // to a waiter or the ready queue below.
+                claimed_peek = read_wait_;
+                read_wait_   = nullptr;
+            }
             if (was_closing)
             {
                 if (new_fd >= 0)
@@ -608,6 +725,19 @@ protected:
                 node->peer_len  = multi_op_->peer_len;
                 ready_fds_.push_back(node);
             }
+        }
+
+        if (claimed_peek)
+        {
+            claimed_peek->stop_cb.reset();
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler: noexcept, OOM => std::terminate is the intended behavior
+            auto* op   = new uring_accept_op();
+            op->h      = claimed_peek->h;
+            op->ex     = claimed_peek->ex;
+            op->ec_out = claimed_peek->ec_out;
+            delete claimed_peek;
+            sched_->post(op);
+            sched_->work_finished();  // balance the parking work_started
         }
 
         if (matched)

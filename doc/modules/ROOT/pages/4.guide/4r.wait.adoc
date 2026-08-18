@@ -85,6 +85,10 @@ This is useful when application-level conditions must be checked
 before consuming the next connection (rate limiting, backpressure
 signaling) without holding an `accept()` call open.
 
+A connection already queued when the wait begins completes it
+immediately — including on an adopted listener whose backlog predates
+the adoption, the socket-activation handoff shape.
+
 == Cancellation
 
 `wait()` honors the stop token of its `co_await` environment and the
@@ -119,10 +123,9 @@ congested. Code that hands its buffers to `write_some()` does not need
 `wait(wait_type::write)` at all — `write_some()` already parks on the
 same condition.
 
-Acceptors are the exception: `wait(wait_type::write)` on an acceptor
-completes immediately on the reactor and IOCP backends and never
-completes on `io_uring`, because writability has no meaning for a
-listening socket. Do not use it.
+Acceptors are the exception: writability has no meaning for a
+listening socket, so `wait(wait_type::write)` on an acceptor fails
+with `errc::operation_not_supported` on every backend.
 
 == Backend Notes
 

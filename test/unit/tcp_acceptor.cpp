@@ -1157,6 +1157,182 @@ struct tcp_acceptor_test
         BOOST_TEST(acceptOneThrough(ioc, acc, port, false));
     }
 
+    // A wait for readability must observe a connection that was
+    // already queued when the wait began: a shared or adopted
+    // listener has history the reactor never saw.
+    void testWaitReadPreexistingBacklog()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto port = acc.local_endpoint().port();
+
+        // Queue a connection before any wait exists, then pump once
+        // with nothing parked so an edge-triggered reactor has
+        // already dispatched — and dropped — the readiness edge.
+        auto client = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(client != invalid_native_socket);
+        BOOST_TEST(native_connect_loopback(client, port, false));
+        (void)ioc.poll();
+        ioc.restart();
+
+        std::error_code wait_ec;
+        bool wait_done      = false;
+        bool watchdog_fired = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [wec] = co_await acc.wait(wait_type::read);
+            wait_ec   = wec;
+            wait_done = true;
+        };
+        // Watchdog: a reactor that misses pre-existing readiness
+        // parks forever; retract the wait so the miss is reported
+        // instead of hanging the suite.
+        auto watchdog = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            if (!wait_done)
+            {
+                watchdog_fired = true;
+                acc.cancel();
+            }
+        };
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(watchdog());
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!watchdog_fired);
+        BOOST_TEST(!wait_ec);
+
+        // The signalled connection is genuinely acceptable.
+        bool accepted = false;
+        auto server = [&]() -> capy::task<> {
+            auto [aec, peer] = co_await acc.accept();
+            BOOST_TEST(!aec);
+            accepted = !aec;
+        };
+        capy::run_async(ex)(server());
+        ioc.run();
+        BOOST_TEST(accepted);
+
+        close_native_socket(client);
+    }
+
+    // The socket-activation shape of the same guarantee: the queued
+    // connection predates the adoption itself.
+    void testWaitReadAdoptedBacklog()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        std::uint16_t port = 0;
+        auto lfd = make_native_listener(false, port);
+        BOOST_TEST(lfd != invalid_native_socket);
+
+        auto client = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(client != invalid_native_socket);
+        BOOST_TEST(native_connect_loopback(client, port, false));
+
+        tcp_acceptor acc(ioc);
+        acc.assign(lfd);
+        BOOST_TEST(acc.is_open());
+
+        // Pump once with nothing parked so the registration-time
+        // readiness edge has already been dispatched and dropped.
+        (void)ioc.poll();
+        ioc.restart();
+
+        std::error_code wait_ec;
+        bool wait_done      = false;
+        bool watchdog_fired = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [wec] = co_await acc.wait(wait_type::read);
+            wait_ec   = wec;
+            wait_done = true;
+        };
+        auto watchdog = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            if (!wait_done)
+            {
+                watchdog_fired = true;
+                acc.cancel();
+            }
+        };
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(watchdog());
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!watchdog_fired);
+        BOOST_TEST(!wait_ec);
+
+        bool accepted = false;
+        auto server = [&]() -> capy::task<> {
+            auto [aec, peer] = co_await acc.accept();
+            BOOST_TEST(!aec);
+            accepted = !aec;
+        };
+        capy::run_async(ex)(server());
+        ioc.run();
+        BOOST_TEST(accepted);
+
+        close_native_socket(client);
+    }
+
+    // Writability carries no meaning for a listener; the wait must
+    // fail the same way on every backend instead of completing
+    // immediately on some and never on others.
+    void testWaitWriteUnsupported()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        std::error_code wait_ec;
+        bool wait_done      = false;
+        bool watchdog_fired = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [wec] = co_await acc.wait(wait_type::write);
+            wait_ec   = wec;
+            wait_done = true;
+        };
+        // Watchdog: a backend that parks the meaningless wait would
+        // hang the suite; retract it so the miss is reported.
+        auto watchdog = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            if (!wait_done)
+            {
+                watchdog_fired = true;
+                acc.cancel();
+            }
+        };
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(watchdog());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!watchdog_fired);
+        BOOST_TEST(wait_ec == std::errc::operation_not_supported);
+    }
+
     // Adopting over an acceptor that is already listening must retire
     // the in-flight accept machinery for the descriptor being replaced,
     // not leave it aliased onto the newly adopted one.
@@ -1424,6 +1600,9 @@ struct tcp_acceptor_test
         // Descriptor adoption
         testNativeHandle();
         testAssignListeningSocket();
+        testWaitReadPreexistingBacklog();
+        testWaitReadAdoptedBacklog();
+        testWaitWriteUnsupported();
         testAssignOverListeningAcceptor();
         testAssignAfterRelease();
         testListenAfterRelease();

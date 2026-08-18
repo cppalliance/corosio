@@ -686,15 +686,31 @@ public:
         std::stop_token         token,
         std::error_code*        ec) override
     {
-        int poll_flags = 0;
-        switch (w)
+        // Multishot accepting drains the kernel queue as connections
+        // arrive, so a poll on the listener never reports it
+        // readable; read waits complete from the delivery queue.
+        if (w == wait_type::read)
         {
-            case wait_type::read:  poll_flags = POLLIN;  break;
-            case wait_type::write: poll_flags = POLLOUT; break;
-            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+            this->park_read_wait(h, ex, token, ec);
+            return std::noop_coroutine();
         }
+        // Writability carries no meaning for a listening socket;
+        // fail uniformly instead of never completing.
+        if (w == wait_type::write)
+        {
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept-adjacent initiation path: OOM => std::terminate is the intended behavior
+            auto* op   = new uring_accept_op();
+            op->h      = h;
+            op->ex     = ex;
+            op->ec_out = ec;
+            op->err    = ENOTSUP;
+            this->sched_->post(op);
+            return std::noop_coroutine();
+        }
+        // Errors are not consumed by the accept machinery, so the
+        // error wait still polls the descriptor.
         wait_op_.prepare(h, ex, ec, this->fd_, this->sched_,
-            this->shared_from_this(), poll_flags, token);
+            this->shared_from_this(), POLLPRI | POLLERR | POLLHUP, token);
         this->sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -1466,15 +1482,31 @@ public:
         std::stop_token         token,
         std::error_code*        ec) override
     {
-        int poll_flags = 0;
-        switch (w)
+        // Multishot accepting drains the kernel queue as connections
+        // arrive, so a poll on the listener never reports it
+        // readable; read waits complete from the delivery queue.
+        if (w == wait_type::read)
         {
-            case wait_type::read:  poll_flags = POLLIN;  break;
-            case wait_type::write: poll_flags = POLLOUT; break;
-            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+            this->park_read_wait(h, ex, token, ec);
+            return std::noop_coroutine();
         }
+        // Writability carries no meaning for a listening socket;
+        // fail uniformly instead of never completing.
+        if (w == wait_type::write)
+        {
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept-adjacent initiation path: OOM => std::terminate is the intended behavior
+            auto* op   = new uring_accept_op();
+            op->h      = h;
+            op->ex     = ex;
+            op->ec_out = ec;
+            op->err    = ENOTSUP;
+            this->sched_->post(op);
+            return std::noop_coroutine();
+        }
+        // Errors are not consumed by the accept machinery, so the
+        // error wait still polls the descriptor.
         wait_op_.prepare(h, ex, ec, this->fd_, this->sched_,
-            this->shared_from_this(), poll_flags, token);
+            this->shared_from_this(), POLLPRI | POLLERR | POLLHUP, token);
         this->sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {

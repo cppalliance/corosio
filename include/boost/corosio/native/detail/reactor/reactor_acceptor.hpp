@@ -208,14 +208,14 @@ public:
 
     /** Wait for readiness on the listen socket.
 
-        Registers a wait op on the matching event slot. For
-        `wait_type::read`, completion signals that an incoming
-        connection is pending and a subsequent accept will
-        succeed without blocking.
+        For `wait_type::read`, completion signals that an incoming
+        connection is pending and a subsequent accept will succeed
+        without blocking; a connection already queued when the wait
+        begins completes it immediately via an initiation probe.
 
-        `wait_type::write` completes immediately here: writability
-        carries no meaning for a listening socket, and the io_uring
-        backend never completes it at all. It is not a usable wait.
+        `wait_type::write` fails with `operation_not_supported` on
+        every backend: writability carries no meaning for a
+        listening socket.
     */
     std::coroutine_handle<> do_wait(
         std::coroutine_handle<>,
@@ -527,9 +527,9 @@ reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, En
         std::stop_token const& token,
         std::error_code* ec)
 {
-    // Acceptors complete wait_type::write immediately: writability
-    // has no meaning for a listening socket, and parking would never
-    // wake. Documented in the wait guide.
+    // Writability carries no meaning for a listening socket; some
+    // backends could only lie about it and others could never report
+    // it, so the wait fails the same way everywhere instead.
     if (w == wait_type::write)
     {
         auto& op = wait_wr_;
@@ -541,7 +541,7 @@ reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, En
         op.fd         = this->fd_;
         op.start(token, static_cast<Derived*>(this));
         op.impl_ptr   = this->shared_from_this();
-        op.complete(0, 0);
+        op.complete(ENOTSUP, 0);
         svc_.post(&op);
         return std::noop_coroutine();
     }
@@ -573,11 +573,32 @@ reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, En
     op.start(token, static_cast<Derived*>(this));
     op.impl_ptr   = this->shared_from_this();
 
+    // A listener's readiness can predate the wait: an adopted or
+    // shared descriptor has history the reactor never saw, and an
+    // edge already dispatched will not be re-announced. Probe before
+    // parking.
+    int perr = 0;
+    if (WaitOp::probe(this->fd_, event, perr))
+    {
+        op.complete(perr, 0);
+        svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
     svc_.work_started();
 
     std::lock_guard lock(desc_state_.mutex);
     if (op.cancelled.load(std::memory_order_acquire))
     {
+        svc_.post(&op);
+        svc_.work_finished();
+    }
+    else if (WaitOp::probe(this->fd_, event, perr))
+    {
+        // Close the probe-to-park window: an edge that landed after
+        // the first probe was consumed, so re-check under the mutex
+        // the dispatch path holds.
+        op.complete(perr, 0);
         svc_.post(&op);
         svc_.work_finished();
     }

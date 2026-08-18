@@ -438,13 +438,14 @@ public:
         Suspends until the listen socket is ready in the
         requested direction, or an error condition is reported.
         For `wait_type::read`, completion signals that a
-        subsequent @ref accept will succeed without blocking.
-        No connection is consumed.
+        subsequent @ref accept will succeed without blocking; a
+        connection already queued when the wait begins completes
+        it immediately. No connection is consumed.
 
         @note `wait_type::write` is not usable on an acceptor:
         writability carries no meaning for a listening socket, so
-        the wait completes immediately on the reactor and IOCP
-        backends and never completes on io_uring.
+        the wait fails with `errc::operation_not_supported` on
+        every backend.
 
         @param w The wait direction.
 

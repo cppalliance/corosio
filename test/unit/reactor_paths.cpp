@@ -415,8 +415,9 @@ struct reactor_paths_test
         BOOST_TEST_EQ(total_read, part1.size() + part2.size() + part3.size());
     }
 
-    // Acceptor wait_type::write completes immediately. Exercises the early
-    // return path in reactor_acceptor::do_wait.
+    // Acceptor wait_type::write fails uniformly: writability carries
+    // no meaning for a listener. Exercises the early return path in
+    // reactor_acceptor::do_wait.
     void testAcceptorWaitWrite()
     {
         io_context ioc(Backend);
@@ -443,7 +444,7 @@ struct reactor_paths_test
         ioc.run();
 
         BOOST_TEST(wait_done);
-        BOOST_TEST(!wait_ec);
+        BOOST_TEST(wait_ec == std::errc::operation_not_supported);
     }
 
     // Cancel a parked acceptor wait_type::error. Exercises the

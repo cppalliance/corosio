@@ -1533,12 +1533,11 @@ win_tcp_acceptor_internal::wait(
 
     svc_.work_started();
 
-    // Acceptors complete wait_type::write immediately: writability
-    // has no meaning for a listening socket, and parking would never
-    // wake. Documented in the wait guide.
+    // Writability carries no meaning for a listening socket; the
+    // wait fails the same way on every backend.
     if (w == wait_type::write)
     {
-        svc_.on_completion(&op, 0, 0);
+        svc_.on_completion(&op, WSAEOPNOTSUPP, 0);
         return std::noop_coroutine();
     }
 
