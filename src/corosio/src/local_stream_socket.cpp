@@ -89,8 +89,6 @@ local_stream_socket::shutdown(shutdown_type what, std::error_code& ec) noexcept
 void
 local_stream_socket::assign(native_handle_type fd)
 {
-    if (is_open())
-        detail::throw_logic_error("assign: socket already open");
     auto& svc = static_cast<detail::local_stream_service&>(h_.service());
     std::error_code ec = svc.assign_socket(
         static_cast<local_stream_socket::implementation&>(*h_.get()), fd);

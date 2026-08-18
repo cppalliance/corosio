@@ -831,14 +831,31 @@ public:
         return opt;
     }
 
-    /** Assign an existing file descriptor to this socket.
+    /** Assign an existing native socket to this object.
 
-        The socket must not already be open. The fd is adopted
-        and registered with the platform reactor.
+        Adopts a Unix domain datagram socket created outside the
+        library — from `socketpair()`, received over `SCM_RIGHTS`,
+        or made natively — and registers it with the backend. The
+        socket must be a datagram socket in the `AF_UNIX` family.
+        Adoption never alters the descriptor's flags or options; the
+        fd must already be non-blocking.
 
-        @param fd The file descriptor to adopt.
+        If this object is already open, pending operations complete
+        with `errc::operation_canceled` and the held socket is
+        closed before the new one is adopted.
 
-        @throws std::system_error on failure.
+        @par Exception Safety
+        Strong guarantee on validation failure: the object is
+        unchanged. If backend registration fails, the object either
+        retains its previous socket or is left closed, depending on
+        the backend. In all failure cases the caller retains
+        ownership of `fd`.
+
+        @param fd The native socket to adopt. On success the object
+            owns it and will close it.
+
+        @throws std::system_error On validation or registration
+            failure.
     */
     void assign(native_handle_type fd);
 

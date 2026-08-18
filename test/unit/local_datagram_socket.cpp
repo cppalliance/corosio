@@ -674,22 +674,59 @@ struct local_datagram_socket_test
         BOOST_TEST(s2.available() >= std::strlen(msg));
     }
 
-    void testAssignAlreadyOpenThrows()
+    // Assign over an open socket cancels its pending operations and
+    // adopts, matching the internet family.
+    void testAssignOverOpenAdopts()
     {
         io_context ioc(Backend);
-        local_datagram_socket sock(ioc);
-        sock.open();
+        auto ex = ioc.get_executor();
+        local_datagram_socket d1(ioc), d2(ioc);
+        connect_pair(d1, d2);
 
-        bool caught = false;
-        try
-        {
-            sock.assign(-1);
-        }
-        catch (std::logic_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+        int fds[2];
+        BOOST_TEST(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);
+        int fl = ::fcntl(fds[0], F_GETFL);
+        BOOST_TEST(::fcntl(fds[0], F_SETFL, fl | O_NONBLOCK) == 0);
+
+        bool recv_done = false;
+        std::error_code recv_ec;
+        auto reader = [&]() -> capy::task<> {
+            char buf[8];
+            auto [ec, n] = co_await d1.recv(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            (void)n;
+            recv_ec   = ec;
+            recv_done = true;
+        };
+        auto assigner = [&]() -> capy::task<> {
+            d1.assign(static_cast<native_handle_type>(fds[0]));
+            co_return;
+        };
+        capy::run_async(ex)(reader());
+        capy::run_async(ex)(assigner());
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST(recv_done);
+        BOOST_TEST(recv_ec == capy::cond::canceled);
+        BOOST_TEST(d1.is_open());
+        BOOST_TEST(
+            d1.native_handle() == static_cast<native_handle_type>(fds[0]));
+
+        // The adopted descriptor reaches its new peer.
+        BOOST_TEST(::send(fds[1], "go", 2, 0) == 2);
+        bool got = false;
+        auto reread = [&]() -> capy::task<> {
+            char buf[8];
+            auto [ec, n] = co_await d1.recv(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            got = !ec && n == 2;
+        };
+        capy::run_async(ex)(reread());
+        ioc.run();
+        BOOST_TEST(got);
+
+        ::close(fds[1]);
     }
 
     // Backend validation, not just the front-end guard: a bad fd must
@@ -854,7 +891,7 @@ struct local_datagram_socket_test
         testReleaseClosedThrows();
         testAvailableClosedThrows();
         testAvailable();
-        testAssignAlreadyOpenThrows();
+        testAssignOverOpenAdopts();
         testAssignBadFdThrows();
         testAssignRejectedFdStaysOpen();
         testRelease();

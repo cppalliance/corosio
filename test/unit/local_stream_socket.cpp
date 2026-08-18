@@ -452,24 +452,112 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(!ec2, true);
     }
 
-    void testAssignAlreadyOpenThrows()
+#if BOOST_COROSIO_POSIX
+    // Assign over an open socket cancels its pending operations and
+    // adopts, matching the internet family.
+    void testAssignOverOpenAdopts()
     {
         io_context ioc(Backend);
-        local_stream_socket sock(ioc);
-        sock.open();
-        BOOST_TEST_EQ(sock.is_open(), true);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        connect_pair(s1, s2);
 
-        bool caught = false;
+        int fds[2];
+        BOOST_TEST(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
+        int fl = ::fcntl(fds[0], F_GETFL);
+        BOOST_TEST(::fcntl(fds[0], F_SETFL, fl | O_NONBLOCK) == 0);
+
+        bool read_done = false;
+        std::error_code read_ec;
+        auto reader = [&]() -> capy::task<> {
+            char buf[4];
+            auto [ec, n] = co_await s1.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            (void)n;
+            read_ec   = ec;
+            read_done = true;
+        };
+        auto assigner = [&]() -> capy::task<> {
+            s1.assign(static_cast<native_handle_type>(fds[0]));
+            co_return;
+        };
+        capy::run_async(ex)(reader());
+        capy::run_async(ex)(assigner());
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST(read_done);
+        BOOST_TEST(read_ec == capy::cond::canceled);
+        BOOST_TEST(s1.is_open());
+        BOOST_TEST(
+            s1.native_handle() == static_cast<native_handle_type>(fds[0]));
+
+        // The adopted descriptor reaches its new peer.
+        BOOST_TEST(::send(fds[1], "go", 2, 0) == 2);
+        bool got = false;
+        auto reread = [&]() -> capy::task<> {
+            char buf[4];
+            auto [ec, n] = co_await s1.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            got = !ec && n == 2;
+        };
+        capy::run_async(ex)(reread());
+        ioc.run();
+        BOOST_TEST(got);
+
+        ::close(fds[1]);
+    }
+
+    // A failed assign over an open socket leaves it untouched and
+    // functional.
+    void testAssignOverOpenRejectedKeepsSocket()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        connect_pair(s1, s2);
+
+        int fds[2];
+        BOOST_TEST(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);
+
+        bool threw = false;
         try
         {
-            sock.assign(static_cast<native_handle_type>(-1));
+            s1.assign(static_cast<native_handle_type>(fds[0]));
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const&)
         {
-            caught = true;
+            threw = true;
         }
-        BOOST_TEST(caught);
+        BOOST_TEST(threw);
+        BOOST_TEST(::fcntl(fds[0], F_GETFD) >= 0); // caller keeps it
+        BOOST_TEST(s1.is_open());
+
+        // The rejected assign disturbed nothing: the pair still moves
+        // bytes.
+        bool got = false;
+        auto writer = [&]() -> capy::task<> {
+            char const out[] = "ok";
+            auto [wec, wn] = co_await s2.write_some(
+                capy::const_buffer(out, 2));
+            (void)wn;
+            BOOST_TEST(!wec);
+        };
+        auto reader = [&]() -> capy::task<> {
+            char buf[4];
+            auto [ec, n] = co_await s1.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            got = !ec && n == 2;
+        };
+        capy::run_async(ex)(reader());
+        capy::run_async(ex)(writer());
+        ioc.run();
+        BOOST_TEST(got);
+
+        ::close(fds[0]);
+        ::close(fds[1]);
     }
+#endif
 
 #if BOOST_COROSIO_POSIX
     // Backend validation, not just the front-end guard: a bad fd must
@@ -1488,8 +1576,9 @@ struct local_stream_socket_test
         testSocketPair();
         testEndpointsConnected();
         testShutdown();
-        testAssignAlreadyOpenThrows();
 #if BOOST_COROSIO_POSIX
+        testAssignOverOpenAdopts();
+        testAssignOverOpenRejectedKeepsSocket();
         testAssignBadFdThrows();
         testAssignRejectedFdStaysOpen();
 #endif

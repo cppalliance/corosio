@@ -96,8 +96,6 @@ local_datagram_socket::shutdown(shutdown_type what, std::error_code& ec) noexcep
 void
 local_datagram_socket::assign(native_handle_type fd)
 {
-    if (is_open())
-        detail::throw_logic_error("assign: socket already open");
     auto& svc = static_cast<detail::local_datagram_service&>(h_.service());
     std::error_code ec = svc.assign_socket(
         static_cast<local_datagram_socket::implementation&>(*h_.get()), fd);
