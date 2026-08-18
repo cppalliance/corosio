@@ -46,6 +46,7 @@
 #include <boost/corosio/local_stream_socket.hpp>
 
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -1165,12 +1166,43 @@ struct reactor_paths_test
         bool false_success = false;
         if (!conn_ec)
         {
+#if defined(TCP_INFO)
+            // The bug under test is uniquely a success reported while
+            // the handshake is still in flight, so ask the kernel for
+            // the transport state directly. Post-hoc witnesses are
+            // unreliable here: a connection the overflowing listener
+            // established and then reset loses its peer, and the
+            // reactor's own error dispatch may have consumed the
+            // recorded reset from SO_ERROR already.
+            tcp_info ti{};
+            socklen_t tlen = sizeof(ti);
+            if (::getsockopt(
+                    sock.native_handle(), IPPROTO_TCP, TCP_INFO, &ti,
+                    &tlen) == 0)
+            {
+                // TCP_SYN_SENT / TCPS_SYN_SENT on every target; the
+                // enum and macro spellings differ, the value does not.
+                false_success = ti.tcpi_state == 2;
+            }
+#else
+            // No transport-state query on this platform: a success
+            // with no peer and nothing recorded is the bug's shape,
+            // while an established-then-reset connection records the
+            // reset.
             sockaddr_storage peer{};
             socklen_t plen = sizeof(peer);
-            false_success =
-                ::getpeername(
+            if (::getpeername(
                     sock.native_handle(),
-                    reinterpret_cast<sockaddr*>(&peer), &plen) != 0;
+                    reinterpret_cast<sockaddr*>(&peer), &plen) != 0)
+            {
+                int soerr       = 0;
+                socklen_t sslen = sizeof(soerr);
+                (void)::getsockopt(
+                    sock.native_handle(), SOL_SOCKET, SO_ERROR, &soerr,
+                    &sslen);
+                false_success = soerr == 0;
+            }
+#endif
         }
         BOOST_TEST(cancel_sent);
         BOOST_TEST(conn_done);
