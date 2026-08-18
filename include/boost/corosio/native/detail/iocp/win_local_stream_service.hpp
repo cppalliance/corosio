@@ -17,6 +17,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/local_stream_service.hpp>
 
+#include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_acceptor.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_socket.hpp>
 #include <boost/corosio/native/detail/iocp/win_tcp_service.hpp>
@@ -783,6 +784,10 @@ win_local_stream_socket::release_socket() noexcept
     if (s != INVALID_SOCKET)
     {
         internal_->cancel();
+        // Sever the port association so the descriptor can be
+        // adopted again; best-effort, the caller keeps a working
+        // socket either way.
+        dissociate_from_iocp(s);
         internal_->socket_ = INVALID_SOCKET;
         internal_->local_endpoint_  = corosio::local_endpoint{};
         internal_->remote_endpoint_ = corosio::local_endpoint{};

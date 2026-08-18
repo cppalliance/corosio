@@ -19,6 +19,7 @@
 #include <boost/corosio/detail/local_stream_acceptor_service.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
+#include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_acceptor.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_service.hpp>
 
@@ -525,6 +526,7 @@ win_local_stream_acceptor::release_socket() noexcept
     if (s != INVALID_SOCKET)
     {
         internal_->cancel();
+        dissociate_from_iocp(s);
         internal_->socket_ = INVALID_SOCKET;
         internal_->local_endpoint_ = corosio::local_endpoint{};
     }

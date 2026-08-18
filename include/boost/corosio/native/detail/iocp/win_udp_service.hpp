@@ -17,6 +17,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/udp_service.hpp>
 
+#include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
 #include <boost/corosio/native/detail/iocp/win_udp_socket.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
@@ -874,6 +875,7 @@ win_udp_socket::release_socket() noexcept
     if (s != INVALID_SOCKET)
     {
         internal_->cancel();
+        dissociate_from_iocp(s);
         internal_->socket_          = INVALID_SOCKET;
         internal_->family_          = AF_UNSPEC;
         internal_->local_endpoint_  = endpoint{};

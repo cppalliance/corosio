@@ -20,6 +20,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
+#include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
 #include <boost/corosio/native/detail/iocp/win_tcp_acceptor.hpp>
 #include <boost/corosio/native/detail/iocp/win_tcp_service.hpp>
 
@@ -904,6 +905,10 @@ win_tcp_socket::release_socket() noexcept
     if (s != INVALID_SOCKET)
     {
         internal_->cancel();
+        // Sever the port association so the descriptor can be
+        // adopted again; best-effort, the caller keeps a working
+        // socket either way.
+        dissociate_from_iocp(s);
         internal_->socket_          = INVALID_SOCKET;
         internal_->family_          = AF_UNSPEC;
         internal_->local_endpoint_  = endpoint{};
@@ -1653,6 +1658,7 @@ win_tcp_acceptor::release_socket() noexcept
     if (s != INVALID_SOCKET)
     {
         internal_->cancel();
+        dissociate_from_iocp(s);
         internal_->socket_         = INVALID_SOCKET;
         internal_->local_endpoint_ = endpoint{};
     }
