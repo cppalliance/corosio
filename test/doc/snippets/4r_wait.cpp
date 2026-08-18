@@ -50,8 +50,13 @@ using namespace std::chrono_literals;
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
+#include <boost/corosio/detail/platform.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
+
+#if BOOST_COROSIO_POSIX
+#include <unistd.h>
+#endif
 
 #include <system_error>
 #include <utility>
@@ -80,6 +85,45 @@ wait_readable(corosio::tcp_socket& sock, std::error_code& ec_out)
     // end::wait_read[]
     ec_out = ec;
 }
+
+#if BOOST_COROSIO_POSIX
+// Stand-ins for a C library that owns a nonblocking socket and does
+// its own I/O on it (the libpq shape).
+struct foreign_conn
+{
+};
+int foreign_socket(foreign_conn*) { return -1; }
+bool foreign_wants_read(foreign_conn*) { return false; }
+int foreign_consume(foreign_conn*) { return 0; }
+int foreign_flush(foreign_conn*) { return 0; }
+
+capy::task<std::error_code>
+drive_foreign(corosio::io_context& ioc, foreign_conn* conn)
+{
+    // tag::foreign_adopt[]
+    // Adopt a duplicate: assigned means owned, and corosio closing
+    // the duplicate can never close the library's descriptor.
+    // Readiness travels through the shared open file description.
+    corosio::tcp_socket sock(ioc);
+    sock.assign(::dup(foreign_socket(conn)));
+
+    // Read side: wake, then let the library take the bytes itself.
+    while (foreign_wants_read(conn)) {
+        auto [ec] = co_await sock.wait(corosio::wait_type::read);
+        if (ec) co_return ec;
+        if (foreign_consume(conn) != 0)
+            co_return std::make_error_code(std::errc::io_error);
+    }
+
+    // Write side: retry exactly when the socket can make progress.
+    while (foreign_flush(conn) == 1) {
+        auto [ec] = co_await sock.wait(corosio::wait_type::write);
+        if (ec) co_return ec;
+    }
+    // end::foreign_adopt[]
+    co_return std::error_code{};
+}
+#endif
 
 capy::task<>
 wait_then_accept(

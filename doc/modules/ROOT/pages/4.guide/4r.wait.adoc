@@ -45,29 +45,35 @@ include::example$snippets/4r_wait.cpp[tag=wait_read,indent=0]
 == Wrapping a Nonblocking C API
 
 The original motivation is libraries such as libssh and libpq that
-manage their own buffers on an `O_NONBLOCK` fd. They need a "tell me
-when the fd is ready" primitive that does not steal bytes from the
-stream.
+manage their own buffers and do their own I/O on an `O_NONBLOCK`
+socket. They need two things from the surrounding event loop: "tell
+me when the fd is ready" without stealing bytes from the stream, and
+"never touch my descriptor".
 
-The typical pattern (sketched against a hypothetical libpq
-integration):
+`wait()` provides the first: it never reads, writes, or consumes the
+socket's pending error, so the library's next `PQconsumeInput` (or
+equivalent) sees everything the kernel has delivered. Adoption
+provides the second, with one rule to follow: `assign()` takes
+ownership and will close the descriptor, so adopt a `dup()` of the
+library's fd rather than the fd itself. Readiness lives on the open
+file description, which both descriptors share — the duplicate
+reports exactly the library's readiness, and closing it can never
+close the library's connection. Neither `assign()` nor `wait()`
+alters the descriptor's flags, so the library's non-blocking
+configuration is untouched.
 
-[source,cpp,role=pseudocode]
+[source,cpp]
 ----
-// pq is some PG connection holding a nonblocking socket fd.
-corosio::tcp_socket sock = adopt_fd(ioc, PQsocket(pq));
-
-while (PQisBusy(pq)) {
-    auto [ec] = co_await sock.wait(corosio::wait_type::read);
-    if (ec) co_return ec;
-    if (PQconsumeInput(pq) == 0)
-        co_return last_pq_error(pq);
-}
+include::example$snippets/4r_wait.cpp[tag=foreign_adopt,indent=0]
 ----
 
-Because `wait()` does not call `recv()`, the C library's next
-`PQconsumeInput` (or equivalent) sees all the data the kernel has
-delivered.
+Never call `read_some()` or `write_some()` on the adopted socket —
+the library owns the byte stream; corosio supplies readiness only.
+
+On Windows, `dup()` does not duplicate a `SOCKET`. Either adopt the
+library's socket directly and `release()` it before the library needs
+exclusive ownership again, or create a true duplicate with
+`WSADuplicateSocketW` and adopt that.
 
 == Acceptors
 
