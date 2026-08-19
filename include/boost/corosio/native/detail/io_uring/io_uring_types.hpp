@@ -939,8 +939,8 @@ public:
         auto& acc = static_cast<io_uring_tcp_acceptor&>(impl);
         if (::listen(acc.fd_, backlog) < 0)
             return make_err(errno);
-        acc.prepare_listen_arm();
-        acc.start_multishot();
+        if (acc.prepare_listen_arm())
+            acc.start_multishot();
         return {};
     }
 
@@ -1725,8 +1725,8 @@ public:
         auto& acc = static_cast<io_uring_local_stream_acceptor&>(impl);
         if (::listen(acc.fd_, backlog) < 0)
             return make_err(errno);
-        acc.prepare_listen_arm();
-        acc.start_multishot();
+        if (acc.prepare_listen_arm())
+            acc.start_multishot();
         return {};
     }
 

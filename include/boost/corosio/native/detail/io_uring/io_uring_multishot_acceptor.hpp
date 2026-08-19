@@ -117,7 +117,10 @@ protected:
     /// Bumped whenever an arming is retired. A re-arm posted for an
     /// earlier generation must not resubmit: `multi_op_` now names a
     /// different op, and resubmitting a live one would alias a single
-    /// `user_data` across two kernel armings.
+    /// `user_data` across two kernel armings. The re-arm's check is
+    /// not atomic with its submit — a retirement landing between them
+    /// (concurrent `assign()` on another thread) can still double-arm;
+    /// closing that needs a generation-aware submit.
     std::atomic<std::uint64_t>                   arm_generation_{0};
 
 private:
@@ -441,11 +444,37 @@ public:
         arming still owed a terminal CQE, which a fresh submission
         would alias by `user_data`.
     */
-    void prepare_listen_arm() noexcept
+    /** Ready the acceptor for a listen-time arming.
+
+        Returns `false` when a live arming already covers the
+        descriptor: a re-listen only changes the backlog, and retiring
+        a live arming here would leave it un-cancelled in the kernel —
+        two armings on one listener, with the retired one's deliveries
+        closed on arrival.
+    */
+    bool prepare_listen_arm() noexcept
     {
+        {
+            std::lock_guard lk(mutex_);
+            if (multi_op_ && !closing_)
+                return false;
+        }
         retire_multishot();
-        std::lock_guard lk(mutex_);
-        closing_ = false;
+        intrusive_list<ready_fd_node> stale;
+        {
+            std::lock_guard lk(mutex_);
+            closing_ = false;
+            // Deliveries queued by a released descriptor belong to
+            // the socket the caller took away, not to this listener.
+            while (auto* r = ready_fds_.pop_front())
+                stale.push_back(r);
+        }
+        while (auto* r = stale.pop_front())
+        {
+            ::close(r->fd);
+            delete r;
+        }
+        return true;
     }
 
     void start_multishot()

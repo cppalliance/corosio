@@ -506,6 +506,11 @@ reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, En
     if (::listen(fd_, backlog) < 0)
         return make_err(errno);
 
+    // A re-listen only changes the backlog; the descriptor is already
+    // registered and re-adding it would fail on epoll.
+    if (desc_state_.registered_events != 0)
+        return {};
+
     return svc_.scheduler().register_descriptor(fd_, &desc_state_);
 }
 

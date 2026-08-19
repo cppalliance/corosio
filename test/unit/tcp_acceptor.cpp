@@ -1438,6 +1438,140 @@ struct tcp_acceptor_test
         BOOST_TEST(acceptOneThrough(ioc, acc, port, false));
     }
 
+    // A second listen() on a live acceptor (backlog change) must not
+    // fork the accept machinery: connections arriving afterwards
+    // belong to the caller, not to a retired arming.
+    void testListenTwiceKeepsAccepting()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto port = acc.local_endpoint().port();
+
+        // Pump once so the first arming is live before the re-listen.
+        (void)ioc.poll();
+        ioc.restart();
+
+        ec = acc.listen(256);
+        BOOST_TEST(!ec);
+
+        auto client = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(client != invalid_native_socket);
+        BOOST_TEST(native_connect_loopback(client, port, false));
+
+        std::error_code accept_ec;
+        bool accept_done    = false;
+        bool watchdog_fired = false;
+
+        auto server = [&]() -> capy::task<> {
+            auto [aec, peer] = co_await acc.accept();
+            accept_ec   = aec;
+            accept_done = true;
+        };
+        // Watchdog: a retired arming stealing the connection parks the
+        // accept forever; retract it so the theft is reported instead
+        // of hanging the suite.
+        auto watchdog = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            if (!accept_done)
+            {
+                watchdog_fired = true;
+                acc.cancel();
+            }
+        };
+        capy::run_async(ex)(server());
+        capy::run_async(ex)(watchdog());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(!watchdog_fired);
+        BOOST_TEST(!accept_ec);
+
+        close_native_socket(client);
+    }
+
+    // Connections a released listener had already delivered internally
+    // must not surface from a later listener on the same object.
+    void testReleaseDropsPreacceptedConnections()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto port_a = acc.local_endpoint().port();
+
+        // Queue a connection and pump so backends that accept ahead of
+        // the user have taken it internally.
+        auto stale = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(stale != invalid_native_socket);
+        BOOST_TEST(native_connect_loopback(stale, port_a, false));
+        (void)ioc.poll();
+        ioc.restart();
+
+        auto released = acc.release();
+        BOOST_TEST(released != invalid_native_socket);
+        close_native_socket(released);
+        close_native_socket(stale);
+
+        acc.open();
+        acc.set_option(socket_option::reuse_address(true));
+        ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+        auto port_b = acc.local_endpoint().port();
+        BOOST_TEST(port_b != port_a);
+
+        auto client = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(client != invalid_native_socket);
+        BOOST_TEST(native_connect_loopback(client, port_b, false));
+
+        std::error_code accept_ec;
+        std::uint16_t accepted_port = 0;
+        bool accept_done            = false;
+        bool watchdog_fired         = false;
+
+        auto server = [&]() -> capy::task<> {
+            auto [aec, peer] = co_await acc.accept();
+            accept_ec   = aec;
+            accept_done = true;
+            if (!aec)
+                accepted_port = peer.local_endpoint().port();
+        };
+        auto watchdog = [&]() -> capy::task<> {
+            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            if (!accept_done)
+            {
+                watchdog_fired = true;
+                acc.cancel();
+            }
+        };
+        capy::run_async(ex)(server());
+        capy::run_async(ex)(watchdog());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(!watchdog_fired);
+        BOOST_TEST(!accept_ec);
+        // The accepted connection belongs to the new listener.
+        BOOST_TEST_EQ(accepted_port, port_b);
+
+        close_native_socket(client);
+    }
+
     // Rejection matrix: bad handle, wrong type, wrong family, self.
     void testAssignRejections()
     {
@@ -1606,6 +1740,8 @@ struct tcp_acceptor_test
         testAssignOverListeningAcceptor();
         testAssignAfterRelease();
         testListenAfterRelease();
+        testListenTwiceKeepsAccepting();
+        testReleaseDropsPreacceptedConnections();
         testAssignRejections();
         testRelease();
         testReleaseClosedThrows();
