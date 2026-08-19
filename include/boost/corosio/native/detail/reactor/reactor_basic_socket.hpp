@@ -242,12 +242,11 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::cancel_si
             std::lock_guard lock(desc_state_.mutex);
             if (*desc_op_ptr == &op)
                 claimed = std::exchange(*desc_op_ptr, nullptr);
-            else
-            {
-                bool* cflag = d->op_to_cancel_flag(op);
-                if (cflag)
-                    *cflag = true;
-            }
+            // Not in the slot: request_cancel() above already set
+            // op.cancelled, which register_op consults before parking
+            // and the completion decode consults on delivery. Latching
+            // a descriptor flag here instead would outlive this op and
+            // cancel the next wait in the same direction.
         }
         if (claimed)
         {

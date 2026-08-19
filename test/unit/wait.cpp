@@ -392,6 +392,83 @@ struct wait_test
         BOOST_TEST(wait_ec == capy::cond::canceled);
     }
 
+    // A cancel that reaches a wait outside its parked window must not
+    // leak into the next wait in the same direction: the second wait
+    // runs under a fresh token and must park until the peer drains.
+    void testWaitWriteCancelDoesNotLeak()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        auto [s1, s2] = make_backpressured_pair(ioc);
+
+        // First wait: writable socket, pre-stopped token. The stop
+        // callback fires during initiation, before the op is in any
+        // descriptor slot, and the wait completes canceled.
+        std::stop_source ss;
+        ss.request_stop();
+
+        std::error_code first_ec;
+        bool first_done = false;
+        auto first = [&]() -> capy::task<> {
+            auto [ec] = co_await s1.wait(wait_type::write);
+            first_ec   = ec;
+            first_done = true;
+        };
+        capy::run_async(ex, ss.get_token())(first());
+        ioc.run();
+        ioc.restart();
+
+        // Whether the first wait reports canceled or the probe's
+        // success is immaterial here; the subject is what its cancel
+        // left behind.
+        BOOST_TEST(first_done);
+        (void)first_ec;
+
+        // Second wait: full buffer, fresh token. It must park and
+        // complete on the drain — not absorb the first wait's cancel.
+        auto filled = fill_send_buffer(s1.native_handle());
+        if (filled == 0)
+            return; // the platform refuses to backpressure
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+        bool drained   = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            for (;;)
+            {
+                auto [ec] = co_await s1.wait(wait_type::write);
+                wait_ec   = ec;
+                wait_done = true;
+                if (ec)
+                    break;
+                BOOST_TEST(socket_writable(s1.native_handle()));
+                if (drained)
+                    break;
+            }
+        };
+        auto drainer = [&]() -> capy::task<> {
+            std::array<char, 8192> sink{};
+            std::size_t got = 0;
+            while (got < filled)
+            {
+                auto [ec, n] = co_await s2.read_some(
+                    capy::mutable_buffer(sink.data(), sink.size()));
+                if (ec)
+                    break;
+                got += n;
+                drained = true;
+            }
+        };
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(drainer());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(!wait_ec);
+        BOOST_TEST(drained);
+    }
+
     // UDP wait_read fires when a datagram arrives.
     void testWaitOnUdp()
     {
@@ -848,6 +925,7 @@ struct wait_test
         testWaitWriteReady();
         testWaitWriteParksUntilDrained();
         testWaitWriteCancel();
+        testWaitWriteCancelDoesNotLeak();
         testAcceptorWait();
         testWaitOnLocalStream();
         testWaitOnUdp();
