@@ -2190,7 +2190,19 @@ struct tcp_socket_test
 
         auto dg = make_native_socket(AF_INET, SOCK_DGRAM);
         BOOST_TEST(dg != invalid_native_socket);
-        expect_throw(dg);
+        {
+            // The rejection code is part of the portable contract.
+            std::error_code rejected;
+            try
+            {
+                sock.assign(dg);
+            }
+            catch (std::system_error const& e)
+            {
+                rejected = e.code();
+            }
+            BOOST_TEST(rejected == std::errc::wrong_protocol_type);
+        }
         BOOST_TEST(native_socket_valid(dg)); // caller keeps it
         close_native_socket(dg);
 
