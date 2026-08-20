@@ -95,7 +95,7 @@ struct native_stream_file_test
         io_context ioc(Backend);
         temp_file tmp("native_sf_slice_", "x");
         native_stream_file<Backend> f(ioc);
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         stream_file& base = f;
         BOOST_TEST(base.is_open());
@@ -108,7 +108,7 @@ struct native_stream_file_test
 
         io_context ioc(Backend);
         native_stream_file<Backend> f(ioc);
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         char buf[64] = {};
         std::size_t n_out = 0;
@@ -132,9 +132,9 @@ struct native_stream_file_test
 
         io_context ioc(Backend);
         native_stream_file<Backend> f(ioc);
-        f.open(
+        BOOST_TEST(!f.open(
             tmp.path,
-            file_base::write_only | file_base::create | file_base::truncate);
+            file_base::write_only | file_base::create | file_base::truncate));
 
         char const msg[] = "native write";
         std::size_t written = 0;
@@ -165,7 +165,7 @@ struct native_stream_file_test
 
         io_context ioc(Backend);
         native_stream_file<Backend> f(ioc);
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         stream_file& base = f;
 

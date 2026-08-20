@@ -306,7 +306,7 @@ testFailureCases(StreamFactory make_stream)
     {
         auto client_ctx = make_client_context();
         auto server_ctx = make_anon_context();
-        server_ctx.set_ciphersuites(""); // NOLINT(bugprone-unused-return-value)
+        (void)server_ctx.set_ciphersuites("");
         run_tls_test_fail(
             ioc, client_ctx, server_ctx, make_stream, make_stream);
         ioc.restart();
@@ -848,15 +848,15 @@ testHostnameIpLiteral(StreamFactory make_stream, bool ip_supported)
 
     // NOLINTBEGIN(bugprone-unused-return-value)
     tls_context client_ctx;
-    client_ctx.add_certificate_authority(test::server_ip_cert_pem);
-    client_ctx.set_verify_mode(tls_verify_mode::peer);
+    require_ok(client_ctx.add_certificate_authority(test::server_ip_cert_pem));
+    require_ok(client_ctx.set_verify_mode(tls_verify_mode::peer));
 
     tls_context server_ctx;
-    server_ctx.use_certificate(
-        test::server_ip_cert_pem, tls_file_format::pem);
-    server_ctx.use_private_key(
-        test::server_ip_key_pem, tls_file_format::pem);
-    server_ctx.set_verify_mode(tls_verify_mode::none);
+    require_ok(server_ctx.use_certificate(
+        test::server_ip_cert_pem, tls_file_format::pem));
+    require_ok(server_ctx.use_private_key(
+        test::server_ip_key_pem, tls_file_format::pem));
+    require_ok(server_ctx.set_verify_mode(tls_verify_mode::none));
     // NOLINTEND(bugprone-unused-return-value)
 
     std::size_t sni_count = 0;
@@ -954,22 +954,17 @@ testCrlRevocation(StreamFactory make_stream, bool crl_supported)
 {
     auto revoked_server = []() {
         tls_context ctx;
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.use_certificate(revoked_leaf_cert_pem, tls_file_format::pem);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.use_private_key(revoked_leaf_key_pem, tls_file_format::pem);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.set_verify_mode(tls_verify_mode::none);
+        require_ok(ctx.use_certificate(revoked_leaf_cert_pem, tls_file_format::pem));
+        require_ok(ctx.use_private_key(revoked_leaf_key_pem, tls_file_format::pem));
+        require_ok(ctx.set_verify_mode(tls_verify_mode::none));
         return ctx;
     };
     auto revoking_client = [](tls_revocation_policy policy, bool load_crl) {
         tls_context ctx;
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.add_certificate_authority(root_ca_cert_pem);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.set_verify_mode(tls_verify_mode::peer);
+        require_ok(ctx.add_certificate_authority(root_ca_cert_pem));
+        require_ok(ctx.set_verify_mode(tls_verify_mode::peer));
         if (load_crl)
-            ctx.add_crl(revoked_crl_pem); // NOLINT(bugprone-unused-return-value)
+            (void)ctx.add_crl(revoked_crl_pem);
         ctx.set_revocation_policy(policy);
         return ctx;
     };
@@ -1014,12 +1009,9 @@ testCrlRevocation(StreamFactory make_stream, bool crl_supported)
     {
         io_context ioc;
         tls_context client_ctx;
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.add_certificate_authority(root_ca_cert_pem);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.set_verify_mode(tls_verify_mode::peer);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.add_crl("this is not a valid PEM or DER CRL");
+        require_ok(client_ctx.add_certificate_authority(root_ca_cert_pem));
+        require_ok(client_ctx.set_verify_mode(tls_verify_mode::peer));
+        (void)client_ctx.add_crl("this is not a valid PEM or DER CRL");
         client_ctx.set_revocation_policy(tls_revocation_policy::soft_fail);
         auto server_ctx = revoked_server();
         run_tls_test_fail(
@@ -1033,8 +1025,7 @@ testCrlRevocation(StreamFactory make_stream, bool crl_supported)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.add_crl(revoked_crl_pem); // policy left disabled
+        (void)client_ctx.add_crl(revoked_crl_pem); // policy left disabled
         auto server_ctx = make_server_context();
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
@@ -1065,10 +1056,8 @@ testPkcs12(StreamFactory make_stream)
         io_context ioc;
         auto client_ctx = make_client_context();
         tls_context server_ctx;
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.use_pkcs12(p12, p12_password);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.set_verify_mode(tls_verify_mode::none);
+        require_ok(server_ctx.use_pkcs12(p12, p12_password));
+        require_ok(server_ctx.set_verify_mode(tls_verify_mode::none));
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
 
@@ -1077,10 +1066,8 @@ testPkcs12(StreamFactory make_stream)
         io_context ioc;
         auto client_ctx = make_client_context();
         tls_context server_ctx;
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.use_pkcs12(p12, "wrong-password");
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.set_verify_mode(tls_verify_mode::none);
+        require_ok(server_ctx.use_pkcs12(p12, "wrong-password"));
+        require_ok(server_ctx.set_verify_mode(tls_verify_mode::none));
         run_tls_test_fail(
             ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
@@ -1094,14 +1081,10 @@ testPkcs12(StreamFactory make_stream)
         io_context ioc;
         auto client_ctx = make_client_context();
         tls_context server_ctx;
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.use_pkcs12(p12, p12_password);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.use_certificate(expired_cert_pem, tls_file_format::pem);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.use_private_key(expired_key_pem, tls_file_format::pem);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.set_verify_mode(tls_verify_mode::none);
+        require_ok(server_ctx.use_pkcs12(p12, p12_password));
+        require_ok(server_ctx.use_certificate(expired_cert_pem, tls_file_format::pem));
+        require_ok(server_ctx.use_private_key(expired_key_pem, tls_file_format::pem));
+        require_ok(server_ctx.set_verify_mode(tls_verify_mode::none));
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
 
@@ -1113,11 +1096,9 @@ testPkcs12(StreamFactory make_stream)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.use_pkcs12(p12, "wrong-password");
+        require_ok(client_ctx.use_pkcs12(p12, "wrong-password"));
         auto server_ctx = make_server_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.set_verify_mode(tls_verify_mode::peer);
+        require_ok(server_ctx.set_verify_mode(tls_verify_mode::peer));
         run_tls_test_fail(
             ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
@@ -1142,10 +1123,8 @@ testPkcs12Chain(StreamFactory make_stream)
     io_context ioc;
     auto client_ctx = make_rootonly_client_context();
     tls_context server_ctx;
-    // NOLINTNEXTLINE(bugprone-unused-return-value)
-    server_ctx.use_pkcs12(p12, p12_password);
-    // NOLINTNEXTLINE(bugprone-unused-return-value)
-    server_ctx.set_verify_mode(tls_verify_mode::none);
+    require_ok(server_ctx.use_pkcs12(p12, p12_password));
+    require_ok(server_ctx.set_verify_mode(tls_verify_mode::none));
     run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
 }
 
@@ -1204,8 +1183,7 @@ testDefaultVerifyPaths(StreamFactory make_stream)
     auto client_ctx = make_client_context();
     // Adding the system store on top of the explicit CA must not break
     // context creation or verification.
-    // NOLINTNEXTLINE(bugprone-unused-return-value)
-    client_ctx.set_default_verify_paths();
+    require_ok(client_ctx.set_default_verify_paths());
 
     auto server_ctx = make_server_context();
     run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
@@ -1229,10 +1207,8 @@ testCiphersuitesTls13(
 {
     auto make_ctx = [&](auto base, char const* suite) {
         auto ctx = base();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.set_min_protocol_version(tls_version::tls_1_3);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.set_ciphersuites_tls13(suite);
+        require_ok(ctx.set_min_protocol_version(tls_version::tls_1_3));
+        require_ok(ctx.set_ciphersuites_tls13(suite));
         return ctx;
     };
 
@@ -1281,11 +1257,9 @@ testProtocolVersion(StreamFactory make_stream)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.set_min_protocol_version(tls_version::tls_1_3);
+        require_ok(client_ctx.set_min_protocol_version(tls_version::tls_1_3));
         auto server_ctx = make_server_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.set_min_protocol_version(tls_version::tls_1_3);
+        require_ok(server_ctx.set_min_protocol_version(tls_version::tls_1_3));
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
 
@@ -1293,11 +1267,9 @@ testProtocolVersion(StreamFactory make_stream)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.set_max_protocol_version(tls_version::tls_1_2);
+        require_ok(client_ctx.set_max_protocol_version(tls_version::tls_1_2));
         auto server_ctx = make_server_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        server_ctx.set_min_protocol_version(tls_version::tls_1_3);
+        require_ok(server_ctx.set_min_protocol_version(tls_version::tls_1_3));
         run_tls_test_fail(
             ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
@@ -1308,10 +1280,8 @@ testProtocolVersion(StreamFactory make_stream)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.set_min_protocol_version(tls_version::tls_1_3);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.set_max_protocol_version(tls_version::tls_1_2);
+        require_ok(client_ctx.set_min_protocol_version(tls_version::tls_1_3));
+        require_ok(client_ctx.set_max_protocol_version(tls_version::tls_1_2));
         auto server_ctx = make_server_context();
         run_tls_test_fail(
             ioc, client_ctx, server_ctx, make_stream, make_stream);
@@ -1336,11 +1306,9 @@ testAlpn(StreamFactory make_stream, bool alpn_supported)
     auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
 
     auto client_ctx = make_client_context();
-    // NOLINTNEXTLINE(bugprone-unused-return-value)
-    client_ctx.set_alpn({"h2", "http/1.1"});
+    require_ok(client_ctx.set_alpn({"h2", "http/1.1"}));
     auto server_ctx = make_server_context();
-    // NOLINTNEXTLINE(bugprone-unused-return-value)
-    server_ctx.set_alpn({"h2", "http/1.1"});
+    require_ok(server_ctx.set_alpn({"h2", "http/1.1"}));
 
     auto client = make_stream(m1, client_ctx);
     auto server = make_stream(m2, server_ctx);
@@ -1399,11 +1367,9 @@ testAlpnNoOverlap(StreamFactory make_stream, bool alpn_supported)
 
     io_context ioc;
     auto client_ctx = make_client_context();
-    // NOLINTNEXTLINE(bugprone-unused-return-value)
-    client_ctx.set_alpn({"h2"});
+    require_ok(client_ctx.set_alpn({"h2"}));
     auto server_ctx = make_server_context();
-    // NOLINTNEXTLINE(bugprone-unused-return-value)
-    server_ctx.set_alpn({"http/1.1"});
+    require_ok(server_ctx.set_alpn({"http/1.1"}));
     run_tls_test_fail(ioc, client_ctx, server_ctx, make_stream, make_stream);
 }
 
@@ -1440,11 +1406,10 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
         {
             io_context ioc;
             auto client_ctx = make_client_context();
-            // NOLINTNEXTLINE(bugprone-unused-return-value)
-            client_ctx.set_verify_callback(
+            require_ok(client_ctx.set_verify_callback(
                 [](bool preverified, verify_context&) -> bool {
                     return preverified;
-                });
+                }));
             auto server_ctx = make_server_context();
             std::error_code client_ec;
             run_tls_test_fail(
@@ -1462,11 +1427,10 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
             auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
             (void)m2;
             auto client_ctx = make_client_context();
-            // NOLINTNEXTLINE(bugprone-unused-return-value)
-            client_ctx.set_verify_callback(
+            require_ok(client_ctx.set_verify_callback(
                 [](bool preverified, verify_context&) -> bool {
                     return preverified;
-                });
+                }));
             auto client = make_stream(m1, client_ctx);
 
             std::error_code ec1;
@@ -1498,8 +1462,7 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
         bool saw_unverified = false;
 
         auto client_ctx = make_wrong_ca_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.set_verify_callback(
+        require_ok(client_ctx.set_verify_callback(
             [&saw_unverified](bool preverified, verify_context& vc) -> bool {
                 if (!preverified)
                 {
@@ -1515,7 +1478,7 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
                         BOOST_TEST(der[0] == 0x30);
                 }
                 return true;
-            });
+            }));
 
         auto server_ctx = make_server_context();
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
@@ -1526,9 +1489,8 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
     {
         io_context ioc;
         auto client_ctx = make_wrong_ca_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.set_verify_callback(
-            [](bool, verify_context&) -> bool { return false; });
+        require_ok(client_ctx.set_verify_callback(
+            [](bool, verify_context&) -> bool { return false; }));
 
         auto server_ctx = make_server_context();
         run_tls_test_fail(
@@ -1557,15 +1519,14 @@ testVerifyCallbackOnSuccess(StreamFactory make_stream)
         bool saw_cert = false;
 
         auto client_ctx = make_client_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.set_verify_callback(
+        require_ok(client_ctx.set_verify_callback(
             [&](bool preverified, verify_context& vc) -> bool {
                 invoked = true;
                 if (preverified && !vc.certificate().empty() &&
                     vc.certificate()[0] == 0x30)
                     saw_cert = true;
                 return preverified;
-            });
+            }));
 
         auto server_ctx = make_server_context();
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
@@ -1577,9 +1538,8 @@ testVerifyCallbackOnSuccess(StreamFactory make_stream)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.set_verify_callback(
-            [](bool, verify_context&) -> bool { return false; });
+        require_ok(client_ctx.set_verify_callback(
+            [](bool, verify_context&) -> bool { return false; }));
 
         auto server_ctx = make_server_context();
         run_tls_test_fail(
@@ -1592,14 +1552,13 @@ testVerifyCallbackOnSuccess(StreamFactory make_stream)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        client_ctx.set_verify_callback(
+        require_ok(client_ctx.set_verify_callback(
             [](bool preverified, verify_context& vc) -> bool {
                 if (!preverified)
                     return false;
                 auto der = vc.certificate();
                 return der.size() == 1 && der[0] == 0xFF; // never matches
-            });
+            }));
 
         auto server_ctx = make_server_context();
         run_tls_test_fail(
@@ -1821,12 +1780,11 @@ testInvalidContextHandshake(StreamFactory make_stream)
     auto client_ctx = make_client_context();
 
     tls_context server_ctx;
-    // NOLINTNEXTLINE(bugprone-unused-return-value)
-    server_ctx.use_certificate("not a certificate", tls_file_format::pem);
-    // NOLINTNEXTLINE(bugprone-unused-return-value)
-    server_ctx.use_private_key("not a key", tls_file_format::pem);
-    // NOLINTNEXTLINE(bugprone-unused-return-value)
-    server_ctx.set_verify_mode(tls_verify_mode::none);
+    // The setters may reject the garbage eagerly or defer to the
+    // handshake; the handshake failure below is what is asserted.
+    (void)server_ctx.use_certificate("not a certificate", tls_file_format::pem);
+    (void)server_ctx.use_private_key("not a key", tls_file_format::pem);
+    require_ok(server_ctx.set_verify_mode(tls_verify_mode::none));
 
     auto client = make_stream(m1, client_ctx);
     auto server = make_stream(m2, server_ctx);
@@ -3862,7 +3820,7 @@ testShutdownTruncation(StreamFactory make_stream)
     // inbound bytes (e.g. a post-handshake session ticket), which
     // would otherwise turn the FIN into an RST and hit a different
     // (already-propagated) error path than the one under test.
-    m1.socket().shutdown(shutdown_send);
+    BOOST_TEST(!m1.socket().shutdown(shutdown_send));
 
     bool shutdown_done = false;
     bool failsafe_hit  = false;

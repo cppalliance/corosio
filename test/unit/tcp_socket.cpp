@@ -137,8 +137,11 @@ struct tcp_socket_test
         tcp_socket sock(ioc);
 
         // Open the tcp_socket
-        sock.open();
+        BOOST_TEST(!sock.open());
         BOOST_TEST_EQ(sock.is_open(), true);
+
+        // Opening an already-open socket is a successful no-op
+        BOOST_TEST(!sock.open());
 
         // Close it
         sock.close();
@@ -149,7 +152,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         // Bind to loopback with ephemeral port
         auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
@@ -168,11 +171,11 @@ struct tcp_socket_test
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-        sock.open();
+        BOOST_TEST(!sock.open());
         BOOST_TEST(sock.is_open());
 
         // Second open() on an already-open socket is a no-op.
-        sock.open();
+        BOOST_TEST(!sock.open());
         BOOST_TEST(sock.is_open());
     }
 
@@ -199,7 +202,7 @@ struct tcp_socket_test
         // Closed: returns the platform sentinel.
         BOOST_TEST(sock.native_handle() == invalid);
 
-        sock.open();
+        BOOST_TEST(!sock.open());
         BOOST_TEST(sock.native_handle() != invalid);
         sock.close();
     }
@@ -209,7 +212,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -219,7 +222,7 @@ struct tcp_socket_test
 
         tcp_socket client(ioc);
         tcp_socket server(ioc);
-        client.open();
+        BOOST_TEST(!client.open());
 
         // Bind client to specific local address before connecting
         ec = client.bind(endpoint(ipv4_address::loopback(), 0));
@@ -276,7 +279,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open(tcp::v6());
+        BOOST_TEST(!sock.open(tcp::v6()));
 
         auto ec = sock.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -294,14 +297,14 @@ struct tcp_socket_test
 
         // Bind first socket to a specific port
         tcp_socket sock1(ioc);
-        sock1.open();
+        BOOST_TEST(!sock1.open());
         auto ec = sock1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         auto port = sock1.local_endpoint().port();
 
         // Second bind to same port should fail
         tcp_socket sock2(ioc);
-        sock2.open();
+        BOOST_TEST(!sock2.open());
         ec = sock2.bind(endpoint(ipv4_address::loopback(), port));
         BOOST_TEST(ec);
 
@@ -313,7 +316,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         auto ec = sock.bind(endpoint(ipv4_address("1.2.3.4"), 0));
         BOOST_TEST(ec);
@@ -325,7 +328,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock1(ioc);
-        sock1.open();
+        BOOST_TEST(!sock1.open());
         BOOST_TEST_EQ(sock1.is_open(), true);
 
         // Move construct
@@ -341,7 +344,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
         tcp_socket sock1(ioc);
         tcp_socket sock2(ioc);
-        sock1.open();
+        BOOST_TEST(!sock1.open());
         BOOST_TEST_EQ(sock1.is_open(), true);
         BOOST_TEST_EQ(sock2.is_open(), false);
 
@@ -986,7 +989,7 @@ struct tcp_socket_test
             // Write data then shutdown send
             // (unqualified: using enum avoids GCC 11 ICE in tsubst_copy)
             (void)co_await a.write_some(capy::const_buffer("hello", 5));
-            a.shutdown(shutdown_send);
+            BOOST_TEST(!a.shutdown(shutdown_send));
 
             // Read the data
             char buf[32] = {};
@@ -1015,7 +1018,7 @@ struct tcp_socket_test
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Shutdown receive on b
-            b.shutdown(shutdown_receive);
+            BOOST_TEST(!b.shutdown(shutdown_receive));
 
             // b can still send
             (void)co_await b.write_some(capy::const_buffer("from_b", 6));
@@ -1038,10 +1041,13 @@ struct tcp_socket_test
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-        // Shutdown on closed tcp_socket should not crash
-        sock.shutdown(shutdown_send);
-        sock.shutdown(shutdown_receive);
-        sock.shutdown(shutdown_both);
+        // Closed socket reports bad_file_descriptor
+        BOOST_TEST(sock.shutdown(shutdown_send)
+                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(sock.shutdown(shutdown_receive)
+                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(sock.shutdown(shutdown_both)
+                   == std::errc::bad_file_descriptor);
     }
 
     void testShutdownBothSendDirection()
@@ -1053,7 +1059,7 @@ struct tcp_socket_test
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then shutdown both
             (void)co_await a.write_some(capy::const_buffer("goodbye", 7));
-            a.shutdown(shutdown_both);
+            BOOST_TEST(!a.shutdown(shutdown_both));
 
             // Peer should receive the data
             char buf[32] = {};
@@ -1080,7 +1086,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         sock.set_option(socket_option::no_delay(true));
         BOOST_TEST_EQ(sock.get_option<socket_option::no_delay>().value(), true);
@@ -1099,7 +1105,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         sock.set_option(socket_option::keep_alive(true));
         BOOST_TEST_EQ(
@@ -1120,7 +1126,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         int initial_size =
             sock.get_option<socket_option::receive_buffer_size>().value();
@@ -1138,7 +1144,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         int initial_size =
             sock.get_option<socket_option::send_buffer_size>().value();
@@ -1156,7 +1162,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         sock.set_option(socket_option::linger(true, 5));
         auto opts = sock.get_option<socket_option::linger>();
@@ -1214,7 +1220,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         sock.set_option(socket_option::no_delay(true));
         BOOST_TEST(sock.get_option<socket_option::no_delay>().value());
@@ -1229,7 +1235,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         sock.set_option(socket_option::receive_buffer_size(32768));
         int sz = sock.get_option<socket_option::receive_buffer_size>().value();
@@ -1242,7 +1248,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         sock.set_option(socket_option::linger(true, 5));
         auto lg = sock.get_option<socket_option::linger>();
@@ -1256,7 +1262,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         // boolean assignment and negation
         socket_option::no_delay nd(false);
@@ -1385,7 +1391,7 @@ struct tcp_socket_test
         tcp_acceptor acc(ioc);
 
         // Bind to loopback with port 0 (ephemeral)
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto listen_ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         if (!listen_ec)
@@ -1399,7 +1405,7 @@ struct tcp_socket_test
 
         tcp_socket client(ioc);
         tcp_socket server(ioc);
-        client.open();
+        BOOST_TEST(!client.open());
 
         auto task = [&]() -> capy::task<> {
             // Connect to the acceptor
@@ -1458,7 +1464,7 @@ struct tcp_socket_test
         bool found              = false;
         for (int attempt = 0; attempt < 100; ++attempt)
         {
-            acc.open();
+            BOOST_TEST(!acc.open());
             acc.set_option(socket_option::reuse_address(true));
             if (!acc.bind(endpoint(ipv4_address::loopback(), test_port)) &&
                 !acc.listen())
@@ -1484,7 +1490,7 @@ struct tcp_socket_test
 
         tcp_socket client(ioc);
         tcp_socket server(ioc);
-        client.open();
+        BOOST_TEST(!client.open());
 
         auto task = [&]() -> capy::task<> {
             auto [ec] = co_await client.connect(
@@ -1532,7 +1538,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         // Open but unconnected tcp_socket should return default endpoint
         BOOST_TEST(sock.local_endpoint() == endpoint{});
@@ -1545,7 +1551,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         auto task = [&]() -> capy::task<> {
             // Connect to an unreachable address (localhost on unlikely port)
@@ -1667,7 +1673,7 @@ struct tcp_socket_test
         BOOST_TEST(s1.remote_endpoint() == endpoint{});
 
         // Reopen the tcp_socket
-        s1.open();
+        BOOST_TEST(!s1.open());
 
         // After reopen (but before connect), endpoints should still be default
         BOOST_TEST(s1.local_endpoint() == endpoint{});
@@ -1779,7 +1785,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        acc.open(tcp::v6());
+        BOOST_TEST(!acc.open(tcp::v6()));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         if (!ec)
@@ -1837,7 +1843,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         if (!ec)
@@ -1891,7 +1897,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         if (!ec)
@@ -1901,7 +1907,7 @@ struct tcp_socket_test
 
         tcp_socket s1(ioc);
         tcp_socket s2(ioc);
-        s2.open();
+        BOOST_TEST(!s2.open());
         s2.set_option(socket_option::no_delay(true));
         BOOST_TEST(s2.get_option<socket_option::no_delay>());
 
@@ -1947,7 +1953,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        acc.open(tcp::v6());
+        BOOST_TEST(!acc.open(tcp::v6()));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         if (!ec)
@@ -2037,7 +2043,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open(tcp::v6()); // IPv6
+        BOOST_TEST(!sock.open(tcp::v6())); // IPv6
 
         // Default is v6only=true (kernel default after open_socket sets it)
         BOOST_TEST_EQ(sock.get_option<socket_option::v6_only>().value(), true);
@@ -2057,7 +2063,7 @@ struct tcp_socket_test
 
         // Dual-stack listener (v6only=false is the default)
         tcp_acceptor acc(ioc);
-        acc.open(tcp::v6());
+        BOOST_TEST(!acc.open(tcp::v6()));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::any(), 0));
         if (!ec)
@@ -2067,7 +2073,7 @@ struct tcp_socket_test
 
         tcp_socket s1(ioc);
         tcp_socket s2(ioc);
-        s2.open(tcp::v6()); // IPv6 socket
+        BOOST_TEST(!s2.open(tcp::v6())); // IPv6 socket
         s2.set_option(socket_option::v6_only(false));
 
         bool accept_done  = false;
@@ -2115,7 +2121,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -2129,7 +2135,7 @@ struct tcp_socket_test
         make_native_adoptable(nfd);
 
         tcp_socket adopted(ioc);
-        adopted.assign(nfd);
+        BOOST_TEST(!adopted.assign(nfd));
         BOOST_TEST(adopted.is_open());
         BOOST_TEST(adopted.native_handle() == nfd);
         BOOST_TEST_EQ(adopted.remote_endpoint().port(), port);
@@ -2172,36 +2178,18 @@ struct tcp_socket_test
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-        auto expect_throw = [&](native_handle_type h) {
-            bool threw = false;
-            try
-            {
-                sock.assign(h);
-            }
-            catch (std::system_error const&)
-            {
-                threw = true;
-            }
-            BOOST_TEST(threw);
+        auto expect_error = [&](native_handle_type h) {
+            BOOST_TEST(sock.assign(h));
         };
 
-        expect_throw(invalid_native_socket);
+        expect_error(invalid_native_socket);
         BOOST_TEST(!sock.is_open());
 
         auto dg = make_native_socket(AF_INET, SOCK_DGRAM);
         BOOST_TEST(dg != invalid_native_socket);
         {
             // The rejection code is part of the portable contract.
-            std::error_code rejected;
-            try
-            {
-                sock.assign(dg);
-            }
-            catch (std::system_error const& e)
-            {
-                rejected = e.code();
-            }
-            BOOST_TEST(rejected == std::errc::wrong_protocol_type);
+            BOOST_TEST(sock.assign(dg) == std::errc::wrong_protocol_type);
         }
         BOOST_TEST(native_socket_valid(dg)); // caller keeps it
         close_native_socket(dg);
@@ -2209,13 +2197,13 @@ struct tcp_socket_test
 #if BOOST_COROSIO_POSIX
         auto un = make_native_socket(AF_UNIX, SOCK_STREAM);
         BOOST_TEST(un != invalid_native_socket);
-        expect_throw(un);
+        expect_error(un);
         BOOST_TEST(native_socket_valid(un));
         close_native_socket(un);
 #endif
 
-        sock.open(tcp::v4());
-        expect_throw(sock.native_handle());
+        BOOST_TEST(!sock.open(tcp::v4()));
+        expect_error(sock.native_handle());
         BOOST_TEST(sock.is_open());
         sock.close();
     }
@@ -2231,16 +2219,7 @@ struct tcp_socket_test
 
         auto dg = make_native_socket(AF_INET, SOCK_DGRAM);
         BOOST_TEST(dg != invalid_native_socket);
-        bool threw = false;
-        try
-        {
-            s1.assign(dg);
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        BOOST_TEST(s1.assign(dg));
         BOOST_TEST(native_socket_valid(dg));
         close_native_socket(dg);
 
@@ -2274,7 +2253,7 @@ struct tcp_socket_test
         tcp_socket& s1 = pair.first;
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -2300,7 +2279,7 @@ struct tcp_socket_test
             read_done = true;
         };
         auto adopter = [&]() -> capy::task<> {
-            s1.assign(nfd);
+            BOOST_TEST(!s1.assign(nfd));
             auto [aec, peer] = co_await acc.accept();
             BOOST_TEST(!aec);
             char const out[] = "ping";
@@ -2409,7 +2388,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        acc.open(tcp::v6());
+        BOOST_TEST(!acc.open(tcp::v6()));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         if (ec)
@@ -2429,7 +2408,7 @@ struct tcp_socket_test
         make_native_adoptable(nfd);
 
         tcp_socket adopted(ioc);
-        adopted.assign(nfd);
+        BOOST_TEST(!adopted.assign(nfd));
         BOOST_TEST(adopted.is_open());
         BOOST_TEST(adopted.local_endpoint().is_v6());
         BOOST_TEST(adopted.remote_endpoint().is_v6());

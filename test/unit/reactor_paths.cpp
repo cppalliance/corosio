@@ -123,7 +123,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         std::error_code conn_ec;
         bool conn_done = false;
@@ -164,7 +164,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         // Use port 1 which is well-known reserved and very unlikely to
         // be listening; the resulting connect will get RST or fail.
@@ -424,7 +424,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
@@ -455,7 +455,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
@@ -491,7 +491,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -519,7 +519,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -552,7 +552,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -583,8 +583,8 @@ struct reactor_paths_test
         // Use a connected pair to avoid sendto address issues.
         udp_socket s1(ioc);
         udp_socket s2(ioc);
-        s1.open(udp::v4());
-        s2.open(udp::v4());
+        BOOST_TEST(!s1.open(udp::v4()));
+        BOOST_TEST(!s2.open(udp::v4()));
         auto e1 = s1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!e1);
         auto e2 = s2.bind(endpoint(ipv4_address::loopback(), 0));
@@ -633,8 +633,8 @@ struct reactor_paths_test
 
         udp_socket s1(ioc);
         udp_socket s2(ioc);
-        s1.open(udp::v4());
-        s2.open(udp::v4());
+        BOOST_TEST(!s1.open(udp::v4()));
+        BOOST_TEST(!s2.open(udp::v4()));
         auto e1 = s1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!e1);
         auto e2 = s2.bind(endpoint(ipv4_address::loopback(), 0));
@@ -679,8 +679,8 @@ struct reactor_paths_test
 
         udp_socket s1(ioc);
         udp_socket s2(ioc);
-        s1.open(udp::v4());
-        s2.open(udp::v4());
+        BOOST_TEST(!s1.open(udp::v4()));
+        BOOST_TEST(!s2.open(udp::v4()));
         auto e1 = s1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!e1);
         auto e2 = s2.bind(endpoint(ipv4_address::loopback(), 0));
@@ -717,7 +717,7 @@ struct reactor_paths_test
 
         bool ok = false;
         auto task = [&]() -> capy::task<> {
-            s1.shutdown(shutdown_both);
+            BOOST_TEST(!s1.shutdown(shutdown_both));
             ok = true;
             co_return;
         };
@@ -735,7 +735,7 @@ struct reactor_paths_test
 
         bool ok = false;
         auto task = [&]() -> capy::task<> {
-            s1.shutdown(shutdown_receive);
+            BOOST_TEST(!s1.shutdown(shutdown_receive));
             ok = true;
             co_return;
         };
@@ -752,7 +752,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -797,14 +797,14 @@ struct reactor_paths_test
         for (int i = 0; i < N; ++i)
         {
             accs.emplace_back(ioc);
-            accs.back().open();
+            BOOST_TEST(!accs.back().open());
             accs.back().set_option(socket_option::reuse_address(true));
             BOOST_TEST(!accs.back().bind(endpoint(ipv4_address::loopback(), 0)));
             BOOST_TEST(!accs.back().listen());
             ports.push_back(accs.back().local_endpoint().port());
             peers.emplace_back(ioc);
             clients.emplace_back(ioc);
-            clients.back().open();
+            BOOST_TEST(!clients.back().open());
         }
 
         std::array<bool, N> accept_done{};
@@ -908,8 +908,8 @@ struct reactor_paths_test
 
         udp_socket s1(ioc);
         udp_socket s2(ioc);
-        s1.open(udp::v4());
-        s2.open(udp::v4());
+        BOOST_TEST(!s1.open(udp::v4()));
+        BOOST_TEST(!s2.open(udp::v4()));
         auto e1 = s1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!e1);
         auto e2 = s2.bind(endpoint(ipv4_address::loopback(), 0));
@@ -962,7 +962,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -999,7 +999,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
@@ -1047,7 +1047,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
@@ -1112,7 +1112,7 @@ struct reactor_paths_test
         auto port = ntohs(addr.sin_port);
 
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         auto [t1, t2] = test::make_socket_pair(ioc);
 
@@ -1277,12 +1277,12 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket rsock(ioc);
-        rsock.open(udp::v4());
+        BOOST_TEST(!rsock.open(udp::v4()));
         auto bec = rsock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
         udp_socket ssock(ioc);
-        ssock.open(udp::v4());
+        BOOST_TEST(!ssock.open(udp::v4()));
 
         std::error_code wait_ec;
         bool wait_done     = false;
@@ -1356,19 +1356,10 @@ struct reactor_paths_test
         BOOST_TEST(tcp_fd >= 0);
 
         local_stream_socket sock(ioc);
-        bool threw = false;
-        try
-        {
-            sock.assign(tcp_fd);
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
-        // assign may throw on wrong type/family; cleanup if owned.
+        BOOST_TEST(sock.assign(tcp_fd));
+        // rejection leaves ownership with the caller
         if (!sock.is_open())
             ::close(tcp_fd);
-        BOOST_TEST(threw);
     }
 
     // Assign a stream-type fd (AF_UNIX SOCK_STREAM) to local_datagram_socket:
@@ -1381,18 +1372,9 @@ struct reactor_paths_test
         BOOST_TEST(fd >= 0);
 
         local_datagram_socket sock(ioc);
-        bool threw = false;
-        try
-        {
-            sock.assign(fd);
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
+        BOOST_TEST(sock.assign(fd));
         if (!sock.is_open())
             ::close(fd);
-        BOOST_TEST(threw);
     }
     // Local stream socket wait_type::error then cancel. Exercises the
     // local-endpoint specialization of reactor_stream_socket.
@@ -1655,7 +1637,7 @@ struct reactor_paths_test
 
         std::error_code ec;
         auto task = [&]() -> capy::task<> {
-            s1.shutdown(shutdown_both, ec);
+            ec = s1.shutdown(shutdown_both);
             co_return;
         };
         capy::run_async(ioc.get_executor())(task());
@@ -1673,7 +1655,7 @@ struct reactor_paths_test
 
         std::error_code ec;
         auto task = [&]() -> capy::task<> {
-            s1.shutdown(shutdown_receive, ec);
+            ec = s1.shutdown(shutdown_receive);
             co_return;
         };
         capy::run_async(ioc.get_executor())(task());
@@ -1793,7 +1775,7 @@ struct reactor_paths_test
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
         udp_socket u1(ioc);
-        u1.open(udp::v4());
+        BOOST_TEST(!u1.open(udp::v4()));
         auto bec = u1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 

@@ -22,8 +22,8 @@ namespace capy = boost::capy;
 
 capy::task<void> connect_example(corosio::io_context& ioc)
 {
+    // connect() opens the socket automatically
     corosio::tcp_socket s(ioc);
-    s.open();
 
     // Connect using structured bindings
     auto [ec] = co_await s.connect(

@@ -238,8 +238,10 @@ bind_one(corosio::tcp_server& server)
 bind_many(corosio::tcp_server& server)
 {
     // tag::bind_many[]
-    server.bind(corosio::endpoint(80));
-    server.bind(corosio::endpoint(443));
+    if (auto ec = server.bind(corosio::endpoint(80)))
+        return;  // report the error
+    if (auto ec = server.bind(corosio::endpoint(443)))
+        return;
     // end::bind_many[]
 }
 
@@ -255,8 +257,10 @@ start_server(corosio::tcp_server& server)
 multiple_ports(corosio::tcp_server& server)
 {
     // tag::multiple_ports[]
-    server.bind(corosio::endpoint(80));    // HTTP
-    server.bind(corosio::endpoint(443));   // HTTPS
+    if (auto ec = server.bind(corosio::endpoint(80)))    // HTTP
+        return;
+    if (auto ec = server.bind(corosio::endpoint(443)))   // HTTPS
+        return;
     server.start();
     // end::multiple_ports[]
 }

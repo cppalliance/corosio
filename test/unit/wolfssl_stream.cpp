@@ -145,10 +145,8 @@ struct wolfssl_stream_test
         {
             io_context ioc;
             tls_context client_ctx;
-            // NOLINTNEXTLINE(bugprone-unused-return-value)
-            client_ctx.add_verify_path(dir.string());
-            // NOLINTNEXTLINE(bugprone-unused-return-value)
-            client_ctx.set_verify_mode(tls_verify_mode::peer);
+            BOOST_TEST(!client_ctx.add_verify_path(dir.string()));
+            BOOST_TEST(!client_ctx.set_verify_mode(tls_verify_mode::peer));
 
             auto server_ctx = make_server_context();
             run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);

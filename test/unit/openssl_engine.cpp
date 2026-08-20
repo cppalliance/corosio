@@ -615,15 +615,14 @@ struct openssl_engine_test
     testPasswordTruncation()
     {
         tls_context ctx;
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
+        BOOST_TEST(
+            !ctx.use_certificate(test::server_cert_pem, tls_file_format::pem));
         ctx.set_password_callback(
             [](std::size_t, tls_password_purpose) {
                 return std::string(4096, 'x');
             });
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.use_private_key(
+        // The oversized password may fail here or latch for init().
+        (void)ctx.use_private_key(
             test::encrypted_server_key_pem, tls_file_format::pem);
 
         ossl_engine eng;
@@ -637,10 +636,10 @@ struct openssl_engine_test
     testGarbageDerCertificateFailsSetup()
     {
         tls_context ctx;
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        // Whether the garbage surfaces here or at init() is
+        // backend-dependent; the init failure below is what matters.
+        (void)ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
+        (void)ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
 
         ossl_engine eng;
         BOOST_TEST(!eng.init(ctx));

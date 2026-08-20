@@ -28,6 +28,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <tuple>
 
 #include "../common/http_protocol.hpp"
 #include "../../common/native_includes.hpp"
@@ -138,7 +139,7 @@ client_task(
         buf.erase(0, total_size);
     }
 
-    sock.shutdown(corosio::tcp_socket::shutdown_send);
+    std::ignore = sock.shutdown(corosio::tcp_socket::shutdown_send);
 }
 
 template<auto Backend>

@@ -44,7 +44,7 @@ struct socket_option_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         sock.set_option(socket_option::no_delay(true));
         BOOST_TEST(sock.get_option<socket_option::no_delay>().value());
@@ -81,7 +81,7 @@ struct socket_option_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -98,7 +98,7 @@ struct socket_option_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
 
         sock.set_option(socket_option::broadcast(true));
         BOOST_TEST(sock.get_option<socket_option::broadcast>().value());
@@ -120,7 +120,7 @@ struct socket_option_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
 
         sock.set_option(socket_option::multicast_loop_v4(false));
         BOOST_TEST(
@@ -140,7 +140,7 @@ struct socket_option_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open(udp::v6());
+        BOOST_TEST(!sock.open(udp::v6()));
 
         sock.set_option(socket_option::v6_only(true));
         BOOST_TEST(sock.get_option<socket_option::v6_only>().value());
@@ -183,7 +183,7 @@ struct socket_option_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
 
         bool threw = false;
         try

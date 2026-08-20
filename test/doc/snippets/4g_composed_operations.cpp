@@ -255,7 +255,7 @@ capy::task<> send_and_close(
     auto [ec, n] = co_await capy::write(
         s, capy::const_buffer(text.data(), text.size()));
     BOOST_TEST(!ec);
-    s.shutdown(corosio::shutdown_send);
+    BOOST_TEST(!s.shutdown(corosio::shutdown_send));
 }
 
 struct composed_operations_test

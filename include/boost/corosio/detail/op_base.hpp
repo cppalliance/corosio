@@ -87,7 +87,9 @@ public:
 
     bool await_ready() const noexcept
     {
-        return token_.stop_requested();
+        // A pre-set ec_ means the initiator failed before dispatch
+        // (e.g. auto-open); complete immediately with that error.
+        return static_cast<bool>(ec_) || token_.stop_requested();
     }
 
     [[nodiscard]] capy::io_result<> await_resume() const noexcept

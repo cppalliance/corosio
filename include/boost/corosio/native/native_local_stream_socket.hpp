@@ -175,7 +175,9 @@ class native_local_stream_socket : public local_stream_socket
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. auto-open).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<> await_resume() const noexcept
@@ -306,14 +308,15 @@ public:
 
         @return An awaitable yielding `io_result<>`.
 
-        @throws std::system_error if the socket needs to be opened
-            and the open fails.
+        If the socket needs to be opened and the open fails, the
+        awaitable completes immediately with that error.
     */
     auto connect(corosio::local_endpoint ep)
     {
+        native_connect_awaitable aw(*this, ep);
         if (!is_open())
-            open();
-        return native_connect_awaitable(*this, ep);
+            aw.ec_ = open();
+        return aw;
     }
 
     /** Asynchronously wait for the socket to be ready.

@@ -117,33 +117,32 @@ public:
         return static_cast<std::uint64_t>(st.st_size);
     }
 
-    void resize(std::uint64_t new_size) override
+    std::error_code resize(std::uint64_t new_size) noexcept override
     {
         if (new_size > static_cast<std::uint64_t>(
                 (std::numeric_limits<off_t>::max)()))
-            throw_system_error(
-                make_err(EOVERFLOW), "random_access_file::resize");
+            return make_err(EOVERFLOW);
         if (::ftruncate(fd_, static_cast<off_t>(new_size)) < 0)
-            throw_system_error(
-                make_err(errno), "random_access_file::resize");
+            return make_err(errno);
+        return {};
     }
 
-    void sync_data() override
+    std::error_code sync_data() noexcept override
     {
 #if BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
         if (::fdatasync(fd_) < 0)
 #else
         if (::fsync(fd_) < 0)
 #endif
-            throw_system_error(
-                make_err(errno), "random_access_file::sync_data");
+            return make_err(errno);
+        return {};
     }
 
-    void sync_all() override
+    std::error_code sync_all() noexcept override
     {
         if (::fsync(fd_) < 0)
-            throw_system_error(
-                make_err(errno), "random_access_file::sync_all");
+            return make_err(errno);
+        return {};
     }
 
     native_handle_type release() override
@@ -153,10 +152,11 @@ public:
         return fd;
     }
 
-    void assign(native_handle_type handle) override
+    std::error_code assign(native_handle_type handle) noexcept override
     {
         close_file();
         fd_ = handle;
+        return {};
     }
 
     // -- Internal --

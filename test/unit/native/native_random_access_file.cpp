@@ -101,7 +101,7 @@ struct native_random_access_file_test
         io_context ioc(Backend);
         temp_file tmp("native_raf_slice_", "x");
         native_random_access_file<Backend> f(ioc);
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         random_access_file& base = f;
         BOOST_TEST(base.is_open());
@@ -114,7 +114,7 @@ struct native_random_access_file_test
 
         io_context ioc(Backend);
         native_random_access_file<Backend> f(ioc);
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         char buf[5] = {};
         std::size_t n_out = 0;
@@ -138,9 +138,9 @@ struct native_random_access_file_test
 
         io_context ioc(Backend);
         native_random_access_file<Backend> f(ioc);
-        f.open(
+        BOOST_TEST(!f.open(
             tmp.path,
-            file_base::read_write | file_base::create | file_base::truncate);
+            file_base::read_write | file_base::create | file_base::truncate));
 
         std::size_t written = 0;
         auto task = [&]() -> capy::task<> {
@@ -169,7 +169,7 @@ struct native_random_access_file_test
 
         io_context ioc(Backend);
         native_random_access_file<Backend> f(ioc);
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         random_access_file& base = f;
 

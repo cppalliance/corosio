@@ -185,7 +185,7 @@ struct error_conditions_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         std::error_code connect_ec;
 

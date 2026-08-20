@@ -64,8 +64,8 @@ capy::task<>
 connecting(corosio::io_context& ioc, bool& done)
 {
     // tag::connecting[]
+    // connect() opens the socket automatically
     corosio::tcp_socket s(ioc);
-    s.open();
 
     corosio::endpoint target(
         corosio::ipv4_address::loopback(), 8080);

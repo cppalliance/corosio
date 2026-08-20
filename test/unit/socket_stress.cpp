@@ -68,7 +68,7 @@ make_stress_pair(io_context& ctx)
     bool connect_done = false;
 
     tcp_acceptor acc(ctx);
-    acc.open();
+    BOOST_TEST(!acc.open());
     acc.set_option(socket_option::reuse_address(true));
     if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
         throw std::runtime_error("stress_pair bind failed: " + ec.message());
@@ -78,7 +78,7 @@ make_stress_pair(io_context& ctx)
 
     tcp_socket s1(ctx);
     tcp_socket s2(ctx);
-    s2.open();
+    BOOST_TEST(!s2.open());
 
     capy::run_async(ex)(
         [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec_out,
@@ -623,7 +623,7 @@ struct accept_stress_test
         std::atomic<bool> stop_flag{false};
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
         {
@@ -659,7 +659,7 @@ struct accept_stress_test
             while (!stop_flag.load(std::memory_order_relaxed))
             {
                 tcp_socket client(ioc);
-                client.open();
+                BOOST_TEST(!client.open());
                 auto [ec] = co_await client.connect(
                     endpoint(ipv4_address::loopback(), port));
                 (void)ec;

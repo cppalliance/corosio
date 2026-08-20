@@ -188,8 +188,9 @@ capy::task<void> connect_to_service(
     if (results.empty())
         throw std::runtime_error("No addresses found");
 
+    // connect() opens the socket automatically, and re-opens it
+    // with each candidate's address family after close()
     corosio::tcp_socket sock(ioc);
-    sock.open();
 
     std::error_code last_error;
     for (auto const& entry : results)
@@ -200,7 +201,6 @@ capy::task<void> connect_to_service(
 
         last_error = ec;
         sock.close();
-        sock.open();
     }
 
     throw std::system_error(last_error);
@@ -275,9 +275,8 @@ capy::task<void> http_get(
         co_return;
     }
 
-    // Connect to first address
+    // Connect to first address; connect() opens the socket
     corosio::tcp_socket sock(ioc);
-    sock.open();
 
     for (auto const& entry : results)
     {

@@ -290,8 +290,10 @@ public:
         @endcode
 
         @see bind, listen
+
+        @return The error code, empty on success.
     */
-    void open(tcp proto = tcp::v4());
+    [[nodiscard]] std::error_code open(tcp proto = tcp::v4()) noexcept;
 
     /** Bind to a local endpoint.
 
@@ -509,10 +511,11 @@ public:
         @param fd The native socket to adopt. On success the object
             owns it and will close it.
 
-        @throws std::system_error On validation or registration
-            failure.
+        @return The error code, empty on success. Validation and
+            registration failures are normal runtime conditions when
+            adopting foreign descriptors.
     */
-    void assign(native_handle_type fd);
+    [[nodiscard]] std::error_code assign(native_handle_type fd) noexcept;
 
     /** Release ownership of the native socket handle.
 

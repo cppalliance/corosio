@@ -81,7 +81,7 @@ struct local_connect_pair_test
     {
         io_context ioc(Backend);
         local_stream_socket a(ioc), b(ioc);
-        a.open();
+        BOOST_TEST(!a.open());
         // a is open; connect_pair must refuse and leave both sockets
         // in their original state (a open, b closed).
         auto ec = connect_pair(a, b);
@@ -95,7 +95,7 @@ struct local_connect_pair_test
     {
         io_context ioc(Backend);
         local_datagram_socket a(ioc), b(ioc);
-        b.open();
+        BOOST_TEST(!b.open());
         auto ec = connect_pair(a, b);
         BOOST_TEST(static_cast<bool>(ec));
         BOOST_TEST(!a.is_open());

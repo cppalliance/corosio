@@ -165,11 +165,11 @@ public:
     }
 
     std::uint64_t size() const override;
-    void resize(std::uint64_t new_size) override;
-    void sync_data() override;
-    void sync_all() override;
+    std::error_code resize(std::uint64_t new_size) noexcept override;
+    std::error_code sync_data() noexcept override;
+    std::error_code sync_all() noexcept override;
     native_handle_type release() override;
-    void assign(native_handle_type handle) override;
+    std::error_code assign(native_handle_type handle) noexcept override;
 
     std::error_code open_file(
         std::filesystem::path const& path, file_base::flags mode);
@@ -251,31 +251,35 @@ posix_random_access_file::size() const
     return static_cast<std::uint64_t>(st.st_size);
 }
 
-inline void
-posix_random_access_file::resize(std::uint64_t new_size)
+inline std::error_code
+posix_random_access_file::resize(std::uint64_t new_size) noexcept
 {
-    if (new_size > static_cast<std::uint64_t>(std::numeric_limits<off_t>::max()))
-        throw_system_error(make_err(EOVERFLOW), "random_access_file::resize");
+    if (new_size >
+        static_cast<std::uint64_t>((std::numeric_limits<off_t>::max)()))
+        return make_err(EOVERFLOW);
     if (::ftruncate(fd_, static_cast<off_t>(new_size)) < 0)
-        throw_system_error(make_err(errno), "random_access_file::resize");
+        return make_err(errno);
+    return {};
 }
 
-inline void
-posix_random_access_file::sync_data()
+inline std::error_code
+posix_random_access_file::sync_data() noexcept
 {
 #if BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
     if (::fdatasync(fd_) < 0)
 #else // BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
     if (::fsync(fd_) < 0)
 #endif // BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
-        throw_system_error(make_err(errno), "random_access_file::sync_data");
+        return make_err(errno);
+    return {};
 }
 
-inline void
-posix_random_access_file::sync_all()
+inline std::error_code
+posix_random_access_file::sync_all() noexcept
 {
     if (::fsync(fd_) < 0)
-        throw_system_error(make_err(errno), "random_access_file::sync_all");
+        return make_err(errno);
+    return {};
 }
 
 inline native_handle_type
@@ -286,11 +290,12 @@ posix_random_access_file::release()
     return fd;
 }
 
-inline void
-posix_random_access_file::assign(native_handle_type handle)
+inline std::error_code
+posix_random_access_file::assign(native_handle_type handle) noexcept
 {
     close_file();
     fd_ = handle;
+    return {};
 }
 
 // read_some_at, write_some_at are defined in

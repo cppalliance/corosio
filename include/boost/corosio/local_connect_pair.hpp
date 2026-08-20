@@ -47,8 +47,7 @@ namespace boost::corosio {
 
     @return Empty on success; otherwise the underlying system error.
 */
-BOOST_COROSIO_DECL
-std::error_code
+[[nodiscard]] BOOST_COROSIO_DECL std::error_code
 connect_pair(local_stream_socket& a, local_stream_socket& b) noexcept;
 
 #if BOOST_COROSIO_POSIX
@@ -69,8 +68,7 @@ connect_pair(local_stream_socket& a, local_stream_socket& b) noexcept;
 
     @return Empty on success; otherwise the underlying system error.
 */
-BOOST_COROSIO_DECL
-std::error_code
+[[nodiscard]] BOOST_COROSIO_DECL std::error_code
 connect_pair(local_datagram_socket& a, local_datagram_socket& b) noexcept;
 
 #endif // BOOST_COROSIO_POSIX

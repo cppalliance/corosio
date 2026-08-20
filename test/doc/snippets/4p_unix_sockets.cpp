@@ -78,13 +78,14 @@ remove_stale(char const* path)
 capy::task<> server(corosio::io_context& ioc)
 {
     corosio::local_stream_acceptor acc(ioc);
-    acc.open();
+    if (auto ec = acc.open())
+        co_return;
 
-    auto ec = acc.bind(corosio::local_endpoint("/tmp/my_app.sock"));
-    if (ec) co_return;
+    if (auto ec = acc.bind(corosio::local_endpoint("/tmp/my_app.sock")))
+        co_return;
 
-    ec = acc.listen();
-    if (ec) co_return;
+    if (auto ec = acc.listen())
+        co_return;
 
     corosio::local_stream_socket peer(ioc);
     auto [accept_ec] = co_await acc.accept(peer);
@@ -118,10 +119,11 @@ void
 unlink_then_bind(corosio::io_context& ioc, bool& bound)
 {
     corosio::local_stream_acceptor acc(ioc);
-    acc.open();
+    BOOST_TEST(!acc.open());
     // tag::unlink_bind[]
     ::unlink("/tmp/my_app.sock");  // remove stale socket
-    acc.bind(corosio::local_endpoint("/tmp/my_app.sock"));
+    if (auto ec = acc.bind(corosio::local_endpoint("/tmp/my_app.sock")))
+        return;  // report the error
     // end::unlink_bind[]
     bound = std::filesystem::exists("/tmp/my_app.sock");
     acc.close();
@@ -159,8 +161,10 @@ datagram_connectionless(
     char buf[64];
     // tag::datagram_connectionless[]
     corosio::local_datagram_socket s(ioc);
-    s.open();
-    s.bind(corosio::local_endpoint("/tmp/my_dgram.sock"));
+    if (auto ec = s.open())
+        co_return;
+    if (auto ec = s.bind(corosio::local_endpoint("/tmp/my_dgram.sock")))
+        co_return;
 
     // Send to a specific peer
     co_await s.send_to(
@@ -262,7 +266,7 @@ struct unix_sockets_test
         // A live peer bound to the page's literal path receives the
         // fragment's datagram and answers it.
         corosio::local_datagram_socket peer(ioc);
-        peer.open();
+        BOOST_TEST(!peer.open());
         auto bec = peer.bind(corosio::local_endpoint("/tmp/peer.sock"));
         BOOST_TEST(!bec);
 

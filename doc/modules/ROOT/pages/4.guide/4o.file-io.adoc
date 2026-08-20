@@ -146,8 +146,13 @@ end-of-file return `capy::cond::eof`:
 include::example$snippets/4o_file_io.cpp[tag=error_handling,indent=0]
 ----
 
-Opening a nonexistent file with `read_only` throws `std::system_error`.
-Use `create` to create files that may not exist.
+Synchronous operations that can fail in normal use — `open`,
+`resize`, `sync_data`, `sync_all`, and `assign` — return a
+`std::error_code`; `seek` returns the code together with the new
+position. Opening a nonexistent file with `read_only` reports
+`no_such_file_or_directory`; use `create` to create files that may
+not exist. Only misuse, such as calling `size()` or `release()` on
+a closed file, throws `std::system_error`.
 
 == Thread Safety
 

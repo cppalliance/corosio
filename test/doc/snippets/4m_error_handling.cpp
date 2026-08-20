@@ -68,7 +68,7 @@ corosio::endpoint
 closed_endpoint(corosio::io_context& ioc)
 {
     corosio::tcp_acceptor acc(ioc);
-    acc.open();
+    BOOST_TEST(!acc.open());
     acc.set_option(corosio::socket_option::reuse_address(true));
     if (auto ec = acc.bind(
             corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
@@ -84,7 +84,7 @@ refused_connect_ec(corosio::io_context& ioc)
 {
     std::error_code out;
     corosio::tcp_socket sock(ioc);
-    sock.open();
+    BOOST_TEST(!sock.open());
     capy::run_async(ioc.get_executor())(
         [](corosio::tcp_socket& s, corosio::endpoint ep,
            std::error_code& o) -> capy::task<> {
@@ -337,7 +337,7 @@ struct exception_safety_fixture
         : sock(ioc)
         , endpoint(ep)
     {
-        sock.open();
+        BOOST_TEST(!sock.open());
     }
 
     // tag::exception_safety[]
@@ -368,7 +368,7 @@ capy::task<void> connect_with_retry(
 
     for (int attempt = 0; attempt < max_retries; ++attempt)
     {
-        sock.open();
+        // connect() re-opens the socket after the close() below
         auto [ec] = co_await sock.connect(ep);
 
         if (!ec)
@@ -416,7 +416,7 @@ struct error_handling_test
     {
         corosio::io_context ioc;
         corosio::tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         std::error_code connect_ec;
         capy::run_async(ioc.get_executor())(
             bindings_void_result(sock, closed_endpoint(ioc), connect_ec));
@@ -446,7 +446,7 @@ struct error_handling_test
     {
         corosio::io_context ioc;
         corosio::tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         std::error_code out;
         capy::run_async(ioc.get_executor())(
             direct_members(sock, closed_endpoint(ioc), out));
@@ -493,7 +493,7 @@ struct error_handling_test
     {
         corosio::io_context ioc;
         corosio::tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(corosio::socket_option::reuse_address(true));
         BOOST_TEST(!acc.bind(
             corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
@@ -502,7 +502,7 @@ struct error_handling_test
 
         corosio::tcp_socket psock(ioc);
         corosio::tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         std::string request_text = "GET /\r\n";
         char received[16] = {};
         std::size_t got = 0;
@@ -559,7 +559,7 @@ struct error_handling_test
         // race reports cancellation rather than a timeout.
         corosio::io_context ioc;
         corosio::tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         std::stop_source source;
         source.request_stop();
         std::error_code out;
@@ -668,7 +668,7 @@ struct error_handling_test
     {
         corosio::io_context ioc;
         corosio::tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(corosio::socket_option::reuse_address(true));
         BOOST_TEST(!acc.bind(
             corosio::endpoint(corosio::ipv4_address::loopback(), 0)));

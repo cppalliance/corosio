@@ -52,7 +52,8 @@ make_socket_pair(io_context& ctx)
     bool connect_done = false;
 
     Acceptor acc(ctx);
-    acc.open();
+    if (auto open_ec = acc.open())
+        throw std::runtime_error("socket_pair open failed: " + open_ec.message());
     acc.set_option(socket_option::reuse_address(true));
     if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
         throw std::runtime_error("socket_pair bind failed: " + ec.message());
@@ -62,7 +63,8 @@ make_socket_pair(io_context& ctx)
 
     Socket s1(ctx);
     Socket s2(ctx);
-    s2.open();
+    if (auto open_ec = s2.open())
+        throw std::runtime_error("socket_pair open failed: " + open_ec.message());
 
     capy::run_async(ex)(
         [](Acceptor& a, Socket& s, std::error_code& ec_out,

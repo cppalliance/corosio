@@ -115,12 +115,13 @@ public:
     void close_handle() noexcept;
 
     std::uint64_t size() const;
-    void resize(std::uint64_t new_size);
-    void sync_data();
-    void sync_all();
+    std::error_code resize(std::uint64_t new_size) noexcept;
+    std::error_code sync_data() noexcept;
+    std::error_code sync_all() noexcept;
     native_handle_type release();
-    void assign(native_handle_type handle);
-    std::uint64_t seek(std::int64_t offset, file_base::seek_basis origin);
+    std::error_code assign(native_handle_type handle) noexcept;
+    capy::io_result<std::uint64_t>
+    seek(std::int64_t offset, file_base::seek_basis origin) noexcept;
 };
 
 /** Stream file implementation wrapper for IOCP-based I/O.
@@ -159,12 +160,13 @@ public:
     native_handle_type native_handle() const noexcept override;
     void cancel() noexcept override;
     std::uint64_t size() const override;
-    void resize(std::uint64_t new_size) override;
-    void sync_data() override;
-    void sync_all() override;
+    std::error_code resize(std::uint64_t new_size) noexcept override;
+    std::error_code sync_data() noexcept override;
+    std::error_code sync_all() noexcept override;
     native_handle_type release() override;
-    void assign(native_handle_type handle) override;
-    std::uint64_t seek(std::int64_t offset, file_base::seek_basis origin) override;
+    std::error_code assign(native_handle_type handle) noexcept override;
+    capy::io_result<std::uint64_t>
+    seek(std::int64_t offset, file_base::seek_basis origin) noexcept override;
 
     win_stream_file_internal* get_internal() const noexcept;
 };

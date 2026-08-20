@@ -124,31 +124,32 @@ public:
         return static_cast<std::uint64_t>(st.st_size);
     }
 
-    void resize(std::uint64_t new_size) override
+    std::error_code resize(std::uint64_t new_size) noexcept override
     {
         if (new_size > static_cast<std::uint64_t>(
                 (std::numeric_limits<off_t>::max)()))
-            throw_system_error(
-                make_err(EOVERFLOW), "stream_file::resize");
+            return make_err(EOVERFLOW);
         if (::ftruncate(fd_, static_cast<off_t>(new_size)) < 0)
-            throw_system_error(make_err(errno), "stream_file::resize");
+            return make_err(errno);
+        return {};
     }
 
-    void sync_data() override
+    std::error_code sync_data() noexcept override
     {
 #if BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
         if (::fdatasync(fd_) < 0)
 #else
         if (::fsync(fd_) < 0)
 #endif
-            throw_system_error(
-                make_err(errno), "stream_file::sync_data");
+            return make_err(errno);
+        return {};
     }
 
-    void sync_all() override
+    std::error_code sync_all() noexcept override
     {
         if (::fsync(fd_) < 0)
-            throw_system_error(make_err(errno), "stream_file::sync_all");
+            return make_err(errno);
+        return {};
     }
 
     native_handle_type release() override
@@ -158,14 +159,15 @@ public:
         return fd;
     }
 
-    void assign(native_handle_type handle) override
+    std::error_code assign(native_handle_type handle) noexcept override
     {
         close_file();
         fd_ = handle;
+        return {};
     }
 
-    std::uint64_t seek(
-        std::int64_t offset, file_base::seek_basis origin) override
+    capy::io_result<std::uint64_t> seek(
+        std::int64_t offset, file_base::seek_basis origin) noexcept override
     {
         int whence = SEEK_SET;
         if (origin == file_base::seek_cur) whence = SEEK_CUR;
@@ -173,8 +175,8 @@ public:
 
         off_t r = ::lseek(fd_, static_cast<off_t>(offset), whence);
         if (r == static_cast<off_t>(-1))
-            throw_system_error(make_err(errno), "stream_file::seek");
-        return static_cast<std::uint64_t>(r);
+            return {make_err(errno), 0};
+        return {std::error_code{}, static_cast<std::uint64_t>(r)};
     }
 
     // -- Internal --

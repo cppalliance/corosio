@@ -55,7 +55,8 @@ namespace boost::corosio {
     @code
     io_context ioc;
     random_access_file f(ioc);
-    f.open("data.bin", file_base::read_only);
+    if (auto ec = f.open("data.bin", file_base::read_only))
+        co_return;  // report the error
 
     char buf[4096];
     auto [ec, n] = co_await f.read_some_at(
@@ -121,19 +122,19 @@ public:
         virtual std::uint64_t size() const = 0;
 
         /// Resize the file to @p new_size bytes.
-        virtual void resize(std::uint64_t new_size) = 0;
+        virtual std::error_code resize(std::uint64_t new_size) noexcept = 0;
 
         /// Synchronize file data to stable storage.
-        virtual void sync_data() = 0;
+        virtual std::error_code sync_data() noexcept = 0;
 
         /// Synchronize file data and metadata to stable storage.
-        virtual void sync_all() = 0;
+        virtual std::error_code sync_all() noexcept = 0;
 
         /// Release ownership of the native handle.
         virtual native_handle_type release() = 0;
 
         /// Adopt an existing native handle.
-        virtual void assign(native_handle_type handle) = 0;
+        virtual std::error_code assign(native_handle_type handle) noexcept = 0;
     };
 
     /** Awaitable for async read-at operations. */
@@ -264,15 +265,20 @@ public:
 
     /** Open a file.
 
+        Failures such as a missing file or insufficient permissions
+        are expected runtime conditions and are reported through the
+        returned error code. If the file is already open, it is
+        closed first.
+
         @param path The filesystem path to open.
         @param mode Bitmask of @ref file_base::flags specifying
             access mode and creation behavior.
 
-        @throws std::system_error on failure.
+        @return The error code, empty on success.
     */
-    void open(
+    [[nodiscard]] std::error_code open(
         std::filesystem::path const& path,
-        file_base::flags mode = file_base::read_only);
+        file_base::flags mode = file_base::read_only) noexcept;
 
     /** Close the file.
 
@@ -331,17 +337,44 @@ public:
     /** Get the native file descriptor or handle. */
     native_handle_type native_handle() const noexcept;
 
-    /** Return the file size in bytes. */
+    /** Return the file size in bytes.
+
+        @throws std::system_error If the file is not open, or if the
+            underlying size query fails.
+    */
     std::uint64_t size() const;
 
-    /** Resize the file. */
-    void resize(std::uint64_t new_size);
+    /** Resize the file to @p new_size bytes.
 
-    /** Synchronize file data to stable storage. */
-    void sync_data();
+        Failures such as insufficient disk space are reported
+        through the returned error code. A closed file reports
+        `errc::bad_file_descriptor`.
 
-    /** Synchronize file data and metadata to stable storage. */
-    void sync_all();
+        @param new_size The new file size.
+
+        @return The error code, empty on success.
+    */
+    [[nodiscard]] std::error_code resize(std::uint64_t new_size) noexcept;
+
+    /** Synchronize file data to stable storage.
+
+        Write-back failures such as device I/O errors surface here
+        and are reported through the returned error code. A closed
+        file reports `errc::bad_file_descriptor`.
+
+        @return The error code, empty on success.
+    */
+    [[nodiscard]] std::error_code sync_data() noexcept;
+
+    /** Synchronize file data and metadata to stable storage.
+
+        Write-back failures such as device I/O errors surface here
+        and are reported through the returned error code. A closed
+        file reports `errc::bad_file_descriptor`.
+
+        @return The error code, empty on success.
+    */
+    [[nodiscard]] std::error_code sync_all() noexcept;
 
     /** Release ownership of the native handle.
 
@@ -355,11 +388,15 @@ public:
     /** Adopt an existing native handle.
 
         Closes any currently open file before adopting.
-        The file object takes ownership of the handle.
+        The file object takes ownership of the handle. Handles
+        created elsewhere may be unsuitable for asynchronous I/O;
+        such failures are reported through the returned error code.
 
         @param handle The native file descriptor or handle.
+
+        @return The error code, empty on success.
     */
-    void assign(native_handle_type handle);
+    [[nodiscard]] std::error_code assign(native_handle_type handle) noexcept;
 
 protected:
     /// Construct from a pre-built handle (for native_random_access_file).

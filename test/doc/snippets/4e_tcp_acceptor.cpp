@@ -105,7 +105,8 @@ bind_listen(corosio::io_context& ioc)
 {
     // tag::bind_listen[]
     corosio::tcp_acceptor acc(ioc);
-    acc.open();                                  // create an IPv4 TCP socket
+    if (auto ec = acc.open())                    // create an IPv4 TCP socket
+        return ec;
 
     if (auto ec = acc.bind(corosio::endpoint(8080)))
     {
@@ -275,7 +276,8 @@ capy::task<void> accept_loop(
 capy::task<void> run_server(corosio::io_context& ioc)
 {
     corosio::tcp_acceptor acc(ioc);
-    acc.open();
+    if (auto ec = acc.open())
+        co_return;
     if (auto ec = acc.bind(corosio::endpoint(8080)))
     {
         std::cerr << "Bind failed: " << ec.message() << "\n";
@@ -310,7 +312,7 @@ connect_client(
     std::error_code& out)
 {
     corosio::tcp_socket s(ioc);
-    s.open();
+    BOOST_TEST(!s.open());
     auto [ec] = co_await s.connect(ep);
     out = ec;
 }
@@ -332,7 +334,7 @@ struct tcp_acceptor_test
         auto ex = ioc.get_executor();
 
         corosio::tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         BOOST_TEST(!acc.bind(corosio::endpoint(
             corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
@@ -367,7 +369,7 @@ struct tcp_acceptor_test
         auto ex = ioc.get_executor();
 
         corosio::tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         BOOST_TEST(!acc.bind(corosio::endpoint(
             corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
@@ -391,7 +393,7 @@ struct tcp_acceptor_test
         auto ex = ioc.get_executor();
 
         corosio::tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         BOOST_TEST(!acc.bind(corosio::endpoint(
             corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());

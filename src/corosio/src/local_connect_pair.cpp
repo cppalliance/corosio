@@ -74,26 +74,18 @@ template<class Socket>
 std::error_code
 assign_pair(Socket& a, Socket& b, int a_fd, int b_fd) noexcept
 {
-    try
-    {
-        a.assign(a_fd);
-    }
-    catch (std::system_error const& e)
+    if (auto ec = a.assign(a_fd))
     {
         ::close(a_fd);
         ::close(b_fd);
-        return e.code();
+        return ec;
     }
 
-    try
-    {
-        b.assign(b_fd);
-    }
-    catch (std::system_error const& e)
+    if (auto ec = b.assign(b_fd))
     {
         a.close();
         ::close(b_fd);
-        return e.code();
+        return ec;
     }
 
     return {};
@@ -250,26 +242,18 @@ assign_pair(
     SOCKET a_sock,
     SOCKET b_sock) noexcept
 {
-    try
-    {
-        a.assign(static_cast<native_handle_type>(a_sock));
-    }
-    catch (std::system_error const& e)
+    if (auto ec = a.assign(static_cast<native_handle_type>(a_sock)))
     {
         ::closesocket(a_sock);
         ::closesocket(b_sock);
-        return e.code();
+        return ec;
     }
 
-    try
-    {
-        b.assign(static_cast<native_handle_type>(b_sock));
-    }
-    catch (std::system_error const& e)
+    if (auto ec = b.assign(static_cast<native_handle_type>(b_sock)))
     {
         a.close();
         ::closesocket(b_sock);
-        return e.code();
+        return ec;
     }
 
     return {};

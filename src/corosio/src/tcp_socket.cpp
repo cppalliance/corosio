@@ -34,16 +34,16 @@ tcp_socket::tcp_socket(capy::execution_context& ctx)
 {
 }
 
-void
-tcp_socket::open(tcp proto)
+std::error_code
+tcp_socket::open(tcp proto) noexcept
 {
     if (is_open())
-        return;
-    open_for_family(proto.family(), proto.type(), proto.protocol());
+        return {};
+    return open_for_family(proto.family(), proto.type(), proto.protocol());
 }
 
-void
-tcp_socket::open_for_family(int family, int type, int protocol)
+std::error_code
+tcp_socket::open_for_family(int family, int type, int protocol) noexcept
 {
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc          = static_cast<detail::win_tcp_service&>(h_.service());
@@ -57,12 +57,11 @@ tcp_socket::open_for_family(int family, int type, int protocol)
         static_cast<tcp_socket::implementation&>(*h_.get()), family, type,
         protocol);
 #endif
-    if (ec)
-        detail::throw_system_error(ec, "tcp_socket::open");
+    return ec;
 }
 
-void
-tcp_socket::assign(native_handle_type fd)
+std::error_code
+tcp_socket::assign(native_handle_type fd) noexcept
 {
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc          = static_cast<detail::win_tcp_service&>(h_.service());
@@ -74,8 +73,7 @@ tcp_socket::assign(native_handle_type fd)
     std::error_code ec = svc.assign_socket(
         static_cast<tcp_socket::implementation&>(*h_.get()), fd);
 #endif
-    if (ec)
-        detail::throw_system_error(ec, "tcp_socket::assign");
+    return ec;
 }
 
 native_handle_type
@@ -119,14 +117,12 @@ tcp_socket::cancel()
     get().cancel();
 }
 
-void
-tcp_socket::shutdown(shutdown_type what)
+std::error_code
+tcp_socket::shutdown(shutdown_type what) noexcept
 {
-    if (is_open())
-    {
-        // Best-effort: errors like ENOTCONN are expected and unhelpful
-        [[maybe_unused]] auto ec = get().shutdown(what);
-    }
+    if (!is_open())
+        return make_error_code(std::errc::bad_file_descriptor);
+    return get().shutdown(what);
 }
 
 native_handle_type

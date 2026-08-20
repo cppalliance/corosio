@@ -27,6 +27,7 @@
 #include <system_error>
 #include <thread>
 #include <vector>
+#include <tuple>
 
 namespace corosio = boost::corosio;
 namespace capy    = boost::capy;
@@ -62,7 +63,7 @@ bench_unix_throughput(bench::state& state)
             if (ec)
                 break;
         }
-        writer.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore = writer.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read_task = [&]() -> capy::task<> {
@@ -125,7 +126,7 @@ bench_unix_bidirectional_throughput(bench::state& state)
             if (ec)
                 break;
         }
-        sock1.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore = sock1.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read1_task = [&]() -> capy::task<> {
@@ -148,7 +149,7 @@ bench_unix_bidirectional_throughput(bench::state& state)
             if (ec)
                 break;
         }
-        sock2.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore = sock2.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read2_task = [&]() -> capy::task<> {
@@ -215,7 +216,7 @@ bench_unix_throughput_lockless(bench::state& state)
             if (ec)
                 break;
         }
-        writer.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore = writer.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read_task = [&]() -> capy::task<> {
@@ -280,7 +281,7 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
             if (ec)
                 break;
         }
-        sock1.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore = sock1.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read1_task = [&]() -> capy::task<> {
@@ -303,7 +304,7 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
             if (ec)
                 break;
         }
-        sock2.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore = sock2.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read2_task = [&]() -> capy::task<> {

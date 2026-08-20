@@ -76,7 +76,7 @@ struct native_io_uring_specific_test
 
         {
             tcp_acceptor acc(ctx);
-            acc.open();
+            BOOST_TEST(!acc.open());
             acc.set_option(socket_option::reuse_address(true));
             BOOST_TEST(!acc.bind(endpoint(0)));
             // listen() calls start_multishot(), submitting a multishot

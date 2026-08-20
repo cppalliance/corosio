@@ -304,7 +304,7 @@ public:
             Returns `errc::invalid_argument` if the signal is already
             registered with different flags.
     */
-    std::error_code add(int signal_number, flags_t flags);
+    [[nodiscard]] std::error_code add(int signal_number, flags_t flags);
 
     /** Add a signal to the signal set with default flags.
 
@@ -314,7 +314,7 @@ public:
 
         @return Success, or an error if the signal could not be added.
     */
-    std::error_code add(int signal_number)
+    [[nodiscard]] std::error_code add(int signal_number)
     {
         return add(signal_number, none);
     }
@@ -328,7 +328,7 @@ public:
 
         @return Success, or an error if the signal could not be removed.
     */
-    std::error_code remove(int signal_number);
+    [[nodiscard]] std::error_code remove(int signal_number);
 
     /** Remove all signals from the signal set.
 
@@ -337,7 +337,7 @@ public:
 
         @return Success, or an error if resetting any signal handler fails.
     */
-    std::error_code clear();
+    [[nodiscard]] std::error_code clear();
 
 protected:
     explicit signal_set(handle h) noexcept : io_signal_set(std::move(h)) {}

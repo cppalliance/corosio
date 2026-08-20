@@ -53,8 +53,8 @@ struct datagram_paths_test
     // Connected UDP pair; both sockets bound to ephemeral loopback ports.
     static void make_udp_pair(io_context& ioc, udp_socket& a, udp_socket& b)
     {
-        a.open(udp::v4());
-        b.open(udp::v4());
+        BOOST_TEST(!a.open(udp::v4()));
+        BOOST_TEST(!b.open(udp::v4()));
         auto ec1 = a.bind(endpoint(ipv4_address::loopback(), 0));
         auto ec2 = b.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec1);
@@ -120,8 +120,8 @@ struct datagram_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket recv_sock(ioc), send_sock(ioc);
-        recv_sock.open(udp::v4());
-        send_sock.open(udp::v4());
+        BOOST_TEST(!recv_sock.open(udp::v4()));
+        BOOST_TEST(!send_sock.open(udp::v4()));
         auto ec1 = recv_sock.bind(endpoint(ipv4_address::loopback(), 0));
         auto ec2 = send_sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec1);
@@ -165,7 +165,7 @@ struct datagram_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -199,7 +199,7 @@ struct datagram_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -272,8 +272,8 @@ struct datagram_paths_test
         test::temp_socket_dir tmp2;
 
         local_datagram_socket s1(ioc), s2(ioc);
-        s1.open();
-        s2.open();
+        BOOST_TEST(!s1.open());
+        BOOST_TEST(!s2.open());
         auto ec1 = s1.bind(local_endpoint(tmp1.path()));
         auto ec2 = s2.bind(local_endpoint(tmp2.path()));
         BOOST_TEST(!ec1);
@@ -394,8 +394,8 @@ struct datagram_paths_test
         test::temp_socket_dir tmp2;
 
         local_datagram_socket s1(ioc), s2(ioc);
-        s1.open();
-        s2.open();
+        BOOST_TEST(!s1.open());
+        BOOST_TEST(!s2.open());
         auto ec1 = s1.bind(local_endpoint(tmp1.path()));
         auto ec2 = s2.bind(local_endpoint(tmp2.path()));
         BOOST_TEST(!ec1);
@@ -510,7 +510,7 @@ struct datagram_paths_test
         test::temp_socket_dir tmp;
 
         local_datagram_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         auto bec = sock.bind(local_endpoint(tmp.path()));
         BOOST_TEST(!bec);
 
@@ -610,8 +610,8 @@ struct datagram_paths_test
         test::temp_socket_dir tmp2;
 
         local_datagram_socket s1(ioc), s2(ioc);
-        s1.open();
-        s2.open();
+        BOOST_TEST(!s1.open());
+        BOOST_TEST(!s2.open());
         auto ec1 = s1.bind(local_endpoint(tmp1.path()));
         auto ec2 = s2.bind(local_endpoint(tmp2.path()));
         BOOST_TEST(!ec1);

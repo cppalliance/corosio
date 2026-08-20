@@ -124,8 +124,9 @@ connect(Socket& s, Iter begin, Iter end, ConnectCondition cond);
         `reuse_address`) are lost. Apply options after this operation
         completes.
 
-    @throws std::system_error if auto-opening the socket fails during
-        an attempt (inherits the contract of `Socket::connect`).
+    If auto-opening the socket fails during an attempt, that attempt
+    completes with the open error (inherits the contract of
+    `Socket::connect`).
 
     @par Example
     @code
@@ -168,7 +169,8 @@ connect(Socket& s, Range endpoints)
     @return Same as the non-condition overload. If every candidate is
         rejected, completes with `std::errc::no_such_device_or_address`.
 
-    @throws std::system_error if auto-opening the socket fails.
+    If auto-opening the socket fails, the attempt completes with the
+    open error.
 */
 template<class Socket, std::ranges::input_range Range, class ConnectCondition>
     requires std::convertible_to<
@@ -233,7 +235,8 @@ connect(Socket& s, Range endpoints, ConnectCondition cond)
         - on empty range: `std::errc::no_such_device_or_address` and
           `end`.
 
-    @throws std::system_error if auto-opening the socket fails.
+    If auto-opening the socket fails, the attempt completes with the
+    open error.
 */
 template<class Socket, std::input_iterator Iter>
     requires std::convertible_to<
@@ -261,7 +264,8 @@ connect(Socket& s, Iter begin, Iter end)
     @return Same as the plain iterator overload. If every candidate is
         rejected, completes with `std::errc::no_such_device_or_address`.
 
-    @throws std::system_error if auto-opening the socket fails.
+    If auto-opening the socket fails, the attempt completes with the
+    open error.
 */
 template<class Socket, std::input_iterator Iter, class ConnectCondition>
     requires std::convertible_to<

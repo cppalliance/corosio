@@ -142,7 +142,7 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         BOOST_TEST(f.is_open());
 
         f.close();
@@ -155,7 +155,7 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::write_only | file_base::create);
+        BOOST_TEST(!f.open(tmp.path, file_base::write_only | file_base::create));
         BOOST_TEST(f.is_open());
         f.close();
 
@@ -168,17 +168,9 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        bool threw = false;
-        try
-        {
-            f.open("/tmp/corosio_nonexistent_file_zzz_12345",
-                   file_base::read_only);
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        auto ec = f.open("/tmp/corosio_nonexistent_file_zzz_12345",
+                         file_base::read_only);
+        BOOST_TEST(ec == std::errc::no_such_file_or_directory);
         BOOST_TEST(!f.is_open());
     }
 
@@ -189,18 +181,10 @@ struct stream_file_test
         stream_file f(ioc);
 
         // Opening with create|exclusive on an existing file should fail
-        bool threw = false;
-        try
-        {
-            f.open(tmp.path,
-                   file_base::write_only | file_base::create
-                       | file_base::exclusive);
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        auto ec = f.open(tmp.path,
+                         file_base::write_only | file_base::create
+                             | file_base::exclusive);
+        BOOST_TEST(ec == std::errc::file_exists);
     }
 
     void testOpenSyncAllOnWrite()
@@ -210,9 +194,9 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::write_only | file_base::create
-                   | file_base::truncate | file_base::sync_all_on_write);
+        BOOST_TEST(!f.open(tmp.path,
+                   file_base::write_only | file_base::create
+                       | file_base::truncate | file_base::sync_all_on_write));
         BOOST_TEST(f.is_open());
 
         bool done = false;
@@ -237,7 +221,7 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         BOOST_TEST_EQ(f.size(), static_cast<std::uint64_t>(data.size()));
     }
 
@@ -247,22 +231,13 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_write);
-        f.resize(5);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_write));
+        BOOST_TEST(!f.resize(5));
         BOOST_TEST_EQ(f.size(), 5u);
 
 #if BOOST_COROSIO_POSIX
         // Larger than off_t can represent: rejected with EOVERFLOW.
-        bool caught = false;
-        try
-        {
-            f.resize((std::numeric_limits<std::uint64_t>::max)());
-        }
-        catch (std::system_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+        BOOST_TEST(f.resize((std::numeric_limits<std::uint64_t>::max)()));
 #endif
     }
 
@@ -272,16 +247,24 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
-        auto pos = f.seek(5, file_base::seek_set);
-        BOOST_TEST_EQ(pos, 5u);
+        auto [ec1, pos1] = f.seek(5, file_base::seek_set);
+        BOOST_TEST(!ec1);
+        BOOST_TEST_EQ(pos1, 5u);
 
-        pos = f.seek(3, file_base::seek_cur);
-        BOOST_TEST_EQ(pos, 8u);
+        auto [ec2, pos2] = f.seek(3, file_base::seek_cur);
+        BOOST_TEST(!ec2);
+        BOOST_TEST_EQ(pos2, 8u);
 
-        pos = f.seek(-2, file_base::seek_end);
-        BOOST_TEST_EQ(pos, 8u); // size=10, 10-2=8
+        auto [ec3, pos3] = f.seek(-2, file_base::seek_end);
+        BOOST_TEST(!ec3);
+        BOOST_TEST_EQ(pos3, 8u); // size=10, 10-2=8
+
+        // Seeking past EOF is allowed
+        auto [ec4, pos4] = f.seek(100, file_base::seek_set);
+        BOOST_TEST(!ec4);
+        BOOST_TEST_EQ(pos4, 100u);
     }
 
     // Async read
@@ -293,7 +276,7 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         bool completed = false;
         std::error_code result_ec;
@@ -326,7 +309,7 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         bool got_eof = false;
 
@@ -359,8 +342,8 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::write_only | file_base::create | file_base::truncate));
 
         std::string data = "written by corosio";
         bool completed = false;
@@ -396,8 +379,8 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::read_write | file_base::create | file_base::truncate);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::read_write | file_base::create | file_base::truncate));
 
         bool completed = false;
 
@@ -417,7 +400,8 @@ struct stream_file_test
             }
 
             // Seek back to start
-            f_ref.seek(0, file_base::seek_set);
+            auto [sec, spos] = f_ref.seek(0, file_base::seek_set);
+            BOOST_TEST(!sec);
 
             // Read back
             char buf[6] = {};
@@ -446,8 +430,8 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::write_only | file_base::create | file_base::truncate));
 
         bool completed = false;
 
@@ -455,7 +439,7 @@ struct stream_file_test
             auto [ec, n] = co_await f_ref.write_some(
                 capy::const_buffer("data", 4));
             BOOST_TEST(!ec);
-            f_ref.sync_data();
+            BOOST_TEST(!f_ref.sync_data());
             done = true;
         };
         capy::run_async(ioc.get_executor())(task(f, completed));
@@ -473,7 +457,7 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         f.cancel(); // Should not crash
 
         BOOST_TEST_PASS();
@@ -503,7 +487,7 @@ struct stream_file_test
         // Closed: returns the platform sentinel.
         BOOST_TEST(f.native_handle() == invalid);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         BOOST_TEST(f.native_handle() != invalid);
     }
 
@@ -514,11 +498,11 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp1.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp1.path, file_base::read_only));
         BOOST_TEST(f.is_open());
 
         // Reopen on an already-open file closes the previous handle.
-        f.open(tmp2.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp2.path, file_base::read_only));
         BOOST_TEST(f.is_open());
     }
 
@@ -540,16 +524,8 @@ struct stream_file_test
         io_context ioc(Backend, opts, 1);
         stream_file f(ioc);
 
-        bool caught = false;
-        try
-        {
-            f.open(tmp.path, file_base::read_only);
-        }
-        catch (std::system_error const& e)
-        {
-            caught = (e.code() == std::errc::operation_not_supported);
-        }
-        BOOST_TEST(caught);
+        auto ec = f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(ec == std::errc::operation_not_supported);
     }
 
     void testOpenUnsafeIoStillSupported()
@@ -568,19 +544,8 @@ struct stream_file_test
         io_context ioc(Backend, opts, 1);
         stream_file f(ioc);
 
-        bool opened = false;
-        std::error_code caught_ec;
-        try
-        {
-            f.open(tmp.path, file_base::read_only);
-            opened = true;
-        }
-        catch (std::system_error const& e)
-        {
-            caught_ec = e.code();
-        }
-        BOOST_TEST(opened);
-        BOOST_TEST(caught_ec != std::errc::operation_not_supported);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
+        BOOST_TEST(f.is_open());
     }
 #endif
 
@@ -592,7 +557,7 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         bool completed = false;
 
@@ -615,8 +580,8 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::write_only | file_base::create | file_base::truncate));
 
         bool completed = false;
 
@@ -640,7 +605,7 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::write_only | file_base::truncate);
+        BOOST_TEST(!f.open(tmp.path, file_base::write_only | file_base::truncate));
         BOOST_TEST_EQ(f.size(), 0u);
     }
 
@@ -652,8 +617,8 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::write_only | file_base::append);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::write_only | file_base::append));
 
         bool completed = false;
 
@@ -687,8 +652,8 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::write_only | file_base::create | file_base::truncate));
 
         bool completed = false;
 
@@ -696,7 +661,7 @@ struct stream_file_test
             auto [ec, n] = co_await f_ref.write_some(
                 capy::const_buffer("data", 4));
             BOOST_TEST(!ec);
-            f_ref.sync_all();
+            BOOST_TEST(!f_ref.sync_all());
             done = true;
         };
         capy::run_async(ioc.get_executor())(task(f, completed));
@@ -714,7 +679,7 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         BOOST_TEST(f.is_open());
 
         auto handle = f.release();
@@ -766,7 +731,7 @@ struct stream_file_test
 
         io_context ioc(Backend);
         stream_file f(ioc);
-        f.assign(raw_handle);
+        BOOST_TEST(!f.assign(raw_handle));
         BOOST_TEST(f.is_open());
 
         bool completed = false;
@@ -789,13 +754,13 @@ struct stream_file_test
 
     // Operations on closed file
 
-    void testClosedFileThrows()
+    void testClosedFileErrors()
     {
         io_context ioc(Backend);
         stream_file f(ioc);
         BOOST_TEST(!f.is_open());
 
-        // Each operation on a closed file should throw
+        // Exceptional-only operations throw on a closed file
         auto expect_throw = [](auto fn) {
             bool threw = false;
             try { fn(); }
@@ -804,40 +769,43 @@ struct stream_file_test
         };
 
         expect_throw([&] { f.size(); });
-        expect_throw([&] { f.resize(0); });
-        expect_throw([&] { f.sync_data(); });
-        expect_throw([&] { f.sync_all(); });
         expect_throw([&] { f.release(); });
-        expect_throw([&] { f.seek(0, file_base::seek_set); });
+
+        // Error-returning operations report bad_file_descriptor
+        BOOST_TEST(f.resize(0) == std::errc::bad_file_descriptor);
+        BOOST_TEST(f.sync_data() == std::errc::bad_file_descriptor);
+        BOOST_TEST(f.sync_all() == std::errc::bad_file_descriptor);
+        auto [ec, pos] = f.seek(0, file_base::seek_set);
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
     }
 
     // Negative seek validation
 
-    void testSeekNegativeThrows()
+    void testSeekNegative()
     {
         temp_file tmp("sf_seekneg_", "0123456789");
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         // seek_set with negative offset
-        bool threw = false;
-        try { f.seek(-1, file_base::seek_set); }
-        catch (std::system_error const&) { threw = true; }
-        BOOST_TEST(threw);
+        {
+            auto [ec, pos] = f.seek(-1, file_base::seek_set);
+            BOOST_TEST(ec);
+        }
 
         // seek_end past beginning
-        threw = false;
-        try { f.seek(-100, file_base::seek_end); }
-        catch (std::system_error const&) { threw = true; }
-        BOOST_TEST(threw);
+        {
+            auto [ec, pos] = f.seek(-100, file_base::seek_end);
+            BOOST_TEST(ec);
+        }
 
         // seek_cur past beginning
-        threw = false;
-        try { f.seek(-100, file_base::seek_cur); }
-        catch (std::system_error const&) { threw = true; }
-        BOOST_TEST(threw);
+        {
+            auto [ec, pos] = f.seek(-100, file_base::seek_cur);
+            BOOST_TEST(ec);
+        }
     }
 
     void run()
@@ -879,8 +847,8 @@ struct stream_file_test
         testAppendMode();
         testRelease();
         testAssign();
-        testClosedFileThrows();
-        testSeekNegativeThrows();
+        testClosedFileErrors();
+        testSeekNegative();
         testCancelWithStoppedToken();
     }
 
@@ -892,7 +860,7 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         // Pre-stop the source so the token is already cancelled
         // when the coroutine starts

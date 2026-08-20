@@ -103,7 +103,7 @@ struct precancel_test
         auto ex = ioc.get_executor();
 
         tcp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         std::stop_source ss;
         ss.request_stop();
@@ -131,7 +131,7 @@ struct precancel_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         BOOST_TEST(!acc.bind(endpoint(0)));
         BOOST_TEST(!acc.listen());
@@ -163,8 +163,8 @@ struct precancel_test
         auto ex = ioc.get_executor();
 
         udp_socket s1(ioc), s2(ioc);
-        s1.open(udp::v4());
-        s2.open(udp::v4());
+        BOOST_TEST(!s1.open(udp::v4()));
+        BOOST_TEST(!s2.open(udp::v4()));
         BOOST_TEST(!s1.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!s2.bind(endpoint(ipv4_address::loopback(), 0)));
         auto peer_ep = s2.local_endpoint();
@@ -310,7 +310,7 @@ struct precancel_test
         auto path = tmp.path();
 
         local_stream_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         BOOST_TEST(!acc.bind(local_endpoint(path)));
         BOOST_TEST(!acc.listen());
 
@@ -318,7 +318,7 @@ struct precancel_test
         ss.request_stop();
 
         local_stream_socket client(ioc);
-        client.open();
+        BOOST_TEST(!client.open());
         local_stream_socket server(ioc);
 
         std::error_code conn_ec, accept_ec;
@@ -400,8 +400,8 @@ struct precancel_test
         test::temp_socket_dir tmp2;
 
         local_datagram_socket s1(ioc), s2(ioc);
-        s1.open();
-        s2.open();
+        BOOST_TEST(!s1.open());
+        BOOST_TEST(!s2.open());
         BOOST_TEST(!s1.bind(local_endpoint(tmp1.path())));
         BOOST_TEST(!s2.bind(local_endpoint(tmp2.path())));
 

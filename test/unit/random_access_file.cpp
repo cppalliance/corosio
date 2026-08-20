@@ -129,7 +129,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         BOOST_TEST(f.is_open());
 
         f.close();
@@ -141,17 +141,10 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        bool threw = false;
-        try
-        {
-            f.open("/tmp/corosio_nonexistent_raf_zzz_12345",
-                   file_base::read_only);
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        auto ec = f.open("/tmp/corosio_nonexistent_raf_zzz_12345",
+                         file_base::read_only);
+        BOOST_TEST(ec == std::errc::no_such_file_or_directory);
+        BOOST_TEST(!f.is_open());
     }
 
     // File metadata
@@ -163,7 +156,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         BOOST_TEST_EQ(f.size(), static_cast<std::uint64_t>(data.size()));
     }
 
@@ -173,22 +166,13 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_write);
-        f.resize(5);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_write));
+        BOOST_TEST(!f.resize(5));
         BOOST_TEST_EQ(f.size(), 5u);
 
 #if BOOST_COROSIO_POSIX
         // Larger than off_t can represent: rejected with EOVERFLOW.
-        bool caught = false;
-        try
-        {
-            f.resize((std::numeric_limits<std::uint64_t>::max)());
-        }
-        catch (std::system_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+        BOOST_TEST(f.resize((std::numeric_limits<std::uint64_t>::max)()));
 #endif
     }
 
@@ -201,7 +185,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         bool completed = false;
         char buf[5] = {};
@@ -230,7 +214,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         bool completed = false;
         char buf[5] = {};
@@ -257,7 +241,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         bool got_eof = false;
 
@@ -284,8 +268,8 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::read_write | file_base::create | file_base::truncate);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::read_write | file_base::create | file_base::truncate));
 
         bool completed = false;
 
@@ -318,8 +302,8 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::read_write | file_base::create | file_base::truncate);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::read_write | file_base::create | file_base::truncate));
 
         bool completed = false;
 
@@ -378,7 +362,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         int read_count = 0;
 
@@ -410,7 +394,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         f.cancel();
 
         BOOST_TEST_PASS();
@@ -439,7 +423,7 @@ struct random_access_file_test
 #endif
         BOOST_TEST(f.native_handle() == invalid);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         BOOST_TEST(f.native_handle() != invalid);
     }
 
@@ -450,11 +434,11 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp1.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp1.path, file_base::read_only));
         BOOST_TEST(f.is_open());
 
         // Reopen on an already-open file closes the previous handle.
-        f.open(tmp2.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp2.path, file_base::read_only));
         BOOST_TEST(f.is_open());
     }
 
@@ -466,8 +450,8 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::write_only | file_base::create | file_base::truncate));
 
         bool completed = false;
 
@@ -476,7 +460,7 @@ struct random_access_file_test
             auto [ec, n] = co_await f_ref.write_some_at(
                 0, capy::const_buffer("sync", 4));
             BOOST_TEST(!ec);
-            f_ref.sync_data();
+            BOOST_TEST(!f_ref.sync_data());
             done = true;
         };
         capy::run_async(ioc.get_executor())(task(f, completed));
@@ -496,7 +480,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         int completed = 0;
 
@@ -530,9 +514,9 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::read_write | file_base::create | file_base::truncate);
-        f.resize(16);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::read_write | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.resize(16));
 
         int completed = 0;
 
@@ -573,7 +557,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_write);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_write));
 
         bool read_done  = false;
         bool write_done = false;
@@ -620,7 +604,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         std::atomic<int> completed{0};
 
@@ -683,7 +667,7 @@ struct random_access_file_test
         testSyncAll();
         testRelease();
         testAssign();
-        testClosedFileThrows();
+        testClosedFileErrors();
         testOpenSyncAllOnWrite();
         testOpenExclusiveExistingFails();
         testOpenExclusiveNewFile();
@@ -695,12 +679,13 @@ struct random_access_file_test
 
     // Operations on closed file
 
-    void testClosedFileThrows()
+    void testClosedFileErrors()
     {
         io_context ioc(Backend);
         random_access_file f(ioc);
         BOOST_TEST(!f.is_open());
 
+        // Exceptional-only operations throw on a closed file
         auto expect_throw = [](auto fn) {
             bool threw = false;
             try { fn(); }
@@ -709,10 +694,12 @@ struct random_access_file_test
         };
 
         expect_throw([&] { f.size(); });
-        expect_throw([&] { f.resize(0); });
-        expect_throw([&] { f.sync_data(); });
-        expect_throw([&] { f.sync_all(); });
         expect_throw([&] { f.release(); });
+
+        // Error-returning operations report bad_file_descriptor
+        BOOST_TEST(f.resize(0) == std::errc::bad_file_descriptor);
+        BOOST_TEST(f.sync_data() == std::errc::bad_file_descriptor);
+        BOOST_TEST(f.sync_all() == std::errc::bad_file_descriptor);
     }
 
     // Open flag variants
@@ -724,9 +711,9 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::write_only | file_base::create
-                   | file_base::truncate | file_base::sync_all_on_write);
+        BOOST_TEST(!f.open(tmp.path,
+                   file_base::write_only | file_base::create
+                       | file_base::truncate | file_base::sync_all_on_write));
         BOOST_TEST(f.is_open());
 
         bool done = false;
@@ -751,18 +738,10 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        bool threw = false;
-        try
-        {
-            f.open(tmp.path,
-                   file_base::write_only | file_base::create
-                       | file_base::exclusive);
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        auto ec = f.open(tmp.path,
+                         file_base::write_only | file_base::create
+                             | file_base::exclusive);
+        BOOST_TEST(ec == std::errc::file_exists);
         BOOST_TEST(!f.is_open());
     }
 
@@ -774,9 +753,9 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::write_only | file_base::create
-                   | file_base::exclusive);
+        BOOST_TEST(!f.open(tmp.path,
+                   file_base::write_only | file_base::create
+                       | file_base::exclusive));
         BOOST_TEST(f.is_open());
         f.close();
     }
@@ -789,7 +768,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_write);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_write));
 
         bool done = false;
         auto task = [](random_access_file& f_ref, bool& d) -> capy::task<> {
@@ -819,7 +798,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         constexpr std::uint64_t num_ops = 16;
         std::atomic<int> completed{0};
@@ -853,7 +832,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         bool done = false;
         auto task = [](random_access_file& f_ref, bool& d) -> capy::task<> {
@@ -877,7 +856,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         std::stop_source stop_src;
         stop_src.request_stop();
@@ -911,8 +890,8 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate);
+        BOOST_TEST(!f.open(tmp.path,
+               file_base::write_only | file_base::create | file_base::truncate));
 
         bool completed = false;
 
@@ -921,7 +900,7 @@ struct random_access_file_test
             auto [ec, n] = co_await f_ref.write_some_at(
                 0, capy::const_buffer("sync_all", 8));
             BOOST_TEST(!ec);
-            f_ref.sync_all();
+            BOOST_TEST(!f_ref.sync_all());
             done = true;
         };
         capy::run_async(ioc.get_executor())(task(f, completed));
@@ -939,7 +918,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        f.open(tmp.path, file_base::read_only);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         BOOST_TEST(f.is_open());
 
         auto handle = f.release();
@@ -1001,7 +980,7 @@ struct random_access_file_test
 
         io_context ioc(Backend);
         random_access_file f(ioc);
-        f.assign(raw_handle);
+        BOOST_TEST(!f.assign(raw_handle));
         BOOST_TEST(f.is_open());
 
         bool completed = false;

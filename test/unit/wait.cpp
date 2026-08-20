@@ -185,7 +185,7 @@ make_backpressured_pair(io_context& ioc)
     bool connect_done = false;
 
     tcp_acceptor acc(ioc);
-    acc.open();
+    BOOST_TEST(!acc.open());
     acc.set_option(socket_option::reuse_address(true));
     shrink_socket_buffer(acc.native_handle(), SO_SNDBUF);
     shrink_socket_buffer(acc.native_handle(), SO_RCVBUF);
@@ -197,7 +197,7 @@ make_backpressured_pair(io_context& ioc)
 
     tcp_socket s1(ioc);
     tcp_socket s2(ioc);
-    s2.open();
+    BOOST_TEST(!s2.open());
     shrink_socket_buffer(s2.native_handle(), SO_SNDBUF);
     shrink_socket_buffer(s2.native_handle(), SO_RCVBUF);
 
@@ -476,13 +476,13 @@ struct wait_test
         auto ex = ioc.get_executor();
 
         udp_socket recv(ioc);
-        recv.open(udp::v4());
+        BOOST_TEST(!recv.open(udp::v4()));
         auto bec = recv.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto port = recv.local_endpoint().port();
 
         udp_socket send(ioc);
-        send.open(udp::v4());
+        BOOST_TEST(!send.open(udp::v4()));
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -516,7 +516,7 @@ struct wait_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
@@ -564,7 +564,7 @@ struct wait_test
         auto path = tmp.path();
 
         local_stream_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         auto bec = acc.bind(local_endpoint(path));
         BOOST_TEST(!bec);
         auto lec = acc.listen();
@@ -572,7 +572,7 @@ struct wait_test
 
         local_stream_socket server(ioc);
         local_stream_socket client(ioc);
-        client.open();
+        BOOST_TEST(!client.open());
 
         auto accept_task = [&]() -> capy::task<> {
             auto [ec] = co_await acc.accept(server);
@@ -649,7 +649,7 @@ struct wait_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        sock.open(udp::v4());
+        BOOST_TEST(!sock.open(udp::v4()));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -799,13 +799,13 @@ struct wait_test
         auto ex = ioc.get_executor();
 
         udp_socket recv(ioc);
-        recv.open(udp::v4());
+        BOOST_TEST(!recv.open(udp::v4()));
         auto bec = recv.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto port = recv.local_endpoint().port();
 
         udp_socket send(ioc);
-        send.open(udp::v4());
+        BOOST_TEST(!send.open(udp::v4()));
 
         std::size_t first_n = 0;
         std::error_code wait_ec;
@@ -854,12 +854,12 @@ struct wait_test
         auto ex = ioc.get_executor();
 
         udp_socket rsock(ioc);
-        rsock.open(udp::v4());
+        BOOST_TEST(!rsock.open(udp::v4()));
         auto bec = rsock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
         udp_socket ssock(ioc);
-        ssock.open(udp::v4());
+        BOOST_TEST(!ssock.open(udp::v4()));
 
         auto [t1, t2] = test::make_socket_pair(ioc);
 

@@ -595,10 +595,10 @@ struct wolfssl_engine_test
     testGarbageDerCertificateFailsSetup()
     {
         tls_context ctx;
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        // Whether the garbage surfaces here or at init() is
+        // backend-dependent; the init failure below is what matters.
+        (void)ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
+        (void)ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
 
         wssl_engine eng;
         // Unlike the OpenSSL engine, wolfSSL surfaces setup_error_

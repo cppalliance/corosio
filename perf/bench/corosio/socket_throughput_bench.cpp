@@ -29,6 +29,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <tuple>
 #endif
 
 #include "../../common/native_includes.hpp"
@@ -83,7 +84,7 @@ bench_throughput(bench::state& state)
             if (ec)
                 break;
         }
-        writer.shutdown(corosio::tcp_socket::shutdown_send);
+        std::ignore = writer.shutdown(corosio::tcp_socket::shutdown_send);
     };
 
     auto read_task = [&]() -> capy::task<> {
@@ -148,7 +149,7 @@ bench_bidirectional_throughput(bench::state& state)
             if (ec)
                 break;
         }
-        sock1.shutdown(corosio::tcp_socket::shutdown_send);
+        std::ignore = sock1.shutdown(corosio::tcp_socket::shutdown_send);
     };
 
     auto read1_task = [&]() -> capy::task<> {
@@ -171,7 +172,7 @@ bench_bidirectional_throughput(bench::state& state)
             if (ec)
                 break;
         }
-        sock2.shutdown(corosio::tcp_socket::shutdown_send);
+        std::ignore = sock2.shutdown(corosio::tcp_socket::shutdown_send);
     };
 
     auto read2_task = [&]() -> capy::task<> {
@@ -223,7 +224,7 @@ mt_write_coro(
         if (ec)
             break;
     }
-    sock.shutdown(corosio::tcp_socket::shutdown_send);
+    std::ignore = sock.shutdown(corosio::tcp_socket::shutdown_send);
 }
 
 template<auto Backend>
@@ -276,7 +277,7 @@ bench_throughput_lockless(bench::state& state)
             if (ec)
                 break;
         }
-        writer.shutdown(corosio::tcp_socket::shutdown_send);
+        std::ignore = writer.shutdown(corosio::tcp_socket::shutdown_send);
     };
 
     auto read_task = [&]() -> capy::task<> {
@@ -343,7 +344,7 @@ bench_bidirectional_throughput_lockless(bench::state& state)
             if (ec)
                 break;
         }
-        sock1.shutdown(corosio::tcp_socket::shutdown_send);
+        std::ignore = sock1.shutdown(corosio::tcp_socket::shutdown_send);
     };
 
     auto read1_task = [&]() -> capy::task<> {
@@ -366,7 +367,7 @@ bench_bidirectional_throughput_lockless(bench::state& state)
             if (ec)
                 break;
         }
-        sock2.shutdown(corosio::tcp_socket::shutdown_send);
+        std::ignore = sock2.shutdown(corosio::tcp_socket::shutdown_send);
     };
 
     auto read2_task = [&]() -> capy::task<> {

@@ -24,6 +24,7 @@
 #include <chrono>
 #include <thread>
 #include <vector>
+#include <tuple>
 
 #include "../../common/native_includes.hpp"
 
@@ -69,7 +70,7 @@ pingpong_client_task(
             co_return;
     }
 
-    client.shutdown(corosio::tcp_socket::shutdown_send);
+    std::ignore = client.shutdown(corosio::tcp_socket::shutdown_send);
 }
 
 template<auto Backend>

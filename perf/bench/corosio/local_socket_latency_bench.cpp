@@ -29,6 +29,7 @@
 #include <system_error>
 #include <thread>
 #include <vector>
+#include <tuple>
 
 namespace corosio = boost::corosio;
 namespace capy    = boost::capy;
@@ -72,7 +73,7 @@ unix_pingpong_client_task(
             co_return;
     }
 
-    client.shutdown(corosio::local_stream_socket::shutdown_send);
+    std::ignore = client.shutdown(corosio::local_stream_socket::shutdown_send);
 }
 
 template<auto Backend>

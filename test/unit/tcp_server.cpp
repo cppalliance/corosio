@@ -129,7 +129,7 @@ struct tcp_server_test
                std::atomic<bool>* connection_handled,
                std::atomic<bool>* stop_requested) -> capy::task<> {
             tcp_socket client(*ioc);
-            client.open();
+            BOOST_TEST(!client.open());
 
             auto [connect_ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
@@ -241,7 +241,7 @@ struct tcp_server_test
         auto task1 = [](io_context* ioc, std::uint16_t port,
                         int* count) -> capy::task<> {
             tcp_socket client(*ioc);
-            client.open();
+            BOOST_TEST(!client.open());
             auto [connect_ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
             if (!connect_ec)
@@ -279,7 +279,7 @@ struct tcp_server_test
         auto task2 = [](io_context* ioc, std::uint16_t port,
                         int* count) -> capy::task<> {
             tcp_socket client(*ioc);
-            client.open();
+            BOOST_TEST(!client.open());
             auto [connect_ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
             if (!connect_ec)
@@ -357,7 +357,7 @@ struct tcp_server_test
 
         // Test success case
         tcp_acceptor acc1(ioc);
-        acc1.open();
+        BOOST_TEST(!acc1.open());
         acc1.set_option(socket_option::reuse_address(true));
         auto ec1 = acc1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec1);
@@ -369,7 +369,7 @@ struct tcp_server_test
 
         // Test with explicit backlog
         tcp_acceptor acc2(ioc);
-        acc2.open();
+        BOOST_TEST(!acc2.open());
         acc2.set_option(socket_option::reuse_address(true));
         auto ec2 = acc2.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec2);
@@ -398,7 +398,7 @@ struct tcp_server_test
         // 192.0.2.1 is from TEST-NET-1 (RFC 5737), reserved for documentation
         // and never assigned to real interfaces.
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         auto ec = acc.bind(endpoint(ipv4_address({192, 0, 2, 1}), 0));
         BOOST_TEST(ec);
         acc.close();
@@ -420,7 +420,7 @@ struct tcp_server_test
         tcp_acceptor acc(ioc);
 
         // First listen
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec1 = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec1);
@@ -430,7 +430,7 @@ struct tcp_server_test
 
         // Close and re-listen
         acc.close();
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec2 = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec2);
@@ -533,7 +533,7 @@ struct tcp_server_test
             for (int i = 0; i < 2; ++i)
             {
                 tcp_socket client(*ioc);
-                client.open();
+                BOOST_TEST(!client.open());
                 auto [cec] = co_await client.connect(
                     endpoint(ipv4_address::loopback(), port));
                 (void)cec;
@@ -615,7 +615,6 @@ struct tcp_server_test
                          std::atomic<int>* connected,
                          multi_server* srv) -> capy::task<> {
             tcp_socket c1(*ioc), c2(*ioc), c3(*ioc);
-            c1.open(); c2.open(); c3.open();
 
             auto [e1] = co_await c1.connect(
                 endpoint(ipv4_address::loopback(), port));
@@ -719,7 +718,7 @@ struct tcp_server_test
         auto client_task = [](io_context* ioc, std::uint16_t port,
                               one_worker_server* srv) -> capy::task<> {
             tcp_socket client(*ioc);
-            client.open();
+            BOOST_TEST(!client.open());
             auto [cec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
             (void)cec;
@@ -781,7 +780,7 @@ struct tcp_server_test
             for (int i = 0; i < 2; ++i)
             {
                 tcp_socket client(*ioc);
-                client.open();
+                BOOST_TEST(!client.open());
                 auto [cec] = co_await client.connect(
                     endpoint(ipv4_address::loopback(), port));
                 if (cec)

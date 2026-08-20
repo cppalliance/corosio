@@ -33,23 +33,22 @@ local_stream_socket::local_stream_socket(capy::execution_context& ctx)
 {
 }
 
-void
-local_stream_socket::open(local_stream proto)
+std::error_code
+local_stream_socket::open(local_stream proto) noexcept
 {
     if (is_open())
-        return;
-    open_for_family(proto.family(), proto.type(), proto.protocol());
+        return {};
+    return open_for_family(proto.family(), proto.type(), proto.protocol());
 }
 
-void
-local_stream_socket::open_for_family(int family, int type, int protocol)
+std::error_code
+local_stream_socket::open_for_family(int family, int type, int protocol) noexcept
 {
     auto& svc = static_cast<detail::local_stream_service&>(h_.service());
     std::error_code ec = svc.open_socket(
         static_cast<local_stream_socket::implementation&>(*h_.get()),
         family, type, protocol);
-    if (ec)
-        detail::throw_system_error(ec, "local_stream_socket::open");
+    return ec;
 }
 
 void
@@ -68,32 +67,21 @@ local_stream_socket::cancel()
     get().cancel();
 }
 
-void
-local_stream_socket::shutdown(shutdown_type what)
+std::error_code
+local_stream_socket::shutdown(shutdown_type what) noexcept
 {
-    if (is_open())
-    {
-        // Best-effort: errors like ENOTCONN are expected and unhelpful
-        [[maybe_unused]] auto ec = get().shutdown(what);
-    }
+    if (!is_open())
+        return make_error_code(std::errc::bad_file_descriptor);
+    return get().shutdown(what);
 }
 
-void
-local_stream_socket::shutdown(shutdown_type what, std::error_code& ec) noexcept
-{
-    ec = {};
-    if (is_open())
-        ec = get().shutdown(what);
-}
-
-void
-local_stream_socket::assign(native_handle_type fd)
+std::error_code
+local_stream_socket::assign(native_handle_type fd) noexcept
 {
     auto& svc = static_cast<detail::local_stream_service&>(h_.service());
     std::error_code ec = svc.assign_socket(
         static_cast<local_stream_socket::implementation&>(*h_.get()), fd);
-    if (ec)
-        detail::throw_system_error(ec, "local_stream_socket::assign");
+    return ec;
 }
 
 native_handle_type

@@ -183,7 +183,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(0));
         BOOST_TEST(!ec);
@@ -201,7 +201,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto opt = acc.get_option<socket_option::reuse_address>();
         BOOST_TEST(opt.value());
@@ -220,7 +220,7 @@ struct tcp_acceptor_test
     {
         io_context ioc(Backend);
         tcp_acceptor acc1(ioc);
-        acc1.open();
+        BOOST_TEST(!acc1.open());
         acc1.set_option(socket_option::reuse_address(true));
         auto ec = acc1.bind(endpoint(0));
         BOOST_TEST(!ec);
@@ -241,7 +241,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc1(ioc);
         tcp_acceptor acc2(ioc);
-        acc1.open();
+        BOOST_TEST(!acc1.open());
         acc1.set_option(socket_option::reuse_address(true));
         auto ec = acc1.bind(endpoint(0));
         BOOST_TEST(!ec);
@@ -267,7 +267,7 @@ struct tcp_acceptor_test
         // acceptor impl alive until IOCP delivers the cancellation.
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(0));
         BOOST_TEST(!ec);
@@ -315,7 +315,7 @@ struct tcp_acceptor_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         // Bind to loopback explicitly: connecting to a wildcard-bound
         // listener's 0.0.0.0 address only works on some platforms.
@@ -363,7 +363,7 @@ struct tcp_acceptor_test
         // The acceptor_ptr shared_ptr in accept_op ensures this.
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(0));
         BOOST_TEST(!ec);
@@ -408,7 +408,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        acc.open(tcp::v6());
+        BOOST_TEST(!acc.open(tcp::v6()));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -426,7 +426,7 @@ struct tcp_acceptor_test
     {
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        acc.open(tcp::v6());
+        BOOST_TEST(!acc.open(tcp::v6()));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -481,7 +481,7 @@ struct tcp_acceptor_test
         // associated with the acceptor's execution context.
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        acc.open(tcp::v6());
+        BOOST_TEST(!acc.open(tcp::v6()));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -539,7 +539,7 @@ struct tcp_acceptor_test
         tcp_acceptor acc(ioc);
 
         // Default v6only=false gives dual-stack
-        acc.open(tcp::v6());
+        BOOST_TEST(!acc.open(tcp::v6()));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::any(), 0));
         BOOST_TEST(!ec);
@@ -594,7 +594,7 @@ struct tcp_acceptor_test
         tcp_acceptor acc(ioc);
 
         // Explicit v6only restricts to IPv6
-        acc.open(tcp::v6());
+        BOOST_TEST(!acc.open(tcp::v6()));
         acc.set_option(socket_option::reuse_address(true));
         acc.set_option(socket_option::v6_only(true));
         auto ec = acc.bind(endpoint(ipv6_address::any(), 0));
@@ -642,7 +642,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        acc.open();
+        BOOST_TEST(!acc.open());
         BOOST_TEST_EQ(acc.is_open(), true);
 
         acc.set_option(socket_option::reuse_address(true));
@@ -697,7 +697,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         acc.set_option(socket_option::reuse_port(true));
 
@@ -720,11 +720,11 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        acc.open();
+        BOOST_TEST(!acc.open());
         BOOST_TEST_EQ(acc.is_open(), true);
 
         // Second open should be a no-op
-        acc.open();
+        BOOST_TEST(!acc.open());
         BOOST_TEST_EQ(acc.is_open(), true);
 
         acc.close();
@@ -758,7 +758,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -829,14 +829,14 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
 
         tcp_acceptor acc1(ioc);
-        acc1.open();
+        BOOST_TEST(!acc1.open());
         acc1.set_option(socket_option::reuse_address(true));
         auto ec = acc1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         auto port = acc1.local_endpoint().port();
 
         tcp_acceptor acc2(ioc);
-        acc2.open();
+        BOOST_TEST(!acc2.open());
         ec = acc2.bind(endpoint(ipv4_address::loopback(), port));
         BOOST_TEST(ec);
 
@@ -849,7 +849,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        acc.open();
+        BOOST_TEST(!acc.open());
 
         // Bind to an address not assigned to any local interface
         auto ec = acc.bind(endpoint(ipv4_address("1.2.3.4"), 0));
@@ -930,7 +930,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(0));
         BOOST_TEST(!ec);
@@ -968,7 +968,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1023,7 +1023,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1065,7 +1065,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(0));
         BOOST_TEST(!ec);
@@ -1093,7 +1093,7 @@ struct tcp_acceptor_test
         // Closed: returns the platform sentinel.
         BOOST_TEST(acc.native_handle() == invalid_native_socket);
 
-        acc.open();
+        BOOST_TEST(!acc.open());
         BOOST_TEST(acc.native_handle() != invalid_native_socket);
         acc.close();
         BOOST_TEST(acc.native_handle() == invalid_native_socket);
@@ -1149,7 +1149,7 @@ struct tcp_acceptor_test
         BOOST_TEST(port != 0);
 
         tcp_acceptor acc(ioc);
-        acc.assign(lfd);
+        BOOST_TEST(!acc.assign(lfd));
         BOOST_TEST(acc.is_open());
         BOOST_TEST(acc.native_handle() == lfd);
         BOOST_TEST_EQ(acc.local_endpoint().port(), port);
@@ -1166,7 +1166,7 @@ struct tcp_acceptor_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1242,7 +1242,7 @@ struct tcp_acceptor_test
         BOOST_TEST(native_connect_loopback(client, port, false));
 
         tcp_acceptor acc(ioc);
-        acc.assign(lfd);
+        BOOST_TEST(!acc.assign(lfd));
         BOOST_TEST(acc.is_open());
 
         // Pump once with nothing parked so the registration-time
@@ -1298,7 +1298,7 @@ struct tcp_acceptor_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1341,7 +1341,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1359,7 +1359,7 @@ struct tcp_acceptor_test
         BOOST_TEST(lfd != invalid_native_socket);
         BOOST_TEST(port != old_port);
 
-        acc.assign(lfd);
+        BOOST_TEST(!acc.assign(lfd));
         BOOST_TEST(acc.is_open());
         BOOST_TEST(acc.native_handle() == lfd);
         BOOST_TEST_EQ(acc.local_endpoint().port(), port);
@@ -1375,7 +1375,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1391,7 +1391,7 @@ struct tcp_acceptor_test
         auto lfd = make_native_listener(false, port);
         BOOST_TEST(lfd != invalid_native_socket);
 
-        acc.assign(lfd);
+        BOOST_TEST(!acc.assign(lfd));
         BOOST_TEST(acc.is_open());
         BOOST_TEST(acc.native_handle() == lfd);
         BOOST_TEST_EQ(acc.local_endpoint().port(), port);
@@ -1408,7 +1408,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1425,7 +1425,7 @@ struct tcp_acceptor_test
         BOOST_TEST(released != invalid_native_socket);
         close_native_socket(released);
 
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1447,7 +1447,7 @@ struct tcp_acceptor_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1505,7 +1505,7 @@ struct tcp_acceptor_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1526,7 +1526,7 @@ struct tcp_acceptor_test
         close_native_socket(released);
         close_native_socket(stale);
 
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1578,38 +1578,29 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        auto expect_throw = [&](native_handle_type h) {
-            bool threw = false;
-            try
-            {
-                acc.assign(h);
-            }
-            catch (std::system_error const&)
-            {
-                threw = true;
-            }
-            BOOST_TEST(threw);
+        auto expect_error = [&](native_handle_type h) {
+            BOOST_TEST(acc.assign(h));
         };
 
-        expect_throw(invalid_native_socket);
+        expect_error(invalid_native_socket);
         BOOST_TEST(!acc.is_open());
 
         auto dg = make_native_socket(AF_INET, SOCK_DGRAM);
         BOOST_TEST(dg != invalid_native_socket);
-        expect_throw(dg);
+        expect_error(dg);
         BOOST_TEST(native_socket_valid(dg)); // caller keeps it
         close_native_socket(dg);
 
 #if BOOST_COROSIO_POSIX
         auto un = make_native_socket(AF_UNIX, SOCK_STREAM);
         BOOST_TEST(un != invalid_native_socket);
-        expect_throw(un);
+        expect_error(un);
         BOOST_TEST(native_socket_valid(un));
         close_native_socket(un);
 #endif
 
-        acc.open();
-        expect_throw(acc.native_handle());
+        BOOST_TEST(!acc.open());
+        expect_error(acc.native_handle());
         BOOST_TEST(acc.is_open());
         acc.close();
     }
@@ -1619,7 +1610,7 @@ struct tcp_acceptor_test
     {
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -1672,7 +1663,7 @@ struct tcp_acceptor_test
             return; // no IPv6 loopback on this host
 
         tcp_acceptor acc(ioc);
-        acc.assign(lfd);
+        BOOST_TEST(!acc.assign(lfd));
         BOOST_TEST(acc.is_open());
         BOOST_TEST(acc.local_endpoint().is_v6());
         BOOST_TEST_EQ(acc.local_endpoint().port(), port);

@@ -31,7 +31,7 @@ struct native_io_test
         auto ex = ctx.get_executor();
 
         native_tcp_acceptor<Backend> acc(ctx);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(native_socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -41,7 +41,7 @@ struct native_io_test
 
         tcp_socket peer(ctx);
         native_tcp_socket<Backend> client(ctx);
-        client.open();
+        BOOST_TEST(!client.open());
 
         bool done = false;
         std::error_code io_ec;

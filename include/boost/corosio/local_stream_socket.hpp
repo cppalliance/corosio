@@ -297,11 +297,16 @@ public:
         Creates a Unix stream socket and associates it with
         the platform reactor.
 
+        Failures such as descriptor exhaustion are normal runtime
+        conditions and are reported through the returned error code.
+        Opening an already-open socket is a no-op that reports
+        success.
+
         @param proto The protocol. Defaults to local_stream{}.
 
-        @throws std::system_error on failure.
+        @return The error code, empty on success.
     */
-    void open(local_stream proto = {});
+    [[nodiscard]] std::error_code open(local_stream proto = {}) noexcept;
 
     /** Close the socket.
 
@@ -331,14 +336,15 @@ public:
 
         @return An awaitable that completes with io_result<>.
 
-        @throws std::system_error if the socket needs to be opened
-            and the open fails.
+        If the socket needs to be opened and the open fails, the
+        awaitable completes immediately with that error.
     */
     auto connect(corosio::local_endpoint ep)
     {
+        connect_awaitable aw(*this, ep);
         if (!is_open())
-            open();
-        return connect_awaitable(*this, ep);
+            aw.ec_ = open();
+        return aw;
     }
 
     /** Wait for the socket to become ready in a given direction.
@@ -407,19 +413,17 @@ public:
         allows you to close one or both directions without
         destroying the socket.
 
+        Failures such as a peer that already disconnected are
+        normal runtime conditions and are reported through the
+        returned error code. A closed socket reports
+        `errc::bad_file_descriptor`.
+
         @param what Determines what operations will no longer
             be allowed.
 
-        @throws std::system_error on failure.
+        @return The error code, empty on success.
     */
-    void shutdown(shutdown_type what);
-
-    /** Shut down part or all of the socket (non-throwing).
-
-        @param what Which direction to shut down.
-        @param ec Set to the error code on failure.
-    */
-    void shutdown(shutdown_type what, std::error_code& ec) noexcept;
+    [[nodiscard]] std::error_code shutdown(shutdown_type what) noexcept;
 
     /** Set a socket option.
 
@@ -490,10 +494,11 @@ public:
         @param fd The native socket to adopt. On success the object
             owns it and will close it.
 
-        @throws std::system_error On validation or registration
-            failure.
+        @return The error code, empty on success. Validation and
+            registration failures are normal runtime conditions when
+            adopting foreign descriptors.
     */
-    void assign(native_handle_type fd);
+    [[nodiscard]] std::error_code assign(native_handle_type fd) noexcept;
 
     /** Get the local endpoint of the socket.
 
@@ -523,7 +528,7 @@ protected:
 private:
     friend class local_stream_acceptor;
 
-    void open_for_family(int family, int type, int protocol);
+    std::error_code open_for_family(int family, int type, int protocol) noexcept;
 
     inline implementation& get() const noexcept
     {

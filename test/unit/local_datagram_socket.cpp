@@ -58,7 +58,7 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
 
-        sock.open();
+        BOOST_TEST(!sock.open());
         BOOST_TEST_EQ(sock.is_open(), true);
 
         sock.close();
@@ -69,7 +69,7 @@ struct local_datagram_socket_test
     {
         io_context ioc(Backend);
         local_datagram_socket s1(ioc);
-        s1.open();
+        BOOST_TEST(!s1.open());
         BOOST_TEST_EQ(s1.is_open(), true);
 
         local_datagram_socket s2(std::move(s1));
@@ -130,7 +130,7 @@ struct local_datagram_socket_test
     {
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         test::temp_socket_dir tmp;
         auto path = tmp.path();
@@ -150,8 +150,8 @@ struct local_datagram_socket_test
 
         local_datagram_socket s1(ioc);
         local_datagram_socket s2(ioc);
-        s1.open();
-        s2.open();
+        BOOST_TEST(!s1.open());
+        BOOST_TEST(!s2.open());
 
         auto ec1 = s1.bind(local_endpoint(path1));
         auto ec2 = s2.bind(local_endpoint(path2));
@@ -209,7 +209,7 @@ struct local_datagram_socket_test
     {
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         // Bind to a path under a nonexistent directory
         auto ec = sock.bind(local_endpoint("/tmp/nonexistent_dir_corosio/sock"));
@@ -315,8 +315,8 @@ struct local_datagram_socket_test
 
         local_datagram_socket s1(ioc);
         local_datagram_socket s2(ioc);
-        s1.open();
-        s2.open();
+        BOOST_TEST(!s1.open());
+        BOOST_TEST(!s2.open());
 
         auto ec1 = s1.bind(local_endpoint(abs_path1));
         auto ec2 = s2.bind(local_endpoint(abs_path2));
@@ -448,8 +448,8 @@ struct local_datagram_socket_test
 
         local_datagram_socket s1(ioc);
         local_datagram_socket s2(ioc);
-        s1.open();
-        s2.open();
+        BOOST_TEST(!s1.open());
+        BOOST_TEST(!s2.open());
 
         auto ec1 = s1.bind(local_endpoint(path1));
         auto ec2 = s2.bind(local_endpoint(path2));
@@ -529,7 +529,7 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         local_datagram_socket s1(ioc);
         local_datagram_socket s2(ioc);
-        s1.open();
+        BOOST_TEST(!s1.open());
         BOOST_TEST_EQ(s1.is_open(), true);
 
         s2 = std::move(s1);
@@ -554,7 +554,7 @@ struct local_datagram_socket_test
 
         BOOST_TEST_EQ(sock.native_handle() < 0, true);
 
-        sock.open();
+        BOOST_TEST(!sock.open());
         BOOST_TEST(sock.native_handle() >= 0);
     }
 
@@ -571,7 +571,7 @@ struct local_datagram_socket_test
     {
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         test::temp_socket_dir tmp;
         auto path = tmp.path();
@@ -589,20 +589,13 @@ struct local_datagram_socket_test
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
 
-        // Throwing overload (best-effort, may report ENOTCONN).
-        s1.shutdown(shutdown_send);
+        BOOST_TEST(!s1.shutdown(shutdown_send));
+        BOOST_TEST(!s2.shutdown(shutdown_send));
 
-        // Non-throwing overload
-        std::error_code ec;
-        s2.shutdown(shutdown_send, ec);
-
-        // Closed-socket no-ops
+        // Closed socket reports bad_file_descriptor
         local_datagram_socket closed(ioc);
-        closed.shutdown(shutdown_send);
-
-        std::error_code ec2;
-        closed.shutdown(shutdown_send, ec2);
-        BOOST_TEST_EQ(!ec2, true);
+        BOOST_TEST(closed.shutdown(shutdown_send)
+                   == std::errc::bad_file_descriptor);
     }
 
     void testBindClosedThrows()
@@ -681,7 +674,7 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
         local_datagram_socket d1(ioc), d2(ioc);
-        connect_pair(d1, d2);
+        BOOST_TEST(!connect_pair(d1, d2));
 
         int fds[2];
         BOOST_TEST(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);
@@ -699,7 +692,7 @@ struct local_datagram_socket_test
             recv_done = true;
         };
         auto assigner = [&]() -> capy::task<> {
-            d1.assign(static_cast<native_handle_type>(fds[0]));
+            BOOST_TEST(!d1.assign(static_cast<native_handle_type>(fds[0])));
             co_return;
         };
         capy::run_async(ex)(reader());
@@ -735,16 +728,7 @@ struct local_datagram_socket_test
     {
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
-        bool threw = false;
-        try
-        {
-            sock.assign((native_handle_type)-1);
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        BOOST_TEST(sock.assign((native_handle_type)-1));
         BOOST_TEST(!sock.is_open());
     }
 
@@ -756,16 +740,7 @@ struct local_datagram_socket_test
         local_datagram_socket sock(ioc);
         int fds[2];
         BOOST_TEST(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
-        bool threw = false;
-        try
-        {
-            sock.assign((native_handle_type)fds[0]);
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        BOOST_TEST(sock.assign((native_handle_type)fds[0]));
         BOOST_TEST(::fcntl(fds[0], F_GETFD) >= 0);
         BOOST_TEST(!sock.is_open());
         ::close(fds[0]);

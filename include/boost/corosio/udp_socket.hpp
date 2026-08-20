@@ -20,6 +20,7 @@
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/message_flags.hpp>
+#include <boost/corosio/shutdown_type.hpp>
 #include <boost/corosio/udp.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -89,6 +90,9 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL udp_socket : public io_object
 {
 public:
+    using shutdown_type = corosio::shutdown_type;
+    using enum corosio::shutdown_type;
+
     /** Define backend hooks for UDP socket operations.
 
         Platform backends (epoll, kqueue, select) derive from
@@ -161,6 +165,9 @@ public:
             error. Check `ec == cond::canceled` for portable comparison.
         */
         virtual void cancel() noexcept = 0;
+
+        /// Shut down the socket in one or both directions.
+        virtual std::error_code shutdown(shutdown_type what) noexcept = 0;
 
         /** Set a socket option.
 
@@ -463,12 +470,17 @@ public:
         Creates a UDP socket and associates it with the platform
         reactor.
 
+        Failures such as descriptor exhaustion are normal runtime
+        conditions and are reported through the returned error code.
+        Opening an already-open socket is a no-op that reports
+        success.
+
         @param proto The protocol (IPv4 or IPv6). Defaults to
             `udp::v4()`.
 
-        @throws std::system_error on failure.
+        @return The error code, empty on success.
     */
-    void open(udp proto = udp::v4());
+    [[nodiscard]] std::error_code open(udp proto = udp::v4()) noexcept;
 
     /** Close the socket.
 
@@ -502,6 +514,19 @@ public:
         @throws std::logic_error if the socket is not open.
     */
     [[nodiscard]] std::error_code bind(endpoint ep);
+
+    /** Disable sends or receives on the socket.
+
+        Failures such as an unconnected socket are normal runtime
+        conditions and are reported through the returned error
+        code. A closed socket reports `errc::bad_file_descriptor`.
+
+        @param what Determines what operations will no longer be
+            allowed.
+
+        @return The error code, empty on success.
+    */
+    [[nodiscard]] std::error_code shutdown(shutdown_type what) noexcept;
 
     /** Cancel any pending asynchronous operations.
 
@@ -541,10 +566,11 @@ public:
         @param fd The native socket to adopt. On success the object
             owns it and will close it.
 
-        @throws std::system_error On validation or registration
-            failure.
+        @return The error code, empty on success. Validation and
+            registration failures are normal runtime conditions when
+            adopting foreign descriptors.
     */
-    void assign(native_handle_type fd);
+    [[nodiscard]] std::error_code assign(native_handle_type fd) noexcept;
 
     /** Release ownership of the native socket handle.
 
@@ -676,14 +702,15 @@ public:
 
         @return An awaitable that completes with `io_result<>`.
 
-        @throws std::system_error if the socket needs to be opened
-            and the open fails.
+        If the socket needs to be opened and the open fails, the
+        awaitable completes immediately with that error.
     */
     auto connect(endpoint ep)
     {
+        connect_awaitable aw(*this, ep);
         if (!is_open())
-            open(ep.is_v6() ? udp::v6() : udp::v4());
-        return connect_awaitable(*this, ep);
+            aw.ec_ = open(ep.is_v6() ? udp::v6() : udp::v4());
+        return aw;
     }
 
     /** Wait for the socket to become ready in a given direction.
@@ -776,7 +803,7 @@ protected:
 
 private:
     /// Open the socket for the given protocol triple.
-    void open_for_family(int family, int type, int protocol);
+    std::error_code open_for_family(int family, int type, int protocol) noexcept;
 
     inline implementation& get() const noexcept
     {

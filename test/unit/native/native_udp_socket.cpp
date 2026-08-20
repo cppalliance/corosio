@@ -87,7 +87,7 @@ struct native_udp_socket_test
     {
         io_context ctx(Backend);
         native_udp_socket<Backend> s1(ctx);
-        s1.open();
+        BOOST_TEST(!s1.open());
         BOOST_TEST(s1.is_open());
 
         native_udp_socket<Backend> s2(std::move(s1));
@@ -98,7 +98,7 @@ struct native_udp_socket_test
     {
         io_context ctx(Backend);
         native_udp_socket<Backend> ns(ctx);
-        ns.open();
+        BOOST_TEST(!ns.open());
 
         udp_socket& base = ns;
         BOOST_TEST(base.is_open());
@@ -113,8 +113,8 @@ struct native_udp_socket_test
         native_udp_socket<Backend> sender(ioc);
         native_udp_socket<Backend> receiver(ioc);
 
-        sender.open();
-        receiver.open();
+        BOOST_TEST(!sender.open());
+        BOOST_TEST(!receiver.open());
 
         auto ec = receiver.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -150,7 +150,7 @@ struct native_udp_socket_test
         io_context ioc(Backend);
 
         native_udp_socket<Backend> sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
 
@@ -188,7 +188,7 @@ struct native_udp_socket_test
         io_context ioc(Backend);
 
         native_udp_socket<Backend> sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
 
@@ -227,7 +227,7 @@ struct native_udp_socket_test
         native_udp_socket<Backend> a(ioc);
         native_udp_socket<Backend> b(ioc);
 
-        b.open();
+        BOOST_TEST(!b.open());
         auto ec = b.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
         auto b_ep = b.local_endpoint();
@@ -279,7 +279,7 @@ struct native_udp_socket_test
         io_context ioc(Backend);
 
         native_udp_socket<Backend> receiver(ioc);
-        receiver.open();
+        BOOST_TEST(!receiver.open());
         auto ec = receiver.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
         auto recv_ep = receiver.local_endpoint();
@@ -307,8 +307,8 @@ struct native_udp_socket_test
         native_udp_socket<Backend> sender(ioc);
         native_udp_socket<Backend> receiver(ioc);
 
-        sender.open();
-        receiver.open();
+        BOOST_TEST(!sender.open());
+        BOOST_TEST(!receiver.open());
 
         auto ec = receiver.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -345,13 +345,13 @@ struct native_udp_socket_test
         auto       ex = ioc.get_executor();
 
         native_udp_socket<Backend> recv(ioc);
-        recv.open(udp::v4());
+        BOOST_TEST(!recv.open(udp::v4()));
         auto bec = recv.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto port = recv.local_endpoint().port();
 
         native_udp_socket<Backend> send(ioc);
-        send.open(udp::v4());
+        BOOST_TEST(!send.open(udp::v4()));
 
         std::error_code wait_ec;
         bool            wait_done = false;
@@ -386,7 +386,7 @@ struct native_udp_socket_test
     {
         io_context ioc(Backend);
         native_udp_socket<Backend> sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         sock.set_option(native_socket_option::broadcast(true));
         auto bc =
@@ -440,7 +440,7 @@ struct native_udp_socket_test
     {
         io_context ioc(Backend);
         native_udp_socket<Backend> sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         try
         {
@@ -474,7 +474,7 @@ struct native_udp_socket_test
     {
         io_context ioc(Backend);
         native_udp_socket<Backend> sock(ioc);
-        sock.open(udp::v6());
+        BOOST_TEST(!sock.open(udp::v6()));
 
         sock.set_option(native_socket_option::multicast_loop_v6(true));
         sock.set_option(native_socket_option::multicast_hops_v6(4));

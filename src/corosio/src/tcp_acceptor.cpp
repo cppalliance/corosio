@@ -40,7 +40,8 @@ tcp_acceptor::tcp_acceptor(
     capy::execution_context& ctx, endpoint ep, int backlog)
     : tcp_acceptor(ctx)
 {
-    open(ep.is_v6() ? tcp::v6() : tcp::v4());
+    if (auto ec = open(ep.is_v6() ? tcp::v6() : tcp::v4()))
+        detail::throw_system_error(ec, "tcp_acceptor");
     set_option(socket_option::reuse_address(true));
     if (auto ec = bind(ep))
         detail::throw_system_error(ec, "tcp_acceptor");
@@ -48,11 +49,11 @@ tcp_acceptor::tcp_acceptor(
         detail::throw_system_error(ec, "tcp_acceptor");
 }
 
-void
-tcp_acceptor::open(tcp proto)
+std::error_code
+tcp_acceptor::open(tcp proto) noexcept
 {
     if (is_open())
-        return;
+        return {};
 
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc = static_cast<detail::win_tcp_acceptor_service&>(h_.service());
@@ -62,12 +63,11 @@ tcp_acceptor::open(tcp proto)
     std::error_code ec = svc.open_acceptor_socket(
         *static_cast<tcp_acceptor::implementation*>(h_.get()), proto.family(),
         proto.type(), proto.protocol());
-    if (ec)
-        detail::throw_system_error(ec, "tcp_acceptor::open");
+    return ec;
 }
 
-void
-tcp_acceptor::assign(native_handle_type fd)
+std::error_code
+tcp_acceptor::assign(native_handle_type fd) noexcept
 {
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc = static_cast<detail::win_tcp_acceptor_service&>(h_.service());
@@ -76,8 +76,7 @@ tcp_acceptor::assign(native_handle_type fd)
 #endif
     std::error_code ec = svc.assign_socket(
         *static_cast<tcp_acceptor::implementation*>(h_.get()), fd);
-    if (ec)
-        detail::throw_system_error(ec, "tcp_acceptor::assign");
+    return ec;
 }
 
 native_handle_type

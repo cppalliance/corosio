@@ -249,36 +249,35 @@ win_random_access_file_internal::size() const
     return static_cast<std::uint64_t>(li.QuadPart);
 }
 
-inline void
-win_random_access_file_internal::resize(std::uint64_t new_size)
+inline std::error_code
+win_random_access_file_internal::resize(std::uint64_t new_size) noexcept
 {
     LARGE_INTEGER li;
     li.QuadPart = static_cast<LONGLONG>(new_size);
     if (!::SetFilePointerEx(handle_, li, nullptr, FILE_BEGIN))
-        throw_system_error(
-            make_err(::GetLastError()), "random_access_file::resize");
+        return make_err(::GetLastError());
     if (!::SetEndOfFile(handle_))
-        throw_system_error(
-            make_err(::GetLastError()), "random_access_file::resize");
+        return make_err(::GetLastError());
+    return {};
 }
 
-inline void
-win_random_access_file_internal::sync_data()
+inline std::error_code
+win_random_access_file_internal::sync_data() noexcept
 {
     // Attempt data-only flush; fall back to full flush
     if (svc_.try_flush_data(handle_))
-        return;
+        return {};
     if (!::FlushFileBuffers(handle_))
-        throw_system_error(
-            make_err(::GetLastError()), "random_access_file::sync_data");
+        return make_err(::GetLastError());
+    return {};
 }
 
-inline void
-win_random_access_file_internal::sync_all()
+inline std::error_code
+win_random_access_file_internal::sync_all() noexcept
 {
     if (!::FlushFileBuffers(handle_))
-        throw_system_error(
-            make_err(::GetLastError()), "random_access_file::sync_all");
+        return make_err(::GetLastError());
+    return {};
 }
 
 inline native_handle_type
@@ -289,8 +288,8 @@ win_random_access_file_internal::release()
     return reinterpret_cast<native_handle_type>(h);
 }
 
-inline void
-win_random_access_file_internal::assign(native_handle_type handle)
+inline std::error_code
+win_random_access_file_internal::assign(native_handle_type handle) noexcept
 {
     close_handle();
     HANDLE h = reinterpret_cast<HANDLE>(handle);
@@ -298,10 +297,10 @@ win_random_access_file_internal::assign(native_handle_type handle)
     if (!::CreateIoCompletionPort(
             h, static_cast<HANDLE>(svc_.iocp_handle()), key_io, 0))
     {
-        throw_system_error(
-            make_err(::GetLastError()), "random_access_file::assign");
+        return make_err(::GetLastError());
     }
     handle_ = h;
+    return {};
 }
 
 inline std::coroutine_handle<>
@@ -506,22 +505,22 @@ win_random_access_file::size() const
     return internal_->size();
 }
 
-inline void
-win_random_access_file::resize(std::uint64_t new_size)
+inline std::error_code
+win_random_access_file::resize(std::uint64_t new_size) noexcept
 {
-    internal_->resize(new_size);
+    return internal_->resize(new_size);
 }
 
-inline void
-win_random_access_file::sync_data()
+inline std::error_code
+win_random_access_file::sync_data() noexcept
 {
-    internal_->sync_data();
+    return internal_->sync_data();
 }
 
-inline void
-win_random_access_file::sync_all()
+inline std::error_code
+win_random_access_file::sync_all() noexcept
 {
-    internal_->sync_all();
+    return internal_->sync_all();
 }
 
 inline native_handle_type
@@ -530,10 +529,10 @@ win_random_access_file::release()
     return internal_->release();
 }
 
-inline void
-win_random_access_file::assign(native_handle_type handle)
+inline std::error_code
+win_random_access_file::assign(native_handle_type handle) noexcept
 {
-    internal_->assign(handle);
+    return internal_->assign(handle);
 }
 
 inline win_random_access_file_internal*

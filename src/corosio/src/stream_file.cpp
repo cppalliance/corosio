@@ -33,16 +33,14 @@ stream_file::stream_file(capy::execution_context& ctx)
 {
 }
 
-void
+std::error_code
 stream_file::open(
-    std::filesystem::path const& path, file_base::flags mode)
+    std::filesystem::path const& path, file_base::flags mode) noexcept
 {
     if (is_open())
         close();
-    auto& svc          = static_cast<detail::file_service&>(h_.service());
-    std::error_code ec = svc.open_file(get(), path, mode);
-    if (ec)
-        detail::throw_system_error(ec, "stream_file::open");
+    auto& svc = static_cast<detail::file_service&>(h_.service());
+    return svc.open_file(get(), path, mode);
 }
 
 void
@@ -85,34 +83,28 @@ stream_file::size() const
     return get().size();
 }
 
-void
-stream_file::resize(std::uint64_t new_size)
+std::error_code
+stream_file::resize(std::uint64_t new_size) noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
-            make_error_code(std::errc::bad_file_descriptor),
-            "stream_file::resize");
-    get().resize(new_size);
+        return make_error_code(std::errc::bad_file_descriptor);
+    return get().resize(new_size);
 }
 
-void
-stream_file::sync_data()
+std::error_code
+stream_file::sync_data() noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
-            make_error_code(std::errc::bad_file_descriptor),
-            "stream_file::sync_data");
-    get().sync_data();
+        return make_error_code(std::errc::bad_file_descriptor);
+    return get().sync_data();
 }
 
-void
-stream_file::sync_all()
+std::error_code
+stream_file::sync_all() noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
-            make_error_code(std::errc::bad_file_descriptor),
-            "stream_file::sync_all");
-    get().sync_all();
+        return make_error_code(std::errc::bad_file_descriptor);
+    return get().sync_all();
 }
 
 native_handle_type
@@ -125,21 +117,19 @@ stream_file::release()
     return get().release();
 }
 
-void
-stream_file::assign(native_handle_type handle)
+std::error_code
+stream_file::assign(native_handle_type handle) noexcept
 {
     if (is_open())
         close();
-    get().assign(handle);
+    return get().assign(handle);
 }
 
-std::uint64_t
-stream_file::seek(std::int64_t offset, file_base::seek_basis origin)
+capy::io_result<std::uint64_t>
+stream_file::seek(std::int64_t offset, file_base::seek_basis origin) noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
-            make_error_code(std::errc::bad_file_descriptor),
-            "stream_file::seek");
+        return {make_error_code(std::errc::bad_file_descriptor), 0};
     return get().seek(offset, origin);
 }
 

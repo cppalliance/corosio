@@ -97,7 +97,7 @@ struct native_local_datagram_socket_test
     {
         io_context ioc(Backend);
         native_local_datagram_socket<Backend> s(ioc);
-        s.open();
+        BOOST_TEST(!s.open());
         BOOST_TEST(s.is_open());
         s.close();
         BOOST_TEST_EQ(s.is_open(), false);
@@ -107,7 +107,7 @@ struct native_local_datagram_socket_test
     {
         io_context ioc(Backend);
         native_local_datagram_socket<Backend> s(ioc);
-        s.open();
+        BOOST_TEST(!s.open());
         local_datagram_socket& base = s;
         BOOST_TEST(base.is_open());
     }
@@ -122,8 +122,8 @@ struct native_local_datagram_socket_test
 
         native_local_datagram_socket<Backend> sender(ioc);
         native_local_datagram_socket<Backend> receiver(ioc);
-        sender.open();
-        receiver.open();
+        BOOST_TEST(!sender.open());
+        BOOST_TEST(!receiver.open());
 
         auto ec1 = sender.bind(local_endpoint(path1));
         auto ec2 = receiver.bind(local_endpoint(path2));
@@ -164,8 +164,8 @@ struct native_local_datagram_socket_test
 
         native_local_datagram_socket<Backend> a(ioc);
         native_local_datagram_socket<Backend> b(ioc);
-        a.open();
-        b.open();
+        BOOST_TEST(!a.open());
+        BOOST_TEST(!b.open());
 
         auto eca = a.bind(local_endpoint(path_a));
         auto ecb = b.bind(local_endpoint(path_b));
@@ -212,8 +212,8 @@ struct native_local_datagram_socket_test
 
         native_local_datagram_socket<Backend> sender(ioc);
         native_local_datagram_socket<Backend> receiver(ioc);
-        sender.open();
-        receiver.open();
+        BOOST_TEST(!sender.open());
+        BOOST_TEST(!receiver.open());
 
         auto ec1 = sender.bind(local_endpoint(path1));
         auto ec2 = receiver.bind(local_endpoint(path2));
@@ -253,12 +253,12 @@ struct native_local_datagram_socket_test
         auto       rx_path = rx_tmp.path();
 
         native_local_datagram_socket<Backend> recv(ioc);
-        recv.open();
+        BOOST_TEST(!recv.open());
         auto bec = recv.bind(local_endpoint(rx_path));
         BOOST_TEST(!bec);
 
         native_local_datagram_socket<Backend> send(ioc);
-        send.open();
+        BOOST_TEST(!send.open());
 
         std::error_code wait_ec;
         bool            wait_done = false;

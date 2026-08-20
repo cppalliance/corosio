@@ -39,29 +39,27 @@ local_stream_acceptor::local_stream_acceptor(capy::execution_context& ctx)
 {
 }
 
-void
-local_stream_acceptor::open(local_stream proto)
+std::error_code
+local_stream_acceptor::open(local_stream proto) noexcept
 {
     if (is_open())
-        return;
+        return {};
     auto& svc =
         static_cast<detail::local_stream_acceptor_service&>(h_.service());
     auto ec = svc.open_acceptor_socket(
         static_cast<local_stream_acceptor::implementation&>(*h_.get()),
         proto.family(), proto.type(), proto.protocol());
-    if (ec)
-        detail::throw_system_error(ec, "local_stream_acceptor::open");
+    return ec;
 }
 
-void
-local_stream_acceptor::assign(native_handle_type fd)
+std::error_code
+local_stream_acceptor::assign(native_handle_type fd) noexcept
 {
     auto& svc =
         static_cast<detail::local_stream_acceptor_service&>(h_.service());
     auto ec = svc.assign_socket(
         static_cast<local_stream_acceptor::implementation&>(*h_.get()), fd);
-    if (ec)
-        detail::throw_system_error(ec, "local_stream_acceptor::assign");
+    return ec;
 }
 
 native_handle_type

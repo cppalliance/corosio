@@ -53,8 +53,10 @@ Creates the underlying TCP socket:
 include::example$snippets/4d_sockets.cpp[tag=open,indent=0]
 ----
 
-This allocates a socket handle and registers it with the I/O backend.
-Throws `std::system_error` on failure.
+This allocates a socket handle and registers it with the I/O backend,
+returning a `std::error_code`; failures such as descriptor exhaustion
+are reported through the code. Explicit `open()` is only needed to set
+socket options before connecting — `connect()` opens automatically.
 
 === close()
 

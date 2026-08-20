@@ -62,6 +62,7 @@ namespace capy = boost::capy;
 #include <fstream>
 #include <string>
 #include <system_error>
+#include <tuple>
 
 #include "test_suite.hpp"
 
@@ -73,7 +74,8 @@ stream_read(
 {
     // tag::stream_read[]
     corosio::stream_file f(ioc);
-    f.open("data.bin", corosio::file_base::read_only);
+    if (auto ec = f.open("data.bin", corosio::file_base::read_only))
+        co_return;  // open failed
 
     char buf[4096];
     auto [ec, n] = co_await f.read_some(
@@ -92,10 +94,11 @@ stream_write(
 {
     // tag::stream_write[]
     corosio::stream_file f(ioc);
-    f.open("output.bin",
-        corosio::file_base::write_only
-        | corosio::file_base::create
-        | corosio::file_base::truncate);
+    if (auto ec = f.open("output.bin",
+            corosio::file_base::write_only
+            | corosio::file_base::create
+            | corosio::file_base::truncate))
+        co_return;  // open failed
 
     std::string data = "hello world";
     auto [ec, n] = co_await f.write_some(
@@ -109,11 +112,16 @@ std::uint64_t
 reposition(corosio::stream_file& f)
 {
     // tag::seek[]
-    f.seek(0, corosio::file_base::seek_set);    // beginning
-    f.seek(100, corosio::file_base::seek_cur);  // forward 100 bytes
-    f.seek(-10, corosio::file_base::seek_end);  // 10 bytes before end
+    auto [ec, pos] = f.seek(0, corosio::file_base::seek_set);  // beginning
+    if (! ec)
+        std::tie(ec, pos) =
+            f.seek(100, corosio::file_base::seek_cur);  // forward 100 bytes
+    if (! ec)
+        std::tie(ec, pos) =
+            f.seek(-10, corosio::file_base::seek_end);  // 10 before end
     // end::seek[]
-    return f.seek(0, corosio::file_base::seek_cur);
+    BOOST_TEST(!ec);
+    return pos;
 }
 
 capy::task<>
@@ -123,7 +131,8 @@ read_at(
 {
     // tag::read_at[]
     corosio::random_access_file f(ioc);
-    f.open("data.bin", corosio::file_base::read_only);
+    if (auto ec = f.open("data.bin", corosio::file_base::read_only))
+        co_return;  // open failed
 
     char buf[256];
     auto [ec, n] = co_await f.read_some_at(
@@ -141,7 +150,8 @@ write_at(
 {
     // tag::write_at[]
     corosio::random_access_file f(ioc);
-    f.open("data.bin", corosio::file_base::read_write);
+    if (auto ec = f.open("data.bin", corosio::file_base::read_write))
+        co_return;  // open failed
 
     auto [ec, n] = co_await f.write_some_at(
         512, capy::const_buffer("patched", 7));
@@ -154,10 +164,11 @@ void
 open_log(corosio::stream_file& f)
 {
     // tag::open_flags[]
-    f.open("log.txt",
-        corosio::file_base::write_only
-        | corosio::file_base::create
-        | corosio::file_base::append);
+    if (auto ec = f.open("log.txt",
+            corosio::file_base::write_only
+            | corosio::file_base::create
+            | corosio::file_base::append))
+        return;  // report the error
     // end::open_flags[]
 }
 
@@ -165,10 +176,13 @@ void
 inspect_metadata(corosio::stream_file& f)
 {
     // tag::metadata[]
-    auto bytes = f.size();       // file size in bytes
-    f.resize(1024);              // truncate or extend
-    f.sync_data();               // flush data to stable storage
-    f.sync_all();                // flush data and metadata
+    auto bytes = f.size();                 // file size in bytes
+    if (auto ec = f.resize(1024))          // truncate or extend
+        return;
+    if (auto ec = f.sync_data())           // flush data to stable storage
+        return;
+    if (auto ec = f.sync_all())            // flush data and metadata
+        return;
     // end::metadata[]
 }
 
@@ -218,9 +232,9 @@ adopt_handle(
     // Adopt a handle obtained from the platform's file API —
     // the file object takes ownership
     corosio::random_access_file f2(ioc);
-    f2.assign(native_handle);
+    auto ec = f2.assign(native_handle);
     // end::native_adopt[]
-    adopted = f2.is_open();
+    adopted = !ec && f2.is_open();
     f2.close();
 }
 
@@ -280,7 +294,7 @@ struct file_io_test
     {
         corosio::io_context ioc;
         corosio::stream_file f(ioc);
-        f.open("data.bin", corosio::file_base::read_only);
+        BOOST_TEST(!f.open("data.bin", corosio::file_base::read_only));
         // 2048-byte file: 10 bytes before end is position 2038
         BOOST_TEST_EQ(reposition(f), 2038u);
     }
@@ -333,7 +347,7 @@ struct file_io_test
     {
         corosio::io_context ioc;
         corosio::random_access_file f(ioc);
-        f.open("data.bin", corosio::file_base::read_only);
+        BOOST_TEST(!f.open("data.bin", corosio::file_base::read_only));
         release_handle(f);
 
         bool adopted = false;
@@ -346,8 +360,9 @@ struct file_io_test
     {
         corosio::io_context ioc;
         corosio::stream_file f(ioc);
-        f.open("data.bin", corosio::file_base::read_only);
-        f.seek(0, corosio::file_base::seek_end);
+        BOOST_TEST(!f.open("data.bin", corosio::file_base::read_only));
+        auto [sec, spos] = f.seek(0, corosio::file_base::seek_end);
+        BOOST_TEST(!sec);
         char buf[64];
         std::error_code ec;
         capy::run_async(ioc.get_executor())(read_at_eof(

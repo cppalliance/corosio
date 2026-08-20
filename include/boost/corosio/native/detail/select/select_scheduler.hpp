@@ -132,10 +132,10 @@ public:
     void notify_reactor() const;
 
     /// Watch the read end of the POSIX signal self-pipe (see scheduler.hpp).
-    void register_signal_reader(int read_fd) override
+    [[nodiscard]] std::error_code
+    register_signal_reader(int read_fd) override
     {
-        if (auto ec = register_descriptor(read_fd, signal_pipe_reader_.arm()))
-            detail::throw_system_error(ec, "select: register");
+        return register_descriptor(read_fd, signal_pipe_reader_.arm());
     }
 
 private:

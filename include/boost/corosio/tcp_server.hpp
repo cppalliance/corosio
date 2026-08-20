@@ -635,7 +635,7 @@ public:
 
         @return The error code if binding fails.
     */
-    std::error_code bind(endpoint ep);
+    [[nodiscard]] std::error_code bind(endpoint ep);
 
     /** Set the worker pool.
 

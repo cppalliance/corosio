@@ -100,7 +100,8 @@ public:
     /// Watch the read end of the POSIX signal self-pipe (see scheduler.hpp).
     /// Submits a multishot POLL on @p read_fd; on readiness the drain+deliver
     /// runs in dispatch context via signal_drain_op_.
-    void register_signal_reader(int read_fd) override;
+    [[nodiscard]] std::error_code
+    register_signal_reader(int read_fd) override;
 
     /** Return the underlying liburing ring.
 
@@ -802,7 +803,7 @@ io_uring_scheduler::prep_multishot_poll(int fd, void* data) noexcept
     ::io_uring_sqe_set_data(sqe, data);
 }
 
-inline void
+inline std::error_code
 io_uring_scheduler::register_signal_reader(int read_fd)
 {
     // Called once per service from add_signal(), holding neither the
@@ -817,7 +818,10 @@ io_uring_scheduler::register_signal_reader(int read_fd)
 
     lock_type lock(ring_mutex_);
     prep_multishot_poll(read_fd, &signal_pipe_sentinel_);
-    ::io_uring_submit(&ring_);
+    int rc = ::io_uring_submit(&ring_);
+    if (rc < 0)
+        return make_err(-rc);
+    return {};
 }
 
 inline void

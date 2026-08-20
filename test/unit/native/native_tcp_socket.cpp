@@ -72,7 +72,7 @@ struct native_tcp_socket_test
     {
         io_context ctx(Backend);
         native_tcp_socket<Backend> s1(ctx);
-        s1.open();
+        BOOST_TEST(!s1.open());
         BOOST_TEST(s1.is_open());
 
         native_tcp_socket<Backend> s2(std::move(s1));
@@ -83,7 +83,7 @@ struct native_tcp_socket_test
     {
         io_context ctx(Backend);
         native_tcp_socket<Backend> ns(ctx);
-        ns.open();
+        BOOST_TEST(!ns.open());
 
         tcp_socket& base = ns;
         BOOST_TEST(base.is_open());
@@ -131,7 +131,7 @@ struct native_tcp_socket_test
     {
         io_context ctx(Backend);
         native_tcp_socket<Backend> s(ctx);
-        s.open();
+        BOOST_TEST(!s.open());
 
         s.set_option(native_socket_option::no_delay(true));
         auto nd = s.template get_option<native_socket_option::no_delay>();

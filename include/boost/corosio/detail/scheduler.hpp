@@ -13,6 +13,8 @@
 #define BOOST_COROSIO_DETAIL_SCHEDULER_HPP
 
 #include <boost/corosio/detail/config.hpp>
+
+#include <system_error>
 #include <boost/capy/continuation.hpp>
 #include <coroutine>
 
@@ -94,8 +96,15 @@ struct BOOST_COROSIO_DECL scheduler
         uses synchronous C-runtime signal handling instead).
 
         @param read_fd The read end of the global signal self-pipe.
+
+        @return The error code, empty on success.
     */
-    virtual void register_signal_reader(int read_fd) { (void)read_fd; }
+    [[nodiscard]] virtual std::error_code
+    register_signal_reader(int read_fd)
+    {
+        (void)read_fd;
+        return {};
+    }
 
     /// Decomposed threading configuration applied via @ref configure_threading.
     struct threading_config

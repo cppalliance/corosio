@@ -141,7 +141,7 @@ struct udp_socket_test
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        sock.open();
+        BOOST_TEST(!sock.open());
         BOOST_TEST_EQ(sock.is_open(), true);
 
         sock.close();
@@ -153,7 +153,7 @@ struct udp_socket_test
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        sock.open(udp::v6());
+        BOOST_TEST(!sock.open(udp::v6()));
         BOOST_TEST_EQ(sock.is_open(), true);
 
         sock.close();
@@ -164,7 +164,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock1(ioc);
-        sock1.open();
+        BOOST_TEST(!sock1.open());
         BOOST_TEST_EQ(sock1.is_open(), true);
 
         udp_socket sock2(std::move(sock1));
@@ -179,7 +179,7 @@ struct udp_socket_test
         io_context ioc(Backend);
         udp_socket sock1(ioc);
         udp_socket sock2(ioc);
-        sock1.open();
+        BOOST_TEST(!sock1.open());
         BOOST_TEST_EQ(sock1.is_open(), true);
         BOOST_TEST_EQ(sock2.is_open(), false);
 
@@ -194,7 +194,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -210,7 +210,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open(udp::v6());
+        BOOST_TEST(!sock.open(udp::v6()));
 
         auto ec = sock.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -353,13 +353,13 @@ struct udp_socket_test
         io_context ioc(Backend);
 
         udp_socket sock1(ioc);
-        sock1.open();
+        BOOST_TEST(!sock1.open());
         auto ec = sock1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         auto port = sock1.local_endpoint().port();
 
         udp_socket sock2(ioc);
-        sock2.open();
+        BOOST_TEST(!sock2.open());
         ec = sock2.bind(endpoint(ipv4_address::loopback(), port));
         BOOST_TEST(ec);
 
@@ -400,11 +400,11 @@ struct udp_socket_test
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        sock.open();
+        BOOST_TEST(!sock.open());
         BOOST_TEST(sock.is_open());
         auto nh = sock.native_handle();
 
-        sock.open();
+        BOOST_TEST(!sock.open());
         BOOST_TEST(sock.is_open());
         BOOST_TEST_EQ(sock.native_handle(), nh);
 
@@ -415,7 +415,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         auto ec = sock.bind(endpoint(ipv4_address("1.2.3.4"), 0));
         BOOST_TEST(ec);
@@ -427,7 +427,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         sock.set_option(socket_option::receive_buffer_size(65536));
         auto opt = sock.get_option<socket_option::receive_buffer_size>();
@@ -448,8 +448,8 @@ struct udp_socket_test
         udp_socket sender(ioc);
         udp_socket receiver(ioc);
 
-        sender.open();
-        receiver.open();
+        BOOST_TEST(!sender.open());
+        BOOST_TEST(!receiver.open());
 
         auto ec = receiver.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -489,8 +489,8 @@ struct udp_socket_test
         udp_socket sender(ioc);
         udp_socket receiver(ioc);
 
-        sender.open(udp::v6());
-        receiver.open(udp::v6());
+        BOOST_TEST(!sender.open(udp::v6()));
+        BOOST_TEST(!receiver.open(udp::v6()));
 
         auto ec = receiver.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -525,8 +525,8 @@ struct udp_socket_test
         udp_socket a(ioc);
         udp_socket b(ioc);
 
-        a.open();
-        b.open();
+        BOOST_TEST(!a.open());
+        BOOST_TEST(!b.open());
 
         auto ec1 = a.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec1, std::error_code{});
@@ -563,8 +563,8 @@ struct udp_socket_test
         udp_socket sender(ioc);
         udp_socket receiver(ioc);
 
-        sender.open();
-        receiver.open();
+        BOOST_TEST(!sender.open());
+        BOOST_TEST(!receiver.open());
 
         auto ec = receiver.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -599,12 +599,30 @@ struct udp_socket_test
         ioc.run();
     }
 
+    void testShutdown()
+    {
+        io_context ioc(Backend);
+
+        // Closed socket reports bad_file_descriptor
+        udp_socket closed(ioc);
+        BOOST_TEST(closed.shutdown(shutdown_send)
+                   == std::errc::bad_file_descriptor);
+
+        // Open socket: outcome is platform-dependent for an
+        // unconnected datagram socket; only the path is exercised.
+        udp_socket sock(ioc);
+        BOOST_TEST(!sock.open());
+        auto ec = sock.shutdown(shutdown_send);
+        (void)ec;
+        sock.close();
+    }
+
     void testCancelRecv()
     {
         io_context ioc(Backend);
 
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
 
@@ -641,7 +659,7 @@ struct udp_socket_test
         io_context ioc(Backend);
 
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
 
@@ -681,8 +699,8 @@ struct udp_socket_test
         udp_socket reader(ioc);
         udp_socket signal_sock(ioc);
 
-        reader.open();
-        signal_sock.open();
+        BOOST_TEST(!reader.open());
+        BOOST_TEST(!signal_sock.open());
 
         auto ec1 = reader.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec1, std::error_code{});
@@ -752,8 +770,8 @@ struct udp_socket_test
         udp_socket a(ioc);
         udp_socket b(ioc);
 
-        a.open();
-        b.open();
+        BOOST_TEST(!a.open());
+        BOOST_TEST(!b.open());
 
         auto ec1 = a.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec1, std::error_code{});
@@ -822,7 +840,7 @@ struct udp_socket_test
         io_context ioc(Backend);
 
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
 
@@ -844,7 +862,7 @@ struct udp_socket_test
         io_context ioc(Backend);
 
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
 
@@ -864,7 +882,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         sock.set_option(socket_option::multicast_loop_v4(true));
         auto loop = sock.get_option<socket_option::multicast_loop_v4>();
@@ -885,7 +903,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open(udp::v6());
+        BOOST_TEST(!sock.open(udp::v6()));
 
         sock.set_option(socket_option::multicast_loop_v6(true));
         auto loop = sock.get_option<socket_option::multicast_loop_v6>();
@@ -909,12 +927,12 @@ struct udp_socket_test
         udp_socket sender(ioc);
         udp_socket receiver(ioc);
 
-        receiver.open();
+        BOOST_TEST(!receiver.open());
         auto ec = receiver.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
         auto recv_ep = receiver.local_endpoint();
 
-        sender.open();
+        BOOST_TEST(!sender.open());
 
         auto task = [](udp_socket& s, endpoint dest) -> capy::task<> {
             auto [ec] = co_await s.connect(dest);
@@ -933,7 +951,7 @@ struct udp_socket_test
         io_context ioc(Backend);
 
         udp_socket receiver(ioc);
-        receiver.open();
+        BOOST_TEST(!receiver.open());
         auto ec = receiver.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
         auto recv_ep = receiver.local_endpoint();
@@ -959,7 +977,7 @@ struct udp_socket_test
         udp_socket a(ioc);
         udp_socket b(ioc);
 
-        b.open();
+        BOOST_TEST(!b.open());
         auto ec = b.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
         auto b_ep = b.local_endpoint();
@@ -1016,7 +1034,7 @@ struct udp_socket_test
         udp_socket a(ioc);
         udp_socket b(ioc);
 
-        b.open(udp::v6());
+        BOOST_TEST(!b.open(udp::v6()));
         auto ec = b.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
         auto b_ep = b.local_endpoint();
@@ -1053,7 +1071,7 @@ struct udp_socket_test
         udp_socket a(ioc);
         udp_socket b(ioc);
 
-        b.open();
+        BOOST_TEST(!b.open());
         auto ec = b.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
         auto b_ep = b.local_endpoint();
@@ -1094,8 +1112,8 @@ struct udp_socket_test
         udp_socket receiver(ioc);
         udp_socket sender(ioc);
 
-        receiver.open();
-        sender.open();
+        BOOST_TEST(!receiver.open());
+        BOOST_TEST(!sender.open());
 
         auto ec = receiver.bind(endpoint(ipv4_address::any(), 0));
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -1156,7 +1174,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         try
         {
@@ -1177,7 +1195,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open(udp::v6());
+        BOOST_TEST(!sock.open(udp::v6()));
 
         try
         {
@@ -1198,7 +1216,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         try
         {
@@ -1217,7 +1235,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open(udp::v6());
+        BOOST_TEST(!sock.open(udp::v6()));
 
         try
         {
@@ -1237,7 +1255,7 @@ struct udp_socket_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         // Linux clamps SO_RCVBUF=0 to a minimum and reports success;
         // BSD platforms (macOS, FreeBSD) reject 0 with EINVAL.
@@ -1282,7 +1300,7 @@ struct udp_socket_test
         // TCP_NODELAY is meaningful only on TCP; setting on UDP must error.
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
 
         bool caught = false;
         try
@@ -1305,7 +1323,7 @@ struct udp_socket_test
         io_context ioc(Backend);
 
         udp_socket peer(ioc);
-        peer.open();
+        BOOST_TEST(!peer.open());
         auto ec = peer.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         auto peer_ep = peer.local_endpoint();
@@ -1317,7 +1335,7 @@ struct udp_socket_test
         make_native_adoptable(nfd);
 
         udp_socket adopted(ioc);
-        adopted.assign(nfd);
+        BOOST_TEST(!adopted.assign(nfd));
         BOOST_TEST(adopted.is_open());
         BOOST_TEST(adopted.native_handle() == nfd);
         BOOST_TEST_EQ(adopted.local_endpoint().port(), nport);
@@ -1364,36 +1382,18 @@ struct udp_socket_test
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        auto expect_throw = [&](native_handle_type h) {
-            bool threw = false;
-            try
-            {
-                sock.assign(h);
-            }
-            catch (std::system_error const&)
-            {
-                threw = true;
-            }
-            BOOST_TEST(threw);
+        auto expect_error = [&](native_handle_type h) {
+            BOOST_TEST(sock.assign(h));
         };
 
-        expect_throw(invalid_native_socket);
+        expect_error(invalid_native_socket);
         BOOST_TEST(!sock.is_open());
 
         auto st = make_native_socket(AF_INET, SOCK_STREAM);
         BOOST_TEST(st != invalid_native_socket);
         {
             // The rejection code is part of the portable contract.
-            std::error_code rejected;
-            try
-            {
-                sock.assign(st);
-            }
-            catch (std::system_error const& e)
-            {
-                rejected = e.code();
-            }
-            BOOST_TEST(rejected == std::errc::wrong_protocol_type);
+            BOOST_TEST(sock.assign(st) == std::errc::wrong_protocol_type);
         }
         BOOST_TEST(native_socket_valid(st)); // caller keeps it
         close_native_socket(st);
@@ -1401,13 +1401,13 @@ struct udp_socket_test
 #if BOOST_COROSIO_POSIX
         auto un = make_native_socket(AF_UNIX, SOCK_DGRAM);
         BOOST_TEST(un != invalid_native_socket);
-        expect_throw(un);
+        expect_error(un);
         BOOST_TEST(native_socket_valid(un));
         close_native_socket(un);
 #endif
 
-        sock.open(udp::v4());
-        expect_throw(sock.native_handle());
+        BOOST_TEST(!sock.open(udp::v4()));
+        expect_error(sock.native_handle());
         BOOST_TEST(sock.is_open());
         sock.close();
     }
@@ -1418,29 +1418,20 @@ struct udp_socket_test
         io_context ioc(Backend);
 
         udp_socket peer(ioc);
-        peer.open();
+        BOOST_TEST(!peer.open());
         auto ec = peer.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         auto peer_ep = peer.local_endpoint();
 
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         auto before = sock.native_handle();
 
         auto st = make_native_socket(AF_INET, SOCK_STREAM);
         BOOST_TEST(st != invalid_native_socket);
-        bool threw = false;
-        try
-        {
-            sock.assign(st);
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        BOOST_TEST(sock.assign(st));
         BOOST_TEST(native_socket_valid(st));
         close_native_socket(st);
 
@@ -1474,13 +1465,13 @@ struct udp_socket_test
         auto ex = ioc.get_executor();
 
         udp_socket peer(ioc);
-        peer.open();
+        BOOST_TEST(!peer.open());
         auto ec = peer.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         auto peer_ep = peer.local_endpoint();
 
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
 
@@ -1504,7 +1495,7 @@ struct udp_socket_test
             recv_done = true;
         };
         auto adopter = [&]() -> capy::task<> {
-            sock.assign(nfd);
+            BOOST_TEST(!sock.assign(nfd));
             char const msg[] = "after";
             auto [ec1, n1]   = co_await sock.send_to(
                 capy::const_buffer(msg, sizeof(msg)), peer_ep);
@@ -1541,13 +1532,13 @@ struct udp_socket_test
         auto ex = ioc.get_executor();
 
         udp_socket peer(ioc);
-        peer.open();
+        BOOST_TEST(!peer.open());
         auto ec = peer.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         auto peer_port = peer.local_endpoint().port();
 
         udp_socket sock(ioc);
-        sock.open();
+        BOOST_TEST(!sock.open());
         ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         auto sock_port = sock.local_endpoint().port();
@@ -1623,7 +1614,7 @@ struct udp_socket_test
         io_context ioc(Backend);
 
         udp_socket peer(ioc);
-        peer.open(udp::v6());
+        BOOST_TEST(!peer.open(udp::v6()));
         auto ec = peer.bind(endpoint(ipv6_address::loopback(), 0));
         if (ec)
             return; // no IPv6 loopback on this host
@@ -1641,7 +1632,7 @@ struct udp_socket_test
         make_native_adoptable(nfd);
 
         udp_socket adopted(ioc);
-        adopted.assign(nfd);
+        BOOST_TEST(!adopted.assign(nfd));
         BOOST_TEST(adopted.is_open());
         BOOST_TEST(adopted.local_endpoint().is_v6());
         BOOST_TEST_EQ(adopted.local_endpoint().port(), nport);
@@ -1691,6 +1682,7 @@ struct udp_socket_test
         testSendRecvV6Loopback();
         testEchoLoopback();
         testMultipleDatagrams();
+        testShutdown();
         testCancelRecv();
         testCloseWhileRecving();
         testStopTokenCancellation();

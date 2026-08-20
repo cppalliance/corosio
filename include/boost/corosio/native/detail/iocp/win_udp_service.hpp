@@ -868,6 +868,29 @@ win_udp_socket::native_handle() const noexcept
     return static_cast<native_handle_type>(internal_->native_handle());
 }
 
+inline std::error_code
+win_udp_socket::shutdown(udp_socket::shutdown_type what) noexcept
+{
+    int how;
+    switch (what)
+    {
+    case udp_socket::shutdown_receive:
+        how = SD_RECEIVE;
+        break;
+    case udp_socket::shutdown_send:
+        how = SD_SEND;
+        break;
+    case udp_socket::shutdown_both:
+        how = SD_BOTH;
+        break;
+    default:
+        return make_err(WSAEINVAL);
+    }
+    if (::shutdown(internal_->native_handle(), how) != 0)
+        return make_err(WSAGetLastError());
+    return {};
+}
+
 inline native_handle_type
 win_udp_socket::release_socket() noexcept
 {

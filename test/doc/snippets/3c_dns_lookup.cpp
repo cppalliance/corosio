@@ -115,9 +115,8 @@ capy::task<void> connect_to_host(
         throw std::system_error(resolve_ec);
 
     corosio::tcp_socket sock(ioc);
-    sock.open();
 
-    // Try each address until one works
+    // Try each address until one works; connect() opens the socket
     std::error_code last_ec;
     for (auto const& entry : results)
     {

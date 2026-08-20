@@ -248,11 +248,14 @@ public:
 
     /** Create the acceptor socket.
 
+        Failures such as descriptor exhaustion are normal runtime
+        conditions and are reported through the returned error code.
+
         @param proto The protocol. Defaults to local_stream{}.
 
-        @throws std::system_error on failure.
+        @return The error code, empty on success.
     */
-    void open(local_stream proto = {});
+    [[nodiscard]] std::error_code open(local_stream proto = {}) noexcept;
 
     /** Bind to a local endpoint.
 
@@ -428,10 +431,11 @@ public:
         @param fd The native socket to adopt. On success the object
             owns it and will close it.
 
-        @throws std::system_error On validation or registration
-            failure.
+        @return The error code, empty on success. Validation and
+            registration failures are normal runtime conditions when
+            adopting foreign descriptors.
     */
-    void assign(native_handle_type fd);
+    [[nodiscard]] std::error_code assign(native_handle_type fd) noexcept;
 
     /** Return the local endpoint the acceptor is bound to.
 

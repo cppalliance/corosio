@@ -39,7 +39,7 @@ struct connect_test
        Caller keeps the acceptor alive. */
     static std::uint16_t open_listener(tcp_acceptor& acc, tcp proto = tcp::v4())
     {
-        acc.open(proto);
+        BOOST_TEST(!acc.open(proto));
         acc.set_option(socket_option::reuse_address(true));
         std::error_code ec;
         if (proto == tcp::v6())
@@ -60,7 +60,7 @@ struct connect_test
     static std::uint16_t pick_closed_port(io_context& ioc)
     {
         tcp_acceptor tmp(ioc);
-        tmp.open();
+        BOOST_TEST(!tmp.open());
         tmp.set_option(socket_option::reuse_address(true));
         auto ec = tmp.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);

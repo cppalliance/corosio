@@ -83,8 +83,8 @@ overview_fragment(corosio::io_context& ioc)
 {
     // tag::overview[]
     corosio::tcp_socket s(ioc);
-    s.open();
 
+    // connect() opens the socket automatically
     auto [ec] = co_await s.connect(
         corosio::endpoint(corosio::ipv4_address::loopback(), 8080));
 
@@ -111,8 +111,10 @@ void
 open_fragment(corosio::tcp_socket& s)
 {
     // tag::open[]
-    s.open();  // Creates IPv4 TCP socket, associates with the platform
-               // reactor (IOCP on Windows, epoll/kqueue/select on POSIX)
+    // Creates an IPv4 TCP socket and associates it with the platform
+    // reactor (IOCP on Windows, epoll/kqueue/select on POSIX)
+    if (auto ec = s.open())
+        return;  // report the error
     // end::open[]
 }
 
@@ -350,7 +352,6 @@ buffer_sequences_fragment(corosio::tcp_socket& s)
 capy::task<void> echo_client(corosio::io_context& ioc)
 {
     corosio::tcp_socket s(ioc);
-    s.open();
 
     if (auto [ec] = co_await s.connect(
             corosio::endpoint(corosio::ipv4_address::loopback(), 8080)); ec)
@@ -500,7 +501,7 @@ struct sockets_test
     {
         corosio::io_context ioc;
         corosio::tcp_socket s(ioc);
-        s.open();
+        BOOST_TEST(!s.open());
         cancel_fragment(s);
         s.close();
     }
@@ -511,7 +512,7 @@ struct sockets_test
         corosio::io_context ioc;
         corosio::tcp_socket s1(ioc);
         corosio::tcp_socket s2(ioc);
-        s2.open();
+        BOOST_TEST(!s2.open());
         move_assign_fragment(s1, s2);
         BOOST_TEST(s1.is_open());
         s1.close();

@@ -202,7 +202,8 @@ private:
     // service, so every io_context that waits on a signal can drain the pipe.
     // A once_flag (not a bool under mutex_) because registration must run
     // without holding mutex_ or the signal-state mutex — see add_signal.
-    std::once_flag reader_once_;
+    std::mutex reader_mutex_;
+    bool reader_registered_ = false;
 
     intrusive_list<posix_signal> impl_list_;
 
@@ -557,9 +558,18 @@ posix_signal_service::add_signal(
         if (!posix_signal_detail::open_signal_pipe(state))
             return make_error_code(std::errc::io_error);
     }
-    std::call_once(reader_once_, [this, state] {
-        sched_->register_signal_reader(state->read_fd);
-    });
+    {
+        // Success-latched so a failed environmental registration
+        // (epoll_ctl ENOMEM/ENOSPC) is retried by the next add()
+        // instead of being lost; the code travels the return channel.
+        std::lock_guard reg_lock(reader_mutex_);
+        if (!reader_registered_)
+        {
+            if (auto ec = sched_->register_signal_reader(state->read_fd))
+                return ec;
+            reader_registered_ = true;
+        }
+    }
 
     std::lock_guard state_lock(state->mutex);
     std::lock_guard lock(mutex_);

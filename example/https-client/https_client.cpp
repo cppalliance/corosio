@@ -76,8 +76,8 @@ run_client(
     std::uint16_t port,
     std::string_view hostname)
 {
+    // connect() opens the socket automatically
     corosio::tcp_socket s(ioc);
-    s.open();
 
     // Connect to the server
     if (auto [ec] = co_await s.connect(corosio::endpoint(addr, port)); ec)

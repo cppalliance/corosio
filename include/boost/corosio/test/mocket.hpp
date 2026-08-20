@@ -563,7 +563,8 @@ make_mocket_pair(
     bool connect_done = false;
 
     Acceptor acc(ctx);
-    acc.open();
+    if (auto open_ec = acc.open())
+        throw std::runtime_error("mocket open failed: " + open_ec.message());
     acc.set_option(socket_option::reuse_address(true));
     if (auto bind_ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
         throw std::runtime_error("mocket bind failed: " + bind_ec.message());
@@ -572,7 +573,8 @@ make_mocket_pair(
             "mocket listen failed: " + listen_ec.message());
     auto port = acc.local_endpoint().port();
 
-    peer.open();
+    if (auto open_ec = peer.open())
+        throw std::runtime_error("mocket open failed: " + open_ec.message());
 
     Socket accepted_socket(ctx);
 

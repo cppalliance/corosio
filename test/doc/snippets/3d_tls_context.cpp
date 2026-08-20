@@ -88,17 +88,22 @@ typical_setup()
     tls_context ctx;
 
     // 1. Load credentials (for servers, or clients using client certs)
-    ctx.use_certificate_chain_file( "server.crt" );
-    ctx.use_private_key_file( "server.key", tls_file_format::pem );
+    if (auto ec = ctx.use_certificate_chain_file( "server.crt" ))
+        return;
+    if (auto ec = ctx.use_private_key_file( "server.key", tls_file_format::pem ))
+        return;
 
     // 2. Configure trust anchors (for verifying peer certificates)
-    ctx.set_default_verify_paths();  // Use system CA store
+    if (auto ec = ctx.set_default_verify_paths())  // Use system CA store
+        return;
 
     // 3. Set verification mode
-    ctx.set_verify_mode( tls_verify_mode::peer );
+    if (auto ec = ctx.set_verify_mode( tls_verify_mode::peer ))
+        return;
 
     // 4. Configure protocol options (optional)
-    ctx.set_min_protocol_version( tls_version::tls_1_2 );
+    if (auto ec = ctx.set_min_protocol_version( tls_version::tls_1_2 ))
+        return;
     // end::typical_setup[]
 }
 
@@ -107,10 +112,12 @@ load_separate(tls_context& ctx)
 {
     // tag::load_separate[]
     // Load certificate chain (leaf + intermediates)
-    ctx.use_certificate_chain_file( "fullchain.pem" );
+    if (auto ec = ctx.use_certificate_chain_file( "fullchain.pem" ))
+        return;
 
     // Load the matching private key
-    ctx.use_private_key_file( "privkey.key", tls_file_format::pem );
+    if (auto ec = ctx.use_private_key_file( "privkey.key", tls_file_format::pem ))
+        return;
     // end::load_separate[]
 }
 
@@ -118,8 +125,10 @@ void
 load_single(tls_context& ctx)
 {
     // tag::load_single[]
-    ctx.use_certificate_file( "server.crt", tls_file_format::pem );
-    ctx.use_private_key_file( "server.key", tls_file_format::pem );
+    if (auto ec = ctx.use_certificate_file( "server.crt", tls_file_format::pem ))
+        return;
+    if (auto ec = ctx.use_private_key_file( "server.key", tls_file_format::pem ))
+        return;
     // end::load_single[]
 }
 
@@ -127,7 +136,8 @@ void
 pkcs12_bundle(tls_context& ctx)
 {
     // tag::pkcs12_file[]
-    ctx.use_pkcs12_file( "credentials.pfx", "bundle-password" );
+    if (auto ec = ctx.use_pkcs12_file( "credentials.pfx", "bundle-password" ))
+        return;
     // end::pkcs12_file[]
 }
 
@@ -150,8 +160,10 @@ load_memory(tls_context& ctx)
     std::string cert_pem = fetch_certificate_from_vault();
     std::string key_pem = fetch_key_from_vault();
 
-    ctx.use_certificate_chain( cert_pem );
-    ctx.use_private_key( key_pem, tls_file_format::pem );
+    if (auto ec = ctx.use_certificate_chain( cert_pem ))
+        return;
+    if (auto ec = ctx.use_private_key( key_pem, tls_file_format::pem ))
+        return;
     // end::load_memory[]
 }
 
@@ -159,8 +171,10 @@ void
 der_files(tls_context& ctx)
 {
     // tag::der_files[]
-    ctx.use_certificate_file( "server.der", tls_file_format::der );
-    ctx.use_private_key_file( "server.key.der", tls_file_format::der );
+    if (auto ec = ctx.use_certificate_file( "server.der", tls_file_format::der ))
+        return;
+    if (auto ec = ctx.use_private_key_file( "server.key.der", tls_file_format::der ))
+        return;
     // end::der_files[]
 }
 
@@ -168,7 +182,8 @@ void
 system_trust(tls_context& ctx)
 {
     // tag::system_trust[]
-    ctx.set_default_verify_paths();
+    if (auto ec = ctx.set_default_verify_paths())
+        return;
     // end::system_trust[]
 }
 
@@ -177,7 +192,8 @@ ca_bundle(tls_context& ctx)
 {
     // tag::ca_bundle[]
     // Load CA bundle file (may contain multiple CAs)
-    ctx.load_verify_file( "/path/to/ca-bundle.crt" );
+    if (auto ec = ctx.load_verify_file( "/path/to/ca-bundle.crt" ))
+        return;
     // end::ca_bundle[]
 }
 
@@ -185,7 +201,8 @@ void
 ca_directory(tls_context& ctx)
 {
     // tag::ca_directory[]
-    ctx.add_verify_path( "/etc/ssl/certs" );
+    if (auto ec = ctx.add_verify_path( "/etc/ssl/certs" ))
+        return;
     // end::ca_directory[]
 }
 
@@ -204,11 +221,14 @@ ca_individual(
     // tag::ca_individual[]
     // From memory
     std::string internal_ca = load_ca_from_config();
-    ctx.add_certificate_authority( internal_ca );
+    if (auto ec = ctx.add_certificate_authority( internal_ca ))
+        return;
 
     // Multiple CAs
-    ctx.add_certificate_authority( root_ca_pem );
-    ctx.add_certificate_authority( intermediate_ca_pem );
+    if (auto ec = ctx.add_certificate_authority( root_ca_pem ))
+        return;
+    if (auto ec = ctx.add_certificate_authority( intermediate_ca_pem ))
+        return;
     // end::ca_individual[]
 }
 
@@ -217,10 +237,12 @@ combine_trust(tls_context& ctx, std::string const& corporate_ca_pem)
 {
     // tag::combine_trust[]
     // Start with system trust store
-    ctx.set_default_verify_paths();
+    if (auto ec = ctx.set_default_verify_paths())
+        return;
 
     // Add an internal CA for corporate servers
-    ctx.add_certificate_authority( corporate_ca_pem );
+    if (auto ec = ctx.add_certificate_authority( corporate_ca_pem ))
+        return;
     // end::combine_trust[]
 }
 
@@ -229,11 +251,14 @@ version_bounds(tls_context& ctx)
 {
     // tag::version_bounds[]
     // Require TLS 1.2 or newer (default)
-    ctx.set_min_protocol_version( tls_version::tls_1_2 );
+    if (auto ec = ctx.set_min_protocol_version( tls_version::tls_1_2 ))
+        return;
 
     // Require TLS 1.3 only
-    ctx.set_min_protocol_version( tls_version::tls_1_3 );
-    ctx.set_max_protocol_version( tls_version::tls_1_3 );
+    if (auto ec = ctx.set_min_protocol_version( tls_version::tls_1_3 ))
+        return;
+    if (auto ec = ctx.set_max_protocol_version( tls_version::tls_1_3 ))
+        return;
     // end::version_bounds[]
 }
 
@@ -242,10 +267,12 @@ cipher_suites(tls_context& ctx)
 {
     // tag::cipher_suites[]
     // TLS 1.2 and below
-    ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" );
+    if (auto ec = ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" ))
+        return;
 
     // TLS 1.3 (distinct API and suite names)
-    ctx.set_ciphersuites_tls13( "TLS_AES_256_GCM_SHA384" );
+    if (auto ec = ctx.set_ciphersuites_tls13( "TLS_AES_256_GCM_SHA384" ))
+        return;
     // end::cipher_suites[]
 }
 
@@ -254,10 +281,12 @@ alpn_offer(tls_context& ctx)
 {
     // tag::alpn_offer[]
     // HTTP/2 with HTTP/1.1 fallback
-    ctx.set_alpn( { "h2", "http/1.1" } );
+    if (auto ec = ctx.set_alpn( { "h2", "http/1.1" } ))
+        return;
 
     // gRPC
-    ctx.set_alpn( { "h2" } );
+    if (auto ec = ctx.set_alpn( { "h2" } ))
+        return;
     // end::alpn_offer[]
 }
 
@@ -276,13 +305,16 @@ verify_modes(tls_context& ctx)
 {
     // tag::verify_modes[]
     // Don't verify peer (not recommended for production)
-    ctx.set_verify_mode( tls_verify_mode::none );
+    if (auto ec = ctx.set_verify_mode( tls_verify_mode::none ))
+        return;
 
     // Verify peer if certificate is presented
-    ctx.set_verify_mode( tls_verify_mode::peer );
+    if (auto ec = ctx.set_verify_mode( tls_verify_mode::peer ))
+        return;
 
     // Require and verify peer certificate (mTLS server-side)
-    ctx.set_verify_mode( tls_verify_mode::require_peer );
+    if (auto ec = ctx.set_verify_mode( tls_verify_mode::require_peer ))
+        return;
     // end::verify_modes[]
 }
 
@@ -301,7 +333,8 @@ verify_depth(tls_context& ctx)
 {
     // tag::verify_depth[]
     // Allow up to 3 intermediates (leaf -> 3 intermediates -> root)
-    ctx.set_verify_depth( 3 );
+    if (auto ec = ctx.set_verify_depth( 3 ))
+        return;
     // end::verify_depth[]
 }
 
@@ -311,7 +344,7 @@ void
 verify_callback(tls_context& ctx)
 {
     // tag::verify_callback[]
-    ctx.set_verify_callback(
+    if (auto ec = ctx.set_verify_callback(
         []( bool preverified, corosio::verify_context& verify_ctx ) -> bool
         {
             if( !preverified )
@@ -320,7 +353,8 @@ verify_callback(tls_context& ctx)
             auto der = verify_ctx.certificate(); // DER of the current cert
             return der.size() == expected_pin.size() &&
                 std::equal( der.begin(), der.end(), expected_pin.begin() );
-        });
+        }))
+        return;
     // end::verify_callback[]
 }
 
@@ -350,11 +384,13 @@ crl_load(tls_context& ctx, std::string_view crl_url)
 {
     // tag::crl_load[]
     // From file
-    ctx.add_crl_file( "/path/to/issuer.crl" );
+    if (auto ec = ctx.add_crl_file( "/path/to/issuer.crl" ))
+        return;
 
     // From memory (e.g., fetched via HTTP)
     std::string crl_data = fetch_crl_from_url( crl_url );
-    ctx.add_crl( crl_data );
+    if (auto ec = ctx.add_crl( crl_data ))
+        return;
 
     ctx.set_revocation_policy( tls_revocation_policy::hard_fail );
     // end::crl_load[]
@@ -392,7 +428,8 @@ password_callback(tls_context& ctx)
         });
 
     // Now load encrypted private key
-    ctx.use_private_key_file( "encrypted.key", tls_file_format::pem );
+    if (auto ec = ctx.use_private_key_file( "encrypted.key", tls_file_format::pem ))
+        return;
     // end::password_callback[]
 }
 
@@ -423,7 +460,8 @@ void
 pkcs12_memory(tls_context& ctx, std::string_view pkcs12_data)
 {
     // tag::pkcs12_memory[]
-    ctx.use_pkcs12( pkcs12_data, "bundle-password" );
+    if (auto ec = ctx.use_pkcs12( pkcs12_data, "bundle-password" ))
+        return;
     // end::pkcs12_memory[]
 }
 

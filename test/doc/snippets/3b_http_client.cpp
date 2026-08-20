@@ -95,7 +95,7 @@ struct http_client_test
         auto ex = ioc.get_executor();
 
         corosio::tcp_acceptor acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         BOOST_TEST(!acc.bind(
             corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
@@ -103,7 +103,7 @@ struct http_client_test
 
         corosio::tcp_socket s(ioc);
         corosio::tcp_socket peer(ioc);
-        s.open();
+        BOOST_TEST(!s.open());
 
         bool done = false;
         capy::run_async(ex)(accept_one(acc, peer));

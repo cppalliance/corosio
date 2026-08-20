@@ -1936,6 +1936,14 @@ public:
     // native_handle / is_open / set_option / get_option / local_endpoint
     // are inherited from native_socket_base.
 
+    std::error_code shutdown(
+        udp_socket::shutdown_type what) noexcept override
+    {
+        if (::shutdown(fd_, static_cast<int>(what)) != 0)
+            return make_err(errno);
+        return {};
+    }
+
     native_handle_type release_socket() noexcept override
     {
         // Flush while the fd is still open so the kernel resolves

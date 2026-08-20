@@ -105,7 +105,8 @@ drive_foreign(corosio::io_context& ioc, foreign_conn* conn)
     // the duplicate can never close the library's descriptor.
     // Readiness travels through the shared open file description.
     corosio::tcp_socket sock(ioc);
-    sock.assign(::dup(foreign_socket(conn)));
+    if (auto ec = sock.assign(::dup(foreign_socket(conn))))
+        co_return ec;
 
     // Read side: wake, then let the library take the bytes itself.
     while (foreign_wants_read(conn)) {
@@ -189,7 +190,7 @@ struct wait_test
         auto ex = ioc.get_executor();
 
         corosio::tcp_acceptor acceptor(ioc);
-        acceptor.open();
+        BOOST_TEST(!acceptor.open());
         acceptor.set_option(corosio::socket_option::reuse_address(true));
         auto bec = acceptor.bind(corosio::endpoint(
             corosio::ipv4_address::loopback(), 0));
@@ -203,7 +204,7 @@ struct wait_test
         capy::run_async(ex)(wait_then_accept(ioc, acceptor, wec, aec));
 
         corosio::tcp_socket client(ioc);
-        client.open();
+        BOOST_TEST(!client.open());
         auto connecter = [&]() -> capy::task<>
         {
             co_await client.connect(corosio::endpoint(

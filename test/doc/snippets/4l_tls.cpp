@@ -101,9 +101,8 @@ typical_flow(
     if (auto ec = ctx.set_verify_mode(tls_verify_mode::peer); ec)
         throw std::system_error(ec);
 
-    // 2. Connect a socket
+    // 2. Connect a socket (connect() opens it automatically)
     corosio::tcp_socket sock(ioc);
-    sock.open();
     if (auto [ec] = co_await sock.connect(endpoint); ec)
         throw std::system_error(ec);
 
@@ -310,9 +309,8 @@ capy::task<void> https_get(
     if (resolve_ec)
         throw std::system_error(resolve_ec);
 
-    // Connect TCP socket
+    // Connect TCP socket (connect() opens it automatically)
     corosio::tcp_socket sock(ioc);
-    sock.open();
 
     for (auto const& entry : results)
     {

@@ -101,6 +101,11 @@ public:
     explicit kqueue_udp_socket(kqueue_udp_service& svc) noexcept
         : base_type(svc) {}
 
+    std::error_code shutdown(corosio::shutdown_type what) noexcept override
+    {
+        return this->do_shutdown(static_cast<int>(what));
+    }
+
     native_handle_type release_socket() noexcept override
     {
         return this->do_release_socket();

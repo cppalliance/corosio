@@ -200,12 +200,13 @@ public:
     }
 
     std::uint64_t size() const override;
-    void resize(std::uint64_t new_size) override;
-    void sync_data() override;
-    void sync_all() override;
+    std::error_code resize(std::uint64_t new_size) noexcept override;
+    std::error_code sync_data() noexcept override;
+    std::error_code sync_all() noexcept override;
     native_handle_type release() override;
-    void assign(native_handle_type handle) override;
-    std::uint64_t seek(std::int64_t offset, file_base::seek_basis origin) override;
+    std::error_code assign(native_handle_type handle) noexcept override;
+    capy::io_result<std::uint64_t>
+    seek(std::int64_t offset, file_base::seek_basis origin) noexcept override;
 
     // -- Internal --
 
@@ -317,31 +318,35 @@ posix_stream_file::size() const
     return static_cast<std::uint64_t>(st.st_size);
 }
 
-inline void
-posix_stream_file::resize(std::uint64_t new_size)
+inline std::error_code
+posix_stream_file::resize(std::uint64_t new_size) noexcept
 {
-    if (new_size > static_cast<std::uint64_t>(std::numeric_limits<off_t>::max()))
-        throw_system_error(make_err(EOVERFLOW), "stream_file::resize");
+    if (new_size >
+        static_cast<std::uint64_t>((std::numeric_limits<off_t>::max)()))
+        return make_err(EOVERFLOW);
     if (::ftruncate(fd_, static_cast<off_t>(new_size)) < 0)
-        throw_system_error(make_err(errno), "stream_file::resize");
+        return make_err(errno);
+    return {};
 }
 
-inline void
-posix_stream_file::sync_data()
+inline std::error_code
+posix_stream_file::sync_data() noexcept
 {
 #if BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
     if (::fdatasync(fd_) < 0)
 #else // BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
     if (::fsync(fd_) < 0)
 #endif // BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
-        throw_system_error(make_err(errno), "stream_file::sync_data");
+        return make_err(errno);
+    return {};
 }
 
-inline void
-posix_stream_file::sync_all()
+inline std::error_code
+posix_stream_file::sync_all() noexcept
 {
     if (::fsync(fd_) < 0)
-        throw_system_error(make_err(errno), "stream_file::sync_all");
+        return make_err(errno);
+    return {};
 }
 
 inline native_handle_type
@@ -353,16 +358,18 @@ posix_stream_file::release()
     return fd;
 }
 
-inline void
-posix_stream_file::assign(native_handle_type handle)
+inline std::error_code
+posix_stream_file::assign(native_handle_type handle) noexcept
 {
     close_file();
     fd_ = handle;
     offset_ = 0;
+    return {};
 }
 
-inline std::uint64_t
-posix_stream_file::seek(std::int64_t offset, file_base::seek_basis origin)
+inline capy::io_result<std::uint64_t>
+posix_stream_file::seek(
+    std::int64_t offset, file_base::seek_basis origin) noexcept
 {
     // We track offset_ ourselves (not the kernel fd offset)
     // because preadv/pwritev use explicit offsets.
@@ -380,18 +387,19 @@ posix_stream_file::seek(std::int64_t offset, file_base::seek_basis origin)
     {
         struct stat st;
         if (::fstat(fd_, &st) < 0)
-            throw_system_error(make_err(errno), "stream_file::seek");
+            return {make_err(errno), 0};
         new_pos = st.st_size + offset;
     }
 
     if (new_pos < 0)
-        throw_system_error(make_err(EINVAL), "stream_file::seek");
-    if (new_pos > static_cast<std::int64_t>(std::numeric_limits<off_t>::max()))
-        throw_system_error(make_err(EOVERFLOW), "stream_file::seek");
+        return {make_err(EINVAL), 0};
+    if (new_pos >
+        static_cast<std::int64_t>((std::numeric_limits<off_t>::max)()))
+        return {make_err(EOVERFLOW), 0};
 
     offset_ = static_cast<std::uint64_t>(new_pos);
 
-    return offset_;
+    return {std::error_code{}, offset_};
 }
 
 // -- file_op completion handler --

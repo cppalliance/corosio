@@ -337,7 +337,7 @@ public:
         @see use_certificate_file
         @see use_private_key
     */
-    std::error_code
+    [[nodiscard]] std::error_code
     use_certificate(std::string_view certificate, tls_file_format format);
 
     /** Load the entity certificate from a file.
@@ -361,7 +361,7 @@ public:
         @see use_certificate
         @see use_private_key_file
     */
-    std::error_code
+    [[nodiscard]] std::error_code
     use_certificate_file(std::string_view filename, tls_file_format format);
 
     /** Load a certificate chain from a memory buffer.
@@ -377,7 +377,7 @@ public:
 
         @see use_certificate_chain_file
     */
-    std::error_code use_certificate_chain(std::string_view chain);
+    [[nodiscard]] std::error_code use_certificate_chain(std::string_view chain);
 
     /** Load a certificate chain from a file.
 
@@ -397,7 +397,7 @@ public:
 
         @see use_certificate_chain
     */
-    std::error_code use_certificate_chain_file(std::string_view filename);
+    [[nodiscard]] std::error_code use_certificate_chain_file(std::string_view filename);
 
     /** Load the private key from a memory buffer.
 
@@ -419,7 +419,7 @@ public:
         @see use_private_key_file
         @see set_password_callback
     */
-    std::error_code
+    [[nodiscard]] std::error_code
     use_private_key(std::string_view private_key, tls_file_format format);
 
     /** Load the private key from a file.
@@ -446,7 +446,7 @@ public:
         @see use_private_key
         @see set_password_callback
     */
-    std::error_code
+    [[nodiscard]] std::error_code
     use_private_key_file(std::string_view filename, tls_file_format format);
 
     /** Load credentials from a PKCS#12 bundle in memory.
@@ -469,7 +469,7 @@ public:
 
         @see use_pkcs12_file
     */
-    std::error_code
+    [[nodiscard]] std::error_code
     use_pkcs12(std::string_view data, std::string_view passphrase);
 
     /** Load credentials from a PKCS#12 file.
@@ -498,7 +498,7 @@ public:
 
         @see use_pkcs12
     */
-    std::error_code
+    [[nodiscard]] std::error_code
     use_pkcs12_file(std::string_view filename, std::string_view passphrase);
 
     //
@@ -518,7 +518,7 @@ public:
         @see load_verify_file
         @see set_default_verify_paths
     */
-    std::error_code add_certificate_authority(std::string_view ca);
+    [[nodiscard]] std::error_code add_certificate_authority(std::string_view ca);
 
     /** Load CA certificates from a file.
 
@@ -538,7 +538,7 @@ public:
         @see add_certificate_authority
         @see add_verify_path
     */
-    std::error_code load_verify_file(std::string_view filename);
+    [[nodiscard]] std::error_code load_verify_file(std::string_view filename);
 
     /** Add a directory of CA certificates for verification.
 
@@ -566,7 +566,7 @@ public:
         @see load_verify_file
         @see set_default_verify_paths
     */
-    std::error_code add_verify_path(std::string_view path);
+    [[nodiscard]] std::error_code add_verify_path(std::string_view path);
 
     /** Use the system default CA certificate store.
 
@@ -602,7 +602,7 @@ public:
         @see add_verify_path
         @see set_verify_mode
     */
-    std::error_code set_default_verify_paths();
+    [[nodiscard]] std::error_code set_default_verify_paths();
 
     //
     // Protocol Configuration
@@ -626,7 +626,7 @@ public:
 
         @see set_max_protocol_version
     */
-    std::error_code set_min_protocol_version(tls_version v);
+    [[nodiscard]] std::error_code set_min_protocol_version(tls_version v);
 
     /** Set the maximum TLS protocol version.
 
@@ -645,7 +645,7 @@ public:
 
         @see set_min_protocol_version
     */
-    std::error_code set_max_protocol_version(tls_version v);
+    [[nodiscard]] std::error_code set_max_protocol_version(tls_version v);
 
     /** Set the allowed cipher suites.
 
@@ -666,7 +666,7 @@ public:
         @note This configures cipher suites for TLS 1.2 and below. For
             TLS 1.3, use @ref set_ciphersuites_tls13.
     */
-    std::error_code set_ciphersuites(std::string_view ciphers);
+    [[nodiscard]] std::error_code set_ciphersuites(std::string_view ciphers);
 
     /** Set the allowed TLS 1.3 cipher suites.
 
@@ -690,7 +690,7 @@ public:
 
         @see set_ciphersuites
     */
-    std::error_code set_ciphersuites_tls13(std::string_view ciphers);
+    [[nodiscard]] std::error_code set_ciphersuites_tls13(std::string_view ciphers);
 
     /** Set the ALPN protocol list.
 
@@ -717,7 +717,7 @@ public:
         ctx.set_alpn( { "h2", "http/1.1" } );
         @endcode
     */
-    std::error_code set_alpn(std::initializer_list<std::string_view> protocols);
+    [[nodiscard]] std::error_code set_alpn(std::initializer_list<std::string_view> protocols);
 
     //
     // Certificate Verification
@@ -743,7 +743,7 @@ public:
 
         @see tls_verify_mode
     */
-    std::error_code set_verify_mode(tls_verify_mode mode);
+    [[nodiscard]] std::error_code set_verify_mode(tls_verify_mode mode);
 
     /** Set the maximum certificate chain verification depth.
 
@@ -755,7 +755,7 @@ public:
 
         @return Success, or an error if the depth is invalid.
     */
-    std::error_code set_verify_depth(int depth);
+    [[nodiscard]] std::error_code set_verify_depth(int depth);
 
     /** Set a custom certificate verification callback.
 
@@ -818,7 +818,7 @@ public:
         @see set_verify_mode
     */
     template<typename Callback>
-    std::error_code set_verify_callback(Callback callback);
+    [[nodiscard]] std::error_code set_verify_callback(Callback callback);
 
     /** Set a callback for Server Name Indication (SNI).
 
@@ -888,7 +888,7 @@ public:
         @see add_crl_file
         @see set_revocation_policy
     */
-    std::error_code add_crl(std::string_view crl);
+    [[nodiscard]] std::error_code add_crl(std::string_view crl);
 
     /** Add a Certificate Revocation List from a file.
 
@@ -912,7 +912,7 @@ public:
         @see add_crl
         @see set_revocation_policy
     */
-    std::error_code add_crl_file(std::string_view filename);
+    [[nodiscard]] std::error_code add_crl_file(std::string_view filename);
 
     /** Set the certificate revocation checking policy.
 

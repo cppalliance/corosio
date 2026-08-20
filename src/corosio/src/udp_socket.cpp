@@ -25,33 +25,31 @@ udp_socket::udp_socket(capy::execution_context& ctx)
 {
 }
 
-void
-udp_socket::open(udp proto)
+std::error_code
+udp_socket::open(udp proto) noexcept
 {
     if (is_open())
-        return;
-    open_for_family(proto.family(), proto.type(), proto.protocol());
+        return {};
+    return open_for_family(proto.family(), proto.type(), proto.protocol());
 }
 
-void
-udp_socket::open_for_family(int family, int type, int protocol)
+std::error_code
+udp_socket::open_for_family(int family, int type, int protocol) noexcept
 {
     auto& svc          = static_cast<detail::udp_service&>(h_.service());
     std::error_code ec = svc.open_datagram_socket(
         static_cast<udp_socket::implementation&>(*h_.get()), family, type,
         protocol);
-    if (ec)
-        detail::throw_system_error(ec, "udp_socket::open");
+    return ec;
 }
 
-void
-udp_socket::assign(native_handle_type fd)
+std::error_code
+udp_socket::assign(native_handle_type fd) noexcept
 {
     auto& svc          = static_cast<detail::udp_service&>(h_.service());
     std::error_code ec = svc.assign_socket(
         static_cast<udp_socket::implementation&>(*h_.get()), fd);
-    if (ec)
-        detail::throw_system_error(ec, "udp_socket::assign");
+    return ec;
 }
 
 native_handle_type
@@ -78,6 +76,14 @@ udp_socket::bind(endpoint ep)
     auto& svc = static_cast<detail::udp_service&>(h_.service());
     return svc.bind_datagram(
         static_cast<udp_socket::implementation&>(*h_.get()), ep);
+}
+
+std::error_code
+udp_socket::shutdown(shutdown_type what) noexcept
+{
+    if (!is_open())
+        return make_error_code(std::errc::bad_file_descriptor);
+    return get().shutdown(what);
 }
 
 void
