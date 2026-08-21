@@ -32,10 +32,13 @@ class tcp_acceptor;
     @par Example
     @code
     tcp_acceptor acc( ioc );
-    acc.open( tcp::v6() );  // IPv6 socket
+    if ( auto ec = acc.open( tcp::v6() ) )  // IPv6 socket
+        return;
     acc.set_option( socket_option::reuse_address( true ) );
-    acc.bind( endpoint( ipv6_address::any(), 8080 ) );
-    acc.listen();
+    if ( auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ) )
+        return;
+    if ( auto ec = acc.listen() )
+        return;
     @endcode
 
     @see native_tcp, tcp_socket, tcp_acceptor

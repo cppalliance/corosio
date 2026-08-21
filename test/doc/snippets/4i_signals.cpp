@@ -54,6 +54,7 @@ namespace capy = boost::capy;
 #include <atomic>
 #include <iostream>
 #include <system_error>
+#include <tuple>
 #include <type_traits>
 
 #include "test_suite.hpp"
@@ -191,7 +192,8 @@ capy::task<void> child_reaper(corosio::io_context& ioc)
 
     // Only notify on child termination, not stop/continue
     // Prevent zombie processes automatically
-    signals.add(SIGCHLD, flags::no_child_stop | flags::no_child_wait);
+    if (signals.add(SIGCHLD, flags::no_child_stop | flags::no_child_wait))
+        co_return;
 
     for (;;)
     {
@@ -257,9 +259,11 @@ struct signals_test
         corosio::io_context ioc;
         // tag::construct_empty[]
         corosio::signal_set signals(ioc);
-        signals.add(SIGINT);
-        signals.add(SIGTERM);
+        std::error_code ec = signals.add(SIGINT);
+        if (! ec)
+            ec = signals.add(SIGTERM);
         // end::construct_empty[]
+        BOOST_TEST(!ec);
     }
 
 #if BOOST_COROSIO_POSIX
@@ -285,7 +289,8 @@ struct signals_test
         corosio::io_context ioc;
         corosio::signal_set signals(ioc);
         // tag::add_signal[]
-        signals.add(SIGUSR1);
+        if (auto ec = signals.add(SIGUSR1))
+            std::cout << "add failed: " << ec.message() << "\n";
         // end::add_signal[]
     }
 
@@ -298,11 +303,14 @@ struct signals_test
         using flags = corosio::signal_set;
 
         // Restart interrupted system calls automatically
-        signals.add(SIGCHLD, flags::restart);
+        std::error_code ec = signals.add(SIGHUP, flags::restart);
 
         // Multiple flags can be combined
-        signals.add(SIGCHLD, flags::restart | flags::no_child_stop);
+        if (! ec)
+            ec = signals.add(
+                SIGCHLD, flags::restart | flags::no_child_stop);
         // end::add_flags[]
+        BOOST_TEST(!ec);
     }
 
     void
@@ -314,13 +322,15 @@ struct signals_test
         corosio::signal_set s1(ioc);
         corosio::signal_set s2(ioc);
 
-        s1.add(SIGINT, flags::restart);      // OK - first registration
-        s2.add(SIGINT, flags::restart);      // OK - same flags
-        s2.add(SIGINT, flags::no_defer);     // Error! - different flags
+        std::error_code ec;
+        ec = s1.add(SIGINT, flags::restart);   // OK - first registration
+        ec = s2.add(SIGINT, flags::restart);   // OK - same flags
+        ec = s2.add(SIGINT, flags::no_defer);  // invalid_argument - different flags
 
         // Use dont_care to accept existing flags
-        s2.add(SIGINT, flags::dont_care);    // OK - accepts existing flags
+        ec = s2.add(SIGINT, flags::dont_care); // OK - accepts existing flags
         // end::flag_compat[]
+        BOOST_TEST(!ec);
         BOOST_TEST(
             s2.add(SIGINT, flags::no_defer) == std::errc::invalid_argument);
     }
@@ -332,10 +342,10 @@ struct signals_test
         corosio::io_context ioc;
         corosio::signal_set signals(ioc, SIGINT);
         // tag::remove_signal[]
-        signals.remove(SIGINT);
-
-        // remove() returns an error_code instead of throwing
         std::error_code ec = signals.remove(SIGINT);
+
+        // Removing a signal that's not in the set is not an error
+        ec = signals.remove(SIGINT);
         // end::remove_signal[]
         BOOST_TEST(!ec);
     }
@@ -346,9 +356,6 @@ struct signals_test
         corosio::io_context ioc;
         corosio::signal_set signals(ioc, SIGINT, SIGTERM);
         // tag::clear_signals[]
-        signals.clear();
-
-        // clear() returns an error_code instead of throwing
         std::error_code ec = signals.clear();
         // end::clear_signals[]
         BOOST_TEST(!ec);

@@ -254,9 +254,9 @@ I/O context.
 
 [IMPORTANT]
 ====
-Because resolution runs on a thread pool, it requires a multi-threaded
-`io_context`. When the `io_context` is constructed single-threaded (a
-`concurrency_hint` of 1), `resolve()` completes with
+Because resolution runs on a thread pool, it relies on scheduler
+locking, which is on by default. Under the fully lockless tier
+(`locking_mode::unsafe`), `resolve()` completes with
 `std::errc::operation_not_supported` and never performs a lookup.
 ====
 

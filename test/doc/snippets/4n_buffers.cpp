@@ -67,6 +67,7 @@ namespace capy = boost::capy;
 #include <cstring>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <vector>
 
 #include "test_suite.hpp"
@@ -95,7 +96,7 @@ single_buffer_read(
 {
     // tag::single_buffer[]
     capy::mutable_buffer buf(data, size);
-    co_await sock.read_some(buf);  // Works directly
+    auto [ec, n] = co_await sock.read_some(buf);  // Works directly
     // end::single_buffer[]
 }
 
@@ -111,7 +112,7 @@ multi_buffer_read(
         capy::mutable_buffer(header, header_size),
         capy::mutable_buffer(body, body_size)
     };
-    co_await sock.read_some(bufs);
+    auto [ec, n] = co_await sock.read_some(bufs);
 
     // end::multi_buffer[]
 }
@@ -127,7 +128,7 @@ multi_buffer_write(
     std::vector<capy::const_buffer> send_bufs;
     send_bufs.push_back(capy::const_buffer(header.data(), header.size()));
     send_bufs.push_back(capy::const_buffer(body.data(), body.size()));
-    co_await sock.write_some(send_bufs);
+    auto [ec, n] = co_await sock.write_some(send_bufs);
     // end::multi_buffer[]
 }
 
@@ -138,11 +139,14 @@ slice_writes(
 {
     // tag::buffer_slice[]
     // Send only the first 16 bytes of the sequence
-    co_await capy::write(sock, capy::buffer_slice(bufs, 0, 16));
+    auto [ec, n] = co_await capy::write(
+        sock, capy::buffer_slice(bufs, 0, 16));
+    if (ec)
+        co_return;
 
     // Everything after the first 16 bytes, as a value
     auto rest = capy::buffer_slice(bufs, 16);
-    co_await capy::write(sock, rest);
+    std::tie(ec, n) = co_await capy::write(sock, rest);
     // end::buffer_slice[]
     sock.shutdown(corosio::shutdown_send);
 }
@@ -185,14 +189,14 @@ capy::task<void> bad_example(corosio::tcp_socket& sock)
         buf = capy::const_buffer(temp.data(), temp.size());
     }  // temp destroyed here!
 
-    co_await sock.write_some(buf);  // Undefined behavior
+    std::ignore = co_await sock.write_some(buf);  // Undefined behavior
 }
 
 // CORRECT: keep storage alive
 capy::task<void> good_example(corosio::tcp_socket& sock)
 {
     std::string msg = "Hello";
-    co_await sock.write_some(
+    std::ignore = co_await sock.write_some(
         capy::const_buffer(msg.data(), msg.size()));
 }
 // end::lifetime[]

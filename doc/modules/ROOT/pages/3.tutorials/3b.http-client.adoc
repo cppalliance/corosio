@@ -71,7 +71,7 @@ Key points:
 include::example$client/http_client.cpp[tag=run_client]
 ----
 
-The socket must be opened before connecting. We pass the socket as an
+`connect()` opens the socket automatically. We pass the socket as an
 `io_stream&` to `do_request`, so the same function works with any plain
 socket. TLS streams have a different type and need their own overload, as
 shown below.

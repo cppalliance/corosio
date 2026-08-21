@@ -141,7 +141,9 @@ stream_pair(
         throw std::system_error(ec, "connect_pair");
 
     // Data written to s1 can be read from s2, and vice versa.
-    co_await s1.write_some(capy::const_buffer("ping", 4));
+    if (auto [ec, n] = co_await s1.write_some(
+            capy::const_buffer("ping", 4)); ec)
+        co_return;
 
     char buf[16];
     auto [ec, n] = co_await s2.read_some(
@@ -167,9 +169,10 @@ datagram_connectionless(
         co_return;
 
     // Send to a specific peer
-    co_await s.send_to(
-        capy::const_buffer("hello", 5),
-        corosio::local_endpoint("/tmp/peer.sock"));
+    if (auto [ec, n] = co_await s.send_to(
+            capy::const_buffer("hello", 5),
+            corosio::local_endpoint("/tmp/peer.sock")); ec)
+        co_return;
 
     // Receive from any sender
     corosio::local_endpoint sender;
@@ -190,7 +193,9 @@ datagram_pair(
     if (auto ec = corosio::connect_pair(s1, s2))
         throw std::system_error(ec, "connect_pair");
 
-    co_await s1.send(capy::const_buffer("msg", 3));
+    if (auto [ec, n] = co_await s1.send(
+            capy::const_buffer("msg", 3)); ec)
+        co_return;
 
     auto [ec, n] = co_await s2.recv(
         capy::mutable_buffer(buf, sizeof(buf)));

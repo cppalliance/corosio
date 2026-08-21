@@ -277,6 +277,9 @@ public:
             service behavior.
         @param concurrency_hint Hint for the number of threads
             that will call `run()`.
+
+        @throws std::invalid_argument If `opts.thread_pool_size` is
+            less than 1 (POSIX).
     */
     explicit io_context(
         io_context_options const& opts,
@@ -311,6 +314,9 @@ public:
             service behavior.
         @param concurrency_hint Hint for the number of threads
             that will call `run()`.
+
+        @throws std::invalid_argument If `opts.thread_pool_size` is
+            less than 1 (POSIX).
     */
     template<class Backend>
         requires requires { Backend::construct; }

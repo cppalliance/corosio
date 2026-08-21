@@ -43,8 +43,9 @@ open — see xref:#connected-mode[Connected Mode] below.
 
 == Opening and Binding
 
-A socket must be open before any I/O. To receive datagrams it must also be
-bound to a local endpoint:
+Receiving datagrams requires an open socket bound to a local endpoint
+(`connect()` opens the socket automatically; the other initiators
+complete with `errc::bad_file_descriptor` on a closed socket):
 
 [source,cpp]
 ----
@@ -224,7 +225,7 @@ Related options:
 == Cancellation
 
 `cancel()` aborts every operation in flight on the socket. They complete
-with `errc::operation_canceled`:
+with an error matching `capy::cond::canceled`:
 
 [source,cpp]
 ----

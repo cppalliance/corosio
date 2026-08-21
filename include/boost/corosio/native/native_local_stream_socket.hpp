@@ -65,8 +65,9 @@ namespace boost::corosio {
 
     native_io_context<epoll> ctx;
     native_local_stream_socket<epoll> s(ctx);
-    s.open();
     auto [ec] = co_await s.connect(local_endpoint("/tmp/my.sock"));
+    if (ec)
+        co_return;
     @endcode
 
     @see local_stream_socket, epoll_t, iocp_t

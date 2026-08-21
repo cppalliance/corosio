@@ -142,6 +142,8 @@ public:
         @param s The string to parse.
 
         @throws std::system_error on parse failure.
+
+        @see make_endpoint for the non-throwing form.
     */
     explicit endpoint(std::string_view s);
 

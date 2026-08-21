@@ -101,6 +101,8 @@ public:
         referenced by @p buffers must remain valid until the operation
         completes.
 
+        A closed stream completes with `errc::bad_file_descriptor`.
+
         @param buffers The buffer sequence containing data to write.
 
         @return An awaitable yielding `(error_code, std::size_t)`.

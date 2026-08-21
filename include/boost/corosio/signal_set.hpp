@@ -76,13 +76,9 @@ namespace boost::corosio {
     signal_set signals(ctx, SIGINT, SIGTERM);
     auto [ec, signum] = co_await signals.wait();
     if (ec == capy::cond::canceled)
-    {
-        // Operation was cancelled via stop_token or cancel()
-    }
-    else if (!ec)
-    {
+        co_return;
+    if (!ec)
         std::cout << "Received signal " << signum << std::endl;
-    }
     @endcode
 */
 class BOOST_COROSIO_DECL signal_set : public io_signal_set
@@ -212,6 +208,9 @@ public:
         @param signals Additional signal numbers to add.
 
         @throws std::system_error Thrown on failure.
+
+        @see add for the non-throwing form: construct with the
+            context alone, then `add()` each signal.
     */
     template<std::convertible_to<int>... Signals>
     signal_set(capy::execution_context& ctx, int signal, Signals... signals)
@@ -247,6 +246,9 @@ public:
         @param signals Additional signal numbers to add.
 
         @throws std::system_error Thrown on failure.
+
+        @see add for the non-throwing form: construct with the
+            executor alone, then `add()` each signal.
     */
     template<class Ex, std::convertible_to<int>... Signals>
         requires capy::Executor<Ex>
@@ -295,10 +297,17 @@ public:
         signal_set) and the flags differ, an error is returned
         unless one of them has the `dont_care` flag.
 
+        The first signal registration on an execution context
+        installs the process signal-delivery pipe; if that
+        installation fails the error is returned, and the next
+        call retries it.
+
         @param signal_number The signal to be added to the set.
         @param flags The flags to apply when registering the signal.
             On POSIX systems, these map to sigaction() flags.
-            On Windows, flags are accepted but ignored.
+            On Windows, only `none` and `dont_care` are supported;
+            other flags cause `errc::operation_not_supported` to
+            be returned.
 
         @return Success, or an error if the signal could not be added.
             Returns `errc::invalid_argument` if the signal is already

@@ -51,6 +51,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -129,7 +130,7 @@ capy::task<void> session(corosio::tcp_socket sock)
     auto [ec, n] = co_await sock.read_some(buf);
     // No other code in this coroutine runs until above completes
 
-    co_await sock.write_some(response);
+    std::tie(ec, n) = co_await sock.write_some(response);
     // Still sequential
 }
 // end::strand_session[]
@@ -218,7 +219,7 @@ capy::task<void> bad()
 // RIGHT: suspend with an async delay
 capy::task<void> good()
 {
-    co_await corosio::delay(1s);
+    std::ignore = co_await corosio::delay(1s);
 }
 // end::blocking[]
 
@@ -268,7 +269,7 @@ cross_executor(
     // Dangerous: socket created on ctx1, used from ex2
     corosio::tcp_socket sock(ctx1);
     capy::run_async(ex2)([&sock, ep]() -> capy::task<void> {
-        co_await sock.connect(ep);  // Wrong executor!
+        std::ignore = co_await sock.connect(ep);  // Wrong executor!
     }());
     // end::cross_executor[]
 }

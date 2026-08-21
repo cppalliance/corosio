@@ -684,6 +684,13 @@ When a socket closes, its address may remain in TIME_WAIT state for minutes.
 This is essential for servers that restart—without it, the restart fails with
 "address already in use" until TIME_WAIT expires.
 
+The flag means something different on Windows: there it grants a socket the
+right to bind over an address another socket actively holds, silently
+splitting incoming connections between the two. Windows servers that want
+the POSIX contract set `SO_EXCLUSIVEADDRUSE` instead — the `tcp_acceptor`
+convenience constructor does this automatically, so a second listener fails
+with `errc::address_in_use` on every platform.
+
 === SO_REUSEPORT
 
 `SO_REUSEPORT` (available on some operating systems) allows multiple sockets

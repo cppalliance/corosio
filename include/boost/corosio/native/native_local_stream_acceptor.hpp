@@ -269,6 +269,8 @@ public:
 
         A closed acceptor reports `errc::bad_file_descriptor`.
 
+        @throws std::logic_error If the acceptor has been moved from.
+
         This acceptor must outlive the returned awaitable.
     */
     [[nodiscard]] auto accept()

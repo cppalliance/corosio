@@ -227,13 +227,16 @@ tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
     @code
     // Create a client context with system trust anchors
     corosio::tls_context ctx;
-    ctx.set_default_verify_paths();
-    ctx.set_verify_mode( corosio::tls_verify_mode::peer );
+    if (auto ec = ctx.set_default_verify_paths())
+        co_return;
+    if (auto ec = ctx.set_verify_mode( corosio::tls_verify_mode::peer ))
+        co_return;
 
     // Use with a TLS stream
     corosio::openssl_stream secure( &sock, ctx );
     secure.set_hostname( "example.com" );
-    co_await secure.handshake( corosio::tls_role::client );
+    if (auto [ec] = co_await secure.handshake( corosio::tls_role::client ); ec)
+        co_return;
     @endcode
 
     @see tls_role
@@ -331,8 +334,9 @@ public:
 
         @param format The encoding format of the certificate data.
 
-        @return Success, or an error if the certificate could not be parsed
-            or is invalid.
+        @return Success. The certificate is recorded and decoded when the
+            native context is first built; a malformed certificate surfaces
+            as a handshake failure.
 
         @see use_certificate_file
         @see use_private_key
@@ -350,12 +354,15 @@ public:
 
         @param format The encoding format of the file.
 
-        @return Success, or an error if the file could not be read or the
-            certificate is invalid.
+        @return Success, or an error if the file could not be read. The
+            certificate is decoded when the native context is first built;
+            a malformed certificate surfaces as a handshake failure.
 
         @par Example
         @code
-        ctx.use_certificate_file( "server.crt", tls_file_format::pem );
+        if (auto ec = ctx.use_certificate_file(
+                "server.crt", tls_file_format::pem ))
+            return;
         @endcode
 
         @see use_certificate
@@ -373,7 +380,9 @@ public:
         @param chain The certificate chain data in PEM format (concatenated
             certificates).
 
-        @return Success, or an error if the chain could not be parsed.
+        @return Success. The chain is recorded and decoded when the native
+            context is first built; a malformed chain surfaces as a
+            handshake failure.
 
         @see use_certificate_chain_file
     */
@@ -387,12 +396,14 @@ public:
 
         @param filename Path to the certificate chain file.
 
-        @return Success, or an error if the file could not be read or parsed.
+        @return Success, or an error if the file could not be read. The
+            chain is decoded when the native context is first built; a
+            malformed chain surfaces as a handshake failure.
 
         @par Example
         @code
-        // Load certificate chain (cert + intermediates)
-        ctx.use_certificate_chain_file( "fullchain.pem" );
+        if (auto ec = ctx.use_certificate_chain_file( "fullchain.pem" ))
+            return;
         @endcode
 
         @see use_certificate_chain
@@ -412,9 +423,10 @@ public:
 
         @param format The encoding format of the key data.
 
-        @return Success, or an error if the key could not be parsed,
-            is encrypted without a password callback, or doesn't match
-            the certificate.
+        @return Success. The key is recorded and decoded when the native
+            context is first built; a malformed key, a missing password
+            callback for an encrypted key, or a certificate mismatch
+            surfaces as a handshake failure.
 
         @see use_private_key_file
         @see set_password_callback
@@ -435,12 +447,16 @@ public:
 
         @param format The encoding format of the file.
 
-        @return Success, or an error if the file could not be read,
-            the key is invalid, or it doesn't match the certificate.
+        @return Success, or an error if the file could not be read. The
+            key is decoded when the native context is first built; a
+            malformed key or a certificate mismatch surfaces as a
+            handshake failure.
 
         @par Example
         @code
-        ctx.use_private_key_file( "server.key", tls_file_format::pem );
+        if (auto ec = ctx.use_private_key_file(
+                "server.key", tls_file_format::pem ))
+            return;
         @endcode
 
         @see use_private_key
@@ -493,7 +509,8 @@ public:
 
         @par Example
         @code
-        ctx.use_pkcs12_file( "credentials.pfx", "secret" );
+        if (auto ec = ctx.use_pkcs12_file( "credentials.pfx", "secret" ))
+            return;
         @endcode
 
         @see use_pkcs12
@@ -513,7 +530,9 @@ public:
 
         @param ca The CA certificate data in PEM format.
 
-        @return Success, or an error if the certificate could not be parsed.
+        @return Success. The certificate is recorded and decoded when the
+            native context is first built; a malformed certificate
+            surfaces as a handshake failure.
 
         @see load_verify_file
         @see set_default_verify_paths
@@ -527,12 +546,15 @@ public:
 
         @param filename Path to a PEM file containing CA certificates.
 
-        @return Success, or an error if the file could not be read or parsed.
+        @return Success, or an error if the file could not be read. The
+            certificates are decoded when the native context is first
+            built; malformed certificates surface as a handshake failure.
 
         @par Example
         @code
-        // Load a custom CA bundle
-        ctx.load_verify_file( "/etc/ssl/certs/ca-certificates.crt" );
+        if (auto ec = ctx.load_verify_file(
+                "/etc/ssl/certs/ca-certificates.crt" ))
+            return;
         @endcode
 
         @see add_certificate_authority
@@ -560,7 +582,8 @@ public:
 
         @par Example
         @code
-        ctx.add_verify_path( "/etc/ssl/certs" );
+        if (auto ec = ctx.add_verify_path( "/etc/ssl/certs" ))
+            return;
         @endcode
 
         @see load_verify_file
@@ -594,8 +617,10 @@ public:
         @par Example
         @code
         // Trust the same CAs as the system
-        ctx.set_default_verify_paths();
-        ctx.set_verify_mode( tls_verify_mode::peer );
+        if (auto ec = ctx.set_default_verify_paths())
+            return;
+        if (auto ec = ctx.set_verify_mode( tls_verify_mode::peer ))
+            return;
         @endcode
 
         @see load_verify_file
@@ -615,13 +640,14 @@ public:
 
         @param v The minimum protocol version to accept.
 
-        @return Success, or an error if the version is not supported
-            by the backend.
+        @return Success. The version is recorded and applied when the
+            native context is first built.
 
         @par Example
         @code
         // Require TLS 1.3 minimum
-        ctx.set_min_protocol_version( tls_version::tls_1_3 );
+        if (auto ec = ctx.set_min_protocol_version( tls_version::tls_1_3 ))
+            return;
         @endcode
 
         @see set_max_protocol_version
@@ -635,8 +661,8 @@ public:
 
         @param v The maximum protocol version to accept.
 
-        @return Success, or an error if the version is not supported
-            by the backend.
+        @return Success. The version is recorded and applied when the
+            native context is first built.
 
         @note On WolfSSL the ceiling is applied by selecting a
             version-specific method (no native set-max API exists); an
@@ -655,12 +681,15 @@ public:
 
         @param ciphers The cipher suite specification string.
 
-        @return Success, or an error if the cipher string is invalid.
+        @return Success. The string is recorded and applied when the
+            native context is first built; an invalid cipher string
+            surfaces as a handshake failure.
 
         @par Example
         @code
         // TLS 1.2 cipher suites (OpenSSL format)
-        ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" );
+        if (auto ec = ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" ))
+            return;
         @endcode
 
         @note This configures cipher suites for TLS 1.2 and below. For
@@ -676,12 +705,15 @@ public:
 
         @param ciphers The TLS 1.3 cipher suite list.
 
-        @return Success, or an error if the cipher string is invalid.
+        @return Success. The string is recorded and applied when the
+            native context is first built; an invalid cipher string
+            surfaces as a handshake failure.
 
         @par Example
         @code
-        ctx.set_ciphersuites_tls13(
-            "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256" );
+        if (auto ec = ctx.set_ciphersuites_tls13(
+                "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256" ))
+            return;
         @endcode
 
         @note On the WolfSSL backend, TLS 1.2 and TLS 1.3 suites share a
@@ -714,7 +746,8 @@ public:
         @par Example
         @code
         // Prefer HTTP/2, fall back to HTTP/1.1
-        ctx.set_alpn( { "h2", "http/1.1" } );
+        if (auto ec = ctx.set_alpn( { "h2", "http/1.1" } ))
+            return;
         @endcode
     */
     [[nodiscard]] std::error_code set_alpn(std::initializer_list<std::string_view> protocols);
@@ -730,15 +763,15 @@ public:
 
         @param mode The verification mode to use.
 
-        @return Success, or an error if the mode could not be set.
+        @return Success. The mode is recorded and applied when the native
+            context is first built.
 
         @par Example
         @code
-        // Verify peer certificate (typical for clients)
-        ctx.set_verify_mode( tls_verify_mode::peer );
-
-        // Require client certificate (server-side mTLS)
-        ctx.set_verify_mode( tls_verify_mode::require_peer );
+        // Verify peer certificate (typical for clients; servers doing
+        // mTLS use tls_verify_mode::require_peer instead)
+        if (auto ec = ctx.set_verify_mode( tls_verify_mode::peer ))
+            return;
         @endcode
 
         @see tls_verify_mode
@@ -753,7 +786,8 @@ public:
 
         @param depth Maximum number of intermediate certificates allowed.
 
-        @return Success, or an error if the depth is invalid.
+        @return Success. The depth is recorded and applied when the native
+            context is first built.
     */
     [[nodiscard]] std::error_code set_verify_depth(int depth);
 
@@ -799,7 +833,8 @@ public:
 
         @par Example
         @code
-        ctx.set_verify_mode( tls_verify_mode::peer );
+        if (auto ec = ctx.set_verify_mode( tls_verify_mode::peer ))
+            return;
         ctx.set_verify_callback(
             []( bool preverified, verify_context& ctx ) -> bool
             {
@@ -875,7 +910,9 @@ public:
 
         @param crl The CRL data in DER or PEM format.
 
-        @return Success, or an error if the CRL could not be parsed.
+        @return Success. The CRL is recorded and decoded when the native
+            context is first built; a malformed CRL surfaces as a
+            handshake failure.
 
         @note CRLs are consulted only when a revocation policy is set via
             @ref set_revocation_policy. On WolfSSL, CRL checking requires a
@@ -895,8 +932,9 @@ public:
 
         @param filename Path to a CRL file (DER or PEM format).
 
-        @return Success, or an error if the file could not be read
-            or the CRL is invalid.
+        @return Success, or an error if the file could not be read. The
+            CRL is decoded when the native context is first built; a
+            malformed CRL surfaces as a handshake failure.
 
         @note CRLs are consulted only when a revocation policy is set via
             @ref set_revocation_policy (WolfSSL requires a `HAVE_CRL`
@@ -904,7 +942,8 @@ public:
 
         @par Example
         @code
-        ctx.add_crl_file( "issuer.crl" );
+        if (auto ec = ctx.add_crl_file( "issuer.crl" ))
+            return;
         @endcode
 
         @see add_crl
@@ -969,7 +1008,9 @@ public:
             });
 
         // Now load encrypted key
-        ctx.use_private_key_file( "encrypted.key", tls_file_format::pem );
+        if (auto ec = ctx.use_private_key_file(
+                "encrypted.key", tls_file_format::pem ))
+            return;
         @endcode
 
         @see tls_password_purpose

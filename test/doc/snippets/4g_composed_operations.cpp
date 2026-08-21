@@ -60,6 +60,7 @@ namespace capy = boost::capy;
 #include <stop_token>
 #include <string>
 #include <system_error>
+#include <tuple>
 
 #include "test_suite.hpp"
 
@@ -222,11 +223,11 @@ capy::task<> cancellation_frag(
     std::array<capy::mutable_buffer, 2> bufs = {
         capy::mutable_buffer(header, 16),
         capy::mutable_buffer(body, 1024)};
-    co_await capy::read(stream, bufs);
+    std::ignore = co_await capy::read(stream, bufs);
 
     // Less efficient: may require more system calls
-    co_await capy::read(stream, buf1);
-    co_await capy::read(stream, buf2);
+    std::ignore = co_await capy::read(stream, buf1);
+    std::ignore = co_await capy::read(stream, buf2);
     // end::multiple_buffers[]
 }
 

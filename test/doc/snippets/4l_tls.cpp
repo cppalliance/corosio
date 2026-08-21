@@ -62,6 +62,7 @@ using namespace boost::corosio;
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <utility>
 
 #include "test_suite.hpp"
@@ -258,7 +259,7 @@ capy::task<void> send_request(corosio::io_stream& stream)
         throw std::system_error(ec);
 
     char response[4096];
-    co_await capy::read(
+    auto [ec, n] = co_await capy::read(
         stream, capy::mutable_buffer(response, sizeof(response)));
 }
 
@@ -270,7 +271,7 @@ capy::task<void> send_request(corosio::tls_stream& stream)
         throw std::system_error(ec);
 
     char response[4096];
-    co_await capy::read(
+    auto [ec, n] = co_await capy::read(
         stream, capy::mutable_buffer(response, sizeof(response)));
 }
 // end::stream_overloads[]
@@ -363,7 +364,7 @@ capy::task<void> https_get(
     std::cout << response << "\n";
 
     // Graceful shutdown
-    co_await secure.shutdown();
+    std::ignore = co_await secure.shutdown();
 }
 // end::https_get[]
 
@@ -414,7 +415,7 @@ capy::task<void> handle_tls_client(
         capy::mutable_buffer(buf, sizeof(buf)));
 
     // Graceful shutdown
-    co_await secure.shutdown();
+    std::ignore = co_await secure.shutdown();
 }
 // end::tls_server[]
 #endif

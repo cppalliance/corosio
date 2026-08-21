@@ -25,7 +25,7 @@ include::example$snippets/5c_patterns.cpp[tag=assume]
 == Verifying Request Format
 
 When a function under test must emit an exact byte sequence, stage it
-with `expect()` and assert on `close()` at the end:
+with `expect()` and assert on `verify()` at the end:
 
 [source,cpp]
 ----
@@ -86,7 +86,7 @@ include::example$snippets/5c_patterns.cpp[tag=end_to_end,indent=0]
 
 == Deterministic Close-Verification
 
-Always call `close()` on the mocket at the end of a test that uses
+Always call `verify()` on the mocket at the end of a test that uses
 `provide` / `expect`, and assert the result is empty:
 
 [source,cpp]
@@ -95,13 +95,10 @@ include::example$snippets/5c_patterns.cpp[tag=close_verification,indent=0]
 ----
 
 This is the line that catches "the test passed because the code under
-test silently did nothing." Treat it as a test-suite convention.
-
-The leftover-data check only runs on the *first* `close()` of a
-still-open mocket. If the mocket is already closed, `close()` returns
-success without inspecting the staging buffers, so leftover `provide()` /
-`expect()` data goes undetected. Make the verifying `close()` the first
-one.
+test silently did nothing." Treat it as a test-suite convention. An
+unmet expectation also trips the fuse, so a plain `close()` without
+the explicit `verify()` still fails the test — the assertion just
+makes the failure local and readable.
 
 == See Also
 

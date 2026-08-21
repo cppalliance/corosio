@@ -69,12 +69,12 @@ enum class bind_option
     io_context ioc;
     local_stream_acceptor acc(ioc);
     if (auto ec = acc.open())
-        return ec;
+        co_return ec;
     if (auto ec = acc.bind(local_endpoint("/tmp/my.sock"),
                            bind_option::unlink_existing))
-        return ec;
+        co_return ec;
     if (auto ec = acc.listen())
-        return ec;
+        co_return ec;
     auto [aec, peer] = co_await acc.accept();
     @endcode
 */
@@ -196,7 +196,8 @@ public:
     /** Convenience constructor: open + bind + listen.
 
         Creates a fully-bound listening acceptor in a single
-        expression.
+        expression, throwing the codes the piecewise `open()` +
+        `bind()` + `listen()` path returns.
 
         @param ctx The execution context that will own this acceptor.
         @param ep The local endpoint to bind to.
@@ -380,8 +381,10 @@ public:
 
         @return An awaitable that completes with `io_result<>`.
 
+        A closed acceptor completes with `errc::bad_file_descriptor`.
+
         @par Preconditions
-        The acceptor must be listening.
+        This acceptor must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {
@@ -405,6 +408,8 @@ public:
             io_result<local_stream_socket>.
 
         A closed acceptor reports `errc::bad_file_descriptor`.
+        On failure the returned socket is default-constructed and
+        may only be destroyed or assigned.
     */
     [[nodiscard]] auto accept()
     {
@@ -430,7 +435,8 @@ public:
 
         @return The native handle.
 
-        A closed acceptor reports `errc::bad_file_descriptor`.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            acceptor is not open.
 
         @post is_open() == false
     */

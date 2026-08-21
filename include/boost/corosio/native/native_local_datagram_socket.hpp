@@ -66,8 +66,10 @@ namespace boost::corosio {
 
     native_io_context<epoll> ctx;
     native_local_datagram_socket<epoll> s(ctx);
-    s.open();
-    s.bind(local_endpoint("/tmp/recv.sock"));
+    if (auto ec = s.open())
+        co_return;
+    if (auto ec = s.bind(local_endpoint("/tmp/recv.sock")))
+        co_return;
     char buf[1024];
     local_endpoint sender;
     auto [ec, n] = co_await s.recv_from(

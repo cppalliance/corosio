@@ -70,7 +70,8 @@ namespace boost::corosio {
     io_context ioc;
     tcp_server srv(ioc, ioc.get_executor());
     srv.set_workers(make_workers(ioc, 100));
-    srv.bind(endpoint{address_v4::any(), 8080});
+    if (auto ec = srv.bind(endpoint{ipv4_address::any(), 8080}))
+        return;
     srv.start();
     ioc.run();  // Blocks until all work completes
     @endcode
@@ -592,7 +593,8 @@ public:
         @code
         tcp_server srv(ctx, ctx.get_executor());
         srv.set_workers(make_workers(ctx, 100));
-        srv.bind(endpoint{...});
+        if (auto ec = srv.bind(endpoint{...}))
+            return;
         srv.start();
         @endcode
     */

@@ -63,7 +63,6 @@ namespace boost::corosio {
     @code
     io_context ioc;
     tcp_socket s(ioc);
-    s.open();
 
     // Using structured bindings
     auto [ec] = co_await s.connect(
@@ -388,7 +387,8 @@ public:
         @code
         // Socket opened automatically with correct address family:
         auto [ec] = co_await s.connect(endpoint);
-        if (ec) { ... }
+        if (ec)
+            co_return;
         @endcode
     */
     [[nodiscard]] auto connect(endpoint ep)
@@ -419,9 +419,10 @@ public:
             stream; a subsequent `read_some` (for read waits)
             returns the available data.
 
+        A closed socket completes with `errc::bad_file_descriptor`.
+
         @par Preconditions
-        The socket must be open. This socket must outlive the
-        returned awaitable.
+        This socket must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {
@@ -522,9 +523,7 @@ public:
         @code
         auto [ec, n] = co_await sock.read_some(buffer);
         if (ec == capy::cond::eof)
-        {
-            // Peer closed their send direction
-        }
+            co_return;  // Peer closed their send direction
         @endcode
 
         Failures such as a peer that already disconnected are
@@ -574,8 +573,7 @@ public:
         @par Example
         @code
         auto nd = sock.get_option<socket_option::no_delay>();
-        if ( nd.value() )
-            // Nagle's algorithm is disabled
+        bool disabled = nd.value();  // true: Nagle's algorithm is off
         @endcode
 
         @return The current option value.

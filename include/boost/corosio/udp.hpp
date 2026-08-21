@@ -31,8 +31,10 @@ class udp_socket;
     @par Example
     @code
     udp_socket sock( ioc );
-    sock.open( udp::v4() );
-    sock.bind( endpoint( ipv4_address::any(), 9000 ) );
+    if ( auto ec = sock.open( udp::v4() ) )
+        return;
+    if ( auto ec = sock.bind( endpoint( ipv4_address::any(), 9000 ) ) )
+        return;
     @endcode
 
     @see native_udp, udp_socket

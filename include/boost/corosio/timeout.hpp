@@ -48,9 +48,8 @@ namespace boost::corosio {
     @par Example
     @code
     auto [ec, n] = co_await timeout(sock.read_some(buf), 50ms);
-    if (ec == capy::cond::timeout) {
-        // handle timeout
-    }
+    if (ec == capy::cond::timeout)
+        co_return;
     @endcode
 
     @param a The awaitable to race against the deadline.

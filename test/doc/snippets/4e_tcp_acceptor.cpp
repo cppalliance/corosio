@@ -47,6 +47,7 @@ namespace capy = boost::capy;
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/signal_set.hpp>
+#include <boost/capy/cond.hpp>
 
 #include <csignal>
 #include <iostream>
@@ -190,10 +191,10 @@ stop_token_accept(
     // tag::accept_stop_token[]
     // Inside a cancellable task:
     auto [ec] = co_await acc.accept(peer);
-    if (ec == std::errc::operation_canceled)
+    if (ec == capy::cond::canceled)
         std::cout << "Accept cancelled\n";
     // end::accept_stop_token[]
-    canceled = ec == std::errc::operation_canceled;
+    canceled = ec == capy::cond::canceled;
 }
 
 void
@@ -257,7 +258,7 @@ capy::task<void> accept_loop(
 
         if (ec)
         {
-            if (ec == std::errc::operation_canceled)
+            if (ec == capy::cond::canceled)
                 break;  // Shutdown requested
 
             std::cerr << "Accept error: " << ec.message() << "\n";
@@ -383,7 +384,7 @@ struct tcp_acceptor_test
                 co_return;
             }(acc));
         ioc.run();
-        BOOST_TEST(accept_ec == std::errc::operation_canceled);
+        BOOST_TEST(accept_ec == capy::cond::canceled);
     }
 
     void

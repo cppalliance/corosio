@@ -39,10 +39,10 @@ The function:
 
 Both sockets come back `is_open()` and ready to use.
 
-If bind, listen, accept, or connect fails, `make_socket_pair` throws
-`std::runtime_error` naming the failing step; the underlying
-`error_code::message()` appears in the exception text for bind and
-listen failures, and on `stderr` for accept and connect failures.
+If open, bind, listen, accept, or connect fails, `make_socket_pair`
+throws `std::runtime_error` naming the failing step; the underlying
+`error_code::message()` appears in the exception text for open, bind,
+and listen failures, and on `stderr` for accept and connect failures.
 
 == Round Trip
 

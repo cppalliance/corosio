@@ -106,6 +106,9 @@ public:
         @param signals Additional signal numbers to add.
 
         @throws std::system_error on failure.
+
+        @see add for the non-throwing form: construct with the
+            context alone, then `add()` each signal.
     */
     template<std::convertible_to<int>... Signals>
     native_signal_set(

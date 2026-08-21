@@ -71,7 +71,9 @@ struct socket_pair_page_test
 
         auto task = [](corosio::tcp_socket& a, corosio::tcp_socket& b)
             -> capy::task<> {
-            co_await a.write_some(capy::const_buffer("ping", 4));
+            if (auto [wec, wn] = co_await a.write_some(
+                    capy::const_buffer("ping", 4)); wec)
+                co_return;
 
             char buf[8] = {};
             auto [ec, n] = co_await b.read_some(capy::make_buffer(buf));

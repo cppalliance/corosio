@@ -64,7 +64,8 @@ namespace boost::corosio {
 
     native_io_context<epoll> ctx;
     native_random_access_file<epoll> f(ctx);
-    f.open("data.bin", file_base::read_only);
+    if (auto ec = f.open("data.bin", file_base::read_only))
+        co_return;
     char buf[4096];
     auto [ec, n] = co_await f.read_some_at(
         0, capy::mutable_buffer(buf, sizeof(buf)));

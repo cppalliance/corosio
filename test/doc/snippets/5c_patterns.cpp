@@ -44,6 +44,7 @@ namespace capy = boost::capy;
 
 #include <string>
 #include <string_view>
+#include <tuple>
 
 #include "test_suite.hpp"
 
@@ -54,7 +55,8 @@ capy::task<>
 my_http_get(corosio::test::mocket& m, std::string_view target)
 {
     std::string req = "GET " + std::string(target) + " HTTP/1.1\r\n\r\n";
-    co_await m.write_some(capy::const_buffer(req.data(), req.size()));
+    std::ignore = co_await m.write_some(
+        capy::const_buffer(req.data(), req.size()));
 }
 
 capy::task<std::string>
@@ -189,7 +191,9 @@ struct patterns_page_test
         // A reverse round trip with assertions proves data really flows.
         auto verify = [](corosio::tcp_socket& a, corosio::tcp_socket& b)
             -> capy::task<> {
-            co_await b.write_some(capy::const_buffer("reply", 5));
+            auto [wec, wn] = co_await b.write_some(
+                capy::const_buffer("reply", 5));
+            BOOST_TEST(!wec);
 
             char buf[16] = {};
             auto [ec, n] = co_await a.read_some(capy::make_buffer(buf));

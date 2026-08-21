@@ -303,8 +303,7 @@ public:
     @code
     sock.set_option( socket_option::no_delay( true ) );
     auto nd = sock.get_option<socket_option::no_delay>();
-    if ( nd.value() )
-        // Nagle's algorithm is disabled
+    bool disabled = nd.value();  // true: Nagle's algorithm is off
     @endcode
 */
 class BOOST_COROSIO_DECL no_delay : public boolean_option
@@ -393,7 +392,8 @@ public:
     @par Example
     @code
     udp_socket sock( ioc );
-    sock.open();
+    if ( auto ec = sock.open() )
+        return;
     sock.set_option( socket_option::broadcast( true ) );
     @endcode
 */
@@ -413,14 +413,17 @@ public:
 /** Allow multiple sockets to bind to the same port (SO_REUSEPORT).
 
     Not available on all platforms. On unsupported platforms,
-    `set_option` will return an error.
+    `set_option` throws `std::system_error`.
 
     @par Example
     @code
-    acc.open( tcp::v6() );
+    if ( auto ec = acc.open( tcp::v6() ) )
+        return;
     acc.set_option( socket_option::reuse_port( true ) );
-    acc.bind( endpoint( ipv6_address::any(), 8080 ) );
-    acc.listen();
+    if ( auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ) )
+        return;
+    if ( auto ec = acc.listen() )
+        return;
     @endcode
 */
 class BOOST_COROSIO_DECL reuse_port : public boolean_option

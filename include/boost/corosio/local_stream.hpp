@@ -31,7 +31,8 @@ class local_stream_acceptor;
     @par Example
     @code
     local_stream_socket sock(ctx);
-    sock.open(local_stream{});
+    if (auto ec = sock.open(local_stream{}))
+        return;
     @endcode
 
     @see native_local_stream, local_stream_socket, local_stream_acceptor

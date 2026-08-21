@@ -59,9 +59,15 @@ which opens, sets `SO_REUSEADDR`, binds, and listens in a single step:
 include::example$snippets/4e_tcp_acceptor.cpp[tag=convenience_ctor,indent=0]
 ----
 
-This throws `std::system_error` if binding or listening fails. Unlike the
-standalone `open()`, the convenience constructor enables `SO_REUSEADDR` before
-binding, so the listening port can be reused immediately after a restart.
+This throws `std::system_error` on open, `set_option()`, bind, or listen
+failure — exactly the codes the piecewise path (open, set option, bind,
+listen) reports. Unlike the standalone `open()`, the convenience
+constructor configures address reuse before binding, so the listening
+port can be reused immediately after a restart. The option is
+platform-specific: `SO_REUSEADDR` on POSIX, and `SO_EXCLUSIVEADDRUSE` on
+Windows, where `SO_REUSEADDR` would instead let other sockets bind over
+the port. Either way the observable contract is the same — a second
+listener on an occupied endpoint throws `errc::address_in_use`.
 
 === bind() and listen()
 
@@ -142,7 +148,7 @@ Common accept errors:
 |===
 | Error | Meaning
 
-| `operation_canceled`
+| `capy::cond::canceled`
 | Cancelled via `cancel()` or stop token
 
 | Resource errors
@@ -169,7 +175,8 @@ Cancel pending accept operations:
 include::example$snippets/4e_tcp_acceptor.cpp[tag=cancel,indent=0]
 ----
 
-All outstanding `accept()` operations complete with `operation_canceled`.
+All outstanding `accept()` operations complete with an error matching
+`capy::cond::canceled`.
 
 === Stop Token Cancellation
 
@@ -192,7 +199,8 @@ Release tcp_acceptor resources:
 include::example$snippets/4e_tcp_acceptor.cpp[tag=close,indent=0]
 ----
 
-Pending accept operations complete with `operation_canceled`.
+Pending accept operations complete with an error matching
+`capy::cond::canceled`.
 
 === is_open()
 

@@ -68,6 +68,7 @@ namespace capy = boost::capy;
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -306,7 +307,7 @@ capy::const_buffer some_buffer("hi", 2);
     // tag::io_stream_poly[]
     capy::task<void> send_data(corosio::io_stream& stream)
     {
-        co_await capy::write(stream, some_buffer);
+        std::ignore = co_await capy::write(stream, some_buffer);
     }
     // end::io_stream_poly[]
 
@@ -337,14 +338,14 @@ buffer_sequences_fragment(corosio::tcp_socket& s)
     // tag::buffer_sequences[]
     // Single buffer
     capy::mutable_buffer buf(data, size);
-    co_await s.read_some(buf);
+    auto [ec, n] = co_await s.read_some(buf);
 
     // Multiple buffers (scatter/gather I/O)
     std::array<capy::mutable_buffer, 2> bufs = {
         capy::mutable_buffer(header, header_size),
         capy::mutable_buffer(body, body_size)
     };
-    co_await s.read_some(bufs);
+    std::tie(ec, n) = co_await s.read_some(bufs);
     // end::buffer_sequences[]
 }
 

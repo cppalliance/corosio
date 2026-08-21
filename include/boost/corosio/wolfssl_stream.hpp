@@ -60,12 +60,16 @@ namespace boost::corosio {
     ctx.set_verify_mode(tls_verify_mode::peer);
 
     corosio::tcp_socket sock(ioc);
-    co_await sock.connect(endpoint);
+    auto [ec] = co_await sock.connect(endpoint);
+    if (ec)
+        co_return;
 
     // Reference mode - sock must outlive tls
     corosio::wolfssl_stream tls(&sock, ctx);
     tls.set_hostname("example.com");
-    auto [ec] = co_await tls.handshake(tls_role::client);
+    auto [hec] = co_await tls.handshake(tls_role::client);
+    if (hec)
+        co_return;
 
     // Or owning mode - tls owns the socket
     corosio::wolfssl_stream tls2(std::move(sock), ctx);
@@ -128,14 +132,14 @@ public:
     /** Move construct from another WolfSSL stream.
 
         @param other The source stream. After the move,
-            @p other is in a valid but unspecified state.
+            @p other may only be destroyed or assigned to.
     */
     wolfssl_stream(wolfssl_stream&& other) noexcept;
 
     /** Move assign from another WolfSSL stream.
 
         @param other The source stream. After the move,
-            @p other is in a valid but unspecified state.
+            @p other may only be destroyed or assigned to.
 
         @return `*this`.
     */

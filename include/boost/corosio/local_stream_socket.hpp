@@ -64,7 +64,6 @@ namespace boost::corosio {
     @code
     io_context ioc;
     local_stream_socket s(ioc);
-    s.open();
 
     auto [ec] = co_await s.connect(local_endpoint("/tmp/my.sock"));
     if (ec)
@@ -357,9 +356,10 @@ public:
 
         @return An awaitable that completes with `io_result<>`.
 
+        A closed socket completes with `errc::bad_file_descriptor`.
+
         @par Preconditions
-        The socket must be open. This socket must outlive the
-        returned awaitable.
+        This socket must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {

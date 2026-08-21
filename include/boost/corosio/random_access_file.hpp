@@ -388,6 +388,9 @@ public:
         responsible for closing the returned handle.
 
         @return The native file descriptor or handle.
+
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            file is not open.
     */
     native_handle_type release();
 

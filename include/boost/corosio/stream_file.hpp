@@ -54,10 +54,15 @@ namespace boost::corosio {
         co_return;  // report the error
 
     char buf[4096];
-    auto [ec, n] = co_await f.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
-    if (ec == capy::cond::eof)
-        // end of file
+    for (;;)
+    {
+        auto [ec, n] = co_await f.read_some(
+            capy::mutable_buffer(buf, sizeof(buf)));
+        if (ec == capy::cond::eof)
+            break;
+        if (ec)
+            co_return;
+    }
     @endcode
 */
 class BOOST_COROSIO_DECL stream_file : public io_stream
@@ -250,6 +255,9 @@ public:
         responsible for closing the returned handle.
 
         @return The native file descriptor or handle.
+
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            file is not open.
     */
     native_handle_type release();
 

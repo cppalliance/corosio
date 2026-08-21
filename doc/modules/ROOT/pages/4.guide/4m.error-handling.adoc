@@ -12,6 +12,79 @@
 Corosio reports I/O errors through the `io_result` type, which carries an
 error code alongside any values produced by the operation.
 
+== One Channel
+
+Every fallible operation reports through exactly one channel:
+
+* *Expected runtime conditions return the error.* Synchronous
+  operations return `std::error_code` (or `io_result<T>` when a
+  payload rides along — `seek()`, the `make_*` factories), and
+  asynchronous operations complete with `io_result<...>`. Every
+  error-returning function is `[[nodiscard]]`.
+* *Misuse of a documented precondition throws* `std::system_error` —
+  for example `release()`, `set_option()`, or `get_option()` on a
+  closed object.
+* *Operations whose outcome nobody can act on report nothing.*
+  `close()` and `cancel()` are `void noexcept`; durability reporting
+  belongs to `sync_data()`/`sync_all()`, and cancellation reports
+  through each canceled completion.
+
+Using a closed object is deterministic on every backend and every
+channel: the operation returns, throws, or completes with
+`errc::bad_file_descriptor`.
+
+== Avoiding Exceptions
+
+Every throwing convenience is sugar over an exception-free spelling,
+or is guarded by a public pre-check — code that performs the check or
+uses the piecewise path never sees the throw:
+
+[cols="1,1"]
+|===
+| Throwing convenience | Exception-free spelling
+
+| `tcp_acceptor(ctx, ep, backlog)` +
+  `local_stream_acceptor(ctx, ep, backlog)`
+| default-construct, then `open()` + `bind()` + `listen()`
+  ( `tcp_acceptor` also configures address reuse via `set_option()`
+  between open and bind: `SO_REUSEADDR` on POSIX,
+  `SO_EXCLUSIVEADDRUSE` on Windows ) — the constructor throws exactly
+  the codes this path reports
+
+| `endpoint("host:port")`
+| `make_endpoint(s)`
+
+| `ipv4_address(s)` / `ipv6_address(s)`
+| `make_ipv4_address(s)` / `make_ipv6_address(s)`
+
+| `signal_set(ctx, sig, sigs...)`
+| `signal_set(ctx)`, then `add()` per signal
+
+| `local_endpoint(path)`
+| check `path.size() <= local_endpoint::max_path_length` first — the
+  public constant is the entire precondition
+
+| `io_context(opts, ...)` throwing `std::invalid_argument`
+| ensure `opts.thread_pool_size >= 1`
+
+| `release()`, `size()`, `available()`, `set_option()`,
+  `get_option()` on a closed object
+| check `is_open()` first — closed-ness is the documented precondition
+|===
+
+What cannot be spelled exception-free: root construction and the run
+loop. `io_context` itself throws if backend setup fails (there is no
+code-returning way to construct it), any constructor can throw
+`std::bad_alloc`, and `run()`/`stop()` throw `std::system_error` if
+the OS demultiplexer itself fails — a process-fatal condition with no
+per-operation channel to carry it. One environmental caveat on the
+last table row: `set_option()`/`get_option()` also throw when the
+platform rejects the option itself (an unsupported option on that
+protocol or OS), so an open check removes the closed-object throw but
+not that environmental arm — probe an option once at startup if it
+must not throw later.
+Startup construction failing by exception is the intended shape.
+
 [NOTE]
 ====
 Code snippets assume:
@@ -23,14 +96,12 @@ include::example$snippets/4m_error_handling.cpp[tag=assume]
 
 == The io_result Type
 
-Every I/O operation returns an `io_result<...>` with two public members:
-
-* `ec` — the error code (always present)
-* `values` — a tuple of any additional values produced by the operation
-
-`io_result` also models the tuple protocol, so it can be destructured with
-structured bindings. It has no `value()` member and no conversion to `bool`;
-check for errors by testing `ec`.
+`io_result<Ts...>` is an alias for `std::tuple<std::error_code, Ts...>`:
+the error code always comes first, followed by any values the operation
+produced. Because it is a `std::tuple`, results interoperate with the
+whole tuple API — structured bindings, `std::tie`, `std::get`,
+`std::apply`. There is no `value()` member and no conversion to `bool`;
+check for errors by testing the error code.
 
 [source,cpp]
 ----
@@ -48,17 +119,19 @@ include::example$snippets/4m_error_handling.cpp[tag=structured_bindings,indent=0
 
 This pattern gives you full control over error handling.
 
-== Accessing Members Directly
+== Accessing Elements Directly
 
-You can also bind the whole result and read its members:
+You can also bind the whole result and read its elements through the
+tuple API:
 
 [source,cpp]
 ----
 include::example$snippets/4m_error_handling.cpp[tag=direct_members,indent=0]
 ----
 
-The payload lives in `result.values`; for single-value results, prefer
-structured bindings, which name the value for you.
+The error code is `std::get<0>(result)` and payload elements follow.
+For single-value results, prefer structured bindings, which name the
+value for you.
 
 == Throwing on Error
 
@@ -123,6 +196,39 @@ include::example$snippets/4m_error_handling.cpp[tag=throw_style,indent=0]
 
 | `network_unreachable`
 | No route to host
+|===
+
+=== Deterministic Corosio Codes
+
+Codes corosio generates itself are contracts, portable across every
+platform and backend:
+
+[cols="1,2"]
+|===
+| Error | Meaning
+
+| `bad_file_descriptor`
+| Operation on a closed object, or adopting an invalid descriptor
+
+| `invalid_argument`
+| Unparseable input to the `make_*` factories, invalid signal_set
+  flags, a negative seek
+
+| `already_connected`
+| `connect_pair()` on an already-open socket
+
+| `no_such_device_or_address`
+| `corosio::connect()` with no viable candidate
+
+| `wrong_protocol_type` / `address_family_not_supported`
+| Adopting a foreign descriptor of the wrong type or family
+
+| `value_too_large`
+| A file offset beyond what the platform can represent, or a
+  truncated hostname from `host_name()`
+
+| `filename_too_long`
+| A `local_endpoint` path over `max_path_length`
 |===
 
 === Cancellation

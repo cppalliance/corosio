@@ -67,24 +67,32 @@ namespace boost::corosio {
     // Connectionless mode
     io_context ioc;
     udp_socket sock( ioc );
-    sock.open( udp::v4() );
-    sock.bind( endpoint( ipv4_address::any(), 9000 ) );
+    if ( auto ec = sock.open( udp::v4() ) )
+        co_return;
+    if ( auto ec = sock.bind( endpoint( ipv4_address::any(), 9000 ) ) )
+        co_return;
 
     char buf[1024];
     endpoint sender;
     auto [ec, n] = co_await sock.recv_from(
         capy::mutable_buffer( buf, sizeof( buf ) ), sender );
-    if ( !ec )
-        co_await sock.send_to(
-            capy::const_buffer( buf, n ), sender );
+    if ( ec )
+        co_return;
+    auto [sec, sn] = co_await sock.send_to(
+        capy::const_buffer( buf, n ), sender );
+    if ( sec )
+        co_return;
 
     // Connected mode
     udp_socket csock( ioc );
     auto [cec] = co_await csock.connect(
         endpoint( ipv4_address::loopback(), 9000 ) );
-    if ( !cec )
-        co_await csock.send(
-            capy::const_buffer( buf, n ) );
+    if ( cec )
+        co_return;
+    auto [wec, wn] = co_await csock.send(
+        capy::const_buffer( buf, n ) );
+    if ( wec )
+        co_return;
     @endcode
 */
 class BOOST_COROSIO_DECL udp_socket : public io_object
@@ -730,9 +738,10 @@ public:
 
         @return An awaitable that completes with `io_result<>`.
 
+        A closed socket completes with `errc::bad_file_descriptor`.
+
         @par Preconditions
-        The socket must be open. This socket must outlive the
-        returned awaitable.
+        This socket must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {

@@ -98,22 +98,21 @@ the constructor. The default is `std::size_t(-1)` (unlimited).
 
 == Closing and Verification
 
-`close()` shuts the underlying socket and verifies that both staging
-buffers are empty:
+`verify()` checks that both staging buffers were fully consumed and
+returns `error::test_failure` if either holds leftover data; `close()`
+shuts the underlying socket, running the same check through the fuse
+on the way out:
 
 [source,cpp]
 ----
 include::example$snippets/5a_mocket.cpp[tag=close_check,indent=0]
 ----
 
-Always call `close()` at the end of a test that uses `provide` / `expect`
-and assert that the result is empty. This is what catches "the test
-passed because the code under test did nothing."
-
-The leftover-data check only runs on the *first* `close()` of a
-still-open mocket. `close()` on an already-closed mocket returns success
-without inspecting the staging buffers, so the verifying `close()` must be
-the first one.
+Always call `verify()` at the end of a test that uses `provide` /
+`expect` and assert that the result is empty. This is what catches
+"the test passed because the code under test did nothing." An unmet
+expectation also trips the fuse, so even an unchecked `close()` still
+fails the test.
 
 == Templated over Socket
 

@@ -83,17 +83,25 @@ namespace boost::corosio {
     @code
     // Connectionless
     local_datagram_socket sender(ioc);
-    sender.open();
-    sender.bind(local_endpoint("/tmp/sender.sock"));
+    if (auto ec = sender.open())
+        co_return;
+    if (auto ec = sender.bind(local_endpoint("/tmp/sender.sock")))
+        co_return;
     auto [ec, n] = co_await sender.send_to(
         capy::const_buffer("hello", 5),
         local_endpoint("/tmp/receiver.sock"));
+    if (ec)
+        co_return;
 
     // Connected
     local_datagram_socket sock(ioc);
-    co_await sock.connect(local_endpoint("/tmp/peer.sock"));
+    auto [cec] = co_await sock.connect(local_endpoint("/tmp/peer.sock"));
+    if (cec)
+        co_return;
     auto [ec2, n2] = co_await sock.send(
         capy::const_buffer("hi", 2));
+    if (ec2)
+        co_return;
     @endcode
 */
 class BOOST_COROSIO_DECL local_datagram_socket : public io_object
@@ -590,9 +598,10 @@ public:
 
         @return An awaitable that completes with `io_result<>`.
 
+        A closed socket completes with `errc::bad_file_descriptor`.
+
         @par Preconditions
-        The socket must be open. This socket must outlive the
-        returned awaitable.
+        This socket must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {

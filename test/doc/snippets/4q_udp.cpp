@@ -139,8 +139,9 @@ capy::task<> echo(corosio::io_context& ioc)
             capy::mutable_buffer(buf, sizeof(buf)), sender);
         if (rec) co_return;
 
-        co_await sock.send_to(
-            capy::const_buffer(buf, n), sender);
+        if (auto [sec, sn] = co_await sock.send_to(
+                capy::const_buffer(buf, n), sender); sec)
+            co_return;
     }
 }
 // end::echo[]
@@ -156,7 +157,9 @@ connected_mode(corosio::io_context& ioc)
         corosio::endpoint(corosio::ipv4_address::loopback(), 9000));
     if (cec) co_return;
 
-    co_await sock.send(capy::const_buffer("ping", 4));
+    if (auto [sec, sn] = co_await sock.send(
+            capy::const_buffer("ping", 4)); sec)
+        co_return;
 
     char buf[64];
     auto [rec, n] = co_await sock.recv(

@@ -68,8 +68,7 @@ namespace boost::corosio::native_socket_option {
     @code
     sock.set_option( native_socket_option::no_delay( true ) );
     auto nd = sock.get_option<native_socket_option::no_delay>();
-    if ( nd.value() )
-        // Nagle's algorithm is disabled
+    bool disabled = nd.value();  // true: Nagle's algorithm is off
     @endcode
 
     @tparam Level The protocol level (e.g. `SOL_SOCKET`, `IPPROTO_TCP`).

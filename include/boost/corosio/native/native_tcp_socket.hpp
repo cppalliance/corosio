@@ -64,8 +64,9 @@ namespace boost::corosio {
 
     native_io_context<epoll> ctx;
     native_tcp_socket<epoll> s(ctx);
-    s.open();
     auto [ec] = co_await s.connect(ep);
+    if (ec)
+        co_return;
     auto [ec2, n] = co_await s.read_some(buf);
     @endcode
 

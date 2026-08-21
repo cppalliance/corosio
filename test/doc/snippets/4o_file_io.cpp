@@ -82,9 +82,12 @@ stream_read(
         capy::mutable_buffer(buf, sizeof(buf)));
 
     if (ec == capy::cond::eof)
+    {
         // reached end of file
-    // end::stream_read[]
         eof_seen = true;
+        co_return;
+    }
+    // end::stream_read[]
     bytes_read = n;
 }
 

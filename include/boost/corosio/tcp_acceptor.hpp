@@ -56,7 +56,7 @@ namespace boost::corosio {
 
     @par Example
     @code
-    // Convenience constructor: open + SO_REUSEADDR + bind + listen
+    // Convenience constructor: open + configure + bind + listen
     io_context ioc;
     tcp_acceptor acc( ioc, endpoint( 8080 ) );
 
@@ -197,16 +197,27 @@ public:
     */
     explicit tcp_acceptor(capy::execution_context& ctx);
 
-    /** Convenience constructor: open + SO_REUSEADDR + bind + listen.
+    /** Convenience constructor: open + configure + bind + listen.
 
         Creates a fully-bound listening acceptor in a single
-        expression. The address family is deduced from @p ep.
+        expression, throwing the codes the piecewise `open()` +
+        `set_option()` + `bind()` + `listen()` path reports. The
+        address family is deduced from @p ep.
+
+        Before binding, the constructor configures address reuse so
+        a server can rebind its port immediately after a restart:
+        `SO_REUSEADDR` on POSIX, `SO_EXCLUSIVEADDRUSE` on Windows
+        ( where `SO_REUSEADDR` instead grants other sockets
+        bind-over rights ). A second listener on an occupied
+        endpoint therefore throws `errc::address_in_use` on every
+        platform.
 
         @param ctx The execution context that will own this acceptor.
         @param ep The local endpoint to bind to.
         @param backlog The maximum pending connection queue length.
 
-        @throws std::system_error on bind or listen failure.
+        @throws std::system_error on open, configuration, bind, or
+            listen failure.
     */
     tcp_acceptor(capy::execution_context& ctx, endpoint ep, int backlog = 128);
 
@@ -229,7 +240,8 @@ public:
         @param ep The local endpoint to bind to.
         @param backlog The maximum pending connection queue length.
 
-        @throws std::system_error on bind or listen failure.
+        @throws std::system_error on open, configuration, bind, or
+            listen failure.
     */
     template<class Ex>
         requires capy::Executor<Ex>
@@ -392,9 +404,9 @@ public:
         @code
         tcp_socket peer(ioc);
         auto [ec] = co_await acc.accept(peer);
-        if (!ec) {
-            // Use peer socket
-        }
+        if (ec)
+            co_return;
+        auto [wec, n] = co_await peer.write_some(buffer);
         @endcode
 
         @see accept()
@@ -429,6 +441,8 @@ public:
                 Check `ec == cond::canceled` for portable comparison.
 
         A closed acceptor completes with `errc::bad_file_descriptor`.
+        On failure the returned socket is default-constructed and
+        may only be destroyed or assigned.
 
         @par Preconditions
         This acceptor must outlive the returned awaitable.
@@ -436,9 +450,9 @@ public:
         @par Example
         @code
         auto [ec, peer] = co_await acc.accept();
-        if (!ec) {
-            // peer is a connected socket
-        }
+        if (ec)
+            co_return;
+        auto [wec, n] = co_await peer.write_some(buffer);
         @endcode
 
         @see accept(tcp_socket&)
@@ -543,7 +557,8 @@ public:
 
         @return The native handle.
 
-        A closed acceptor reports `errc::bad_file_descriptor`.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            acceptor is not open.
 
         @post is_open() == false
     */

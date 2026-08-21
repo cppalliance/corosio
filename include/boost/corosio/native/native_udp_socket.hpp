@@ -65,8 +65,10 @@ namespace boost::corosio {
 
     native_io_context<epoll> ctx;
     native_udp_socket<epoll> s(ctx);
-    s.open();
-    s.bind(endpoint(ipv4_address::any(), 9000));
+    if (auto ec = s.open())
+        co_return;
+    if (auto ec = s.bind(endpoint(ipv4_address::any(), 9000)))
+        co_return;
     char buf[1024];
     endpoint sender;
     auto [ec, n] = co_await s.recv_from(
@@ -381,6 +383,8 @@ public:
         @param flags Message flags.
 
         @return An awaitable yielding `(error_code, std::size_t)`.
+
+        A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::ConstBufferSequence CB>
     [[nodiscard]] auto send_to(
@@ -412,6 +416,8 @@ public:
         @param flags Message flags (e.g. message_flags::peek).
 
         @return An awaitable yielding `(error_code, std::size_t)`.
+
+        A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::MutableBufferSequence MB>
     [[nodiscard]] auto recv_from(
