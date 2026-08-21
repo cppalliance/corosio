@@ -155,8 +155,28 @@ struct native_tcp_socket_test
         s.close();
     }
 
+    void testClosedConnectCompletes()
+    {
+        // The native socket does not auto-open: connect on a closed
+        // socket completes with bad_file_descriptor.
+        io_context ioc(Backend);
+        native_tcp_socket<Backend> s(ioc);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            auto [ec] = co_await s.connect(
+                endpoint(ipv4_address::loopback(), 1));
+            BOOST_TEST(ec == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     void run()
     {
+        testClosedConnectCompletes();
         testSocketConstruct();
         testSocketMoveConstruct();
         testSocketPolymorphicSlice();

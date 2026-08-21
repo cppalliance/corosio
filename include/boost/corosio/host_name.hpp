@@ -37,7 +37,7 @@ namespace boost::corosio {
 
     @return The hostname as a UTF-8 string.
 
-    @throws std::runtime_error If the underlying system call fails.
+    @throws std::system_error If the underlying system call fails.
 */
 BOOST_COROSIO_DECL
 std::string

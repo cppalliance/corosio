@@ -962,8 +962,29 @@ struct io_context_test
         BOOST_TEST_EQ(counter.load(), 8);
     }
 
+#if BOOST_COROSIO_POSIX
+    void testZeroThreadPoolSizeThrows()
+    {
+        io_context_options opts;
+        opts.thread_pool_size = 0;
+        bool threw = false;
+        try
+        {
+            io_context ioc(opts);
+        }
+        catch (std::invalid_argument const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(threw);
+    }
+#endif
+
     void run()
     {
+#if BOOST_COROSIO_POSIX
+        testZeroThreadPoolSizeThrows();
+#endif
         testConstruction();
         testConstructionWithOptions();
         testConstructionWithThreadPoolSize();

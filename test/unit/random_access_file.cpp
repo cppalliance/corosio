@@ -172,7 +172,8 @@ struct random_access_file_test
 
 #if BOOST_COROSIO_POSIX
         // Larger than off_t can represent: rejected with EOVERFLOW.
-        BOOST_TEST(f.resize((std::numeric_limits<std::uint64_t>::max)()));
+        BOOST_TEST(f.resize((std::numeric_limits<std::uint64_t>::max)())
+                   == std::errc::value_too_large);
 #endif
     }
 
@@ -668,6 +669,14 @@ struct random_access_file_test
         testRelease();
         testAssign();
         testClosedFileErrors();
+        testClosedAtOpsComplete();
+#if BOOST_COROSIO_POSIX
+        testSyncOnPipeFails();
+        testHugeOffsetFails();
+#endif
+        testWrongDirectionIoFails();
+        testResizeReadOnlyFails();
+        testAssignOverOpenAdopts();
         testOpenSyncAllOnWrite();
         testOpenExclusiveExistingFails();
         testOpenExclusiveNewFile();
@@ -679,18 +688,157 @@ struct random_access_file_test
 
     // Operations on closed file
 
+    void testClosedAtOpsComplete()
+    {
+        // Offset I/O on a closed file completes with
+        // bad_file_descriptor instead of throwing.
+        io_context ioc(Backend);
+        random_access_file f(ioc);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[8];
+            auto [e1, n1] = co_await f.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(e1 == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(n1, 0u);
+
+            auto [e2, n2] = co_await f.write_some_at(
+                0, capy::const_buffer("x", 1));
+            BOOST_TEST(e2 == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(n2, 0u);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    void testResizeReadOnlyFails()
+    {
+        // ftruncate on a read-only descriptor reports a genuine
+        // runtime error through the returned code.
+        temp_file tmp("raf_resize_ro_", "0123456789");
+        io_context ioc(Backend);
+        random_access_file f(ioc);
+
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
+        BOOST_TEST(f.resize(4));
+        BOOST_TEST_EQ(f.size(), 10u);
+    }
+
+    void testAssignOverOpenAdopts()
+    {
+        temp_file tmp1("raf_assign_a_", "first");
+        temp_file tmp2("raf_assign_b_", "second");
+        io_context ioc(Backend);
+        random_access_file f(ioc);
+
+        BOOST_TEST(!f.open(tmp1.path, file_base::read_only));
+
+#if BOOST_COROSIO_HAS_IOCP
+        HANDLE h = ::CreateFileW(
+            tmp2.path.c_str(), GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr, OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+            nullptr);
+        BOOST_TEST(h != INVALID_HANDLE_VALUE);
+        auto raw = reinterpret_cast<native_handle_type>(h);
+#else
+        int fd = ::open(tmp2.path.c_str(), O_RDONLY);
+        BOOST_TEST(fd >= 0);
+        auto raw = static_cast<native_handle_type>(fd);
+#endif
+        // Adopting over an open file closes the previous handle first
+        BOOST_TEST(!f.assign(raw));
+        BOOST_TEST(f.is_open());
+        BOOST_TEST_EQ(f.size(), 6u);
+    }
+
+#if BOOST_COROSIO_POSIX
+    void testSyncOnPipeFails()
+    {
+        io_context ioc(Backend);
+        random_access_file f(ioc);
+
+        int fds[2];
+        BOOST_TEST(::pipe(fds) == 0);
+        BOOST_TEST(!f.assign(static_cast<native_handle_type>(fds[1])));
+        BOOST_TEST(f.sync_data());
+        BOOST_TEST(f.sync_all());
+        f.close();
+        ::close(fds[0]);
+    }
+#endif
+
+    void testWrongDirectionIoFails()
+    {
+        temp_file tmp("raf_wrongdir_", "data");
+        io_context ioc(Backend);
+        random_access_file wo(ioc), ro(ioc);
+
+        BOOST_TEST(!wo.open(tmp.path, file_base::write_only));
+        BOOST_TEST(!ro.open(tmp.path, file_base::read_only));
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[8];
+            auto [rec, rn] = co_await wo.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(bool(rec));
+
+            auto [wec, wn] = co_await ro.write_some_at(
+                0, capy::const_buffer("x", 1));
+            BOOST_TEST(bool(wec));
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+#if BOOST_COROSIO_POSIX
+    void testHugeOffsetFails()
+    {
+        // An offset beyond off_t's range is rejected through the
+        // async completion.
+        temp_file tmp("raf_hugeoff_", "data");
+        io_context ioc(Backend);
+        random_access_file f(ioc);
+
+        BOOST_TEST(!f.open(tmp.path, file_base::read_write));
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[8];
+            // Past off_t's range on the pool backend, and a negative
+            // offset on io_uring (whose ~0 means "current position").
+            auto [ec, n] = co_await f.read_some_at(
+                std::uint64_t(1) << 63,
+                capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(bool(ec));
+            BOOST_TEST_EQ(n, 0u);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+#endif
+
     void testClosedFileErrors()
     {
         io_context ioc(Backend);
         random_access_file f(ioc);
         BOOST_TEST(!f.is_open());
 
-        // Exceptional-only operations throw on a closed file
+        // Exceptional-only operations throw bad_file_descriptor
         auto expect_throw = [](auto fn) {
-            bool threw = false;
+            std::error_code caught;
             try { fn(); }
-            catch (std::system_error const&) { threw = true; }
-            BOOST_TEST(threw);
+            catch (std::system_error const& e) { caught = e.code(); }
+            BOOST_TEST(caught == std::errc::bad_file_descriptor);
         };
 
         expect_throw([&] { f.size(); });

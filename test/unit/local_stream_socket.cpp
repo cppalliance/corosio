@@ -511,7 +511,8 @@ struct local_stream_socket_test
         int fds[2];
         BOOST_TEST(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);
 
-        BOOST_TEST(s1.assign(static_cast<native_handle_type>(fds[0])));
+        BOOST_TEST(s1.assign(static_cast<native_handle_type>(fds[0]))
+                   == std::errc::wrong_protocol_type);
         BOOST_TEST(::fcntl(fds[0], F_GETFD) >= 0); // caller keeps it
         BOOST_TEST(s1.is_open());
 
@@ -548,7 +549,8 @@ struct local_stream_socket_test
     {
         io_context ioc(Backend);
         local_stream_socket sock(ioc);
-        BOOST_TEST(sock.assign((native_handle_type)-1));
+        BOOST_TEST(sock.assign((native_handle_type)-1)
+                   == std::errc::bad_file_descriptor);
         BOOST_TEST(!sock.is_open());
     }
 
@@ -560,7 +562,8 @@ struct local_stream_socket_test
         local_stream_socket sock(ioc);
         int fds[2];
         BOOST_TEST(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);
-        BOOST_TEST(sock.assign((native_handle_type)fds[0]));
+        BOOST_TEST(sock.assign((native_handle_type)fds[0])
+                   == std::errc::wrong_protocol_type);
         // fd still valid: fcntl succeeds
         BOOST_TEST(::fcntl(fds[0], F_GETFD) >= 0);
         BOOST_TEST(!sock.is_open());
@@ -597,16 +600,16 @@ struct local_stream_socket_test
         io_context ioc(Backend);
         local_stream_socket sock(ioc);
 
-        bool caught = false;
+        std::error_code caught;
         try
         {
             (void)sock.release();
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            caught = true;
+            caught = e.code();
         }
-        BOOST_TEST(caught);
+        BOOST_TEST(caught == std::errc::bad_file_descriptor);
     }
 
     void testAvailableClosedThrows()
@@ -614,16 +617,16 @@ struct local_stream_socket_test
         io_context ioc(Backend);
         local_stream_socket sock(ioc);
 
-        bool caught = false;
+        std::error_code caught;
         try
         {
             (void)sock.available();
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            caught = true;
+            caught = e.code();
         }
-        BOOST_TEST(caught);
+        BOOST_TEST(caught == std::errc::bad_file_descriptor);
     }
 
     void testConnectToNonexistent()
@@ -902,12 +905,17 @@ struct local_stream_socket_test
         }
 
         local_stream_socket closed(ioc);
-        BOOST_TEST_THROWS(
-            closed.set_option(socket_option::send_buffer_size(4096)),
-            std::logic_error);
-        BOOST_TEST_THROWS(
-            (void)closed.get_option<socket_option::send_buffer_size>(),
-            std::logic_error);
+        auto expect_bad_fd = [](auto fn) {
+            std::error_code caught;
+            try { fn(); }
+            catch (std::system_error const& e) { caught = e.code(); }
+            BOOST_TEST(caught == std::errc::bad_file_descriptor);
+        };
+        expect_bad_fd([&] {
+            closed.set_option(socket_option::send_buffer_size(4096)); });
+        expect_bad_fd([&] {
+            std::ignore =
+                closed.get_option<socket_option::send_buffer_size>(); });
     }
 
     void testAcceptorOptions()
@@ -933,12 +941,17 @@ struct local_stream_socket_test
         acc.close();
 
         local_stream_acceptor closed(ioc);
-        BOOST_TEST_THROWS(
-            closed.set_option(socket_option::reuse_address(true)),
-            std::logic_error);
-        BOOST_TEST_THROWS(
-            (void)closed.get_option<socket_option::reuse_address>(),
-            std::logic_error);
+        auto expect_bad_fd = [](auto fn) {
+            std::error_code caught;
+            try { fn(); }
+            catch (std::system_error const& e) { caught = e.code(); }
+            BOOST_TEST(caught == std::errc::bad_file_descriptor);
+        };
+        expect_bad_fd([&] {
+            closed.set_option(socket_option::reuse_address(true)); });
+        expect_bad_fd([&] {
+            std::ignore =
+                closed.get_option<socket_option::reuse_address>(); });
     }
 
     // Acceptor wait(wait_type::write) fails uniformly on every
@@ -1168,17 +1181,92 @@ struct local_stream_socket_test
     {
         io_context ioc(Backend);
         local_stream_acceptor acc(ioc);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        BOOST_TEST_THROWS(acc.bind(local_endpoint("/tmp/never")),
-                          std::logic_error);
+        BOOST_TEST(acc.bind(local_endpoint("/tmp/never"))
+                   == std::errc::bad_file_descriptor);
     }
 
     void testAcceptorListenClosedThrows()
     {
         io_context ioc(Backend);
         local_stream_acceptor acc(ioc);
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        BOOST_TEST_THROWS(acc.listen(), std::logic_error);
+        BOOST_TEST(acc.listen() == std::errc::bad_file_descriptor);
+    }
+
+    void testOptionFailureThrows()
+    {
+        io_context ioc(Backend);
+
+        // A TCP-level option on an AF_UNIX socket fails with a genuine
+        // error surfaced as system_error
+        local_stream_socket s1(ioc), s2(ioc);
+        if (auto ec = connect_pair(s1, s2))
+            throw std::system_error(ec, "connect_pair");
+        bool threw = false;
+        try
+        {
+            s1.set_option(socket_option::no_delay(true));
+        }
+        catch (std::system_error const& e)
+        {
+            threw = bool(e.code());
+        }
+        BOOST_TEST(threw);
+
+#if !defined(__APPLE__)
+        // Darwin's getsockopt accepts TCP_NODELAY on AF_UNIX sockets,
+        // so the get failure is only asserted where the kernel rejects it.
+        bool sock_get_threw = false;
+        try
+        {
+            (void)s1.get_option<socket_option::no_delay>();
+        }
+        catch (std::system_error const& e)
+        {
+            sock_get_threw = bool(e.code());
+        }
+        BOOST_TEST(sock_get_threw);
+#endif
+
+        // Same through the acceptor's option surface
+        local_stream_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        bool acc_threw = false;
+        try
+        {
+            acc.set_option(socket_option::no_delay(true));
+        }
+        catch (std::system_error const& e)
+        {
+            acc_threw = bool(e.code());
+        }
+        BOOST_TEST(acc_threw);
+        bool get_threw = false;
+        try
+        {
+            (void)acc.get_option<socket_option::no_delay>();
+        }
+        catch (std::system_error const& e)
+        {
+            get_threw = bool(e.code());
+        }
+        BOOST_TEST(get_threw);
+        acc.close();
+    }
+
+    void testAcceptorClosedWaitCompletes()
+    {
+        io_context ioc(Backend);
+        local_stream_acceptor acc(ioc);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            auto [ec] = co_await acc.wait(wait_type::read);
+            BOOST_TEST(ec == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     void testAcceptorAcceptClosedThrows()
@@ -1187,27 +1275,20 @@ struct local_stream_socket_test
         local_stream_acceptor acc(ioc);
         local_stream_socket peer(ioc);
 
-        bool caught_peer = false;
-        try
-        {
-            (void)acc.accept(peer);
-        }
-        catch (std::logic_error const&)
-        {
-            caught_peer = true;
-        }
-        BOOST_TEST(caught_peer);
+        // Accepts on a closed acceptor complete with
+        // bad_file_descriptor instead of throwing.
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            auto [e1] = co_await acc.accept(peer);
+            BOOST_TEST(e1 == std::errc::bad_file_descriptor);
 
-        bool caught_move = false;
-        try
-        {
-            (void)acc.accept();
-        }
-        catch (std::logic_error const&)
-        {
-            caught_move = true;
-        }
-        BOOST_TEST(caught_move);
+            auto [e2, moved] = co_await acc.accept();
+            BOOST_TEST(e2 == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     void testAcceptorReleaseClosedThrows()
@@ -1220,7 +1301,7 @@ struct local_stream_socket_test
         {
             (void)acc.release();
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const&)
         {
             caught = true;
         }
@@ -1465,19 +1546,15 @@ struct local_stream_socket_test
         BOOST_TEST(caught);
     }
 
-    void testEndpointTooLongNoThrow()
+    void testEndpointTooLongPrecheck()
     {
+        // Runtime-derived paths use the documented pre-check
+        // instead of a non-throwing parse.
         std::string too_long(local_endpoint::max_path_length + 1, 'x');
-        std::error_code ec;
-        local_endpoint ep(too_long, ec);
-        BOOST_TEST(!!ec);
-        BOOST_TEST_EQ(ep.empty(), true);
+        BOOST_TEST(too_long.size() > local_endpoint::max_path_length);
 
-        // Successful construction with the no-throw overload clears ec.
-        std::error_code ec2;
-        local_endpoint ep2("/tmp/ok", ec2);
-        BOOST_TEST_EQ(!ec2, true);
-        BOOST_TEST_EQ(ep2.path(), std::string_view("/tmp/ok"));
+        local_endpoint ok("/tmp/ok");
+        BOOST_TEST_EQ(ok.path(), std::string_view("/tmp/ok"));
     }
 
     void testEndpointMaxPathLength()
@@ -1565,6 +1642,8 @@ struct local_stream_socket_test
         testAcceptorOnClosedNoOp();
         testAcceptorBindClosedThrows();
         testAcceptorListenClosedThrows();
+        testOptionFailureThrows();
+        testAcceptorClosedWaitCompletes();
         testAcceptorAcceptClosedThrows();
         testAcceptorReleaseClosedThrows();
         testAcceptorReleaseOpen();
@@ -1574,7 +1653,7 @@ struct local_stream_socket_test
         testAcceptorAssignAfterRelease();
         testAcceptorLocalEndpoint();
         testEndpointTooLongThrows();
-        testEndpointTooLongNoThrow();
+        testEndpointTooLongPrecheck();
         testEndpointMaxPathLength();
         testAbstractEndpoint();
 #ifdef _WIN32

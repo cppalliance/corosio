@@ -22,6 +22,7 @@
 #include "test_utils.hpp"
 #include "test_suite.hpp"
 #include <iostream>
+#include <tuple>
 
 /*  Cross-Implementation TLS Tests
     ================================
@@ -134,7 +135,7 @@ struct cross_ssl_stream_test
         {
             auto client_ctx = make_client_context();
             auto server_ctx = make_anon_context();
-            (void)server_ctx.set_ciphersuites("");
+            std::ignore = server_ctx.set_ciphersuites("");
             run_tls_test_fail(
                 ioc, client_ctx, server_ctx, make_openssl, make_wolfssl);
             ioc.restart();
@@ -144,7 +145,7 @@ struct cross_ssl_stream_test
         {
             auto client_ctx = make_client_context();
             auto server_ctx = make_anon_context();
-            (void)server_ctx.set_ciphersuites("");
+            std::ignore = server_ctx.set_ciphersuites("");
             run_tls_test_fail(
                 ioc, client_ctx, server_ctx, make_wolfssl, make_openssl);
         }

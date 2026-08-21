@@ -208,12 +208,8 @@ struct tcp_acceptor_test
         acc.close();
 
         tcp_acceptor closed(ioc);
-        BOOST_TEST_THROWS(
-            closed.set_option(socket_option::reuse_address(true)),
-            std::logic_error);
-        BOOST_TEST_THROWS(
-            (void)closed.get_option<socket_option::reuse_address>(),
-            std::logic_error);
+        BOOST_TEST_THROWS(closed.set_option(socket_option::reuse_address(true)), std::system_error);
+        BOOST_TEST_THROWS((void)closed.get_option<socket_option::reuse_address>(), std::system_error);
     }
 
     void testMoveConstruct()
@@ -806,22 +802,13 @@ struct tcp_acceptor_test
         acc.close();
     }
 
-    void testBindClosedAcceptorThrows()
+    void testBindClosedAcceptor()
     {
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        bool caught = false;
-        try
-        {
-            auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
-            (void)ec;
-        }
-        catch (std::logic_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+        BOOST_TEST(acc.bind(endpoint(ipv4_address::loopback(), 0))
+                   == std::errc::bad_file_descriptor);
     }
 
     void testBindAddressInUse()
@@ -838,7 +825,13 @@ struct tcp_acceptor_test
         tcp_acceptor acc2(ioc);
         BOOST_TEST(!acc2.open());
         ec = acc2.bind(endpoint(ipv4_address::loopback(), port));
-        BOOST_TEST(ec);
+#if BOOST_COROSIO_HAS_IOCP
+        // MinGW's libstdc++ lacks the WSA-to-generic condition
+        // mapping, so the raw code is pinned on Windows.
+        BOOST_TEST(ec.value() == WSAEADDRINUSE);
+#else
+        BOOST_TEST(ec == std::errc::address_in_use);
+#endif
 
         acc1.close();
         acc2.close();
@@ -853,28 +846,21 @@ struct tcp_acceptor_test
 
         // Bind to an address not assigned to any local interface
         auto ec = acc.bind(endpoint(ipv4_address("1.2.3.4"), 0));
-        BOOST_TEST(ec);
+#if BOOST_COROSIO_HAS_IOCP
+        BOOST_TEST(ec.value() == WSAEADDRNOTAVAIL);
+#else
+        BOOST_TEST(ec == std::errc::address_not_available);
+#endif
 
         acc.close();
     }
 
-    void testListenClosedThrows()
+    void testListenClosed()
     {
-        // listen() on a closed acceptor throws std::logic_error.
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        bool caught = false;
-        try
-        {
-            auto ec = acc.listen();
-            (void)ec;
-        }
-        catch (std::logic_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+        BOOST_TEST(acc.listen() == std::errc::bad_file_descriptor);
     }
 
     void testClosedAcceptorAccessors()
@@ -896,30 +882,108 @@ struct tcp_acceptor_test
         BOOST_TEST_EQ(acc.is_open(), false);
     }
 
-    // accept()/wait() on a closed acceptor must throw rather than
-    // initiate an operation on an invalid handle.
-    void testClosedAcceptorOpsThrow()
+    // accept()/wait() on a closed acceptor complete with
+    // bad_file_descriptor instead of initiating on an invalid handle.
+    void testOptionFailureThrows()
+    {
+#if !BOOST_COROSIO_HAS_IOCP
+        // The IOCP acceptor is created dual-stack, so IPV6_V6ONLY is
+        // a valid option there even for a v4 open; the rejection is
+        // only asserted where the listener is genuinely AF_INET.
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open(tcp::v4()));
+
+        bool set_threw = false;
+        try
+        {
+            acc.set_option(socket_option::v6_only(true));
+        }
+        catch (std::system_error const& e)
+        {
+            set_threw = bool(e.code());
+        }
+        BOOST_TEST(set_threw);
+
+        bool get_threw = false;
+        try
+        {
+            (void)acc.get_option<socket_option::v6_only>();
+        }
+        catch (std::system_error const& e)
+        {
+            get_threw = bool(e.code());
+        }
+        BOOST_TEST(get_threw);
+        acc.close();
+#endif
+    }
+
+    void testConvenienceCtorBindFailureThrows()
+    {
+        io_context ioc(Backend);
+
+        // Occupy a loopback port without SO_REUSEADDR conflicts
+        tcp_acceptor holder(ioc);
+        BOOST_TEST(!holder.open());
+        BOOST_TEST(!holder.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!holder.listen());
+        auto ep = holder.local_endpoint();
+
+        // The convenience constructor surfaces the bind failure by
+        // throwing system_error
+        std::error_code caught;
+        try
+        {
+            tcp_acceptor dup(ioc, ep);
+        }
+        catch (std::system_error const& e)
+        {
+            caught = e.code();
+        }
+        BOOST_TEST(bool(caught));
+        holder.close();
+    }
+
+    void testMovedFromAcceptorValueAccept()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor a(ioc);
+        tcp_acceptor b(std::move(a));
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            auto [ec, peer] = co_await a.accept();
+            BOOST_TEST(ec == std::errc::bad_file_descriptor);
+            BOOST_TEST(!peer.is_open());
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    void testClosedAcceptorOpsComplete()
     {
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
         tcp_socket peer(ioc);
 
-        auto expect_throw = [](auto fn) {
-            bool threw = false;
-            try
-            {
-                fn();
-            }
-            catch (std::logic_error const&)
-            {
-                threw = true;
-            }
-            BOOST_TEST(threw);
-        };
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            auto [e1] = co_await acc.accept(peer);
+            BOOST_TEST(e1 == std::errc::bad_file_descriptor);
 
-        expect_throw([&] { (void)acc.accept(peer); });
-        expect_throw([&] { (void)acc.accept(); });
-        expect_throw([&] { (void)acc.wait(wait_type::read); });
+            auto [e2, moved] = co_await acc.accept();
+            BOOST_TEST(e2 == std::errc::bad_file_descriptor);
+
+            auto [e3] = co_await acc.wait(wait_type::read);
+            BOOST_TEST(e3 == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     // Stop-token cancel of a parked accept. Unlike testCancelAccept
@@ -1639,16 +1703,16 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        bool caught = false;
+        std::error_code caught;
         try
         {
             (void)acc.release();
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            caught = true;
+            caught = e.code();
         }
-        BOOST_TEST(caught);
+        BOOST_TEST(caught == std::errc::bad_file_descriptor);
     }
 
     // Adopting a v6 listener must seed the endpoint cache as v6: the
@@ -1710,12 +1774,15 @@ struct tcp_acceptor_test
 
         // Explicit bind+listen flow
         testBindThenListen();
-        testBindClosedAcceptorThrows();
+        testBindClosedAcceptor();
         testBindAddressInUse();
         testBindError();
-        testListenClosedThrows();
+        testListenClosed();
         testClosedAcceptorAccessors();
-        testClosedAcceptorOpsThrow();
+        testClosedAcceptorOpsComplete();
+        testMovedFromAcceptorValueAccept();
+        testOptionFailureThrows();
+        testConvenienceCtorBindFailureThrows();
 
         // Waiter lifecycle
         testStopTokenAccept();

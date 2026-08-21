@@ -56,12 +56,14 @@ native_handle_type
 udp_socket::release()
 {
     if (!is_open())
-        detail::throw_logic_error("release: socket not open");
+        detail::throw_system_error(
+            make_error_code(std::errc::bad_file_descriptor),
+            "udp_socket::release");
     return get().release_socket();
 }
 
 void
-udp_socket::close()
+udp_socket::close() noexcept
 {
     if (!is_open())
         return;
@@ -69,10 +71,10 @@ udp_socket::close()
 }
 
 std::error_code
-udp_socket::bind(endpoint ep)
+udp_socket::bind(endpoint ep) noexcept
 {
     if (!is_open())
-        detail::throw_logic_error("bind: socket not open");
+        return make_error_code(std::errc::bad_file_descriptor);
     auto& svc = static_cast<detail::udp_service&>(h_.service());
     return svc.bind_datagram(
         static_cast<udp_socket::implementation&>(*h_.get()), ep);

@@ -48,7 +48,7 @@ local_datagram_socket::open_for_family(int family, int type, int protocol) noexc
 }
 
 void
-local_datagram_socket::close()
+local_datagram_socket::close() noexcept
 {
     if (!is_open())
         return;
@@ -56,10 +56,10 @@ local_datagram_socket::close()
 }
 
 std::error_code
-local_datagram_socket::bind(corosio::local_endpoint ep)
+local_datagram_socket::bind(corosio::local_endpoint ep) noexcept
 {
     if (!is_open())
-        detail::throw_logic_error("bind: socket not open");
+        return make_error_code(std::errc::bad_file_descriptor);
     auto& svc = static_cast<detail::local_datagram_service&>(h_.service());
     return svc.bind_socket(
         static_cast<local_datagram_socket::implementation&>(*h_.get()),
@@ -103,7 +103,9 @@ native_handle_type
 local_datagram_socket::release()
 {
     if (!is_open())
-        detail::throw_logic_error("release: socket not open");
+        detail::throw_system_error(
+            make_error_code(std::errc::bad_file_descriptor),
+            "local_datagram_socket::release");
     return get().release_socket();
 }
 
@@ -111,7 +113,9 @@ std::size_t
 local_datagram_socket::available() const
 {
     if (!is_open())
-        detail::throw_logic_error("available: socket not open");
+        detail::throw_system_error(
+            make_error_code(std::errc::bad_file_descriptor),
+            "local_datagram_socket::available");
     int value = 0;
     if (::ioctl(native_handle(), FIONREAD, &value) < 0)
         detail::throw_system_error(

@@ -35,6 +35,7 @@
 
 #include <string>
 #include <vector>
+#include <tuple>
 
 namespace boost::corosio {
 
@@ -597,8 +598,8 @@ struct wolfssl_engine_test
         tls_context ctx;
         // Whether the garbage surfaces here or at init() is
         // backend-dependent; the init failure below is what matters.
-        (void)ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
-        (void)ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore = ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
+        std::ignore = ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
 
         wssl_engine eng;
         // Unlike the OpenSSL engine, wolfSSL surfaces setup_error_

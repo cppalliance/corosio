@@ -21,6 +21,7 @@
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_endpoint.hpp>
+#include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -598,14 +599,13 @@ struct local_datagram_socket_test
                    == std::errc::bad_file_descriptor);
     }
 
-    void testBindClosedThrows()
+    void testBindClosed()
     {
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
 
-        // NOLINTNEXTLINE(bugprone-unused-return-value)
-        BOOST_TEST_THROWS(sock.bind(local_endpoint("/tmp/never")),
-                          std::logic_error);
+        BOOST_TEST(sock.bind(local_endpoint("/tmp/never"))
+                   == std::errc::bad_file_descriptor);
     }
 
     void testReleaseClosedThrows()
@@ -613,16 +613,16 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
 
-        bool caught = false;
+        std::error_code caught;
         try
         {
             (void)sock.release();
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            caught = true;
+            caught = e.code();
         }
-        BOOST_TEST(caught);
+        BOOST_TEST(caught == std::errc::bad_file_descriptor);
     }
 
     void testAvailableClosedThrows()
@@ -630,16 +630,16 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
 
-        bool caught = false;
+        std::error_code caught;
         try
         {
             (void)sock.available();
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            caught = true;
+            caught = e.code();
         }
-        BOOST_TEST(caught);
+        BOOST_TEST(caught == std::errc::bad_file_descriptor);
     }
 
     void testAvailable()
@@ -728,7 +728,8 @@ struct local_datagram_socket_test
     {
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
-        BOOST_TEST(sock.assign((native_handle_type)-1));
+        BOOST_TEST(sock.assign((native_handle_type)-1)
+                   == std::errc::bad_file_descriptor);
         BOOST_TEST(!sock.is_open());
     }
 
@@ -740,7 +741,8 @@ struct local_datagram_socket_test
         local_datagram_socket sock(ioc);
         int fds[2];
         BOOST_TEST(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
-        BOOST_TEST(sock.assign((native_handle_type)fds[0]));
+        BOOST_TEST(sock.assign((native_handle_type)fds[0])
+                   == std::errc::wrong_protocol_type);
         BOOST_TEST(::fcntl(fds[0], F_GETFD) >= 0);
         BOOST_TEST(!sock.is_open());
         ::close(fds[0]);
@@ -762,58 +764,91 @@ struct local_datagram_socket_test
         ::close(fd);
     }
 
-    void testSendOnClosedThrows()
+    void testOptionErrors()
     {
         io_context ioc(Backend);
+
+        // Closed socket: option access throws bad_file_descriptor
+        local_datagram_socket closed(ioc);
+        std::error_code set_ec, get_ec;
+        try
+        {
+            closed.set_option(socket_option::send_buffer_size(4096));
+        }
+        catch (std::system_error const& e)
+        {
+            set_ec = e.code();
+        }
+        BOOST_TEST(set_ec == std::errc::bad_file_descriptor);
+        try
+        {
+            (void)closed.get_option<socket_option::send_buffer_size>();
+        }
+        catch (std::system_error const& e)
+        {
+            get_ec = e.code();
+        }
+        BOOST_TEST(get_ec == std::errc::bad_file_descriptor);
+
+        // Open socket: a TCP-level option on an AF_UNIX socket fails
+        // with a genuine (platform-specific) error code
         local_datagram_socket sock(ioc);
-        char const m[] = "x";
-
-        bool caught_send = false;
+        BOOST_TEST(!sock.open());
+        bool threw = false;
         try
         {
-            (void)sock.send(capy::const_buffer(m, 1));
+            sock.set_option(socket_option::no_delay(true));
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            caught_send = true;
+            threw = bool(e.code());
         }
-        BOOST_TEST(caught_send);
+        BOOST_TEST(threw);
 
-        bool caught_send_to = false;
+        bool get_threw = false;
         try
         {
-            (void)sock.send_to(
+            (void)sock.get_option<socket_option::no_delay>();
+        }
+        catch (std::system_error const& e)
+        {
+            get_threw = bool(e.code());
+        }
+        BOOST_TEST(get_threw);
+        sock.close();
+    }
+
+    void testClosedOpsComplete()
+    {
+        // Datagram operations on a closed socket complete with
+        // bad_file_descriptor instead of throwing.
+        io_context ioc(Backend);
+        local_datagram_socket sock(ioc);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char const m[] = "x";
+            char buf[1];
+            local_endpoint src;
+
+            auto [e1, n1] = co_await sock.send(capy::const_buffer(m, 1));
+            BOOST_TEST(e1 == std::errc::bad_file_descriptor);
+
+            auto [e2, n2] = co_await sock.send_to(
                 capy::const_buffer(m, 1), local_endpoint("/tmp/x"));
-        }
-        catch (std::logic_error const&)
-        {
-            caught_send_to = true;
-        }
-        BOOST_TEST(caught_send_to);
+            BOOST_TEST(e2 == std::errc::bad_file_descriptor);
 
-        char buf[1];
-        bool caught_recv = false;
-        try
-        {
-            (void)sock.recv(capy::mutable_buffer(buf, 1));
-        }
-        catch (std::logic_error const&)
-        {
-            caught_recv = true;
-        }
-        BOOST_TEST(caught_recv);
+            auto [e3, n3] = co_await sock.recv(capy::mutable_buffer(buf, 1));
+            BOOST_TEST(e3 == std::errc::bad_file_descriptor);
 
-        local_endpoint src;
-        bool caught_recv_from = false;
-        try
-        {
-            (void)sock.recv_from(capy::mutable_buffer(buf, 1), src);
-        }
-        catch (std::logic_error const&)
-        {
-            caught_recv_from = true;
-        }
-        BOOST_TEST(caught_recv_from);
+            auto [e4, n4] = co_await sock.recv_from(
+                capy::mutable_buffer(buf, 1), src);
+            BOOST_TEST(e4 == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     void testCancelPendingRecv()
@@ -862,7 +897,7 @@ struct local_datagram_socket_test
         testEndpointsClosed();
         testEndpointsBound();
         testShutdown();
-        testBindClosedThrows();
+        testBindClosed();
         testReleaseClosedThrows();
         testAvailableClosedThrows();
         testAvailable();
@@ -870,7 +905,8 @@ struct local_datagram_socket_test
         testAssignBadFdThrows();
         testAssignRejectedFdStaysOpen();
         testRelease();
-        testSendOnClosedThrows();
+        testClosedOpsComplete();
+        testOptionErrors();
         testCancelPendingRecv();
         testSendRecvConnected();
         testExplicitBind();

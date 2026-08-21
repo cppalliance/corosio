@@ -102,7 +102,9 @@ class native_local_stream_socket : public local_stream_socket
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
@@ -140,7 +142,9 @@ class native_local_stream_socket : public local_stream_socket
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
@@ -213,7 +217,9 @@ class native_local_stream_socket : public local_stream_socket
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<> await_resume() const noexcept

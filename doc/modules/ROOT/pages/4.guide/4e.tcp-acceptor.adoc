@@ -149,13 +149,12 @@ Common accept errors:
 | System limit reached (file descriptors, memory)
 |===
 
-Calling `accept()` on an acceptor that is not listening is a precondition
-violation: it throws `std::logic_error` rather than completing with an error
-code.
+Calling `accept()` on a closed acceptor completes with
+`errc::bad_file_descriptor` — the same code every corosio operation
+reports for a closed object.
 
 === Preconditions
 
-* The tcp_acceptor must be listening (`is_open() == true`)
 * For `accept(tcp_socket&)`, the peer socket must be associated with the same
   execution context as the acceptor (the returning overload guarantees this)
 

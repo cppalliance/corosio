@@ -44,7 +44,7 @@ random_access_file::open(
 }
 
 void
-random_access_file::close()
+random_access_file::close() noexcept
 {
     if (!is_open())
         return;

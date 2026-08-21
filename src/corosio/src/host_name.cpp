@@ -10,8 +10,8 @@
 #include <boost/corosio/host_name.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
-#include <stdexcept>
 #include <string>
+#include <system_error>
 
 #if BOOST_COROSIO_POSIX
 #include <cerrno>
@@ -33,14 +33,15 @@ host_name()
     char buf[256];
     if (::gethostname(buf, sizeof(buf)) != 0)
     {
-        int e = errno;
-        throw std::runtime_error(
-            std::string("gethostname failed: ") + std::strerror(e));
+        throw std::system_error(
+            std::error_code(errno, std::generic_category()), "gethostname");
     }
 
     // POSIX does not guarantee NUL termination on truncation.
     if (std::memchr(buf, '\0', sizeof(buf)) == nullptr)
-        throw std::runtime_error("gethostname: hostname truncated");
+        throw std::system_error(
+            make_error_code(std::errc::value_too_large),
+            "gethostname: hostname truncated");
 
     return std::string(buf);
 }
@@ -58,14 +59,15 @@ host_name()
     DWORD err = ::GetLastError();
     if (ok)
     {
-        throw std::runtime_error(
+        throw std::system_error(
+            make_error_code(std::errc::protocol_error),
             "GetComputerNameExW (size query) unexpectedly succeeded");
     }
     if (err != ERROR_MORE_DATA)
     {
-        throw std::runtime_error(
-            "GetComputerNameExW (size query) failed: error " +
-            std::to_string(err));
+        throw std::system_error(
+            std::error_code(static_cast<int>(err), std::system_category()),
+            "GetComputerNameExW (size query)");
     }
 
     // On success, GetComputerNameExW rewrites `size` to the count
@@ -74,9 +76,10 @@ host_name()
     if (!::GetComputerNameExW(
             ComputerNameDnsHostname, wide.data(), &size))
     {
-        throw std::runtime_error(
-            "GetComputerNameExW failed: error " +
-            std::to_string(::GetLastError()));
+        throw std::system_error(
+            std::error_code(
+                static_cast<int>(::GetLastError()), std::system_category()),
+            "GetComputerNameExW");
     }
     wide.resize(size);
 
@@ -85,9 +88,10 @@ host_name()
         nullptr, 0, nullptr, nullptr);
     if (needed <= 0)
     {
-        throw std::runtime_error(
-            "WideCharToMultiByte (size query) failed: error " +
-            std::to_string(::GetLastError()));
+        throw std::system_error(
+            std::error_code(
+                static_cast<int>(::GetLastError()), std::system_category()),
+            "WideCharToMultiByte (size query)");
     }
 
     std::string out(static_cast<std::size_t>(needed), '\0');
@@ -96,9 +100,10 @@ host_name()
         out.data(), needed, nullptr, nullptr);
     if (written != needed)
     {
-        throw std::runtime_error(
-            "WideCharToMultiByte failed: error " +
-            std::to_string(::GetLastError()));
+        throw std::system_error(
+            std::error_code(
+                static_cast<int>(::GetLastError()), std::system_category()),
+            "WideCharToMultiByte");
     }
     return out;
 }

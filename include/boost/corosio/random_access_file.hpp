@@ -161,7 +161,9 @@ public:
 
         bool await_ready() const noexcept
         {
-            return false;
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_);
         }
 
         [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
@@ -202,7 +204,9 @@ public:
 
         bool await_ready() const noexcept
         {
-            return false;
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_);
         }
 
         [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
@@ -285,7 +289,7 @@ public:
         Releases file resources. Any pending operations complete
         with `errc::operation_canceled`.
     */
-    void close();
+    void close() noexcept;
 
     /** Check if the file is open. */
     bool is_open() const noexcept
@@ -304,14 +308,15 @@ public:
 
         @return An awaitable yielding `(error_code, std::size_t)`.
 
-        @throws std::logic_error if the file is not open.
+        A closed file reports `errc::bad_file_descriptor`.
     */
     template<capy::MutableBufferSequence MB>
     auto read_some_at(std::uint64_t offset, MB const& buffers)
     {
+        read_some_at_awaitable<MB> aw(*this, offset, buffers);
         if (!is_open())
-            detail::throw_logic_error("read_some_at: file not open");
-        return read_some_at_awaitable<MB>(*this, offset, buffers);
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /** Write data at the given offset.
@@ -321,14 +326,15 @@ public:
 
         @return An awaitable yielding `(error_code, std::size_t)`.
 
-        @throws std::logic_error if the file is not open.
+        A closed file reports `errc::bad_file_descriptor`.
     */
     template<capy::ConstBufferSequence CB>
     auto write_some_at(std::uint64_t offset, CB const& buffers)
     {
+        write_some_at_awaitable<CB> aw(*this, offset, buffers);
         if (!is_open())
-            detail::throw_logic_error("write_some_at: file not open");
-        return write_some_at_awaitable<CB>(*this, offset, buffers);
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /** Cancel pending asynchronous operations. */

@@ -256,23 +256,49 @@ struct tcp_socket_test
         acc.close();
     }
 
-    void testBindClosedSocketThrows()
+    void testOptionFailureThrows()
+    {
+#if !BOOST_COROSIO_HAS_IOCP
+        // WinSock accepts IPv6-level options on AF_INET stream
+        // sockets, so the rejection only holds on POSIX backends.
+        io_context ioc(Backend);
+        tcp_socket sock(ioc);
+        BOOST_TEST(!sock.open(tcp::v4()));
+
+        // An IPv6-level option on an IPv4 socket fails with a genuine
+        // error surfaced as system_error
+        bool set_threw = false;
+        try
+        {
+            sock.set_option(socket_option::v6_only(true));
+        }
+        catch (std::system_error const& e)
+        {
+            set_threw = bool(e.code());
+        }
+        BOOST_TEST(set_threw);
+
+        bool get_threw = false;
+        try
+        {
+            (void)sock.get_option<socket_option::v6_only>();
+        }
+        catch (std::system_error const& e)
+        {
+            get_threw = bool(e.code());
+        }
+        BOOST_TEST(get_threw);
+        sock.close();
+#endif
+    }
+
+    void testBindClosedSocket()
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-        // Bind on a closed socket should throw
-        bool caught = false;
-        try
-        {
-            auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
-            (void)ec;
-        }
-        catch (std::logic_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+        BOOST_TEST(sock.bind(endpoint(ipv4_address::loopback(), 0))
+                   == std::errc::bad_file_descriptor);
     }
 
     void testBindV6()
@@ -1693,7 +1719,8 @@ struct tcp_socket_test
         testBind();
         testBindThenConnect();
         testBindV6();
-        testBindClosedSocketThrows();
+        testBindClosedSocket();
+        testOptionFailureThrows();
         testBindAddressInUse();
         testBindNonLocalAddress();
         testMoveConstruct();
@@ -2182,6 +2209,14 @@ struct tcp_socket_test
             BOOST_TEST(sock.assign(h));
         };
 
+#if BOOST_COROSIO_HAS_IOCP
+        BOOST_TEST(sock.assign(invalid_native_socket)
+                   == std::errc::not_a_socket);
+#else
+        BOOST_TEST(sock.assign(invalid_native_socket)
+                   == std::errc::bad_file_descriptor);
+#endif
+
         expect_error(invalid_native_socket);
         BOOST_TEST(!sock.is_open());
 
@@ -2370,16 +2405,16 @@ struct tcp_socket_test
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-        bool caught = false;
+        std::error_code caught;
         try
         {
             (void)sock.release();
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            caught = true;
+            caught = e.code();
         }
-        BOOST_TEST(caught);
+        BOOST_TEST(caught == std::errc::bad_file_descriptor);
     }
 
     // v6 adoption: the cached endpoints must report v6.

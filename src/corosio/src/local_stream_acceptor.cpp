@@ -77,10 +77,10 @@ local_stream_acceptor::native_handle() const noexcept
 }
 
 std::error_code
-local_stream_acceptor::bind(corosio::local_endpoint ep, bind_option opt)
+local_stream_acceptor::bind(corosio::local_endpoint ep, bind_option opt) noexcept
 {
     if (!is_open())
-        detail::throw_logic_error("bind: acceptor not open");
+        return make_error_code(std::errc::bad_file_descriptor);
 
     if (opt == bind_option::unlink_existing &&
         !ep.empty() && !ep.is_abstract())
@@ -105,10 +105,10 @@ local_stream_acceptor::bind(corosio::local_endpoint ep, bind_option opt)
 }
 
 std::error_code
-local_stream_acceptor::listen(int backlog)
+local_stream_acceptor::listen(int backlog) noexcept
 {
     if (!is_open())
-        detail::throw_logic_error("listen: acceptor not open");
+        return make_error_code(std::errc::bad_file_descriptor);
     auto& svc =
         static_cast<detail::local_stream_acceptor_service&>(h_.service());
     return svc.listen_acceptor(
@@ -117,7 +117,7 @@ local_stream_acceptor::listen(int backlog)
 }
 
 void
-local_stream_acceptor::close()
+local_stream_acceptor::close() noexcept
 {
     if (!is_open())
         return;
@@ -128,7 +128,9 @@ native_handle_type
 local_stream_acceptor::release()
 {
     if (!is_open())
-        detail::throw_logic_error("release: acceptor not open");
+        detail::throw_system_error(
+            make_error_code(std::errc::bad_file_descriptor),
+            "local_stream_acceptor::release");
     return get().release_socket();
 }
 

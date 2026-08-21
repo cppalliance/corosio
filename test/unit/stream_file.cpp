@@ -237,7 +237,8 @@ struct stream_file_test
 
 #if BOOST_COROSIO_POSIX
         // Larger than off_t can represent: rejected with EOVERFLOW.
-        BOOST_TEST(f.resize((std::numeric_limits<std::uint64_t>::max)()));
+        BOOST_TEST(f.resize((std::numeric_limits<std::uint64_t>::max)())
+                   == std::errc::value_too_large);
 #endif
     }
 
@@ -754,18 +755,109 @@ struct stream_file_test
 
     // Operations on closed file
 
+    void testResizeReadOnlyFails()
+    {
+        // ftruncate on a read-only descriptor reports a genuine
+        // runtime error through the returned code.
+        temp_file tmp("sf_resize_ro_", "0123456789");
+        io_context ioc(Backend);
+        stream_file f(ioc);
+
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
+        BOOST_TEST(f.resize(4));
+        BOOST_TEST_EQ(f.size(), 10u);
+    }
+
+    void testAssignOverOpenAdopts()
+    {
+        temp_file tmp1("sf_assign_a_", "first");
+        temp_file tmp2("sf_assign_b_", "second");
+        io_context ioc(Backend);
+        stream_file f(ioc);
+
+        BOOST_TEST(!f.open(tmp1.path, file_base::read_only));
+
+#if BOOST_COROSIO_HAS_IOCP
+        HANDLE h = ::CreateFileW(
+            tmp2.path.c_str(), GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr, OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED
+                | FILE_FLAG_SEQUENTIAL_SCAN,
+            nullptr);
+        BOOST_TEST(h != INVALID_HANDLE_VALUE);
+        auto raw = reinterpret_cast<native_handle_type>(h);
+#else
+        int fd = ::open(tmp2.path.c_str(), O_RDONLY);
+        BOOST_TEST(fd >= 0);
+        auto raw = static_cast<native_handle_type>(fd);
+#endif
+        // Adopting over an open file closes the previous handle first
+        BOOST_TEST(!f.assign(raw));
+        BOOST_TEST(f.is_open());
+        BOOST_TEST_EQ(f.size(), 6u);
+    }
+
+#if BOOST_COROSIO_POSIX
+    void testSyncOnPipeFails()
+    {
+        // fsync/fdatasync on a pipe reports a genuine runtime error
+        // through the returned code.
+        io_context ioc(Backend);
+        stream_file f(ioc);
+
+        int fds[2];
+        BOOST_TEST(::pipe(fds) == 0);
+        BOOST_TEST(!f.assign(static_cast<native_handle_type>(fds[1])));
+        BOOST_TEST(f.sync_data());
+        BOOST_TEST(f.sync_all());
+        f.close();
+        ::close(fds[0]);
+    }
+#endif
+
+    void testWrongDirectionIoFails()
+    {
+        // Reading a write-only file (and writing a read-only one)
+        // completes with an error from the underlying I/O.
+        temp_file tmp("sf_wrongdir_", "data");
+        io_context ioc(Backend);
+        stream_file wo(ioc), ro(ioc);
+
+        BOOST_TEST(!wo.open(tmp.path, file_base::write_only));
+        BOOST_TEST(!ro.open(tmp.path, file_base::read_only));
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[8];
+            auto [rec, rn] = co_await wo.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(bool(rec));
+            BOOST_TEST_EQ(rn, 0u);
+
+            auto [wec, wn] = co_await ro.write_some(
+                capy::const_buffer("x", 1));
+            BOOST_TEST(bool(wec));
+            BOOST_TEST_EQ(wn, 0u);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     void testClosedFileErrors()
     {
         io_context ioc(Backend);
         stream_file f(ioc);
         BOOST_TEST(!f.is_open());
 
-        // Exceptional-only operations throw on a closed file
+        // Exceptional-only operations throw bad_file_descriptor
         auto expect_throw = [](auto fn) {
-            bool threw = false;
+            std::error_code caught;
             try { fn(); }
-            catch (std::system_error const&) { threw = true; }
-            BOOST_TEST(threw);
+            catch (std::system_error const& e) { caught = e.code(); }
+            BOOST_TEST(caught == std::errc::bad_file_descriptor);
         };
 
         expect_throw([&] { f.size(); });
@@ -789,22 +881,30 @@ struct stream_file_test
 
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
+        auto expect_negative = [](std::error_code ec) {
+#if BOOST_COROSIO_POSIX
+            BOOST_TEST(ec == std::errc::invalid_argument);
+#else
+            BOOST_TEST(bool(ec));
+#endif
+        };
+
         // seek_set with negative offset
         {
             auto [ec, pos] = f.seek(-1, file_base::seek_set);
-            BOOST_TEST(ec);
+            expect_negative(ec);
         }
 
         // seek_end past beginning
         {
             auto [ec, pos] = f.seek(-100, file_base::seek_end);
-            BOOST_TEST(ec);
+            expect_negative(ec);
         }
 
         // seek_cur past beginning
         {
             auto [ec, pos] = f.seek(-100, file_base::seek_cur);
-            BOOST_TEST(ec);
+            expect_negative(ec);
         }
     }
 
@@ -848,6 +948,12 @@ struct stream_file_test
         testRelease();
         testAssign();
         testClosedFileErrors();
+        testResizeReadOnlyFails();
+#if BOOST_COROSIO_POSIX
+        testSyncOnPipeFails();
+#endif
+        testWrongDirectionIoFails();
+        testAssignOverOpenAdopts();
         testSeekNegative();
         testCancelWithStoppedToken();
     }

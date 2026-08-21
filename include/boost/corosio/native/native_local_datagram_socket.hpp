@@ -113,7 +113,9 @@ class native_local_datagram_socket : public local_datagram_socket
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
@@ -158,7 +160,9 @@ class native_local_datagram_socket : public local_datagram_socket
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
@@ -232,7 +236,9 @@ class native_local_datagram_socket : public local_datagram_socket
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<> await_resume() const noexcept
@@ -273,7 +279,9 @@ class native_local_datagram_socket : public local_datagram_socket
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
@@ -315,7 +323,9 @@ class native_local_datagram_socket : public local_datagram_socket
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
@@ -382,10 +392,10 @@ public:
         corosio::local_endpoint dest,
         corosio::message_flags flags)
     {
+        native_send_to_awaitable<CB> aw(*this, buffers, dest, static_cast<int>(flags));
         if (!is_open())
-            detail::throw_logic_error("send_to: socket not open");
-        return native_send_to_awaitable<CB>(
-            *this, buffers, dest, static_cast<int>(flags));
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /// @overload
@@ -406,10 +416,10 @@ public:
         corosio::local_endpoint& source,
         corosio::message_flags flags)
     {
+        native_recv_from_awaitable<MB> aw(*this, buffers, source, static_cast<int>(flags));
         if (!is_open())
-            detail::throw_logic_error("recv_from: socket not open");
-        return native_recv_from_awaitable<MB>(
-            *this, buffers, source, static_cast<int>(flags));
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /// @overload
@@ -442,10 +452,10 @@ public:
     template<capy::ConstBufferSequence CB>
     auto send(CB const& buffers, corosio::message_flags flags)
     {
+        native_send_awaitable<CB> aw(*this, buffers, static_cast<int>(flags));
         if (!is_open())
-            detail::throw_logic_error("send: socket not open");
-        return native_send_awaitable<CB>(
-            *this, buffers, static_cast<int>(flags));
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /// @overload
@@ -463,10 +473,10 @@ public:
     template<capy::MutableBufferSequence MB>
     auto recv(MB const& buffers, corosio::message_flags flags)
     {
+        native_recv_awaitable<MB> aw(*this, buffers, static_cast<int>(flags));
         if (!is_open())
-            detail::throw_logic_error("recv: socket not open");
-        return native_recv_awaitable<MB>(
-            *this, buffers, static_cast<int>(flags));
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /// @overload

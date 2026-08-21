@@ -99,7 +99,7 @@ struct ipv6_address_test
         auto check_invalid = [](std::string_view s) {
             ipv6_address addr;
             auto ec = parse_ipv6_address(s, addr);
-            BOOST_TEST(bool(ec));
+            BOOST_TEST(ec == std::errc::invalid_argument);
         };
 
         check_invalid("");

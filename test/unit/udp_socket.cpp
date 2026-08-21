@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <stop_token>
 #include <system_error>
+#include <tuple>
 
 #if BOOST_COROSIO_POSIX
 // Raw socket creation for the assign()/release() adoption tests.
@@ -221,22 +222,13 @@ struct udp_socket_test
         sock.close();
     }
 
-    void testBindClosedSocketThrows()
+    void testBindClosedSocket()
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        bool caught = false;
-        try
-        {
-            auto ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
-            (void)ec;
-        }
-        catch (std::logic_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+        BOOST_TEST(sock.bind(endpoint(ipv4_address::loopback(), 0))
+                   == std::errc::bad_file_descriptor);
     }
 
     void testSetOptionClosedThrows()
@@ -244,16 +236,16 @@ struct udp_socket_test
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        bool caught = false;
+        std::error_code caught;
         try
         {
             sock.set_option(socket_option::broadcast(true));
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            caught = true;
+            caught = e.code();
         }
-        BOOST_TEST(caught);
+        BOOST_TEST(caught == std::errc::bad_file_descriptor);
     }
 
     void testGetOptionClosedThrows()
@@ -261,91 +253,52 @@ struct udp_socket_test
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        bool caught = false;
+        std::error_code caught;
         try
         {
             (void)sock.get_option<socket_option::broadcast>();
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            caught = true;
+            caught = e.code();
         }
-        BOOST_TEST(caught);
+        BOOST_TEST(caught == std::errc::bad_file_descriptor);
     }
 
-    void testSendToClosedThrows()
+    void testClosedOpsComplete()
     {
+        // Datagram operations on a closed socket complete with
+        // bad_file_descriptor instead of throwing.
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        char const msg[] = "x";
-        bool caught      = false;
-        try
-        {
-            (void)sock.send_to(
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[16];
+            char const msg[] = "x";
+            endpoint src;
+
+            auto [e1, n1] = co_await sock.send_to(
                 capy::const_buffer(msg, sizeof(msg)),
                 endpoint(ipv4_address::loopback(), 1));
-        }
-        catch (std::logic_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
-    }
+            BOOST_TEST(e1 == std::errc::bad_file_descriptor);
 
-    void testRecvFromClosedThrows()
-    {
-        io_context ioc(Backend);
-        udp_socket sock(ioc);
+            auto [e2, n2] = co_await sock.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), src);
+            BOOST_TEST(e2 == std::errc::bad_file_descriptor);
 
-        char buf[16];
-        endpoint src;
-        bool caught = false;
-        try
-        {
-            (void)sock.recv_from(capy::mutable_buffer(buf, sizeof(buf)), src);
-        }
-        catch (std::logic_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
-    }
+            auto [e3, n3] = co_await sock.send(
+                capy::const_buffer(msg, sizeof(msg)));
+            BOOST_TEST(e3 == std::errc::bad_file_descriptor);
 
-    void testSendClosedThrows()
-    {
-        io_context ioc(Backend);
-        udp_socket sock(ioc);
-
-        char const msg[] = "x";
-        bool caught      = false;
-        try
-        {
-            (void)sock.send(capy::const_buffer(msg, sizeof(msg)));
-        }
-        catch (std::logic_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
-    }
-
-    void testRecvClosedThrows()
-    {
-        io_context ioc(Backend);
-        udp_socket sock(ioc);
-
-        char buf[16];
-        bool caught = false;
-        try
-        {
-            (void)sock.recv(capy::mutable_buffer(buf, sizeof(buf)));
-        }
-        catch (std::logic_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+            auto [e4, n4] = co_await sock.recv(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(e4 == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     void testBindAddressInUse()
@@ -599,6 +552,40 @@ struct udp_socket_test
         ioc.run();
     }
 
+    void testOptionFailureThrows()
+    {
+#if !BOOST_COROSIO_HAS_IOCP
+        // WinSock's acceptance of IPv6-level options on AF_INET
+        // sockets varies; the rejection only holds on POSIX backends.
+        io_context ioc(Backend);
+        udp_socket sock(ioc);
+        BOOST_TEST(!sock.open(udp::v4()));
+
+        bool set_threw = false;
+        try
+        {
+            sock.set_option(socket_option::v6_only(true));
+        }
+        catch (std::system_error const& e)
+        {
+            set_threw = bool(e.code());
+        }
+        BOOST_TEST(set_threw);
+
+        bool get_threw = false;
+        try
+        {
+            (void)sock.get_option<socket_option::v6_only>();
+        }
+        catch (std::system_error const& e)
+        {
+            get_threw = bool(e.code());
+        }
+        BOOST_TEST(get_threw);
+        sock.close();
+#endif
+    }
+
     void testShutdown()
     {
         io_context ioc(Backend);
@@ -612,8 +599,7 @@ struct udp_socket_test
         // unconnected datagram socket; only the path is exercised.
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open());
-        auto ec = sock.shutdown(shutdown_send);
-        (void)ec;
+        std::ignore = sock.shutdown(shutdown_send);
         sock.close();
     }
 
@@ -1386,6 +1372,14 @@ struct udp_socket_test
             BOOST_TEST(sock.assign(h));
         };
 
+#if BOOST_COROSIO_HAS_IOCP
+        BOOST_TEST(sock.assign(invalid_native_socket)
+                   == std::errc::not_a_socket);
+#else
+        BOOST_TEST(sock.assign(invalid_native_socket)
+                   == std::errc::bad_file_descriptor);
+#endif
+
         expect_error(invalid_native_socket);
         BOOST_TEST(!sock.is_open());
 
@@ -1601,7 +1595,7 @@ struct udp_socket_test
         {
             (void)sock.release();
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const&)
         {
             caught = true;
         }
@@ -1666,13 +1660,10 @@ struct udp_socket_test
         testMoveAssign();
         testBind();
         testBindV6();
-        testBindClosedSocketThrows();
+        testBindClosedSocket();
         testSetOptionClosedThrows();
         testGetOptionClosedThrows();
-        testSendToClosedThrows();
-        testRecvFromClosedThrows();
-        testSendClosedThrows();
-        testRecvClosedThrows();
+        testClosedOpsComplete();
         testBindAddressInUse();
         testBindNonLocalAddress();
         testClosedAccessorsReturnDefaults();
@@ -1683,6 +1674,7 @@ struct udp_socket_test
         testEchoLoopback();
         testMultipleDatagrams();
         testShutdown();
+        testOptionFailureThrows();
         testCancelRecv();
         testCloseWhileRecving();
         testStopTokenCancellation();

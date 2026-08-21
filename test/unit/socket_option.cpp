@@ -155,27 +155,27 @@ struct socket_option_test
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-        bool set_threw = false;
+        std::error_code set_caught;
         try
         {
             sock.set_option(socket_option::no_delay(true));
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            set_threw = true;
+            set_caught = e.code();
         }
-        BOOST_TEST(set_threw);
+        BOOST_TEST(set_caught == std::errc::bad_file_descriptor);
 
-        bool get_threw = false;
+        std::error_code get_caught;
         try
         {
             (void)sock.get_option<socket_option::no_delay>();
         }
-        catch (std::logic_error const&)
+        catch (std::system_error const& e)
         {
-            get_threw = true;
+            get_caught = e.code();
         }
-        BOOST_TEST(get_threw);
+        BOOST_TEST(get_caught == std::errc::bad_file_descriptor);
     }
 
     // An option the protocol does not support reports a system error.

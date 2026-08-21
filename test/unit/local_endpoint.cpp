@@ -105,16 +105,23 @@ struct local_endpoint_test
         std::string too_long(local_endpoint::max_path_length + 1, 'x');
         BOOST_TEST_THROWS(local_endpoint(too_long), std::system_error);
 
-        std::error_code ec;
-        local_endpoint ep(too_long, ec);
-        BOOST_TEST(bool(ec));
-        BOOST_TEST(ep.empty());
+        std::error_code caught;
+        try
+        {
+            local_endpoint ep(too_long);
+        }
+        catch (std::system_error const& e)
+        {
+            caught = e.code();
+        }
+        BOOST_TEST(caught == std::errc::filename_too_long);
+
+        // The documented pre-check pattern for runtime-derived paths
+        BOOST_TEST(too_long.size() > local_endpoint::max_path_length);
 
         // The maximum-length path is accepted.
         std::string at_max(local_endpoint::max_path_length, 'x');
-        std::error_code ec2;
-        local_endpoint ok(at_max, ec2);
-        BOOST_TEST(!ec2);
+        local_endpoint ok(at_max);
         BOOST_TEST_EQ(ok.path().size(), local_endpoint::max_path_length);
     }
 

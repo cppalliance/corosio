@@ -487,7 +487,7 @@ public:
         Releases socket resources. Any pending operations complete
         with `errc::operation_canceled`.
     */
-    void close();
+    void close() noexcept;
 
     /** Check if the socket is open.
 
@@ -511,9 +511,9 @@ public:
 
         @return Error code on failure, empty on success.
 
-        @throws std::logic_error if the socket is not open.
+        A closed socket reports `errc::bad_file_descriptor`.
     */
-    [[nodiscard]] std::error_code bind(endpoint ep);
+    [[nodiscard]] std::error_code bind(endpoint ep) noexcept;
 
     /** Disable sends or receives on the socket.
 
@@ -580,7 +580,8 @@ public:
 
         @return The native handle.
 
-        @throws std::logic_error if the socket is not open.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            socket is not open.
 
         @post is_open() == false
     */
@@ -590,14 +591,16 @@ public:
 
         @param opt The option to set.
 
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            socket is not open; otherwise thrown on failure.
     */
     template<class Option>
     void set_option(Option const& opt)
     {
         if (!is_open())
-            detail::throw_logic_error("set_option: socket not open");
+            detail::throw_system_error(
+                make_error_code(std::errc::bad_file_descriptor),
+                "udp_socket::set_option");
         std::error_code ec = get().set_option(
             Option::level(), Option::name(), opt.data(), opt.size());
         if (ec)
@@ -608,14 +611,16 @@ public:
 
         @return The current option value.
 
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            socket is not open; otherwise thrown on failure.
     */
     template<class Option>
     Option get_option() const
     {
         if (!is_open())
-            detail::throw_logic_error("get_option: socket not open");
+            detail::throw_system_error(
+                make_error_code(std::errc::bad_file_descriptor),
+                "udp_socket::get_option");
         Option opt{};
         std::size_t sz = opt.size();
         std::error_code ec =
@@ -641,7 +646,7 @@ public:
         @return An awaitable that completes with
             `io_result<std::size_t>`.
 
-        @throws std::logic_error if the socket is not open.
+        A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::ConstBufferSequence Buffers>
     auto send_to(
@@ -649,10 +654,10 @@ public:
         endpoint dest,
         corosio::message_flags flags)
     {
+        send_to_awaitable aw(*this, buf, dest, static_cast<int>(flags));
         if (!is_open())
-            detail::throw_logic_error("send_to: socket not open");
-        return send_to_awaitable(
-            *this, buf, dest, static_cast<int>(flags));
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /// @overload
@@ -672,7 +677,7 @@ public:
         @return An awaitable that completes with
             `io_result<std::size_t>`.
 
-        @throws std::logic_error if the socket is not open.
+        A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::MutableBufferSequence Buffers>
     auto recv_from(
@@ -680,10 +685,10 @@ public:
         endpoint& source,
         corosio::message_flags flags)
     {
+        recv_from_awaitable aw(*this, buf, source, static_cast<int>(flags));
         if (!is_open())
-            detail::throw_logic_error("recv_from: socket not open");
-        return recv_from_awaitable(
-            *this, buf, source, static_cast<int>(flags));
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /// @overload
@@ -742,15 +747,15 @@ public:
         @return An awaitable that completes with
             `io_result<std::size_t>`.
 
-        @throws std::logic_error if the socket is not open.
+        A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::ConstBufferSequence Buffers>
     auto send(Buffers const& buf, corosio::message_flags flags)
     {
+        send_awaitable aw(*this, buf, static_cast<int>(flags));
         if (!is_open())
-            detail::throw_logic_error("send: socket not open");
-        return send_awaitable(
-            *this, buf, static_cast<int>(flags));
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /// @overload
@@ -768,15 +773,15 @@ public:
         @return An awaitable that completes with
             `io_result<std::size_t>`.
 
-        @throws std::logic_error if the socket is not open.
+        A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::MutableBufferSequence Buffers>
     auto recv(Buffers const& buf, corosio::message_flags flags)
     {
+        recv_awaitable aw(*this, buf, static_cast<int>(flags));
         if (!is_open())
-            detail::throw_logic_error("recv: socket not open");
-        return recv_awaitable(
-            *this, buf, static_cast<int>(flags));
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /// @overload

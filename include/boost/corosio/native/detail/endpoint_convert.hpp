@@ -315,7 +315,10 @@ from_sockaddr_local(
     if (static_cast<std::size_t>(len) <= path_offset)
         return local_endpoint{};
 
-    auto path_len = static_cast<std::size_t>(len) - path_offset;
+    // Clamp to the buffer: a foreign len may overstate the payload,
+    // and sun_path is the struct's last member.
+    auto path_len = (std::min)(
+        static_cast<std::size_t>(len) - path_offset, sizeof(sa.sun_path));
 
     // Non-abstract paths may be null-terminated by the kernel
     if (path_len > 0 && sa.sun_path[0] != '\0')
@@ -326,11 +329,11 @@ from_sockaddr_local(
             path_len = static_cast<std::size_t>(end - sa.sun_path);
     }
 
-    std::error_code ec;
-    local_endpoint ep(std::string_view(sa.sun_path, path_len), ec);
-    if (ec)
+    // A foreign sun_path may exceed corosio's cap; the length
+    // pre-check keeps the throwing constructor unreachable.
+    if (path_len > local_endpoint::max_path_length)
         return local_endpoint{};
-    return ep;
+    return local_endpoint(std::string_view(sa.sun_path, path_len));
 }
 
 //----------------------------------------------------------

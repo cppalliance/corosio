@@ -55,19 +55,19 @@ public:
 
     /** Construct from a path.
 
+        An over-long path is a precondition violation: the limit is
+        the public @ref max_path_length constant, so callers with
+        runtime-derived paths can check
+        `path.size() <= max_path_length` before constructing.
+
         @param path The filesystem path for the socket.
             Must not exceed @ref max_path_length bytes.
 
-        @throws std::system_error if the path is too long.
+        @throws std::system_error `errc::filename_too_long` if the
+            path is too long.
     */
     explicit local_endpoint(std::string_view path);
 
-    /** Construct from a path (no-throw).
-
-        @param path The filesystem path for the socket.
-        @param ec Set to an error if the path is too long.
-    */
-    local_endpoint(std::string_view path, std::error_code& ec) noexcept;
 
     /** Return the socket path.
 

@@ -44,7 +44,7 @@ stream_file::open(
 }
 
 void
-stream_file::close()
+stream_file::close() noexcept
 {
     if (!is_open())
         return;

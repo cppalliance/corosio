@@ -313,7 +313,7 @@ public:
         Releases socket resources. Any pending operations complete
         with `errc::operation_canceled`.
     */
-    void close();
+    void close() noexcept;
 
     /** Check if the socket is open.
 
@@ -387,8 +387,8 @@ public:
 
         @return The number of bytes that can be read without blocking.
 
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on ioctl failure.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            socket is not open; otherwise thrown on ioctl failure.
     */
     std::size_t available() const;
 
@@ -400,7 +400,8 @@ public:
 
         @return The native handle.
 
-        @throws std::logic_error if the socket is not open.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            socket is not open.
 
         @post is_open() == false
     */
@@ -432,14 +433,16 @@ public:
 
         @param opt The option to set.
 
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            socket is not open; otherwise thrown on failure.
     */
     template<class Option>
     void set_option(Option const& opt)
     {
         if (!is_open())
-            detail::throw_logic_error("set_option: socket not open");
+            detail::throw_system_error(
+                make_error_code(std::errc::bad_file_descriptor),
+                "local_stream_socket::set_option");
         std::error_code ec = get().set_option(
             Option::level(), Option::name(), opt.data(), opt.size());
         if (ec)
@@ -452,14 +455,16 @@ public:
 
         @return The current option value.
 
-        @throws std::logic_error if the socket is not open.
-        @throws std::system_error on failure.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            socket is not open; otherwise thrown on failure.
     */
     template<class Option>
     Option get_option() const
     {
         if (!is_open())
-            detail::throw_logic_error("get_option: socket not open");
+            detail::throw_system_error(
+                make_error_code(std::errc::bad_file_descriptor),
+                "local_stream_socket::get_option");
         Option opt{};
         std::size_t sz = opt.size();
         std::error_code ec =

@@ -176,7 +176,7 @@ public:
         Releases file resources. Any pending operations complete
         with `errc::operation_canceled`.
     */
-    void close();
+    void close() noexcept;
 
     /** Check if the file is open.
 

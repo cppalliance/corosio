@@ -75,7 +75,7 @@ struct ipv4_address_test
         auto check_invalid = [](std::string_view s) {
             ipv4_address addr;
             auto ec = parse_ipv4_address(s, addr);
-            BOOST_TEST(bool(ec));
+            BOOST_TEST(ec == std::errc::invalid_argument);
         };
 
         check_invalid("");
@@ -124,6 +124,16 @@ struct ipv4_address_test
         char buf[ipv4_address::max_str_len];
         auto sv = ipv4_address(0x01020304).to_buffer(buf, sizeof(buf));
         BOOST_TEST_EQ(sv, "1.2.3.4");
+    }
+
+    void testToBufferTooSmallThrows()
+    {
+        // to_buffer must throw length_error when the buffer is smaller
+        // than max_str_len, even if the formatted address would fit.
+        char small[4];
+        BOOST_TEST_THROWS(
+            ipv4_address(0x01020304).to_buffer(small, sizeof(small)),
+            std::length_error);
     }
 
     void testPredicates()
@@ -182,6 +192,7 @@ struct ipv4_address_test
         testToBytes();
         testToString();
         testToBuffer();
+        testToBufferTooSmallThrows();
         testPredicates();
         testStaticFactories();
         testComparison();

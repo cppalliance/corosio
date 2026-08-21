@@ -80,15 +80,17 @@ native_handle_type
 tcp_socket::release()
 {
     if (!is_open())
-        detail::throw_logic_error("release: socket not open");
+        detail::throw_system_error(
+            make_error_code(std::errc::bad_file_descriptor),
+            "tcp_socket::release");
     return get().release_socket();
 }
 
 std::error_code
-tcp_socket::bind(endpoint ep)
+tcp_socket::bind(endpoint ep) noexcept
 {
     if (!is_open())
-        detail::throw_logic_error("bind: socket not open");
+        return make_error_code(std::errc::bad_file_descriptor);
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc     = static_cast<detail::win_tcp_service&>(h_.service());
     auto& wrapper = static_cast<tcp_socket::implementation&>(*h_.get());
@@ -102,7 +104,7 @@ tcp_socket::bind(endpoint ep)
 }
 
 void
-tcp_socket::close()
+tcp_socket::close() noexcept
 {
     if (!is_open())
         return;

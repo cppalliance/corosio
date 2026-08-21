@@ -83,7 +83,9 @@ native_handle_type
 tcp_acceptor::release()
 {
     if (!is_open())
-        detail::throw_logic_error("release: acceptor not open");
+        detail::throw_system_error(
+            make_error_code(std::errc::bad_file_descriptor),
+            "tcp_acceptor::release");
     return get().release_socket();
 }
 
@@ -102,10 +104,10 @@ tcp_acceptor::native_handle() const noexcept
 }
 
 std::error_code
-tcp_acceptor::bind(endpoint ep)
+tcp_acceptor::bind(endpoint ep) noexcept
 {
     if (!is_open())
-        detail::throw_logic_error("bind: acceptor not open");
+        return make_error_code(std::errc::bad_file_descriptor);
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc = static_cast<detail::win_tcp_acceptor_service&>(h_.service());
 #else
@@ -116,10 +118,10 @@ tcp_acceptor::bind(endpoint ep)
 }
 
 std::error_code
-tcp_acceptor::listen(int backlog)
+tcp_acceptor::listen(int backlog) noexcept
 {
     if (!is_open())
-        detail::throw_logic_error("listen: acceptor not open");
+        return make_error_code(std::errc::bad_file_descriptor);
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc = static_cast<detail::win_tcp_acceptor_service&>(h_.service());
 #else
@@ -130,7 +132,7 @@ tcp_acceptor::listen(int backlog)
 }
 
 void
-tcp_acceptor::close()
+tcp_acceptor::close() noexcept
 {
     if (!is_open())
         return;

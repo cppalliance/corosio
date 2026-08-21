@@ -26,19 +26,6 @@ local_endpoint::local_endpoint(std::string_view path)
     len_ = static_cast<std::uint8_t>(path.size());
 }
 
-local_endpoint::local_endpoint(
-    std::string_view path, std::error_code& ec) noexcept
-{
-    if (path.size() > max_path_length)
-    {
-        ec = std::make_error_code(std::errc::filename_too_long);
-        return;
-    }
-    ec = {};
-    std::memcpy(path_, path.data(), path.size());
-    len_ = static_cast<std::uint8_t>(path.size());
-}
-
 std::ostream&
 operator<<(std::ostream& os, local_endpoint const& ep)
 {

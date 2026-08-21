@@ -151,8 +151,7 @@ struct signal_set_test
 
         // A signal number above the service's table size returns
         // invalid_argument.
-        auto result = s.add(100000);
-        BOOST_TEST(!!result);
+        BOOST_TEST(s.add(100000) == std::errc::invalid_argument);
     }
 
     void testRemoveInvalidSignal()
@@ -160,8 +159,7 @@ struct signal_set_test
         io_context ioc(Backend);
         signal_set s(ioc);
 
-        auto result = s.remove(-1);
-        BOOST_TEST(!!result);
+        BOOST_TEST(s.remove(-1) == std::errc::invalid_argument);
     }
 
     void testRemove()

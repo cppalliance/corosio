@@ -306,7 +306,7 @@ testFailureCases(StreamFactory make_stream)
     {
         auto client_ctx = make_client_context();
         auto server_ctx = make_anon_context();
-        (void)server_ctx.set_ciphersuites("");
+        std::ignore = server_ctx.set_ciphersuites("");
         run_tls_test_fail(
             ioc, client_ctx, server_ctx, make_stream, make_stream);
         ioc.restart();
@@ -964,7 +964,7 @@ testCrlRevocation(StreamFactory make_stream, bool crl_supported)
         require_ok(ctx.add_certificate_authority(root_ca_cert_pem));
         require_ok(ctx.set_verify_mode(tls_verify_mode::peer));
         if (load_crl)
-            (void)ctx.add_crl(revoked_crl_pem);
+            std::ignore = ctx.add_crl(revoked_crl_pem);
         ctx.set_revocation_policy(policy);
         return ctx;
     };
@@ -1011,7 +1011,7 @@ testCrlRevocation(StreamFactory make_stream, bool crl_supported)
         tls_context client_ctx;
         require_ok(client_ctx.add_certificate_authority(root_ca_cert_pem));
         require_ok(client_ctx.set_verify_mode(tls_verify_mode::peer));
-        (void)client_ctx.add_crl("this is not a valid PEM or DER CRL");
+        std::ignore = client_ctx.add_crl("this is not a valid PEM or DER CRL");
         client_ctx.set_revocation_policy(tls_revocation_policy::soft_fail);
         auto server_ctx = revoked_server();
         run_tls_test_fail(
@@ -1025,7 +1025,7 @@ testCrlRevocation(StreamFactory make_stream, bool crl_supported)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        (void)client_ctx.add_crl(revoked_crl_pem); // policy left disabled
+        std::ignore = client_ctx.add_crl(revoked_crl_pem); // policy left disabled
         auto server_ctx = make_server_context();
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
@@ -1782,8 +1782,8 @@ testInvalidContextHandshake(StreamFactory make_stream)
     tls_context server_ctx;
     // The setters may reject the garbage eagerly or defer to the
     // handshake; the handshake failure below is what is asserted.
-    (void)server_ctx.use_certificate("not a certificate", tls_file_format::pem);
-    (void)server_ctx.use_private_key("not a key", tls_file_format::pem);
+    std::ignore = server_ctx.use_certificate("not a certificate", tls_file_format::pem);
+    std::ignore = server_ctx.use_private_key("not a key", tls_file_format::pem);
     require_ok(server_ctx.set_verify_mode(tls_verify_mode::none));
 
     auto client = make_stream(m1, client_ctx);

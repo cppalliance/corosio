@@ -543,8 +543,44 @@ struct native_udp_socket_test
         BOOST_TEST_EQ(lg2.timeout(), 3);
     }
 
+    void testClosedOpsComplete()
+    {
+        // Datagram operations on a closed socket complete with
+        // bad_file_descriptor instead of dispatching.
+        io_context ioc(Backend);
+        native_udp_socket<Backend> s(ioc);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[8];
+            char const m[] = "x";
+            endpoint src;
+
+            auto [e1, n1] = co_await s.send_to(
+                capy::const_buffer(m, 1),
+                endpoint(ipv4_address::loopback(), 1));
+            BOOST_TEST(e1 == std::errc::bad_file_descriptor);
+
+            auto [e2, n2] = co_await s.recv_from(
+                capy::mutable_buffer(buf, sizeof(buf)), src);
+            BOOST_TEST(e2 == std::errc::bad_file_descriptor);
+
+            auto [e3, n3] = co_await s.send(capy::const_buffer(m, 1));
+            BOOST_TEST(e3 == std::errc::bad_file_descriptor);
+
+            auto [e4, n4] = co_await s.recv(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(e4 == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     void run()
     {
+        testClosedOpsComplete();
         testConstruct();
         testMoveConstruct();
         testPolymorphicSlice();

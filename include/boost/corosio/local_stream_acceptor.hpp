@@ -68,11 +68,14 @@ enum class bind_option
     @code
     io_context ioc;
     local_stream_acceptor acc(ioc);
-    acc.open();
-    acc.bind(local_endpoint("/tmp/my.sock"),
-             bind_option::unlink_existing);
-    acc.listen();
-    auto [ec, peer] = co_await acc.accept();
+    if (auto ec = acc.open())
+        return ec;
+    if (auto ec = acc.bind(local_endpoint("/tmp/my.sock"),
+                           bind_option::unlink_existing))
+        return ec;
+    if (auto ec = acc.listen())
+        return ec;
+    auto [aec, peer] = co_await acc.accept();
     @endcode
 */
 class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
@@ -108,7 +111,9 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<local_stream_socket> await_resume() const noexcept
@@ -151,7 +156,9 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<> await_resume() const noexcept
@@ -266,11 +273,11 @@ public:
 
         @return An error code on failure, empty on success.
 
-        @throws std::logic_error if the acceptor is not open.
+        A closed acceptor reports `errc::bad_file_descriptor`.
     */
     [[nodiscard]] std::error_code
     bind(corosio::local_endpoint ep,
-         bind_option opt = bind_option::none);
+         bind_option opt = bind_option::none) noexcept;
 
     /** Start listening for incoming connections.
 
@@ -278,9 +285,9 @@ public:
 
         @return An error code on failure, empty on success.
 
-        @throws std::logic_error if the acceptor is not open.
+        A closed acceptor reports `errc::bad_file_descriptor`.
     */
-    [[nodiscard]] std::error_code listen(int backlog = 128);
+    [[nodiscard]] std::error_code listen(int backlog = 128) noexcept;
 
     /** Close the acceptor.
 
@@ -290,7 +297,7 @@ public:
 
         @post is_open() == false
     */
-    void close();
+    void close() noexcept;
 
     /// Check if the acceptor has an open socket handle.
     bool is_open() const noexcept
@@ -313,13 +320,14 @@ public:
 
         @return An awaitable that completes with io_result<>.
 
-        @throws std::logic_error if the acceptor is not open.
+        A closed acceptor reports `errc::bad_file_descriptor`.
     */
     auto accept(local_stream_socket& peer)
     {
+        accept_awaitable aw(*this, peer);
         if (!is_open())
-            detail::throw_logic_error("accept: acceptor not listening");
-        return accept_awaitable(*this, peer);
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /** Wait for an incoming connection or readiness condition.
@@ -345,9 +353,10 @@ public:
     */
     [[nodiscard]] auto wait(wait_type w)
     {
+        wait_awaitable aw(*this, w);
         if (!is_open())
-            detail::throw_logic_error("wait: acceptor not listening");
-        return wait_awaitable(*this, w);
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /** Initiate an asynchronous accept, returning the socket.
@@ -363,13 +372,14 @@ public:
         @return An awaitable that completes with
             io_result<local_stream_socket>.
 
-        @throws std::logic_error if the acceptor is not open.
+        A closed acceptor reports `errc::bad_file_descriptor`.
     */
     auto accept()
     {
+        move_accept_awaitable aw(*this);
         if (!is_open())
-            detail::throw_logic_error("accept: acceptor not listening");
-        return move_accept_awaitable(*this);
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /** Cancel pending asynchronous accept operations.
@@ -388,7 +398,7 @@ public:
 
         @return The native handle.
 
-        @throws std::logic_error if the acceptor is not open.
+        A closed acceptor reports `errc::bad_file_descriptor`.
 
         @post is_open() == false
     */
@@ -456,14 +466,16 @@ public:
             `level()` and `name()` members, and `data()` / `size()`
             accessors.
 
-        @throws std::logic_error if the acceptor is not open.
-        @throws std::system_error on failure.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            acceptor is not open; otherwise thrown on failure.
     */
     template<class Option>
     void set_option(Option const& opt)
     {
         if (!is_open())
-            detail::throw_logic_error("set_option: acceptor not open");
+            detail::throw_system_error(
+                make_error_code(std::errc::bad_file_descriptor),
+                "local_stream_acceptor::set_option");
         std::error_code ec = get().set_option(
             Option::level(), Option::name(), opt.data(), opt.size());
         if (ec)
@@ -480,14 +492,16 @@ public:
             `level()` and `name()` members, and `data()` / `size()`
             / `resize()` members.
 
-        @throws std::logic_error if the acceptor is not open.
-        @throws std::system_error on failure.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            acceptor is not open; otherwise thrown on failure.
     */
     template<class Option>
     Option get_option() const
     {
         if (!is_open())
-            detail::throw_logic_error("get_option: acceptor not open");
+            detail::throw_system_error(
+                make_error_code(std::errc::bad_file_descriptor),
+                "local_stream_acceptor::get_option");
         Option opt{};
         std::size_t sz = opt.size();
         std::error_code ec =

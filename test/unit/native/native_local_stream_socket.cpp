@@ -91,7 +91,7 @@ struct native_local_stream_socket_test
     {
         io_context ioc(Backend);
         native_local_stream_socket<Backend> s(ioc);
-        s.open();
+        BOOST_TEST(!s.open());
         BOOST_TEST(s.is_open());
         s.close();
         BOOST_TEST_EQ(s.is_open(), false);
@@ -101,7 +101,7 @@ struct native_local_stream_socket_test
     {
         io_context ioc(Backend);
         native_local_stream_socket<Backend> s(ioc);
-        s.open();
+        BOOST_TEST(!s.open());
         local_stream_socket& base = s;
         BOOST_TEST(base.is_open());
     }
@@ -113,7 +113,7 @@ struct native_local_stream_socket_test
         auto path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         auto ec = acc.bind(local_endpoint(path));
         BOOST_TEST_EQ(ec, std::error_code{});
         ec = acc.listen();
@@ -160,7 +160,7 @@ struct native_local_stream_socket_test
         auto path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         auto ec = acc.bind(local_endpoint(path));
         BOOST_TEST_EQ(ec, std::error_code{});
         ec = acc.listen();
@@ -206,7 +206,7 @@ struct native_local_stream_socket_test
         auto path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         auto ec = acc.bind(local_endpoint(path));
         BOOST_TEST_EQ(ec, std::error_code{});
         ec = acc.listen();
@@ -258,7 +258,7 @@ struct native_local_stream_socket_test
         auto       path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         auto bec = acc.bind(local_endpoint(path));
         BOOST_TEST(!bec);
         auto lec = acc.listen();
@@ -305,7 +305,7 @@ struct native_local_stream_socket_test
         auto       path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         auto bec = acc.bind(local_endpoint(path));
         BOOST_TEST(!bec);
         auto lec = acc.listen();
@@ -333,33 +333,44 @@ struct native_local_stream_socket_test
         BOOST_TEST(!wait_ec);
     }
 
-    void testAcceptOnClosedThrows()
+    void testMovedFromValueAcceptThrows()
     {
+        io_context ioc(Backend);
+        native_local_stream_acceptor<Backend> a(ioc);
+        native_local_stream_acceptor<Backend> b(std::move(a));
+
+        bool threw = false;
+        try
+        {
+            (void)a.accept();
+        }
+        catch (std::logic_error const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(threw);
+    }
+
+    void testAcceptOnClosedCompletes()
+    {
+        // Accepts on a closed acceptor complete with
+        // bad_file_descriptor instead of throwing.
         io_context ioc(Backend);
         native_local_stream_acceptor<Backend> acc(ioc);
         native_local_stream_socket<Backend> peer(ioc);
 
-        bool caught_peer = false;
-        try
-        {
-            (void)acc.accept(peer);
-        }
-        catch (std::logic_error const&)
-        {
-            caught_peer = true;
-        }
-        BOOST_TEST(caught_peer);
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            auto [e1] = co_await acc.accept(peer);
+            BOOST_TEST(e1 == std::errc::bad_file_descriptor);
 
-        bool caught_move = false;
-        try
-        {
-            (void)acc.accept();
-        }
-        catch (std::logic_error const&)
-        {
-            caught_move = true;
-        }
-        BOOST_TEST(caught_move);
+            auto [e2, moved] = co_await acc.accept();
+            BOOST_TEST(e2 == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     void testConnectAutoOpens()
@@ -400,7 +411,8 @@ struct native_local_stream_socket_test
         testVirtualDispatchFallback();
         testSocketWait();
         testAcceptorWait();
-        testAcceptOnClosedThrows();
+        testAcceptOnClosedCompletes();
+        testMovedFromValueAcceptThrows();
         testConnectAutoOpens();
     }
 };

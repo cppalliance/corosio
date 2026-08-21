@@ -1356,7 +1356,8 @@ struct reactor_paths_test
         BOOST_TEST(tcp_fd >= 0);
 
         local_stream_socket sock(ioc);
-        BOOST_TEST(sock.assign(tcp_fd));
+        BOOST_TEST(sock.assign(tcp_fd)
+                   == std::errc::address_family_not_supported);
         // rejection leaves ownership with the caller
         if (!sock.is_open())
             ::close(tcp_fd);
@@ -1372,7 +1373,8 @@ struct reactor_paths_test
         BOOST_TEST(fd >= 0);
 
         local_datagram_socket sock(ioc);
-        BOOST_TEST(sock.assign(fd));
+        BOOST_TEST(sock.assign(fd)
+                   == std::errc::wrong_protocol_type);
         if (!sock.is_open())
             ::close(fd);
     }

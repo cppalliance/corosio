@@ -57,7 +57,7 @@ struct native_tcp_acceptor_test
     {
         io_context ctx(Backend);
         native_tcp_acceptor<Backend> a1(ctx);
-        a1.open();
+        BOOST_TEST(!a1.open());
         a1.set_option(native_socket_option::reuse_address(true));
         auto ec = a1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -73,7 +73,7 @@ struct native_tcp_acceptor_test
     {
         io_context ctx(Backend);
         native_tcp_acceptor<Backend> na(ctx);
-        na.open();
+        BOOST_TEST(!na.open());
         na.set_option(native_socket_option::reuse_address(true));
         auto ec = na.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -92,7 +92,7 @@ struct native_tcp_acceptor_test
         auto       ex = ioc.get_executor();
 
         native_tcp_acceptor<Backend> acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(native_socket_option::reuse_address(true));
         auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
@@ -101,7 +101,7 @@ struct native_tcp_acceptor_test
         auto port = acc.local_endpoint().port();
 
         native_tcp_socket<Backend> client(ioc);
-        client.open();
+        BOOST_TEST(!client.open());
 
         std::error_code wait_ec;
         bool            wait_done = false;
@@ -133,7 +133,7 @@ struct native_tcp_acceptor_test
         auto       ex = ioc.get_executor();
 
         native_tcp_acceptor<Backend> acc(ioc);
-        acc.open();
+        BOOST_TEST(!acc.open());
         acc.set_option(native_socket_option::reuse_address(true));
         auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
@@ -142,7 +142,7 @@ struct native_tcp_acceptor_test
         auto port = acc.local_endpoint().port();
 
         native_tcp_socket<Backend> client(ioc);
-        client.open();
+        BOOST_TEST(!client.open());
 
         std::error_code accept_ec;
         bool            accept_done = false;
@@ -175,7 +175,7 @@ struct native_tcp_acceptor_test
     {
         io_context ctx(Backend);
         native_tcp_acceptor<Backend> acc(ctx);
-        acc.open();
+        BOOST_TEST(!acc.open());
 
         acc.set_option(native_socket_option::reuse_address(true));
         acc.set_option(native_socket_option::reuse_port(true));
@@ -187,6 +187,46 @@ struct native_tcp_acceptor_test
     }
 #endif
 
+    void testClosedAcceptCompletes()
+    {
+        // Accepts on a closed (not moved-from) acceptor complete
+        // with bad_file_descriptor instead of dispatching.
+        io_context ioc(Backend);
+        native_tcp_acceptor<Backend> acc(ioc);
+        tcp_socket peer(ioc);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            auto [e1] = co_await acc.accept(peer);
+            BOOST_TEST(e1 == std::errc::bad_file_descriptor);
+
+            auto [e2, moved] = co_await acc.accept();
+            BOOST_TEST(e2 == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    void testMovedFromValueAcceptThrows()
+    {
+        io_context ioc(Backend);
+        native_tcp_acceptor<Backend> a(ioc);
+        native_tcp_acceptor<Backend> b(std::move(a));
+
+        bool threw = false;
+        try
+        {
+            (void)a.accept();
+        }
+        catch (std::logic_error const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(threw);
+    }
+
     void run()
     {
         testAcceptorConstruct();
@@ -196,6 +236,8 @@ struct native_tcp_acceptor_test
         testNativeAcceptReturning();
 #ifdef SO_REUSEPORT
         testNativeReusePort();
+        testMovedFromValueAcceptThrows();
+        testClosedAcceptCompletes();
 #endif
     }
 };

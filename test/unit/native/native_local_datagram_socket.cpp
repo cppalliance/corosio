@@ -285,58 +285,37 @@ struct native_local_datagram_socket_test
         BOOST_TEST(!wait_ec);
     }
 
-    void testSendOnClosedThrows()
+    void testClosedOpsComplete()
     {
+        // Datagram operations on a closed socket complete with
+        // bad_file_descriptor instead of throwing.
         io_context ioc(Backend);
         native_local_datagram_socket<Backend> s(ioc);
-        char const m[] = "x";
 
-        bool caught_send = false;
-        try
-        {
-            (void)s.send(capy::const_buffer(m, 1));
-        }
-        catch (std::logic_error const&)
-        {
-            caught_send = true;
-        }
-        BOOST_TEST(caught_send);
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char const m[] = "x";
+            char buf[1];
+            local_endpoint src;
 
-        bool caught_send_to = false;
-        try
-        {
-            (void)s.send_to(
+            auto [e1, n1] = co_await s.send(capy::const_buffer(m, 1));
+            BOOST_TEST(e1 == std::errc::bad_file_descriptor);
+
+            auto [e2, n2] = co_await s.send_to(
                 capy::const_buffer(m, 1), local_endpoint("/tmp/x"));
-        }
-        catch (std::logic_error const&)
-        {
-            caught_send_to = true;
-        }
-        BOOST_TEST(caught_send_to);
+            BOOST_TEST(e2 == std::errc::bad_file_descriptor);
 
-        char buf[1];
-        bool caught_recv = false;
-        try
-        {
-            (void)s.recv(capy::mutable_buffer(buf, 1));
-        }
-        catch (std::logic_error const&)
-        {
-            caught_recv = true;
-        }
-        BOOST_TEST(caught_recv);
+            auto [e3, n3] = co_await s.recv(capy::mutable_buffer(buf, 1));
+            BOOST_TEST(e3 == std::errc::bad_file_descriptor);
 
-        local_endpoint src;
-        bool caught_recv_from = false;
-        try
-        {
-            (void)s.recv_from(capy::mutable_buffer(buf, 1), src);
-        }
-        catch (std::logic_error const&)
-        {
-            caught_recv_from = true;
-        }
-        BOOST_TEST(caught_recv_from);
+            auto [e4, n4] = co_await s.recv_from(
+                capy::mutable_buffer(buf, 1), src);
+            BOOST_TEST(e4 == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     void testConnectAutoOpens()
@@ -381,7 +360,7 @@ struct native_local_datagram_socket_test
         testSendRecvConnected();
         testVirtualDispatchFallback();
         testWait();
-        testSendOnClosedThrows();
+        testClosedOpsComplete();
         testConnectAutoOpens();
     }
 };

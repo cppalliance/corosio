@@ -84,7 +84,9 @@ class native_tcp_acceptor : public tcp_acceptor
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<> await_resume() const noexcept
@@ -120,7 +122,9 @@ class native_tcp_acceptor : public tcp_acceptor
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<> await_resume() const noexcept
@@ -157,7 +161,9 @@ class native_tcp_acceptor : public tcp_acceptor
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<tcp_socket> await_resume() noexcept
@@ -234,16 +240,17 @@ public:
 
         @return An awaitable yielding `io_result<>`.
 
-        @throws std::logic_error if the acceptor is not listening.
+        A closed acceptor reports `errc::bad_file_descriptor`.
 
         Both this acceptor and @p peer must outlive the returned
         awaitable.
     */
     auto accept(tcp_socket& peer)
     {
+        native_accept_awaitable aw(*this, peer);
         if (!is_open())
-            detail::throw_logic_error("accept: acceptor not listening");
-        return native_accept_awaitable(*this, peer);
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /** Asynchronously accept an incoming connection, returning the peer.
@@ -253,15 +260,20 @@ public:
 
         @return An awaitable yielding `io_result<tcp_socket>`.
 
-        @throws std::logic_error if the acceptor is not listening.
+        A closed acceptor reports `errc::bad_file_descriptor`.
 
         This acceptor must outlive the returned awaitable.
     */
     auto accept()
     {
+        // The awaitable builds the peer from context(), which a
+        // moved-from acceptor no longer has.
+        if (!h_)
+            detail::throw_logic_error("accept: acceptor moved-from");
+        native_accept_value_awaitable aw(*this);
         if (!is_open())
-            detail::throw_logic_error("accept: acceptor not listening");
-        return native_accept_value_awaitable(*this);
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /** Asynchronously wait for the acceptor to be ready.

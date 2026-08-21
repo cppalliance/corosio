@@ -72,7 +72,8 @@ namespace boost::corosio {
     @code
     // Fine-grained setup
     tcp_acceptor acc( ioc );
-    acc.open( tcp::v6() );
+    if ( auto ec = acc.open( tcp::v6() ) )
+        return ec;
     acc.set_option( socket_option::reuse_address( true ) );
     acc.set_option( socket_option::v6_only( true ) );
     if ( auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ) )
@@ -115,7 +116,9 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<> await_resume() const noexcept
@@ -140,31 +143,36 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
     struct accept_value_awaitable
     {
         tcp_acceptor& acc_;
-        tcp_socket peer_;
         std::stop_token token_;
         mutable std::error_code ec_;
         mutable io_object::implementation* peer_impl_ = nullptr;
 
-        explicit accept_value_awaitable(tcp_acceptor& acc)
+        explicit accept_value_awaitable(tcp_acceptor& acc) noexcept
             : acc_(acc)
-            , peer_(acc.context())
         {
         }
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            // A pre-set ec_ means the initiator failed before
+            // dispatch (e.g. a closed object).
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<tcp_socket> await_resume() noexcept
         {
+            // The peer is built only on success: error paths must not
+            // touch acc_.context(), which a moved-from acceptor lacks.
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled),
-                        std::move(peer_)};
+                        tcp_socket()};
 
-            if (!ec_ && peer_impl_)
-                peer_.h_.reset(peer_impl_);
-            return {ec_, std::move(peer_)};
+            if (ec_ || !peer_impl_)
+                return {ec_, tcp_socket()};
+
+            tcp_socket peer(acc_.context());
+            peer.h_.reset(peer_impl_);
+            return {ec_, std::move(peer)};
         }
 
         auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
@@ -276,17 +284,21 @@ public:
 
         If the acceptor is already open, this function is a no-op.
 
+        Failures such as descriptor exhaustion are normal runtime
+        conditions and are reported through the returned error code.
+
         @param proto The protocol (IPv4 or IPv6). Defaults to
             `tcp::v4()`.
 
-        @throws std::system_error on failure.
-
         @par Example
         @code
-        acc.open( tcp::v6() );
+        if (auto ec = acc.open( tcp::v6() ))
+            return;  // report the error
         acc.set_option( socket_option::reuse_address( true ) );
-        acc.bind( endpoint( ipv6_address::any(), 8080 ) );
-        acc.listen();
+        if (auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ))
+            return;
+        if (auto ec = acc.listen())
+            return;
         @endcode
 
         @see bind, listen
@@ -313,9 +325,9 @@ public:
         @li `errc::permission_denied`: Insufficient privileges to bind
             to the endpoint (e.g., privileged port).
 
-        @throws std::logic_error if the acceptor is not open.
+        A closed acceptor reports `errc::bad_file_descriptor`.
     */
-    [[nodiscard]] std::error_code bind(endpoint ep);
+    [[nodiscard]] std::error_code bind(endpoint ep) noexcept;
 
     /** Start listening for incoming connections.
 
@@ -328,16 +340,16 @@ public:
         @return An error code indicating success or the reason for
             failure.
 
-        @throws std::logic_error if the acceptor is not open.
+        A closed acceptor reports `errc::bad_file_descriptor`.
     */
-    [[nodiscard]] std::error_code listen(int backlog = 128);
+    [[nodiscard]] std::error_code listen(int backlog = 128) noexcept;
 
     /** Close the acceptor.
 
         Releases acceptor resources. Any pending operations complete
         with `errc::operation_canceled`.
     */
-    void close();
+    void close() noexcept;
 
     /** Check if the acceptor is listening.
 
@@ -368,8 +380,9 @@ public:
             - operation_canceled: Cancelled via stop_token or cancel().
                 Check `ec == cond::canceled` for portable comparison.
 
+        A closed acceptor completes with `errc::bad_file_descriptor`.
+
         @par Preconditions
-        The acceptor must be listening (`is_open() == true`).
         The peer socket must be associated with the same execution context.
 
         Both this acceptor and @p peer must outlive the returned
@@ -388,9 +401,10 @@ public:
     */
     auto accept(tcp_socket& peer)
     {
+        accept_awaitable aw(*this, peer);
         if (!is_open())
-            detail::throw_logic_error("accept: acceptor not listening");
-        return accept_awaitable(*this, peer);
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /** Initiate an asynchronous accept operation, returning the peer.
@@ -414,9 +428,10 @@ public:
             - operation_canceled: Cancelled via stop_token or cancel().
                 Check `ec == cond::canceled` for portable comparison.
 
+        A closed acceptor completes with `errc::bad_file_descriptor`.
+
         @par Preconditions
-        The acceptor must be listening (`is_open() == true`). This acceptor
-        must outlive the returned awaitable.
+        This acceptor must outlive the returned awaitable.
 
         @par Example
         @code
@@ -430,9 +445,10 @@ public:
     */
     auto accept()
     {
+        accept_value_awaitable aw(*this);
         if (!is_open())
-            detail::throw_logic_error("accept: acceptor not listening");
-        return accept_value_awaitable(*this);
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /** Wait for an incoming connection or readiness condition.
@@ -453,15 +469,17 @@ public:
 
         @return An awaitable that completes with `io_result<>`.
 
+        A closed acceptor completes with `errc::bad_file_descriptor`.
+
         @par Preconditions
-        The acceptor must be listening. This acceptor must
-        outlive the returned awaitable.
+        This acceptor must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {
+        wait_awaitable aw(*this, w);
         if (!is_open())
-            detail::throw_logic_error("wait: acceptor not listening");
-        return wait_awaitable(*this, w);
+            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+        return aw;
     }
 
     /** Cancel any pending asynchronous operations.
@@ -525,7 +543,7 @@ public:
 
         @return The native handle.
 
-        @throws std::logic_error if the acceptor is not open.
+        A closed acceptor reports `errc::bad_file_descriptor`.
 
         @post is_open() == false
     */
@@ -558,22 +576,27 @@ public:
 
         @par Example
         @code
-        acc.open( tcp::v6() );
+        if ( auto ec = acc.open( tcp::v6() ) )
+            return ec;
         acc.set_option( socket_option::reuse_port( true ) );
-        acc.bind( endpoint( ipv6_address::any(), 8080 ) );
-        acc.listen();
+        if ( auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ) )
+            return ec;
+        if ( auto ec = acc.listen() )
+            return ec;
         @endcode
 
         @param opt The option to set.
 
-        @throws std::logic_error if the acceptor is not open.
-        @throws std::system_error on failure.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            acceptor is not open; otherwise thrown on failure.
     */
     template<class Option>
     void set_option(Option const& opt)
     {
         if (!is_open())
-            detail::throw_logic_error("set_option: acceptor not open");
+            detail::throw_system_error(
+                make_error_code(std::errc::bad_file_descriptor),
+                "tcp_acceptor::set_option");
         std::error_code ec = get().set_option(
             Option::level(), Option::name(), opt.data(), opt.size());
         if (ec)
@@ -591,14 +614,16 @@ public:
 
         @return The current option value.
 
-        @throws std::logic_error if the acceptor is not open.
-        @throws std::system_error on failure.
+        @throws std::system_error `errc::bad_file_descriptor` if the
+            acceptor is not open; otherwise thrown on failure.
     */
     template<class Option>
     Option get_option() const
     {
         if (!is_open())
-            detail::throw_logic_error("get_option: acceptor not open");
+            detail::throw_system_error(
+                make_error_code(std::errc::bad_file_descriptor),
+                "tcp_acceptor::get_option");
         Option opt{};
         std::size_t sz = opt.size();
         std::error_code ec =

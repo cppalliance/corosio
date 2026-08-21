@@ -52,7 +52,7 @@ local_stream_socket::open_for_family(int family, int type, int protocol) noexcep
 }
 
 void
-local_stream_socket::close()
+local_stream_socket::close() noexcept
 {
     if (!is_open())
         return;
@@ -100,7 +100,9 @@ native_handle_type
 local_stream_socket::release()
 {
     if (!is_open())
-        detail::throw_logic_error("release: socket not open");
+        detail::throw_system_error(
+            make_error_code(std::errc::bad_file_descriptor),
+            "local_stream_socket::release");
     return get().release_socket();
 }
 
@@ -108,7 +110,9 @@ std::size_t
 local_stream_socket::available() const
 {
     if (!is_open())
-        detail::throw_logic_error("available: socket not open");
+        detail::throw_system_error(
+            make_error_code(std::errc::bad_file_descriptor),
+            "local_stream_socket::available");
 #if BOOST_COROSIO_HAS_IOCP
     u_long value = 0;
     if (::ioctlsocket(
