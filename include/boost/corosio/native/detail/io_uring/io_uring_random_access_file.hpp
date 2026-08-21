@@ -230,6 +230,16 @@ io_uring_random_access_file::read_some_at(
         sched_, shared_from_this(), buffers, token);
     sched_->work_started();
 
+    // Closed-object contract outranks the zero-length no-op.
+    if (fd_ < 0)
+    {
+        op_guard->empty_buffer = false;
+        op_guard->res          = -EBADF;
+        io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+        sched_->push_completed_locked(op_guard.release());
+        return std::noop_coroutine();
+    }
+
     if (op_guard->empty_buffer ||
         op_guard->cancelled.load(std::memory_order_acquire))
     {
@@ -257,6 +267,16 @@ io_uring_random_access_file::write_some_at(
         static_cast<std::int64_t>(user_offset),
         sched_, shared_from_this(), buffers, token);
     sched_->work_started();
+
+    // Closed-object contract outranks the zero-length no-op.
+    if (fd_ < 0)
+    {
+        op_guard->empty_buffer = false;
+        op_guard->res          = -EBADF;
+        io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+        sched_->push_completed_locked(op_guard.release());
+        return std::noop_coroutine();
+    }
 
     if (op_guard->empty_buffer ||
         op_guard->cancelled.load(std::memory_order_acquire))

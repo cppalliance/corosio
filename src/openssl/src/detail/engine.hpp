@@ -93,10 +93,11 @@ public:
 
     /** Create the SSL session and BIO pair from a TLS context.
 
-        Must succeed before any other member is used. A context whose
-        native build failed is reported unconditionally: the cache
-        retains a failed build permanently and the error queue may
-        already be drained, so a queue-derived code could read as
+        Called lazily by `prepare` on the first handshake so a setup
+        failure reports through the handshake completion. A context
+        whose native build failed is reported unconditionally: the
+        cache retains a failed build permanently and the error queue
+        may already be drained, so a queue-derived code could read as
         success.
 
         @param ctx The TLS context supplying the native `SSL_CTX`.
@@ -148,13 +149,14 @@ public:
 
     /** Prepare the session for a handshake in the given role.
 
-        Applies SNI/hostname verification and installs the context's
-        ALPN offer, both for client handshakes only; a server
-        handshake clears any name left by a prior client-role
-        handshake so client certificates are never hostname-matched.
-        Fails closed rather than handshake without a requested check.
+        Runs the deferred `init` on first use, then applies
+        SNI/hostname verification and installs the context's ALPN
+        offer, both for client handshakes only; a server handshake
+        clears any name left by a prior client-role handshake so
+        client certificates are never hostname-matched. Fails closed
+        rather than handshake without a requested check.
 
-        @param ctx Unused; the session was built from it at `init`.
+        @param ctx The TLS context backing the deferred session build.
         @param role Handshake role.
         @param hostname Peer name for SNI/verification; empty for
         none.

@@ -249,6 +249,16 @@ io_uring_stream_file::read_some(
         shared_from_this(), buffers, token);
     sched_->work_started();
 
+    // Closed-object contract outranks the zero-length no-op.
+    if (fd_ < 0)
+    {
+        rd_.empty_buffer = false;
+        rd_.res          = -EBADF;
+        io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+        sched_->push_completed_locked(&rd_);
+        return std::noop_coroutine();
+    }
+
     if (rd_.empty_buffer ||
         rd_.cancelled.load(std::memory_order_acquire))
     {
@@ -273,6 +283,16 @@ io_uring_stream_file::write_some(
     wr_.prepare(h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
         shared_from_this(), buffers, token);
     sched_->work_started();
+
+    // Closed-object contract outranks the zero-length no-op.
+    if (fd_ < 0)
+    {
+        wr_.empty_buffer = false;
+        wr_.res          = -EBADF;
+        io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+        sched_->push_completed_locked(&wr_);
+        return std::noop_coroutine();
+    }
 
     if (wr_.empty_buffer ||
         wr_.cancelled.load(std::memory_order_acquire))

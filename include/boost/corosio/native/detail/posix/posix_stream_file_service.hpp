@@ -169,6 +169,15 @@ posix_stream_file::read_some(
     op.reset();
     op.is_read = true;
 
+    // Closed-object contract outranks the zero-length no-op.
+    if (fd_ < 0)
+    {
+        *ec        = make_error_code(std::errc::bad_file_descriptor);
+        *bytes_out = 0;
+        op.cont.h = h;
+        return dispatch_coro(ex, op.cont);
+    }
+
     capy::mutable_buffer bufs[max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, max_buffers));
 
@@ -252,6 +261,15 @@ posix_stream_file::write_some(
     auto& op = write_op_;
     op.reset();
     op.is_read = false;
+
+    // Closed-object contract outranks the zero-length no-op.
+    if (fd_ < 0)
+    {
+        *ec        = make_error_code(std::errc::bad_file_descriptor);
+        *bytes_out = 0;
+        op.cont.h = h;
+        return dispatch_coro(ex, op.cont);
+    }
 
     capy::mutable_buffer bufs[max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, max_buffers));

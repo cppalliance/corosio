@@ -162,6 +162,37 @@ struct native_random_access_file_test
         BOOST_TEST_EQ(contents, std::string("hello"));
     }
 
+    // Closed-object contract on the devirtualized path: the at-ops
+    // complete with bad_file_descriptor.
+    void testReadWriteAtOnClosedFile()
+    {
+        io_context ioc(Backend);
+        native_random_access_file<Backend> f(ioc);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[4] = {};
+            auto [rec, rn] = co_await f.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(rec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(rn, 0u);
+            auto [wec, wn] = co_await f.write_some_at(
+                0, capy::const_buffer(buf, sizeof(buf)));
+            BOOST_TEST(wec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(wn, 0u);
+
+            // Zero-length at-ops on a closed file still report closed.
+            auto [zrec, zrn] = co_await f.read_some_at(
+                0, capy::mutable_buffer(buf, 0));
+            BOOST_TEST(zrec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(zrn, 0u);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     void testVirtualDispatchFallback()
     {
         std::string data = "fallback";
@@ -194,6 +225,7 @@ struct native_random_access_file_test
         testPolymorphicSlice();
         testReadSomeAt();
         testWriteSomeAt();
+        testReadWriteAtOnClosedFile();
         testVirtualDispatchFallback();
     }
 };

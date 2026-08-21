@@ -869,6 +869,35 @@ struct stream_file_test
         BOOST_TEST(f.sync_all() == std::errc::bad_file_descriptor);
         auto [ec, pos] = f.seek(0, file_base::seek_set);
         BOOST_TEST(ec == std::errc::bad_file_descriptor);
+
+        // Async operations complete with bad_file_descriptor
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[4] = {};
+            auto [rec, rn] =
+                co_await f.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(rec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(rn, 0u);
+            auto [wec, wn] =
+                co_await f.write_some(capy::const_buffer(buf, sizeof(buf)));
+            BOOST_TEST(wec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(wn, 0u);
+
+            // The zero-length no-op does not outrank the closed-object
+            // contract: closed wins on every backend.
+            auto [zrec, zrn] =
+                co_await f.read_some(capy::mutable_buffer(buf, 0));
+            BOOST_TEST(zrec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(zrn, 0u);
+            auto [zwec, zwn] =
+                co_await f.write_some(capy::const_buffer(buf, 0));
+            BOOST_TEST(zwec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(zwn, 0u);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     // Negative seek validation
@@ -882,11 +911,9 @@ struct stream_file_test
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         auto expect_negative = [](std::error_code ec) {
-#if BOOST_COROSIO_POSIX
+            // POSIX lseek reports EINVAL; the Windows guard's
+            // ERROR_NEGATIVE_SEEK is normalized by make_err.
             BOOST_TEST(ec == std::errc::invalid_argument);
-#else
-            BOOST_TEST(bool(ec));
-#endif
         };
 
         // seek_set with negative offset

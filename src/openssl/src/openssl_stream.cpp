@@ -33,16 +33,11 @@ struct openssl_stream::implementation
 openssl_stream::implementation*
 openssl_stream::make_implementation(capy::any_stream& stream, tls_context const& ctx)
 {
-    auto* p = new implementation(stream, ctx);
-
-    auto ec = p->engine().init(p->context());
-    if (ec)
-    {
-        delete p;
-        return nullptr;
-    }
-
-    return p;
+    // Session creation is deferred to handshake time (the engine's
+    // prepare hook builds it lazily), so a session setup failure
+    // surfaces through the handshake completion instead of leaving a
+    // null implementation behind.
+    return new implementation(stream, ctx);
 }
 
 openssl_stream::~openssl_stream()

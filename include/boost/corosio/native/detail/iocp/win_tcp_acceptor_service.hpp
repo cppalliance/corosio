@@ -588,6 +588,14 @@ win_tcp_socket_internal::read_some(
 
     svc_.work_started();
 
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel.
+    if (socket_ == INVALID_SOCKET)
+    {
+        svc_.on_completion(&op, WSAEBADF, 0);
+        return std::noop_coroutine();
+    }
+
     // Prepare buffers
     capy::mutable_buffer bufs[read_op::max_buffers];
     op.wsabuf_count =
@@ -653,6 +661,14 @@ win_tcp_socket_internal::write_some(
 
     svc_.work_started();
 
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel.
+    if (socket_ == INVALID_SOCKET)
+    {
+        svc_.on_completion(&op, WSAEBADF, 0);
+        return std::noop_coroutine();
+    }
+
     // Prepare buffers
     capy::mutable_buffer bufs[write_op::max_buffers];
     op.wsabuf_count =
@@ -713,6 +729,14 @@ win_tcp_socket_internal::wait(
     op.start(token);
 
     svc_.work_started();
+
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel or the wait reactor.
+    if (socket_ == INVALID_SOCKET)
+    {
+        svc_.on_completion(&op, WSAEBADF, 0);
+        return std::noop_coroutine();
+    }
 
     if (w == wait_type::read)
     {
@@ -1532,6 +1556,14 @@ win_tcp_acceptor_internal::wait(
     op.start(token);
 
     svc_.work_started();
+
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel or the wait reactor.
+    if (socket_ == INVALID_SOCKET)
+    {
+        svc_.on_completion(&op, WSAEBADF, 0);
+        return std::noop_coroutine();
+    }
 
     // Writability carries no meaning for a listening socket; the
     // wait fails the same way on every backend.

@@ -70,6 +70,13 @@ struct iocp_error_map_test
 
         // Unmapped codes defer to make_err and stay non-empty.
         BOOST_TEST(!!iocp_make_err(ERROR_ACCESS_DENIED, false));
+
+        // Closed-object contract spellings normalize to
+        // bad_file_descriptor regardless of toolchain mapping.
+        BOOST_TEST(iocp_make_err(WSAEBADF, false) ==
+            std::errc::bad_file_descriptor);
+        BOOST_TEST(iocp_make_err(ERROR_INVALID_HANDLE, false) ==
+            std::errc::bad_file_descriptor);
     }
 };
 

@@ -401,6 +401,58 @@ struct native_local_stream_socket_test
         BOOST_TEST(s.is_open());
     }
 
+    // A closed acceptor's wait completes with bad_file_descriptor,
+    // matching the base-class contract.
+    // Stream operations on a closed socket complete with
+    // bad_file_descriptor instead of dispatching.
+    void testSocketClosedOpsComplete()
+    {
+        io_context ioc(Backend);
+        native_local_stream_socket<Backend> s(ioc);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[8] = {};
+
+            auto [rec, rn] = co_await s.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(rec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(rn, 0u);
+
+            auto [wec, wn] = co_await s.write_some(
+                capy::const_buffer(buf, sizeof(buf)));
+            BOOST_TEST(wec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(wn, 0u);
+
+            auto [tec] = co_await s.wait(wait_type::read);
+            BOOST_TEST(tec == std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    void testAcceptorWaitOnClosed()
+    {
+        io_context ioc(Backend);
+        native_local_stream_acceptor<Backend> acc(ioc);
+
+        std::error_code wait_ec;
+        bool            wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await acc.wait(wait_type::read);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        capy::run_async(ioc.get_executor())(waiter());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == std::errc::bad_file_descriptor);
+    }
+
     void run()
     {
         testConstruct();
@@ -410,7 +462,9 @@ struct native_local_stream_socket_test
         testMoveAccept();
         testVirtualDispatchFallback();
         testSocketWait();
+        testSocketClosedOpsComplete();
         testAcceptorWait();
+        testAcceptorWaitOnClosed();
         testAcceptOnClosedCompletes();
         testMovedFromValueAcceptThrows();
         testConnectAutoOpens();

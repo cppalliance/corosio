@@ -714,6 +714,14 @@ win_udp_socket_internal::wait(
 
     svc_.work_started();
 
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel or the wait reactor.
+    if (socket_ == INVALID_SOCKET)
+    {
+        svc_.on_completion(&op, WSAEBADF, 0);
+        return std::noop_coroutine();
+    }
+
     // Every datagram wait routes through the auxiliary select
     // reactor: there's no IOCP-native primitive for "datagram
     // readable without dequeuing the message" (zero-byte WSARecvFrom

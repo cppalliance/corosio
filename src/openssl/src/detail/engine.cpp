@@ -738,7 +738,9 @@ engine::reset()
 bool
 engine::context_setup_failed() const noexcept
 {
-    return nc_->setup_failed_;
+    // Before the deferred init runs there is no native context to
+    // judge; prepare() re-checks once it exists.
+    return nc_ && nc_->setup_failed_;
 }
 
 std::error_code
@@ -758,8 +760,21 @@ engine::check_session() const noexcept
 }
 
 std::error_code
-engine::prepare(tls_context const&, tls_role role, std::string const& hostname)
+engine::prepare(tls_context const& ctx, tls_role role, std::string const& hostname)
 {
+    // Session creation is deferred from construction so a setup
+    // failure reports through the handshake completion.
+    if (!ssl_)
+    {
+        if (auto ec = init(ctx))
+            return ec;
+        // The driver's check_context gate ran before this init could
+        // populate the native context; re-check so a rejected
+        // configuration still fails closed on the first handshake.
+        if (auto cec = check_context())
+            return cec;
+    }
+
     // The hostname applies to client handshakes only; a server
     // handshake clears any name left by a prior client-role
     // handshake so client certificates are never hostname-matched.
@@ -816,6 +831,13 @@ engine::capture_alpn(std::string& out) const
 engine_result
 engine::perform(engine_op op, void* data, std::size_t len)
 {
+    // No session exists until the first handshake's deferred init;
+    // report I/O attempted before then instead of crashing on a null
+    // SSL handle.
+    if (!ssl_)
+        return {engine_want::done,
+            std::make_error_code(std::errc::invalid_argument), 0};
+
     ERR_clear_error();
 
     int ret = 0;

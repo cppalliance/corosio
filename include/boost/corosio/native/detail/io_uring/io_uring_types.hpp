@@ -686,6 +686,19 @@ public:
         std::stop_token         token,
         std::error_code*        ec) override
     {
+        // Closed-object contract: complete with bad_file_descriptor
+        // instead of parking a waiter no accept machinery will signal.
+        if (this->fd_ < 0)
+        {
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept-adjacent initiation path: OOM => std::terminate is the intended behavior
+            auto* op   = new uring_accept_op();
+            op->h      = h;
+            op->ex     = ex;
+            op->ec_out = ec;
+            op->err    = EBADF;
+            this->sched_->post(op);
+            return std::noop_coroutine();
+        }
         // Multishot accepting drains the kernel queue as connections
         // arrive, so a poll on the listener never reports it
         // readable; read waits complete from the delivery queue.
@@ -1482,6 +1495,19 @@ public:
         std::stop_token         token,
         std::error_code*        ec) override
     {
+        // Closed-object contract: complete with bad_file_descriptor
+        // instead of parking a waiter no accept machinery will signal.
+        if (this->fd_ < 0)
+        {
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept-adjacent initiation path: OOM => std::terminate is the intended behavior
+            auto* op   = new uring_accept_op();
+            op->h      = h;
+            op->ex     = ex;
+            op->ec_out = ec;
+            op->err    = EBADF;
+            this->sched_->post(op);
+            return std::noop_coroutine();
+        }
         // Multishot accepting drains the kernel queue as connections
         // arrive, so a poll on the listener never reports it
         // readable; read waits complete from the delivery queue.

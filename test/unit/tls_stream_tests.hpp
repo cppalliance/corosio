@@ -430,6 +430,46 @@ testSocketErrorPropagation(StreamFactory make_stream)
     }
 }
 
+/** I/O before any handshake completes with an error, never crashes.
+
+    The engines defer session creation to the first handshake; a
+    read, write, or shutdown issued before then must surface a code
+    through the completion.
+*/
+template<typename StreamFactory>
+void
+testIoBeforeHandshake(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+
+    auto ctx    = make_client_context();
+    auto stream = make_stream(m, ctx);
+
+    bool done = false;
+    auto task = [&]() -> capy::task<> {
+        char buf[16];
+        auto [rec, rn] = co_await stream.read_some(
+            capy::mutable_buffer(buf, sizeof(buf)));
+        BOOST_TEST(bool(rec));
+        BOOST_TEST_EQ(rn, 0u);
+
+        auto [wec, wn] = co_await stream.write_some(
+            capy::const_buffer("x", 1));
+        BOOST_TEST(bool(wec));
+        BOOST_TEST_EQ(wn, 0u);
+
+        auto [sec] = co_await stream.shutdown();
+        BOOST_TEST(bool(sec));
+        done = true;
+    };
+    capy::run_async(ioc.get_executor())(task());
+    ioc.run();
+    BOOST_TEST(done);
+
+    peer.close();
+}
+
 /** Test certificate validation. */
 template<typename StreamFactory>
 void

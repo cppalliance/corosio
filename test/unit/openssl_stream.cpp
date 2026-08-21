@@ -170,6 +170,7 @@ struct openssl_stream_test
 
     void run()
     {
+        test::testIoBeforeHandshake(make_stream);
         test::testHandshakeFuse(make_stream);
         test::testReadWriteFuse(make_stream);
         test::testShutdownFuse(make_stream);

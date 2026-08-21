@@ -22,6 +22,26 @@
 
 namespace boost::corosio {
 
+#if BOOST_COROSIO_HAS_IOCP
+namespace {
+
+// On Windows SO_REUSEADDR grants bind-over ("hijack") rights instead
+// of TIME_WAIT reuse, so a second listener would share the port
+// silently. SO_EXCLUSIVEADDRUSE restores the POSIX contract: the
+// collision surfaces as WSAEADDRINUSE (errc::address_in_use).
+struct exclusive_address_use
+{
+    int value_ = 1;
+
+    static int level() noexcept { return SOL_SOCKET; }
+    static int name() noexcept { return SO_EXCLUSIVEADDRUSE; }
+    void const* data() const noexcept { return &value_; }
+    std::size_t size() const noexcept { return sizeof(value_); }
+};
+
+} // namespace
+#endif
+
 tcp_acceptor::~tcp_acceptor()
 {
     close();
@@ -42,7 +62,11 @@ tcp_acceptor::tcp_acceptor(
 {
     if (auto ec = open(ep.is_v6() ? tcp::v6() : tcp::v4()))
         detail::throw_system_error(ec, "tcp_acceptor");
+#if BOOST_COROSIO_HAS_IOCP
+    set_option(exclusive_address_use{});
+#else
     set_option(socket_option::reuse_address(true));
+#endif
     if (auto ec = bind(ep))
         detail::throw_system_error(ec, "tcp_acceptor");
     if (auto ec = listen(backlog))

@@ -315,6 +315,14 @@ win_local_stream_acceptor_internal::wait(
 
     svc_.work_started();
 
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel or the wait reactor.
+    if (socket_ == INVALID_SOCKET)
+    {
+        svc_.on_completion(&op, WSAEBADF, 0);
+        return std::noop_coroutine();
+    }
+
     // Writability carries no meaning for a listening socket; the
     // wait fails the same way on every backend.
     if (w == wait_type::write)

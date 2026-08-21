@@ -786,7 +786,7 @@ struct signal_set_test
         BOOST_TEST(!s1.add(SIGINT, signal_set::restart));
         // Second set tries to add with different flag
         auto result = s2.add(SIGINT, signal_set::no_defer);
-        BOOST_TEST(!!result); // Should fail
+        BOOST_TEST(result == std::errc::invalid_argument);
     }
 
     void testMultipleSetsWithDontCare()

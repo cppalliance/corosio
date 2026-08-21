@@ -227,12 +227,35 @@ struct native_tcp_acceptor_test
         BOOST_TEST(threw);
     }
 
+    // A closed acceptor's wait completes with bad_file_descriptor,
+    // matching the base-class contract.
+    void testWaitOnClosedAcceptor()
+    {
+        io_context ioc(Backend);
+        native_tcp_acceptor<Backend> acc(ioc);
+
+        std::error_code wait_ec;
+        bool            wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await acc.wait(wait_type::read);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        capy::run_async(ioc.get_executor())(waiter());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == std::errc::bad_file_descriptor);
+    }
+
     void run()
     {
         testAcceptorConstruct();
         testAcceptorMoveConstruct();
         testAcceptorPolymorphicSlice();
         testWait();
+        testWaitOnClosedAcceptor();
         testNativeAcceptReturning();
 #ifdef SO_REUSEPORT
         testNativeReusePort();

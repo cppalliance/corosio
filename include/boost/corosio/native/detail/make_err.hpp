@@ -82,7 +82,7 @@ make_err(unsigned long dwError) noexcept
     if (dwError == ERROR_HANDLE_EOF)
         return capy::error::eof;
 
-    // Part of the portable wait and adoption contracts;
+    // Part of the portable wait, adoption, bind, and seek contracts;
     // system_category's condition mapping for WSA codes varies by
     // toolchain.
     if (dwError == WSAEOPNOTSUPP)
@@ -94,6 +94,12 @@ make_err(unsigned long dwError) noexcept
             std::errc::address_family_not_supported);
     if (dwError == WSAEPROTOTYPE)
         return std::make_error_code(std::errc::wrong_protocol_type);
+    if (dwError == WSAEADDRINUSE)
+        return std::make_error_code(std::errc::address_in_use);
+    if (dwError == WSAEADDRNOTAVAIL)
+        return std::make_error_code(std::errc::address_not_available);
+    if (dwError == ERROR_NEGATIVE_SEEK)
+        return std::make_error_code(std::errc::invalid_argument);
 
     return std::error_code(static_cast<int>(dwError), std::system_category());
 }

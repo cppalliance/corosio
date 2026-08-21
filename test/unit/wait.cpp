@@ -12,6 +12,7 @@
 #include <boost/corosio/wait_type.hpp>
 
 #include <boost/corosio/delay.hpp>
+#include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
@@ -919,6 +920,52 @@ struct wait_test
         BOOST_TEST(wait_ec == capy::cond::canceled);
     }
 
+    // wait(wait_type::error) on a listening acceptor parks in the
+    // error-poll path (aux reactor on IOCP, POLL_ADD on io_uring);
+    // cancel() completes it with the canceled condition.
+    template<class Acceptor, class Endpoint>
+    void checkAcceptorErrorWaitCancel(Endpoint ep)
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        Acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        BOOST_TEST(!acc.bind(ep));
+        BOOST_TEST(!acc.listen());
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+        capy::run_async(ex)(
+            [](Acceptor& a, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
+                auto [ec] = co_await a.wait(wait_type::error);
+                ec_out = ec;
+                done   = true;
+            }(acc, wait_ec, wait_done));
+
+        // Runs after the waiter has parked: coroutines start in
+        // submission order on the single run thread.
+        capy::run_async(ex)(
+            [](Acceptor& a) -> capy::task<> {
+                a.cancel();
+                co_return;
+            }(acc));
+
+        ioc.run();
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec == capy::cond::canceled);
+    }
+
+    void testAcceptorErrorWaitCancel()
+    {
+        checkAcceptorErrorWaitCancel<tcp_acceptor>(
+            endpoint(ipv4_address::loopback(), 0));
+        test::temp_socket_dir tmp;
+        checkAcceptorErrorWaitCancel<local_stream_acceptor>(
+            local_endpoint(tmp.path()));
+    }
+
     void run()
     {
         testWaitReadAndNoConsume();
@@ -927,6 +974,7 @@ struct wait_test
         testWaitWriteCancel();
         testWaitWriteCancelDoesNotLeak();
         testAcceptorWait();
+        testAcceptorErrorWaitCancel();
         testWaitOnLocalStream();
         testWaitOnUdp();
         testWaitReadAfterShortRead();
@@ -940,20 +988,18 @@ struct wait_test
 
 COROSIO_BACKEND_TESTS(wait_test, "boost.corosio.wait")
 
-// Reactor-only: the readiness probe is shared by epoll/kqueue/select;
-// the proactor backends resolve closed-socket waits through their own
-// submission paths.
+// Closed-object contract: every backend completes wait/read/write on a
+// closed socket with bad_file_descriptor instead of a platform code.
 template<auto Backend>
 struct wait_closed_test
 {
-    // Waiting on a socket that was never opened must fail instead of
-    // parking forever on a descriptor the reactor has never seen.
-    void testWaitOnUnopenedSocket()
+    template<class Socket>
+    void checkClosedWait()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
-        tcp_socket sock(ioc);
+        Socket sock(ioc);
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -971,12 +1017,63 @@ struct wait_closed_test
         BOOST_TEST(wait_ec == std::errc::bad_file_descriptor);
     }
 
+    void testWaitOnUnopenedSocket()
+    {
+        checkClosedWait<tcp_socket>();
+        checkClosedWait<udp_socket>();
+        checkClosedWait<local_stream_socket>();
+#if BOOST_COROSIO_POSIX
+        // No local datagram sockets on Windows.
+        checkClosedWait<local_datagram_socket>();
+#endif
+    }
+
+    template<class Socket>
+    void checkClosedReadWrite()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        Socket sock(ioc);
+
+        std::error_code read_ec;
+        std::error_code write_ec;
+        bool done = false;
+
+        auto io = [&]() -> capy::task<> {
+            char buf[4] = {};
+            auto [rec, rn] =
+                co_await sock.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            read_ec = rec;
+            BOOST_TEST_EQ(rn, std::size_t(0));
+            auto [wec, wn] =
+                co_await sock.write_some(capy::const_buffer(buf, sizeof(buf)));
+            write_ec = wec;
+            BOOST_TEST_EQ(wn, std::size_t(0));
+            done = true;
+        };
+
+        capy::run_async(ex)(io());
+        ioc.run();
+
+        BOOST_TEST(done);
+        BOOST_TEST(read_ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(write_ec == std::errc::bad_file_descriptor);
+    }
+
+    void testReadWriteOnUnopenedSocket()
+    {
+        checkClosedReadWrite<tcp_socket>();
+        checkClosedReadWrite<local_stream_socket>();
+    }
+
     void run()
     {
         testWaitOnUnopenedSocket();
+        testReadWriteOnUnopenedSocket();
     }
 };
 
-COROSIO_REACTOR_BACKEND_TESTS(wait_closed_test, "boost.corosio.wait_closed")
+COROSIO_BACKEND_TESTS(wait_closed_test, "boost.corosio.wait_closed")
 
 } // namespace boost::corosio

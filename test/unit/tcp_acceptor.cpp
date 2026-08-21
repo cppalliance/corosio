@@ -825,13 +825,9 @@ struct tcp_acceptor_test
         tcp_acceptor acc2(ioc);
         BOOST_TEST(!acc2.open());
         ec = acc2.bind(endpoint(ipv4_address::loopback(), port));
-#if BOOST_COROSIO_HAS_IOCP
-        // MinGW's libstdc++ lacks the WSA-to-generic condition
-        // mapping, so the raw code is pinned on Windows.
-        BOOST_TEST(ec.value() == WSAEADDRINUSE);
-#else
+        // make_err normalizes WSAEADDRINUSE, so the condition compares
+        // portably on every toolchain.
         BOOST_TEST(ec == std::errc::address_in_use);
-#endif
 
         acc1.close();
         acc2.close();
@@ -846,11 +842,7 @@ struct tcp_acceptor_test
 
         // Bind to an address not assigned to any local interface
         auto ec = acc.bind(endpoint(ipv4_address("1.2.3.4"), 0));
-#if BOOST_COROSIO_HAS_IOCP
-        BOOST_TEST(ec.value() == WSAEADDRNOTAVAIL);
-#else
         BOOST_TEST(ec == std::errc::address_not_available);
-#endif
 
         acc.close();
     }
@@ -941,7 +933,7 @@ struct tcp_acceptor_test
         {
             caught = e.code();
         }
-        BOOST_TEST(bool(caught));
+        BOOST_TEST(caught == std::errc::address_in_use);
         holder.close();
     }
 

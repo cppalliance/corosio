@@ -441,6 +441,21 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
     auto& op = rd_;
     op.reset();
 
+    // Closed-object contract: complete with bad_file_descriptor without
+    // touching the kernel or the unregistered descriptor state.
+    if (this->fd_ < 0)
+    {
+        op.h         = h;
+        op.ex        = ex;
+        op.ec_out    = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, static_cast<Derived*>(this));
+        op.impl_ptr = this->shared_from_this();
+        op.complete(EBADF, 0);
+        this->svc_.post(&op);
+        return std::noop_coroutine();
+    }
+
     capy::mutable_buffer bufs[ReadOp::max_buffers];
     op.iovec_count = static_cast<int>(param.copy_to(bufs, ReadOp::max_buffers));
 
@@ -549,6 +564,21 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
 {
     auto& op = wr_;
     op.reset();
+
+    // Closed-object contract: complete with bad_file_descriptor without
+    // touching the kernel or the unregistered descriptor state.
+    if (this->fd_ < 0)
+    {
+        op.h         = h;
+        op.ex        = ex;
+        op.ec_out    = ec;
+        op.bytes_out = bytes_out;
+        op.start(token, static_cast<Derived*>(this));
+        op.impl_ptr = this->shared_from_this();
+        op.complete(EBADF, 0);
+        this->svc_.post(&op);
+        return std::noop_coroutine();
+    }
 
     capy::mutable_buffer bufs[WriteOp::max_buffers];
     op.iovec_count =

@@ -314,7 +314,9 @@ struct udp_socket_test
         udp_socket sock2(ioc);
         BOOST_TEST(!sock2.open());
         ec = sock2.bind(endpoint(ipv4_address::loopback(), port));
-        BOOST_TEST(ec);
+        // make_err normalizes WSAEADDRINUSE, so the condition
+        // compares portably on every toolchain.
+        BOOST_TEST(ec == std::errc::address_in_use);
 
         sock1.close();
         sock2.close();

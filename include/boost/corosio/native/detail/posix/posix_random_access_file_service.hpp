@@ -168,6 +168,14 @@ posix_random_access_file::read_some_at(
     std::error_code* ec,
     std::size_t* bytes_out)
 {
+    // Closed-object contract outranks the zero-length no-op.
+    if (fd_ < 0)
+    {
+        *ec        = make_error_code(std::errc::bad_file_descriptor);
+        *bytes_out = 0;
+        return h;
+    }
+
     capy::mutable_buffer bufs[max_buffers];
     auto count = param.copy_to(bufs, max_buffers);
 
@@ -223,6 +231,14 @@ posix_random_access_file::write_some_at(
     std::error_code* ec,
     std::size_t* bytes_out)
 {
+    // Closed-object contract outranks the zero-length no-op.
+    if (fd_ < 0)
+    {
+        *ec        = make_error_code(std::errc::bad_file_descriptor);
+        *bytes_out = 0;
+        return h;
+    }
+
     capy::mutable_buffer bufs[max_buffers];
     auto count = param.copy_to(bufs, max_buffers);
 

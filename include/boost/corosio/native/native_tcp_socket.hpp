@@ -325,11 +325,13 @@ public:
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref tcp_socket::connect.
 
+        If the socket is not open, it is opened automatically using
+        the protocol matching the endpoint's address family. An open
+        failure surfaces through the connect completion.
+
         @param ep The remote endpoint to connect to.
 
         @return An awaitable yielding `io_result<>`.
-
-        A closed socket reports `errc::bad_file_descriptor`.
 
         This socket must outlive the returned awaitable.
     */
@@ -337,7 +339,7 @@ public:
     {
         native_connect_awaitable aw(*this, ep);
         if (!is_open())
-            aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
+            aw.ec_ = open(ep.is_v6() ? tcp::v6() : tcp::v4());
         return aw;
     }
 

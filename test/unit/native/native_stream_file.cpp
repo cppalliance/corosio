@@ -158,6 +158,31 @@ struct native_stream_file_test
         BOOST_TEST_EQ(contents, std::string(msg));
     }
 
+    // Closed-object contract on the devirtualized path: read/write
+    // complete with bad_file_descriptor.
+    void testReadWriteOnClosedFile()
+    {
+        io_context ioc(Backend);
+        native_stream_file<Backend> f(ioc);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[4] = {};
+            auto [rec, rn] =
+                co_await f.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(rec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(rn, 0u);
+            auto [wec, wn] =
+                co_await f.write_some(capy::const_buffer(buf, sizeof(buf)));
+            BOOST_TEST(wec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(wn, 0u);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     void testVirtualDispatchFallback()
     {
         std::string data = "fallback";
@@ -189,6 +214,7 @@ struct native_stream_file_test
         testPolymorphicSlice();
         testReadSome();
         testWriteSome();
+        testReadWriteOnClosedFile();
         testVirtualDispatchFallback();
     }
 };

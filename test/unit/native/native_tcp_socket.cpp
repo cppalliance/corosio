@@ -155,18 +155,51 @@ struct native_tcp_socket_test
         s.close();
     }
 
-    void testClosedConnectCompletes()
+    void testConnectAutoOpens()
     {
-        // The native socket does not auto-open: connect on a closed
-        // socket completes with bad_file_descriptor.
+        // connect() auto-opens like the base class: the failure (no
+        // listener on the target port) comes from the connect attempt,
+        // not from a closed descriptor, and the socket ends up open.
         io_context ioc(Backend);
         native_tcp_socket<Backend> s(ioc);
+        BOOST_TEST_EQ(s.is_open(), false);
 
         bool done = false;
         auto task = [&]() -> capy::task<> {
             auto [ec] = co_await s.connect(
                 endpoint(ipv4_address::loopback(), 1));
-            BOOST_TEST(ec == std::errc::bad_file_descriptor);
+            BOOST_TEST(ec != std::errc::bad_file_descriptor);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
+        BOOST_TEST(s.is_open());
+    }
+
+    // Stream operations on a closed socket complete with
+    // bad_file_descriptor instead of dispatching.
+    void testClosedOpsComplete()
+    {
+        io_context ioc(Backend);
+        native_tcp_socket<Backend> s(ioc);
+
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            char buf[8] = {};
+
+            auto [rec, rn] = co_await s.read_some(
+                capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(rec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(rn, 0u);
+
+            auto [wec, wn] = co_await s.write_some(
+                capy::const_buffer(buf, sizeof(buf)));
+            BOOST_TEST(wec == std::errc::bad_file_descriptor);
+            BOOST_TEST_EQ(wn, 0u);
+
+            auto [tec] = co_await s.wait(wait_type::read);
+            BOOST_TEST(tec == std::errc::bad_file_descriptor);
             done = true;
         };
         capy::run_async(ioc.get_executor())(task());
@@ -176,7 +209,8 @@ struct native_tcp_socket_test
 
     void run()
     {
-        testClosedConnectCompletes();
+        testConnectAutoOpens();
+        testClosedOpsComplete();
         testSocketConstruct();
         testSocketMoveConstruct();
         testSocketPolymorphicSlice();

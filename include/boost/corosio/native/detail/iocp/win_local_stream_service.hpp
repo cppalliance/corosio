@@ -488,6 +488,14 @@ win_local_stream_socket_internal::read_some(
 
     svc_.work_started();
 
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel.
+    if (socket_ == INVALID_SOCKET)
+    {
+        svc_.on_completion(&op, WSAEBADF, 0);
+        return std::noop_coroutine();
+    }
+
     capy::mutable_buffer bufs[local_stream_read_op::max_buffers];
     op.wsabuf_count =
         static_cast<DWORD>(param.copy_to(bufs, local_stream_read_op::max_buffers));
@@ -549,6 +557,14 @@ win_local_stream_socket_internal::write_some(
 
     svc_.work_started();
 
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel.
+    if (socket_ == INVALID_SOCKET)
+    {
+        svc_.on_completion(&op, WSAEBADF, 0);
+        return std::noop_coroutine();
+    }
+
     capy::mutable_buffer bufs[local_stream_write_op::max_buffers];
     op.wsabuf_count =
         static_cast<DWORD>(param.copy_to(bufs, local_stream_write_op::max_buffers));
@@ -606,6 +622,14 @@ win_local_stream_socket_internal::wait(
     op.start(token);
 
     svc_.work_started();
+
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel or the wait reactor.
+    if (socket_ == INVALID_SOCKET)
+    {
+        svc_.on_completion(&op, WSAEBADF, 0);
+        return std::noop_coroutine();
+    }
 
     if (w == wait_type::read)
     {

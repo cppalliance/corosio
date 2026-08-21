@@ -165,7 +165,10 @@ raf_concurrent_op::do_complete(
         if (op->cancelled.load(std::memory_order_acquire))
             *op->ec_out = capy::error::canceled;
         else if (op->dwError != 0)
-            *op->ec_out = make_err(op->dwError);
+            // Through the IOCP normalization point, like every other
+            // overlapped op — plain make_err would leave codes such
+            // as ERROR_INVALID_HANDLE to toolchain-dependent mappings.
+            *op->ec_out = iocp_make_err(op->dwError, /*accept_path=*/false);
         else if (op->is_read && op->bytes_transferred == 0 && !op->empty_buffer)
             *op->ec_out = capy::error::eof;
         else
@@ -328,6 +331,18 @@ win_random_access_file_internal::read_some_at(
 
     svc_.work_started();
 
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel.
+    if (handle_ == INVALID_HANDLE_VALUE)
+    {
+        {
+            std::lock_guard<win_mutex> lock(ops_mutex_);
+            outstanding_ops_.push_back(op);
+        }
+        svc_.on_completion(op, ERROR_INVALID_HANDLE, 0);
+        return std::noop_coroutine();
+    }
+
     capy::mutable_buffer bufs[max_buffers];
     auto count = param.copy_to(bufs, max_buffers);
 
@@ -396,6 +411,18 @@ win_random_access_file_internal::write_some_at(
     op->start(token);
 
     svc_.work_started();
+
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel.
+    if (handle_ == INVALID_HANDLE_VALUE)
+    {
+        {
+            std::lock_guard<win_mutex> lock(ops_mutex_);
+            outstanding_ops_.push_back(op);
+        }
+        svc_.on_completion(op, ERROR_INVALID_HANDLE, 0);
+        return std::noop_coroutine();
+    }
 
     capy::mutable_buffer bufs[max_buffers];
     auto count = param.copy_to(bufs, max_buffers);

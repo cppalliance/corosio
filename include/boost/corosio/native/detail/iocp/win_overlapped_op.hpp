@@ -93,6 +93,11 @@ iocp_make_err(DWORD dwError, bool accept_path) noexcept
         return std::make_error_code(std::errc::host_unreachable);
     case WSAETIMEDOUT:    case ERROR_SEM_TIMEOUT:          // 10060 / 121
         return std::make_error_code(std::errc::timed_out);
+    // Closed-object contract: MSVC maps ERROR_INVALID_HANDLE to
+    // invalid_argument and MinGW's WSAEBADF mapping is unreliable, so
+    // normalize both spellings of "dead handle" here.
+    case WSAEBADF:        case ERROR_INVALID_HANDLE:       // 10009 / 6
+        return std::make_error_code(std::errc::bad_file_descriptor);
     default:
         break;
     }

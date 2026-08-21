@@ -40,7 +40,11 @@ void
 complete_io_op(Op& op)
 {
     op.stop_cb.reset();
-    op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
+    // scheduler_ is null until the descriptor is registered; an op
+    // completed by the closed-object entry check never registered and
+    // has no budget to reset.
+    if (auto* sched = op.socket_impl_->desc_state_.scheduler_)
+        sched->reset_inline_budget();
 
     // is_read_operation() already folds in the empty-buffer case (it
     // returns false for a zero-length read), so empty_buffer stays false

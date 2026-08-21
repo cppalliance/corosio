@@ -376,6 +376,14 @@ win_stream_file_internal::read_some(
 
     svc_.work_started();
 
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel.
+    if (handle_ == INVALID_HANDLE_VALUE)
+    {
+        svc_.on_completion(&op, ERROR_INVALID_HANDLE, 0);
+        return std::noop_coroutine();
+    }
+
     // Extract first buffer from buffer_param
     capy::mutable_buffer bufs[max_buffers];
     auto count = param.copy_to(bufs, max_buffers);
@@ -437,6 +445,14 @@ win_stream_file_internal::write_some(
     op.start(token);
 
     svc_.work_started();
+
+    // Closed-object contract: complete with bad_file_descriptor
+    // without touching the kernel.
+    if (handle_ == INVALID_HANDLE_VALUE)
+    {
+        svc_.on_completion(&op, ERROR_INVALID_HANDLE, 0);
+        return std::noop_coroutine();
+    }
 
     // Extract first buffer from buffer_param
     capy::mutable_buffer bufs[max_buffers];
