@@ -80,8 +80,8 @@ testHandshakeFuse(StreamFactory make_stream)
                 client_ec = ec;
                 if (ec)
                 {
-                    m1.close(); // NOLINT(bugprone-unused-return-value)
-                    m2.close(); // NOLINT(bugprone-unused-return-value)
+                    m1.close();
+                    m2.close();
                 }
             };
 
@@ -90,8 +90,8 @@ testHandshakeFuse(StreamFactory make_stream)
                 server_ec = ec;
                 if (ec)
                 {
-                    m1.close(); // NOLINT(bugprone-unused-return-value)
-                    m2.close(); // NOLINT(bugprone-unused-return-value)
+                    m1.close();
+                    m2.close();
                 }
             };
 
@@ -103,8 +103,8 @@ testHandshakeFuse(StreamFactory make_stream)
             if (!client_ec && !server_ec)
                 clean_seen = true;
 
-            m1.close(); // NOLINT(bugprone-unused-return-value)
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
+            m2.close();
             co_return;
         });
         BOOST_TEST(clean_seen);
@@ -141,8 +141,8 @@ testReadWriteFuse(StreamFactory make_stream)
             // instead of waiting on bytes that will never come. The
             // data check runs only on the injection-free pass.
             auto bail = [&]() {
-                m1.close(); // NOLINT(bugprone-unused-return-value)
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m1.close();
+                m2.close();
             };
 
             auto client_task = [&]() -> capy::task<> {
@@ -184,8 +184,8 @@ testReadWriteFuse(StreamFactory make_stream)
             capy::run_async(ioc.get_executor())(server_task());
             ioc.run();
 
-            m1.close(); // NOLINT(bugprone-unused-return-value)
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
+            m2.close();
             co_return;
         });
     }
@@ -230,15 +230,15 @@ testShutdownFuse(StreamFactory make_stream)
             // peer parked on a close_notify that never comes, so the
             // unconditional close is what guarantees no side hangs.
             auto bail = [&]() {
-                m1.close(); // NOLINT(bugprone-unused-return-value)
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m1.close();
+                m2.close();
             };
 
             auto client_task = [&]() -> capy::task<> {
                 auto [ec] = co_await client.handshake(tls_role::client);
                 client_hs_ec = ec;
                 if (!ec)
-                    (void)co_await client.shutdown();
+                    std::ignore = co_await client.shutdown();
                 bail();
             };
 
@@ -248,7 +248,7 @@ testShutdownFuse(StreamFactory make_stream)
                 if (!ec)
                 {
                     char buf[32];
-                    (void)co_await server.read_some(
+                    std::ignore = co_await server.read_some(
                         capy::mutable_buffer(buf, sizeof(buf)));
                 }
                 bail();
@@ -261,7 +261,7 @@ testShutdownFuse(StreamFactory make_stream)
             if (!client_hs_ec && !server_hs_ec)
                 clean_seen = true;
 
-            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
             co_return;
         });
         BOOST_TEST(clean_seen);
@@ -618,8 +618,8 @@ run_hostname_round(
         client_ec = ec;
         if (ec)
         {
-            m1.close(); // NOLINT(bugprone-unused-return-value)
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
+            m2.close();
         }
     };
     auto hs_server = [&]() -> capy::task<> {
@@ -640,13 +640,13 @@ run_hostname_round(
             return;
 
         auto sd_client = [&]() -> capy::task<> {
-            (void)co_await client.shutdown();
+            std::ignore = co_await client.shutdown();
         };
         auto sd_server = [&]() -> capy::task<> {
             char drain[32];
-            (void)co_await server.read_some(
+            std::ignore = co_await server.read_some(
                 capy::mutable_buffer(drain, sizeof(drain)));
-            (void)co_await server.shutdown();
+            std::ignore = co_await server.shutdown();
         };
         capy::run_async(ioc.get_executor())(sd_client());
         capy::run_async(ioc.get_executor())(sd_server());
@@ -697,8 +697,8 @@ testHostnamePersistence(StreamFactory make_stream)
 
     BOOST_TEST_EQ(sni_count, 2u);
 
-    m1.close(); // NOLINT(bugprone-unused-return-value)
-    m2.close(); // NOLINT(bugprone-unused-return-value)
+    m1.close();
+    m2.close();
 }
 
 /** A new hostname set after reset() takes effect on the next
@@ -746,9 +746,9 @@ testHostnameRedirect(StreamFactory make_stream)
     }
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 /** set_hostname("") after reset() disables SNI and verification:
@@ -788,8 +788,8 @@ testHostnameClear(StreamFactory make_stream)
     // Only round 1 sent SNI
     BOOST_TEST_EQ(sni_count, 1u);
 
-    m1.close(); // NOLINT(bugprone-unused-return-value)
-    m2.close(); // NOLINT(bugprone-unused-return-value)
+    m1.close();
+    m2.close();
 }
 
 /** A hostname set after a failed handshake attempt takes effect on
@@ -871,8 +871,8 @@ testHostnameRetryAfterFailure(StreamFactory make_stream)
     if (seen.size() == 1u)
         BOOST_TEST_EQ(seen[0], "www.example.com");
 
-    m1.close(); // NOLINT(bugprone-unused-return-value)
-    m2.close(); // NOLINT(bugprone-unused-return-value)
+    m1.close();
+    m2.close();
 }
 
 /** An IP-literal hostname is matched against the certificate's
@@ -919,11 +919,11 @@ testHostnameIpLiteral(StreamFactory make_stream, bool ip_supported)
         auto hs_client = [&]() -> capy::task<> {
             auto [ec] = co_await client.handshake(tls_role::client);
             client_ec = ec;
-            m1.close(); // NOLINT(bugprone-unused-return-value)
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
+            m2.close();
         };
         auto hs_server = [&]() -> capy::task<> {
-            (void)co_await server.handshake(tls_role::server);
+            std::ignore = co_await server.handshake(tls_role::server);
         };
         capy::run_async(ioc.get_executor())(hs_client());
         capy::run_async(ioc.get_executor())(hs_server());
@@ -951,9 +951,9 @@ testHostnameIpLiteral(StreamFactory make_stream, bool ip_supported)
         ioc, client, server, m1, m2, false);
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 /** A freshly constructed stream reports no negotiated ALPN protocol.
@@ -970,8 +970,8 @@ testAlpnAccessorEmpty(StreamFactory make_stream)
     auto ctx      = make_client_context();
     auto stream   = make_stream(m1, ctx);
     BOOST_TEST(stream.alpn_protocol().empty());
-    m1.close(); // NOLINT(bugprone-unused-return-value)
-    m2.close(); // NOLINT(bugprone-unused-return-value)
+    m1.close();
+    m2.close();
 }
 
 /** Test CRL-based revocation.
@@ -1382,8 +1382,8 @@ testAlpn(StreamFactory make_stream, bool alpn_supported)
             sec == std::errc::function_not_supported);
     }
 
-    m1.close(); // NOLINT(bugprone-unused-return-value)
-    m2.close(); // NOLINT(bugprone-unused-return-value)
+    m1.close();
+    m2.close();
 }
 
 /** ALPN with no common protocol fails the handshake (RFC 7301 §3.2).
@@ -1446,10 +1446,10 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
         {
             io_context ioc;
             auto client_ctx = make_client_context();
-            require_ok(client_ctx.set_verify_callback(
+            client_ctx.set_verify_callback(
                 [](bool preverified, verify_context&) -> bool {
                     return preverified;
-                }));
+                });
             auto server_ctx = make_server_context();
             std::error_code client_ec;
             run_tls_test_fail(
@@ -1464,13 +1464,12 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
         // non-null (which would let the retry bypass the check).
         {
             io_context ioc;
-            auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
-            (void)m2;
+            [[maybe_unused]] auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
             auto client_ctx = make_client_context();
-            require_ok(client_ctx.set_verify_callback(
+            client_ctx.set_verify_callback(
                 [](bool preverified, verify_context&) -> bool {
                     return preverified;
-                }));
+                });
             auto client = make_stream(m1, client_ctx);
 
             std::error_code ec1;
@@ -1488,7 +1487,7 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
             BOOST_TEST(ec1 == std::errc::function_not_supported);
             BOOST_TEST(ec2 == std::errc::function_not_supported);
 
-            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
         }
         return;
     }
@@ -1502,7 +1501,7 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
         bool saw_unverified = false;
 
         auto client_ctx = make_wrong_ca_context();
-        require_ok(client_ctx.set_verify_callback(
+        client_ctx.set_verify_callback(
             [&saw_unverified](bool preverified, verify_context& vc) -> bool {
                 if (!preverified)
                 {
@@ -1518,7 +1517,7 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
                         BOOST_TEST(der[0] == 0x30);
                 }
                 return true;
-            }));
+            });
 
         auto server_ctx = make_server_context();
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
@@ -1529,8 +1528,8 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
     {
         io_context ioc;
         auto client_ctx = make_wrong_ca_context();
-        require_ok(client_ctx.set_verify_callback(
-            [](bool, verify_context&) -> bool { return false; }));
+        client_ctx.set_verify_callback(
+            [](bool, verify_context&) -> bool { return false; });
 
         auto server_ctx = make_server_context();
         run_tls_test_fail(
@@ -1559,14 +1558,14 @@ testVerifyCallbackOnSuccess(StreamFactory make_stream)
         bool saw_cert = false;
 
         auto client_ctx = make_client_context();
-        require_ok(client_ctx.set_verify_callback(
+        client_ctx.set_verify_callback(
             [&](bool preverified, verify_context& vc) -> bool {
                 invoked = true;
                 if (preverified && !vc.certificate().empty() &&
                     vc.certificate()[0] == 0x30)
                     saw_cert = true;
                 return preverified;
-            }));
+            });
 
         auto server_ctx = make_server_context();
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
@@ -1578,8 +1577,8 @@ testVerifyCallbackOnSuccess(StreamFactory make_stream)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        require_ok(client_ctx.set_verify_callback(
-            [](bool, verify_context&) -> bool { return false; }));
+        client_ctx.set_verify_callback(
+            [](bool, verify_context&) -> bool { return false; });
 
         auto server_ctx = make_server_context();
         run_tls_test_fail(
@@ -1592,13 +1591,13 @@ testVerifyCallbackOnSuccess(StreamFactory make_stream)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        require_ok(client_ctx.set_verify_callback(
+        client_ctx.set_verify_callback(
             [](bool preverified, verify_context& vc) -> bool {
                 if (!preverified)
                     return false;
                 auto der = vc.certificate();
                 return der.size() == 1 && der[0] == 0xFF; // never matches
-            }));
+            });
 
         auto server_ctx = make_server_context();
         run_tls_test_fail(
@@ -1707,9 +1706,8 @@ testAbruptClose(StreamFactory make_stream)
     std::error_code read_ec;
     auto reader = [&]() -> capy::task<> {
         char buf[16];
-        auto [ec, n] = co_await client.read_some(
+        [[maybe_unused]] auto [ec, n] = co_await client.read_some(
             capy::mutable_buffer(buf, sizeof(buf)));
-        (void)n;
         read_ec   = ec;
         read_done = true;
     };
@@ -1724,7 +1722,7 @@ testAbruptClose(StreamFactory make_stream)
     // normalized, not reported as a transport error.
     bool shutdown_done = false;
     auto closer = [&]() -> capy::task<> {
-        (void)co_await client.shutdown();
+        std::ignore = co_await client.shutdown();
         shutdown_done = true;
     };
     capy::run_async(ioc.get_executor())(closer());
@@ -1786,8 +1784,8 @@ testEncryptedKey(StreamFactory make_stream, bool expect_success = true)
         if (!ec)
         {
             failsafe_hit = true;
-            m1.close(); // NOLINT(bugprone-unused-return-value)
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
+            m2.close();
         }
     };
     capy::run_async(ioc.get_executor())(client_hs());
@@ -1837,13 +1835,13 @@ testInvalidContextHandshake(StreamFactory make_stream)
         client_ec   = ec;
         client_done = true;
         // Unblock the server if it is still waiting on the transport.
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     };
     auto server_hs = [&]() -> capy::task<> {
         auto [ec]   = co_await server.handshake(tls_role::server);
         server_ec   = ec;
         server_done = true;
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
     };
     capy::run_async(ioc.get_executor())(client_hs());
     capy::run_async(ioc.get_executor())(server_hs());
@@ -1957,14 +1955,14 @@ testReset(StreamFactory make_stream, std::array<context_mode, N> const& modes)
 
             // Shutdown both sides concurrently
             auto sd_client = [&]() -> capy::task<> {
-                (void)co_await client.shutdown();
+                std::ignore = co_await client.shutdown();
             };
             auto sd_server = [&]() -> capy::task<> {
                 // Read until close_notify, then send ours
                 char drain[32];
-                (void)co_await server.read_some(
+                std::ignore = co_await server.read_some(
                     capy::mutable_buffer(drain, sizeof(drain)));
-                (void)co_await server.shutdown();
+                std::ignore = co_await server.shutdown();
             };
 
             capy::run_async(ioc.get_executor())(sd_client());
@@ -1983,8 +1981,8 @@ testReset(StreamFactory make_stream, std::array<context_mode, N> const& modes)
         // Round 2
         do_round("hello2");
 
-        m1.close(); // NOLINT(bugprone-unused-return-value)
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
+        m2.close();
     }
 }
 
@@ -2049,13 +2047,13 @@ testResetViaHandshake(
             ioc.restart();
 
             auto sd_client = [&]() -> capy::task<> {
-                (void)co_await client.shutdown();
+                std::ignore = co_await client.shutdown();
             };
             auto sd_server = [&]() -> capy::task<> {
                 char drain[32];
-                (void)co_await server.read_some(
+                std::ignore = co_await server.read_some(
                     capy::mutable_buffer(drain, sizeof(drain)));
-                (void)co_await server.shutdown();
+                std::ignore = co_await server.shutdown();
             };
 
             capy::run_async(ioc.get_executor())(sd_client());
@@ -2072,8 +2070,8 @@ testResetViaHandshake(
         // Round 2
         do_round("round2");
 
-        m1.close(); // NOLINT(bugprone-unused-return-value)
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
+        m2.close();
     }
 }
 
@@ -2109,8 +2107,8 @@ testResetFuse(StreamFactory make_stream)
             auto server = make_stream(m2, server_ctx);
 
             auto bail = [&]() {
-                m1.close(); // NOLINT(bugprone-unused-return-value)
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m1.close();
+                m2.close();
             };
 
             // Round 1
@@ -2200,8 +2198,8 @@ testResetFuse(StreamFactory make_stream)
                     clean_seen = true;
             }
 
-            m1.close(); // NOLINT(bugprone-unused-return-value)
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
+            m2.close();
         });
         BOOST_TEST(clean_seen);
     }
@@ -2300,7 +2298,7 @@ testFullDuplex(StreamFactory make_stream)
         client_done = true;
 
         // Tear down the transport so the server's reader completes.
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     };
 
     auto failsafe_task = [&]() -> capy::task<> {
@@ -2310,9 +2308,9 @@ testFullDuplex(StreamFactory make_stream)
         {
             failsafe_hit = true;
             if (m1.is_open())
-                m1.close(); // NOLINT(bugprone-unused-return-value)
+                m1.close();
             if (m2.is_open())
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m2.close();
         }
     };
 
@@ -2327,9 +2325,9 @@ testFullDuplex(StreamFactory make_stream)
     BOOST_TEST(server_done);
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 /** Sustained transfer in both directions at once: claim interleaving,
@@ -2424,9 +2422,9 @@ testFullDuplexBulk(StreamFactory make_stream)
         {
             failsafe_hit = true;
             if (m1.is_open())
-                m1.close(); // NOLINT(bugprone-unused-return-value)
+                m1.close();
             if (m2.is_open())
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m2.close();
         }
     };
 
@@ -2441,9 +2439,9 @@ testFullDuplexBulk(StreamFactory make_stream)
     BOOST_TEST(server_ok);
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 /** Exact TLS record-boundary payloads: one transfer of exactly 16384
@@ -2534,9 +2532,9 @@ testRecordBoundaryTransfer(StreamFactory make_stream)
         {
             failsafe_hit = true;
             if (m1.is_open())
-                m1.close(); // NOLINT(bugprone-unused-return-value)
+                m1.close();
             if (m2.is_open())
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m2.close();
         }
     };
 
@@ -2549,9 +2547,9 @@ testRecordBoundaryTransfer(StreamFactory make_stream)
     BOOST_TEST(done);
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 /** shutdown() while a read is parked on the transport: the reader
@@ -2627,9 +2625,9 @@ testShutdownOverRead(StreamFactory make_stream)
         {
             failsafe_hit = true;
             if (m1.is_open())
-                m1.close(); // NOLINT(bugprone-unused-return-value)
+                m1.close();
             if (m2.is_open())
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m2.close();
         }
     };
 
@@ -2645,9 +2643,9 @@ testShutdownOverRead(StreamFactory make_stream)
     BOOST_TEST(peer_sd_ok);
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 /** Stream wrapper whose transport completions can be held at
@@ -2784,9 +2782,9 @@ testShutdownSimultaneousClose(StreamFactory make_stream)
         {
             failsafe_hit = true;
             if (m1.is_open())
-                m1.close(); // NOLINT(bugprone-unused-return-value)
+                m1.close();
             if (m2.is_open())
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m2.close();
             // A gate-wait parks on an in-process event, not transport
             // I/O; closing the mockets alone would leave it stuck, so
             // the failure would hang instead of surfacing.
@@ -2807,9 +2805,9 @@ testShutdownSimultaneousClose(StreamFactory make_stream)
     BOOST_TEST(peer_sd_ok);
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 /** Stream wrapper that injects an error alongside a real transport
@@ -2912,9 +2910,8 @@ testPartialReadWithError(StreamFactory make_stream)
         pes.inject_ec_ = std::make_error_code(std::errc::connection_reset);
 
         char buf[512];
-        auto [ec1, n1] = co_await client.read_some(
+        [[maybe_unused]] auto [ec1, n1] = co_await client.read_some(
             capy::mutable_buffer(buf, sizeof(buf)));
-        (void)n1;
         first_read_errored = (ec1 == std::errc::connection_reset);
 
         pes.armed_ = false;
@@ -2933,9 +2930,9 @@ testPartialReadWithError(StreamFactory make_stream)
         {
             failsafe_hit = true;
             if (m1.is_open())
-                m1.close(); // NOLINT(bugprone-unused-return-value)
+                m1.close();
             if (m2.is_open())
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m2.close();
         }
     };
 
@@ -2951,9 +2948,9 @@ testPartialReadWithError(StreamFactory make_stream)
     BOOST_TEST(second_read_ok);
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 /** Cancelling a parked reader releases its transport claim: a second
@@ -3043,10 +3040,8 @@ testCancelParkedReader(StreamFactory make_stream)
         client_got_all = (got == reply);
         // Reply received; now cancel the parked server reader.
         reader_stop.request_stop();
-        auto [ec, n] = co_await capy::write(
+        [[maybe_unused]] auto [ec, n] = co_await capy::write(
             client, capy::const_buffer(probe, probe_size));
-        (void)ec;
-        (void)n;
     };
 
     auto failsafe_task = [&]() -> capy::task<> {
@@ -3056,9 +3051,9 @@ testCancelParkedReader(StreamFactory make_stream)
         {
             failsafe_hit = true;
             if (m1.is_open())
-                m1.close(); // NOLINT(bugprone-unused-return-value)
+                m1.close();
             if (m2.is_open())
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m2.close();
             reader_done.set(); // unstick a parked wait on this event too
             // A leaked rd_cm_ claim would park the second read forever
             // on its own lock acquisition, past the point closing the
@@ -3084,9 +3079,9 @@ testCancelParkedReader(StreamFactory make_stream)
     BOOST_TEST(second_read_ok);
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 /** The documented multithreaded pattern: all operations on one stream
@@ -3180,7 +3175,7 @@ testFullDuplexMtStrand(StreamFactory make_stream)
         }
         client_got_size = got.size();
         client_done     = true;
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     };
 
     auto failsafe_task = [&]() -> capy::task<> {
@@ -3195,12 +3190,12 @@ testFullDuplexMtStrand(StreamFactory make_stream)
             // them from the session tasks non-concurrent.
             auto close_m1 = [&]() -> capy::task<> {
                 if (m1.is_open())
-                    m1.close(); // NOLINT(bugprone-unused-return-value)
+                    m1.close();
                 co_return;
             };
             auto close_m2 = [&]() -> capy::task<> {
                 if (m2.is_open())
-                    m2.close(); // NOLINT(bugprone-unused-return-value)
+                    m2.close();
                 co_return;
             };
             capy::run_async(client_strand)(close_m1());
@@ -3227,9 +3222,9 @@ testFullDuplexMtStrand(StreamFactory make_stream)
     BOOST_TEST(server_done);
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 /** Test that a trailing flush failure is deferred to the next operation.
@@ -3312,9 +3307,9 @@ testDeferredFlushError(StreamFactory make_stream)
             {
                 failsafe_hit = true;
                 if (m1.is_open())
-                    m1.close(); // NOLINT(bugprone-unused-return-value)
+                    m1.close();
                 if (m2.is_open())
-                    m2.close(); // NOLINT(bugprone-unused-return-value)
+                    m2.close();
             }
         };
         capy::run_async(ioc.get_executor())(write2());
@@ -3327,9 +3322,9 @@ testDeferredFlushError(StreamFactory make_stream)
         BOOST_TEST_EQ(n2, 0u);
 
         if (m1.is_open())
-            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
         if (m2.is_open())
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close();
     }
 
     // Read side: the same stash surfaces when the next operation after
@@ -3397,9 +3392,9 @@ testDeferredFlushError(StreamFactory make_stream)
             {
                 failsafe_hit = true;
                 if (m1.is_open())
-                    m1.close(); // NOLINT(bugprone-unused-return-value)
+                    m1.close();
                 if (m2.is_open())
-                    m2.close(); // NOLINT(bugprone-unused-return-value)
+                    m2.close();
             }
         };
         capy::run_async(ioc.get_executor())(read1());
@@ -3434,9 +3429,9 @@ testDeferredFlushError(StreamFactory make_stream)
             {
                 failsafe_hit2 = true;
                 if (m1.is_open())
-                    m1.close(); // NOLINT(bugprone-unused-return-value)
+                    m1.close();
                 if (m2.is_open())
-                    m2.close(); // NOLINT(bugprone-unused-return-value)
+                    m2.close();
             }
         };
         capy::run_async(ioc.get_executor())(read2());
@@ -3453,9 +3448,9 @@ testDeferredFlushError(StreamFactory make_stream)
         BOOST_TEST_EQ(n3, 0u);
 
         if (m1.is_open())
-            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
         if (m2.is_open())
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close();
     }
 
     // shutdown() surfaces a stash left by an earlier deferred flush.
@@ -3518,9 +3513,9 @@ testDeferredFlushError(StreamFactory make_stream)
             {
                 failsafe_hit = true;
                 if (m1.is_open())
-                    m1.close(); // NOLINT(bugprone-unused-return-value)
+                    m1.close();
                 if (m2.is_open())
-                    m2.close(); // NOLINT(bugprone-unused-return-value)
+                    m2.close();
             }
         };
         capy::run_async(ioc.get_executor())(shutdown_task());
@@ -3541,9 +3536,9 @@ testDeferredFlushError(StreamFactory make_stream)
         BOOST_TEST(sec != capy::cond::stream_truncated);
 
         if (m1.is_open())
-            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
         if (m2.is_open())
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close();
     }
 }
 
@@ -3620,9 +3615,9 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         BOOST_TEST(!c_sd2);
 
         if (m1.is_open())
-            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
         if (m2.is_open())
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close();
     }
 
     // (b) read_some after a completed shutdown.
@@ -3650,10 +3645,10 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         ioc.restart();
 
         auto client_sd = [&]() -> capy::task<> {
-            (void)co_await client.shutdown();
+            std::ignore = co_await client.shutdown();
         };
         auto server_sd = [&]() -> capy::task<> {
-            (void)co_await server.shutdown();
+            std::ignore = co_await server.shutdown();
         };
         capy::run_async(ioc.get_executor())(client_sd());
         capy::run_async(ioc.get_executor())(server_sd());
@@ -3680,9 +3675,9 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         BOOST_TEST_EQ(rd_n, 0u);
 
         if (m1.is_open())
-            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
         if (m2.is_open())
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close();
     }
 
     // write_some after a completed shutdown, on its own transport so its
@@ -3711,10 +3706,10 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         ioc.restart();
 
         auto client_sd = [&]() -> capy::task<> {
-            (void)co_await client.shutdown();
+            std::ignore = co_await client.shutdown();
         };
         auto server_sd = [&]() -> capy::task<> {
-            (void)co_await server.shutdown();
+            std::ignore = co_await server.shutdown();
         };
         capy::run_async(ioc.get_executor())(client_sd());
         capy::run_async(ioc.get_executor())(server_sd());
@@ -3740,9 +3735,9 @@ testTlsLifecycleEdges(StreamFactory make_stream)
             {
                 wfailsafe_hit = true;
                 if (m1.is_open())
-                    m1.close(); // NOLINT(bugprone-unused-return-value)
+                    m1.close();
                 if (m2.is_open())
-                    m2.close(); // NOLINT(bugprone-unused-return-value)
+                    m2.close();
             }
         };
         capy::run_async(ioc.get_executor())(write_op());
@@ -3765,9 +3760,9 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         }
 
         if (m1.is_open())
-            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
         if (m2.is_open())
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close();
     }
 
     // (c) zero-length buffer sequences: clean { {}, 0 } completion,
@@ -3816,9 +3811,9 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         BOOST_TEST_EQ(rn, 0u);
 
         if (m1.is_open())
-            m1.close(); // NOLINT(bugprone-unused-return-value)
+            m1.close();
         if (m2.is_open())
-            m2.close(); // NOLINT(bugprone-unused-return-value)
+            m2.close();
     }
 }
 
@@ -3883,7 +3878,7 @@ testShutdownTruncation(StreamFactory make_stream)
         {
             failsafe_hit = true;
             if (m2.is_open())
-                m2.close(); // NOLINT(bugprone-unused-return-value)
+                m2.close();
         }
     };
 
@@ -3897,9 +3892,9 @@ testShutdownTruncation(StreamFactory make_stream)
     BOOST_TEST(shutdown_ec == capy::cond::stream_truncated);
 
     if (m1.is_open())
-        m1.close(); // NOLINT(bugprone-unused-return-value)
+        m1.close();
     if (m2.is_open())
-        m2.close(); // NOLINT(bugprone-unused-return-value)
+        m2.close();
 }
 
 } // namespace boost::corosio::test

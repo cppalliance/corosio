@@ -84,7 +84,8 @@ struct patterns_page_test
         capy::run_async(ioc.get_executor())(task(m));
         ioc.run();
 
-        auto ec = m.close();   // !ec means everything was written
+        auto ec = m.verify();  // !ec means everything was written
+        m.close();
         // end::request_format[]
         BOOST_TEST(!ec);
         peer.close();
@@ -113,7 +114,8 @@ struct patterns_page_test
         ioc.restart();
 
         // A clean close proves the consumer read the whole response.
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 
@@ -141,7 +143,8 @@ struct patterns_page_test
         ioc.restart();
 
         // A clean close proves the loop consumed all 8 staged bytes.
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 
@@ -157,7 +160,8 @@ struct patterns_page_test
         // e.g., openssl_stream tls(&under, tls_ctx);
         // end::layering[]
         BOOST_TEST(under.is_open());
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 
@@ -209,7 +213,8 @@ struct patterns_page_test
         m.expect("never written");
 
         // tag::close_verification[]
-        auto ec = m.close();
+        auto ec = m.verify();
+        m.close();
         // ec == capy::error::test_failure means leftover provide() data was
         // never read, or expect() data was never written. Either way, the test
         // would have passed silently without this check.

@@ -46,6 +46,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <type_traits>
 
 #include "context.hpp"
@@ -90,6 +91,37 @@ struct local_stream_socket_test
         local_stream_socket s2(std::move(s1));
         BOOST_TEST_EQ(s2.is_open(), true);
         BOOST_TEST_EQ(s1.is_open(), false);
+    }
+
+    void testAcceptorConvenienceConstructor()
+    {
+        io_context ioc(Backend);
+        test::temp_socket_dir tmp;
+        local_endpoint ep(tmp.path());
+
+        local_stream_acceptor acc(ioc, ep);
+        BOOST_TEST(acc.is_open());
+
+        // Opening an already-open acceptor is a no-op reporting success.
+        BOOST_TEST(!acc.open());
+        BOOST_TEST(acc.is_open());
+        BOOST_TEST_EQ(acc.local_endpoint().path(), tmp.path());
+
+        // A second acceptor on the same path surfaces the bind
+        // conflict by throwing system_error.
+        std::error_code caught;
+        try
+        {
+            local_stream_acceptor dup(ioc, ep);
+            BOOST_TEST_FAIL();
+        }
+        catch (std::system_error const& e)
+        {
+            caught = e.code();
+        }
+        BOOST_TEST(caught == std::errc::address_in_use);
+
+        acc.close();
     }
 
     void testConnectAccept()
@@ -402,29 +434,27 @@ struct local_stream_socket_test
         capy::run_async(ex)(
             [](local_stream_acceptor& a, local_stream_socket& s)
                 -> capy::task<> {
-                (void)co_await a.accept(s);
+                std::ignore = co_await a.accept(s);
             }(acc, server));
 
         capy::run_async(ex)(
             [](local_stream_socket& s, local_endpoint ep) -> capy::task<> {
-                (void)co_await s.connect(ep);
+                std::ignore = co_await s.connect(ep);
             }(client, local_endpoint(path)));
 
         ioc.run();
         ioc.restart();
 
         // Endpoint accessors hit the backend
-        auto cl = client.local_endpoint();
+        [[maybe_unused]] auto cl = client.local_endpoint();
         auto cr = client.remote_endpoint();
         auto sl = server.local_endpoint();
-        auto sr = server.remote_endpoint();
+        [[maybe_unused]] auto sr = server.remote_endpoint();
         // server local should match the listening path
         BOOST_TEST_EQ(sl.path(), path);
         // client remote should match the listening path
         BOOST_TEST_EQ(cr.path(), path);
         // touch the others so the lines exec
-        (void)cl;
-        (void)sr;
     }
 
     void testShutdown()
@@ -462,9 +492,8 @@ struct local_stream_socket_test
         std::error_code read_ec;
         auto reader = [&]() -> capy::task<> {
             char buf[4];
-            auto [ec, n] = co_await s1.read_some(
+            [[maybe_unused]] auto [ec, n] = co_await s1.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             read_ec   = ec;
             read_done = true;
         };
@@ -521,9 +550,8 @@ struct local_stream_socket_test
         bool got = false;
         auto writer = [&]() -> capy::task<> {
             char const out[] = "ok";
-            auto [wec, wn] = co_await s2.write_some(
+            [[maybe_unused]] auto [wec, wn] = co_await s2.write_some(
                 capy::const_buffer(out, 2));
-            (void)wn;
             BOOST_TEST(!wec);
         };
         auto reader = [&]() -> capy::task<> {
@@ -603,7 +631,7 @@ struct local_stream_socket_test
         std::error_code caught;
         try
         {
-            (void)sock.release();
+            std::ignore = sock.release();
         }
         catch (std::system_error const& e)
         {
@@ -620,7 +648,7 @@ struct local_stream_socket_test
         std::error_code caught;
         try
         {
-            (void)sock.available();
+            std::ignore = sock.available();
         }
         catch (std::system_error const& e)
         {
@@ -655,7 +683,7 @@ struct local_stream_socket_test
         // of failing it, retract it so the test reports the miss
         // instead of hanging the suite.
         auto watchdog = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
             if (!done)
                 client.cancel();
         };
@@ -695,7 +723,7 @@ struct local_stream_socket_test
 
         // Schedule a cancel after a brief delay
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             acc.cancel();
         };
         capy::run_async(ex)(canceller());
@@ -733,7 +761,7 @@ struct local_stream_socket_test
             accept_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -765,7 +793,7 @@ struct local_stream_socket_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -792,14 +820,13 @@ struct local_stream_socket_test
         char buf[16];
 
         auto reader = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.read_some(
+            [[maybe_unused]] auto [ec, n] = co_await s1.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             read_ec   = ec;
             read_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -827,14 +854,13 @@ struct local_stream_socket_test
         char buf[16];
 
         auto reader = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.read_some(
+            [[maybe_unused]] auto [ec, n] = co_await s1.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             read_ec   = ec;
             read_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -932,7 +958,7 @@ struct local_stream_socket_test
         try
         {
             acc.set_option(socket_option::reuse_address(true));
-            (void)acc.get_option<socket_option::reuse_address>();
+            std::ignore = acc.get_option<socket_option::reuse_address>();
         }
         catch (std::system_error const&)
         {
@@ -1008,7 +1034,7 @@ struct local_stream_socket_test
             wait_done  = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             acc.cancel();
         };
 
@@ -1097,7 +1123,7 @@ struct local_stream_socket_test
         // failing it, retract it so the test reports the miss
         // instead of hanging the suite.
         auto watchdog = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
             if (!accept_done)
                 acc.cancel();
         };
@@ -1130,13 +1156,13 @@ struct local_stream_socket_test
         local_stream_socket server(ioc);
 
         auto acceptor_task = [&]() -> capy::task<> {
-            (void)co_await acc.accept(server);
+            std::ignore = co_await acc.accept(server);
         };
         capy::run_async(ex)(acceptor_task());
 
         // Run the coroutine to its parked suspension point only, then
         // fall off the end of the scope with the accept outstanding.
-        (void)ioc.run_one();
+        std::ignore = ioc.run_one();
         BOOST_TEST_PASS();
     }
 
@@ -1153,12 +1179,12 @@ struct local_stream_socket_test
 
         char buf[16];
         auto reader = [&]() -> capy::task<> {
-            (void)co_await s1.read_some(
+            std::ignore = co_await s1.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
         };
         capy::run_async(ex)(reader());
 
-        (void)ioc.run_one();
+        std::ignore = ioc.run_one();
         BOOST_TEST_PASS();
     }
 
@@ -1218,7 +1244,7 @@ struct local_stream_socket_test
         bool sock_get_threw = false;
         try
         {
-            (void)s1.get_option<socket_option::no_delay>();
+            std::ignore = s1.get_option<socket_option::no_delay>();
         }
         catch (std::system_error const& e)
         {
@@ -1243,7 +1269,7 @@ struct local_stream_socket_test
         bool get_threw = false;
         try
         {
-            (void)acc.get_option<socket_option::no_delay>();
+            std::ignore = acc.get_option<socket_option::no_delay>();
         }
         catch (std::system_error const& e)
         {
@@ -1299,7 +1325,7 @@ struct local_stream_socket_test
         bool caught = false;
         try
         {
-            (void)acc.release();
+            std::ignore = acc.release();
         }
         catch (std::system_error const&)
         {
@@ -1376,10 +1402,9 @@ struct local_stream_socket_test
             auto [cec] = co_await client.connect(local_endpoint(path));
             BOOST_TEST(!cec);
             char const out[] = "ping";
-            auto [wec, wn] =
+            [[maybe_unused]] auto [wec, wn] =
                 co_await client.write_some(capy::const_buffer(out, 4));
             BOOST_TEST(!wec);
-            (void)wn;
         };
 
         auto ex = ioc.get_executor();
@@ -1503,10 +1528,9 @@ struct local_stream_socket_test
             auto [cec] = co_await client.connect(local_endpoint(path));
             BOOST_TEST(!cec);
             char const out[] = "ping";
-            auto [wec, wn] =
+            [[maybe_unused]] auto [wec, wn] =
                 co_await client.write_some(capy::const_buffer(out, 4));
             BOOST_TEST(!wec);
-            (void)wn;
         };
 
         capy::run_async(ex)(server());
@@ -1536,8 +1560,7 @@ struct local_stream_socket_test
         bool caught = false;
         try
         {
-            local_endpoint ep(too_long);
-            (void)ep;
+            [[maybe_unused]] local_endpoint ep(too_long);
         }
         catch (std::system_error const&)
         {
@@ -1600,6 +1623,7 @@ struct local_stream_socket_test
         testMove();
         testMoveAssign();
         testCancelOnClosedSocket();
+        testAcceptorConvenienceConstructor();
         testNativeHandleClosed();
         testEndpointsClosed();
         testConnectAccept();
@@ -1686,7 +1710,7 @@ struct local_stream_socket_test
         capy::run_async(ex)(
             [](local_stream_socket& s, char const* data, std::size_t len,
                bool& d) -> capy::task<> {
-                (void)co_await capy::write(s, capy::const_buffer(data, len));
+                std::ignore = co_await capy::write(s, capy::const_buffer(data, len));
                 d = true;
             }(s1, msg, std::strlen(msg), done));
 
@@ -1746,9 +1770,8 @@ struct local_stream_socket_test
 #endif
 
         auto reader = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.read_some(
+            [[maybe_unused]] auto [ec, n] = co_await s1.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             read_ec   = ec;
             read_done = true;
         };

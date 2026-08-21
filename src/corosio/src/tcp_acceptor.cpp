@@ -164,7 +164,7 @@ tcp_acceptor::close() noexcept
 }
 
 void
-tcp_acceptor::cancel()
+tcp_acceptor::cancel() noexcept
 {
     if (!is_open())
         return;

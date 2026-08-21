@@ -20,6 +20,7 @@
 
 #include <array>
 #include <system_error>
+#include <tuple>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -69,11 +70,10 @@ struct error_conditions_test
 
         auto reader = [&](tcp_socket& b) -> capy::task<> {
             char buf[32] = {};
-            auto [ec, n] =
+            [[maybe_unused]] auto [ec, n] =
                 co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             read_ec   = ec;
             read_done = true;
-            (void)n;
         };
         auto closer = [](tcp_socket& a) -> capy::task<> {
             a.close(); // graceful FIN
@@ -106,11 +106,10 @@ struct error_conditions_test
         // exact IOCP scenario that yields ERROR_NETNAME_DELETED.
         auto reader = [&](tcp_socket& b) -> capy::task<> {
             char buf[32] = {};
-            auto [ec, n] =
+            [[maybe_unused]] auto [ec, n] =
                 co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             read_ec   = ec;
             read_done = true;
-            (void)n;
         };
         auto closer = [](tcp_socket& a) -> capy::task<> {
             a.close(); // RST via SO_LINGER{on,0}
@@ -145,7 +144,7 @@ struct error_conditions_test
             b.close(); // peer dies (RST)
 
             // Let the RST propagate before writing.
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             // Keep writing until the failure surfaces. The budget (256 x 64 KiB
             // = 16 MiB) is far beyond any platform's send buffer + in-flight
@@ -155,10 +154,9 @@ struct error_conditions_test
             std::array<char, 65536> buf{};
             for (int i = 0; i < 256; ++i)
             {
-                auto [ec, n] = co_await a.write_some(
+                [[maybe_unused]] auto [ec, n] = co_await a.write_some(
                     capy::const_buffer(buf.data(), buf.size()));
                 write_ec = ec;
-                (void)n;
                 if (ec)
                 {
                     write_failed = true;

@@ -36,6 +36,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <tuple>
 #include <cstdio>
 #include <cstring>
 #include <stop_token>
@@ -278,7 +279,7 @@ struct tls_concurrent_io_stress_impl
 
         // Stopper: wait for duration then close all sockets
         auto stopper = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::seconds(duration));
+            std::ignore = co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
 
             sa1.close();
@@ -355,7 +356,7 @@ struct tls_cancel_handshake_stress_impl
             // Server: wait for ClientHello then trigger cancellation
             auto server_task = [&s2, &stop_src]() -> capy::task<> {
                 char buf[1];
-                (void)co_await s2.read_some(capy::mutable_buffer(buf, 1));
+                std::ignore = co_await s2.read_some(capy::mutable_buffer(buf, 1));
                 stop_src.request_stop();
             };
 

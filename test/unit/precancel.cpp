@@ -67,16 +67,14 @@ struct precancel_test
         int done = 0;
 
         auto reader = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.read_some(
+            [[maybe_unused]] auto [ec, n] = co_await s1.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             read_ec = ec;
             ++done;
         };
         auto writer = [&]() -> capy::task<> {
-            auto [ec, n] =
+            [[maybe_unused]] auto [ec, n] =
                 co_await s1.write_some(capy::const_buffer("x", 1));
-            (void)n;
             write_ec = ec;
             ++done;
         };
@@ -178,16 +176,14 @@ struct precancel_test
         int done = 0;
 
         auto send_to_task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.send_to(
+            [[maybe_unused]] auto [ec, n] = co_await s1.send_to(
                 capy::const_buffer("x", 1), peer_ep);
-            (void)n;
             send_to_ec = ec;
             ++done;
         };
         auto recv_from_task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.recv_from(
+            [[maybe_unused]] auto [ec, n] = co_await s1.recv_from(
                 capy::mutable_buffer(buf, sizeof(buf)), source);
-            (void)n;
             recv_from_ec = ec;
             ++done;
         };
@@ -232,15 +228,13 @@ struct precancel_test
 
         std::error_code send_ec, recv_ec;
         auto send_task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.send(capy::const_buffer("x", 1));
-            (void)n;
+            [[maybe_unused]] auto [ec, n] = co_await s1.send(capy::const_buffer("x", 1));
             send_ec = ec;
             ++done;
         };
         auto recv_task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.recv(
+            [[maybe_unused]] auto [ec, n] = co_await s1.recv(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             recv_ec = ec;
             ++done;
         };
@@ -272,16 +266,14 @@ struct precancel_test
         int done = 0;
 
         auto reader = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.read_some(
+            [[maybe_unused]] auto [ec, n] = co_await s1.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             read_ec = ec;
             ++done;
         };
         auto writer = [&]() -> capy::task<> {
-            auto [ec, n] =
+            [[maybe_unused]] auto [ec, n] =
                 co_await s1.write_some(capy::const_buffer("x", 1));
-            (void)n;
             write_ec = ec;
             ++done;
         };
@@ -362,15 +354,13 @@ struct precancel_test
         int done = 0;
 
         auto send_task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.send(capy::const_buffer("x", 1));
-            (void)n;
+            [[maybe_unused]] auto [ec, n] = co_await s1.send(capy::const_buffer("x", 1));
             send_ec = ec;
             ++done;
         };
         auto recv_task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.recv(
+            [[maybe_unused]] auto [ec, n] = co_await s1.recv(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             recv_ec = ec;
             ++done;
         };
@@ -414,16 +404,14 @@ struct precancel_test
         int done = 0;
 
         auto send_to_task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.send_to(
+            [[maybe_unused]] auto [ec, n] = co_await s1.send_to(
                 capy::const_buffer("x", 1), local_endpoint(tmp2.path()));
-            (void)n;
             send_to_ec = ec;
             ++done;
         };
         auto recv_from_task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.recv_from(
+            [[maybe_unused]] auto [ec, n] = co_await s1.recv_from(
                 capy::mutable_buffer(buf, sizeof(buf)), source);
-            (void)n;
             recv_from_ec = ec;
             ++done;
         };

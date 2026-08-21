@@ -112,7 +112,7 @@ tcp_socket::close() noexcept
 }
 
 void
-tcp_socket::cancel()
+tcp_socket::cancel() noexcept
 {
     if (!is_open())
         return;

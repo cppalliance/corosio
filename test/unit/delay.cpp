@@ -339,9 +339,8 @@ struct delay_test
 
         auto t = [](std::chrono::steady_clock::duration& out) -> capy::task<> {
             auto start = std::chrono::steady_clock::now();
-            auto [ec]  = co_await delay(std::chrono::milliseconds(50));
+            [[maybe_unused]] auto [ec]  = co_await delay(std::chrono::milliseconds(50));
             out        = std::chrono::steady_clock::now() - start;
-            (void)ec;
         };
         capy::run_async(ioc.get_executor())(t(elapsed));
 
@@ -409,8 +408,7 @@ struct delay_test
                     ~guard() { ++c_; }
                 };
                 guard g{counter};
-                auto [ec] = co_await delay(std::chrono::hours(1));
-                (void)ec;
+                [[maybe_unused]] auto [ec] = co_await delay(std::chrono::hours(1));
             };
 
             capy::run_async(ioc.get_executor())(task(destroyed));
@@ -439,8 +437,7 @@ struct delay_test
                     ~guard() { ++c_; }
                 };
                 guard g{counter};
-                auto [ec] = co_await delay(std::chrono::hours(ms));
-                (void)ec;
+                [[maybe_unused]] auto [ec] = co_await delay(std::chrono::hours(ms));
             };
 
             capy::run_async(ex)(task(1, destroyed));
@@ -471,8 +468,7 @@ struct delay_test
                     ~guard() { ++c_; }
                 };
                 guard g{counter};
-                auto [ec] = co_await delay(std::chrono::hours(1));
-                (void)ec;
+                [[maybe_unused]] auto [ec] = co_await delay(std::chrono::hours(1));
             };
 
             capy::run_async(ioc.get_executor(), src.get_token())(
@@ -578,8 +574,7 @@ struct delay_test
         std::vector<int> order;
 
         auto d = [](int ms, int id, std::vector<int>& out) -> capy::task<> {
-            auto [ec] = co_await delay(std::chrono::milliseconds(ms));
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await delay(std::chrono::milliseconds(ms));
             out.push_back(id);
         };
 
@@ -611,8 +606,7 @@ struct delay_test
 
             auto waiter = [](bool& started_out) -> capy::task<> {
                 started_out = true;
-                auto [ec]   = co_await delay(std::chrono::hours(1));
-                (void)ec;
+                [[maybe_unused]] auto [ec]   = co_await delay(std::chrono::hours(1));
             };
             auto stopper = [](io_context& ctx) -> capy::task<> {
                 ctx.stop();
@@ -646,15 +640,13 @@ struct delay_test
             auto delay_frame = [](int& counter) -> capy::task<> {
                 struct guard { int& c_; ~guard() { ++c_; } };
                 guard g{counter};
-                auto [ec] = co_await delay(std::chrono::hours(1));
-                (void)ec;
+                [[maybe_unused]] auto [ec] = co_await delay(std::chrono::hours(1));
             };
             auto timeout_frame = [](int& counter) -> capy::task<> {
                 struct guard { int& c_; ~guard() { ++c_; } };
                 guard g{counter};
-                auto [ec] = co_await timeout(
+                [[maybe_unused]] auto [ec] = co_await timeout(
                     delay(std::chrono::hours(1)), std::chrono::hours(1));
-                (void)ec;
             };
 
             capy::run_async(ex)(delay_frame(destroyed));
@@ -685,8 +677,8 @@ struct delay_test
 
             auto task =
                 [](std::atomic<int>& done, int ms) -> capy::task<> {
-                auto [ec] = co_await delay(std::chrono::milliseconds(ms));
-                (void)ec; // success or canceled — both acceptable
+                [[maybe_unused]] auto [ec] = co_await delay(std::chrono::milliseconds(ms));
+                // success or canceled — both acceptable
                 done.fetch_add(1, std::memory_order_relaxed);
             };
 
@@ -869,8 +861,7 @@ struct delay_test
                 };
                 guard g{counter};
                 auto tp = test_clock::now() + std::chrono::hours(1);
-                auto [ec] = co_await delay<hold_traits>(tp);
-                (void)ec;
+                [[maybe_unused]] auto [ec] = co_await delay<hold_traits>(tp);
             };
 
             capy::run_async(ioc.get_executor())(task(destroyed));
@@ -912,8 +903,8 @@ struct delay_test
             auto task = [](std::atomic<int>& done) -> capy::task<> {
                 auto tp = test_clock::now() +
                     std::chrono::milliseconds(50);
-                auto [ec] = co_await delay<race_traits>(tp);
-                (void)ec; // success or canceled — both acceptable
+                [[maybe_unused]] auto [ec] = co_await delay<race_traits>(tp);
+                // success or canceled — both acceptable
                 done.fetch_add(1, std::memory_order_relaxed);
             };
 

@@ -371,7 +371,7 @@ win_signal::clear()
 }
 
 inline void
-win_signal::cancel()
+win_signal::cancel() noexcept
 {
     svc_.cancel_wait(*this);
 }

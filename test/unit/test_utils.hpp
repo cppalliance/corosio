@@ -27,6 +27,7 @@
 #include "test_suite.hpp"
 
 #include <chrono>
+#include <tuple>
 #include <stop_token>
 #include <type_traits>
 #include <vector>
@@ -95,10 +96,10 @@ make_native_socket(int family, int type)
     @param h The descriptor to configure.
 */
 inline void
-make_native_adoptable(native_handle_type h)
+make_native_adoptable([[maybe_unused]] native_handle_type h)
 {
 #if BOOST_COROSIO_HAS_IOCP
-    (void)h; // WSA_FLAG_OVERLAPPED is set at creation
+    // WSA_FLAG_OVERLAPPED is set at creation.
 #else
     int fd    = static_cast<int>(h);
     int flags = ::fcntl(fd, F_GETFL);
@@ -2348,7 +2349,7 @@ run_stop_token_handshake_test(
     auto server_task = [&s2, &stop_src]() -> capy::task<> {
         // Wait for client to send ClientHello (proves client started handshake)
         char buf[1];
-        (void)co_await s2.read_some(capy::mutable_buffer(buf, 1));
+        std::ignore = co_await s2.read_some(capy::mutable_buffer(buf, 1));
         // Client is now blocked waiting for ServerHello - cancel it
         stop_src.request_stop();
     };
@@ -2571,13 +2572,10 @@ run_shutdown_cancel_test(
     auto server_drain_then_cancel = [&server, &stop_src, &s1,
                                      mode]() -> capy::task<> {
         char buf[64];
-        auto [ec, n] =
+        [[maybe_unused]] auto [ec, n] =
             co_await server.read_some(capy::mutable_buffer(buf, sizeof(buf)));
-        (void)ec;
-        (void)n;
-        auto [dec] = co_await corosio::delay(
+        [[maybe_unused]] auto [dec] = co_await corosio::delay(
             std::chrono::milliseconds(20 * failsafe_scale));
-        (void)dec;
         if (mode == shutdown_cancel_mode::socket_cancel)
             s1.cancel();
         else
@@ -2694,7 +2692,7 @@ run_stop_token_write_test(
     auto server_cancel = [&s2, &stop_src]() -> capy::task<> {
         // Wait for client to send some data (proves client started writing)
         char buf[1];
-        (void)co_await s2.read_some(capy::mutable_buffer(buf, 1));
+        std::ignore = co_await s2.read_some(capy::mutable_buffer(buf, 1));
         // Client is now writing - cancel it
         stop_src.request_stop();
     };
@@ -2777,7 +2775,7 @@ run_socket_cancel_test(
     auto server_task = [&s1, &s2]() -> capy::task<> {
         // Wait for client to send ClientHello (proves client started handshake)
         char buf[1];
-        (void)co_await s2.read_some(capy::mutable_buffer(buf, 1));
+        std::ignore = co_await s2.read_some(capy::mutable_buffer(buf, 1));
         // Client is now blocked waiting for ServerHello - cancel its socket
         s1.cancel();
     };

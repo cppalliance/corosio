@@ -151,8 +151,8 @@ namespace {
 // Pre-create services that must exist before construct() runs.
 void
 pre_create_services(
-    capy::execution_context& ctx,
-    io_context_options const& opts)
+    [[maybe_unused]] capy::execution_context& ctx,
+    [[maybe_unused]] io_context_options const& opts)
 {
 #if BOOST_COROSIO_POSIX
     if (opts.thread_pool_size < 1)
@@ -166,8 +166,6 @@ pre_create_services(
         ctx.make_service<detail::thread_pool>(opts.thread_pool_size);
 #endif
 
-    (void)ctx;
-    (void)opts;
 }
 
 // Map the locking tier to the scheduler's threading facilities. one_thread is
@@ -188,9 +186,9 @@ make_threading_config(io_context_options const& opts)
 // runs post everything for cross-thread work-stealing.
 void
 apply_scheduler_options(
-    detail::scheduler& sched,
-    io_context_options const& opts,
-    unsigned concurrency_hint)
+    [[maybe_unused]] detail::scheduler& sched,
+    [[maybe_unused]] io_context_options const& opts,
+    [[maybe_unused]] unsigned concurrency_hint)
 {
     sched.configure_threading(make_threading_config(opts));
 
@@ -238,9 +236,6 @@ apply_scheduler_options(
     }
 #endif
 
-    (void)sched;
-    (void)opts;
-    (void)concurrency_hint;
 }
 
 detail::scheduler&

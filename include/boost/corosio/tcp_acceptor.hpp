@@ -399,7 +399,7 @@ public:
 
         @see accept()
     */
-    auto accept(tcp_socket& peer)
+    [[nodiscard]] auto accept(tcp_socket& peer)
     {
         accept_awaitable aw(*this, peer);
         if (!is_open())
@@ -443,7 +443,7 @@ public:
 
         @see accept(tcp_socket&)
     */
-    auto accept()
+    [[nodiscard]] auto accept()
     {
         accept_value_awaitable aw(*this);
         if (!is_open())
@@ -487,7 +487,7 @@ public:
         All outstanding operations complete with `errc::operation_canceled`.
         Check `ec == cond::canceled` for portable comparison.
     */
-    void cancel();
+    void cancel() noexcept;
 
     /** Get the native socket handle.
 

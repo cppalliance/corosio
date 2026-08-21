@@ -12,6 +12,8 @@
 
 #include <boost/corosio/detail/config.hpp>
 
+#include <boost/capy/io_result.hpp>
+
 #include <string>
 
 namespace boost::corosio {
@@ -27,20 +29,20 @@ namespace boost::corosio {
     been initialized.
 
     @par Exception Safety
-    Strong guarantee.
+    Strong guarantee; throws only on allocation failure.
 
     @par Example
     @code
-    std::string h = boost::corosio::host_name();
+    auto [ec, h] = boost::corosio::host_name();
+    if (ec)
+        return;
     std::cout << "running on " << h << "\n";
     @endcode
 
-    @return The hostname as a UTF-8 string.
-
-    @throws std::system_error If the underlying system call fails.
+    @return The error code, empty on success, and the hostname as a
+        UTF-8 string — empty on failure.
 */
-BOOST_COROSIO_DECL
-std::string
+[[nodiscard]] BOOST_COROSIO_DECL capy::io_result<std::string>
 host_name();
 
 } // namespace boost::corosio

@@ -76,7 +76,8 @@ public:
             }
         }
         throw std::runtime_error(
-            "temp_socket_dir: could not create temp directory");
+            "temp_socket_dir: could not create temp directory: " +
+            ec.message());
     }
 
     ~temp_socket_dir() noexcept

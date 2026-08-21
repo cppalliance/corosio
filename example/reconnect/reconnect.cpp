@@ -187,8 +187,8 @@ main(int argc, char* argv[])
     }
 
     // Parse IP address
-    corosio::ipv4_address addr;
-    if (auto ec = corosio::parse_ipv4_address(argv[1], addr); ec)
+    auto [aec, addr] = corosio::make_ipv4_address(argv[1]);
+    if (aec)
     {
         std::cerr << "Invalid IP address: " << argv[1] << "\n";
         return EXIT_FAILURE;

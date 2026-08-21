@@ -65,8 +65,8 @@ parse_port(std::string_view s, std::uint16_t& port) noexcept
 
 } // namespace
 
-std::error_code
-parse_endpoint(std::string_view s, endpoint& ep) noexcept
+static std::error_code
+parse_endpoint_impl(std::string_view s, endpoint& ep) noexcept
 {
     if (s.empty())
         return std::make_error_code(std::errc::invalid_argument);
@@ -77,8 +77,7 @@ parse_endpoint(std::string_view s, endpoint& ep) noexcept
     {
     case endpoint_format::ipv4_no_port:
     {
-        ipv4_address addr;
-        auto ec = parse_ipv4_address(s, addr);
+        auto [ec, addr] = make_ipv4_address(s);
         if (ec)
             return ec;
         ep = endpoint(addr, 0);
@@ -95,8 +94,7 @@ parse_endpoint(std::string_view s, endpoint& ep) noexcept
         auto addr_str = s.substr(0, colon_pos);
         auto port_str = s.substr(colon_pos + 1);
 
-        ipv4_address addr;
-        auto ec = parse_ipv4_address(addr_str, addr);
+        auto [ec, addr] = make_ipv4_address(addr_str);
         if (ec)
             return ec;
 
@@ -110,8 +108,7 @@ parse_endpoint(std::string_view s, endpoint& ep) noexcept
 
     case endpoint_format::ipv6_no_port:
     {
-        ipv6_address addr;
-        auto ec = parse_ipv6_address(s, addr);
+        auto [ec, addr] = make_ipv6_address(s);
         if (ec)
             return ec;
         ep = endpoint(addr, 0);
@@ -130,8 +127,7 @@ parse_endpoint(std::string_view s, endpoint& ep) noexcept
 
         auto addr_str = s.substr(1, close_bracket - 1);
 
-        ipv6_address addr;
-        auto ec = parse_ipv6_address(addr_str, addr);
+        auto [ec, addr] = make_ipv6_address(addr_str);
         if (ec)
             return ec;
 
@@ -154,6 +150,15 @@ parse_endpoint(std::string_view s, endpoint& ep) noexcept
     default:
         return std::make_error_code(std::errc::invalid_argument);
     }
+}
+
+capy::io_result<endpoint>
+make_endpoint(std::string_view s) noexcept
+{
+    endpoint ep;
+    if (auto ec = parse_endpoint_impl(s, ep))
+        return {ec, endpoint{}};
+    return {std::error_code{}, ep};
 }
 
 } // namespace boost::corosio

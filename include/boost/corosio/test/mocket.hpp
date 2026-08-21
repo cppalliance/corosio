@@ -30,6 +30,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <utility>
 
 namespace boost::corosio::test {
@@ -188,36 +189,37 @@ public:
         expect_.append(s);
     }
 
-    /** Close the mocket and verify test expectations.
+    /** Check that every test expectation was consumed.
 
-        Closes the underlying socket and verifies that both the
-        `expect()` and `provide()` buffers are empty. If either
-        buffer contains unconsumed data, returns `test_failure`
-        and calls `fuse::fail()`.
+        Verifies that both the `expect()` and `provide()` buffers are
+        empty. An unmet expectation also trips the fuse, so even a
+        discarded result still fails the test.
 
-        @return An error code indicating success or failure.
-            Returns `error::test_failure` if buffers are not empty.
+        @return `error::test_failure` if either buffer holds
+            unconsumed data; empty otherwise.
     */
-    std::error_code close()
+    [[nodiscard]] std::error_code verify() noexcept
+    {
+        if (expect_.empty() && provide_.empty())
+            return {};
+        fuse_.fail();
+        return capy::error::test_failure;
+    }
+
+    /** Close the mocket.
+
+        Idempotent, like every `close()` in the library. Unconsumed
+        `expect()`/`provide()` data trips the fuse on the way out; use
+        @ref verify to inspect the outcome as a code.
+    */
+    void close() noexcept
     {
         if (!sock_.is_open())
-            return {};
+            return;
 
-        if (!expect_.empty())
-        {
-            fuse_.fail();
-            sock_.close();
-            return capy::error::test_failure;
-        }
-        if (!provide_.empty())
-        {
-            fuse_.fail();
-            sock_.close();
-            return capy::error::test_failure;
-        }
-
+        // Discarded on purpose: the fuse reports unmet expectations.
+        std::ignore = verify();
         sock_.close();
-        return {};
     }
 
     /** Cancel pending I/O operations.
@@ -225,7 +227,7 @@ public:
         Cancels any pending asynchronous operations on the underlying
         socket. Outstanding operations complete with `cond::canceled`.
     */
-    void cancel()
+    void cancel() noexcept
     {
         sock_.cancel();
     }
@@ -250,7 +252,7 @@ public:
         @return An awaitable yielding `(error_code, std::size_t)`.
     */
     template<class MutableBufferSequence>
-    auto read_some(MutableBufferSequence const& buffers)
+    [[nodiscard]] auto read_some(MutableBufferSequence const& buffers)
     {
         return read_some_awaitable<MutableBufferSequence>(*this, buffers);
     }
@@ -266,7 +268,7 @@ public:
         @return An awaitable yielding `(error_code, std::size_t)`.
     */
     template<class ConstBufferSequence>
-    auto write_some(ConstBufferSequence const& buffers)
+    [[nodiscard]] auto write_some(ConstBufferSequence const& buffers)
     {
         return write_some_awaitable<ConstBufferSequence>(*this, buffers);
     }

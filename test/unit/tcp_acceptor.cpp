@@ -26,6 +26,7 @@
 #include <stdexcept>
 #include <stop_token>
 #include <system_error>
+#include <tuple>
 
 #ifndef _WIN32
 // For the SO_REUSEPORT guard around testReusePort. The corosio public
@@ -209,7 +210,7 @@ struct tcp_acceptor_test
 
         tcp_acceptor closed(ioc);
         BOOST_TEST_THROWS(closed.set_option(socket_option::reuse_address(true)), std::system_error);
-        BOOST_TEST_THROWS((void)closed.get_option<socket_option::reuse_address>(), std::system_error);
+        BOOST_TEST_THROWS(std::ignore = closed.get_option<socket_option::reuse_address>(), std::system_error);
     }
 
     void testMoveConstruct()
@@ -287,11 +288,11 @@ struct tcp_acceptor_test
             capy::run_async(ioc.get_executor())(nested_coro());
 
             // Wait then cancel
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             acc.cancel();
 
             // Wait for accept to complete
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(accept_done);
             BOOST_TEST(accept_ec == capy::cond::canceled);
@@ -327,11 +328,11 @@ struct tcp_acceptor_test
 
         capy::run_async(ex)(
             [](tcp_acceptor& a, tcp_socket& s) -> capy::task<> {
-                (void)co_await a.accept(s);
+                std::ignore = co_await a.accept(s);
             }(acc, server));
         capy::run_async(ex)(
             [](tcp_socket& s, endpoint e) -> capy::task<> {
-                (void)co_await s.connect(e);
+                std::ignore = co_await s.connect(e);
             }(client, ep));
         ioc.run();
         BOOST_TEST(server.is_open());
@@ -341,12 +342,12 @@ struct tcp_acceptor_test
 
         char buf[16];
         auto reader = [&]() -> capy::task<> {
-            (void)co_await server.read_some(
+            std::ignore = co_await server.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
         };
         capy::run_async(ex)(reader());
 
-        (void)ioc.run_one();
+        std::ignore = ioc.run_one();
         BOOST_TEST_PASS();
     }
 
@@ -386,10 +387,10 @@ struct tcp_acceptor_test
             capy::run_async(ioc.get_executor())(nested_coro());
 
             // Wait then close the acceptor
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             acc.close();
 
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(accept_done);
             BOOST_TEST(accept_ec == capy::cond::canceled);
@@ -619,7 +620,7 @@ struct tcp_acceptor_test
 
         // Cancel lingering accept after connect completes
         auto cancel_task = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(200));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(200));
             acc.cancel();
         };
         capy::run_async(ex)(cancel_task());
@@ -900,7 +901,7 @@ struct tcp_acceptor_test
         bool get_threw = false;
         try
         {
-            (void)acc.get_option<socket_option::v6_only>();
+            std::ignore = acc.get_option<socket_option::v6_only>();
         }
         catch (std::system_error const& e)
         {
@@ -1004,7 +1005,7 @@ struct tcp_acceptor_test
             accept_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1099,7 +1100,7 @@ struct tcp_acceptor_test
         // failing it, retract it so the test reports the miss
         // instead of hanging the suite.
         auto watchdog = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
             if (!accept_done)
                 acc.cancel();
         };
@@ -1131,13 +1132,13 @@ struct tcp_acceptor_test
         tcp_socket peer(ioc);
 
         auto acceptor_task = [&]() -> capy::task<> {
-            (void)co_await acc.accept(peer);
+            std::ignore = co_await acc.accept(peer);
         };
         capy::run_async(ex)(acceptor_task());
 
         // Run the coroutine to its parked suspension point only, then
         // fall off the end of the scope with the accept outstanding.
-        (void)ioc.run_one();
+        std::ignore = ioc.run_one();
         BOOST_TEST_PASS();
     }
 
@@ -1180,10 +1181,9 @@ struct tcp_acceptor_test
                    : endpoint(ipv4_address::loopback(), port));
             BOOST_TEST(!cec);
             char const out[] = "ping";
-            auto [wec, wn] =
+            [[maybe_unused]] auto [wec, wn] =
                 co_await client.write_some(capy::const_buffer(out, 4));
             BOOST_TEST(!wec);
-            (void)wn;
         };
 
         auto ex = ioc.get_executor();
@@ -1236,7 +1236,7 @@ struct tcp_acceptor_test
         auto client = make_native_socket(AF_INET, SOCK_STREAM);
         BOOST_TEST(client != invalid_native_socket);
         BOOST_TEST(native_connect_loopback(client, port, false));
-        (void)ioc.poll();
+        std::ignore = ioc.poll();
         ioc.restart();
 
         std::error_code wait_ec;
@@ -1252,7 +1252,7 @@ struct tcp_acceptor_test
         // parks forever; retract the wait so the miss is reported
         // instead of hanging the suite.
         auto watchdog = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
             if (!wait_done)
             {
                 watchdog_fired = true;
@@ -1303,7 +1303,7 @@ struct tcp_acceptor_test
 
         // Pump once with nothing parked so the registration-time
         // readiness edge has already been dispatched and dropped.
-        (void)ioc.poll();
+        std::ignore = ioc.poll();
         ioc.restart();
 
         std::error_code wait_ec;
@@ -1316,7 +1316,7 @@ struct tcp_acceptor_test
             wait_done = true;
         };
         auto watchdog = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
             if (!wait_done)
             {
                 watchdog_fired = true;
@@ -1373,7 +1373,7 @@ struct tcp_acceptor_test
         // Watchdog: a backend that parks the meaningless wait would
         // hang the suite; retract it so the miss is reported.
         auto watchdog = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
             if (!wait_done)
             {
                 watchdog_fired = true;
@@ -1407,7 +1407,7 @@ struct tcp_acceptor_test
 
         // Pump once so the listen-time accept arming is live in the
         // kernel before the descriptor is swapped underneath it.
-        (void)ioc.poll();
+        std::ignore = ioc.poll();
         ioc.restart();
 
         std::uint16_t port = 0;
@@ -1473,7 +1473,7 @@ struct tcp_acceptor_test
 
         // Pump once so the listen-time accept arming is live in the
         // kernel before release() retires it.
-        (void)ioc.poll();
+        std::ignore = ioc.poll();
         ioc.restart();
 
         auto released = acc.release();
@@ -1512,7 +1512,7 @@ struct tcp_acceptor_test
         auto port = acc.local_endpoint().port();
 
         // Pump once so the first arming is live before the re-listen.
-        (void)ioc.poll();
+        std::ignore = ioc.poll();
         ioc.restart();
 
         ec = acc.listen(256);
@@ -1535,7 +1535,7 @@ struct tcp_acceptor_test
         // accept forever; retract it so the theft is reported instead
         // of hanging the suite.
         auto watchdog = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
             if (!accept_done)
             {
                 watchdog_fired = true;
@@ -1574,7 +1574,7 @@ struct tcp_acceptor_test
         auto stale = make_native_socket(AF_INET, SOCK_STREAM);
         BOOST_TEST(stale != invalid_native_socket);
         BOOST_TEST(native_connect_loopback(stale, port_a, false));
-        (void)ioc.poll();
+        std::ignore = ioc.poll();
         ioc.restart();
 
         auto released = acc.release();
@@ -1608,7 +1608,7 @@ struct tcp_acceptor_test
                 accepted_port = peer.local_endpoint().port();
         };
         auto watchdog = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(250));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
             if (!accept_done)
             {
                 watchdog_fired = true;
@@ -1698,7 +1698,7 @@ struct tcp_acceptor_test
         std::error_code caught;
         try
         {
-            (void)acc.release();
+            std::ignore = acc.release();
         }
         catch (std::system_error const& e)
         {

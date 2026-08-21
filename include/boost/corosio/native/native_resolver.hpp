@@ -196,7 +196,7 @@ public:
         @note `resolver_results` is an alias for `std::vector<resolver_entry>`;
             copying it deep-copies every entry. See @ref resolver::resolve.
     */
-    auto resolve(std::string_view host, std::string_view service)
+    [[nodiscard]] auto resolve(std::string_view host, std::string_view service)
     {
         return native_resolve_awaitable(
             *this, host, service, resolve_flags::none);
@@ -212,7 +212,7 @@ public:
 
         @return An awaitable yielding `io_result<resolver_results>`.
     */
-    auto resolve(
+    [[nodiscard]] auto resolve(
         std::string_view host, std::string_view service, resolve_flags flags)
     {
         return native_resolve_awaitable(*this, host, service, flags);
@@ -231,7 +231,7 @@ public:
         @return An awaitable yielding
             `io_result<reverse_resolver_result>`.
     */
-    auto resolve(endpoint const& ep)
+    [[nodiscard]] auto resolve(endpoint const& ep)
     {
         return native_reverse_awaitable(*this, ep, reverse_flags::none);
     }
@@ -246,7 +246,7 @@ public:
         @return An awaitable yielding
             `io_result<reverse_resolver_result>`.
     */
-    auto resolve(endpoint const& ep, reverse_flags flags)
+    [[nodiscard]] auto resolve(endpoint const& ep, reverse_flags flags)
     {
         return native_reverse_awaitable(*this, ep, flags);
     }

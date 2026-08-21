@@ -33,6 +33,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <type_traits>
 
 #include <fcntl.h>
@@ -616,7 +617,7 @@ struct local_datagram_socket_test
         std::error_code caught;
         try
         {
-            (void)sock.release();
+            std::ignore = sock.release();
         }
         catch (std::system_error const& e)
         {
@@ -633,7 +634,7 @@ struct local_datagram_socket_test
         std::error_code caught;
         try
         {
-            (void)sock.available();
+            std::ignore = sock.available();
         }
         catch (std::system_error const& e)
         {
@@ -656,7 +657,7 @@ struct local_datagram_socket_test
         capy::run_async(ex)(
             [](local_datagram_socket& s, char const* m, std::size_t n,
                bool& d) -> capy::task<> {
-                (void)co_await s.send(capy::const_buffer(m, n));
+                std::ignore = co_await s.send(capy::const_buffer(m, n));
                 d = true;
             }(s1, msg, std::strlen(msg), done));
 
@@ -685,9 +686,8 @@ struct local_datagram_socket_test
         std::error_code recv_ec;
         auto reader = [&]() -> capy::task<> {
             char buf[8];
-            auto [ec, n] = co_await d1.recv(
+            [[maybe_unused]] auto [ec, n] = co_await d1.recv(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             recv_ec   = ec;
             recv_done = true;
         };
@@ -755,7 +755,6 @@ struct local_datagram_socket_test
         local_datagram_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
-        (void)s2;
         BOOST_TEST(s1.is_open());
 
         int fd = s1.release();
@@ -782,7 +781,7 @@ struct local_datagram_socket_test
         BOOST_TEST(set_ec == std::errc::bad_file_descriptor);
         try
         {
-            (void)closed.get_option<socket_option::send_buffer_size>();
+            std::ignore = closed.get_option<socket_option::send_buffer_size>();
         }
         catch (std::system_error const& e)
         {
@@ -808,7 +807,7 @@ struct local_datagram_socket_test
         bool get_threw = false;
         try
         {
-            (void)sock.get_option<socket_option::no_delay>();
+            std::ignore = sock.get_option<socket_option::no_delay>();
         }
         catch (std::system_error const& e)
         {
@@ -854,10 +853,9 @@ struct local_datagram_socket_test
     void testCancelPendingRecv()
     {
         io_context ioc(Backend);
-        local_datagram_socket s1(ioc), s2(ioc);
+        [[maybe_unused]] local_datagram_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
-        (void)s1;
 
         auto ex = ioc.get_executor();
         std::error_code recv_ec;
@@ -867,15 +865,14 @@ struct local_datagram_socket_test
             [](local_datagram_socket& s,
                std::error_code& ec_out, bool& done) -> capy::task<> {
                 char buf[8];
-                auto [ec, n] = co_await s.recv(
+                [[maybe_unused]] auto [ec, n] = co_await s.recv(
                     capy::mutable_buffer(buf, sizeof(buf)));
-                (void)n;
                 ec_out = ec;
                 done   = true;
             }(s2, recv_ec, recv_done));
 
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             s2.cancel();
         };
         capy::run_async(ex)(canceller());

@@ -344,7 +344,7 @@ void
 verify_callback(tls_context& ctx)
 {
     // tag::verify_callback[]
-    if (auto ec = ctx.set_verify_callback(
+    ctx.set_verify_callback(
         []( bool preverified, corosio::verify_context& verify_ctx ) -> bool
         {
             if( !preverified )
@@ -353,8 +353,7 @@ verify_callback(tls_context& ctx)
             auto der = verify_ctx.certificate(); // DER of the current cert
             return der.size() == expected_pin.size() &&
                 std::equal( der.begin(), der.end(), expected_pin.begin() );
-        }))
-        return;
+        });
     // end::verify_callback[]
 }
 

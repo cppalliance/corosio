@@ -193,6 +193,22 @@ public:
     */
     explicit local_stream_acceptor(capy::execution_context& ctx);
 
+    /** Convenience constructor: open + bind + listen.
+
+        Creates a fully-bound listening acceptor in a single
+        expression.
+
+        @param ctx The execution context that will own this acceptor.
+        @param ep The local endpoint to bind to.
+        @param backlog The maximum pending connection queue length.
+
+        @throws std::system_error on open, bind, or listen failure.
+    */
+    local_stream_acceptor(
+        capy::execution_context& ctx,
+        corosio::local_endpoint ep,
+        int backlog = 128);
+
     /** Construct an acceptor from an executor.
 
         The acceptor is associated with the executor's context.
@@ -207,6 +223,22 @@ public:
         requires(!std::same_as<std::remove_cvref_t<Ex>, local_stream_acceptor>) &&
         capy::Executor<Ex>
     explicit local_stream_acceptor(Ex const& ex) : local_stream_acceptor(ex.context())
+    {
+    }
+
+    /** Convenience constructor from an executor.
+
+        @param ex The executor whose context will own the acceptor.
+        @param ep The local endpoint to bind to.
+        @param backlog The maximum pending connection queue length.
+
+        @throws std::system_error on open, bind, or listen failure.
+    */
+    template<class Ex>
+        requires capy::Executor<Ex>
+    local_stream_acceptor(
+        Ex const& ex, corosio::local_endpoint ep, int backlog = 128)
+        : local_stream_acceptor(ex.context(), std::move(ep), backlog)
     {
     }
 
@@ -322,7 +354,7 @@ public:
 
         A closed acceptor reports `errc::bad_file_descriptor`.
     */
-    auto accept(local_stream_socket& peer)
+    [[nodiscard]] auto accept(local_stream_socket& peer)
     {
         accept_awaitable aw(*this, peer);
         if (!is_open())
@@ -374,7 +406,7 @@ public:
 
         A closed acceptor reports `errc::bad_file_descriptor`.
     */
-    auto accept()
+    [[nodiscard]] auto accept()
     {
         move_accept_awaitable aw(*this);
         if (!is_open())
@@ -388,7 +420,7 @@ public:
         @c capy::cond::canceled. Safe to call when no
         operations are pending (no-op).
     */
-    void cancel();
+    void cancel() noexcept;
 
     /** Release ownership of the native socket handle.
 

@@ -22,6 +22,7 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+#include <tuple>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -308,9 +309,7 @@ inline capy::task<void>
 when_all_set_event_main(bool& finished)
 {
     capy::async_event evt;
-    auto [ec, a, b] = co_await capy::when_all(evt.wait(), set_event_task(evt));
-    (void)a;
-    (void)b;
+    [[maybe_unused]] auto [ec, a, b] = co_await capy::when_all(evt.wait(), set_event_task(evt));
     BOOST_TEST(!ec);
     finished = true;
 }
@@ -947,7 +946,7 @@ struct io_context_test
         std::thread runner([&]() {
             // 5s ceiling is a safety net only; we release the guard
             // below as soon as work is drained.
-            (void)ioc.run_for(std::chrono::seconds(5));
+            std::ignore = ioc.run_for(std::chrono::seconds(5));
         });
 
         for (int i = 0; i < 8; ++i)

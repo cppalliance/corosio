@@ -274,35 +274,31 @@ struct endpoints_test
     void
     testParseAddresses()
     {
-        // tag::parse_addresses[]
+        // tag::make_addresses[]
         // IPv4
-        corosio::ipv4_address addr;
-        if (auto ec = corosio::parse_ipv4_address("192.168.1.1", addr); !ec)
-        {
-            corosio::endpoint ep(addr, 8080);
-        }
+        auto [ec, addr] = corosio::make_ipv4_address("192.168.1.1");
+        if (ec)
+            return;
+        corosio::endpoint ep(addr, 8080);
 
         // IPv6
-        corosio::ipv6_address addr6;
-        if (auto ec = corosio::parse_ipv6_address("2001:db8::1", addr6); !ec)
-        {
-            corosio::endpoint ep(addr6, 8080);
-        }
-        // end::parse_addresses[]
-        BOOST_TEST(addr.to_string() == "192.168.1.1");
-        BOOST_TEST(addr6.to_string() == "2001:db8::1");
+        auto [ec6, addr6] = corosio::make_ipv6_address("2001:db8::1");
+        if (ec6)
+            return;
+        corosio::endpoint ep6(addr6, 8080);
+        // end::make_addresses[]
+        BOOST_TEST(ep.v4_address().to_string() == "192.168.1.1");
+        BOOST_TEST(ep6.v6_address().to_string() == "2001:db8::1");
     }
 
     void
     testParseEndpoint()
     {
-        // tag::parse_endpoint[]
-        corosio::endpoint ep;
-        if (auto ec = corosio::parse_endpoint("192.168.1.1:8080", ep); !ec)
-        {
-            // Use ep...
-        }
-        // end::parse_endpoint[]
+        // tag::make_endpoint[]
+        auto [ec, ep] = corosio::make_endpoint("192.168.1.1:8080");
+        if (ec)
+            return;
+        // end::make_endpoint[]
         BOOST_TEST(ep.is_v4());
         BOOST_TEST(ep.v4_address().to_string() == "192.168.1.1");
         BOOST_TEST(ep.port() == 8080);

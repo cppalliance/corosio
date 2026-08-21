@@ -465,7 +465,7 @@ posix_signal::clear()
 }
 
 inline void
-posix_signal::cancel()
+posix_signal::cancel() noexcept
 {
     svc_.cancel_wait(*this);
 }

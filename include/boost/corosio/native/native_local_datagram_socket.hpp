@@ -387,7 +387,7 @@ public:
         dispatch. Otherwise identical to @ref local_datagram_socket::send_to.
     */
     template<capy::ConstBufferSequence CB>
-    auto send_to(
+    [[nodiscard]] auto send_to(
         CB const& buffers,
         corosio::local_endpoint dest,
         corosio::message_flags flags)
@@ -400,7 +400,7 @@ public:
 
     /// @overload
     template<capy::ConstBufferSequence CB>
-    auto send_to(CB const& buffers, corosio::local_endpoint dest)
+    [[nodiscard]] auto send_to(CB const& buffers, corosio::local_endpoint dest)
     {
         return send_to(buffers, dest, corosio::message_flags::none);
     }
@@ -411,7 +411,7 @@ public:
         dispatch. Otherwise identical to @ref local_datagram_socket::recv_from.
     */
     template<capy::MutableBufferSequence MB>
-    auto recv_from(
+    [[nodiscard]] auto recv_from(
         MB const& buffers,
         corosio::local_endpoint& source,
         corosio::message_flags flags)
@@ -424,7 +424,7 @@ public:
 
     /// @overload
     template<capy::MutableBufferSequence MB>
-    auto recv_from(MB const& buffers, corosio::local_endpoint& source)
+    [[nodiscard]] auto recv_from(MB const& buffers, corosio::local_endpoint& source)
     {
         return recv_from(buffers, source, corosio::message_flags::none);
     }
@@ -436,7 +436,7 @@ public:
 
         If the socket is not already open, it is opened automatically.
     */
-    auto connect(corosio::local_endpoint ep)
+    [[nodiscard]] auto connect(corosio::local_endpoint ep)
     {
         native_connect_awaitable aw(*this, ep);
         if (!is_open())
@@ -450,7 +450,7 @@ public:
         dispatch. Otherwise identical to @ref local_datagram_socket::send.
     */
     template<capy::ConstBufferSequence CB>
-    auto send(CB const& buffers, corosio::message_flags flags)
+    [[nodiscard]] auto send(CB const& buffers, corosio::message_flags flags)
     {
         native_send_awaitable<CB> aw(*this, buffers, static_cast<int>(flags));
         if (!is_open())
@@ -460,7 +460,7 @@ public:
 
     /// @overload
     template<capy::ConstBufferSequence CB>
-    auto send(CB const& buffers)
+    [[nodiscard]] auto send(CB const& buffers)
     {
         return send(buffers, corosio::message_flags::none);
     }
@@ -471,7 +471,7 @@ public:
         dispatch. Otherwise identical to @ref local_datagram_socket::recv.
     */
     template<capy::MutableBufferSequence MB>
-    auto recv(MB const& buffers, corosio::message_flags flags)
+    [[nodiscard]] auto recv(MB const& buffers, corosio::message_flags flags)
     {
         native_recv_awaitable<MB> aw(*this, buffers, static_cast<int>(flags));
         if (!is_open())
@@ -481,7 +481,7 @@ public:
 
     /// @overload
     template<capy::MutableBufferSequence MB>
-    auto recv(MB const& buffers)
+    [[nodiscard]] auto recv(MB const& buffers)
     {
         return recv(buffers, corosio::message_flags::none);
     }

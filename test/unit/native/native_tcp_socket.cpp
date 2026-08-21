@@ -88,14 +88,11 @@ struct native_tcp_socket_test
         tcp_socket& base = ns;
         BOOST_TEST(base.is_open());
 
-        io_stream& stream_base = ns;
-        (void)stream_base;
+        [[maybe_unused]] io_stream& stream_base = ns;
 
-        io_read_stream& read_base = ns;
-        (void)read_base;
+        [[maybe_unused]] io_read_stream& read_base = ns;
 
-        io_write_stream& write_base = ns;
-        (void)write_base;
+        [[maybe_unused]] io_write_stream& write_base = ns;
 
         BOOST_TEST_PASS();
     }

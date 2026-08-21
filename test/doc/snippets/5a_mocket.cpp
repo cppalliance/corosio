@@ -73,7 +73,8 @@ struct mocket_page_test
         // "Both are open and immediately usable."
         BOOST_TEST(m.is_open());
         BOOST_TEST(peer.is_open());
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 
@@ -97,7 +98,8 @@ struct mocket_page_test
         ioc.restart();
 
         // A clean close proves the staged bytes were fully consumed.
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 
@@ -121,7 +123,8 @@ struct mocket_page_test
         ioc.restart();
 
         // A clean close proves the expected bytes were all written.
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 
@@ -169,7 +172,8 @@ struct mocket_page_test
         ioc.run();
         ioc.restart();
 
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 
@@ -183,7 +187,8 @@ struct mocket_page_test
         m.provide("unread");
 
         // tag::close_check[]
-        auto ec = m.close();
+        auto ec = m.verify();
+        m.close();
         if (ec == capy::error::test_failure)
         {
             // Either provide() data was never read,
@@ -210,7 +215,8 @@ struct mocket_page_test
         static_assert(std::is_same_v<decltype(m), mocket_type>);
         BOOST_TEST(m.is_open());
         BOOST_TEST(peer.is_open());
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 
@@ -225,7 +231,8 @@ struct mocket_page_test
         // Pass `under` into a TLS stream, a custom framing layer, etc.
         // end::socket_access[]
         BOOST_TEST(under.is_open());
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         // `under` is the mocket's own socket, so it closed with it.
         BOOST_TEST(!under.is_open());
         peer.close();

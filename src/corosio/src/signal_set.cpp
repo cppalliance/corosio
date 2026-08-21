@@ -77,7 +77,7 @@ signal_set::operator=(signal_set&& other) noexcept
 }
 
 void
-signal_set::do_cancel()
+signal_set::do_cancel() noexcept
 {
     get().cancel();
 }

@@ -9,6 +9,8 @@
 
 #include <boost/corosio/ipv4_address.hpp>
 
+#include <boost/corosio/detail/except.hpp>
+
 #include <ostream>
 #include <stdexcept>
 
@@ -26,9 +28,10 @@ ipv4_address::ipv4_address(bytes_type const& bytes) noexcept
 
 ipv4_address::ipv4_address(std::string_view s)
 {
-    auto ec = parse_ipv4_address(s, *this);
+    auto [ec, addr] = make_ipv4_address(s);
     if (ec)
-        throw std::invalid_argument("invalid IPv4 address");
+        detail::throw_system_error(ec, "invalid IPv4 address");
+    *this = addr;
 }
 
 auto
@@ -172,8 +175,8 @@ parse_dec_octet(char const*& it, char const* end, unsigned char& octet) noexcept
 
 } // namespace
 
-std::error_code
-parse_ipv4_address(std::string_view s, ipv4_address& addr) noexcept
+static std::error_code
+parse_ipv4_impl(std::string_view s, ipv4_address& addr) noexcept
 {
     auto it        = s.data();
     auto const end = it + s.size();
@@ -203,6 +206,15 @@ parse_ipv4_address(std::string_view s, ipv4_address& addr) noexcept
         ipv4_address::bytes_type{{octets[0], octets[1], octets[2], octets[3]}});
 
     return {};
+}
+
+capy::io_result<ipv4_address>
+make_ipv4_address(std::string_view s) noexcept
+{
+    ipv4_address addr;
+    if (auto ec = parse_ipv4_impl(s, addr))
+        return {ec, ipv4_address{}};
+    return {std::error_code{}, addr};
 }
 
 } // namespace boost::corosio

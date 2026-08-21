@@ -26,6 +26,7 @@
 
 #include <stdexcept>
 #include <system_error>
+#include <tuple>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -169,7 +170,7 @@ struct socket_option_test
         std::error_code get_caught;
         try
         {
-            (void)sock.get_option<socket_option::no_delay>();
+            std::ignore = sock.get_option<socket_option::no_delay>();
         }
         catch (std::system_error const& e)
         {

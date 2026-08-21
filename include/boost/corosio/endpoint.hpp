@@ -15,6 +15,8 @@
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
 
+#include <boost/capy/io_result.hpp>
+
 #include <compare>
 #include <cstdint>
 #include <string_view>
@@ -46,11 +48,10 @@ namespace boost::corosio {
     // Port only (defaults to IPv4 any address)
     endpoint bind_addr(8080);
 
-    // Parse from string
-    endpoint ep;
-    if (auto ec = parse_endpoint("192.168.1.1:8080", ep); !ec) {
-        // use ep
-    }
+    // Create from string
+    auto [ec, ep] = make_endpoint("192.168.1.1:8080");
+    if (ec)
+        return;
     @endcode
 */
 class endpoint
@@ -245,7 +246,7 @@ public:
 
 /** Endpoint format detection result.
 
-    Used internally by parse_endpoint to determine
+    Used internally by make_endpoint to determine
     the format of an endpoint string.
 */
 enum class endpoint_format
@@ -272,7 +273,7 @@ enum class endpoint_format
 BOOST_COROSIO_DECL
 endpoint_format detect_endpoint_format(std::string_view s) noexcept;
 
-/** Parse an endpoint from a string.
+/** Create an endpoint from a string.
 
     This function parses an endpoint string in one of
     the following formats:
@@ -284,30 +285,30 @@ endpoint_format detect_endpoint_format(std::string_view s) noexcept;
 
     @par Example
     @code
-    endpoint ep;
-    if (auto ec = parse_endpoint("192.168.1.1:8080", ep); !ec) {
-        // ep.is_v4() == true
-        // ep.port() == 8080
-    }
+    auto [ec, ep] = make_endpoint("192.168.1.1:8080");
+    if (ec)
+        return;
+    assert( ep.is_v4() && ep.port() == 8080 );
 
-    if (auto ec = parse_endpoint("[::1]:443", ep); !ec) {
-        // ep.is_v6() == true
-        // ep.port() == 443
-    }
+    auto [ec6, ep6] = make_endpoint("[::1]:443");
+    if (ec6)
+        return;
+    assert( ep6.is_v6() && ep6.port() == 443 );
     @endcode
 
     @param s The string to parse.
-    @param ep The endpoint to store the result.
-    @return An error code (empty on success).
+    @return The error code, empty on success, and the parsed
+        endpoint — default-constructed on failure.
 */
-[[nodiscard]] BOOST_COROSIO_DECL std::error_code
-parse_endpoint(std::string_view s, endpoint& ep) noexcept;
+[[nodiscard]] BOOST_COROSIO_DECL capy::io_result<endpoint>
+make_endpoint(std::string_view s) noexcept;
 
 inline endpoint::endpoint(std::string_view s)
 {
-    auto ec = parse_endpoint(s, *this);
+    auto [ec, ep] = make_endpoint(s);
     if (ec)
         detail::throw_system_error(ec);
+    *this = ep;
 }
 
 } // namespace boost::corosio

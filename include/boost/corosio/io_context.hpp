@@ -292,12 +292,11 @@ public:
     template<class Backend>
         requires requires { Backend::construct; }
     explicit io_context(
-        Backend backend,
+        [[maybe_unused]] Backend backend,
         unsigned concurrency_hint = std::thread::hardware_concurrency())
         : capy::execution_context(this)
         , sched_(nullptr)
     {
-        (void)backend;
         sched_ = &Backend::construct(*this, concurrency_hint);
         // Apply threading config only (locking tier). Unlike the options
         // ctor, the plain path leaves the reactor budget at its defaults.
@@ -316,13 +315,12 @@ public:
     template<class Backend>
         requires requires { Backend::construct; }
     explicit io_context(
-        Backend backend,
+        [[maybe_unused]] Backend backend,
         io_context_options const& opts,
         unsigned concurrency_hint = std::thread::hardware_concurrency())
         : capy::execution_context(this)
         , sched_(nullptr)
     {
-        (void)backend;
         apply_options_pre_(opts);
         // Effective hint (1 for lockless tiers); see effective_concurrency_hint.
         unsigned const eff =

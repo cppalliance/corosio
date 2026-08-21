@@ -33,6 +33,7 @@
 #include <stop_token>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 
 #if BOOST_COROSIO_POSIX
 #include <boost/corosio/local_connect_pair.hpp>
@@ -97,10 +98,9 @@ struct datagram_paths_test
             recv_n  = n;
         };
         auto sender = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s2.send(
+            [[maybe_unused]] auto [ec, n] = co_await s2.send(
                 capy::const_buffer(payload.data(), payload.size()));
             send_ec = ec;
-            (void)n;
         };
 
         capy::run_async(ex)(receiver());
@@ -140,11 +140,10 @@ struct datagram_paths_test
             recv_n  = n;
         };
         auto sender = [&]() -> capy::task<> {
-            auto [ec, n] = co_await send_sock.send_to(
+            [[maybe_unused]] auto [ec, n] = co_await send_sock.send_to(
                 capy::const_buffer(payload.data(), payload.size()),
                 recv_sock.local_endpoint());
             send_ec = ec;
-            (void)n;
         };
 
         capy::run_async(ex)(receiver());
@@ -179,7 +178,7 @@ struct datagram_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -213,7 +212,7 @@ struct datagram_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -248,10 +247,9 @@ struct datagram_paths_test
             recv_n  = n;
         };
         auto sender = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s2.send(
+            [[maybe_unused]] auto [ec, n] = co_await s2.send(
                 capy::const_buffer(payload.data(), payload.size()));
             send_ec = ec;
-            (void)n;
         };
 
         capy::run_async(ex)(receiver());
@@ -292,11 +290,10 @@ struct datagram_paths_test
             recv_n  = n;
         };
         auto sender = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s2.send_to(
+            [[maybe_unused]] auto [ec, n] = co_await s2.send_to(
                 capy::const_buffer(payload.data(), payload.size()),
                 local_endpoint(tmp1.path()));
             send_ec = ec;
-            (void)n;
         };
 
         capy::run_async(ex)(receiver());
@@ -349,7 +346,7 @@ struct datagram_paths_test
         };
         auto reader = [&]() -> capy::task<> {
             // Let the writer fill the kernel queue and park first.
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
 
             char buf[2048];
             while (!writer_done || received < sent)
@@ -430,7 +427,7 @@ struct datagram_paths_test
             writer_done = true;
         };
         auto reader = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
 
             char buf[2048];
             local_endpoint source;
@@ -482,14 +479,13 @@ struct datagram_paths_test
         char buf[64];
 
         auto receiver = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.recv(
+            [[maybe_unused]] auto [ec, n] = co_await s1.recv(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             recv_ec   = ec;
             recv_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -521,14 +517,13 @@ struct datagram_paths_test
         local_endpoint source;
 
         auto receiver = [&]() -> capy::task<> {
-            auto [ec, n] = co_await sock.recv_from(
+            [[maybe_unused]] auto [ec, n] = co_await sock.recv_from(
                 capy::mutable_buffer(buf, sizeof(buf)), source);
-            (void)n;
             recv_ec   = ec;
             recv_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -567,9 +562,8 @@ struct datagram_paths_test
             // 64 KiB into ~4 KiB of queue: parks long before the limit.
             for (int i = 0; i < 64; ++i)
             {
-                auto [ec, n] = co_await s1.send(
+                [[maybe_unused]] auto [ec, n] = co_await s1.send(
                     capy::const_buffer(dgram, sizeof(dgram)));
-                (void)n;
                 if (ec)
                 {
                     send_ec   = ec;
@@ -580,7 +574,7 @@ struct datagram_paths_test
             send_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -631,9 +625,8 @@ struct datagram_paths_test
         auto writer = [&]() -> capy::task<> {
             for (int i = 0; i < 64; ++i)
             {
-                auto [ec, n] = co_await s1.send_to(
+                [[maybe_unused]] auto [ec, n] = co_await s1.send_to(
                     capy::const_buffer(dgram, sizeof(dgram)), dest);
-                (void)n;
                 if (ec)
                 {
                     send_ec   = ec;
@@ -644,7 +637,7 @@ struct datagram_paths_test
             send_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -682,7 +675,7 @@ struct datagram_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -713,7 +706,7 @@ struct datagram_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 

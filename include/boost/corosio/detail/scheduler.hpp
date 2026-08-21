@@ -100,9 +100,8 @@ struct BOOST_COROSIO_DECL scheduler
         @return The error code, empty on success.
     */
     [[nodiscard]] virtual std::error_code
-    register_signal_reader(int read_fd)
+    register_signal_reader([[maybe_unused]] int read_fd)
     {
-        (void)read_fd;
         return {};
     }
 

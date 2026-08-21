@@ -146,10 +146,9 @@ tls_context make_server_encrypted_key()
 
     // Set password callback before loading encrypted key
     ctx.set_password_callback(
-        []( std::size_t max_len, tls_password_purpose purpose )
+        []( [[maybe_unused]] std::size_t max_len,
+            [[maybe_unused]] tls_password_purpose purpose )
         {
-            (void)max_len;
-            (void)purpose;
             // Read from environment or secret manager
             char const* pw = std::getenv( "TLS_KEY_PASSWORD" );
             return std::string( pw ? pw : "" );
@@ -283,7 +282,7 @@ tls_context make_client_custom_verify( std::span<unsigned char const> pin )
     must(ctx.set_default_verify_paths());
     must(ctx.set_verify_mode( tls_verify_mode::peer ));
 
-    must(ctx.set_verify_callback(
+    ctx.set_verify_callback(
         [pin]( bool preverified, verify_context& verify_ctx ) -> bool
         {
             // Require the chain to verify normally first.
@@ -297,7 +296,7 @@ tls_context make_client_custom_verify( std::span<unsigned char const> pin )
             auto der = verify_ctx.certificate();
             return der.size() == pin.size() &&
                 std::equal( der.begin(), der.end(), pin.begin() );
-        }));
+        });
 
     return ctx;
 }
@@ -379,17 +378,14 @@ void demonstrate_sharing()
     must(original.set_verify_mode( tls_verify_mode::peer ));
 
     // Share via copy - both point to same underlying state
-    tls_context copy1 = original;
-    tls_context copy2 = original;
-    (void)copy1;
-    (void)copy2;
+    [[maybe_unused]] tls_context copy1 = original;
+    [[maybe_unused]] tls_context copy2 = original;
 
     // Changes to copy1 affect copy2 and original
     // (they all share the same impl)
 
     // Move transfers ownership
-    tls_context moved = std::move( original );
-    (void)moved;
+    [[maybe_unused]] tls_context moved = std::move( original );
     // original is now empty
 }
 
@@ -458,12 +454,9 @@ int main()
     // These examples demonstrate API ergonomics
     try
     {
-        auto https  = make_https_client();
-        auto server = make_basic_server();
-        auto mtls   = make_mtls_server();
-        (void)https;
-        (void)server;
-        (void)mtls;
+        [[maybe_unused]] auto https  = make_https_client();
+        [[maybe_unused]] auto server = make_basic_server();
+        [[maybe_unused]] auto mtls   = make_mtls_server();
     }
     catch( std::exception const& e )
     {

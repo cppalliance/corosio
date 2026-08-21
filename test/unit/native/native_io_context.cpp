@@ -36,8 +36,7 @@ struct native_io_context_test
     void testIoContextPolymorphicSlice()
     {
         native_io_context<Backend> ctx;
-        io_context& base = ctx;
-        (void)base;
+        [[maybe_unused]] io_context& base = ctx;
         BOOST_TEST_PASS();
     }
 

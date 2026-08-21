@@ -67,7 +67,7 @@ local_datagram_socket::bind(corosio::local_endpoint ep) noexcept
 }
 
 void
-local_datagram_socket::cancel()
+local_datagram_socket::cancel() noexcept
 {
     if (!is_open())
         return;

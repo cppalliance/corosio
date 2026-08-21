@@ -200,7 +200,7 @@ public:
         dispatch. Otherwise identical to @ref io_stream::read_some.
     */
     template<capy::MutableBufferSequence MB>
-    auto read_some(MB const& buffers)
+    [[nodiscard]] auto read_some(MB const& buffers)
     {
         return native_read_awaitable<MB>(*this, buffers);
     }
@@ -211,7 +211,7 @@ public:
         dispatch. Otherwise identical to @ref io_stream::write_some.
     */
     template<capy::ConstBufferSequence CB>
-    auto write_some(CB const& buffers)
+    [[nodiscard]] auto write_some(CB const& buffers)
     {
         return native_write_awaitable<CB>(*this, buffers);
     }

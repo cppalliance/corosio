@@ -283,7 +283,7 @@ public:
         @return An awaitable yielding `(error_code, std::size_t)`.
     */
     template<capy::MutableBufferSequence MB>
-    auto read_some(MB const& buffers)
+    [[nodiscard]] auto read_some(MB const& buffers)
     {
         return native_read_awaitable<MB>(*this, buffers);
     }
@@ -298,7 +298,7 @@ public:
         @return An awaitable yielding `(error_code, std::size_t)`.
     */
     template<capy::ConstBufferSequence CB>
-    auto write_some(CB const& buffers)
+    [[nodiscard]] auto write_some(CB const& buffers)
     {
         return native_write_awaitable<CB>(*this, buffers);
     }
@@ -317,7 +317,7 @@ public:
         If the socket needs to be opened and the open fails, the
         awaitable completes immediately with that error.
     */
-    auto connect(corosio::local_endpoint ep)
+    [[nodiscard]] auto connect(corosio::local_endpoint ep)
     {
         native_connect_awaitable aw(*this, ep);
         if (!is_open())

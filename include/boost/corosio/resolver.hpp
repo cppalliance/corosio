@@ -364,7 +364,7 @@ public:
         auto [ec, results] = co_await r.resolve("www.example.com", "https");
         @endcode
     */
-    auto resolve(std::string_view host, std::string_view service)
+    [[nodiscard]] auto resolve(std::string_view host, std::string_view service)
     {
         return resolve_awaitable(*this, host, service, resolve_flags::none);
     }
@@ -383,7 +383,7 @@ public:
 
         @return An awaitable that completes with `io_result<resolver_results>`.
     */
-    auto resolve(
+    [[nodiscard]] auto resolve(
         std::string_view host, std::string_view service, resolve_flags flags)
     {
         return resolve_awaitable(*this, host, service, flags);
@@ -409,7 +409,7 @@ public:
             std::cout << result.host_name() << ":" << result.service_name();
         @endcode
     */
-    auto resolve(endpoint const& ep)
+    [[nodiscard]] auto resolve(endpoint const& ep)
     {
         return reverse_resolve_awaitable(*this, ep, reverse_flags::none);
     }
@@ -428,7 +428,7 @@ public:
         @return An awaitable that completes with
             `io_result<reverse_resolver_result>`.
     */
-    auto resolve(endpoint const& ep, reverse_flags flags)
+    [[nodiscard]] auto resolve(endpoint const& ep, reverse_flags flags)
     {
         return reverse_resolve_awaitable(*this, ep, flags);
     }
@@ -438,7 +438,7 @@ public:
         All outstanding operations complete with `errc::operation_canceled`.
         Check `ec == cond::canceled` for portable comparison.
     */
-    void cancel();
+    void cancel() noexcept;
 
 public:
     /** Backend interface for DNS resolution operations.

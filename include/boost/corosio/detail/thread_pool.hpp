@@ -103,9 +103,10 @@ public:
 
         @throws std::logic_error If `num_threads` is 0.
     */
-    explicit thread_pool(capy::execution_context& ctx, unsigned num_threads = 1)
+    explicit thread_pool(
+        [[maybe_unused]] capy::execution_context& ctx,
+        unsigned num_threads = 1)
     {
-        (void)ctx;
         if (!num_threads)
             throw std::logic_error("thread_pool requires at least 1 thread");
         threads_.reserve(num_threads);

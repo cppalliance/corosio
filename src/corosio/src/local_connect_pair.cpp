@@ -267,13 +267,7 @@ std::error_code
 connect_pair(local_stream_socket& a, local_stream_socket& b) noexcept
 {
     if (a.is_open() || b.is_open())
-        return detail::make_err(
-#if BOOST_COROSIO_POSIX
-            EISCONN
-#else
-            WSAEISCONN
-#endif
-        );
+        return std::make_error_code(std::errc::already_connected);
 
 #if BOOST_COROSIO_POSIX
     int a_fd = -1, b_fd = -1;
@@ -296,7 +290,7 @@ std::error_code
 connect_pair(local_datagram_socket& a, local_datagram_socket& b) noexcept
 {
     if (a.is_open() || b.is_open())
-        return detail::make_err(EISCONN);
+        return std::make_error_code(std::errc::already_connected);
 
     int a_fd = -1, b_fd = -1;
     if (auto ec = make_pair_fds(SOCK_DGRAM, a_fd, b_fd))

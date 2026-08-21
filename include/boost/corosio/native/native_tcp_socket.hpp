@@ -296,7 +296,7 @@ public:
         completes.
     */
     template<capy::MutableBufferSequence MB>
-    auto read_some(MB const& buffers)
+    [[nodiscard]] auto read_some(MB const& buffers)
     {
         return native_read_awaitable<MB>(*this, buffers);
     }
@@ -315,7 +315,7 @@ public:
         completes.
     */
     template<capy::ConstBufferSequence CB>
-    auto write_some(CB const& buffers)
+    [[nodiscard]] auto write_some(CB const& buffers)
     {
         return native_write_awaitable<CB>(*this, buffers);
     }
@@ -335,7 +335,7 @@ public:
 
         This socket must outlive the returned awaitable.
     */
-    auto connect(endpoint ep)
+    [[nodiscard]] auto connect(endpoint ep)
     {
         native_connect_awaitable aw(*this, ep);
         if (!is_open())

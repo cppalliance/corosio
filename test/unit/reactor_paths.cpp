@@ -37,6 +37,7 @@
 #include <cstring>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <vector>
 
 #if BOOST_COROSIO_POSIX
@@ -94,11 +95,9 @@ struct reactor_paths_test
         };
         auto peer_writer = [&]() -> capy::task<> {
             // Brief delay so the read side parks first.
-            (void)co_await corosio::delay(std::chrono::milliseconds(10));
-            auto [ec, n] = co_await s2.write_some(
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(10));
+            [[maybe_unused]] auto [ec, n] = co_await s2.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
-            (void)ec;
-            (void)n;
         };
 
         capy::run_async(ex)(reader());
@@ -142,7 +141,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(500));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(500));
             sock.cancel();
         };
 
@@ -203,11 +202,11 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto closer = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             s2.close();
             // Bound the wait: cancel s1 after another delay if the peer
             // close did not surface as an error condition.
-            (void)co_await corosio::delay(std::chrono::milliseconds(200));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(200));
             s1.cancel();
         };
 
@@ -238,7 +237,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -278,11 +277,9 @@ struct reactor_paths_test
             read_n       = n;
         };
         auto writer = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(10));
-            auto [ec, n] = co_await s2.write_some(
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(10));
+            [[maybe_unused]] auto [ec, n] = co_await s2.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
-            (void)ec;
-            (void)n;
         };
 
         capy::run_async(ex)(reader());
@@ -471,7 +468,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             acc.cancel();
         };
 
@@ -532,7 +529,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             sock.cancel();
         };
 
@@ -765,7 +762,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto closer = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             sock.close();
         };
 
@@ -815,14 +812,12 @@ struct reactor_paths_test
             capy::run_async(ex)(
                 [](tcp_acceptor& a, tcp_socket& p, bool& done)
                     -> capy::task<> {
-                    auto [ec] = co_await a.accept(p);
-                    (void)ec;
+                    [[maybe_unused]] auto [ec] = co_await a.accept(p);
                     done = true;
                 }(accs[i], peers[i], accept_done[i]));
             capy::run_async(ex)(
                 [](tcp_socket& c, endpoint ep, bool& done) -> capy::task<> {
-                    auto [ec] = co_await c.connect(ep);
-                    (void)ec;
+                    [[maybe_unused]] auto [ec] = co_await c.connect(ep);
                     done = true;
                 }(clients[i], endpoint(ipv4_address::loopback(), ports[i]),
                                  connect_done[i]));
@@ -857,7 +852,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -887,7 +882,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -936,14 +931,13 @@ struct reactor_paths_test
         char buf[64];
 
         auto receiver = [&]() -> capy::task<> {
-            auto [ec, n] =
+            [[maybe_unused]] auto [ec, n] =
                 co_await s1.recv(capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             recv_ec   = ec;
             recv_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -973,14 +967,13 @@ struct reactor_paths_test
         char buf[64];
 
         auto receiver = [&]() -> capy::task<> {
-            auto [ec, n] = co_await sock.recv_from(
+            [[maybe_unused]] auto [ec, n] = co_await sock.recv_from(
                 capy::mutable_buffer(buf, sizeof(buf)), src);
-            (void)n;
             recv_ec   = ec;
             recv_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1015,7 +1008,7 @@ struct reactor_paths_test
             accept_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1106,7 +1099,7 @@ struct reactor_paths_test
         // assertions below accept — only a false success is a failure.
         int filler = ::socket(AF_INET, SOCK_STREAM, 0);
         BOOST_TEST(filler >= 0);
-        (void)::connect(
+        std::ignore = ::connect(
             filler, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
 
         auto port = ntohs(addr.sin_port);
@@ -1126,16 +1119,14 @@ struct reactor_paths_test
         // is processed only after the driver has parked.
         auto canceller = [&]() -> capy::task<> {
             char c[2];
-            auto [ec, n] = co_await t1.read_some(
+            [[maybe_unused]] auto [ec, n] = co_await t1.read_some(
                 capy::mutable_buffer(c, sizeof(c)));
-            (void)ec;
-            (void)n;
             // Drain the ready queue before cancelling: a falsely
             // completed connect is already posted at this point, and
             // cancelling first would mark the op cancelled and mask
             // the wrong ec at delivery. Let it deliver, then cancel
             // the (correctly) parked op.
-            (void)co_await corosio::delay(std::chrono::milliseconds(1));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
             cancel_sent = true;
             sock.cancel();
         };
@@ -1143,11 +1134,9 @@ struct reactor_paths_test
             // Yield through one reactor cycle with no op parked so the
             // fresh socket's spurious writable event is dispatched and
             // latched before the connect begins.
-            (void)co_await corosio::delay(std::chrono::milliseconds(1));
-            auto [sec, sn] = co_await t2.write_some(
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
+            [[maybe_unused]] auto [sec, sn] = co_await t2.write_some(
                 capy::const_buffer("go", 2));
-            (void)sec;
-            (void)sn;
             auto [ec] = co_await sock.connect(
                 endpoint(ipv4_address::loopback(), port));
             conn_ec   = ec;
@@ -1198,7 +1187,7 @@ struct reactor_paths_test
             {
                 int soerr       = 0;
                 socklen_t sslen = sizeof(soerr);
-                (void)::getsockopt(
+                std::ignore = ::getsockopt(
                     sock.native_handle(), SOL_SOCKET, SO_ERROR, &soerr,
                     &sslen);
                 false_success = soerr == 0;
@@ -1232,9 +1221,8 @@ struct reactor_paths_test
 
         auto waiter = [&]() -> capy::task<> {
             char c;
-            auto [rec, rn] = co_await s1.read_some(
+            [[maybe_unused]] auto [rec, rn] = co_await s1.read_some(
                 capy::mutable_buffer(&c, 1));
-            (void)rn;
             read_ec = rec;
             // Reporting the reset consumed SO_ERROR. Linux keeps
             // POLLHUP visible on the dead socket; on a platform that
@@ -1291,9 +1279,8 @@ struct reactor_paths_test
         std::size_t recv_n = 42;
 
         auto task = [&]() -> capy::task<> {
-            auto [sec, sn] = co_await ssock.send_to(
+            [[maybe_unused]] auto [sec, sn] = co_await ssock.send_to(
                 capy::const_buffer(nullptr, 0), rsock.local_endpoint());
-            (void)sn;
             // Some platforms reject zero-length datagram sends (same
             // variation as testUdpSendToEmpty); nothing is queued
             // then, so there is no readiness to wait for.
@@ -1335,8 +1322,7 @@ struct reactor_paths_test
         bool threw = false;
         try
         {
-            io_context ioc(Backend, opts);
-            (void)ioc;
+            [[maybe_unused]] io_context ioc(Backend, opts);
         }
         catch (std::out_of_range const&)
         {
@@ -1397,7 +1383,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -1463,11 +1449,9 @@ struct reactor_paths_test
             read_n       = n;
         };
         auto writer = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(10));
-            auto [ec, n] = co_await s2.write_some(
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(10));
+            [[maybe_unused]] auto [ec, n] = co_await s2.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
-            (void)ec;
-            (void)n;
         };
 
         capy::run_async(ex)(reader());
@@ -1506,10 +1490,8 @@ struct reactor_paths_test
         };
         auto reader = [&]() -> capy::task<> {
             char buf[64];
-            auto [ec, n] =
+            [[maybe_unused]] auto [ec, n] =
                 co_await s2.read_some(capy::mutable_buffer(buf, sizeof(buf)));
-            (void)ec;
-            (void)n;
         };
 
         capy::run_async(ex)(writer());
@@ -1538,7 +1520,7 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -1681,14 +1663,13 @@ struct reactor_paths_test
         char buf[16];
 
         auto reader = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.read_some(
+            [[maybe_unused]] auto [ec, n] = co_await s1.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
-            (void)n;
             read_ec   = ec;
             read_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1793,19 +1774,19 @@ struct reactor_paths_test
         endpoint source;
 
         auto tcp_reader = [&]() -> capy::task<> {
-            (void)co_await t1.read_some(
+            std::ignore = co_await t1.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
         };
         auto udp_reader = [&]() -> capy::task<> {
-            (void)co_await u1.recv_from(
+            std::ignore = co_await u1.recv_from(
                 capy::mutable_buffer(buf, sizeof(buf)), source);
         };
         auto ls_reader = [&]() -> capy::task<> {
-            (void)co_await ls1.read_some(
+            std::ignore = co_await ls1.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
         };
         auto ld_reader = [&]() -> capy::task<> {
-            (void)co_await ld1.recv(
+            std::ignore = co_await ld1.recv(
                 capy::mutable_buffer(buf, sizeof(buf)));
         };
 
@@ -1816,7 +1797,7 @@ struct reactor_paths_test
 
         // Run each coroutine to its parked suspension point only.
         for (int i = 0; i < 4; ++i)
-            (void)ioc.run_one();
+            std::ignore = ioc.run_one();
 
         // Sockets and io_context destruct here with the ops parked.
         BOOST_TEST_PASS();

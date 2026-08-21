@@ -21,6 +21,7 @@
 #include <cstring>
 #include <type_traits>
 #include <utility>
+#include <tuple>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -168,11 +169,11 @@ struct native_udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             sock.cancel();
 
             // Let the cancellation settle before checking the result.
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -206,11 +207,11 @@ struct native_udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             sock.close();
 
             // Let the close settle before checking the result.
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -363,11 +364,9 @@ struct native_udp_socket_test
         };
         auto sender = [&]() -> capy::task<> {
             char dg[1]   = {'X'};
-            auto [ec, n] = co_await send.send_to(
+            [[maybe_unused]] auto [ec, n] = co_await send.send_to(
                 capy::const_buffer(dg, sizeof(dg)),
                 endpoint(ipv4_address::loopback(), port));
-            (void)ec;
-            (void)n;
         };
 
         capy::run_async(ex)(waiter());

@@ -147,7 +147,7 @@ public:
 
         This signal set must outlive the returned awaitable.
     */
-    auto wait()
+    [[nodiscard]] auto wait()
     {
         return native_wait_awaitable(*this);
     }

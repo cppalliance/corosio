@@ -39,6 +39,18 @@ local_stream_acceptor::local_stream_acceptor(capy::execution_context& ctx)
 {
 }
 
+local_stream_acceptor::local_stream_acceptor(
+    capy::execution_context& ctx, corosio::local_endpoint ep, int backlog)
+    : local_stream_acceptor(ctx)
+{
+    if (auto ec = open())
+        detail::throw_system_error(ec, "local_stream_acceptor");
+    if (auto ec = bind(ep))
+        detail::throw_system_error(ec, "local_stream_acceptor");
+    if (auto ec = listen(backlog))
+        detail::throw_system_error(ec, "local_stream_acceptor");
+}
+
 std::error_code
 local_stream_acceptor::open(local_stream proto) noexcept
 {
@@ -135,7 +147,7 @@ local_stream_acceptor::release()
 }
 
 void
-local_stream_acceptor::cancel()
+local_stream_acceptor::cancel() noexcept
 {
     if (!is_open())
         return;

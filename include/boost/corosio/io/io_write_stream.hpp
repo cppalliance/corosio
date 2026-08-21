@@ -108,7 +108,7 @@ public:
         @see io_stream::read_some
     */
     template<capy::ConstBufferSequence CB>
-    auto write_some(CB const& buffers)
+    [[nodiscard]] auto write_some(CB const& buffers)
     {
         return write_some_awaitable<CB>(*this, buffers);
     }

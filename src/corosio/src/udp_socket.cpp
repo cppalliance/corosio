@@ -89,7 +89,7 @@ udp_socket::shutdown(shutdown_type what) noexcept
 }
 
 void
-udp_socket::cancel()
+udp_socket::cancel() noexcept
 {
     if (!is_open())
         return;

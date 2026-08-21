@@ -118,21 +118,22 @@ include::example$snippets/4f_endpoints.cpp[tag=broadcast,indent=0]
 
 == Parsing Addresses
 
-Parse addresses from strings. Parsing reports failure through an
-`std::error_code` out-parameter:
+Create addresses from strings. The `make_*` factories destructure into
+the error code and the parsed value, the same idiom every corosio
+operation uses:
 
 [source,cpp]
 ----
-include::example$snippets/4f_endpoints.cpp[tag=parse_addresses,indent=0]
+include::example$snippets/4f_endpoints.cpp[tag=make_addresses,indent=0]
 ----
 
-You can also parse a full `address:port` string directly into an endpoint
-using `parse_endpoint()`, or the `endpoint` constructor that accepts a
-`std::string_view`:
+You can also create an endpoint from a full `address:port` string
+using `make_endpoint()`, or the `endpoint` constructor that accepts a
+`std::string_view` and throws on failure:
 
 [source,cpp]
 ----
-include::example$snippets/4f_endpoints.cpp[tag=parse_endpoint,indent=0]
+include::example$snippets/4f_endpoints.cpp[tag=make_endpoint,indent=0]
 ----
 
 == Comparison

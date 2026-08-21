@@ -391,7 +391,7 @@ public:
         if (ec) { ... }
         @endcode
     */
-    auto connect(endpoint ep)
+    [[nodiscard]] auto connect(endpoint ep)
     {
         connect_awaitable aw(*this, ep);
         if (!is_open())
@@ -433,7 +433,7 @@ public:
         All outstanding operations complete with `errc::operation_canceled`.
         Check `ec == cond::canceled` for portable comparison.
     */
-    void cancel();
+    void cancel() noexcept;
 
     /** Get the native socket handle.
 
@@ -642,7 +642,8 @@ private:
     friend class tcp_acceptor;
 
     /// Open the socket for the given protocol triple.
-    std::error_code open_for_family(int family, int type, int protocol) noexcept;
+    [[nodiscard]] std::error_code
+    open_for_family(int family, int type, int protocol) noexcept;
 
     inline implementation& get() const noexcept
     {

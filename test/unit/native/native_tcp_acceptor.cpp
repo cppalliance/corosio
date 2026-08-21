@@ -18,6 +18,7 @@
 #include <system_error>
 #include <type_traits>
 #include <utility>
+#include <tuple>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -112,9 +113,8 @@ struct native_tcp_acceptor_test
             wait_done = true;
         };
         auto connector = [&]() -> capy::task<> {
-            auto [ec] = co_await client.connect(
+            [[maybe_unused]] auto [ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
-            (void)ec;
         };
 
         capy::run_async(ex)(waiter());
@@ -156,9 +156,8 @@ struct native_tcp_acceptor_test
             accept_done = true;
         };
         auto connector = [&]() -> capy::task<> {
-            auto [ec] = co_await client.connect(
+            [[maybe_unused]] auto [ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
-            (void)ec;
         };
 
         capy::run_async(ex)(acceptor());
@@ -218,7 +217,7 @@ struct native_tcp_acceptor_test
         bool threw = false;
         try
         {
-            (void)a.accept();
+            std::ignore = a.accept();
         }
         catch (std::logic_error const&)
         {

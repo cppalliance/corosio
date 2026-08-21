@@ -18,6 +18,7 @@
 #include <boost/capy/task.hpp>
 
 #include <atomic>
+#include <tuple>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -45,7 +46,7 @@ public:
                 char buf[64];
                 auto [ec, n] = co_await sock->read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
-                (void)co_await sock->write_some(capy::const_buffer(buf, n));
+                std::ignore = co_await sock->write_some(capy::const_buffer(buf, n));
                 sock->close();
             }(&sock_));
     }
@@ -93,7 +94,7 @@ struct tcp_server_test
         auto client_task = [](test_server* srv,
                               std::atomic<bool>* client_done) -> capy::task<> {
             // Brief delay to ensure server accept loop is running
-            (void)co_await corosio::delay(std::chrono::milliseconds(10));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(10));
 
             // Request stop - server should exit accept loop
             srv->stop();
@@ -179,7 +180,7 @@ struct tcp_server_test
         srv.start(); // Second call should be no-op
 
         auto task = [](test_server* srv) -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(10));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(10));
             srv->stop();
         }(&srv);
 
@@ -198,7 +199,7 @@ struct tcp_server_test
         srv.start();
 
         auto task = [](test_server* srv) -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(10));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(10));
 
             // Calling stop() twice should be safe
             srv->stop();
@@ -261,7 +262,7 @@ struct tcp_server_test
         }(&ioc, port, &connections_handled);
 
         auto stop_task1 = [](test_server* srv) -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             srv->stop();
         }(&srv);
 
@@ -299,7 +300,7 @@ struct tcp_server_test
         }(&ioc, port, &connections_handled);
 
         auto stop_task2 = [](test_server* srv) -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             srv->stop();
         }(&srv);
 
@@ -534,11 +535,10 @@ struct tcp_server_test
             {
                 tcp_socket client(*ioc);
                 BOOST_TEST(!client.open());
-                auto [cec] = co_await client.connect(
+                [[maybe_unused]] auto [cec] = co_await client.connect(
                     endpoint(ipv4_address::loopback(), port));
-                (void)cec;
                 client.close();
-                (void)co_await corosio::delay(std::chrono::milliseconds(20));
+                std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             }
             srv->stop();
         }(&ioc, port, &srv);
@@ -571,16 +571,13 @@ struct tcp_server_test
             {
                 launch(
                     ctx_.get_executor(),
-                    [](io_context* ctx,
+                    []([[maybe_unused]] io_context* ctx,
                        corosio::tcp_socket* s) -> capy::task<> {
                         // Block on read until the client disconnects.
                         char buf[64];
-                        auto [ec, n] = co_await s->read_some(
+                        [[maybe_unused]] auto [ec, n] = co_await s->read_some(
                             capy::mutable_buffer(buf, sizeof(buf)));
-                        (void)ec;
-                        (void)n;
                         s->close();
-                        (void)ctx;
                     }(&ctx_, &sock_));
             }
         };
@@ -627,16 +624,16 @@ struct tcp_server_test
             if (!e3) connected->fetch_add(1);
 
             // Give the server time to register the connections.
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             // Disconnect middle first, then tail, then head:
             // exercises remove from each list position.
             c2.close();
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             c3.close();
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
             c1.close();
-            (void)co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
 
             srv->stop();
         }(&ioc, port, &connected, &srv);
@@ -719,13 +716,12 @@ struct tcp_server_test
                               one_worker_server* srv) -> capy::task<> {
             tcp_socket client(*ioc);
             BOOST_TEST(!client.open());
-            auto [cec] = co_await client.connect(
+            [[maybe_unused]] auto [cec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
-            (void)cec;
             client.close();
 
             // Give server time to handle the connection, then stop.
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             srv->stop();
         }(&ioc, port, &srv);
 

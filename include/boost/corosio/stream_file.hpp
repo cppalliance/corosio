@@ -196,7 +196,7 @@ public:
         All outstanding operations complete with
         `errc::operation_canceled`.
     */
-    void cancel();
+    void cancel() noexcept;
 
     /** Get the native file descriptor or handle.
 

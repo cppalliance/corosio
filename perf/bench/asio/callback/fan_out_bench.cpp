@@ -106,8 +106,8 @@ struct sub_request_op : std::enable_shared_from_this<sub_request_op>
         auto self = shared_from_this();
         asio::async_read(
             client, asio::buffer(recv_buf, 64),
-            [self](boost::system::error_code ec, std::size_t) {
-                (void)ec;
+            [self]([[maybe_unused]] boost::system::error_code ec,
+                std::size_t) {
                 self->finish();
             });
     }

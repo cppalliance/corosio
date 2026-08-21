@@ -952,8 +952,7 @@ reactor_scheduler::do_one(
                 lock.unlock();
             }
 
-            work_cleanup on_exit{this, &lock, ctx};
-            (void)on_exit;
+            [[maybe_unused]] work_cleanup on_exit{this, &lock, ctx};
 
             if (ready_is_continuation(e))
                 ready_as_cont(e)->h.resume();

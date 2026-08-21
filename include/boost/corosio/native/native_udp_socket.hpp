@@ -383,7 +383,7 @@ public:
         @return An awaitable yielding `(error_code, std::size_t)`.
     */
     template<capy::ConstBufferSequence CB>
-    auto send_to(
+    [[nodiscard]] auto send_to(
         CB const& buffers,
         endpoint dest,
         corosio::message_flags flags)
@@ -396,7 +396,7 @@ public:
 
     /// @overload
     template<capy::ConstBufferSequence CB>
-    auto send_to(CB const& buffers, endpoint dest)
+    [[nodiscard]] auto send_to(CB const& buffers, endpoint dest)
     {
         return send_to(buffers, dest, corosio::message_flags::none);
     }
@@ -414,7 +414,7 @@ public:
         @return An awaitable yielding `(error_code, std::size_t)`.
     */
     template<capy::MutableBufferSequence MB>
-    auto recv_from(
+    [[nodiscard]] auto recv_from(
         MB const& buffers,
         endpoint& source,
         corosio::message_flags flags)
@@ -427,7 +427,7 @@ public:
 
     /// @overload
     template<capy::MutableBufferSequence MB>
-    auto recv_from(MB const& buffers, endpoint& source)
+    [[nodiscard]] auto recv_from(MB const& buffers, endpoint& source)
     {
         return recv_from(buffers, source, corosio::message_flags::none);
     }
@@ -447,7 +447,7 @@ public:
         If the socket needs to be opened and the open fails, the
         awaitable completes immediately with that error.
     */
-    auto connect(endpoint ep)
+    [[nodiscard]] auto connect(endpoint ep)
     {
         native_connect_awaitable aw(*this, ep);
         if (!is_open())
@@ -468,7 +468,7 @@ public:
         A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::ConstBufferSequence CB>
-    auto send(CB const& buffers, corosio::message_flags flags)
+    [[nodiscard]] auto send(CB const& buffers, corosio::message_flags flags)
     {
         native_send_awaitable<CB> aw(*this, buffers, static_cast<int>(flags));
         if (!is_open())
@@ -478,7 +478,7 @@ public:
 
     /// @overload
     template<capy::ConstBufferSequence CB>
-    auto send(CB const& buffers)
+    [[nodiscard]] auto send(CB const& buffers)
     {
         return send(buffers, corosio::message_flags::none);
     }
@@ -496,7 +496,7 @@ public:
         A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::MutableBufferSequence MB>
-    auto recv(MB const& buffers, corosio::message_flags flags)
+    [[nodiscard]] auto recv(MB const& buffers, corosio::message_flags flags)
     {
         native_recv_awaitable<MB> aw(*this, buffers, static_cast<int>(flags));
         if (!is_open())
@@ -506,7 +506,7 @@ public:
 
     /// @overload
     template<capy::MutableBufferSequence MB>
-    auto recv(MB const& buffers)
+    [[nodiscard]] auto recv(MB const& buffers)
     {
         return recv(buffers, corosio::message_flags::none);
     }

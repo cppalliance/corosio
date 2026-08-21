@@ -108,6 +108,19 @@ struct endpoint_parse_test
 
     void testConstructFromStringThrows()
     {
+        // The constructor throws the code make_endpoint returns.
+        std::error_code caught;
+        try
+        {
+            endpoint("not an endpoint");
+            BOOST_TEST_FAIL();
+        }
+        catch (std::system_error const& e)
+        {
+            caught = e.code();
+        }
+        BOOST_TEST(caught == std::errc::invalid_argument);
+
         // Empty string
         BOOST_TEST_THROWS(endpoint(""), std::system_error);
 
@@ -134,6 +147,10 @@ struct endpoint_parse_test
 
     void testDetectFormat()
     {
+        // Empty input classifies as ipv4_no_port; the parse arm
+        // rejects it.
+        BOOST_TEST(
+            detect_endpoint_format("") == endpoint_format::ipv4_no_port);
         BOOST_TEST(
             detect_endpoint_format("192.168.1.1") ==
             endpoint_format::ipv4_no_port);
@@ -154,8 +171,7 @@ struct endpoint_parse_test
 
     void testParseIPv4NoPort()
     {
-        endpoint ep;
-        auto ec = parse_endpoint("192.168.1.1", ep);
+        auto [ec, ep] = make_endpoint("192.168.1.1");
         BOOST_TEST(!ec);
         BOOST_TEST(ep.is_v4());
         BOOST_TEST_EQ(ep.port(), 0);
@@ -164,69 +180,66 @@ struct endpoint_parse_test
 
     void testParseIPv4WithPort()
     {
-        endpoint ep;
-        auto ec = parse_endpoint("192.168.1.1:8080", ep);
+        auto [ec, ep] = make_endpoint("192.168.1.1:8080");
         BOOST_TEST(!ec);
         BOOST_TEST(ep.is_v4());
         BOOST_TEST_EQ(ep.port(), 8080);
         BOOST_TEST_EQ(ep.v4_address().to_string(), "192.168.1.1");
 
         // Edge cases
-        ec = parse_endpoint("127.0.0.1:0", ep);
-        BOOST_TEST(!ec);
-        BOOST_TEST_EQ(ep.port(), 0);
+        auto [ec0, ep0] = make_endpoint("127.0.0.1:0");
+        BOOST_TEST(!ec0);
+        BOOST_TEST_EQ(ep0.port(), 0);
 
-        ec = parse_endpoint("127.0.0.1:65535", ep);
-        BOOST_TEST(!ec);
-        BOOST_TEST_EQ(ep.port(), 65535);
+        auto [ec1, ep1] = make_endpoint("127.0.0.1:65535");
+        BOOST_TEST(!ec1);
+        BOOST_TEST_EQ(ep1.port(), 65535);
     }
 
     void testParseIPv6NoPort()
     {
-        endpoint ep;
-        auto ec = parse_endpoint("::1", ep);
+        auto [ec, ep] = make_endpoint("::1");
         BOOST_TEST(!ec);
         BOOST_TEST(ep.is_v6());
         BOOST_TEST_EQ(ep.port(), 0);
         BOOST_TEST(ep.v6_address().is_loopback());
 
-        ec = parse_endpoint("2001:db8::1", ep);
-        BOOST_TEST(!ec);
-        BOOST_TEST(ep.is_v6());
-        BOOST_TEST_EQ(ep.port(), 0);
+        auto [ec1, ep1] = make_endpoint("2001:db8::1");
+        BOOST_TEST(!ec1);
+        BOOST_TEST(ep1.is_v6());
+        BOOST_TEST_EQ(ep1.port(), 0);
     }
 
     void testParseIPv6Bracketed()
     {
-        endpoint ep;
-
         // Bracketed without port
-        auto ec = parse_endpoint("[::1]", ep);
+        auto [ec, ep] = make_endpoint("[::1]");
         BOOST_TEST(!ec);
         BOOST_TEST(ep.is_v6());
         BOOST_TEST_EQ(ep.port(), 0);
         BOOST_TEST(ep.v6_address().is_loopback());
 
         // Bracketed with port
-        ec = parse_endpoint("[::1]:8080", ep);
-        BOOST_TEST(!ec);
-        BOOST_TEST(ep.is_v6());
-        BOOST_TEST_EQ(ep.port(), 8080);
-        BOOST_TEST(ep.v6_address().is_loopback());
+        auto [ec1, ep1] = make_endpoint("[::1]:8080");
+        BOOST_TEST(!ec1);
+        BOOST_TEST(ep1.is_v6());
+        BOOST_TEST_EQ(ep1.port(), 8080);
+        BOOST_TEST(ep1.v6_address().is_loopback());
 
         // Full address with port
-        ec = parse_endpoint("[2001:db8::1]:443", ep);
-        BOOST_TEST(!ec);
-        BOOST_TEST(ep.is_v6());
-        BOOST_TEST_EQ(ep.port(), 443);
+        auto [ec2, ep2] = make_endpoint("[2001:db8::1]:443");
+        BOOST_TEST(!ec2);
+        BOOST_TEST(ep2.is_v6());
+        BOOST_TEST_EQ(ep2.port(), 443);
     }
 
     void testParseInvalid()
     {
         auto check_invalid = [](std::string_view s) {
-            endpoint ep;
-            auto ec = parse_endpoint(s, ep);
-            BOOST_TEST(bool(ec));
+            auto [ec, ep] = make_endpoint(s);
+            BOOST_TEST(ec == std::errc::invalid_argument);
+            // The failure payload is the documented default value.
+            BOOST_TEST(ep == endpoint());
         };
 
         // Empty
@@ -236,6 +249,13 @@ struct endpoint_parse_test
         check_invalid("256.0.0.1");
         check_invalid("1.2.3");
         check_invalid("1.2.3.4.5");
+
+        // Invalid IPv4 with a valid port (the with-port parse arm)
+        check_invalid("256.0.0.1:80");
+
+        // Invalid unbracketed IPv6 (two-plus colons routes to the
+        // ipv6_no_port arm)
+        check_invalid("1:2:zz");
 
         // Invalid port
         check_invalid("1.2.3.4:");

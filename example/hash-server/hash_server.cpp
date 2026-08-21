@@ -89,11 +89,9 @@ do_session(
 
     // Send hex result back to client (on io_context)
     auto result = to_hex( hash ) + "\n";
-    auto [wec, wn] = co_await capy::write(
+    [[maybe_unused]] auto [wec, wn] = co_await capy::write(
         sock,
         capy::const_buffer( result.data(), result.size() ) );
-    (void)wec;
-    (void)wn;
 
     sock.close();
 }

@@ -35,12 +35,12 @@ namespace boost::corosio {
     base reference selects the backend's `assign_socket` through normal
     virtual dispatch.
 
-    @par Preconditions
-    Both sockets must be in the closed state.
+    An already-open socket is rejected with
+    `errc::already_connected`; both sockets are left untouched.
 
     @par Exception Safety
-    Nothrow. On failure both sockets remain closed and any underlying
-    resources are released.
+    Nothrow. On failure closed sockets remain closed and any
+    underlying resources are released.
 
     @param a Receives the accepted/first endpoint of the pair.
     @param b Receives the connected/second endpoint of the pair.
@@ -57,8 +57,8 @@ connect_pair(local_stream_socket& a, local_stream_socket& b) noexcept;
     POSIX only. Uses `socketpair(AF_UNIX, SOCK_DGRAM)` and adopts the
     descriptors via `assign()`.
 
-    @par Preconditions
-    Both sockets must be in the closed state.
+    An already-open socket is rejected with
+    `errc::already_connected`; both sockets are left untouched.
 
     @par Exception Safety
     Nothrow.

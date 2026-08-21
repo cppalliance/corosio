@@ -12,6 +12,8 @@
 
 #include <boost/corosio/detail/config.hpp>
 
+#include <boost/capy/io_result.hpp>
+
 #include <array>
 #include <cstdint>
 #include <iosfwd>
@@ -43,7 +45,7 @@ namespace boost::corosio {
         >3.2.2. Host (rfc3986)</a>
 
     @see
-        @ref parse_ipv4_address,
+        @ref make_ipv4_address,
         @ref ipv6_address.
 */
 class BOOST_COROSIO_DECL ipv4_address
@@ -110,12 +112,13 @@ public:
         is thrown.
 
         @note For a non-throwing parse function,
-        use @ref parse_ipv4_address.
+        use @ref make_ipv4_address.
 
         @par Exception Safety
         Exceptions thrown on invalid input.
 
-        @throw std::invalid_argument The input failed to parse correctly.
+        @throws std::system_error `errc::invalid_argument` if the input
+        failed to parse correctly.
 
         @param s The string to parse.
 
@@ -124,7 +127,7 @@ public:
             >3.2.2. Host (rfc3986)</a>
 
         @see
-            @ref parse_ipv4_address.
+            @ref make_ipv4_address.
     */
     explicit ipv4_address(std::string_view s);
 
@@ -249,14 +252,14 @@ private:
     std::size_t print_impl(char* dest) const noexcept;
 };
 
-/** Return an IPv4 address from an IP address string in dotted decimal form.
+/** Create an IPv4 address from an IP address string in dotted decimal form.
 
     @param s The string to parse.
-    @param addr The address to store the result.
-    @return An error code (empty on success).
+    @return The error code, empty on success, and the parsed
+        address — default-constructed on failure.
 */
-[[nodiscard]] BOOST_COROSIO_DECL std::error_code
-parse_ipv4_address(std::string_view s, ipv4_address& addr) noexcept;
+[[nodiscard]] BOOST_COROSIO_DECL capy::io_result<ipv4_address>
+make_ipv4_address(std::string_view s) noexcept;
 
 } // namespace boost::corosio
 

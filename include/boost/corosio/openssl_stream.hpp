@@ -155,7 +155,7 @@ public:
 
         @return An awaitable yielding `(error_code)`.
     */
-    capy::io_task<> handshake(tls_role role) override;
+    [[nodiscard]] capy::io_task<> handshake(tls_role role) override;
 
     /** Asynchronously shut down the TLS session.
 
@@ -177,7 +177,7 @@ public:
 
         @return An awaitable yielding `(error_code)`.
     */
-    capy::io_task<> shutdown() override;
+    [[nodiscard]] capy::io_task<> shutdown() override;
 
     /** Reset TLS session state for reuse.
 

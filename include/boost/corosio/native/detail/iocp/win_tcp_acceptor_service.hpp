@@ -1729,10 +1729,9 @@ win_tcp_acceptor::get_internal() const noexcept
 // win_tcp_acceptor_service
 
 inline win_tcp_acceptor_service::win_tcp_acceptor_service(
-    capy::execution_context& ctx, win_tcp_service& svc)
+    [[maybe_unused]] capy::execution_context& ctx, win_tcp_service& svc)
     : svc_(svc)
 {
-    (void)ctx;
 }
 
 inline io_object::implementation*

@@ -52,7 +52,7 @@ stream_file::close() noexcept
 }
 
 void
-stream_file::cancel()
+stream_file::cancel() noexcept
 {
     if (!is_open())
         return;

@@ -52,7 +52,7 @@ random_access_file::close() noexcept
 }
 
 void
-random_access_file::cancel()
+random_access_file::cancel() noexcept
 {
     if (!is_open())
         return;

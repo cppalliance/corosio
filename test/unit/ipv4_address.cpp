@@ -11,6 +11,7 @@
 #include <boost/corosio/ipv4_address.hpp>
 
 #include <sstream>
+#include <system_error>
 
 #include "test_suite.hpp"
 
@@ -47,11 +48,20 @@ struct ipv4_address_test
             BOOST_TEST_EQ(a.to_string(), "10.0.0.1");
         }
 
-        // Invalid string throws
+        // Invalid string throws system_error carrying the parse code
         {
-            BOOST_TEST_THROWS(ipv4_address("invalid"), std::invalid_argument);
-            BOOST_TEST_THROWS(ipv4_address("256.0.0.1"), std::invalid_argument);
-            BOOST_TEST_THROWS(ipv4_address("1.2.3"), std::invalid_argument);
+            BOOST_TEST_THROWS(ipv4_address("invalid"), std::system_error);
+            BOOST_TEST_THROWS(ipv4_address("256.0.0.1"), std::system_error);
+            BOOST_TEST_THROWS(ipv4_address("1.2.3"), std::system_error);
+            try
+            {
+                ipv4_address("invalid");
+                BOOST_TEST_FAIL();
+            }
+            catch (std::system_error const& e)
+            {
+                BOOST_TEST(e.code() == std::errc::invalid_argument);
+            }
         }
     }
 
@@ -59,8 +69,7 @@ struct ipv4_address_test
     {
         // Valid addresses
         auto check_valid = [](std::string_view s, std::uint32_t expected) {
-            ipv4_address addr;
-            auto ec = parse_ipv4_address(s, addr);
+            auto [ec, addr] = make_ipv4_address(s);
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(addr.to_uint(), expected);
         };
@@ -73,9 +82,10 @@ struct ipv4_address_test
 
         // Invalid addresses
         auto check_invalid = [](std::string_view s) {
-            ipv4_address addr;
-            auto ec = parse_ipv4_address(s, addr);
+            auto [ec, addr] = make_ipv4_address(s);
             BOOST_TEST(ec == std::errc::invalid_argument);
+            // The failure payload is the documented default value.
+            BOOST_TEST(addr == ipv4_address());
         };
 
         check_invalid("");

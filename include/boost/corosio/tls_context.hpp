@@ -792,12 +792,10 @@ public:
         @tparam Callback A callable with signature
             `bool( bool preverified, verify_context& ctx )`.
 
-        @param callback The verification callback.
-
-        @return Success. The callback is recorded here and applied during the
-            handshake. On a WolfSSL build that cannot honor it, the handshake
-            fails with `std::errc::function_not_supported` (see Backend
-            Support).
+        @param callback The verification callback. Recorded here and
+            applied during the handshake; on a WolfSSL build that
+            cannot honor it, the handshake fails with
+            `std::errc::function_not_supported` (see Backend Support).
 
         @par Example
         @code
@@ -818,7 +816,7 @@ public:
         @see set_verify_mode
     */
     template<typename Callback>
-    [[nodiscard]] std::error_code set_verify_callback(Callback callback);
+    void set_verify_callback(Callback callback);
 
     /** Set a callback for Server Name Indication (SNI).
 
@@ -998,11 +996,10 @@ tls_context::set_password_callback(Callback callback)
 }
 
 template<typename Callback>
-std::error_code
+void
 tls_context::set_verify_callback(Callback callback)
 {
     set_verify_callback_impl(std::move(callback));
-    return {};
 }
 
 } // namespace boost::corosio

@@ -11,6 +11,7 @@
 #include <boost/corosio/host_name.hpp>
 
 #include <string>
+#include <system_error>
 
 #include "test_suite.hpp"
 
@@ -21,15 +22,18 @@ struct host_name_test
     // Every configured machine has a hostname.
     void testReturnsNonEmpty()
     {
-        std::string h = host_name();
+        auto [ec, h] = host_name();
+        BOOST_TEST(!ec);
         BOOST_TEST(!h.empty());
     }
 
     // Catches buffer or string-lifetime bugs across calls.
     void testStable()
     {
-        std::string a = host_name();
-        std::string b = host_name();
+        auto [ec1, a] = host_name();
+        auto [ec2, b] = host_name();
+        BOOST_TEST(!ec1);
+        BOOST_TEST(!ec2);
         BOOST_TEST_EQ(a, b);
     }
 
@@ -37,7 +41,8 @@ struct host_name_test
     // from a miscounted buffer.
     void testReasonableLength()
     {
-        std::string h = host_name();
+        auto [ec, h] = host_name();
+        BOOST_TEST(!ec);
         BOOST_TEST(h.size() > 0);
         BOOST_TEST(h.size() <= 255);
     }
@@ -47,7 +52,8 @@ struct host_name_test
     // corosio's WSAStartup is lazy (inside io_context).
     void testNoIoContextNeeded()
     {
-        std::string h = host_name();
+        auto [ec, h] = host_name();
+        BOOST_TEST(!ec);
         BOOST_TEST(!h.empty());
     }
 
@@ -56,7 +62,8 @@ struct host_name_test
     // accept any printable ASCII byte or high-bit byte.
     void testCharsetSanity()
     {
-        std::string h = host_name();
+        auto [ec, h] = host_name();
+        BOOST_TEST(!ec);
         for (unsigned char c : h)
         {
             bool printable_ascii = (c >= 0x20 && c <= 0x7E);

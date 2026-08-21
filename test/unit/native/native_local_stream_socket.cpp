@@ -20,6 +20,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -237,7 +238,7 @@ struct native_local_stream_socket_test
             BOOST_TEST_EQ(ec, std::error_code{});
 
             char const msg[] = "virtual";
-            (void)co_await c.write_some(
+            std::ignore = co_await c.write_some(
                 capy::const_buffer(msg, sizeof(msg) - 1));
         };
 
@@ -271,12 +272,10 @@ struct native_local_stream_socket_test
         bool            wait_done = false;
 
         auto rendezvous = [&]() -> capy::task<> {
-            auto [ec] = co_await acc.accept(server);
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await acc.accept(server);
         };
         auto connect_task = [&]() -> capy::task<> {
-            auto [ec] = co_await client.connect(local_endpoint(path));
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await client.connect(local_endpoint(path));
         };
         capy::run_async(ex)(rendezvous());
         capy::run_async(ex)(connect_task());
@@ -322,8 +321,7 @@ struct native_local_stream_socket_test
             wait_done = true;
         };
         auto connect_task = [&]() -> capy::task<> {
-            auto [ec] = co_await client.connect(local_endpoint(path));
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await client.connect(local_endpoint(path));
         };
         capy::run_async(ex)(waiter());
         capy::run_async(ex)(connect_task());
@@ -342,7 +340,7 @@ struct native_local_stream_socket_test
         bool threw = false;
         try
         {
-            (void)a.accept();
+            std::ignore = a.accept();
         }
         catch (std::logic_error const&)
         {

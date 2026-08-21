@@ -53,7 +53,7 @@ resolver::resolver(capy::execution_context& ctx)
 }
 
 void
-resolver::cancel()
+resolver::cancel() noexcept
 {
     if (h_)
         get().cancel();

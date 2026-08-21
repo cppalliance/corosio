@@ -82,8 +82,7 @@ bench_sequential_churn(bench::state& state)
 
             capy::run_async(ioc.get_executor())(
                 [](socket_type& c, corosio::endpoint ep) -> capy::task<> {
-                    auto [ec] = co_await c.connect(ep);
-                    (void)ec;
+                    [[maybe_unused]] auto [ec] = co_await c.connect(ep);
                 }(client, ep));
 
             auto [aec] = co_await acc.accept(server);
@@ -165,8 +164,7 @@ bench_sequential_churn_lockless(bench::state& state)
 
             capy::run_async(ioc.get_executor())(
                 [](socket_type& c, corosio::endpoint ep) -> capy::task<> {
-                    auto [ec] = co_await c.connect(ep);
-                    (void)ec;
+                    [[maybe_unused]] auto [ec] = co_await c.connect(ep);
                 }(client, ep));
 
             auto [aec] = co_await acc.accept(server);
@@ -257,8 +255,7 @@ bench_concurrent_churn(bench::state& state)
 
             capy::run_async(ioc.get_executor())(
                 [](socket_type& c, corosio::endpoint ep) -> capy::task<> {
-                    auto [ec] = co_await c.connect(ep);
-                    (void)ec;
+                    [[maybe_unused]] auto [ec] = co_await c.connect(ep);
                 }(client, ep));
 
             auto [aec] = co_await acc.accept(server);
@@ -345,12 +342,11 @@ bench_burst_churn(bench::state& state)
             for (int i = 0; i < burst_size; ++i)
             {
                 clients.emplace_back(ioc);
-                (void)clients.back().open();
+                std::ignore = clients.back().open();
                 configure_churn_socket(clients.back());
                 capy::run_async(ioc.get_executor())(
                     [](socket_type& c, corosio::endpoint ep) -> capy::task<> {
-                        auto [ec] = co_await c.connect(ep);
-                        (void)ec;
+                        [[maybe_unused]] auto [ec] = co_await c.connect(ep);
                     }(clients.back(), ep));
             }
 
@@ -431,12 +427,11 @@ bench_burst_churn_lockless(bench::state& state)
             for (int i = 0; i < burst_size; ++i)
             {
                 clients.emplace_back(ioc);
-                (void)clients.back().open();
+                std::ignore = clients.back().open();
                 configure_churn_socket(clients.back());
                 capy::run_async(ioc.get_executor())(
                     [](socket_type& c, corosio::endpoint ep) -> capy::task<> {
-                        auto [ec] = co_await c.connect(ep);
-                        (void)ec;
+                        [[maybe_unused]] auto [ec] = co_await c.connect(ep);
                     }(clients.back(), ep));
             }
 

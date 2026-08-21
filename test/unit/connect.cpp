@@ -22,6 +22,7 @@
 
 #include <chrono>
 #include <system_error>
+#include <tuple>
 #include <vector>
 
 #include "context.hpp"
@@ -117,7 +118,7 @@ struct connect_test
         };
 
         auto accept_task = [&]() -> capy::task<> {
-            (void)co_await acc.accept(peer);
+            std::ignore = co_await acc.accept(peer);
         };
 
         capy::run_async(ioc.get_executor())(accept_task());
@@ -156,7 +157,7 @@ struct connect_test
         };
 
         auto accept_task = [&]() -> capy::task<> {
-            (void)co_await acc.accept(peer);
+            std::ignore = co_await acc.accept(peer);
         };
 
         capy::run_async(ioc.get_executor())(accept_task());
@@ -225,7 +226,7 @@ struct connect_test
         };
 
         auto accept_task = [&]() -> capy::task<> {
-            (void)co_await acc.accept(peer);
+            std::ignore = co_await acc.accept(peer);
         };
 
         capy::run_async(ioc.get_executor())(accept_task());
@@ -264,7 +265,7 @@ struct connect_test
 
         // Must also cancel the acceptor since nothing will ever connect.
         auto cancel_task = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             acc.cancel();
         };
 
@@ -311,7 +312,7 @@ struct connect_test
         };
 
         auto accept_task = [&]() -> capy::task<> {
-            (void)co_await acc.accept(peer);
+            std::ignore = co_await acc.accept(peer);
         };
 
         capy::run_async(ioc.get_executor())(accept_task());
@@ -349,7 +350,7 @@ struct connect_test
         };
 
         auto accept_task = [&]() -> capy::task<> {
-            (void)co_await acc.accept(peer);
+            std::ignore = co_await acc.accept(peer);
         };
 
         capy::run_async(ioc.get_executor())(accept_task());
@@ -407,14 +408,13 @@ struct connect_test
         bool connect_done = false;
 
         auto connect_task = [&]() -> capy::task<> {
-            auto [ec, ep] = co_await corosio::connect(client, endpoints);
+            [[maybe_unused]] auto [ec, ep] = co_await corosio::connect(client, endpoints);
             connect_ec    = ec;
             connect_done  = true;
-            (void)ep;
         };
 
         auto cancel_task = [&]() -> capy::task<> {
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             client.cancel();
         };
 

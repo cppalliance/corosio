@@ -104,7 +104,7 @@ public:
     std::error_code add(int signal_number, signal_set::flags_t flags) override;
     std::error_code remove(int signal_number) override;
     std::error_code clear() override;
-    void cancel() override;
+    void cancel() noexcept override;
 };
 
 } // namespace boost::corosio::detail

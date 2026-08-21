@@ -214,7 +214,7 @@ public:
         dispatch. Otherwise identical to @ref random_access_file::read_some_at.
     */
     template<capy::MutableBufferSequence MB>
-    auto read_some_at(std::uint64_t offset, MB const& buffers)
+    [[nodiscard]] auto read_some_at(std::uint64_t offset, MB const& buffers)
     {
         return native_read_at_awaitable<MB>(*this, offset, buffers);
     }
@@ -225,7 +225,7 @@ public:
         dispatch. Otherwise identical to @ref random_access_file::write_some_at.
     */
     template<capy::ConstBufferSequence CB>
-    auto write_some_at(std::uint64_t offset, CB const& buffers)
+    [[nodiscard]] auto write_some_at(std::uint64_t offset, CB const& buffers)
     {
         return native_write_at_awaitable<CB>(*this, offset, buffers);
     }

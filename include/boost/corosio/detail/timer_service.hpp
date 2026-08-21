@@ -238,8 +238,7 @@ struct tl_cache_owner
 inline void
 arm_tl_cache_cleanup() noexcept
 {
-    thread_local tl_cache_owner owner;
-    (void)owner;
+    [[maybe_unused]] thread_local tl_cache_owner owner;
 }
 
 inline timer::implementation*

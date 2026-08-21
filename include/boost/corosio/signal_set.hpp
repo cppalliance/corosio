@@ -343,7 +343,7 @@ protected:
     explicit signal_set(handle h) noexcept : io_signal_set(std::move(h)) {}
 
 private:
-    void do_cancel() override;
+    void do_cancel() noexcept override;
 
     implementation& get() const noexcept
     {

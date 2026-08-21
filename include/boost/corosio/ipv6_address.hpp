@@ -12,6 +12,8 @@
 
 #include <boost/corosio/detail/config.hpp>
 
+#include <boost/capy/io_result.hpp>
+
 #include <array>
 #include <iosfwd>
 #include <string>
@@ -54,7 +56,7 @@ class ipv4_address;
 
     @see
         @ref ipv4_address,
-        @ref parse_ipv6_address.
+        @ref make_ipv6_address.
 */
 class BOOST_COROSIO_DECL ipv6_address
 {
@@ -134,13 +136,13 @@ public:
         is thrown.
 
         @note For a non-throwing parse function,
-        use @ref parse_ipv6_address.
+        use @ref make_ipv6_address.
 
         @par Exception Safety
         Exceptions thrown on invalid input.
 
-        @throw std::invalid_argument
-        The input failed to parse correctly.
+        @throws std::system_error `errc::invalid_argument` if the input
+        failed to parse correctly.
 
         @param s The string to parse.
 
@@ -149,7 +151,7 @@ public:
             >3.2.2. Host (rfc3986)</a>
 
         @see
-            @ref parse_ipv6_address.
+            @ref make_ipv6_address.
     */
     explicit ipv6_address(std::string_view s);
 
@@ -316,7 +318,7 @@ private:
     std::size_t print_impl(char* dest) const noexcept;
 };
 
-/** Parse a string containing an IPv6 address.
+/** Create an IPv6 address from a string.
 
     This function attempts to parse the string
     as an IPv6 address and returns an error code
@@ -325,13 +327,12 @@ private:
     @par Exception Safety
     Throws nothing.
 
-    @return An error code (empty on success).
-
     @param s The string to parse.
-    @param addr The address to store the result.
+    @return The error code, empty on success, and the parsed
+        address — default-constructed on failure.
 */
-[[nodiscard]] BOOST_COROSIO_DECL std::error_code
-parse_ipv6_address(std::string_view s, ipv6_address& addr) noexcept;
+[[nodiscard]] BOOST_COROSIO_DECL capy::io_result<ipv6_address>
+make_ipv6_address(std::string_view s) noexcept;
 
 } // namespace boost::corosio
 

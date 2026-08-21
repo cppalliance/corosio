@@ -81,13 +81,11 @@ struct openssl_stream_test
         openssl_stream stream(&sock, ctx);
 
         // Non-const overload via mutable stream.
-        capy::any_stream& mutable_next = stream.next_layer();
-        (void)mutable_next;
+        [[maybe_unused]] capy::any_stream& mutable_next = stream.next_layer();
 
         // Const overload via reference to const.
         openssl_stream const& cref = stream;
-        capy::any_stream const& const_next = cref.next_layer();
-        (void)const_next;
+        [[maybe_unused]] capy::any_stream const& const_next = cref.next_layer();
 
         BOOST_TEST(&mutable_next == &const_next);
     }

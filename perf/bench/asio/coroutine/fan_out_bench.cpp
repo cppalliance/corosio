@@ -135,9 +135,8 @@ bench_fork_join(bench::state& state)
             // async_wait registering.
             while (remaining.load(std::memory_order_acquire) > 0)
             {
-                auto [ec] =
+                [[maybe_unused]] auto [ec] =
                     co_await t.async_wait(asio::as_tuple(asio::deferred));
-                (void)ec;
             }
         }
 
@@ -213,8 +212,7 @@ bench_nested(bench::state& state)
         // registering.
         while (subs_remaining.load(std::memory_order_acquire) > 0)
         {
-            auto [ec] = co_await t.async_wait(asio::as_tuple(asio::deferred));
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await t.async_wait(asio::as_tuple(asio::deferred));
         }
 
         groups_notifier.arrive();
@@ -241,9 +239,8 @@ bench_nested(bench::state& state)
 
             while (groups_remaining.load(std::memory_order_acquire) > 0)
             {
-                auto [ec] =
+                [[maybe_unused]] auto [ec] =
                     co_await t.async_wait(asio::as_tuple(asio::deferred));
-                (void)ec;
             }
         }
 
@@ -326,9 +323,8 @@ bench_concurrent_parents(bench::state& state)
             // async_wait registering.
             while (remaining.load(std::memory_order_acquire) > 0)
             {
-                auto [ec] =
+                [[maybe_unused]] auto [ec] =
                     co_await t.async_wait(asio::as_tuple(asio::deferred));
-                (void)ec;
             }
         }
 
@@ -406,9 +402,8 @@ bench_fork_join_lockless(bench::state& state)
             // async_wait registering.
             while (remaining.load(std::memory_order_acquire) > 0)
             {
-                auto [ec] =
+                [[maybe_unused]] auto [ec] =
                     co_await t.async_wait(asio::as_tuple(asio::deferred));
-                (void)ec;
             }
         }
 
@@ -483,8 +478,7 @@ bench_nested_lockless(bench::state& state)
         // registering.
         while (subs_remaining.load(std::memory_order_acquire) > 0)
         {
-            auto [ec] = co_await t.async_wait(asio::as_tuple(asio::deferred));
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await t.async_wait(asio::as_tuple(asio::deferred));
         }
 
         groups_notifier.arrive();
@@ -511,9 +505,8 @@ bench_nested_lockless(bench::state& state)
 
             while (groups_remaining.load(std::memory_order_acquire) > 0)
             {
-                auto [ec] =
+                [[maybe_unused]] auto [ec] =
                     co_await t.async_wait(asio::as_tuple(asio::deferred));
-                (void)ec;
             }
         }
 
@@ -595,9 +588,8 @@ bench_concurrent_parents_lockless(bench::state& state)
             // async_wait registering.
             while (remaining.load(std::memory_order_acquire) > 0)
             {
-                auto [ec] =
+                [[maybe_unused]] auto [ec] =
                     co_await t.async_wait(asio::as_tuple(asio::deferred));
-                (void)ec;
             }
         }
 

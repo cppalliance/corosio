@@ -34,6 +34,7 @@
 #include <stdexcept>
 #include <stop_token>
 #include <string_view>
+#include <tuple>
 #include <thread>
 #include <vector>
 
@@ -205,7 +206,7 @@ struct timeout_test
         auto t = [](bool& out) -> capy::task<> {
             try
             {
-                (void) co_await timeout(
+                std::ignore = co_await timeout(
                     throwing_awaitable{}, std::chrono::seconds(10));
             }
             catch(std::runtime_error const&)
@@ -429,10 +430,9 @@ struct timeout_test
                     ~guard() { ++c_; }
                 };
                 guard g{counter};
-                auto [ec] = co_await timeout(
+                [[maybe_unused]] auto [ec] = co_await timeout(
                     delay(std::chrono::hours(1)),
                     std::chrono::hours(1));
-                (void)ec;
             };
 
             capy::run_async(ioc.get_executor())(task(destroyed));
@@ -450,22 +450,21 @@ struct timeout_test
         // example).
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        // s2 is held open but silent.
+        [[maybe_unused]] auto [s1, s2] = test::make_socket_pair(ioc);
         bool timed_out = false;
         std::array<char, 32> buf{};
 
         auto t = [&]() -> capy::task<> {
-            auto [ec, n] = co_await timeout(
+            [[maybe_unused]] auto [ec, n] = co_await timeout(
                 s1.read_some(capy::mutable_buffer(buf.data(), buf.size())),
                 std::chrono::milliseconds(50));
-            (void)n;
             timed_out = (ec == capy::cond::timeout);
         };
         capy::run_async(ex)(t());
         ioc.run();
 
         BOOST_TEST(timed_out);
-        (void)s2; // held open but silent
     }
 
     void testTypeErasedInnerFullProtocol()
@@ -504,24 +503,23 @@ struct timeout_test
         // path. The pointer form exercises non-owning reference mode.
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        // s2 is held open but silent.
+        [[maybe_unused]] auto [s1, s2] = test::make_socket_pair(ioc);
         bool timed_out = false;
         std::array<char, 32> buf{};
 
         auto t = [&]() -> capy::task<> {
             capy::any_read_stream stream(&s1);
-            auto [ec, n] = co_await timeout(
+            [[maybe_unused]] auto [ec, n] = co_await timeout(
                 stream.read_some(
                     capy::mutable_buffer(buf.data(), buf.size())),
                 std::chrono::milliseconds(50));
-            (void)n;
             timed_out = (ec == capy::cond::timeout);
         };
         capy::run_async(ex)(t());
         ioc.run();
 
         BOOST_TEST(timed_out);
-        (void)s2; // held open but silent
     }
 
     void testNestedTimeoutOverTypeErased()

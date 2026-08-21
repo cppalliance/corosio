@@ -339,7 +339,7 @@ public:
         If the socket needs to be opened and the open fails, the
         awaitable completes immediately with that error.
     */
-    auto connect(corosio::local_endpoint ep)
+    [[nodiscard]] auto connect(corosio::local_endpoint ep)
     {
         connect_awaitable aw(*this, ep);
         if (!is_open())
@@ -371,7 +371,7 @@ public:
         All outstanding operations complete with `errc::operation_canceled`.
         Check `ec == cond::canceled` for portable comparison.
     */
-    void cancel();
+    void cancel() noexcept;
 
     /** Get the native socket handle.
 
@@ -533,7 +533,8 @@ protected:
 private:
     friend class local_stream_acceptor;
 
-    std::error_code open_for_family(int family, int type, int protocol) noexcept;
+    [[nodiscard]] std::error_code
+    open_for_family(int family, int type, int protocol) noexcept;
 
     inline implementation& get() const noexcept
     {

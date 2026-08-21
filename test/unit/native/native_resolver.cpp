@@ -83,8 +83,7 @@ struct native_resolver_test
         io_context ctx(Backend);
         native_resolver<Backend> nr(ctx);
 
-        resolver& base = nr;
-        (void)base;
+        [[maybe_unused]] resolver& base = nr;
         BOOST_TEST_PASS();
     }
 

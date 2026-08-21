@@ -10,6 +10,8 @@
 #include <boost/corosio/ipv6_address.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 
+#include <boost/corosio/detail/except.hpp>
+
 #include <cstring>
 #include <ostream>
 #include <stdexcept>
@@ -30,9 +32,10 @@ ipv6_address::ipv6_address(ipv4_address const& addr) noexcept
 
 ipv6_address::ipv6_address(std::string_view s)
 {
-    auto ec = parse_ipv6_address(s, *this);
+    auto [ec, addr] = make_ipv6_address(s);
     if (ec)
-        throw std::invalid_argument("invalid IPv6 address");
+        detail::throw_system_error(ec, "invalid IPv6 address");
+    *this = addr;
 }
 
 std::string
@@ -281,8 +284,8 @@ maybe_octet(unsigned char const* p) noexcept
 
 } // namespace
 
-std::error_code
-parse_ipv6_address(std::string_view s, ipv6_address& addr) noexcept
+static std::error_code
+parse_ipv6_impl(std::string_view s, ipv6_address& addr) noexcept
 {
     auto it        = s.data();
     auto const end = it + s.size();
@@ -361,11 +364,10 @@ parse_ipv6_address(std::string_view s, ipv6_address& addr) noexcept
             }
             // rewind the h16 and parse it as IPv4
             it = prev;
-            ipv4_address v4;
-            auto ec = parse_ipv4_address(
-                std::string_view(it, static_cast<std::size_t>(end - it)), v4);
-            if (ec)
-                return ec;
+            auto [v4ec, v4] = make_ipv4_address(
+                std::string_view(it, static_cast<std::size_t>(end - it)));
+            if (v4ec)
+                return v4ec;
             // Must consume exactly the IPv4 address portion
             // Re-parse to find where it ends
             auto v4_it = it;
@@ -373,12 +375,10 @@ parse_ipv6_address(std::string_view s, ipv6_address& addr) noexcept
                    (*v4_it == '.' || (*v4_it >= '0' && *v4_it <= '9')))
                 ++v4_it;
             // Verify it parsed correctly by re-parsing the exact substring
-            ipv4_address v4_check;
-            ec = parse_ipv4_address(
-                std::string_view(it, static_cast<std::size_t>(v4_it - it)),
-                v4_check);
-            if (ec)
-                return ec;
+            auto [ckec, v4_check] = make_ipv4_address(
+                std::string_view(it, static_cast<std::size_t>(v4_it - it)));
+            if (ckec)
+                return ckec;
             it                     = v4_it;
             auto const b4          = v4_check.to_bytes();
             bytes[2 * (7 - n) + 0] = b4[0];
@@ -448,6 +448,15 @@ parse_ipv6_address(std::string_view s, ipv6_address& addr) noexcept
 
     addr = ipv6_address{bytes};
     return {};
+}
+
+capy::io_result<ipv6_address>
+make_ipv6_address(std::string_view s) noexcept
+{
+    ipv6_address addr;
+    if (auto ec = parse_ipv6_impl(s, addr))
+        return {ec, ipv6_address{}};
+    return {std::error_code{}, addr};
 }
 
 } // namespace boost::corosio

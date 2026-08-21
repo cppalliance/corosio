@@ -311,7 +311,7 @@ public:
         A closed file reports `errc::bad_file_descriptor`.
     */
     template<capy::MutableBufferSequence MB>
-    auto read_some_at(std::uint64_t offset, MB const& buffers)
+    [[nodiscard]] auto read_some_at(std::uint64_t offset, MB const& buffers)
     {
         read_some_at_awaitable<MB> aw(*this, offset, buffers);
         if (!is_open())
@@ -329,7 +329,7 @@ public:
         A closed file reports `errc::bad_file_descriptor`.
     */
     template<capy::ConstBufferSequence CB>
-    auto write_some_at(std::uint64_t offset, CB const& buffers)
+    [[nodiscard]] auto write_some_at(std::uint64_t offset, CB const& buffers)
     {
         write_some_at_awaitable<CB> aw(*this, offset, buffers);
         if (!is_open())
@@ -338,7 +338,7 @@ public:
     }
 
     /** Cancel pending asynchronous operations. */
-    void cancel();
+    void cancel() noexcept;
 
     /** Get the native file descriptor or handle. */
     native_handle_type native_handle() const noexcept;

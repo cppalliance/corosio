@@ -85,7 +85,7 @@ struct local_connect_pair_test
         // a is open; connect_pair must refuse and leave both sockets
         // in their original state (a open, b closed).
         auto ec = connect_pair(a, b);
-        BOOST_TEST(static_cast<bool>(ec));
+        BOOST_TEST(ec == std::errc::already_connected);
         BOOST_TEST(a.is_open());
         BOOST_TEST(!b.is_open());
     }
@@ -97,7 +97,7 @@ struct local_connect_pair_test
         local_datagram_socket a(ioc), b(ioc);
         BOOST_TEST(!b.open());
         auto ec = connect_pair(a, b);
-        BOOST_TEST(static_cast<bool>(ec));
+        BOOST_TEST(ec == std::errc::already_connected);
         BOOST_TEST(!a.is_open());
         BOOST_TEST(b.is_open());
     }

@@ -18,6 +18,7 @@
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 
 #include <system_error>
+#include <tuple>
 
 #include <errno.h>
 #include <netinet/in.h>
@@ -120,7 +121,7 @@ struct epoll_traits
         if (family == AF_INET6)
         {
             int one = 1;
-            (void)::setsockopt(
+            std::ignore = ::setsockopt(
                 fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one));
         }
         return {};
@@ -134,7 +135,7 @@ struct epoll_traits
         if (family == AF_INET6)
         {
             int val = 0;
-            (void)::setsockopt(
+            std::ignore = ::setsockopt(
                 fd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val));
         }
         return {};

@@ -60,7 +60,7 @@ local_stream_socket::close() noexcept
 }
 
 void
-local_stream_socket::cancel()
+local_stream_socket::cancel() noexcept
 {
     if (!is_open())
         return;

@@ -94,7 +94,7 @@ public:
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     template<capy::MutableBufferSequence Buffers>
-    auto read_some(Buffers const& buffers)
+    [[nodiscard]] auto read_some(Buffers const& buffers)
     {
         return do_read_some(buffers);
     }
@@ -119,7 +119,7 @@ public:
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     template<capy::ConstBufferSequence Buffers>
-    auto write_some(Buffers const& buffers)
+    [[nodiscard]] auto write_some(Buffers const& buffers)
     {
         return do_write_some(buffers);
     }
@@ -144,7 +144,7 @@ public:
 
         @return An awaitable yielding `(error_code)`.
     */
-    virtual capy::io_task<> handshake(tls_role role) = 0;
+    [[nodiscard]] virtual capy::io_task<> handshake(tls_role role) = 0;
 
     /** Asynchronously perform a graceful TLS shutdown.
 
@@ -165,7 +165,7 @@ public:
 
         @return An awaitable yielding `(error_code)`.
     */
-    virtual capy::io_task<> shutdown() = 0;
+    [[nodiscard]] virtual capy::io_task<> shutdown() = 0;
 
     /** Reset TLS session state for reuse.
 

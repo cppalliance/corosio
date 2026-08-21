@@ -65,7 +65,8 @@ struct mocket_test
         ioc.restart();
 
         // All staged data should be consumed
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 
@@ -79,9 +80,10 @@ struct mocket_test
         // Set expectation that won't be fulfilled
         m.expect("never_written");
 
-        // Close should fail because expect_ is not empty
-        auto ec = m.close();
+        // Verification fails because expect_ is not empty
+        auto ec = m.verify();
         BOOST_TEST(ec == capy::error::test_failure);
+        m.close();
 
         peer.close();
     }
@@ -96,9 +98,10 @@ struct mocket_test
         // Stage data that won't be consumed
         m.provide("never_read");
 
-        // Close should fail because provide_ is not empty
-        auto ec = m.close();
+        // Verification fails because provide_ is not empty
+        auto ec = m.verify();
         BOOST_TEST(ec == capy::error::test_failure);
+        m.close();
 
         peer.close();
     }
@@ -141,7 +144,8 @@ struct mocket_test
 
         ioc.run();
 
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 
@@ -192,7 +196,8 @@ struct native_mocket_test
         ioc.run();
         ioc.restart();
 
-        BOOST_TEST(!m.close());
+        BOOST_TEST(!m.verify());
+        m.close();
         peer.close();
     }
 

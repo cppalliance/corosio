@@ -47,11 +47,9 @@ struct native_signal_set_test
         io_context ctx(Backend);
         native_signal_set<Backend> nss(ctx, SIGINT);
 
-        signal_set& base = nss;
-        (void)base;
+        [[maybe_unused]] signal_set& base = nss;
 
-        io_signal_set& io_base = nss;
-        (void)io_base;
+        [[maybe_unused]] io_signal_set& io_base = nss;
 
         BOOST_TEST_PASS();
     }

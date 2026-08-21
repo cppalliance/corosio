@@ -87,10 +87,8 @@ sub_request(
         co_return;
     }
 
-    auto [rec, rn] =
+    [[maybe_unused]] auto [rec, rn] =
         co_await capy::read(client, capy::mutable_buffer(recv_buf, 64));
-    (void)rec;
-    (void)rn;
     latch.arrive();
 }
 
@@ -134,8 +132,7 @@ bench_fork_join(bench::state& state)
                 capy::run_async(ioc.get_executor())(
                     sub_request<Backend>(clients[i], latch));
 
-            auto [ec] = co_await latch.done.wait();
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await latch.done.wait();
         }
 
         for (auto& c : clients)
@@ -201,8 +198,7 @@ bench_nested(bench::state& state)
             capy::run_async(ioc.get_executor())(
                 sub_request<Backend>(clients[base_idx + i], subs_latch));
 
-        auto [ec] = co_await subs_latch.done.wait();
-        (void)ec;
+        [[maybe_unused]] auto [ec] = co_await subs_latch.done.wait();
 
         groups_latch.arrive();
     };
@@ -217,8 +213,7 @@ bench_nested(bench::state& state)
                 capy::run_async(ioc.get_executor())(group_task(
                     g * subs_per_group, subs_per_group, groups_latch));
 
-            auto [ec] = co_await groups_latch.done.wait();
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await groups_latch.done.wait();
         }
 
         for (auto& c : clients)
@@ -291,8 +286,7 @@ bench_concurrent_parents(bench::state& state)
                 capy::run_async(ioc.get_executor())(
                     sub_request<Backend>(clients[base + i], latch));
 
-            auto [ec] = co_await latch.done.wait();
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await latch.done.wait();
         }
 
         if (parents_done.fetch_add(1, std::memory_order_acq_rel) ==
@@ -363,8 +357,7 @@ bench_fork_join_lockless(bench::state& state)
                 capy::run_async(ioc.get_executor())(
                     sub_request<Backend>(clients[i], latch));
 
-            auto [ec] = co_await latch.done.wait();
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await latch.done.wait();
         }
 
         for (auto& c : clients)
@@ -431,8 +424,7 @@ bench_nested_lockless(bench::state& state)
             capy::run_async(ioc.get_executor())(
                 sub_request<Backend>(clients[base_idx + i], subs_latch));
 
-        auto [ec] = co_await subs_latch.done.wait();
-        (void)ec;
+        [[maybe_unused]] auto [ec] = co_await subs_latch.done.wait();
 
         groups_latch.arrive();
     };
@@ -447,8 +439,7 @@ bench_nested_lockless(bench::state& state)
                 capy::run_async(ioc.get_executor())(group_task(
                     g * subs_per_group, subs_per_group, groups_latch));
 
-            auto [ec] = co_await groups_latch.done.wait();
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await groups_latch.done.wait();
         }
 
         for (auto& c : clients)
@@ -522,8 +513,7 @@ bench_concurrent_parents_lockless(bench::state& state)
                 capy::run_async(ioc.get_executor())(
                     sub_request<Backend>(clients[base + i], latch));
 
-            auto [ec] = co_await latch.done.wait();
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await latch.done.wait();
         }
 
         if (parents_done.fetch_add(1, std::memory_order_acq_rel) ==

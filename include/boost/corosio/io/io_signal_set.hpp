@@ -97,7 +97,7 @@ public:
             Cancelled waiters complete with an error that
             compares equal to `capy::cond::canceled`.
         */
-        virtual void cancel() = 0;
+        virtual void cancel() noexcept = 0;
     };
 
     /** Cancel all operations associated with the signal set.
@@ -108,7 +108,7 @@ public:
 
         Cancellation does not alter the set of registered signals.
     */
-    void cancel()
+    void cancel() noexcept
     {
         do_cancel();
     }
@@ -126,14 +126,14 @@ public:
             Returns the signal number when a signal is delivered,
             or an error code on failure.
     */
-    auto wait()
+    [[nodiscard]] auto wait()
     {
         return wait_awaitable(*this);
     }
 
 protected:
     /** Dispatch cancel to the concrete implementation. */
-    virtual void do_cancel() = 0;
+    virtual void do_cancel() noexcept = 0;
 
     explicit io_signal_set(handle h) noexcept : io_object(std::move(h)) {}
 

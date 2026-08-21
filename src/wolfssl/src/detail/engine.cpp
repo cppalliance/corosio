@@ -899,7 +899,7 @@ engine::reset()
 }
 
 void
-engine::capture_alpn(std::string& out) const
+engine::capture_alpn([[maybe_unused]] std::string& out) const
 {
 #if defined(HAVE_ALPN)
     char* name        = nullptr;
@@ -907,8 +907,6 @@ engine::capture_alpn(std::string& out) const
     if (wolfSSL_ALPN_GetProtocol(ssl_, &name, &sz) == WOLFSSL_SUCCESS &&
         name && sz)
         out.assign(name, sz);
-#else
-    (void)out;
 #endif
 }
 

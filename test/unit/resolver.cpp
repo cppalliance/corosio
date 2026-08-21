@@ -340,10 +340,9 @@ struct resolver_test
 
         auto task = [](resolver& r_ref,
                        std::error_code& ec_out, bool& done) -> capy::task<> {
-            auto [ec, res] = co_await r_ref.resolve("localhost", "80");
+            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve("localhost", "80");
             ec_out = ec;
             done   = true;
-            (void)res;
         };
         capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
         ioc.run();
@@ -372,10 +371,9 @@ struct resolver_test
         auto task = [](resolver& r_ref,
                        std::error_code& ec_out, bool& done) -> capy::task<> {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
-            auto [ec, res] = co_await r_ref.resolve(ep);
+            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve(ep);
             ec_out = ec;
             done   = true;
-            (void)res;
         };
         capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
         ioc.run();
@@ -405,10 +403,9 @@ struct resolver_test
 
         auto task = [](resolver& r_ref,
                        std::error_code& ec_out, bool& done) -> capy::task<> {
-            auto [ec, res] = co_await r_ref.resolve("localhost", "80");
+            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve("localhost", "80");
             ec_out = ec;
             done   = true;
-            (void)res;
         };
         capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
         ioc.run();
@@ -429,12 +426,11 @@ struct resolver_test
 
         auto task = [](resolver& r_ref,
                        std::error_code& ec_out, bool& done) -> capy::task<> {
-            auto [ec, res] = co_await r_ref.resolve(
+            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve(
                 "127.0.0.1", "not-a-real-service",
                 resolve_flags::numeric_host | resolve_flags::numeric_service);
             ec_out = ec;
             done   = true;
-            (void)res;
         };
         capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
         ioc.run();
@@ -455,9 +451,7 @@ struct resolver_test
             auto flags = resolve_flags::passive |
                 resolve_flags::address_configured |
                 resolve_flags::v4_mapped | resolve_flags::all_matching;
-            auto [ec, res] = co_await r_ref.resolve("127.0.0.1", "80", flags);
-            (void)ec;
-            (void)res;
+            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve("127.0.0.1", "80", flags);
         };
         capy::run_async(ioc.get_executor())(task(r));
         ioc.run();
@@ -548,10 +542,9 @@ struct resolver_test
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
                        bool& done) -> capy::task<> {
-            auto [ec, res] = co_await r_ref.resolve("localhost", "80");
+            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve("localhost", "80");
             ec_out = ec;
             done   = true;
-            (void)res;
         };
         capy::run_async(ioc.get_executor(), stop_src.get_token())(
             task(r, result_ec, completed));
@@ -579,10 +572,9 @@ struct resolver_test
         auto task = [](resolver& r_ref, std::error_code& ec_out,
                        bool& done) -> capy::task<> {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
-            auto [ec, res] = co_await r_ref.resolve(ep);
+            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve(ep);
             ec_out = ec;
             done   = true;
-            (void)res;
         };
         capy::run_async(ioc.get_executor(), stop_src.get_token())(
             task(r, result_ec, completed));
@@ -755,11 +747,8 @@ struct resolver_test
 
         // Test range-based for
         std::size_t count = 0;
-        for (auto const& entry : results)
-        {
-            (void)entry;
+        for ([[maybe_unused]] auto const& entry : results)
             ++count;
-        }
         BOOST_TEST_EQ(count, results.size());
 
         // Test cbegin/cend

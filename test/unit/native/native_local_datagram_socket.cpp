@@ -270,11 +270,9 @@ struct native_local_datagram_socket_test
         };
         auto sender = [&]() -> capy::task<> {
             char dg[1]   = {'X'};
-            auto [ec, n] = co_await send.send_to(
+            [[maybe_unused]] auto [ec, n] = co_await send.send_to(
                 capy::const_buffer(dg, sizeof(dg)),
                 local_endpoint(rx_path));
-            (void)ec;
-            (void)n;
         };
 
         capy::run_async(ex)(waiter());

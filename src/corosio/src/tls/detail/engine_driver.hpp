@@ -30,6 +30,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -251,7 +252,7 @@ class engine_driver
     // nothing is pending.
     capy::task<void> best_effort_flush()
     {
-        (void)co_await flush_output();
+        std::ignore = co_await flush_output();
     }
 
     // gen is the caller's read_gen_ snapshot from its engine call; a

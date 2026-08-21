@@ -34,6 +34,7 @@
 #include <stop_token>
 #include <stdexcept>
 #include <system_error>
+#include <tuple>
 
 #if BOOST_COROSIO_POSIX
 #include <unistd.h> // getpid()
@@ -281,7 +282,7 @@ struct tcp_socket_test
         bool get_threw = false;
         try
         {
-            (void)sock.get_option<socket_option::v6_only>();
+            std::ignore = sock.get_option<socket_option::v6_only>();
         }
         catch (std::system_error const& e)
         {
@@ -478,21 +479,21 @@ struct tcp_socket_test
             char buf[32] = {};
 
             // First exchange
-            (void)co_await a.write_some(capy::const_buffer("one", 3));
+            std::ignore = co_await a.write_some(capy::const_buffer("one", 3));
             auto [ec1, n1] =
                 co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(std::string_view(buf, n1), "one");
 
             // Second exchange
-            (void)co_await a.write_some(capy::const_buffer("two", 3));
+            std::ignore = co_await a.write_some(capy::const_buffer("two", 3));
             auto [ec2, n2] =
                 co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(std::string_view(buf, n2), "two");
 
             // Third exchange
-            (void)co_await a.write_some(capy::const_buffer("three", 5));
+            std::ignore = co_await a.write_some(capy::const_buffer("three", 5));
             auto [ec3, n3] =
                 co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec3);
@@ -537,8 +538,8 @@ struct tcp_socket_test
             BOOST_TEST_EQ(std::string_view(buf, n4), "from_b");
 
             // Interleaved: write a, write b, read b, read a
-            (void)co_await a.write_some(capy::const_buffer("msg_a", 5));
-            (void)co_await b.write_some(capy::const_buffer("msg_b", 5));
+            std::ignore = co_await a.write_some(capy::const_buffer("msg_a", 5));
+            std::ignore = co_await b.write_some(capy::const_buffer("msg_b", 5));
 
             auto [ec5, n5] =
                 co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
@@ -574,7 +575,7 @@ struct tcp_socket_test
             BOOST_TEST_EQ(n1, 0u);
 
             // Send actual data so read can complete
-            (void)co_await a.write_some(capy::const_buffer("x", 1));
+            std::ignore = co_await a.write_some(capy::const_buffer("x", 1));
 
             // Read with empty buffer should return 0
             auto [ec2, n2] =
@@ -584,7 +585,7 @@ struct tcp_socket_test
 
             // Drain the actual data
             char buf[8];
-            (void)co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore = co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         };
         capy::run_async(ioc.get_executor())(task(s1, s2));
 
@@ -683,7 +684,7 @@ struct tcp_socket_test
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then close
-            (void)co_await a.write_some(capy::const_buffer("final", 5));
+            std::ignore = co_await a.write_some(capy::const_buffer("final", 5));
             a.close();
 
             // Read the data
@@ -717,7 +718,7 @@ struct tcp_socket_test
             b.close();
 
             // Give OS time to process the close
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             // Writing to closed peer should eventually fail.
             // We need to write enough data to fill the tcp_socket buffer and
@@ -768,11 +769,11 @@ struct tcp_socket_test
             capy::run_async(ioc.get_executor())(nested_coro());
 
             // Wait for the read to be underway then cancel it
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             b.cancel();
 
             // Wait for read to complete
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(read_done);
             BOOST_TEST(read_ec == capy::cond::canceled);
@@ -807,10 +808,10 @@ struct tcp_socket_test
             capy::run_async(ioc.get_executor())(nested_coro());
 
             // Wait then close the tcp_socket
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             b.close();
 
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(read_done);
             // Close should cancel pending operations
@@ -841,7 +842,7 @@ struct tcp_socket_test
         // Reader task - signals ready then blocks waiting for data
         auto reader_task = [&]() -> capy::task<> {
             // Signal we're about to start the blocking read
-            (void)co_await s2.write_some(capy::const_buffer("R", 1));
+            std::ignore = co_await s2.write_some(capy::const_buffer("R", 1));
 
             // Now block waiting for data that will never come
             char buf[32];
@@ -855,7 +856,7 @@ struct tcp_socket_test
         auto canceller_task = [&]() -> capy::task<> {
             // Wait for reader's "ready" signal
             char buf[1];
-            (void)co_await s1.read_some(capy::mutable_buffer(buf, 1));
+            std::ignore = co_await s1.read_some(capy::mutable_buffer(buf, 1));
 
             // Reader is now blocked on read - request stop
             stop_src.request_stop();
@@ -905,7 +906,7 @@ struct tcp_socket_test
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write exactly 100 bytes
             std::string send_data(100, 'X');
-            (void)co_await capy::write(
+            std::ignore = co_await capy::write(
                 a, capy::const_buffer(send_data.data(), send_data.size()));
 
             // Read exactly 100 bytes using corosio::read
@@ -959,7 +960,7 @@ struct tcp_socket_test
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             std::string send_data = "Hello, this is a test message!";
-            (void)co_await capy::write(a, capy::make_buffer(send_data));
+            std::ignore = co_await capy::write(a, capy::make_buffer(send_data));
 
             char buf[64] = {};
             auto [ec, n] = co_await capy::read(
@@ -984,7 +985,7 @@ struct tcp_socket_test
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Send 50 bytes but try to read 100
             std::string send_data(50, 'Z');
-            (void)co_await capy::write(
+            std::ignore = co_await capy::write(
                 a, capy::const_buffer(send_data.data(), send_data.size()));
             a.close();
 
@@ -1014,7 +1015,7 @@ struct tcp_socket_test
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then shutdown send
             // (unqualified: using enum avoids GCC 11 ICE in tsubst_copy)
-            (void)co_await a.write_some(capy::const_buffer("hello", 5));
+            std::ignore = co_await a.write_some(capy::const_buffer("hello", 5));
             BOOST_TEST(!a.shutdown(shutdown_send));
 
             // Read the data
@@ -1047,7 +1048,7 @@ struct tcp_socket_test
             BOOST_TEST(!b.shutdown(shutdown_receive));
 
             // b can still send
-            (void)co_await b.write_some(capy::const_buffer("from_b", 6));
+            std::ignore = co_await b.write_some(capy::const_buffer("from_b", 6));
 
             char buf[32] = {};
             auto [ec, n] =
@@ -1084,7 +1085,7 @@ struct tcp_socket_test
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then shutdown both
-            (void)co_await a.write_some(capy::const_buffer("goodbye", 7));
+            std::ignore = co_await a.write_some(capy::const_buffer("goodbye", 7));
             BOOST_TEST(!a.shutdown(shutdown_both));
 
             // Peer should receive the data
@@ -2307,9 +2308,8 @@ struct tcp_socket_test
         char buf[16];
 
         auto reader = [&]() -> capy::task<> {
-            auto [rec, rn] =
+            [[maybe_unused]] auto [rec, rn] =
                 co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
-            (void)rn;
             read_ec   = rec;
             read_done = true;
         };
@@ -2318,10 +2318,9 @@ struct tcp_socket_test
             auto [aec, peer] = co_await acc.accept();
             BOOST_TEST(!aec);
             char const out[] = "ping";
-            auto [wec, wn]   = co_await s1.write_some(
+            [[maybe_unused]] auto [wec, wn]   = co_await s1.write_some(
                 capy::const_buffer(out, 4));
             BOOST_TEST(!wec);
-            (void)wn;
             char in[8];
             auto [rec, rn] =
                 co_await peer.read_some(capy::mutable_buffer(in, sizeof(in)));
@@ -2361,9 +2360,8 @@ struct tcp_socket_test
         auto released = invalid_native_socket;
 
         auto reader = [&]() -> capy::task<> {
-            auto [rec, rn] =
+            [[maybe_unused]] auto [rec, rn] =
                 co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
-            (void)rn;
             read_ec   = rec;
             read_done = true;
         };
@@ -2408,7 +2406,7 @@ struct tcp_socket_test
         std::error_code caught;
         try
         {
-            (void)sock.release();
+            std::ignore = sock.release();
         }
         catch (std::system_error const& e)
         {
@@ -2454,10 +2452,9 @@ struct tcp_socket_test
             auto [aec, peer] = co_await acc.accept();
             BOOST_TEST(!aec);
             char const out[] = "v6";
-            auto [wec, wn]   = co_await adopted.write_some(
+            [[maybe_unused]] auto [wec, wn]   = co_await adopted.write_some(
                 capy::const_buffer(out, 2));
             BOOST_TEST(!wec);
-            (void)wn;
             char in[8];
             auto [rec, rn] =
                 co_await peer.read_some(capy::mutable_buffer(in, sizeof(in)));

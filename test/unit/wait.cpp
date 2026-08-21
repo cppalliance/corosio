@@ -36,6 +36,7 @@
 #include <cstddef>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 
 #if BOOST_COROSIO_POSIX
 // Raw descriptor access for the write-backpressure tests.
@@ -255,10 +256,8 @@ struct wait_test
             bytes_read = n;
         };
         auto writer = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s2.write_some(
+            [[maybe_unused]] auto [ec, n] = co_await s2.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
-            (void)ec;
-            (void)n;
         };
 
         capy::run_async(ex)(reader());
@@ -408,7 +407,7 @@ struct wait_test
         std::stop_source ss;
         ss.request_stop();
 
-        std::error_code first_ec;
+        [[maybe_unused]] std::error_code first_ec;
         bool first_done = false;
         auto first = [&]() -> capy::task<> {
             auto [ec] = co_await s1.wait(wait_type::write);
@@ -423,7 +422,6 @@ struct wait_test
         // success is immaterial here; the subject is what its cancel
         // left behind.
         BOOST_TEST(first_done);
-        (void)first_ec;
 
         // Second wait: full buffer, fresh token. It must park and
         // complete on the drain — not absorb the first wait's cancel.
@@ -495,11 +493,9 @@ struct wait_test
         };
         auto sender = [&]() -> capy::task<> {
             char dg[1] = { 'X' };
-            auto [ec, n] = co_await send.send_to(
+            [[maybe_unused]] auto [ec, n] = co_await send.send_to(
                 capy::const_buffer(dg, sizeof(dg)),
                 endpoint(ipv4_address::loopback(), port));
-            (void)ec;
-            (void)n;
         };
 
         capy::run_async(ex)(waiter());
@@ -541,9 +537,8 @@ struct wait_test
             accept_ec  = ec2;
         };
         auto connector = [&]() -> capy::task<> {
-            auto [ec] = co_await client.connect(
+            [[maybe_unused]] auto [ec] = co_await client.connect(
                 endpoint(ipv4_address::loopback(), port));
-            (void)ec;
         };
 
         capy::run_async(ex)(waiter());
@@ -576,12 +571,10 @@ struct wait_test
         BOOST_TEST(!client.open());
 
         auto accept_task = [&]() -> capy::task<> {
-            auto [ec] = co_await acc.accept(server);
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await acc.accept(server);
         };
         auto connect_task = [&]() -> capy::task<> {
-            auto [ec] = co_await client.connect(local_endpoint(path));
-            (void)ec;
+            [[maybe_unused]] auto [ec] = co_await client.connect(local_endpoint(path));
         };
         capy::run_async(ex)(accept_task());
         capy::run_async(ex)(connect_task());
@@ -598,10 +591,8 @@ struct wait_test
             wait_done = true;
         };
         auto writer = [&]() -> capy::task<> {
-            auto [ec, n] = co_await client.write_some(
+            [[maybe_unused]] auto [ec, n] = co_await client.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
-            (void)ec;
-            (void)n;
         };
 
         capy::run_async(ex)(waiter());
@@ -628,7 +619,7 @@ struct wait_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await delay(std::chrono::milliseconds(20));
+            std::ignore = co_await delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -663,7 +654,7 @@ struct wait_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            (void)co_await delay(std::chrono::milliseconds(20));
+            std::ignore = co_await delay(std::chrono::milliseconds(20));
             sock.cancel();
         };
 
@@ -702,15 +693,12 @@ struct wait_test
             wait_done  = true;
             if (ec2)
                 co_return;
-            auto [ec3, n3] = co_await s1.read_some(
+            [[maybe_unused]] auto [ec3, n3] = co_await s1.read_some(
                 capy::mutable_buffer(rest.data(), rest.size()));
-            (void)ec3;
             rest_n = n3;
         };
         auto writer = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s2.write_some(capy::const_buffer("xy", 2));
-            (void)ec;
-            (void)n;
+            [[maybe_unused]] auto [ec, n] = co_await s2.write_some(capy::const_buffer("xy", 2));
         };
 
         capy::run_async(ex)(reader());
@@ -750,15 +738,12 @@ struct wait_test
         };
         auto driver = [&]() -> capy::task<> {
             // Latch a readiness edge on s1 with no read op parked...
-            auto [wec, wn] = co_await s2.write_some(
+            [[maybe_unused]] auto [wec, wn] = co_await s2.write_some(
                 capy::const_buffer("xy", 2));
-            (void)wec;
-            (void)wn;
             // ...drain it, typically on the speculative success path...
             std::array<char, 8> buf{};
-            auto [rec, rn] = co_await s1.read_some(
+            [[maybe_unused]] auto [rec, rn] = co_await s1.read_some(
                 capy::mutable_buffer(buf.data(), buf.size()));
-            (void)rec;
             drained_n = rn;
             // ...then park the wait before the release signal exists.
             // Spawning here queues the wait initiation ahead of every
@@ -766,17 +751,13 @@ struct wait_test
             // ordered after the park on FIFO schedulers and completion
             // ports alike.
             capy::run_async(ex)(waiter());
-            auto [sec, sn] = co_await t2.write_some(
+            [[maybe_unused]] auto [sec, sn] = co_await t2.write_some(
                 capy::const_buffer("go", 2));
-            (void)sec;
-            (void)sn;
         };
         auto canceller = [&]() -> capy::task<> {
             char c[2];
-            auto [ec, n] = co_await t1.read_some(
+            [[maybe_unused]] auto [ec, n] = co_await t1.read_some(
                 capy::mutable_buffer(c, sizeof(c)));
-            (void)ec;
-            (void)n;
             cancel_sent = true;
             s1.cancel();
         };
@@ -815,9 +796,8 @@ struct wait_test
         auto receiver = [&]() -> capy::task<> {
             char dg[4];
             endpoint source;
-            auto [ec, n] = co_await recv.recv_from(
+            [[maybe_unused]] auto [ec, n] = co_await recv.recv_from(
                 capy::mutable_buffer(dg, sizeof(dg)), source);
-            (void)ec;
             first_n = n;
             auto [wec] = co_await recv.wait(wait_type::read);
             wait_ec   = wec;
@@ -827,14 +807,10 @@ struct wait_test
             char a[1] = { 'a' };
             char b[1] = { 'b' };
             endpoint dst(ipv4_address::loopback(), port);
-            auto [e1, n1] = co_await send.send_to(
+            [[maybe_unused]] auto [e1, n1] = co_await send.send_to(
                 capy::const_buffer(a, sizeof(a)), dst);
-            (void)e1;
-            (void)n1;
-            auto [e2, n2] = co_await send.send_to(
+            [[maybe_unused]] auto [e2, n2] = co_await send.send_to(
                 capy::const_buffer(b, sizeof(b)), dst);
-            (void)e2;
-            (void)n2;
         };
 
         capy::run_async(ex)(receiver());
@@ -877,17 +853,14 @@ struct wait_test
         auto driver = [&]() -> capy::task<> {
             // Latch a readiness edge on rsock with no recv parked...
             char dg[1] = { 'x' };
-            auto [wec, wn] = co_await ssock.send_to(
+            [[maybe_unused]] auto [wec, wn] = co_await ssock.send_to(
                 capy::const_buffer(dg, sizeof(dg)),
                 rsock.local_endpoint());
-            (void)wec;
-            (void)wn;
             // ...drain it, typically on the speculative success path...
             char buf[4];
             endpoint source;
-            auto [rec, rn] = co_await rsock.recv_from(
+            [[maybe_unused]] auto [rec, rn] = co_await rsock.recv_from(
                 capy::mutable_buffer(buf, sizeof(buf)), source);
-            (void)rec;
             drained_n = rn;
             // ...then park the wait before the release signal exists.
             // Spawning here queues the wait initiation ahead of every
@@ -895,17 +868,13 @@ struct wait_test
             // ordered after the park on FIFO schedulers and completion
             // ports alike.
             capy::run_async(ex)(waiter());
-            auto [sec, sn] = co_await t2.write_some(
+            [[maybe_unused]] auto [sec, sn] = co_await t2.write_some(
                 capy::const_buffer("go", 2));
-            (void)sec;
-            (void)sn;
         };
         auto canceller = [&]() -> capy::task<> {
             char c[2];
-            auto [ec, n] = co_await t1.read_some(
+            [[maybe_unused]] auto [ec, n] = co_await t1.read_some(
                 capy::mutable_buffer(c, sizeof(c)));
-            (void)ec;
-            (void)n;
             cancel_sent = true;
             rsock.cancel();
         };

@@ -245,7 +245,7 @@ public:
         Both this acceptor and @p peer must outlive the returned
         awaitable.
     */
-    auto accept(tcp_socket& peer)
+    [[nodiscard]] auto accept(tcp_socket& peer)
     {
         native_accept_awaitable aw(*this, peer);
         if (!is_open())
@@ -264,7 +264,7 @@ public:
 
         This acceptor must outlive the returned awaitable.
     */
-    auto accept()
+    [[nodiscard]] auto accept()
     {
         // The awaitable builds the peer from context(), which a
         // moved-from acceptor no longer has.

@@ -954,10 +954,8 @@ struct random_access_file_test
         auto reader = [](random_access_file* f, std::uint64_t off,
                          std::atomic<int>* c) -> capy::task<> {
             char buf[1024];
-            auto [ec, n] =
+            [[maybe_unused]] auto [ec, n] =
                 co_await f->read_some_at(off, capy::mutable_buffer(buf, 1024));
-            (void)ec;
-            (void)n;
             c->fetch_add(1);
         };
 

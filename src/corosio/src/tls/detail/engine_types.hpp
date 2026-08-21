@@ -81,9 +81,8 @@ enum class engine_op
 inline bool
 is_ip_literal(std::string const& s) noexcept
 {
-    ipv4_address v4;
-    ipv6_address v6;
-    return !parse_ipv4_address(s, v4) || !parse_ipv6_address(s, v6);
+    return !std::get<0>(make_ipv4_address(s)) ||
+        !std::get<0>(make_ipv6_address(s));
 }
 
 /** Map a transport error observed while filling engine input.

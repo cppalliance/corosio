@@ -256,7 +256,7 @@ struct udp_socket_test
         std::error_code caught;
         try
         {
-            (void)sock.get_option<socket_option::broadcast>();
+            std::ignore = sock.get_option<socket_option::broadcast>();
         }
         catch (std::system_error const& e)
         {
@@ -577,7 +577,7 @@ struct udp_socket_test
         bool get_threw = false;
         try
         {
-            (void)sock.get_option<socket_option::v6_only>();
+            std::ignore = sock.get_option<socket_option::v6_only>();
         }
         catch (std::system_error const& e)
         {
@@ -628,10 +628,10 @@ struct udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             sock.cancel();
 
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -665,10 +665,10 @@ struct udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             sock.close();
 
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -705,7 +705,7 @@ struct udp_socket_test
         // Reader task: signal ready, then block on recv_from
         auto reader_task = [&]() -> capy::task<> {
             char const msg[] = "R";
-            (void)co_await reader.send_to(
+            std::ignore = co_await reader.send_to(
                 capy::const_buffer(msg, 1), signal_ep);
 
             char buf[64];
@@ -720,7 +720,7 @@ struct udp_socket_test
         auto canceller_task = [&]() -> capy::task<> {
             char buf[1];
             endpoint source;
-            (void)co_await signal_sock.recv_from(
+            std::ignore = co_await signal_sock.recv_from(
                 capy::mutable_buffer(buf, 1), source);
 
             stop_src.request_stop();
@@ -809,7 +809,7 @@ struct udp_socket_test
             BOOST_TEST_EQ(ec3, std::error_code{});
 
             // Wait for recv to complete
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST_EQ(recv_ec, std::error_code{});
@@ -1080,10 +1080,10 @@ struct udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
             a.cancel();
 
-            (void)co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -1346,10 +1346,9 @@ struct udp_socket_test
 
             // Reverse direction through the adopted socket.
             char const reply[] = "back";
-            auto [ec3, n3]     = co_await peer.send_to(
+            [[maybe_unused]] auto [ec3, n3]     = co_await peer.send_to(
                 capy::const_buffer(reply, sizeof(reply)), source);
             BOOST_TEST(!ec3);
-            (void)n3;
 
             char buf2[64] = {};
             endpoint from;
@@ -1484,9 +1483,8 @@ struct udp_socket_test
         endpoint source;
 
         auto receiver = [&]() -> capy::task<> {
-            auto [rec, rn] = co_await sock.recv_from(
+            [[maybe_unused]] auto [rec, rn] = co_await sock.recv_from(
                 capy::mutable_buffer(buf, sizeof(buf)), source);
-            (void)rn;
             recv_ec   = rec;
             recv_done = true;
         };
@@ -1546,9 +1544,8 @@ struct udp_socket_test
         auto released = invalid_native_socket;
 
         auto receiver = [&]() -> capy::task<> {
-            auto [rec, rn] = co_await sock.recv_from(
+            [[maybe_unused]] auto [rec, rn] = co_await sock.recv_from(
                 capy::mutable_buffer(buf, sizeof(buf)), source);
-            (void)rn;
             recv_ec   = rec;
             recv_done = true;
         };
@@ -1595,7 +1592,7 @@ struct udp_socket_test
         bool caught = false;
         try
         {
-            (void)sock.release();
+            std::ignore = sock.release();
         }
         catch (std::system_error const&)
         {

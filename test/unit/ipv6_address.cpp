@@ -12,6 +12,8 @@
 #include <boost/corosio/ipv4_address.hpp>
 
 #include <sstream>
+#include <tuple>
+#include <system_error>
 
 #include "test_suite.hpp"
 
@@ -49,10 +51,19 @@ struct ipv6_address_test
             BOOST_TEST(a.is_loopback());
         }
 
-        // Invalid string throws
+        // Invalid string throws system_error carrying the parse code
         {
-            BOOST_TEST_THROWS(ipv6_address("invalid"), std::invalid_argument);
-            BOOST_TEST_THROWS(ipv6_address(":::1"), std::invalid_argument);
+            BOOST_TEST_THROWS(ipv6_address("invalid"), std::system_error);
+            BOOST_TEST_THROWS(ipv6_address(":::1"), std::system_error);
+            try
+            {
+                ipv6_address("invalid");
+                BOOST_TEST_FAIL();
+            }
+            catch (std::system_error const& e)
+            {
+                BOOST_TEST(e.code() == std::errc::invalid_argument);
+            }
         }
     }
 
@@ -60,8 +71,7 @@ struct ipv6_address_test
     {
         // Valid addresses
         auto check_valid = [](std::string_view s) {
-            ipv6_address addr;
-            auto ec = parse_ipv6_address(s, addr);
+            auto [ec, addr] = make_ipv6_address(s);
             if (ec)
             {
                 BOOST_TEST_FAIL();
@@ -97,9 +107,10 @@ struct ipv6_address_test
 
         // Invalid addresses
         auto check_invalid = [](std::string_view s) {
-            ipv6_address addr;
-            auto ec = parse_ipv6_address(s, addr);
+            auto [ec, addr] = make_ipv6_address(s);
             BOOST_TEST(ec == std::errc::invalid_argument);
+            // The failure payload is the documented default value.
+            BOOST_TEST(addr == ipv6_address());
         };
 
         check_invalid("");
@@ -171,51 +182,57 @@ struct ipv6_address_test
     void testParseEndsWithDoubleColon()
     {
         // "1::" — '::' at the end requires the "ends in ::" hex break path.
-        ipv6_address addr;
-        auto ec = parse_ipv6_address("1::", addr);
+        auto [ec, addr] = make_ipv6_address("1::");
         BOOST_TEST(!ec);
         BOOST_TEST_EQ(addr.to_string(), "1::");
     }
 
     void testParseInvalidIPv4Suffix()
     {
-        ipv6_address addr;
+        auto rejects = [](std::string_view s) {
+            return bool(std::get<0>(make_ipv6_address(s)));
+        };
         // "::1.2.3" — IPv4 portion incomplete.
-        BOOST_TEST(parse_ipv6_address("::1.2.3", addr));
+        BOOST_TEST(rejects("::1.2.3"));
         // "::g.0.0.0" — non-numeric hex.
-        BOOST_TEST(parse_ipv6_address("::g.0.0.0", addr));
+        BOOST_TEST(rejects("::g.0.0.0"));
         // "1:2:3:4:5:6.7.8.9" — IPv4 with no '::' but not enough h16 groups.
-        BOOST_TEST(parse_ipv6_address("1:2:3:4:5:6.7.8.9", addr));
+        BOOST_TEST(rejects("1:2:3:4:5:6.7.8.9"));
         // The embedded-IPv4 validator parses each octet as an h16 and
         // rejects values dotted decimal can never produce.
-        BOOST_TEST(parse_ipv6_address("::1.2.3.400", addr));
-        BOOST_TEST(parse_ipv6_address("::1.2.3.2a", addr));
-        BOOST_TEST(parse_ipv6_address("::1.2.3.a1", addr));
+        BOOST_TEST(rejects("::1.2.3.400"));
+        BOOST_TEST(rejects("::1.2.3.2a"));
+        BOOST_TEST(rejects("::1.2.3.a1"));
+        BOOST_TEST(rejects("::1.2.3.1a1"));
+        BOOST_TEST(rejects("1:zz::"));
     }
 
     void testParseMoreEdges()
     {
-        ipv6_address addr;
+        auto rejects = [](std::string_view s) {
+            return bool(std::get<0>(make_ipv6_address(s)));
+        };
 
         // Uppercase hex digits.
-        BOOST_TEST(!parse_ipv6_address("ABCD::EF01", addr));
-        BOOST_TEST_EQ(addr.to_string(), "abcd::ef01");
+        auto [uec, upper] = make_ipv6_address("ABCD::EF01");
+        BOOST_TEST(!uec);
+        BOOST_TEST_EQ(upper.to_string(), "abcd::ef01");
 
         // Full-form embedded IPv4 with no '::'.
-        BOOST_TEST(!parse_ipv6_address("1:2:3:4:5:6:1.2.3.4", addr));
+        BOOST_TEST(!rejects("1:2:3:4:5:6:1.2.3.4"));
 
         // Input ending right after a colon.
-        BOOST_TEST(parse_ipv6_address("1:", addr));
-        BOOST_TEST(parse_ipv6_address("1:2:3:4:5:6:7:", addr));
+        BOOST_TEST(rejects("1:"));
+        BOOST_TEST(rejects("1:2:3:4:5:6:7:"));
 
         // Non-hex garbage after '::'.
-        BOOST_TEST(parse_ipv6_address("1::zz", addr));
+        BOOST_TEST(rejects("1::zz"));
 
         // '::' with all eight groups already present.
-        BOOST_TEST(parse_ipv6_address("1:2:3:4:5:6:7:8::", addr));
+        BOOST_TEST(rejects("1:2:3:4:5:6:7:8::"));
 
         // '::' compressing exactly zero remaining groups at the end.
-        BOOST_TEST(!parse_ipv6_address("1:2:3:4:5:6:7::", addr));
+        BOOST_TEST(!rejects("1:2:3:4:5:6:7::"));
     }
 
     void testPredicates()
