@@ -158,9 +158,11 @@ struct select_traits
             }
 
 #ifdef SO_NOSIGPIPE
-            // SO_NOSIGPIPE is the only SIGPIPE guard on platforms that
-            // lack MSG_NOSIGNAL (macOS/BSD). Treat failure as fatal,
-            // matching the kqueue backend and Boost.Asio.
+            // MSG_NOSIGNAL is not universal across the platforms this
+            // portable backend covers, and the write() the fast path
+            // falls back to there takes no flag at all; SO_NOSIGPIPE is
+            // the per-descriptor guard that covers both. Treat failure
+            // as fatal, matching the kqueue backend.
             int one = 1;
             if (::setsockopt(
                     new_fd, SOL_SOCKET, SO_NOSIGPIPE,
@@ -199,9 +201,11 @@ struct select_traits
             return make_err(EMFILE);
 
 #ifdef SO_NOSIGPIPE
-        // SO_NOSIGPIPE is the only SIGPIPE guard on platforms that lack
-        // MSG_NOSIGNAL (macOS/BSD). Treat failure as fatal, matching the
-        // kqueue backend and Boost.Asio. Caller closes fd on error.
+        // MSG_NOSIGNAL is not universal across the platforms this
+        // portable backend covers, and the write() the fast path falls
+        // back to there takes no flag at all; SO_NOSIGPIPE is the
+        // per-descriptor guard that covers both. Treat failure as fatal,
+        // matching the kqueue backend. Caller closes fd on error.
         {
             int one = 1;
             if (::setsockopt(

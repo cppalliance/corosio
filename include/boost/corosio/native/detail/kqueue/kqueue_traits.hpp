@@ -30,8 +30,9 @@
 /* kqueue backend traits.
 
    Captures the platform-specific behavior of the BSD/macOS kqueue backend:
-   manual fcntl for O_NONBLOCK/FD_CLOEXEC, mandatory SO_NOSIGPIPE (macOS
-   lacks MSG_NOSIGNAL), writev() for writes, and accept()+fcntl for
+   manual fcntl for O_NONBLOCK/FD_CLOEXEC, mandatory SO_NOSIGPIPE
+   (MSG_NOSIGNAL is not universal across kqueue platforms, and writev()
+   takes no flags at all), writev() for writes, and accept()+fcntl for
    accepted connections.
 */
 
@@ -83,9 +84,9 @@ struct kqueue_traits
             return n;
         }
 
-        // Single-buffer fast path. macOS lacks MSG_NOSIGNAL; SIGPIPE is
-        // suppressed by the mandatory SO_NOSIGPIPE set in accept_policy
-        // and set_fd_options, so plain write() is safe here.
+        // Single-buffer fast path. write() carries no flag to suppress
+        // SIGPIPE; the mandatory SO_NOSIGPIPE set in accept_policy and
+        // set_fd_options does it per descriptor instead.
         static ssize_t write_one(
             int fd, void const* data, std::size_t size) noexcept
         {
@@ -135,9 +136,11 @@ struct kqueue_traits
             }
 
 #ifndef BOOST_COROSIO_MRDOCS
-            // SO_NOSIGPIPE is mandatory on kqueue platforms (macOS lacks
-            // MSG_NOSIGNAL). Skipped under MRDOCS so the docs build can
-            // parse this header on Linux, where SO_NOSIGPIPE is absent.
+            // SO_NOSIGPIPE is mandatory on kqueue platforms: MSG_NOSIGNAL
+            // is not universal across them, and the writev() the write
+            // path uses takes no flags. Skipped under MRDOCS so the docs
+            // build can parse this header on Linux, where SO_NOSIGPIPE is
+            // absent.
             int one = 1;
             if (::setsockopt(
                     new_fd, SOL_SOCKET, SO_NOSIGPIPE,
