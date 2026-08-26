@@ -1,0 +1,86 @@
+#
+# Copyright (c) 2026 Steve Gerbino
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio
+#
+
+import os ;
+import testing ;
+
+project boost/corosio/test/unit/fault
+    : requirements
+      <library>/boost/corosio//boost_corosio
+      <source>../../../../capy/extra/test_suite/test_main.cpp
+      <source>../../../../capy/extra/test_suite/test_suite.cpp
+      <include>../../../../capy/extra/test_suite
+      <include>.
+      <include>..
+      <include>../../..
+      <include>../../../src/corosio
+      <target-os>windows:<define>_WIN32_WINNT=0x0602
+      <warnings>extra
+      <warnings-as-errors>on
+      <toolset>gcc:<cxxflags>-Wno-maybe-uninitialized
+      <target-os>linux:<linkflags>-ldl
+      # Interposition only works if the shadows land in the executable's
+      # dynamic symbol table; Boost builds tests with hidden visibility.
+      # <local-visibility> so the flag stays on these targets instead of
+      # propagating into a private rebuild of corosio and capy.
+      <local-visibility>global
+      # Static sanitizer runtimes define the same libc symbols the
+      # harness shadows; TSan also models fd ordering in them.
+      <thread-sanitizer>on:<build>no
+      <thread-sanitizer>norecover:<build>no
+      <toolset>clang,<address-sanitizer>on:<build>no
+      <toolset>clang,<address-sanitizer>norecover:<build>no
+      # Windows ASan interposes by patching the very import thunks this
+      # harness owns, so the two cannot both hold a symbol.
+      <toolset>msvc,<address-sanitizer>on:<build>no
+      <toolset>msvc,<address-sanitizer>norecover:<build>no
+      <toolset>clang-win,<address-sanitizer>on:<build>no
+      <toolset>clang-win,<address-sanitizer>norecover:<build>no
+    ;
+
+# The POSIX shadows are written against glibc, Darwin libc and the
+# FreeBSD libc and the Windows hooks against the PE import table, so
+# nothing is built anywhere else; the CMake side gates the same way.
+# Darwin and FreeBSD drop only epoll_faults.cpp and uring_faults.cpp,
+# which have no counterpart there.
+# fault_arm.cpp holds the arm model every hook translation unit shares.
+local hooks = fault_arm.cpp fault_posix.cpp ;
+local tests ;
+local uring-hook ;
+if [ os.name ] = NT
+{
+    hooks = fault_arm.cpp fault_win.cpp ;
+    tests = self_test.cpp win_faults.cpp iocp_faults.cpp ;
+}
+else if [ os.name ] = MACOSX
+{
+    tests = self_test.cpp posix_faults.cpp select_faults.cpp
+        kqueue_faults.cpp reactor_faults.cpp ;
+}
+else if [ os.name ] = FREEBSD
+{
+    tests = self_test.cpp posix_faults.cpp select_faults.cpp
+        kqueue_faults.cpp reactor_faults.cpp ;
+}
+else if [ os.name ] = LINUX
+{
+    tests = self_test.cpp posix_faults.cpp select_faults.cpp
+        epoll_faults.cpp reactor_faults.cpp uring_faults.cpp ;
+    # The io_uring hook includes <liburing.h> unconditionally, so it can
+    # only build where the library's own probe found liburing. Without
+    # it uring_faults.cpp compiles away behind BOOST_COROSIO_HAS_IO_URING
+    # and the program still runs; CMake drops that source instead.
+    uring-hook = [ check-target-builds /boost/corosio//has_liburing
+        : <source>fault_uring.cpp : ] ;
+}
+
+for local f in $(tests)
+{
+    run $(f) $(hooks) : : : $(uring-hook) ;
+}

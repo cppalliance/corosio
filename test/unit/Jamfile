@@ -33,11 +33,17 @@ project boost/corosio/test/unit
       <toolset>gcc:<cxxflags>-Wno-maybe-uninitialized
     ;
 
-# Non-TLS tests (recurses into test/, native/, etc.)
-for local f in [ glob-tree-ex . : *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp iocp_shutdown.cpp iocp_error_map.cpp openssl_engine.cpp wolfssl_engine.cpp cross_engine.cpp ]
+# Non-TLS tests (recurses into test/, native/, etc.). `fault` excludes
+# the whole directory rather than its sources one by one: glob-tree-ex
+# applies the exclusion patterns to directory entries too and does not
+# descend into a match. Those targets need the hook translation unit
+# linked in, which only fault/Jamfile does.
+for local f in [ glob-tree-ex . : *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp iocp_shutdown.cpp iocp_error_map.cpp openssl_engine.cpp wolfssl_engine.cpp cross_engine.cpp fault ]
 {
     run $(f) ;
 }
+
+build-project fault ;
 
 # IOCP-specific native tests (Windows host only; skip on other hosts to
 # avoid triggering a cross-compile attempt).
