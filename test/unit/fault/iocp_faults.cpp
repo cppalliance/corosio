@@ -1075,6 +1075,27 @@ struct iocp_faults
         BOOST_TEST(parked_ec == capy::error::canceled);
         arm.reset();
 
+        // The polling thread left for good and nothing restarts it, so
+        // a wait registered afterwards has nobody to report its
+        // readiness. Refusing it is the only answer that is not a park
+        // forever, and it is the same abort the drain on the way out
+        // gave the ops the reactor was holding. io_context::stop() does
+        // not reach the reactor, so this is the reactor's own state
+        // answering and not a stopped scheduler.
+        ioc.restart();
+        std::error_code late_ec;
+        bool late_expired = false;
+        auto late = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await s1.wait(wait_type::error);
+            late_ec = ec;
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(late());
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, late_expired));
+        ioc.run();
+        BOOST_TEST(!late_expired);
+        BOOST_TEST(late_ec == capy::error::canceled);
         s1.close();
         s2.close();
     }

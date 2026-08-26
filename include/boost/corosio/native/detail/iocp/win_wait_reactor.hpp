@@ -307,7 +307,7 @@ win_wait_reactor::wake_self() noexcept
         // The flag is what coalesces later wakes into a byte already
         // in the channel; a send that failed put no byte there, so
         // leaving it latched would swallow every wake that follows.
-        // Disarming keeps the cost at the one wake that failed: the
+        // Disarming keeps the cost to the wakes already in flight: the
         // next register, cancel or stop sends its own byte and the
         // reactor learns about both.
         wake_pending_.store(false, std::memory_order_release);
@@ -383,6 +383,14 @@ win_wait_reactor::cancel_wait(overlapped_op* op)
 {
     {
         std::lock_guard lock(mutex_);
+        // Same refusal queue_register makes, for the same reason: once
+        // the polling thread is gone nothing reads pending_cancel_
+        // again, so a cancel queued here would sit there for good. It
+        // has nothing to cancel either -- the drain those exits run
+        // already answered whatever was parked, and a register that
+        // arrived after them was refused at its caller.
+        if (stop_.load(std::memory_order_acquire) || dead_)
+            return;
         pending_cancel_.push_back(op);
     }
     wake_self();
@@ -465,8 +473,8 @@ win_wait_reactor::run()
         // periodic timeout, so an idle reactor consumes no CPU: the
         // self-pipe is the only thing that ends this wait, and
         // wake_self() leaves the channel free for the next poke when
-        // its own send fails, so what a lost wake costs is that one
-        // wake rather than every wake after it.
+        // its own send fails, so a lost wake costs the wakes already in
+        // flight rather than every wake after it.
         int n = ::WSAPoll(
             pollfds.data(),
             static_cast<ULONG>(pollfds.size()),
