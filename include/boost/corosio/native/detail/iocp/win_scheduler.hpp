@@ -727,14 +727,22 @@ inline win_scheduler::win_scheduler(
     if (iocp_ == nullptr)
         detail::throw_system_error(make_err(::GetLastError()));
 
-    // Create timer wakeup mechanism (tries NT native, falls back to thread)
-    timers_ = make_win_timers(iocp_, &dispatch_required_);
-
-    // Connect timer service to scheduler
-    set_timer_service(&get_timer_service(ctx, *this));
-
-    // Initialize resolver service
-    ctx.make_service<win_resolver_service>(*this);
+    try
+    {
+        timers_ = make_win_timers(iocp_, &dispatch_required_);
+        set_timer_service(&get_timer_service(ctx, *this));
+        ctx.make_service<win_resolver_service>(*this);
+    }
+    catch (...)
+    {
+        // ~win_scheduler never runs for a constructor that throws, and
+        // the port is a raw handle nothing else owns. The timer thread
+        // is stopped first because it posts to that port.
+        timers_.reset();
+        ::CloseHandle(iocp_);
+        iocp_ = nullptr;
+        throw;
+    }
 }
 
 inline void

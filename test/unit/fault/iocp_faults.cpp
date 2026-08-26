@@ -101,15 +101,18 @@ struct iocp_faults
 {
     void testSchedulerConstructFails()
     {
-        {
-            // Winsock is started once per process and released when
-            // the last service goes, so this only fires while no
-            // io_context is alive (win_wsa_init.hpp:57-67).
+        // Winsock is started once per process and released when the
+        // last service goes, so this only fires while no io_context is
+        // alive (win_wsa_init.hpp:57-67). The resolver service that
+        // starts it is built inside the scheduler's constructor, after
+        // the completion port: the port is the scheduler's to release
+        // on the way out (win_scheduler.hpp:713-748).
+        expect_no_handle_leak([]{
             fault_scope f(sys::WSAStartup, WSAEAFNOSUPPORT);
             expect_system_error([]{ io_context ioc(iocp); },
                 std::errc::address_family_not_supported);
             BOOST_TEST(f.fired());
-        }
+        });
         {
             // The scheduler's own port: CreateIoCompletionPort with
             // INVALID_HANDLE_VALUE (win_scheduler.hpp:722-728).

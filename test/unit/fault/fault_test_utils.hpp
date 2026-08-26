@@ -79,9 +79,8 @@ void in_child(F&& body)
 // enough repetitions that a per-call leak, which grows the count once
 // per call, separates from that ambient noise.
 template<class F>
-void expect_no_handle_leak(F&& fn)
+void expect_no_handle_leak(F&& fn, int reps, int max_growth)
 {
-    constexpr int reps = 8;
     fn();
     int const before = open_fds();
     // open_fds() answers -1 when the count cannot be read, which would
@@ -92,7 +91,17 @@ void expect_no_handle_leak(F&& fn)
     int const after = open_fds();
     // A -1 here would satisfy the growth comparison on its own.
     BOOST_TEST(after >= 0);
-    BOOST_TEST(after - before < reps);
+    BOOST_TEST(after - before < max_growth);
+}
+
+// The default shape: eight repetitions, and a leak of one handle per
+// call lands exactly on the threshold. A call site whose leak is
+// exactly one handle should ask for more repetitions than it allows
+// growth, so the two are not decided by a single ambient handle.
+template<class F>
+void expect_no_handle_leak(F&& fn)
+{
+    expect_no_handle_leak(fn, 8, 8);
 }
 
 // The Win32 and Winsock codes the library hands back unchanged compare
