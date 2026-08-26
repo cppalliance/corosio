@@ -110,6 +110,33 @@ struct uring_faults
         });
     }
 
+    // A ring clamped to one SQE spends it on the wakeup poll when the
+    // ring is created, leaving none for the signal reader's multishot
+    // poll. The submit that follows succeeds because it has nothing
+    // left to submit, which is not the same as a reader watching the
+    // pipe.
+    void testSignalReaderSqFull()
+    {
+        in_child([]{
+            io_context ioc(io_uring);
+            signal_set ss(ioc);
+            std::error_code ec;
+            bool fired = false;
+            {
+                // The ring is created lazily, so the clamp still
+                // catches it from inside add().
+                fault_scope f(sys::uring_sqe_full, 0);
+                ec = ss.add(SIGUSR2);
+                fired = f.fired();
+            }
+            // Not latched: with the SQ flushable again the next add()
+            // arms the reader.
+            return fired &&
+                ec == std::errc::resource_unavailable_try_again &&
+                !ss.add(SIGUSR2) && !ss.clear();
+        });
+    }
+
     void testWaitFails()
     {
         {
@@ -595,6 +622,7 @@ struct uring_faults
         testRingInitFails();
         testRingInitLeaksNothing();
         testSignalReaderSubmitFails();
+        testSignalReaderSqFull();
         testWaitFails();
         testAcceptorDrainSubmitFails();
         testSqFull();

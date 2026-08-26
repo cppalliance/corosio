@@ -41,6 +41,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <tuple>
 #include <vector>
 
 #include <errno.h>
@@ -501,7 +502,7 @@ private:
     std::size_t do_one(long timeout_us);
     void        process_completions();
     void        drain_wakeup_eventfd() const noexcept;
-    void        prep_multishot_poll(int fd, void* data) noexcept;
+    bool        prep_multishot_poll(int fd, void* data) noexcept;
     void        lazy_init_ring_unlocked() const;
 };
 
@@ -783,14 +784,15 @@ io_uring_scheduler::drain_wakeup_eventfd() const noexcept
     wakeup_armed_.store(false, std::memory_order_release);
 }
 
-inline void
+inline bool
 io_uring_scheduler::prep_multishot_poll(int fd, void* data) noexcept
 {
     // Prepare a multishot POLLIN SQE on `fd` tagged with `data`. Caller holds
     // ring_mutex_ and flushes separately (re-arm sites ride the batch submit;
-    // register/init submit explicitly). Best-effort: a get_sqe failure after
-    // one flush leaves the poll un-armed. Shared by the wakeup-eventfd and
-    // signal self-pipe multishot polls.
+    // register/init submit explicitly). Returns false when no SQE could be
+    // had after one flush, so a caller that has someone to report to does
+    // not mistake the submit of an empty queue for an armed poll. Shared by
+    // the wakeup-eventfd and signal self-pipe multishot polls.
     ::io_uring_sqe* sqe = ::io_uring_get_sqe(&ring_);
     if (!sqe)
     {
@@ -798,9 +800,10 @@ io_uring_scheduler::prep_multishot_poll(int fd, void* data) noexcept
         sqe = ::io_uring_get_sqe(&ring_);
     }
     if (!sqe)
-        return;
+        return false;
     ::io_uring_prep_poll_multishot(sqe, fd, POLLIN);
     ::io_uring_sqe_set_data(sqe, data);
+    return true;
 }
 
 inline std::error_code
@@ -817,7 +820,11 @@ io_uring_scheduler::register_signal_reader(int read_fd)
     lazy_init_ring();
 
     lock_type lock(ring_mutex_);
-    prep_multishot_poll(read_fd, &signal_pipe_sentinel_);
+    // EAGAIN, not ENOBUFS: an exhausted submission queue reports the
+    // same retryable code wherever it is hit, and the next add() is
+    // the retry.
+    if (!prep_multishot_poll(read_fd, &signal_pipe_sentinel_))
+        return make_err(EAGAIN);
     int rc = ::io_uring_submit(&ring_);
     if (rc < 0)
         return make_err(-rc);
@@ -1310,8 +1317,10 @@ io_uring_scheduler::process_completions()
             // If multishot terminated (kernel dropped under memory
             // pressure or similar), re-arm. Each CQE except the last
             // sets IORING_CQE_F_MORE.
+            // Best-effort: nothing here has a caller to report to, and
+            // prep_multishot_poll already flushed once to make room.
             if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                prep_multishot_poll(wakeup_eventfd_, nullptr);
+                std::ignore = prep_multishot_poll(wakeup_eventfd_, nullptr);
         }
         else if (ud == &cancel_sentinel_)
         {
@@ -1328,7 +1337,7 @@ io_uring_scheduler::process_completions()
             // io_uring_inflight_ (like the wakeup eventfd poll): its progress
             // does not gate DEFER_TASKRUN GETEVENTS.
             if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                prep_multishot_poll(
+                std::ignore = prep_multishot_poll(
                     signal_pipe_read_fd_, &signal_pipe_sentinel_);
             bool expected = false;
             if (signal_drain_op_.queued_.compare_exchange_strong(
@@ -1565,7 +1574,8 @@ io_uring_scheduler::drain_cqes_for(io_uring_op* target) noexcept
                 // does. Never incremented, so never decremented.
                 drain_wakeup_eventfd();
                 if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                    prep_multishot_poll(wakeup_eventfd_, nullptr);
+                    std::ignore =
+                        prep_multishot_poll(wakeup_eventfd_, nullptr);
             }
             else if (ud == &signal_pipe_sentinel_)
             {
@@ -1577,7 +1587,7 @@ io_uring_scheduler::drain_cqes_for(io_uring_op* target) noexcept
                 // was armed via prep_multishot_poll, which never increments),
                 // so it must NOT be decremented.
                 if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                    prep_multishot_poll(
+                    std::ignore = prep_multishot_poll(
                         signal_pipe_read_fd_, &signal_pipe_sentinel_);
             }
             else if (ud == &cancel_sentinel_)

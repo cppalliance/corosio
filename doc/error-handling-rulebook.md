@@ -157,7 +157,9 @@ second channel:
   `filename_too_long`,
   `already_connected` (`connect_pair` on an open socket),
   `no_such_device_or_address` (`corosio::connect` with no viable
-  candidate).
+  candidate),
+  `resource_unavailable_try_again` (io_uring submission queue
+  exhausted, for a submitted op and for the signal reader alike).
 - Portable comparison comes from **normalizing at the boundary**: the
   Windows `make_err` maps the contracted WSA/Win32 codes to
   generic-category `errc` values (`WSAEOPNOTSUPP`, `WSAENOTSOCK`,
