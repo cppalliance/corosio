@@ -23,10 +23,15 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <chrono>
 #include <csignal>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
+#include <future>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <tuple>
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -39,6 +44,30 @@ void remove_file(std::string const& path)
 {
     std::error_code ec;
     std::ignore = std::filesystem::remove(std::filesystem::path(path), ec);
+}
+
+// Run connect_pair with a deadline. A rendezvous that cannot finish
+// would otherwise stall until the CI job runs out of time, which reads
+// as an infrastructure failure rather than as this test; leaving the
+// stuck thread behind and carrying on is not an option either, since
+// it holds references into the caller's frame.
+std::error_code
+connect_pair_bounded(local_stream_socket& a, local_stream_socket& b)
+{
+    std::error_code ec;
+    std::promise<void> done;
+    auto ready = done.get_future();
+    std::thread t([&]{ ec = connect_pair(a, b); done.set_value(); });
+    if(ready.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+    {
+        BOOST_TEST(false);
+        std::fprintf(stderr,
+            "fault harness: connect_pair did not return within 5s\n");
+        std::fflush(stderr);
+        std::_Exit(1);
+    }
+    t.join();
+    return ec;
 }
 
 } // namespace
@@ -366,9 +395,12 @@ struct win_common_faults
     void testConnectPairFails()
     {
         io_context ioc(iocp);
-        // The pair is built by hand out of a listening AF_UNIX socket,
-        // a worker that connects and a blocking accept here; each of
-        // those four calls has its own failure path.
+        // The pair is built by hand: a listening AF_UNIX socket put
+        // into non-blocking mode, a worker thread that connects, a
+        // polled accept here, and the accepted socket put back into
+        // blocking mode. Every one of those calls is faulted below,
+        // and each has a cleanup path of its own
+        // (local_connect_pair.cpp, make_pair_sockets).
         {
             local_stream_socket a(ioc), b(ioc);
             fault_scope f(sys::WSASocketW, WSAEAFNOSUPPORT);
@@ -403,6 +435,61 @@ struct win_common_faults
             BOOST_TEST(ec == std::errc::not_a_socket);
             BOOST_TEST(!a.is_open() && !b.is_open());
         }
+        {
+            // The listener cannot be polled while it blocks, so this
+            // fails before the worker is even started.
+            local_stream_socket a(ioc), b(ioc);
+            fault_scope f(sys::ioctlsocket, WSAENOBUFS);
+            auto ec = connect_pair(a, b);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ec == win_err(WSAENOBUFS));
+            BOOST_TEST(!a.is_open() && !b.is_open());
+        }
+        // The two worker-side failures: neither ever produces a
+        // connection, so the accept has to give up on its own and
+        // hand back what the worker saw. The arms are process-wide
+        // because the call they fail is on the worker thread, and the
+        // socket arm is the second WSASocketW because the listener is
+        // created first.
+        expect_no_handle_leak([&]{
+            local_stream_socket a(ioc), b(ioc);
+            fault_scope f(sys::WSASocketW, WSAEMFILE, 2u, any_thread);
+            auto ec = connect_pair_bounded(a, b);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ec == win_err(WSAEMFILE));
+            BOOST_TEST(!a.is_open() && !b.is_open());
+        });
+        expect_no_handle_leak([&]{
+            local_stream_socket a(ioc), b(ioc);
+            fault_scope f(sys::connect, WSAENETDOWN, 1u, any_thread);
+            auto ec = connect_pair_bounded(a, b);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ec == win_err(WSAENETDOWN));
+            BOOST_TEST(!a.is_open() && !b.is_open());
+        });
+        // A poll that fails abandons the accept while the worker is
+        // still connecting, so the socket the worker hands back has
+        // to be closed here. Process-wide, since the arm has to
+        // survive the hop onto the thread the deadline runs it on.
+        expect_no_handle_leak([&]{
+            local_stream_socket a(ioc), b(ioc);
+            fault_scope f(sys::WSAPoll, WSAEINTR, 1u, any_thread);
+            auto ec = connect_pair_bounded(a, b);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ec == win_err(WSAEINTR));
+            BOOST_TEST(!a.is_open() && !b.is_open());
+        });
+        // Restoring the accepted socket's blocking mode is the last
+        // thing that can fail, and the only failure with a complete
+        // pair in hand: both ends are the library's to close.
+        expect_no_handle_leak([&]{
+            local_stream_socket a(ioc), b(ioc);
+            fault_scope f(sys::ioctlsocket, WSAEINVAL, 2u);
+            auto ec = connect_pair(a, b);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ec == win_err(WSAEINVAL));
+            BOOST_TEST(!a.is_open() && !b.is_open());
+        });
         // Adoption of the first descriptor fails; both are the
         // library's to close.
         expect_no_handle_leak([&]{
@@ -415,7 +502,7 @@ struct win_common_faults
         });
         // Unfaulted, a pair still forms.
         local_stream_socket a(ioc), b(ioc);
-        BOOST_TEST(!connect_pair(a, b));
+        BOOST_TEST(!connect_pair_bounded(a, b));
     }
 
     void testAvailableThrows()

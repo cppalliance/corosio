@@ -22,6 +22,7 @@
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <filesystem>
 #include <random>
@@ -178,40 +179,96 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
         return ec;
     }
 
-    SOCKET          worker_sock = INVALID_SOCKET;
-    std::error_code worker_ec;
+    // A worker that fails before connecting produces no connection at
+    // all, so the accept below must be able to give up. Poll the
+    // listener instead of blocking in accept() forever.
+    u_long non_blocking = 1;
+    if (::ioctlsocket(listen_sock, FIONBIO, &non_blocking) == SOCKET_ERROR)
+    {
+        auto ec = detail::make_err(::WSAGetLastError());
+        ::closesocket(listen_sock);
+        remove_pair_path(dir, path);
+        return ec;
+    }
 
+    SOCKET            worker_sock = INVALID_SOCKET;
+    std::error_code   worker_ec;
+    std::atomic<bool> worker_done{false};
+
+    // One exit, so worker_done is published on every path: the accept
+    // below waits on it, and a path that skipped it would hang.
     std::thread worker([&] {
         worker_sock = ::WSASocketW(
             AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
         if (worker_sock == INVALID_SOCKET)
         {
             worker_ec = detail::make_err(::WSAGetLastError());
-            return;
         }
-
-        detail::un_sa_t caddr{};
-        caddr.sun_family = AF_UNIX;
-        std::memcpy(
-            caddr.sun_path, path.c_str(),
-            (std::min)(path.size(), sizeof(caddr.sun_path) - 1));
-        int caddr_len = static_cast<int>(
-            offsetof(detail::un_sa_t, sun_path) + path.size() + 1);
-
-        if (::connect(
-                worker_sock, reinterpret_cast<sockaddr*>(&caddr), caddr_len)
-            == SOCKET_ERROR)
+        else
         {
-            worker_ec = detail::make_err(::WSAGetLastError());
-            ::closesocket(worker_sock);
-            worker_sock = INVALID_SOCKET;
+            detail::un_sa_t caddr{};
+            caddr.sun_family = AF_UNIX;
+            std::memcpy(
+                caddr.sun_path, path.c_str(),
+                (std::min)(path.size(), sizeof(caddr.sun_path) - 1));
+            int caddr_len = static_cast<int>(
+                offsetof(detail::un_sa_t, sun_path) + path.size() + 1);
+
+            if (::connect(
+                    worker_sock,
+                    reinterpret_cast<sockaddr*>(&caddr), caddr_len)
+                == SOCKET_ERROR)
+            {
+                worker_ec = detail::make_err(::WSAGetLastError());
+                ::closesocket(worker_sock);
+                worker_sock = INVALID_SOCKET;
+            }
         }
+        // Released last so a reader that sees it also sees worker_ec.
+        worker_done.store(true, std::memory_order_release);
     });
 
-    SOCKET          accept_sock = ::accept(listen_sock, nullptr, nullptr);
+    SOCKET          accept_sock = INVALID_SOCKET;
     std::error_code accept_ec;
-    if (accept_sock == INVALID_SOCKET)
-        accept_ec = detail::make_err(::WSAGetLastError());
+    for (;;)
+    {
+        // A worker that succeeded has left a connection in the
+        // backlog, so only a failed one means nothing is coming.
+        if (worker_done.load(std::memory_order_acquire) && worker_ec)
+            break;
+
+        WSAPOLLFD pfd{listen_sock, POLLRDNORM, 0};
+        int const n = ::WSAPoll(&pfd, 1, 100);
+        if (n == SOCKET_ERROR)
+        {
+            accept_ec = detail::make_err(::WSAGetLastError());
+            break;
+        }
+        if (n == 0)
+            continue;
+
+        // Readiness that is not "a connection is waiting" is an error
+        // condition on the listener; accepting on it would spin. The
+        // condition carries no retrievable code, so this one is
+        // corosio's own and has to compare equal on every toolchain.
+        if ((pfd.revents & POLLRDNORM) == 0)
+        {
+            accept_ec =
+                std::make_error_code(std::errc::connection_aborted);
+            break;
+        }
+
+        accept_sock = ::accept(listen_sock, nullptr, nullptr);
+        if (accept_sock != INVALID_SOCKET)
+            break;
+        DWORD const err = ::WSAGetLastError();
+        // A readiness report with nothing left to accept: keep
+        // waiting for the worker's connection.
+        if (err == WSAEWOULDBLOCK)
+            continue;
+        accept_ec = detail::make_err(err);
+        break;
+    }
 
     worker.join();
 
@@ -226,8 +283,21 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
     }
     if (worker_ec)
     {
-        ::closesocket(accept_sock);
+        if (accept_sock != INVALID_SOCKET)
+            ::closesocket(accept_sock);
         return worker_ec;
+    }
+
+    // accept() inherits the listener's non-blocking mode; the rest of
+    // the IOCP backend hands out blocking sockets and drives them
+    // through overlapped I/O.
+    non_blocking = 0;
+    if (::ioctlsocket(accept_sock, FIONBIO, &non_blocking) == SOCKET_ERROR)
+    {
+        auto ec = detail::make_err(::WSAGetLastError());
+        ::closesocket(accept_sock);
+        ::closesocket(worker_sock);
+        return ec;
     }
 
     a_sock = accept_sock;
