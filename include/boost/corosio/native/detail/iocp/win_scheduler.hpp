@@ -138,31 +138,21 @@ private:
     mutable op_queue completed_ops_;
     std::unique_ptr<win_timers> timers_;
     std::unique_ptr<win_wait_reactor> wait_reactor_;
-    std::once_flag wait_reactor_once_;
-    std::atomic<bool> wait_reactor_ready_{false};
     BOOST_COROSIO_MSVC_WARNING_POP
 
 public:
-    /** Auxiliary select-based reactor for IOCP wait operations.
+    /** Return the auxiliary select-based reactor for wait operations.
 
-        Lazily created on first access; lives for the lifetime of the
-        scheduler and is stopped+joined in ~win_scheduler. Used by
-        socket and acceptor wait() implementations whose readiness
-        cannot be expressed natively in IOCP (datagram-read,
-        acceptor-read, error-wait).
+        Built with the scheduler and stopped+joined in ~win_scheduler,
+        so it is always there to hand a wait to. Used by socket and
+        acceptor wait() implementations whose readiness cannot be
+        expressed natively in IOCP (datagram-read, acceptor-read,
+        error-wait).
     */
     win_wait_reactor& wait_reactor();
 
-    /** Cancel a parked wait op only if the reactor exists.
-
-        Safe to call from any thread. If no wait op has ever been
-        registered, the reactor was never constructed, so there is
-        nothing to cancel and we avoid spinning up a thread + wakeup
-        socketpair on the cancel path. Acquire/release pairs with the
-        store in wait_reactor() so reads see a fully-constructed
-        reactor when the flag is true.
-    */
-    void cancel_wait_if_constructed(overlapped_op* op) noexcept;
+    /// Cancel a parked wait op. Safe to call from any thread.
+    void cancel_wait(overlapped_op* op) noexcept;
 };
 
 /*
@@ -217,10 +207,11 @@ struct thread_context_guard
 
 } // namespace iocp
 
-// The constructor, ~win_scheduler() and shutdown() are defined at the
-// bottom of this header so the unique_ptr<win_wait_reactor>'s deleter
-// and wait_reactor_->stop() see the type complete. The constructor
-// needs it too: its unwind path destroys wait_reactor_.
+// The constructor, ~win_scheduler(), shutdown(), wait_reactor() and
+// cancel_wait() are defined at the bottom of this header so the
+// unique_ptr<win_wait_reactor>'s deleter, its operator* and
+// wait_reactor_->stop() see the type complete. The constructor needs
+// it to build the reactor, and its unwind path to destroy it.
 
 inline void
 win_scheduler::post(std::coroutine_handle<> h) const
@@ -700,8 +691,8 @@ win_scheduler::update_timeout()
 // Defer including the auxiliary wait reactor until the scheduler is
 // fully defined, since the reactor's inline methods call back into
 // win_scheduler. This also gives the ctor, dtor and wait_reactor()
-// below a complete win_wait_reactor type for unique_ptr destruction
-// and lazy construction.
+// below a complete win_wait_reactor type: the constructor builds it,
+// the destructor and unique_ptr's deleter tear it down.
 //
 // The macro lets win_wait_reactor.hpp diagnose direct inclusion
 // (which would land it here with win_scheduler still incomplete).
@@ -732,12 +723,32 @@ inline win_scheduler::win_scheduler(
         timers_ = make_win_timers(iocp_, &dispatch_required_);
         set_timer_service(&get_timer_service(ctx, *this));
         ctx.make_service<win_resolver_service>(*this);
+
+        // A scheduler whose wait reactor could not be built would
+        // answer every wait with a parked op, so it refuses to exist
+        // instead. Last, so the catch below is the whole cleanup:
+        // the reactor holds its own Winsock reference and needs no
+        // help from the order.
+        wait_reactor_ = std::make_unique<win_wait_reactor>(*this);
     }
     catch (...)
     {
         // ~win_scheduler never runs for a constructor that throws, and
         // the port is a raw handle nothing else owns. The timer thread
         // is stopped first because it posts to that port.
+        //
+        // The services registered above are not unregistered here, and
+        // cannot be: the context owns them and offers no way to take
+        // one back. Each holds a scheduler reference this unwind is
+        // about to invalidate, and each survives to be shut down and
+        // destroyed with the context. What makes that safe is that
+        // none of them touches its scheduler while it holds nothing:
+        // a scheduler that never finished constructing handed out no
+        // timer, resolver or file, so every one of those shutdowns
+        // walks an empty list. Registering anything here that would
+        // reach back into the scheduler on an empty shutdown breaks
+        // that, and the fix would have to be a rollback in the
+        // context, not an ordering trick here.
         timers_.reset();
         ::CloseHandle(iocp_);
         iocp_ = nullptr;
@@ -763,8 +774,7 @@ win_scheduler::shutdown()
     // Same problem for the auxiliary wait reactor: ops parked in it
     // owe completion packets. Stop the reactor early so its loop
     // posts them as cancelled and the pending count can reach zero.
-    if (wait_reactor_ready_.load(std::memory_order_acquire))
-        wait_reactor_->stop();
+    wait_reactor_->stop();
 
     // Reap every packet still owed to the port before the services
     // free the op memory those packets reference. Work-guard credits,
@@ -850,8 +860,7 @@ win_scheduler::shutdown()
 
 inline win_scheduler::~win_scheduler()
 {
-    if (wait_reactor_)
-        wait_reactor_->stop();
+    wait_reactor_->stop();
     wait_reactor_.reset();
 
     if (iocp_ != nullptr)
@@ -861,22 +870,13 @@ inline win_scheduler::~win_scheduler()
 inline win_wait_reactor&
 win_scheduler::wait_reactor()
 {
-    // Lazy thread-safe init: multiple IOCP workers may race the first
-    // wait() call. wait_reactor_ready_ is set with release ordering
-    // after construction so cancel_wait_if_constructed can safely
-    // observe the reactor without forcing construction itself.
-    std::call_once(wait_reactor_once_, [this] {
-        wait_reactor_ = std::make_unique<win_wait_reactor>(*this);
-        wait_reactor_ready_.store(true, std::memory_order_release);
-    });
     return *wait_reactor_;
 }
 
 inline void
-win_scheduler::cancel_wait_if_constructed(overlapped_op* op) noexcept
+win_scheduler::cancel_wait(overlapped_op* op) noexcept
 {
-    if (wait_reactor_ready_.load(std::memory_order_acquire))
-        wait_reactor_->cancel_wait(op);
+    wait_reactor_->cancel_wait(op);
 }
 
 } // namespace boost::corosio::detail

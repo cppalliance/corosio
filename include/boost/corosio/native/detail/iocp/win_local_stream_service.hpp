@@ -218,7 +218,7 @@ local_stream_wait_op::do_cancel_impl(overlapped_op* base) noexcept
         ::CancelIoEx(
             reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
     }
-    op->internal.svc_.scheduler().cancel_wait_if_constructed(op);
+    op->internal.svc_.scheduler().cancel_wait(op);
 }
 
 // ============================================================
@@ -679,7 +679,7 @@ win_local_stream_socket_internal::cancel() noexcept
     rd_.request_cancel();
     wr_.request_cancel();
     wt_.request_cancel();
-    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+    svc_.scheduler().cancel_wait(&wt_);
 }
 
 inline void
@@ -692,7 +692,7 @@ win_local_stream_socket_internal::close_socket() noexcept
     rd_.request_cancel();
     wr_.request_cancel();
     wt_.request_cancel();
-    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+    svc_.scheduler().cancel_wait(&wt_);
 
     if (socket_ != INVALID_SOCKET)
     {

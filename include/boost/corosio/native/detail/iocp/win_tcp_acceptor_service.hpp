@@ -169,10 +169,9 @@ wait_op::do_cancel_impl(overlapped_op* base) noexcept
             reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
     }
     // wait_type::error parks the op in the auxiliary select reactor;
-    // wake it so the reactor can post a cancelled completion. No-op
-    // if the reactor was never constructed (e.g. zero-byte WSARecv
-    // path was the only thing this socket ever did).
-    op->internal.svc_.scheduler().cancel_wait_if_constructed(op);
+    // wake it so the reactor can post a cancelled completion. A cancel
+    // for an op the reactor never registered finds nothing and returns.
+    op->internal.svc_.scheduler().cancel_wait(op);
 }
 
 inline void
@@ -197,7 +196,7 @@ acceptor_wait_op::do_cancel_impl(overlapped_op* base) noexcept
     if (op->acceptor_ptr)
     {
         op->acceptor_ptr->socket_service().scheduler()
-            .cancel_wait_if_constructed(op);
+            .cancel_wait(op);
     }
 }
 
@@ -791,9 +790,8 @@ win_tcp_socket_internal::cancel() noexcept
     wt_.request_cancel();
     // CancelIoEx covers overlapped I/O on the socket but cannot reach
     // a wait op parked in the auxiliary reactor (no overlapped is
-    // outstanding). Route through the reactor explicitly. Safe no-op
-    // if the reactor was never constructed.
-    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+    // outstanding). Route through the reactor explicitly.
+    svc_.scheduler().cancel_wait(&wt_);
 }
 
 inline void
@@ -813,7 +811,7 @@ win_tcp_socket_internal::close_socket() noexcept
     // otherwise the reactor would keep polling a dangling fd (and on a Winsock
     // SOCKET-id reuse the wrong fd could be polled briefly).
     wt_.request_cancel();
-    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+    svc_.scheduler().cancel_wait(&wt_);
 
     if (socket_ != INVALID_SOCKET)
     {
@@ -1589,7 +1587,7 @@ win_tcp_acceptor_internal::cancel() noexcept
 
     acc_.request_cancel();
     wt_.request_cancel();
-    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+    svc_.scheduler().cancel_wait(&wt_);
 }
 
 inline void
@@ -1601,7 +1599,7 @@ win_tcp_acceptor_internal::close_socket() noexcept
     acc_.request_cancel();
     // Tear down any aux-reactor-parked wait op first.
     wt_.request_cancel();
-    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+    svc_.scheduler().cancel_wait(&wt_);
 
     if (socket_ != INVALID_SOCKET)
     {

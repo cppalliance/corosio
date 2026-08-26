@@ -59,8 +59,10 @@ make_err(int errn) noexcept
 /** Convert a Windows error code to std::error_code.
 
     Maps ERROR_OPERATION_ABORTED and ERROR_CANCELLED to
-    capy::error::canceled, and ERROR_HANDLE_EOF to capy::error::eof.
-    Every other code passes through std::system_category().
+    capy::error::canceled, ERROR_HANDLE_EOF to capy::error::eof, and
+    the contracted WSA/Win32 codes to the `std::errc` conditions the
+    library promises. Every other code passes through
+    std::system_category().
 
     ERROR_NETNAME_DELETED (64) is deliberately not mapped here: IOCP
     delivers it both for a local closesocket() that cancels pending I/O
@@ -100,6 +102,12 @@ make_err(unsigned long dwError) noexcept
         return std::make_error_code(std::errc::address_not_available);
     if (dwError == ERROR_NEGATIVE_SEEK)
         return std::make_error_code(std::errc::invalid_argument);
+    // A thread the system will not give is the same retryable
+    // condition POSIX spells EAGAIN, which is what the contract
+    // promises; no toolchain maps the Win32 spelling to it.
+    if (dwError == ERROR_MAX_THRDS_REACHED)
+        return std::make_error_code(
+            std::errc::resource_unavailable_try_again);
 
     return std::error_code(static_cast<int>(dwError), std::system_category());
 }

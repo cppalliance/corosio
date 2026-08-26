@@ -266,7 +266,7 @@ udp_wait_op::do_cancel_impl(overlapped_op* base) noexcept
         ::CancelIoEx(
             reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
     }
-    op->internal.svc_.scheduler().cancel_wait_if_constructed(op);
+    op->internal.svc_.scheduler().cancel_wait(op);
 }
 
 // Connected-mode completion handlers
@@ -746,7 +746,7 @@ win_udp_socket_internal::cancel() noexcept
     send_wr_.request_cancel();
     recv_rd_.request_cancel();
     wt_.request_cancel();
-    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+    svc_.scheduler().cancel_wait(&wt_);
 }
 
 inline void
@@ -761,7 +761,7 @@ win_udp_socket_internal::close_socket() noexcept
     send_wr_.request_cancel();
     recv_rd_.request_cancel();
     wt_.request_cancel();
-    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+    svc_.scheduler().cancel_wait(&wt_);
 
     if (socket_ != INVALID_SOCKET)
     {

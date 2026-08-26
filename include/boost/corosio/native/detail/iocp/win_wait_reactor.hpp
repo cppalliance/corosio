@@ -28,6 +28,7 @@ instead of including this header directly."
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
+#include <boost/corosio/native/detail/iocp/win_wsa_init.hpp>
 
 #include <Ws2tcpip.h>
 
@@ -68,13 +69,32 @@ namespace boost::corosio::detail {
        op from the table and posts a completion; invoke_handler sees
        op.cancelled==true and yields capy::cond::canceled.
 
+    The constructor builds the wakeup channel and throws if it cannot:
+    a reactor that cannot be woken can never report readiness, so
+    there is no reactor worth handing back. The polling thread is a
+    separate cost, paid by the first register_wait, so a context that
+    never waits never carries one.
+
     Thread-safe: register_wait, cancel_wait, and stop may be called
     from any thread.
 */
-class win_wait_reactor
+class win_wait_reactor : private win_wsa_init
 {
 public:
+    /** Construct the reactor and its wakeup channel.
+
+        @par Exception Safety
+        Strong guarantee. A channel that cannot be formed leaves no
+        socket open.
+
+        @param sched The scheduler synthetic completions are posted to.
+
+        @throws std::system_error If Winsock could not be started or
+            the wakeup socket pair could not be built.
+    */
     explicit win_wait_reactor(win_scheduler& sched);
+
+    /// Stop the reactor thread and close the wakeup channel.
     ~win_wait_reactor();
 
     win_wait_reactor(win_wait_reactor const&)            = delete;
@@ -98,9 +118,18 @@ private:
     };
 
     void run();
+    DWORD queue_register(entry const& e);
     void wake_self() noexcept;
-    void make_wakeup_pair();
+    DWORD make_wakeup_pair() noexcept;
     void close_wakeup_pair() noexcept;
+
+    // A failed call that left a zero last error would answer "no
+    // error" and put the reactor straight back on the silent path.
+    static DWORD wakeup_error() noexcept
+    {
+        DWORD const err = ::WSAGetLastError();
+        return err != 0 ? err : static_cast<DWORD>(WSAEINVAL);
+    }
 
     static SHORT events_for_wait(wait_type w) noexcept
     {
@@ -128,9 +157,12 @@ private:
 
     win_scheduler& sched_;
 
+    // Built by the constructor and closed by the destructor, so every
+    // other member function can assume a usable channel.
     SOCKET wakeup_read_  = INVALID_SOCKET;
     SOCKET wakeup_write_ = INVALID_SOCKET;
 
+    // Also guards thread_ against a start racing the stop that joins it.
     std::mutex mutex_;
     std::vector<entry> pending_register_;
     std::vector<overlapped_op*> pending_cancel_;
@@ -145,8 +177,17 @@ private:
 inline win_wait_reactor::win_wait_reactor(win_scheduler& sched)
     : sched_(sched)
 {
-    make_wakeup_pair();
-    thread_ = std::thread([this] { run(); });
+    // The win_wsa_init base is what makes the sockets below legal, and
+    // holding the reference rather than borrowing someone else's is
+    // what keeps them legal to the end: a base is constructed before
+    // this body and released after ~win_wait_reactor has closed the
+    // pair, so WSACleanup can never land between the two.
+    //
+    // A reactor that cannot be woken would park every op it is handed
+    // forever, so it refuses to exist rather than being handed out
+    // broken. The polling thread waits for the first register_wait.
+    if (DWORD const err = make_wakeup_pair(); err != 0)
+        detail::throw_system_error(make_err(err), "win_wait_reactor");
 }
 
 inline win_wait_reactor::~win_wait_reactor()
@@ -155,15 +196,18 @@ inline win_wait_reactor::~win_wait_reactor()
     close_wakeup_pair();
 }
 
-inline void
-win_wait_reactor::make_wakeup_pair()
+inline DWORD
+win_wait_reactor::make_wakeup_pair() noexcept
 {
     // Build a pair of connected loopback sockets to use as a wakeup
     // channel. Winsock has no socketpair(2), so we listen on
     // 127.0.0.1:0, connect a peer, then accept it.
+    //
+    // Every failure path reads the last error before closing
+    // anything: closesocket() overwrites it.
     SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listener == INVALID_SOCKET)
-        return;
+        return wakeup_error();
 
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
@@ -177,42 +221,52 @@ win_wait_reactor::make_wakeup_pair()
         ::getsockname(listener, reinterpret_cast<sockaddr*>(&addr), &len) ==
             SOCKET_ERROR)
     {
+        DWORD const err = wakeup_error();
         ::closesocket(listener);
-        return;
+        return err;
     }
 
     wakeup_write_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (wakeup_write_ == INVALID_SOCKET)
     {
+        DWORD const err = wakeup_error();
         ::closesocket(listener);
-        return;
+        return err;
     }
 
     if (::connect(
             wakeup_write_, reinterpret_cast<sockaddr*>(&addr), len) ==
         SOCKET_ERROR)
     {
+        DWORD const err = wakeup_error();
         ::closesocket(wakeup_write_);
         wakeup_write_ = INVALID_SOCKET;
         ::closesocket(listener);
-        return;
+        return err;
     }
 
     wakeup_read_ = ::accept(listener, nullptr, nullptr);
-    ::closesocket(listener);
-
     if (wakeup_read_ == INVALID_SOCKET)
     {
+        DWORD const err = wakeup_error();
+        ::closesocket(listener);
         ::closesocket(wakeup_write_);
         wakeup_write_ = INVALID_SOCKET;
-        return;
+        return err;
     }
+    ::closesocket(listener);
 
     // The drain loop in run() calls recv() until it returns <= 0.
     // With a blocking socket that second recv() would block instead
     // of returning WSAEWOULDBLOCK, deadlocking the reactor thread.
     u_long non_blocking = 1;
-    ::ioctlsocket(wakeup_read_, FIONBIO, &non_blocking);
+    if (::ioctlsocket(wakeup_read_, FIONBIO, &non_blocking) == SOCKET_ERROR)
+    {
+        DWORD const err = wakeup_error();
+        close_wakeup_pair();
+        return err;
+    }
+    return 0;
 }
 
 inline void
@@ -238,19 +292,17 @@ win_wait_reactor::wake_self() noexcept
     if (!wake_pending_.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel))
         return;
-    if (wakeup_write_ != INVALID_SOCKET)
+
+    char b = 0;
+    if (::send(wakeup_write_, &b, 1, 0) == SOCKET_ERROR)
     {
-        char b = 0;
-        if (::send(wakeup_write_, &b, 1, 0) == SOCKET_ERROR)
-        {
-            // The self-pipe byte is the only thing that wakes the reactor
-            // thread from an indefinite poll(); a coalesced lost wakeup
-            // would leave wake_pending_ stuck true and hang the op.
-            // wakeup_write_ is a blocking socket, so a 1-byte send can
-            // only fail on a hard error -- fatal, mirroring a failed
-            // PostQueuedCompletionStatus in win_scheduler.
-            detail::throw_system_error(make_err(::WSAGetLastError()));
-        }
+        // The self-pipe byte is the only thing that wakes the reactor
+        // thread from an indefinite poll(); a coalesced lost wakeup
+        // would leave wake_pending_ stuck true and hang the op.
+        // wakeup_write_ is a blocking socket, so a 1-byte send can
+        // only fail on a hard error -- fatal, mirroring a failed
+        // PostQueuedCompletionStatus in win_scheduler.
+        detail::throw_system_error(make_err(::WSAGetLastError()));
     }
 }
 
@@ -268,11 +320,51 @@ win_wait_reactor::register_wait(
         sched_.on_completion(op, 0, 0);
         return;
     }
+
+    if (DWORD const err = queue_register(entry{fd, w, op}); err != 0)
     {
-        std::lock_guard lock(mutex_);
-        pending_register_.push_back(entry{fd, w, op});
+        // The reactor is stopped, so nothing would ever drain a parked
+        // op. Report the abort its own shutdown drain gives the ops it
+        // was still holding.
+        sched_.on_completion(op, err, 0);
+        return;
     }
     wake_self();
+}
+
+inline DWORD
+win_wait_reactor::queue_register(entry const& e)
+{
+    std::lock_guard lock(mutex_);
+    // stop() sets the flag before it takes the thread out from under
+    // this lock, and never joins again. Checking the flag and queueing
+    // in one critical section is what keeps both halves honest: a
+    // thread started after that join would be destroyed still joinable,
+    // which ends the process, and an op queued after it would have no
+    // drainer. Queueing under the flag instead leaves the op for the
+    // drain run() performs on its way out.
+    if (stop_.load(std::memory_order_acquire))
+        return ERROR_OPERATION_ABORTED;
+
+    // A polling thread costs a thread per context, and a context that
+    // never waits never pays for one; the first wait is what starts it.
+    // A system that will not give one refuses this wait alone: nothing
+    // has been queued yet, so the reactor is left exactly as it was and
+    // the next register_wait asks again.
+    if (!thread_.joinable())
+    {
+        try
+        {
+            thread_ = std::thread([this] { run(); });
+        }
+        catch (...)
+        {
+            return ERROR_MAX_THRDS_REACHED;
+        }
+    }
+
+    pending_register_.push_back(e);
+    return 0;
 }
 
 inline void
@@ -291,8 +383,17 @@ win_wait_reactor::stop()
     if (stop_.exchange(true, std::memory_order_acq_rel))
         return;
     wake_self();
-    if (thread_.joinable())
-        thread_.join();
+    // Moved out under the lock, then joined without it: the reactor
+    // thread takes the same lock on every pass, so joining while
+    // holding it would deadlock. A context that never waited has no
+    // thread here at all.
+    std::thread t;
+    {
+        std::lock_guard lock(mutex_);
+        t = std::move(thread_);
+    }
+    if (t.joinable())
+        t.join();
 }
 
 inline void
@@ -316,6 +417,18 @@ win_wait_reactor::run()
 
         for (auto* op : to_cancel)
         {
+            // A socket's close() and cancel() ask the reactor to drop
+            // their wait op whether or not one is parked -- open() goes
+            // through close_socket() before it has a socket at all --
+            // and such an ask can outlive the op's next reset().
+            // Acting on it then would complete the wait that reset
+            // started, the moment it is registered. Every real cancel
+            // flags the op before queueing the ask, and only reset()
+            // clears the flag, so an unflagged op is one of those
+            // stale asks.
+            if (!op->cancelled.load(std::memory_order_acquire))
+                continue;
+
             auto it = std::find_if(
                 registered_.begin(), registered_.end(),
                 [op](entry const& e) { return e.op == op; });

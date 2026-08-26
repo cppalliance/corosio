@@ -62,6 +62,14 @@ as `std::system_error` carrying the code the piecewise spelling
 returns); and root setup for which no code-returning spelling can
 exist (`io_context` backend creation, allocation).
 
+Root setup is everything the backend needs — completion port, ring,
+wakeup channel, thread pool — and all of it is built during
+construction, so a system that refuses any of it throws from the
+constructor instead of from the first operation, and the failed
+construction leaves nothing open. An initiator may then assume that
+infrastructure exists, which is what makes "initiators never throw"
+reachable at all.
+
 ## 3. The Classification Test
 
 Ask: **can the caller reliably prevent the failure by checking state
@@ -159,14 +167,16 @@ second channel:
   `no_such_device_or_address` (`corosio::connect` with no viable
   candidate),
   `resource_unavailable_try_again` (io_uring submission queue
-  exhausted, for a submitted op and for the signal reader alike).
+  exhausted, for a submitted op and for the signal reader alike; and a
+  polling thread the system would not start).
 - Portable comparison comes from **normalizing at the boundary**: the
   Windows `make_err` maps the contracted WSA/Win32 codes to
   generic-category `errc` values (`WSAEOPNOTSUPP`, `WSAENOTSOCK`,
   `WSAEAFNOSUPPORT`, `WSAEPROTOTYPE`, `WSAEADDRINUSE`,
-  `WSAEADDRNOTAVAIL`, `ERROR_NEGATIVE_SEEK`; `iocp_make_err` adds the
-  async condition set and `WSAEBADF`/`ERROR_INVALID_HANDLE`). On
-  POSIX, raw errno satisfies `errc` comparison with one exception:
+  `WSAEADDRNOTAVAIL`, `ERROR_NEGATIVE_SEEK`, `ERROR_MAX_THRDS_REACHED`;
+  `iocp_make_err` adds the async condition set and
+  `WSAEBADF`/`ERROR_INVALID_HANDLE`). On POSIX, raw errno satisfies
+  `errc` comparison with one exception:
   `make_err` normalizes `ENOTSUP` so platforms where it differs from
   `EOPNOTSUPP` still compare equal to
   `errc::operation_not_supported`.
@@ -177,6 +187,11 @@ second channel:
   AF_INET sockets; Darwin's `getsockopt(TCP_NODELAY)` on AF_UNIX);
   Windows reports `not_a_socket` where POSIX validation reports
   `EBADF` for garbage (non-sentinel) handles.
+- A failing call that leaves a zero last error must not become an
+  empty `error_code`: read the last error before anything that can
+  clobber it, and substitute rather than report success. Prefer a
+  contracted condition to a plausible-looking raw platform value,
+  which is indistinguishable from a code the provider really gave.
 - Conditions the standard cannot spell come from capy:
   `capy::cond::eof`, `capy::cond::canceled` (a stop token, not
   `errc::operation_canceled`), `capy::cond::timeout` (our deadline,

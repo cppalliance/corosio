@@ -153,7 +153,12 @@ struct overlapped_op
         bytes_transferred = 0;
         empty_buffer      = false;
         is_read           = false;
-        cancelled.store(false, std::memory_order_relaxed);
+        // Release, not relaxed: the wait reactor decides whether a
+        // queued cancel request is stale by loading this flag, so the
+        // clear has to be ordered against the fields written above it
+        // rather than against whichever lock the caller happens to
+        // take next.
+        cancelled.store(false, std::memory_order_release);
     }
 
     // coro_op::request_cancel() (set the cancelled flag) is inherited

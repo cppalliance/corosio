@@ -74,11 +74,13 @@ struct post_awaitable
     void await_resume() const noexcept {}
 };
 
-// One entry point make_wakeup_pair calls, and the code to fail it with.
+// One entry point make_wakeup_pair calls, the code to fail it with,
+// and which of its calls to that entry point to hit.
 struct wakeup_arm
 {
     sys which;
     int err;
+    unsigned nth = 1;
 };
 
 // An operation the wait reactor can no longer complete parks forever,
@@ -103,19 +105,23 @@ struct iocp_faults
     {
         // Winsock is started once per process and released when the
         // last service goes, so this only fires while no io_context is
-        // alive (win_wsa_init.hpp:57-67). The resolver service that
-        // starts it is built inside the scheduler's constructor, after
-        // the completion port: the port is the scheduler's to release
-        // on the way out (win_scheduler.hpp:713-748).
+        // alive. The resolver service that starts it is built inside
+        // the scheduler's constructor, after the completion port: the
+        // port is the scheduler's to release on the way out.
+        //
+        // A lost port is exactly one handle per attempt, so the run is
+        // twice as long as the growth it allows: sixteen attempts have
+        // to stay under the eight handles of ambient drift the default
+        // shape tolerates.
         expect_no_handle_leak([]{
             fault_scope f(sys::WSAStartup, WSAEAFNOSUPPORT);
             expect_system_error([]{ io_context ioc(iocp); },
                 std::errc::address_family_not_supported);
             BOOST_TEST(f.fired());
-        });
+        }, 16, 8);
         {
             // The scheduler's own port: CreateIoCompletionPort with
-            // INVALID_HANDLE_VALUE (win_scheduler.hpp:722-728).
+            // INVALID_HANDLE_VALUE.
             fault_scope f(sys::CreateIoCompletionPort,
                 ERROR_INVALID_PARAMETER);
             expect_system_error([]{ io_context ioc(iocp); },
@@ -128,7 +134,7 @@ struct iocp_faults
     {
         // A null waitable timer is never reported: start() returns
         // without a thread and update_timeout() does nothing, so
-        // timers simply never fire (win_timers_thread.hpp:52,62-66).
+        // timers simply never fire.
         fault_scope f(sys::CreateWaitableTimerW, ERROR_NOT_ENOUGH_MEMORY);
         io_context ioc(iocp);
         BOOST_TEST(f.fired());
@@ -157,7 +163,7 @@ struct iocp_faults
         // The wait is the first thing the timer thread does, but the
         // thread starts asynchronously: destroying the context right
         // away can set the shutdown flag before the loop is entered
-        // and the wait never happens (win_timers_thread.hpp:135-141).
+        // and the wait never happens.
         // So the context is held until the arm reports, bounded so a
         // wait that never comes fails rather than hangs.
         //
@@ -189,8 +195,7 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         // The shutdown packet is the only thing that wakes a blocked
-        // run(), so a failed post is fatal rather than reported
-        // (win_scheduler.hpp:405-412).
+        // run(), so a failed post is fatal rather than reported.
         fault_scope f(sys::PostQueuedCompletionStatus,
             ERROR_NO_SYSTEM_RESOURCES);
         expect_system_error([&]{ ioc.stop(); },
@@ -208,8 +213,7 @@ struct iocp_faults
         {
             {
                 // A failed post falls back to the allocating handle
-                // path, so the work still runs
-                // (win_scheduler.hpp:299-313).
+                // path, so the work still runs.
                 fault_scope f(sys::PostQueuedCompletionStatus,
                     ERROR_NO_SYSTEM_RESOURCES);
                 co_await post_awaitable{&cont};
@@ -227,7 +231,7 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         // A dequeue that reports failure with no OVERLAPPED is not a
-        // timeout, so the run loop throws (win_scheduler.hpp:663-669).
+        // timeout, so the run loop throws.
         fault_scope f(sys::GetQueuedCompletionStatus, ERROR_INVALID_HANDLE);
         auto body = [&]() -> capy::task<>
         {
@@ -271,8 +275,8 @@ struct iocp_faults
         make_native_adoptable(h);
         expect_no_handle_leak([&]{
             {
-                // SO_PROTOCOL_INFOW is how adoption learns the family
-                // and type (win_tcp_acceptor_service.hpp:1141-1147).
+                // SO_PROTOCOL_INFOW is how adoption learns the
+                // family and type.
                 tcp_socket s(ioc);
                 fault_scope f(sys::getsockopt, WSAENOTSOCK);
                 auto ec = s.assign(h);
@@ -349,8 +353,7 @@ struct iocp_faults
         tcp_socket s(ioc);
         BOOST_TEST(!s.open(tcp::v4()));
         // Severing the port association is best effort: the caller
-        // gets a working socket either way
-        // (win_tcp_acceptor_service.hpp:986-996).
+        // gets a working socket either way.
         fault_scope f(sys::NtSetInformationFile, ERROR_INVALID_PARAMETER);
         auto h = s.release();
         BOOST_TEST(f.fired());
@@ -362,8 +365,7 @@ struct iocp_faults
     void testTcpExtensionPointerMissing()
     {
         // load_extension_functions runs once, from the tcp service's
-        // constructor, so the arm has to precede the io_context
-        // (win_tcp_acceptor_service.hpp:1241-1264).
+        // constructor, so the arm has to precede the io_context.
         fault_scope f(sys::WSAIoctl, WSAEOPNOTSUPP);
         io_context ioc(iocp);
         BOOST_TEST(f.fired());
@@ -396,8 +398,7 @@ struct iocp_faults
         {
             {
                 // ConnectEx needs a bound socket, so an unbound one
-                // is bound to the wildcard first
-                // (win_tcp_acceptor_service.hpp:507-536).
+                // is bound to the wildcard first.
                 tcp_socket s(ioc);
                 BOOST_TEST(!s.open(tcp::v4()));
                 fault_scope f(sys::bind, WSAEADDRNOTAVAIL);
@@ -470,8 +471,7 @@ struct iocp_faults
                 BOOST_TEST(f.fired());
             }
             {
-                // A wait for readability is a zero-byte WSARecv
-                // (win_tcp_acceptor_service.hpp:740-756).
+                // A wait for readability is a zero-byte WSARecv.
                 fault_scope f(sys::WSARecv, WSAENOTSOCK);
                 auto [ec] = co_await a.wait(wait_type::read);
                 wtec = ec;
@@ -486,8 +486,7 @@ struct iocp_faults
             {
                 // A remote reset reaches a pending read as
                 // ERROR_NETNAME_DELETED, which off the accept path
-                // means connection_reset
-                // (win_overlapped_op.hpp:76-81).
+                // means connection_reset.
                 completion_fault_scope q(ERROR_NETNAME_DELETED);
                 auto [ec, n] = co_await a.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
@@ -595,8 +594,7 @@ struct iocp_faults
             tcp_socket server(ioc);
             {
                 // Writability carries no meaning for a listening
-                // socket and reaches no syscall
-                // (win_tcp_acceptor_service.hpp:1570-1574).
+                // socket and reaches no syscall.
                 auto [ec] = co_await acc.wait(wait_type::write);
                 waitec = ec;
             }
@@ -651,8 +649,7 @@ struct iocp_faults
                 auto [cec] = co_await client.connect(ep);
                 BOOST_TEST(!cec);
                 // On the accept path ERROR_NETNAME_DELETED means the
-                // half-open connection died, not a reset stream
-                // (win_overlapped_op.hpp:76-81).
+                // half-open connection died, not a reset stream.
                 completion_fault_scope q(ERROR_NETNAME_DELETED);
                 auto [ec] = co_await acc.accept(server);
                 compec = ec;
@@ -816,8 +813,7 @@ struct iocp_faults
             }
             {
                 // A datagram connect is synchronous: WSAConnect
-                // either names the peer or reports why not
-                // (win_udp_service.hpp:566-576).
+                // either names the peer or reports why not.
                 fault_scope f(sys::WSAConnect, WSAEAFNOSUPPORT);
                 auto [ec] = co_await a.connect(b_ep);
                 conec = ec;
@@ -884,44 +880,92 @@ struct iocp_faults
 
     void testWaitReactorSetupFails()
     {
-        // make_wakeup_pair reports nothing: a failure leaves the
-        // reactor with no self-pipe, so a register that follows never
-        // reaches its poll set (win_wait_reactor.hpp:159-215). Nothing
-        // else is observable, and poll() is used rather than run() so
-        // a parked op cannot hang the suite.
+        // The wakeup channel is built as the scheduler is, right after
+        // the resolver service starts Winsock, and nothing before it
+        // in the construction reaches these entry points -- so the
+        // counts below are the pair's own. A reactor that cannot be
+        // woken can never report readiness, so the context refuses to
+        // construct rather than handing back one whose every wait
+        // would park forever. The codes are ones neither make_err nor
+        // iocp_make_err rewrites, so what is injected is what the
+        // constructor throws.
         static constexpr wakeup_arm arms[] = {
             {sys::socket, WSAEMFILE},
-            {sys::bind, WSAEADDRINUSE},
-            {sys::listen, WSAEOPNOTSUPP},
-            {sys::connect, WSAECONNREFUSED},
-            {sys::accept, WSAENOTSOCK},
+            {sys::bind, WSAEACCES},
+            {sys::listen, WSAEINVAL},
+            {sys::getsockname, WSAEFAULT},
+            // The second socket() in make_wakeup_pair is the peer that
+            // connects to the listener.
+            {sys::socket, WSAENOBUFS, 2u},
+            {sys::connect, WSAENETDOWN},
+            {sys::accept, WSAEINPROGRESS},
+            {sys::ioctlsocket, WSAENOTCONN},
         };
-        for(auto const& a : arms)
+        // The completion port, the timer wakeup and whichever wakeup
+        // sockets were already open are all the failed construction's
+        // to release. A leak of one handle per attempt has to separate
+        // from the ambient drift, so each arm runs sixteen times
+        // against a growth budget of eight.
+        for(auto const& arm : arms)
         {
-            io_context ioc(iocp);
-            auto pair = make_socket_pair(ioc);
-            auto& s1 = pair.first;
-            auto& s2 = pair.second;
-            // The arm outlives the coroutine: a wait the reactor
-            // cannot report never resumes it, so `fired()` has to be
-            // readable from here.
-            std::optional<fault_scope> arm;
-            auto body = [&]() -> capy::task<>
-            {
-                arm.emplace(a.which, a.err, 1u);
-                std::ignore = co_await s1.wait(wait_type::write);
-            };
-            capy::run_async(ioc.get_executor())(body());
-            std::ignore = ioc.poll();
-            s1.cancel();
-            std::ignore = ioc.poll();
-            // The reactor is built inside the wait above, on this
-            // thread, so the arm is settled by the time poll returns.
-            BOOST_TEST(arm.has_value() && arm->fired());
-            arm.reset();
-            s1.close();
-            s2.close();
+            expect_no_handle_leak([&]{
+                fault_scope f(arm.which, arm.err, arm.nth);
+                expect_system_error([]{ io_context ioc(iocp); },
+                    win_err(arm.err));
+                BOOST_TEST(f.fired());
+            }, 16, 8);
         }
+    }
+
+    // A context that constructs owns a wakeup channel, so the reactor
+    // has something to poll and the wait it is handed completes. The
+    // polling thread is the half that waits for a reason to exist: one
+    // that was already running would be sitting in WSAPoll, so a
+    // context that never waits leaves the arm below unspent.
+    void testWaitReactorStartsOnFirstWait()
+    {
+        if(!hook_is_live(sys::WSAPoll))
+        {
+            skip_dead_hook("WSAPoll");
+        }
+        else
+        {
+            // any_thread: a thread that had started would be polling
+            // on its own, not on this one. The arm outlives the
+            // context so a poll begun during teardown counts too.
+            fault_scope f(sys::WSAPoll, WSAENOBUFS, 1u, any_thread);
+            {
+                io_context quiet(iocp);
+                udp_socket s(quiet);
+                BOOST_TEST(!s.open(udp::v4()));
+                BOOST_TEST(!s.bind(loopback()));
+                s.close();
+            }
+            BOOST_TEST(!f.fired());
+        }
+
+        io_context ioc(iocp);
+        auto pair = make_socket_pair(ioc);
+        auto& s1 = pair.first;
+        auto& s2 = pair.second;
+        std::error_code wec;
+        bool done    = false;
+        bool expired = false;
+        auto body = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await s1.wait(wait_type::write);
+            wec  = ec;
+            done = true;
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(done);
+        BOOST_TEST(!wec);
+        s1.close();
+        s2.close();
     }
 
     void testWaitReactorPollFails()
@@ -947,7 +991,7 @@ struct iocp_faults
             // Armed after the wait above is queued, so whichever poll
             // fails first already has that op in hand: the drain on
             // the way out covers registered_ and pending_register_
-            // alike (win_wait_reactor.hpp:344-348, 400-412).
+            // alike.
             arm.emplace(sys::WSAPoll, WSAENOBUFS, 1u, any_thread);
             // A cancel for an op the reactor never registered is a
             // no-op that still pokes the self-pipe.
@@ -1009,8 +1053,7 @@ struct iocp_faults
             expect_no_handle_leak([&]{
                 {
                     // Adoption learns the family and type from
-                    // SO_PROTOCOL_INFOW here too
-                    // (win_local_stream_service.hpp:990-1000).
+                    // SO_PROTOCOL_INFOW here too.
                     local_stream_socket s(ioc);
                     fault_scope f(sys::getsockopt, WSAENOTSOCK);
                     BOOST_TEST(s.assign(h) == std::errc::not_a_socket);
@@ -1081,8 +1124,7 @@ struct iocp_faults
         {
             {
                 // AF_UNIX ConnectEx also needs a bound socket, which
-                // it satisfies with a family-only sockaddr_un
-                // (win_local_stream_service.hpp:419-434).
+                // it satisfies with a family-only sockaddr_un.
                 local_stream_socket s(ioc);
                 BOOST_TEST(!s.open());
                 fault_scope f(sys::bind, WSAEADDRNOTAVAIL);
@@ -1121,8 +1163,7 @@ struct iocp_faults
             if(hook_is_live(sys::AcceptEx))
             {
                 // The AF_UNIX accept reaches the same substituted
-                // pointer as the tcp one
-                // (win_local_stream_acceptor_service.hpp:415-425).
+                // pointer as the tcp one.
                 local_stream_socket c(ioc);
                 BOOST_TEST(!c.open());
                 auto [cec] = co_await c.connect(ep);
@@ -1187,6 +1228,7 @@ struct iocp_faults
         testUdpSetupFails();
         testUdpIoFails();
         testWaitReactorSetupFails();
+        testWaitReactorStartsOnFirstWait();
         testWaitReactorPollFails();
         testLocalSetupFails();
         testLocalConnectAcceptFails();

@@ -113,7 +113,7 @@ local_stream_acceptor_wait_op::do_cancel_impl(overlapped_op* base) noexcept
     if (op->acceptor_ptr)
     {
         op->acceptor_ptr->socket_service().scheduler()
-            .cancel_wait_if_constructed(op);
+            .cancel_wait(op);
     }
 }
 
@@ -291,7 +291,7 @@ win_local_stream_acceptor_internal::cancel() noexcept
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
     acc_.request_cancel();
     wt_.request_cancel();
-    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+    svc_.scheduler().cancel_wait(&wt_);
 }
 
 inline std::coroutine_handle<>
@@ -345,7 +345,7 @@ win_local_stream_acceptor_internal::close_socket() noexcept
     // to connection_aborted by iocp_make_err (see win_tcp_socket close_socket).
     acc_.request_cancel();
     wt_.request_cancel();
-    svc_.scheduler().cancel_wait_if_constructed(&wt_);
+    svc_.scheduler().cancel_wait(&wt_);
 
     if (socket_ != INVALID_SOCKET)
     {
