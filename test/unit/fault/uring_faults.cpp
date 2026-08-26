@@ -605,6 +605,89 @@ struct uring_faults
         ::unlink(rf_path.c_str());
     }
 
+    /* The multishot accept arm is the one submission nothing counted.
+
+       Every other op is paid for by a `work_started()` before it is
+       submitted, which is what lets the SQ-full path queue it as
+       completed: the run loop spends a `work_finished()` on everything
+       it dispatches. The arm is a persistent internal mechanism with no
+       such credit, so queueing it would spend one the context never
+       owed. Its failure comes back through the acceptor instead, which
+       is also the only channel that can say anything at all: an arm the
+       ring never took produces no CQE, so an accept that parked on a
+       delivery would park for good.
+    */
+    void testAcceptorArmSqFull()
+    {
+        std::optional<fault_scope> f, g;
+        f.emplace(sys::uring_sqe_full, 0);
+        g.emplace(sys::io_uring_submit_and_get_events, EBADF);
+        io_context ioc(io_uring);
+        // The listen inside the constructor is what arms the multishot
+        // accept, and it finds the one SQE already spent on the wakeup
+        // poll.
+        tcp_acceptor acc(ioc, uring_loopback());
+        tcp_socket s(ioc);
+        std::error_code aec, wec;
+        auto body = [&]() -> capy::task<>
+        {
+            {
+                auto [ec] = co_await acc.accept(s);
+                aec = ec;
+            }
+            {
+                // Readiness on this backend means a future delivery,
+                // which the failed arm has ruled out just as squarely.
+                auto [ec] = co_await acc.wait(wait_type::read);
+                wec = ec;
+            }
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST(f->fired());
+        // The deferred flush is failed too, so the SQ is still full
+        // when the arm makes its own retry.
+        BOOST_TEST(g->fired());
+        BOOST_TEST(aec == std::errc::resource_unavailable_try_again);
+        BOOST_TEST(wec == std::errc::resource_unavailable_try_again);
+        BOOST_TEST(!s.is_open());
+
+        // A failed arm has to be recoverable, or an acceptor that hit
+        // a full SQ once would report EAGAIN for the rest of its life:
+        // the arming it is left holding covers nothing, so a re-listen
+        // must be allowed to replace it rather than being read as one
+        // already in place.
+        f.reset();
+        g.reset();
+        ioc.restart();
+        BOOST_TEST(!acc.listen());
+        tcp_socket c(ioc), s2(ioc);
+        std::error_code cec, aec2;
+        // The accept goes first and finds nothing queued, so the
+        // synchronous accept4 answers EAGAIN and the connection can
+        // only reach it through the arming. That is what makes this an
+        // assertion about the arming rather than about accept4: with
+        // the failed arm still counted as one in place, listen() would
+        // not have replaced it and this accept would report EAGAIN
+        // instead of parking.
+        auto accept_body = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await acc.accept(s2);
+            aec2 = ec;
+        };
+        auto client_body = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await c.connect(acc.local_endpoint());
+            cec = ec;
+        };
+        capy::run_async(ioc.get_executor())(accept_body());
+        capy::run_async(ioc.get_executor())(client_body());
+        ioc.run();
+        BOOST_TEST(!cec);
+        BOOST_TEST(!aec2);
+        BOOST_TEST(s2.is_open());
+    }
+
     void run()
     {
         if(skip_under_valgrind())
@@ -614,6 +697,7 @@ struct uring_faults
         testSignalReaderSqFull();
         testWaitFails();
         testAcceptorDrainSubmitFails();
+        testAcceptorArmSqFull();
         testSqFull();
         testConnectCqeRewrite();
         testAcceptCqeRewrite();

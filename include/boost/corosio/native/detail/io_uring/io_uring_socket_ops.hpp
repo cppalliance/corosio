@@ -427,27 +427,28 @@ struct uring_connect_op : io_uring_op
     }
 };
 
-/** Submit an `io_uring_op` whose `prep_func` is set.
+/** Submit an `io_uring_op`, reporting an SQ that stayed full.
 
-    Acquires the ring mutex, prepares the SQE, and (under the same
-    mutex) CAS-sets `submit_op_posted_`. The first submitter of a
-    batch wins the CAS and posts the scheduler's `submit_sqes_op`,
-    which later flushes all queued SQEs in a single
-    `io_uring_submit_and_get_events` call and drains any ready CQEs.
-    Subsequent submitters in the same batch piggyback — their SQEs
-    sit in the user-space SQ ring until that op dispatches.
-
-    On SQ-ring exhaustion (after one flush retry), completes the op
-    with `EAGAIN` and queues it so its handler dispatches on the next
-    `do_one` cycle, exactly as if the kernel had returned that error.
+    The body behind @ref io_uring_submit_op and
+    @ref io_uring_try_submit_op; `counted` selects which of the two
+    answers an exhausted SQ ring gets.
 
     @pre `op->prep_func != nullptr`.
 
     @par Exception Safety
     Nothrow.
+
+    @param sched The scheduler owning the ring.
+    @param op The operation to submit.
+    @param counted True when a `work_started()` backs this op, so its
+        completion may ride the scheduler's queue.
+
+    @return `false` when the SQ stayed full and the op was left for the
+        caller to report; `true` otherwise.
 */
-inline void
-io_uring_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
+inline bool
+io_uring_do_submit_op(
+    io_uring_scheduler& sched, io_uring_op* op, bool counted) noexcept
 {
     sched.lazy_init_ring();
 
@@ -471,16 +472,21 @@ io_uring_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
             // to ec_out is overwritten on the way out, and a res left at
             // zero reads as end-of-file, a zero-byte write, or a
             // successful connect that never happened. Queue the op as
-            // completed so do_one dispatches the handler. The caller's
-            // work_started() already counted this op, with one exception:
-            // the multishot accept arm deliberately counts nothing, so a
-            // failure here spends a work_finished() it never matched. Its
-            // handler is a no-op, which makes that an accounting slip and
-            // not a use-after-free. (CAS path is not entered here.)
+            // completed so do_one dispatches the handler; the caller's
+            // work_started() pays for the work_finished() do_one spends
+            // on it. (CAS path is not entered here.)
             op->res = -EAGAIN;
+            if (!counted)
+            {
+                // Nothing counted this op, so queueing it would spend a
+                // work_finished() the context never owed and drive
+                // outstanding_work_ below what is really outstanding.
+                // The owner reports the failure instead.
+                return false;
+            }
             typename io_uring_scheduler::lock_type lock(sched.dispatch_mutex());
             sched.push_completed_locked(op);
-            return;
+            return true;
         }
 
         op->prep_func(op, sqe);
@@ -505,6 +511,72 @@ io_uring_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
         // Flush is deferred to submit_sqes_op; post() owns the wake.
         sched.post(&sched.submit_op_ref());
     }
+    return true;
+}
+
+/** Submit an `io_uring_op` a `work_started()` already paid for.
+
+    Acquires the ring mutex, prepares the SQE, and (under the same
+    mutex) CAS-sets `submit_op_posted_`. The first submitter of a
+    batch wins the CAS and posts the scheduler's `submit_sqes_op`,
+    which later flushes all queued SQEs in a single
+    `io_uring_submit_and_get_events` call and drains any ready CQEs.
+    Subsequent submitters in the same batch piggyback — their SQEs
+    sit in the user-space SQ ring until that op dispatches.
+
+    On SQ-ring exhaustion (after one flush retry), completes the op
+    with `EAGAIN` and queues it so its handler dispatches on the next
+    `do_one` cycle, exactly as if the kernel had returned that error.
+    That is why this spelling reports nothing: the failure reaches the
+    caller as the operation's own `EAGAIN` completion.
+
+    @pre `op->prep_func != nullptr`.
+    @pre A `work_started()` backs this op, so the `work_finished()` the
+        scheduler spends on everything it dispatches is owed.
+
+    @par Exception Safety
+    Nothrow.
+
+    @param sched The scheduler owning the ring.
+    @param op The operation to submit.
+
+    @see io_uring_try_submit_op
+*/
+inline void
+io_uring_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
+{
+    // The result is true by construction: a counted op's SQ-full path
+    // queues the op and answers through its own completion.
+    io_uring_do_submit_op(sched, op, true);
+}
+
+/** Submit an `io_uring_op` nothing counted, reporting a full SQ.
+
+    The scheduler spends a `work_finished()` on everything it
+    dispatches out of `completed_ops_`, so an op no `work_started()`
+    backs cannot be completed through that queue: doing so drives
+    `outstanding_work_` below what is really outstanding. This spelling
+    hands an SQ that stayed full back to the owner instead, which
+    reports it through its own channel — the multishot accept arm
+    latches it and answers the accepts it can no longer serve.
+
+    @pre `op->prep_func != nullptr`.
+
+    @par Exception Safety
+    Nothrow.
+
+    @param sched The scheduler owning the ring.
+    @param op The operation to submit.
+
+    @return True when the SQE was prepared; false when the SQ stayed
+        full after one flush and the caller owns the failure.
+
+    @see io_uring_submit_op
+*/
+[[nodiscard]] inline bool
+io_uring_try_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
+{
+    return io_uring_do_submit_op(sched, op, false);
 }
 
 /** Readiness wait via `IORING_OP_POLL_ADD`.

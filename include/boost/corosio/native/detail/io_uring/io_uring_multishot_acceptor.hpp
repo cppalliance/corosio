@@ -114,6 +114,12 @@ protected:
     waiter_node*                                 read_wait_ = nullptr;
     std::unique_ptr<uring_multi_accept_op>       multi_op_;
     bool                                         closing_ = false;
+    /// Non-zero once an arming failed to reach the kernel (guarded by
+    /// `mutex_`). Nothing will ever deliver a connection through an
+    /// SQE the ring never took, so an accept reports this instead of
+    /// parking on a delivery that cannot come. Cleared by the next
+    /// arming that does reach the kernel.
+    int                                          arm_err_ = 0;
     /// Bumped whenever an arming is retired. A re-arm posted for an
     /// earlier generation must not resubmit: `multi_op_` now names a
     /// different op, and resubmitting a live one would alias a single
@@ -310,6 +316,7 @@ public:
             w->stop_cb.emplace(token, waiter_canceller{w});
 
         bool was_cancelled = false;
+        int  arm_err       = 0;
         {
             std::lock_guard lk(mutex_);
             if (w->cancelled.load(std::memory_order_acquire) || closing_)
@@ -318,10 +325,17 @@ public:
             }
             else if (ready_fds_.empty())
             {
-                w->queued = true;
-                sched_->work_started();
-                read_wait_ = w;
-                return;
+                // Readiness here means a future delivery, which a failed
+                // arming has already ruled out: report it rather than
+                // wait on one.
+                arm_err = arm_err_;
+                if (arm_err == 0)
+                {
+                    w->queued = true;
+                    sched_->work_started();
+                    read_wait_ = w;
+                    return;
+                }
             }
             // else: a connection arrived while the callback was armed;
             // complete as ready below.
@@ -333,6 +347,7 @@ public:
         op->h      = w->h;
         op->ex     = w->ex;
         op->ec_out = w->ec_out;
+        op->err    = arm_err;
         if (was_cancelled)
             op->cancelled.store(true, std::memory_order_release);
         delete w;
@@ -451,15 +466,28 @@ public:
         a live arming here would leave it un-cancelled in the kernel —
         two armings on one listener, with the retired one's deliveries
         closed on arrival.
+
+        An arming that failed to reach the kernel is not one of those.
+        It covers nothing, so a re-listen is the caller's way back and
+        has to be allowed through.
     */
     bool prepare_listen_arm() noexcept
     {
+        bool submitted = true;
         {
             std::lock_guard lk(mutex_);
-            if (multi_op_ && !closing_)
+            if (multi_op_ && !closing_ && arm_err_ == 0)
                 return false;
+            // The op behind a failed arming was never handed to the
+            // ring, so no CQE is owed for it and it is still ours.
+            submitted = (arm_err_ == 0);
         }
-        retire_multishot();
+        // Retiring is for an op the kernel still holds: it parks the op
+        // in the scheduler until a terminal CQE releases it. One that
+        // was never submitted would wait there for a completion that
+        // cannot come, so it is reused in place instead.
+        if (submitted)
+            retire_multishot();
         intrusive_list<ready_fd_node> stale;
         {
             std::lock_guard lk(mutex_);
@@ -493,17 +521,86 @@ public:
             // Reuse the existing op (re-arm path). Reset peer scratch
             // so the kernel writes into a clean slot. listen_fd and
             // impl_ptr are re-seeded so the op can never carry state
-            // from an arming that has since been torn down.
+            // from an arming that has since been torn down. `res` is
+            // one of those: an arming that failed to submit left
+            // -EAGAIN there, and the reader of `res` cannot tell a
+            // result the kernel wrote from one it did not.
             multi_op_->peer_storage = sockaddr_storage{};
             multi_op_->peer_len     = sizeof(sockaddr_storage);
+            multi_op_->res          = 0;
             multi_op_->listen_fd    = fd_;
             multi_op_->impl_ptr     = this->shared_from_this();
         }
 
         auto* op = multi_op_.get();
-        io_uring_submit_op(*sched_, op);
         // Deliberately no work_started(): the multishot SQE is a persistent
         // internal mechanism. User-visible work is tracked per-accept call.
+        // The try_ spelling is what says so: it keeps a failed submission
+        // off the scheduler's completion queue, which spends a
+        // work_finished() on everything it dispatches.
+        if (io_uring_try_submit_op(*sched_, op))
+        {
+            std::lock_guard lk(mutex_);
+            arm_err_ = 0;
+            return;
+        }
+        fail_arm(EAGAIN);
+    }
+
+    /** Report an arming that never reached the kernel.
+
+        No CQE can arrive for an SQE the ring never took, so an accept
+        parked on this acceptor would park for good. The error is
+        remembered for the accepts still to come and delivered now to
+        whoever is already parked, which is the same EAGAIN every other
+        op reports when the SQ stays full.
+
+        @param err The code to report to the accepts this arming can no
+            longer serve.
+    */
+    void fail_arm(int err) noexcept
+    {
+        intrusive_list<waiter_node> claimed;
+        {
+            std::lock_guard lk(mutex_);
+            arm_err_ = err;
+            // Claim each waiter the way a delivery does. One the
+            // canceller already claimed belongs to it: cancel_waiter
+            // is waiting on this mutex to unlink the node itself, so
+            // it has to still be in the list when it gets in.
+            intrusive_list<waiter_node> keep;
+            while (auto* w = waiters_.pop_front())
+            {
+                if (!w->cancelled.exchange(true, std::memory_order_acq_rel))
+                    claimed.push_back(w);
+                else
+                    keep.push_back(w);
+            }
+            while (auto* w = keep.pop_front())
+                waiters_.push_back(w);
+            if (read_wait_ &&
+                !read_wait_->cancelled.exchange(
+                    true, std::memory_order_acq_rel))
+            {
+                claimed.push_back(read_wait_);
+                read_wait_ = nullptr;
+            }
+        }
+
+        while (auto* w = claimed.pop_front())
+        {
+            w->stop_cb.reset();
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept arming path: OOM => std::terminate is the intended behavior
+            auto* op     = new uring_accept_op();
+            op->h        = w->h;
+            op->ex       = w->ex;
+            op->ec_out   = w->ec_out;
+            op->impl_out = w->impl_out;
+            op->err      = err;
+            delete w;
+            sched_->post(op);
+            sched_->work_finished();  // balance the waiter's work_started
+        }
     }
 
     /// Pull a parked fd or queue a waiter — used by Derived::accept().
@@ -620,6 +717,18 @@ public:
                 ready_op->peer_storage = r->peer;
                 ready_op->peer_len     = r->peer_len;
                 delete r;
+            }
+            else if (arm_err_ != 0)
+            {
+                // No arming reached the kernel, so no CQE will deliver
+                // a connection: parking here would park for good.
+                // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept accept path: OOM => std::terminate is the intended behavior
+                ready_op           = new uring_accept_op();
+                ready_op->h        = h;
+                ready_op->ex       = ex;
+                ready_op->ec_out   = ec;
+                ready_op->impl_out = impl_out;
+                ready_op->err      = arm_err_;
             }
             else
             {

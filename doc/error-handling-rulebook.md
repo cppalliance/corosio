@@ -139,6 +139,14 @@ second channel:
 - `tls_context` setters record configuration that is applied when a
   handshake first configures the engine; application failures surface
   through that handshake's completion.
+- A failure with no operation to attach to is latched on the object
+  and pre-answers the operations that follow, until the step it
+  belongs to succeeds again: a multishot arming the ring never took
+  reports to every accept until the next arming clears it.
+- A completion queued into a scheduler that spends a
+  `work_finished()` on everything it dispatches needs a matching
+  `work_started()`. An operation nothing counted reports through its
+  owner's channel instead of the completion queue.
 
 ## 6. Attributes and Spelling
 
@@ -173,8 +181,10 @@ second channel:
   `no_such_device_or_address` (`corosio::connect` with no viable
   candidate),
   `resource_unavailable_try_again` (io_uring submission queue
-  exhausted, for a submitted op and for the signal reader alike; and a
-  polling thread the system would not start).
+  exhausted, for a submitted op, for the signal reader, and for a
+  multishot arming that never reached the kernel, latched on the
+  object until an arming succeeds; and a polling thread the system
+  would not start).
 - Portable comparison comes from **normalizing at the boundary**: the
   Windows `make_err` maps the contracted WSA/Win32 codes to
   generic-category `errc` values (`WSAEOPNOTSUPP`, `WSAENOTSOCK`,
