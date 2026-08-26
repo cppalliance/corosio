@@ -14,6 +14,7 @@
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/local_datagram_service.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 
 #include <sys/ioctl.h>
 
@@ -119,7 +120,7 @@ local_datagram_socket::available() const
     int value = 0;
     if (::ioctl(native_handle(), FIONREAD, &value) < 0)
         detail::throw_system_error(
-            std::error_code(errno, std::system_category()),
+            detail::make_err(errno),
             "local_datagram_socket::available");
     return static_cast<std::size_t>(value);
 }

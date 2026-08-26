@@ -14,6 +14,7 @@
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/local_stream_service.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 
 #if BOOST_COROSIO_POSIX
 #include <sys/ioctl.h>
@@ -118,14 +119,15 @@ local_stream_socket::available() const
     if (::ioctlsocket(
             static_cast<SOCKET>(native_handle()), FIONREAD, &value) != 0)
         detail::throw_system_error(
-            std::error_code(::WSAGetLastError(), std::system_category()),
+            detail::make_err(
+                static_cast<unsigned long>(::WSAGetLastError())),
             "local_stream_socket::available");
     return static_cast<std::size_t>(value);
 #else
     int value = 0;
     if (::ioctl(native_handle(), FIONREAD, &value) < 0)
         detail::throw_system_error(
-            std::error_code(errno, std::system_category()),
+            detail::make_err(errno),
             "local_stream_socket::available");
     return static_cast<std::size_t>(value);
 #endif

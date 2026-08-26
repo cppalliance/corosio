@@ -9,6 +9,7 @@
 
 #include <boost/corosio/host_name.hpp>
 #include <boost/corosio/detail/platform.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 
 #include <string>
 #include <system_error>
@@ -32,7 +33,7 @@ host_name()
     // every mainstream OS's actual cap (Linux 64, macOS/BSD 255).
     char buf[256];
     if (::gethostname(buf, sizeof(buf)) != 0)
-        return {std::error_code(errno, std::system_category()), {}};
+        return {detail::make_err(errno), {}};
 
     // POSIX does not guarantee NUL termination on truncation.
     if (std::memchr(buf, '\0', sizeof(buf)) == nullptr)
@@ -60,7 +61,7 @@ host_name()
     }
     if (err != ERROR_MORE_DATA)
         return {
-            std::error_code(static_cast<int>(err), std::system_category()),
+            detail::make_err(static_cast<unsigned long>(err)),
             {}};
 
     // On success, GetComputerNameExW rewrites `size` to the count
@@ -69,8 +70,8 @@ host_name()
     if (!::GetComputerNameExW(
             ComputerNameDnsHostname, wide.data(), &size))
         return {
-            std::error_code(
-                static_cast<int>(::GetLastError()), std::system_category()),
+            detail::make_err(
+                static_cast<unsigned long>(::GetLastError())),
             {}};
     wide.resize(size);
 
@@ -79,8 +80,8 @@ host_name()
         nullptr, 0, nullptr, nullptr);
     if (needed <= 0)
         return {
-            std::error_code(
-                static_cast<int>(::GetLastError()), std::system_category()),
+            detail::make_err(
+                static_cast<unsigned long>(::GetLastError())),
             {}};
 
     std::string out(static_cast<std::size_t>(needed), '\0');
@@ -89,8 +90,8 @@ host_name()
         out.data(), needed, nullptr, nullptr);
     if (written != needed)
         return {
-            std::error_code(
-                static_cast<int>(::GetLastError()), std::system_category()),
+            detail::make_err(
+                static_cast<unsigned long>(::GetLastError())),
             {}};
     return {std::error_code{}, std::move(out)};
 }

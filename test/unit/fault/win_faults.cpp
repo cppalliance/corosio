@@ -510,9 +510,8 @@ struct win_common_faults
         io_context ioc(iocp);
         local_stream_socket a(ioc), b(ioc);
         BOOST_TEST(!connect_pair(a, b));
-        // available() reports the raw Winsock code rather than
-        // routing it through make_err
-        // (src/corosio/src/local_stream_socket.cpp:118-123).
+        // WSAEINVAL is one of the codes make_err passes through, so
+        // available() reports it as the raw Winsock code either way.
         fault_scope f(sys::ioctlsocket, WSAEINVAL);
         expect_system_error(
             [&]{ std::ignore = a.available(); }, win_err(WSAEINVAL));
