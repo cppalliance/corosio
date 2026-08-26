@@ -180,22 +180,39 @@ struct select_faults
 
     void testRunLoopFaults()
     {
-        io_context ioc(select);
-        // EINTR and EBADF are the two codes select() retries; every
-        // other one leaves the run loop through an exception. Only the
-        // exceptional branch is driven from a test: arming either
-        // retried code aborts the process instead of looping, so it is
-        // left uncovered rather than asserted.
-        fault_scope f(sys::select, EINVAL);
-        auto body = [&]() -> capy::task<>
+        // EINTR and EBADF are the two codes select() retries: the poll
+        // is abandoned for this round and the run loop keeps going, so
+        // the delay armed before it still fires.
+        for(int err : {EINTR, EBADF})
         {
-            std::ignore = co_await corosio::delay(
-                std::chrono::milliseconds(1));
-        };
-        capy::run_async(ioc.get_executor())(body());
-        expect_system_error([&]{ ioc.run(); },
-            std::errc::invalid_argument);
-        BOOST_TEST(f.fired());
+            io_context ioc(select);
+            fault_scope f(sys::select, err);
+            bool done = false;
+            auto body = [&]() -> capy::task<>
+            {
+                std::ignore = co_await corosio::delay(
+                    std::chrono::milliseconds(1));
+                done = true;
+            };
+            capy::run_async(ioc.get_executor())(body());
+            ioc.run();
+            BOOST_TEST(f.fired());
+            BOOST_TEST(done);
+        }
+        // Every other code leaves the run loop through an exception.
+        {
+            io_context ioc(select);
+            fault_scope f(sys::select, EINVAL);
+            auto body = [&]() -> capy::task<>
+            {
+                std::ignore = co_await corosio::delay(
+                    std::chrono::milliseconds(1));
+            };
+            capy::run_async(ioc.get_executor())(body());
+            expect_system_error([&]{ ioc.run(); },
+                std::errc::invalid_argument);
+            BOOST_TEST(f.fired());
+        }
     }
 
     void run()

@@ -331,7 +331,14 @@ protected:
     };
     task_op task_op_;
 
-    /// Run the platform-specific reactor poll.
+    /** Run the platform-specific reactor poll.
+
+        @par Postconditions
+        `lock` is owned on return, however the poll ended. An
+        implementation that unlocks around the blocking call owes the
+        caller a matching re-acquire on every path out, including the
+        errors it retries rather than reports.
+    */
     virtual void
     run_task(lock_type& lock, context_type* ctx,
         long timeout_us) = 0;

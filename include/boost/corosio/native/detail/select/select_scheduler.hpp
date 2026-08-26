@@ -402,11 +402,14 @@ select_scheduler::run_task(
     // EINTR: signal interrupted select(), just retry.
     // EBADF: an fd was closed between snapshot and select(); retry
     // with a fresh snapshot from registered_descs_.
+    // Both fall through with no ready descriptors rather than
+    // returning: the caller handed this function an owned lock that
+    // only the epilogue below re-acquires.
     if (ready < 0)
     {
-        if (errno == EINTR || errno == EBADF)
-            return;
-        detail::throw_system_error(make_err(errno), "select");
+        if (errno != EINTR && errno != EBADF)
+            detail::throw_system_error(make_err(errno), "select");
+        ready = 0;
     }
 
     // Process timers outside the lock
