@@ -32,6 +32,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <optional>
 #include <system_error>
 #include <tuple>
 
@@ -55,36 +56,26 @@ endpoint uring_loopback()
 
 struct uring_faults
 {
-    // The ring is created lazily, so init faults surface from the first
-    // operation that needs it rather than from the io_context ctor.
+    // The ring is created at the end of io_context construction, so a
+    // ring the kernel refuses leaves no context behind to run: the
+    // failure surfaces from the constructor, and what it opened on the
+    // way in is released as the constructor unwinds.
     void testRingInitFails()
     {
         auto expect = [](sys s, int err, std::errc code)
         {
-            io_context ioc(io_uring);
+            int const before = open_fds();
             fault_scope f(s, err);
-            expect_system_error([&]{ ioc.run(); }, code);
+            expect_system_error([&]{ io_context ioc(io_uring); }, code);
             BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(open_fds(), before);
         };
         expect(sys::io_uring_queue_init_params, ENOMEM,
             std::errc::not_enough_memory);
         expect(sys::eventfd, EMFILE, std::errc::too_many_files_open);
-        // The wakeup poll's submit is the only one init issues.
+        // The wakeup poll's submit is the only one ring creation issues.
         expect(sys::io_uring_submit, EBADF,
             std::errc::bad_file_descriptor);
-    }
-
-    void testRingInitLeaksNothing()
-    {
-        int before = open_fds();
-        {
-            io_context ioc(io_uring);
-            fault_scope f(sys::io_uring_submit, EBADF);
-            expect_system_error([&]{ ioc.run(); },
-                std::errc::bad_file_descriptor);
-            BOOST_TEST(f.fired());
-        }
-        BOOST_TEST_EQ(open_fds(), before);
     }
 
     void testSignalReaderSubmitFails()
@@ -98,9 +89,10 @@ struct uring_faults
             std::error_code ec;
             bool fired = false;
             {
-                // nth = 2: the first submit arms the wakeup eventfd
-                // when the ring is created.
-                fault_scope f(sys::io_uring_submit, EBADF, 2);
+                // The wakeup eventfd's submit is spent building the
+                // ring, before this arm, so the reader's is the first
+                // one it sees.
+                fault_scope f(sys::io_uring_submit, EBADF);
                 ec = ss.add(SIGUSR2);
                 fired = f.fired();
             }
@@ -118,17 +110,15 @@ struct uring_faults
     void testSignalReaderSqFull()
     {
         in_child([]{
+            // The clamp sizes the ring as it is created, which happens
+            // while the context is built, so it is armed before that.
+            std::optional<fault_scope> f;
+            f.emplace(sys::uring_sqe_full, 0);
             io_context ioc(io_uring);
             signal_set ss(ioc);
-            std::error_code ec;
-            bool fired = false;
-            {
-                // The ring is created lazily, so the clamp still
-                // catches it from inside add().
-                fault_scope f(sys::uring_sqe_full, 0);
-                ec = ss.add(SIGUSR2);
-                fired = f.fired();
-            }
+            std::error_code const ec = ss.add(SIGUSR2);
+            bool const fired = f->fired();
+            f.reset();
             // Not latched: with the SQ flushable again the next add()
             // arms the reader.
             return fired &&
@@ -620,7 +610,6 @@ struct uring_faults
         if(skip_under_valgrind())
             return;
         testRingInitFails();
-        testRingInitLeaksNothing();
         testSignalReaderSubmitFails();
         testSignalReaderSqFull();
         testWaitFails();

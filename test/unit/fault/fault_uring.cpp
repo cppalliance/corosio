@@ -134,7 +134,14 @@ extern "C" int io_uring_submit(io_uring* ring) LIBURING_NOEXCEPT
         return 0;
     }
     scan_pending_sqes(ring);
-    return real(ring);
+    rc = real(ring);
+    // A buffered write can complete inside this io_uring_enter, so the
+    // CQE the arm is waiting for may already be visible when it
+    // returns. Rewriting here as well as in the waiting entry points
+    // is what keeps the arm from depending on which call the kernel
+    // chose to finish the op in.
+    rewrite_visible_cqes(ring);
+    return rc;
 }
 
 extern "C" int io_uring_submit_and_wait_timeout(io_uring* ring, io_uring_cqe** cqe,

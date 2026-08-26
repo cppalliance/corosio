@@ -238,6 +238,20 @@ apply_scheduler_options(
 
 }
 
+// Bring up backend infrastructure whose setup depends on the options
+// applied above. Runs last in every constructor: an io_context that
+// constructs is usable, so a kernel that refuses the infrastructure is
+// reported from the constructor and not from the first operation.
+void
+finish_construction([[maybe_unused]] detail::scheduler& sched)
+{
+#if BOOST_COROSIO_HAS_IO_URING
+    if (auto* uring_sched =
+            dynamic_cast<detail::io_uring_scheduler*>(&sched))
+        uring_sched->init_ring();
+#endif
+}
+
 detail::scheduler&
 construct_default(capy::execution_context& ctx, unsigned concurrency_hint)
 {
@@ -274,13 +288,13 @@ io_context::io_context(
     : capy::execution_context(this)
     , sched_(nullptr)
 {
-    pre_create_services(*this, opts_in);
+    apply_options_pre_(opts_in);
     // Computed before construct_default so IOCP's completion port is created
     // with the effective concurrency.
     unsigned const eff =
         detail::effective_concurrency_hint(opts_in, concurrency_hint);
     sched_ = &construct_default(*this, eff);
-    apply_scheduler_options(*sched_, opts_in, eff);
+    apply_options_post_(opts_in, eff);
 }
 
 void
@@ -295,12 +309,14 @@ io_context::apply_options_post_(
     unsigned concurrency_hint)
 {
     apply_scheduler_options(*sched_, opts_in, concurrency_hint);
+    finish_construction(*sched_);
 }
 
 void
 io_context::apply_threading_(io_context_options const& opts_in)
 {
     sched_->configure_threading(make_threading_config(opts_in));
+    finish_construction(*sched_);
 }
 
 io_context::~io_context()

@@ -224,6 +224,13 @@ effective_concurrency_hint(
     `capy::run` / `capy::run_async` is work-tracked, so a normal
     `run()` completion already waits for it.
 
+    @par Exception Safety
+    A context that constructs is usable. The infrastructure its
+    backend needs — the completion port, the ring, the reactor's
+    wakeup channel — is created during construction, so a system that
+    refuses it throws from the constructor rather than from the first
+    operation, and the failed construction leaves nothing open.
+
     @par Thread Safety
     Distinct objects: Safe.@n
     Shared objects: Safe, unless the context was constructed with a
@@ -237,15 +244,19 @@ class BOOST_COROSIO_DECL io_context : public capy::execution_context
     /// Pre-create services that depend on options (before construct).
     void apply_options_pre_(io_context_options const& opts);
 
-    /// Apply runtime tuning to the scheduler (after construct).
+    /** Apply runtime tuning to the scheduler and finish bringing the
+        backend up. The tail of every options constructor: the backend
+        infrastructure whose setup reads these options is created here,
+        so a failure to create it throws from the constructor. */
     void apply_options_post_(
         io_context_options const& opts,
         unsigned concurrency_hint);
 
-    /** Apply only the decomposed threading configuration (locking tiers).
-        Used by the plain constructors, which — unlike the options
-        constructors — deliberately leave the reactor budget at its defaults
-        rather than engaging the multi-thread post-everything heuristic. */
+    /** Apply only the decomposed threading configuration (locking tiers),
+        then finish bringing the backend up. The tail of every plain
+        constructor, which — unlike the options constructors —
+        deliberately leaves the reactor budget at its defaults rather than
+        engaging the multi-thread post-everything heuristic. */
     void apply_threading_(io_context_options const& opts);
 
 protected:
@@ -261,6 +272,9 @@ public:
         case it reports 0) as the concurrency hint, and the default
         @ref locking_mode::safe tier. Select a lockless tier via
         @ref io_context_options::locking.
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
     */
     io_context();
 
@@ -268,6 +282,9 @@ public:
 
         @param concurrency_hint Hint for the number of threads
             that will call `run()`.
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
     */
     explicit io_context(unsigned concurrency_hint);
 
@@ -280,6 +297,9 @@ public:
 
         @throws std::invalid_argument If `opts.thread_pool_size` is
             less than 1 (POSIX).
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
     */
     explicit io_context(
         io_context_options const& opts,
@@ -291,6 +311,9 @@ public:
             multiplexer (e.g. `corosio::epoll`).
         @param concurrency_hint Hint for the number of threads
             that will call `run()`.
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
     */
     template<class Backend>
         requires requires { Backend::construct; }
@@ -317,6 +340,9 @@ public:
 
         @throws std::invalid_argument If `opts.thread_pool_size` is
             less than 1 (POSIX).
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
     */
     template<class Backend>
         requires requires { Backend::construct; }

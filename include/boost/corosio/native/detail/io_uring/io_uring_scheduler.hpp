@@ -184,6 +184,26 @@ public:
     /// Initialize the io_uring ring on first access. Idempotent.
     void lazy_init_ring() const;
 
+    /** Create the io_uring ring.
+
+        Called once the owning `io_context` has applied every option
+        that feeds the ring's setup flags, so that a kernel that
+        refuses the ring is reported from the `io_context`
+        constructor rather than from the first operation submitted
+        through it. Idempotent.
+
+        @par Exception Safety
+        Strong guarantee. A ring that cannot be created leaves no
+        descriptor behind.
+
+        @throws std::system_error If the ring, its wakeup eventfd, or
+            the poll watching that eventfd could not be set up.
+    */
+    void init_ring() const
+    {
+        lazy_init_ring();
+    }
+
     /// Wake the leader if it's blocked in `submit_and_wait_timeout`.
     /// Best-effort: the wakeup is suppressed if the leader has already
     /// been signalled and not yet acked.
@@ -341,9 +361,8 @@ public:
 
     /** Configure SQPOLL parameters.
 
-        Must be called before the first run/poll/post — the values
-        are cached and read by `lazy_init_ring_unlocked` when the
-        ring is first constructed. No-op if `enable` is false (the
+        Must be called before the ring is created — the values are
+        cached and read when it is. No-op if `enable` is false (the
         default).
 
         @note  When combined with single-threaded mode,
@@ -493,9 +512,9 @@ private:
     static constexpr int              drain_cqes_max_rounds = 8;
     static constexpr unsigned long    drain_cqes_kick_ns    = 1'000'000;
 
-    // ring_inited_ goes true once on first run/poll/submit. The init is
-    // deferred from the constructor so configure_threading() can take
-    // effect before io_uring_queue_init_params chooses flags.
+    // ring_inited_ goes true once the ring exists. The init is deferred
+    // from the constructor so configure_threading() and configure_sqpoll()
+    // can take effect before io_uring_queue_init_params chooses flags.
     mutable std::once_flag            ring_init_once_;
     mutable bool                      ring_inited_ = false;
 
@@ -525,9 +544,12 @@ io_uring_scheduler::io_uring_scheduler(
     get_resolver_service(ctx, *this);
     get_signal_service(ctx, *this);
 
-    // Ring init is deferred to lazy_init_ring() so configure_single_-
-    // threaded(true), which the io_context applies after construction,
-    // can take effect before io_uring_queue_init_params chooses flags.
+    // Ring init is deferred so the options the io_context applies
+    // after this constructor — the locking tier and SQPOLL — can feed
+    // the flags io_uring_queue_init_params is given. The io_context
+    // calls init_ring() once they are in place; the lazy_init_ring()
+    // calls scattered through the op paths only matter for a
+    // scheduler used without one.
 }
 
 inline
@@ -633,6 +655,7 @@ io_uring_scheduler::lazy_init_ring_unlocked() const
     if (!sqe)
     {
         ::close(wakeup_eventfd_);
+        wakeup_eventfd_ = -1;
         ::io_uring_queue_exit(&ring_);
         detail::throw_system_error(
             make_err(ENOSPC), "io_uring_get_sqe (wakeup)");
@@ -647,6 +670,7 @@ io_uring_scheduler::lazy_init_ring_unlocked() const
     if (submit_rc < 0)
     {
         ::close(wakeup_eventfd_);
+        wakeup_eventfd_ = -1;
         ::io_uring_queue_exit(&ring_);
         detail::throw_system_error(
             make_err(-submit_rc), "io_uring_submit (wakeup)");
