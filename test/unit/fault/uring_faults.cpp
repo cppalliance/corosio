@@ -169,60 +169,128 @@ struct uring_faults
 
     // A ring clamped to one SQE spends it on the wakeup poll, and the
     // deferred flush that would free it is failed too, so the first
-    // user op finds the SQ still full after its own flush retry. The
-    // pair is built with raw syscalls and adopted: connecting through
-    // a ring this crippled would deadlock before the test began.
+    // user op finds the SQ still full after its own flush retry. Every
+    // op kind reports the same EAGAIN there, whatever it was going to
+    // do with the SQE. The pairs are built with raw syscalls and
+    // adopted: connecting through a ring this crippled would deadlock
+    // before the test began.
     void testSqFull()
     {
-        int sv[2];
-        if(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+        // A read that never reached the kernel is not an end of file.
         {
-            BOOST_TEST(false);
-            return;
+            int sv[2];
+            if(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+            {
+                BOOST_TEST(false);
+                return;
+            }
+            make_native_adoptable(sv[1]);
+            fault_scope f(sys::uring_sqe_full, 0);
+            fault_scope g(sys::io_uring_submit_and_get_events, EBADF);
+            io_context ioc(io_uring);
+            local_stream_socket b(ioc);
+            BOOST_TEST(!b.assign(sv[1]));
+            char buf[8];
+            std::error_code rec, rec2;
+            std::size_t n1 = 1, n2 = 0;
+            auto read_body = [&]() -> capy::task<>
+            {
+                {
+                    auto [ec, n] = co_await b.read_some(
+                        capy::mutable_buffer(buf, 8));
+                    rec = ec;
+                    n1 = n;
+                }
+                // Nothing was consumed, so the peer's next bytes still
+                // arrive: the follow-up read needs no SQE because the
+                // speculative readv answers it.
+                BOOST_TEST_EQ(::write(sv[0], "abcd", 4), 4);
+                {
+                    auto [ec, n] = co_await b.read_some(
+                        capy::mutable_buffer(buf, 8));
+                    rec2 = ec;
+                    n2 = n;
+                }
+            };
+            capy::run_async(ioc.get_executor())(read_body());
+            ioc.run();
+            BOOST_TEST(f.fired());
+            BOOST_TEST(g.fired());
+            BOOST_TEST(rec == std::errc::resource_unavailable_try_again);
+            BOOST_TEST_EQ(n1, 0u);
+            BOOST_TEST(b.is_open());
+            BOOST_TEST(!rec2);
+            BOOST_TEST_EQ(n2, 4u);
+            BOOST_TEST_EQ(std::memcmp(buf, "abcd", 4), 0);
+            ::close(sv[0]);
         }
-        make_native_adoptable(sv[1]);
-        fault_scope f(sys::uring_sqe_full, 0);
-        fault_scope g(sys::io_uring_submit_and_get_events, EBADF);
-        io_context ioc(io_uring);
-        local_stream_socket b(ioc);
-        BOOST_TEST(!b.assign(sv[1]));
-        char buf[8];
-        std::error_code rec, rec2;
-        std::size_t n2 = 0;
-        auto read_body = [&]() -> capy::task<>
+        // A write that never reached the kernel moved no bytes, so
+        // reporting success with a zero count would lose the payload.
         {
+            int sv[2];
+            if(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
             {
-                auto [ec, n] = co_await b.read_some(
-                    capy::mutable_buffer(buf, 8));
-                std::ignore = n;
-                rec = ec;
+                BOOST_TEST(false);
+                return;
             }
-            // The reported eof is spurious, so the peer's next bytes
-            // still arrive: the follow-up read needs no SQE because the
-            // speculative readv answers it.
-            BOOST_TEST_EQ(::write(sv[0], "abcd", 4), 4);
+            make_native_adoptable(sv[1]);
+            fault_scope f(sys::uring_sqe_full, 0);
+            fault_scope g(sys::io_uring_submit_and_get_events, EBADF);
+            io_context ioc(io_uring);
+            local_stream_socket b(ioc);
+            BOOST_TEST(!b.assign(sv[1]));
+            std::error_code wec;
+            std::size_t wn = 1;
+            auto write_body = [&]() -> capy::task<>
             {
-                auto [ec, n] = co_await b.read_some(
-                    capy::mutable_buffer(buf, 8));
-                rec2 = ec;
-                n2 = n;
+                // The socket is writable, so the speculative sendmsg
+                // would answer the write without ever needing an SQE.
+                fault_scope s(sys::sendmsg, EAGAIN);
+                auto [ec, n] = co_await b.write_some(
+                    capy::const_buffer("abcd", 4));
+                wec = ec;
+                wn = n;
+                BOOST_TEST(s.fired());
+            };
+            capy::run_async(ioc.get_executor())(write_body());
+            ioc.run();
+            BOOST_TEST(f.fired());
+            BOOST_TEST(g.fired());
+            BOOST_TEST(wec == std::errc::resource_unavailable_try_again);
+            BOOST_TEST_EQ(wn, 0u);
+            BOOST_TEST(b.is_open());
+            ::close(sv[0]);
+        }
+        // A readiness wait carries no byte count to give it away: an
+        // unsubmitted poll that reported success would have the caller
+        // read a socket nothing said was readable.
+        {
+            int sv[2];
+            if(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+            {
+                BOOST_TEST(false);
+                return;
             }
-        };
-        capy::run_async(ioc.get_executor())(read_body());
-        ioc.run();
-        BOOST_TEST(f.fired());
-        BOOST_TEST(g.fired());
-        // The SQ-full path writes EAGAIN into the op's error output and
-        // then queues the op as completed; the read handler re-decodes
-        // the untouched res == 0 as a zero-byte read, so the caller sees
-        // eof on a socket whose peer is still open rather than the
-        // EAGAIN the submit path wrote.
-        BOOST_TEST(rec == capy::error::eof);
-        BOOST_TEST(b.is_open());
-        BOOST_TEST(!rec2);
-        BOOST_TEST_EQ(n2, 4u);
-        BOOST_TEST_EQ(std::memcmp(buf, "abcd", 4), 0);
-        ::close(sv[0]);
+            make_native_adoptable(sv[1]);
+            fault_scope f(sys::uring_sqe_full, 0);
+            fault_scope g(sys::io_uring_submit_and_get_events, EBADF);
+            io_context ioc(io_uring);
+            local_stream_socket b(ioc);
+            BOOST_TEST(!b.assign(sv[1]));
+            std::error_code pec;
+            auto wait_body = [&]() -> capy::task<>
+            {
+                auto [ec] = co_await b.wait(wait_type::read);
+                pec = ec;
+            };
+            capy::run_async(ioc.get_executor())(wait_body());
+            ioc.run();
+            BOOST_TEST(f.fired());
+            BOOST_TEST(g.fired());
+            BOOST_TEST(pec == std::errc::resource_unavailable_try_again);
+            BOOST_TEST(b.is_open());
+            ::close(sv[0]);
+        }
     }
 
     void testConnectCqeRewrite()

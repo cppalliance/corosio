@@ -437,9 +437,9 @@ struct uring_connect_op : io_uring_op
     Subsequent submitters in the same batch piggyback — their SQEs
     sit in the user-space SQ ring until that op dispatches.
 
-    On SQ-ring exhaustion (after one flush retry), surfaces `EAGAIN`
-    on `*op->ec_out` and queues the op as completed so its handler
-    dispatches on the next `do_one` cycle.
+    On SQ-ring exhaustion (after one flush retry), completes the op
+    with `EAGAIN` and queues it so its handler dispatches on the next
+    `do_one` cycle, exactly as if the kernel had returned that error.
 
     @pre `op->prep_func != nullptr`.
 
@@ -466,11 +466,18 @@ io_uring_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
         if (!sqe)
         {
             // SQ stayed full after one flush — synchronous failure path.
-            // Surface EAGAIN and queue the op as completed so do_one
-            // dispatches the handler. The caller's work_started() already
-            // counted this op. (CAS path is not entered here.)
-            if (op->ec_out)
-                *op->ec_out = make_err(EAGAIN);
+            // Report EAGAIN the way a CQE would, because every handler
+            // re-derives its result from `res`: a code written straight
+            // to ec_out is overwritten on the way out, and a res left at
+            // zero reads as end-of-file, a zero-byte write, or a
+            // successful connect that never happened. Queue the op as
+            // completed so do_one dispatches the handler. The caller's
+            // work_started() already counted this op, with one exception:
+            // the multishot accept arm deliberately counts nothing, so a
+            // failure here spends a work_finished() it never matched. Its
+            // handler is a no-op, which makes that an accounting slip and
+            // not a use-after-free. (CAS path is not entered here.)
+            op->res = -EAGAIN;
             typename io_uring_scheduler::lock_type lock(sched.dispatch_mutex());
             sched.push_completed_locked(op);
             return;
