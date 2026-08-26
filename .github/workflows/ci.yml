@@ -861,6 +861,7 @@ jobs:
             cd boost-root
             cmake -S . -B build \
               -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TESTING=ON \
               -DBOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}" \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
             cmake --build build --target tests -j$(sysctl -n hw.ncpu)
