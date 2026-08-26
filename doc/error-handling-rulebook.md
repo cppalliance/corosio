@@ -26,6 +26,12 @@ by classifying its failures:
   would be an attractive nuisance: the retry it invites is a
   double-close hazard, because POSIX leaves descriptor release under
   `EINTR` unspecified.
+- **No caller at all** — an internal wakeup (`interrupt_reactor()`,
+  `wake_self()`) has nobody to report to, but swallowing the failure
+  must not swallow every later wake too: a coalescing flag stands for
+  a byte a failed write never sent, so the failure path disarms it.
+  The cost is then the wakes already in flight rather than every wake
+  after them. Never throw from a wake path.
 - Never both channels for one operation. Never `std::error_code&`
   out-params. Never a throwing/non-throwing overload pair.
 

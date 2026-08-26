@@ -438,7 +438,6 @@ private:
     int                               sq_thread_cpu_     = -1;
 
     int                               cancel_sentinel_ = 0;
-    mutable std::atomic<bool>         wakeup_armed_{false};
 
     // Ops adopted by retire_op, kept alive so the kernel never sees
     // their user_data reused. Declared before ring_ is exited only in
@@ -788,24 +787,18 @@ io_uring_scheduler::interrupt_reactor() const noexcept
     // (drained together by drain_wakeup_eventfd's single read of
     // the eventfd counter).
     std::uint64_t v = 1;
-    [[maybe_unused]] auto r = ::write(wakeup_eventfd_, &v, sizeof(v));
-    wakeup_armed_.store(true, std::memory_order_release);
+    std::ignore = ::write(wakeup_eventfd_, &v, sizeof(v));
 }
 
 inline void
 io_uring_scheduler::drain_wakeup_eventfd() const noexcept
 {
     std::uint64_t v;
-    [[maybe_unused]] auto r = ::read(wakeup_eventfd_, &v, sizeof(v));
+    std::ignore = ::read(wakeup_eventfd_, &v, sizeof(v));
 
     // Multishot poll never needs re-arming. The poll-add was queued
     // once at lazy_init_ring with IORING_POLL_ADD_MULTI; each eventfd
     // POLLIN produces a CQE without consuming the SQE.
-    //
-    // Release pairs with the acquire side of interrupt_reactor's CAS:
-    // a posting thread that observes wakeup_armed_ == false from this
-    // store will see the eventfd already drained by the leader.
-    wakeup_armed_.store(false, std::memory_order_release);
 }
 
 inline bool

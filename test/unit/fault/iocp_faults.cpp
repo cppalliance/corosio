@@ -968,6 +968,74 @@ struct iocp_faults
         s2.close();
     }
 
+    /* A wake that never left has to be retried, not swallowed.
+
+       `wake_pending_` is set before the send and stands for a byte in
+       the wakeup channel, so a send that failed leaves it claiming a
+       byte nobody sent. Every later register, cancel and stop then
+       coalesces into that phantom, and the poll they were meant to end
+       is indefinite.
+
+       This context never registers a wait, so no polling thread is
+       ever started and nothing drains the flag -- a latch here would
+       be permanent, which is what makes the second send the
+       observable. Both sends come from the socket: open() goes
+       through close_socket, which asks the reactor to drop any wait op
+       the descriptor might have had, and cancel() asks again. Both
+       asks reach wake_self whether or not anything is parked
+       (win_tcp_socket_internal::cancel and ::close_socket).
+    */
+    void testWakeSendFails()
+    {
+        if(!hook_is_live(sys::send))
+        {
+            skip_dead_hook("send");
+            return;
+        }
+        {
+            io_context ioc(iocp);
+            // Thread-local, not any_thread: two process-wide scopes
+            // cannot be alive at once, and every call below is on this
+            // thread. Armed before open(), whose own ask is the first
+            // send and the one that has to leave the flag clear.
+            fault_scope first(sys::send, WSAENOBUFS, 1);
+            fault_scope second(sys::send, WSAENOBUFS, 2);
+            tcp_socket s(ioc);
+            BOOST_TEST(!s.open(tcp::v4()));
+            s.cancel();
+            BOOST_TEST(first.fired());
+            BOOST_TEST(second.fired());
+            s.close();
+        }
+        // And the reactor those wakes were aimed at still works: a
+        // real wait registers, parks, and is ended by a cancel.
+        io_context ioc(iocp);
+        auto pair = make_socket_pair(ioc);
+        auto& s1 = pair.first;
+        auto& s2 = pair.second;
+        std::error_code parked_ec;
+        bool expired = false;
+        auto parked = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await s1.wait(wait_type::error);
+            parked_ec = ec;
+            ioc.stop();
+        };
+        auto breaker = [&]() -> capy::task<>
+        {
+            s1.cancel();
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(parked());
+        capy::run_async(ioc.get_executor())(breaker());
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(parked_ec == capy::error::canceled);
+        s1.close();
+        s2.close();
+    }
+
     void testWaitReactorPollFails()
     {
         io_context ioc(iocp);
@@ -1006,6 +1074,7 @@ struct iocp_faults
         BOOST_TEST(arm.has_value() && arm->fired());
         BOOST_TEST(parked_ec == capy::error::canceled);
         arm.reset();
+
         s1.close();
         s2.close();
     }
@@ -1229,6 +1298,7 @@ struct iocp_faults
         testUdpIoFails();
         testWaitReactorSetupFails();
         testWaitReactorStartsOnFirstWait();
+        testWakeSendFails();
         testWaitReactorPollFails();
         testLocalSetupFails();
         testLocalConnectAcceptFails();

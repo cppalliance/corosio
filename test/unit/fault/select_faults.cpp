@@ -215,6 +215,43 @@ struct select_faults
         }
     }
 
+    /* This backend coalesces nothing: every interrupt writes its own
+       byte to the self-pipe, so a failed write costs exactly that one
+       interrupt. The arms below are what holds that shape in place —
+       the eventfd and kqueue backends reach it by clearing a flag, and
+       a flag introduced here would have to clear one too.
+    */
+    void testInterruptWriteFails()
+    {
+        io_context ioc(select);
+        {
+            // stop() is the one interrupt that reaches the self-pipe
+            // without a reactor thread (reactor_scheduler::stop), and
+            // it interrupts only on the transition, so each stop below
+            // is one write.
+            fault_scope first(sys::write, EIO, 1);
+            fault_scope second(sys::write, EIO, 2);
+            ioc.stop();
+            BOOST_TEST(first.fired());
+            BOOST_TEST(!second.fired());
+            ioc.restart();
+            ioc.stop();
+            BOOST_TEST(second.fired());
+        }
+        ioc.restart();
+        bool done = false;
+        auto body = [&]() -> capy::task<>
+        {
+            std::ignore = co_await corosio::delay(
+                std::chrono::milliseconds(1));
+            done = true;
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     void run()
     {
         if(skip_under_valgrind())
@@ -224,6 +261,7 @@ struct select_faults
         testAcceptFails();
         testAcceptFcntlFails();
         testRunLoopFaults();
+        testInterruptWriteFails();
     }
 };
 

@@ -294,8 +294,18 @@ epoll_scheduler::interrupt_reactor() const
             expected, true, std::memory_order_release,
             std::memory_order_relaxed))
     {
-        std::uint64_t val       = 1;
-        [[maybe_unused]] auto r = ::write(event_fd_, &val, sizeof(val));
+        std::uint64_t val = 1;
+        if (::write(event_fd_, &val, sizeof(val)) < 0)
+        {
+            // The flag is what coalesces later interrupts into a byte
+            // already in the eventfd; a write that failed put no byte
+            // there, so leaving it armed would swallow every interrupt
+            // that follows. Disarming keeps the cost to the interrupts
+            // already in flight -- the next one arms and writes again,
+            // instead of every one after this coalescing into a byte
+            // that does not exist.
+            eventfd_armed_.store(false, std::memory_order_release);
+        }
     }
 }
 

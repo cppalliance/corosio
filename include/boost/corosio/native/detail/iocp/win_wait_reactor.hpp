@@ -169,6 +169,14 @@ private:
     std::atomic<bool> stop_{false};
     std::atomic<bool> wake_pending_{false};
 
+    // Set by the polling thread on its way out, guarded by mutex_.
+    // stop() is the ordinary way the thread leaves and has stop_ to
+    // announce it; this covers the thread leaving on its own after a
+    // WSAPoll error, which stop_ must not be used for -- stop() reads
+    // it as "already stopped" and would skip the join that keeps the
+    // thread from being destroyed joinable.
+    bool dead_ = false;
+
     std::vector<entry> registered_; // reactor-thread-only
 
     std::thread thread_;
@@ -296,13 +304,13 @@ win_wait_reactor::wake_self() noexcept
     char b = 0;
     if (::send(wakeup_write_, &b, 1, 0) == SOCKET_ERROR)
     {
-        // The self-pipe byte is the only thing that wakes the reactor
-        // thread from an indefinite poll(); a coalesced lost wakeup
-        // would leave wake_pending_ stuck true and hang the op.
-        // wakeup_write_ is a blocking socket, so a 1-byte send can
-        // only fail on a hard error -- fatal, mirroring a failed
-        // PostQueuedCompletionStatus in win_scheduler.
-        detail::throw_system_error(make_err(::WSAGetLastError()));
+        // The flag is what coalesces later wakes into a byte already
+        // in the channel; a send that failed put no byte there, so
+        // leaving it latched would swallow every wake that follows.
+        // Disarming keeps the cost at the one wake that failed: the
+        // next register, cancel or stop sends its own byte and the
+        // reactor learns about both.
+        wake_pending_.store(false, std::memory_order_release);
     }
 }
 
@@ -323,9 +331,9 @@ win_wait_reactor::register_wait(
 
     if (DWORD const err = queue_register(entry{fd, w, op}); err != 0)
     {
-        // The reactor is stopped, so nothing would ever drain a parked
-        // op. Report the abort its own shutdown drain gives the ops it
-        // was still holding.
+        // The reactor is stopped, or its polling thread has died, so
+        // nothing would ever drain a parked op. Report the abort its
+        // own shutdown drain gives the ops it was still holding.
         sched_.on_completion(op, err, 0);
         return;
     }
@@ -343,7 +351,10 @@ win_wait_reactor::queue_register(entry const& e)
     // which ends the process, and an op queued after it would have no
     // drainer. Queueing under the flag instead leaves the op for the
     // drain run() performs on its way out.
-    if (stop_.load(std::memory_order_acquire))
+    // dead_ says the same thing for the other exit: a thread that left
+    // on a WSAPoll error drained what it held and will not poll again,
+    // so a register queued after it would wait on nobody.
+    if (stop_.load(std::memory_order_acquire) || dead_)
         return ERROR_OPERATION_ABORTED;
 
     // A polling thread costs a thread per context, and a context that
@@ -450,10 +461,12 @@ win_wait_reactor::run()
             pollfds.push_back({e.fd, events_for_wait(e.w), 0});
 
         // Block until the self-pipe (slot 0) is poked by a register,
-        // cancel, or stop, or a watched socket becomes ready. There is
-        // no periodic safety-net timeout: a lost self-pipe wakeup is
-        // fatal in wake_self() (the byte send can only fail on a hard
-        // error), so an idle reactor consumes no CPU.
+        // cancel, or stop, or a watched socket becomes ready. No
+        // periodic timeout, so an idle reactor consumes no CPU: the
+        // self-pipe is the only thing that ends this wait, and
+        // wake_self() leaves the channel free for the next poke when
+        // its own send fails, so what a lost wake costs is that one
+        // wake rather than every wake after it.
         int n = ::WSAPoll(
             pollfds.data(),
             static_cast<ULONG>(pollfds.size()),
@@ -517,6 +530,11 @@ win_wait_reactor::run()
     // ops leak work_started credit and stall scheduler shutdown.
     {
         std::lock_guard lock(mutex_);
+        // Closing the door and taking what is behind it in one critical
+        // section is what leaves no register in between: one that got
+        // in is drained here, one that arrives after is refused by
+        // queue_register and completes as aborted at its caller.
+        dead_ = true;
         for (auto& e : pending_register_)
             registered_.push_back(e);
         pending_register_.clear();

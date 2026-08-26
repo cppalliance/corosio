@@ -210,6 +210,48 @@ struct epoll_faults
         }
     }
 
+    /* A wake that never left has to be retried, not swallowed.
+
+       `eventfd_armed_` is set before the write, so it stands for a byte
+       in the eventfd. A write that failed put none there: leaving the
+       flag set would coalesce every later interrupt into a wake that
+       does not exist, and a wait only an interrupt could end would
+       never end. The second arm is the observable — it can only fire if
+       the second interrupt actually reached `write`.
+    */
+    void testInterruptWriteFails()
+    {
+        io_context ioc(epoll);
+        {
+            // stop() is the one interrupt that reaches the eventfd
+            // without a reactor thread (reactor_scheduler::stop), and
+            // it interrupts only on the transition, so each stop below
+            // is one write.
+            fault_scope first(sys::write, EIO, 1);
+            fault_scope second(sys::write, EIO, 2);
+            ioc.stop();
+            BOOST_TEST(first.fired());
+            BOOST_TEST(!second.fired());
+            ioc.restart();
+            ioc.stop();
+            BOOST_TEST(second.fired());
+        }
+        // And the loop the failed wakes were aimed at still runs: timed
+        // work fires and a stop from inside ends run().
+        ioc.restart();
+        bool done = false;
+        auto body = [&]() -> capy::task<>
+        {
+            std::ignore = co_await corosio::delay(
+                std::chrono::milliseconds(1));
+            done = true;
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     void testSignalReaderRegisterFails()
     {
         in_child([]{
@@ -237,6 +279,7 @@ struct epoll_faults
         testAcceptorRegisterFails();
         testAcceptFails();
         testRunLoopFaults();
+        testInterruptWriteFails();
         testSignalReaderRegisterFails();
     }
 };

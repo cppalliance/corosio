@@ -289,7 +289,17 @@ kqueue_scheduler::interrupt_reactor() const
     {
         struct kevent ev;
         EV_SET(&ev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, nullptr);
-        ::kevent(kq_fd_, &ev, 1, nullptr, 0, nullptr);
+        if (::kevent(kq_fd_, &ev, 1, nullptr, 0, nullptr) < 0)
+        {
+            // The flag is what coalesces later interrupts into a
+            // trigger already queued on the kqueue; a kevent that
+            // failed queued nothing, so leaving it armed would swallow
+            // every interrupt that follows. Disarming keeps the cost to
+            // the interrupts already in flight -- the next one arms and
+            // triggers again, instead of every one after this
+            // coalescing into a trigger that does not exist.
+            user_event_armed_.store(false, std::memory_order_release);
+        }
     }
 }
 

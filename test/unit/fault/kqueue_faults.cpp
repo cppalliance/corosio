@@ -336,25 +336,34 @@ struct kqueue_faults
         }
     }
 
-    void testInterruptTriggerIgnored()
+    /* A NOTE_TRIGGER that never left has to be retried, not swallowed.
+
+       `user_event_armed_` is set before the kevent, so it stands for a
+       trigger queued on the kqueue. A kevent that failed queued none:
+       leaving the flag set would coalesce every later interrupt into a
+       wake that does not exist, and a wait only an interrupt could end
+       would never end. The second arm is the observable — it can only
+       fire if the second interrupt actually reached kevent.
+    */
+    void testInterruptTriggerFails()
     {
         io_context ioc(kqueue);
         {
-            // stop() interrupts unconditionally
-            // (reactor_scheduler.hpp:566-573), which is the one path
-            // that reaches NOTE_TRIGGER without a reactor thread. The
-            // result is discarded, and user_event_armed_ stays latched
-            // even though nothing was ever queued on the kqueue
-            // (kqueue_scheduler.hpp:285-293) — so no later interrupt
-            // can wake a blocked wait either.
-            fault_scope f(sys::kevent, EIO);
+            // stop() is the one path that reaches NOTE_TRIGGER without
+            // a reactor thread (reactor_scheduler::stop), and it
+            // interrupts only on the transition, so each stop below is
+            // one kevent.
+            fault_scope first(sys::kevent, EIO, 1);
+            fault_scope second(sys::kevent, EIO, 2);
             ioc.stop();
-            BOOST_TEST(f.fired());
+            BOOST_TEST(first.fired());
+            BOOST_TEST(!second.fired());
+            ioc.restart();
+            ioc.stop();
+            BOOST_TEST(second.fired());
         }
-        // What survives the latch is the timeout: the wait is computed
-        // from the nearest expiry, so timed work still completes and
-        // run() still returns. Asserting anything about a wait that
-        // only an interrupt could end would be asserting a hang.
+        // And the loop the failed wakes were aimed at still runs: timed
+        // work fires and a stop from inside ends run().
         ioc.restart();
         bool done = false;
         auto body = [&]() -> capy::task<>
@@ -362,6 +371,7 @@ struct kqueue_faults
             std::ignore = co_await corosio::delay(
                 std::chrono::milliseconds(1));
             done = true;
+            ioc.stop();
         };
         capy::run_async(ioc.get_executor())(body());
         ioc.run();
@@ -400,7 +410,7 @@ struct kqueue_faults
         testAcceptFails();
         testAcceptConfigureFails();
         testRunLoopFaults();
-        testInterruptTriggerIgnored();
+        testInterruptTriggerFails();
         testSignalReaderRegisterFails();
     }
 };
