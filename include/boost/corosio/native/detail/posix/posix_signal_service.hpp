@@ -20,6 +20,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
+#include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/capy/error.hpp>
 
 #include <mutex>
@@ -316,16 +317,18 @@ flags_compatible(signal_set::flags_t existing, signal_set::flags_t requested)
 // state->mutex before installing the first signal handler so write_fd is
 // valid by the time the handler can fire. Both ends are non-blocking and
 // close-on-exec (mirrors the reactor self-pipe setup in select_scheduler).
-// Returns false and leaves the fds at -1 if creation fails.
-inline bool
+// Returns the failing call's errno and leaves the fds at -1 if creation
+// fails: an exhausted descriptor table and a rejected fcntl are different
+// problems to the caller of add().
+[[nodiscard]] inline std::error_code
 open_signal_pipe(signal_state* state)
 {
     if (state->read_fd >= 0)
-        return true;
+        return {};
 
     int fds[2];
     if (::pipe(fds) < 0)
-        return false;
+        return make_err(errno);
 
     for (int i = 0; i < 2; ++i)
     {
@@ -333,15 +336,16 @@ open_signal_pipe(signal_state* state)
         if (fl == -1 || ::fcntl(fds[i], F_SETFL, fl | O_NONBLOCK) == -1 ||
             ::fcntl(fds[i], F_SETFD, FD_CLOEXEC) == -1)
         {
+            auto ec = make_err(errno);
             ::close(fds[0]);
             ::close(fds[1]);
-            return false;
+            return ec;
         }
     }
 
     state->read_fd  = fds[0];
     state->write_fd = fds[1];
-    return true;
+    return {};
 }
 
 // C signal handler. Async-signal-safe: it touches only the single global
@@ -555,8 +559,8 @@ posix_signal_service::add_signal(
     // this context race add() from different threads.
     {
         std::lock_guard state_lock(state->mutex);
-        if (!posix_signal_detail::open_signal_pipe(state))
-            return make_error_code(std::errc::io_error);
+        if (auto ec = posix_signal_detail::open_signal_pipe(state))
+            return ec;
     }
     {
         // Success-latched so a failed environmental registration

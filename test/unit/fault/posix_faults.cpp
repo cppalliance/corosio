@@ -413,7 +413,7 @@ struct posix_common_faults
             signal_set ss(ioc);
             fault_scope f(sys::pipe, EMFILE);
             auto ec = ss.add(SIGUSR2);
-            return f.fired() && ec == std::errc::io_error;
+            return f.fired() && ec == std::errc::too_many_files_open;
         });
         // 1..3 are F_GETFL, F_SETFL and F_SETFD on the read end.
         for(unsigned nth : {1u, 2u, 3u})
@@ -424,7 +424,7 @@ struct posix_common_faults
                 int before = open_fds();
                 fault_scope f(sys::fcntl, EINVAL, nth);
                 auto ec = ss.add(SIGUSR2);
-                return f.fired() && ec == std::errc::io_error &&
+                return f.fired() && ec == std::errc::invalid_argument &&
                     open_fds() == before;
             });
         }
