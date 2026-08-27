@@ -15,6 +15,10 @@
 
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/local_connect_pair.hpp>
+#include <boost/corosio/local_datagram_socket.hpp>
+#include <boost/corosio/local_endpoint.hpp>
+#include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/random_access_file.hpp>
 #include <boost/corosio/signal_set.hpp>
@@ -40,6 +44,7 @@
 
 #include <liburing.h>
 
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -76,6 +81,163 @@ struct uring_faults
         // The wakeup poll's submit is the only one ring creation issues.
         expect(sys::io_uring_submit, EBADF,
             std::errc::bad_file_descriptor);
+    }
+
+    /* Every io_uring object type creates and configures its descriptor
+       with plain syscalls, and each of those returns rather than
+       throwing. None of the error legs had run: the ring's own faults
+       reach the operations, not the object surface underneath them.
+    */
+    void testObjectSurfaceErrors()
+    {
+        io_context ioc(io_uring);
+        auto expect_open = [&](auto&& obj, auto&& open_it)
+        {
+            int const before = open_fds();
+            fault_scope f(sys::socket, EMFILE);
+            BOOST_TEST(open_it() == std::errc::too_many_files_open);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(!obj.is_open());
+            BOOST_TEST_EQ(open_fds(), before);
+        };
+        {
+            tcp_acceptor acc(ioc);
+            expect_open(acc, [&]{ return acc.open(); });
+            BOOST_TEST(!acc.open());
+            BOOST_TEST(!acc.bind(uring_loopback()));
+            fault_scope f(sys::listen, EADDRINUSE);
+            BOOST_TEST(acc.listen() == std::errc::address_in_use);
+            BOOST_TEST(f.fired());
+        }
+        {
+            udp_socket u(ioc);
+            expect_open(u, [&]{ return u.open(udp::v4()); });
+        }
+        {
+            local_stream_socket ls(ioc);
+            expect_open(ls, [&]{ return ls.open(); });
+        }
+        {
+            local_datagram_socket ld(ioc);
+            expect_open(ld, [&]{ return ld.open(); });
+        }
+        auto path = temp_path("ura");
+        ::unlink(path.c_str());
+        {
+            local_stream_acceptor acc(ioc);
+            expect_open(acc, [&]{ return acc.open(); });
+            BOOST_TEST(!acc.open());
+            BOOST_TEST(!acc.bind(corosio::local_endpoint(path)));
+            fault_scope f(sys::listen, EADDRINUSE);
+            BOOST_TEST(acc.listen() == std::errc::address_in_use);
+            BOOST_TEST(f.fired());
+        }
+        ::unlink(path.c_str());
+        {
+            local_datagram_socket ld(ioc);
+            BOOST_TEST(!ld.open());
+            fault_scope f(sys::bind, EACCES);
+            BOOST_TEST(ld.bind(corosio::local_endpoint(path)) ==
+                std::errc::permission_denied);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ld.is_open());
+        }
+        ::unlink(path.c_str());
+        {
+            auto [a, b] = test::make_socket_pair(ioc);
+            std::ignore = b;
+            fault_scope f(sys::shutdown, ENOTCONN);
+            BOOST_TEST(a.shutdown(shutdown_both) == std::errc::not_connected);
+            BOOST_TEST(f.fired());
+        }
+        {
+            local_stream_socket a(ioc), b(ioc);
+            BOOST_TEST(!connect_pair(a, b));
+            fault_scope f(sys::shutdown, ENOTCONN);
+            BOOST_TEST(a.shutdown(shutdown_both) == std::errc::not_connected);
+            BOOST_TEST(f.fired());
+        }
+        {
+            local_datagram_socket a(ioc), b(ioc);
+            BOOST_TEST(!connect_pair(a, b));
+            fault_scope f(sys::shutdown, ENOTCONN);
+            BOOST_TEST(a.shutdown(shutdown_both) == std::errc::not_connected);
+            BOOST_TEST(f.fired());
+        }
+    }
+
+    /* Multishot accept fails immediately on a socket that is not
+       listening, so an adopted descriptor is probed before it is
+       armed. A kernel that refuses the query is treated as reporting a
+       listener, which is what keeps adoption working on a platform
+       that has no SO_ACCEPTCONN.
+    */
+    void testAcceptorAssignProbeFails()
+    {
+        io_context ioc(io_uring);
+        auto h = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(static_cast<int>(h) >= 0);
+        make_native_adoptable(h);
+        sockaddr_in sa{};
+        sa.sin_family = AF_INET;
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        BOOST_TEST_EQ(::bind(static_cast<int>(h),
+            reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+        BOOST_TEST_EQ(::listen(static_cast<int>(h), 1), 0);
+        tcp_acceptor acc(ioc);
+        {
+            // 1 is the SO_TYPE query adoption validates with; 2 is the
+            // SO_ACCEPTCONN probe.
+            fault_scope f(sys::getsockopt, EBADF, 2);
+            BOOST_TEST(!acc.assign(h));
+            BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(f.count(), 2u);
+        }
+        BOOST_TEST(acc.is_open());
+        acc.close();
+    }
+
+    /* Cancellation is best-effort when the submission queue is full.
+
+       A ring clamped to one SQE spends it on the wakeup poll, and the
+       flush that would free it is a no-op while the arm is alive, so
+       every cancel below finds the queue still full after its own
+       retry and gives up. Nothing observable changes — the descriptor
+       is closed either way — which is why the arm's own report is the
+       only witness that the give-up was taken.
+    */
+    void testCancelSqFull()
+    {
+        std::optional<fault_scope> f;
+        f.emplace(sys::uring_sqe_full, 0);
+        io_context ioc(io_uring);
+        {
+            // close() submits the cancel while the descriptor is still
+            // open, so the kernel resolves it before the number can be
+            // recycled.
+            tcp_socket s(ioc);
+            BOOST_TEST(!s.open(tcp::v4()));
+            int const before = open_fds();
+            s.close();
+            BOOST_TEST(!s.is_open());
+            BOOST_TEST_EQ(open_fds(), before - 1);
+        }
+        {
+            // cancel() reaches the by-descriptor cancel without going
+            // through a close.
+            tcp_socket s(ioc);
+            BOOST_TEST(!s.open(tcp::v4()));
+            s.cancel();
+            BOOST_TEST(s.is_open());
+        }
+        {
+            tcp_acceptor acc(ioc);
+            BOOST_TEST(!acc.open());
+            BOOST_TEST(!acc.bind(uring_loopback()));
+            BOOST_TEST(!acc.listen());
+        }
+        BOOST_TEST(f->fired());
+        f.reset();
     }
 
     void testWaitFails()
@@ -644,6 +806,9 @@ struct uring_faults
         if(skip_under_valgrind())
             return;
         testRingInitFails();
+        testObjectSurfaceErrors();
+        testAcceptorAssignProbeFails();
+        testCancelSqFull();
         testWaitFails();
         testAcceptorDrainSubmitFails();
         testAcceptorArmSqFull();
