@@ -12,6 +12,7 @@
 #include "context.hpp"
 #include "test_suite.hpp"
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/host_name.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/local_connect_pair.hpp>
@@ -46,6 +47,17 @@ void remove_file(std::string const& path)
     std::ignore = std::filesystem::remove(std::filesystem::path(path), ec);
 }
 
+// A file handle the library did not open, in the mode adoption needs.
+// The path is one temp_path built, so widening it a character at a
+// time is enough.
+HANDLE make_native_file(std::string const& path)
+{
+    std::wstring wide(path.begin(), path.end());
+    return ::CreateFileW(wide.c_str(), GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
+        FILE_FLAG_OVERLAPPED, nullptr);
+}
+
 // Run connect_pair with a deadline. A rendezvous that cannot finish
 // would otherwise stall until the CI job runs out of time, which reads
 // as an infrastructure failure rather than as this test; leaving the
@@ -68,6 +80,18 @@ connect_pair_bounded(local_stream_socket& a, local_stream_socket& b)
     }
     t.join();
     return ec;
+}
+
+// Bound a run loop an assertion failure could leave running. Only the
+// deferred-post test needs one: every other test here either drives a
+// synchronous call or awaits an operation the fault completes on the
+// spot, whereas a post that never reaches the deferred drain leaves
+// run() with work outstanding and nothing to deliver it.
+capy::task<> stop_guard(io_context& ioc, bool& expired)
+{
+    std::ignore = co_await corosio::delay(std::chrono::seconds(2));
+    expired = true;
+    ioc.stop();
 }
 
 } // namespace
@@ -194,6 +218,13 @@ struct win_common_faults
             BOOST_TEST(f.fired());
         }
         {
+            // With the data-only flush declined the full flush is the
+            // only path left, and it succeeds: declining is not a
+            // failure to report.
+            fault_scope nt(sys::NtFlushBuffersFileEx, ERROR_INVALID_FUNCTION);
+            BOOST_TEST(!sf.sync_data());
+        }
+        {
             // sync_data tries the data-only NT flush first and only
             // falls back to FlushFileBuffers when that fails, so the
             // fallback needs both arms. Where the NT entry point never
@@ -310,6 +341,16 @@ struct win_common_faults
                 file_base::create) == win_err(ERROR_INVALID_PARAMETER));
             BOOST_TEST(f.fired());
         });
+        // create|truncate lowers to OPEN_ALWAYS plus an explicit
+        // SetEndOfFile; every other mode leaves it to the disposition.
+        expect_no_handle_leak([&]{
+            fault_scope f(sys::SetEndOfFile, ERROR_DISK_FULL);
+            BOOST_TEST(rf.open(path, file_base::read_write |
+                file_base::create | file_base::truncate) ==
+                win_err(ERROR_DISK_FULL));
+            BOOST_TEST(f.fired());
+            BOOST_TEST(!rf.is_open());
+        });
         BOOST_TEST(!rf.open(path, file_base::read_write | file_base::create));
         {
             fault_scope f(sys::GetFileSizeEx, ERROR_INVALID_HANDLE);
@@ -327,6 +368,10 @@ struct win_common_faults
             fault_scope f(sys::SetEndOfFile, ERROR_DISK_FULL);
             BOOST_TEST(rf.resize(16) == win_err(ERROR_DISK_FULL));
             BOOST_TEST(f.fired());
+        }
+        {
+            fault_scope nt(sys::NtFlushBuffersFileEx, ERROR_INVALID_FUNCTION);
+            BOOST_TEST(!rf.sync_data());
         }
         {
             fault_scope nt(sys::NtFlushBuffersFileEx, ERROR_INVALID_FUNCTION);
@@ -500,6 +545,29 @@ struct win_common_faults
             BOOST_TEST(ec == std::errc::not_a_socket);
             BOOST_TEST(!a.is_open() && !b.is_open());
         });
+        // A readiness report the accept cannot satisfy is not an
+        // error: the loop goes back to polling and the pair forms.
+        // The accept is on this thread, so a thread-local arm reaches
+        // it without touching the worker's own calls.
+        {
+            local_stream_socket a(ioc), b(ioc);
+            fault_scope f(sys::accept, WSAEWOULDBLOCK);
+            auto ec = connect_pair(a, b);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(!ec);
+            BOOST_TEST(a.is_open() && b.is_open());
+        }
+        // Adoption of the second descriptor fails after the first
+        // took: one end is the library's to close and the other is
+        // still a bare socket, and both have to go.
+        expect_no_handle_leak([&]{
+            local_stream_socket a(ioc), b(ioc);
+            fault_scope f(sys::getsockopt, WSAENOTSOCK, 2u);
+            auto ec = connect_pair(a, b);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ec == std::errc::not_a_socket);
+            BOOST_TEST(!a.is_open() && !b.is_open());
+        });
         // Unfaulted, a pair still forms.
         local_stream_socket a(ioc), b(ioc);
         BOOST_TEST(!connect_pair_bounded(a, b));
@@ -620,6 +688,116 @@ struct win_common_faults
             BOOST_TEST(cancel_fired);
     }
 
+    /* Adoption of a handle the library did not open.
+
+       The only thing it does is associate the handle with the
+       completion port, so a refusal there is its only failure. It
+       closes what the object held before it tries, which is why the
+       caller's handle is still theirs afterwards.
+    */
+    void testFileAssignFails()
+    {
+        io_context ioc(iocp);
+        auto path = temp_path("winassign");
+        {
+            HANDLE h = make_native_file(path);
+            BOOST_TEST(h != INVALID_HANDLE_VALUE);
+            stream_file sf(ioc);
+            {
+                fault_scope f(sys::CreateIoCompletionPort,
+                    ERROR_INVALID_PARAMETER);
+                BOOST_TEST(
+                    sf.assign(reinterpret_cast<native_handle_type>(h)) ==
+                    win_err(ERROR_INVALID_PARAMETER));
+                BOOST_TEST(f.fired());
+                BOOST_TEST(!sf.is_open());
+            }
+            BOOST_TEST(::CloseHandle(h) != FALSE);
+        }
+        {
+            HANDLE h = make_native_file(path);
+            BOOST_TEST(h != INVALID_HANDLE_VALUE);
+            random_access_file rf(ioc);
+            {
+                fault_scope f(sys::CreateIoCompletionPort,
+                    ERROR_INVALID_PARAMETER);
+                BOOST_TEST(
+                    rf.assign(reinterpret_cast<native_handle_type>(h)) ==
+                    win_err(ERROR_INVALID_PARAMETER));
+                BOOST_TEST(f.fired());
+                BOOST_TEST(!rf.is_open());
+            }
+            BOOST_TEST(::CloseHandle(h) != FALSE);
+        }
+        remove_file(path);
+    }
+
+    /* A completion the thread pool never carried.
+
+       A GetAddrInfoExW that fails without going asynchronous is
+       finished on the calling thread, and win_resolver::resolve posts
+       the operation rather than resuming it inline. That post is the
+       scheduler's scheduler_op overload, whose only fallback when the
+       completion port refuses the packet is the deferred queue, which
+       the run loop drains on its next turn.
+    */
+    void testResolverPostFallbackRuns()
+    {
+        io_context ioc(iocp);
+        resolver r(ioc);
+        std::error_code fec;
+        bool fired = false;
+        auto t = [&]() -> capy::task<>
+        {
+            fault_scope g(sys::GetAddrInfoExW, WSAEAFNOSUPPORT);
+            fault_scope p(sys::PostQueuedCompletionStatus,
+                ERROR_NO_SYSTEM_RESOURCES);
+            auto [ec, results] = co_await r.resolve("localhost", "80");
+            std::ignore = results;
+            fec   = ec;
+            fired = g.fired() && p.fired();
+            ioc.stop();
+        };
+        bool expired = false;
+        capy::run_async(ioc.get_executor())(t());
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(fired);
+        BOOST_TEST(fec == std::errc::address_family_not_supported);
+    }
+
+    /* The conversion on the way back out.
+
+       A reverse lookup's answer arrives wide and is converted on the
+       pool thread, so the arm has to be process-wide. A size query of
+       zero leaves the name empty and reports nothing
+       (resolver_detail::from_wide): the lookup itself succeeded.
+    */
+    void testResolverReverseWideConversionFails()
+    {
+        io_context ioc(iocp);
+        resolver r(ioc);
+        std::error_code rec;
+        std::string host = "unset";
+        bool fired = false;
+        auto t = [&]() -> capy::task<>
+        {
+            fault_scope f(sys::WideCharToMultiByte,
+                ERROR_NO_UNICODE_TRANSLATION, 1, any_thread);
+            auto [ec, result] = co_await r.resolve(
+                endpoint(ipv4_address::loopback(), 80));
+            rec   = ec;
+            host  = result.host_name();
+            fired = f.fired();
+        };
+        capy::run_async(ioc.get_executor())(t());
+        ioc.run();
+        BOOST_TEST(fired);
+        BOOST_TEST(!rec);
+        BOOST_TEST(host.empty());
+    }
+
     void run()
     {
         testHostNameFails();
@@ -627,10 +805,13 @@ struct win_common_faults
         testStreamFileSyncOps();
         testStreamFileIoFails();
         testRandomAccessFileFails();
+        testFileAssignFails();
         testConnectPairFails();
         testAvailableThrows();
         testResolverFails();
+        testResolverPostFallbackRuns();
         testResolverWideConversionFails();
+        testResolverReverseWideConversionFails();
         testResolverCancelIgnored();
     }
 };
