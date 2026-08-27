@@ -11,6 +11,7 @@
 #include "fault_test_utils.hpp"
 #include "context.hpp"
 #include "test_suite.hpp"
+#include "test_utils.hpp"
 
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
@@ -25,6 +26,9 @@
 #include <csignal>
 #include <system_error>
 #include <tuple>
+
+#include <netinet/in.h>
+#include <sys/socket.h>
 
 #if BOOST_COROSIO_HAS_EPOLL
 
@@ -252,6 +256,118 @@ struct epoll_faults
         BOOST_TEST(done);
     }
 
+    /* Adoption is the acceptor's other way into the reactor.
+
+       `listen()` registers a descriptor the library made; `assign()`
+       registers one the caller made, and only that path leaves the
+       caller still owning it when the reactor refuses. The acceptor
+       has to come back closed with the descriptor untouched.
+    */
+    void testAcceptorAssignRegisterFails()
+    {
+        io_context ioc(epoll);
+        auto h = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(static_cast<int>(h) >= 0);
+        make_native_adoptable(h);
+        sockaddr_in sa{};
+        sa.sin_family = AF_INET;
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        BOOST_TEST_EQ(::bind(static_cast<int>(h),
+            reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+        BOOST_TEST_EQ(::listen(static_cast<int>(h), 1), 0);
+
+        int const before = open_fds();
+        tcp_acceptor acc(ioc);
+        {
+            fault_scope f(sys::epoll_ctl, ENOMEM);
+            auto ec = acc.assign(h);
+            BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(f.count(), 1u);
+            BOOST_TEST(ec == std::errc::not_enough_memory);
+        }
+        BOOST_TEST(!acc.is_open());
+        BOOST_TEST(native_socket_valid(h));
+        BOOST_TEST_EQ(open_fds(), before);
+        // Not latched: the descriptor is still unregistered.
+        BOOST_TEST(!acc.assign(h));
+        acc.close();
+    }
+
+    /* The accept that the reactor dispatches, rather than the one the
+       initiator speculates on.
+
+       A first accept4 with no peer waiting reports EAGAIN and parks the
+       op, so the second call is the reactor's retry — a different code
+       path with its own error and completion arms, and the one an
+       accepted descriptor is registered from.
+    */
+    void testPostedAcceptFails()
+    {
+        io_context ioc(epoll);
+        tcp_acceptor acc(ioc, loopback());
+        tcp_socket client(ioc), server(ioc);
+        // Opened before any arm so its own registration is not counted.
+        BOOST_TEST(!client.open(tcp::v4()));
+        std::error_code aec;
+        auto accept_body = [&]() -> capy::task<>
+        {
+            {
+                // 1 is the speculative accept, which finds nothing.
+                fault_scope f(sys::accept4, EMFILE, 2);
+                auto [ec] = co_await acc.accept(server);
+                aec = ec;
+                BOOST_TEST(f.fired());
+            }
+            // A refused accept dequeues nothing, so the acceptor is
+            // still open and the connection still pending.
+            auto [ec] = co_await acc.accept(server);
+            BOOST_TEST(!ec);
+        };
+        auto connect_body = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await client.connect(acc.local_endpoint());
+            BOOST_TEST(!ec);
+        };
+        capy::run_async(ioc.get_executor())(accept_body());
+        capy::run_async(ioc.get_executor())(connect_body());
+        ioc.run();
+        BOOST_TEST(aec == std::errc::too_many_files_open);
+        BOOST_TEST(server.is_open());
+    }
+
+    void testPostedAcceptRegisterFails()
+    {
+        io_context ioc(epoll);
+        tcp_acceptor acc(ioc, loopback());
+        tcp_socket client(ioc), server(ioc);
+        BOOST_TEST(!client.open(tcp::v4()));
+        std::error_code aec;
+        int leaked = 0;
+        auto accept_body = [&]() -> capy::task<>
+        {
+            int const before = open_fds();
+            fault_scope f(sys::epoll_ctl, ENOMEM);
+            auto [ec] = co_await acc.accept(server);
+            aec = ec;
+            BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(f.count(), 1u);
+            // The peer implementation owns the accepted descriptor by
+            // then, so destroying it is what closes it.
+            leaked = open_fds() - before;
+        };
+        auto connect_body = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await client.connect(acc.local_endpoint());
+            BOOST_TEST(!ec);
+        };
+        capy::run_async(ioc.get_executor())(accept_body());
+        capy::run_async(ioc.get_executor())(connect_body());
+        ioc.run();
+        BOOST_TEST(aec == std::errc::not_enough_memory);
+        BOOST_TEST(!server.is_open());
+        BOOST_TEST_EQ(leaked, 0);
+    }
+
     void run()
     {
         if(skip_under_valgrind())
@@ -262,6 +378,9 @@ struct epoll_faults
         testAcceptFails();
         testRunLoopFaults();
         testInterruptWriteFails();
+        testAcceptorAssignRegisterFails();
+        testPostedAcceptFails();
+        testPostedAcceptRegisterFails();
     }
 };
 
