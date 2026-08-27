@@ -78,55 +78,6 @@ struct uring_faults
             std::errc::bad_file_descriptor);
     }
 
-    void testSignalReaderSubmitFails()
-    {
-        // A successful add opens the process-global self-pipe and
-        // installs its handlers; doing that here would disarm the
-        // tests that fault exactly that setup, so it stays in a child.
-        in_child([]{
-            io_context ioc(io_uring);
-            signal_set ss(ioc);
-            std::error_code ec;
-            bool fired = false;
-            {
-                // The wakeup eventfd's submit is spent building the
-                // ring, before this arm, so the reader's is the first
-                // one it sees.
-                fault_scope f(sys::io_uring_submit, EBADF);
-                ec = ss.add(SIGUSR2);
-                fired = f.fired();
-            }
-            // Not latched: the registration is retried by the next add().
-            return fired && ec == std::errc::bad_file_descriptor &&
-                !ss.add(SIGUSR2) && !ss.clear();
-        });
-    }
-
-    // A ring clamped to one SQE spends it on the wakeup poll when the
-    // ring is created, leaving none for the signal reader's multishot
-    // poll. The submit that follows succeeds because it has nothing
-    // left to submit, which is not the same as a reader watching the
-    // pipe.
-    void testSignalReaderSqFull()
-    {
-        in_child([]{
-            // The clamp sizes the ring as it is created, which happens
-            // while the context is built, so it is armed before that.
-            std::optional<fault_scope> f;
-            f.emplace(sys::uring_sqe_full, 0);
-            io_context ioc(io_uring);
-            signal_set ss(ioc);
-            std::error_code const ec = ss.add(SIGUSR2);
-            bool const fired = f->fired();
-            f.reset();
-            // Not latched: with the SQ flushable again the next add()
-            // arms the reader.
-            return fired &&
-                ec == std::errc::resource_unavailable_try_again &&
-                !ss.add(SIGUSR2) && !ss.clear();
-        });
-    }
-
     void testWaitFails()
     {
         {
@@ -693,8 +644,6 @@ struct uring_faults
         if(skip_under_valgrind())
             return;
         testRingInitFails();
-        testSignalReaderSubmitFails();
-        testSignalReaderSqFull();
         testWaitFails();
         testAcceptorDrainSubmitFails();
         testAcceptorArmSqFull();

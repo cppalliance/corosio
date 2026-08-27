@@ -252,24 +252,6 @@ struct epoll_faults
         BOOST_TEST(done);
     }
 
-    void testSignalReaderRegisterFails()
-    {
-        in_child([]{
-            io_context ioc(epoll);
-            signal_set ss(ioc);
-            std::error_code ec;
-            bool fired = false;
-            {
-                fault_scope f(sys::epoll_ctl, ENOMEM);
-                ec = ss.add(SIGUSR2);
-                fired = f.fired();
-            }
-            // Not latched: the next add retries the registration.
-            return fired && ec == std::errc::not_enough_memory &&
-                !ss.add(SIGUSR2) && !ss.clear();
-        });
-    }
-
     void run()
     {
         if(skip_under_valgrind())
@@ -280,7 +262,6 @@ struct epoll_faults
         testAcceptFails();
         testRunLoopFaults();
         testInterruptWriteFails();
-        testSignalReaderRegisterFails();
     }
 };
 

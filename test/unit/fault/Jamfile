@@ -81,17 +81,20 @@ if [ os.name ] = NT
 else if [ os.name ] = MACOSX
 {
     tests = self_test.cpp posix_faults.cpp select_faults.cpp
-        kqueue_faults.cpp reactor_faults.cpp ;
+        kqueue_faults.cpp reactor_faults.cpp
+        signal_pipe_faults.cpp signal_sigaction_faults.cpp ;
 }
 else if [ os.name ] = FREEBSD
 {
     tests = self_test.cpp posix_faults.cpp select_faults.cpp
-        kqueue_faults.cpp reactor_faults.cpp ;
+        kqueue_faults.cpp reactor_faults.cpp
+        signal_pipe_faults.cpp signal_sigaction_faults.cpp ;
 }
 else if [ os.name ] = LINUX
 {
     tests = self_test.cpp posix_faults.cpp select_faults.cpp
-        epoll_faults.cpp reactor_faults.cpp uring_faults.cpp ;
+        epoll_faults.cpp reactor_faults.cpp uring_faults.cpp
+        signal_pipe_faults.cpp signal_sigaction_faults.cpp ;
     # The io_uring hook includes <liburing.h> unconditionally, so it can
     # only build where the library's own probe found liburing. Without
     # it uring_faults.cpp compiles away behind BOOST_COROSIO_HAS_IO_URING

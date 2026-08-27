@@ -16,6 +16,9 @@
 #include <boost/corosio/host_name.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/local_connect_pair.hpp>
+#include <boost/corosio/local_datagram_socket.hpp>
+#include <boost/corosio/local_endpoint.hpp>
+#include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/random_access_file.hpp>
 #include <boost/corosio/resolver.hpp>
@@ -163,7 +166,119 @@ struct posix_common_faults
             BOOST_TEST(ec == std::errc::invalid_argument);
             BOOST_TEST(!a.is_open() && !b.is_open());
         }
+        // assign() interrogates the descriptor once with
+        // getsockopt(SO_TYPE), so the ordinal selects which half of
+        // the pair is refused. Either way both descriptors go back.
+        for(unsigned nth : {1u, 2u})
+        {
+            local_stream_socket a(ioc), b(ioc);
+            fault_scope f(sys::getsockopt, EBADF, nth);
+            auto ec = connect_pair(a, b);
+            BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(f.count(), nth);
+            BOOST_TEST(ec == std::errc::bad_file_descriptor);
+            BOOST_TEST(!a.is_open() && !b.is_open());
+        }
+        {
+            local_datagram_socket a(ioc), b(ioc);
+            fault_scope f(sys::socketpair, EMFILE);
+            auto ec = connect_pair(a, b);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ec == std::errc::too_many_files_open);
+            BOOST_TEST(!a.is_open() && !b.is_open());
+        }
+        {
+            local_datagram_socket a(ioc), b(ioc);
+            BOOST_TEST(!connect_pair(a, b));
+        }
         BOOST_TEST_EQ(open_fds(), before);
+    }
+
+    void testDatagramAvailableThrows()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket a(ioc), b(ioc);
+        BOOST_TEST(!connect_pair(a, b));
+        fault_scope f(sys::ioctl, EBADF);
+        expect_system_error(
+            [&]{ std::ignore = a.available(); },
+            std::errc::bad_file_descriptor);
+        BOOST_TEST(f.fired());
+        BOOST_TEST(a.is_open());
+    }
+
+    void testDatagramBindFails()
+    {
+        io_context ioc(Backend);
+        auto path = temp_path("ldb");
+        ::unlink(path.c_str());
+        local_datagram_socket s(ioc);
+        BOOST_TEST(!s.open());
+        // An already-open socket takes the early return rather than
+        // replacing the descriptor it holds.
+        BOOST_TEST(!s.open());
+        {
+            fault_scope f(sys::bind, EACCES);
+            BOOST_TEST(s.bind(corosio::local_endpoint(path)) ==
+                std::errc::permission_denied);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(s.is_open());
+        }
+        BOOST_TEST(!s.bind(corosio::local_endpoint(path)));
+        s.close();
+        ::unlink(path.c_str());
+    }
+
+    /* The convenience constructors report through an exception, since
+       there is no object yet to hand an error code back on. Each leg
+       has its own `what`, which is the only way a caller can tell
+       which step of open/bind/listen refused.
+    */
+    void testAcceptorConstructorThrows()
+    {
+        io_context ioc(Backend);
+        {
+            int before = open_fds();
+            fault_scope f(sys::listen, EADDRINUSE);
+            expect_system_error(
+                [&]{
+                    tcp_acceptor acc(
+                        ioc, endpoint(ipv4_address::loopback(), 0));
+                },
+                std::errc::address_in_use);
+            BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(open_fds(), before);
+        }
+        auto path = temp_path("lsa");
+        {
+            ::unlink(path.c_str());
+            int before = open_fds();
+            fault_scope f(sys::socket, EMFILE);
+            expect_system_error(
+                [&]{
+                    local_stream_acceptor acc(
+                        ioc, corosio::local_endpoint(path));
+                },
+                std::errc::too_many_files_open);
+            BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(open_fds(), before);
+        }
+        {
+            // bind() leaves the socket node behind, and a second bind
+            // to a path that exists fails for its own reason.
+            ::unlink(path.c_str());
+            int before = open_fds();
+            fault_scope f(sys::listen, EADDRINUSE);
+            expect_system_error(
+                [&]{
+                    local_stream_acceptor acc(
+                        ioc, corosio::local_endpoint(path));
+                },
+                std::errc::address_in_use);
+            BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(open_fds(), before);
+        }
+        ::unlink(path.c_str());
     }
 
     void testAvailableThrows()
@@ -430,57 +545,6 @@ struct posix_common_faults
         ::unlink(path.c_str());
     }
 
-    void testSignalPipeFails()
-    {
-        // The signal pipe is process-wide and created once; these
-        // faults only fire in a fresh process, so run them in a fork.
-        in_child([&]{
-            io_context ioc(Backend);
-            signal_set ss(ioc);
-            fault_scope f(sys::pipe, EMFILE);
-            auto ec = ss.add(SIGUSR2);
-            return f.fired() && ec == std::errc::too_many_files_open;
-        });
-        // 1..3 are F_GETFL, F_SETFL and F_SETFD on the read end.
-        for(unsigned nth : {1u, 2u, 3u})
-        {
-            in_child([&]{
-                io_context ioc(Backend);
-                signal_set ss(ioc);
-                int before = open_fds();
-                fault_scope f(sys::fcntl, EINVAL, nth);
-                auto ec = ss.add(SIGUSR2);
-                return f.fired() && ec == std::errc::invalid_argument &&
-                    open_fds() == before;
-            });
-        }
-        in_child([&]{
-            io_context ioc(Backend);
-            signal_set ss(ioc);
-            fault_scope f(sys::sigaction, EINVAL);
-            auto ec = ss.add(SIGUSR2);
-            return f.fired() && ec == std::errc::invalid_argument;
-        });
-        in_child([&]{
-            io_context ioc(Backend);
-            signal_set ss(ioc);
-            if(ss.add(SIGUSR2))
-                return false;
-            fault_scope f(sys::sigaction, EINVAL);
-            auto ec = ss.remove(SIGUSR2);
-            return f.fired() && ec == std::errc::invalid_argument;
-        });
-        in_child([&]{
-            io_context ioc(Backend);
-            signal_set ss(ioc);
-            if(ss.add(SIGUSR2))
-                return false;
-            fault_scope f(sys::sigaction, EINVAL);
-            auto ec = ss.clear();
-            return f.fired() && ec == std::errc::invalid_argument;
-        });
-    }
-
     void testResolverFails()
     {
         io_context ioc(Backend);
@@ -510,6 +574,34 @@ struct posix_common_faults
         BOOST_TEST(rec == std::errc::io_error);
     }
 
+    // The signal service's shutdown walks the implementations it still
+    // owns, deleting each set and the registrations hanging off it. A
+    // signal set that outlives its io_context is the only way to reach
+    // that walk, and the SIGINT registration it leaves behind stays in
+    // the process signal table and fails every later add() of the same
+    // signal -- so the whole thing happens in a child that dies with it.
+    void testSignalTeardownWalk()
+    {
+        in_child([]{
+            bool resumed = false;
+            {
+                io_context ioc(Backend);
+                auto keeper = [&]() -> capy::task<> {
+                    signal_set sig(ioc, SIGINT);
+                    std::ignore = co_await sig.wait();
+                    resumed = true;
+                };
+                capy::run_async(ioc.get_executor())(keeper());
+                // Exactly one handler, and it has to be the coroutine
+                // start: a zero here would leave nothing parked and the
+                // walk with nothing to reclaim.
+                if(ioc.run_one() != 1)
+                    return false;
+            }
+            return !resumed;
+        });
+    }
+
     void run()
     {
         if(skip_under_valgrind())
@@ -520,14 +612,17 @@ struct posix_common_faults
         testGetOptionFails();
         testAssignValidateFails();
         testConnectPairFails();
+        testDatagramAvailableThrows();
+        testDatagramBindFails();
+        testAcceptorConstructorThrows();
         testAvailableThrows();
         testHostNameFails();
         testStreamFileOpenFails();
         testStreamFileSyncOps();
         testStreamFileIoFails();
         testRandomAccessFileFails();
-        testSignalPipeFails();
         testResolverFails();
+        testSignalTeardownWalk();
     }
 };
 

@@ -13,6 +13,9 @@
 #include "fault.hpp"
 #include "test_suite.hpp"
 
+#include <boost/corosio/backend.hpp>
+#include <boost/corosio/detail/platform.hpp>
+
 #if defined(__FreeBSD__)
 // real_symbol: the descriptor scan below must not spend a live `fcntl`
 // arm on its own probing.
@@ -46,6 +49,24 @@
 #endif
 
 namespace boost::corosio::test::fault {
+
+/* The one backend a process-wide suite may use.
+
+   The signal self-pipe and its handlers are created once per process,
+   so a suite that faults their creation cannot be instantiated per
+   backend: the first instantiation would install exactly what the rest
+   were meant to fault. Such a suite picks the platform's native
+   reactor and names the others explicitly where it needs them.
+*/
+#if BOOST_COROSIO_HAS_EPOLL
+inline constexpr auto one_backend = corosio::epoll;
+#elif BOOST_COROSIO_HAS_KQUEUE
+inline constexpr auto one_backend = corosio::kqueue;
+#elif BOOST_COROSIO_HAS_IOCP
+inline constexpr auto one_backend = corosio::iocp;
+#else
+inline constexpr auto one_backend = corosio::select;
+#endif
 
 #if defined(_WIN32)
 
