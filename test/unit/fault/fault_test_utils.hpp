@@ -15,6 +15,13 @@
 
 #include <boost/corosio/backend.hpp>
 #include <boost/corosio/detail/platform.hpp>
+#if !defined(_WIN32)
+#include <boost/corosio/delay.hpp>
+#include <boost/corosio/io_context.hpp>
+#include <boost/capy/task.hpp>
+#include <chrono>
+#include <tuple>
+#endif
 
 #if defined(__FreeBSD__)
 // real_symbol: the descriptor scan below must not spend a live `fcntl`
@@ -246,6 +253,37 @@ inline std::string temp_path(char const* tag)
     if(base.back() != '/')
         base += '/';
     return base + "corosio_fault_" + tag + "_" + std::to_string(::getpid());
+}
+
+#endif
+
+#if !defined(_WIN32)
+
+/* Bound a run loop an assertion failure could leave running.
+
+   A test that parks an operation and expects something else to
+   complete it has no way to fail on its own: if the completion never
+   comes, run() does not return and the job dies on the CI timeout with
+   nothing to say which test was waiting. Spawn one of these under a
+   stop source alongside, request the stop where the test finishes, and
+   check `expired` after the run.
+
+   The stop source is what keeps the guard from becoming the thing the
+   run loop waits for: a pending delay is outstanding work, so a guard
+   that is never cancelled costs its full timeout on every test that
+   passes. The IOCP suites keep a copy of their own.
+
+   @param ioc The context to stop if the timeout is reached.
+   @param expired Set when the guard fired rather than being cancelled.
+*/
+inline capy::task<> stop_guard(io_context& ioc, bool& expired)
+{
+    auto [ec] = co_await corosio::delay(std::chrono::seconds(2));
+    // Cancelled: the test finished and asked the guard to stand down.
+    if(ec)
+        co_return;
+    expired = true;
+    ioc.stop();
 }
 
 #endif

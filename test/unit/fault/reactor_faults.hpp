@@ -30,12 +30,14 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <stop_token>
 #include <system_error>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include <sys/select.h>
 #include <sys/socket.h>
 
 namespace boost::corosio::test::fault {
@@ -435,6 +437,551 @@ struct reactor_common_faults
         BOOST_TEST(wec == std::errc::io_error);
     }
 
+    /* Fill the send path until it refuses a small write.
+
+       A write-direction operation parks only on a descriptor the
+       kernel would refuse, and how much a socket takes before it
+       refuses is the kernel's business. Neither a `send` that stops
+       short nor a descriptor that has stopped reporting itself
+       writable is enough: a stream socket still accepts a few bytes
+       below its low-water mark, and the operation these tests park is
+       seven of them. The bulk loop saturates both ends — the peer
+       never reads, so what stops it is the closed window — and the
+       small sends that follow are the actual precondition, so the
+       caller can skip rather than fail an unrelated assertion where
+       filling does not close it.
+
+       @return True once a small write would be refused.
+    */
+    static bool fill_send_buffer(tcp_socket& s)
+    {
+        std::vector<char> chunk(64 * 1024, 'x');
+        int const fd = static_cast<int>(s.native_handle());
+        // A refused send is not the end of the loop: the peer's receive
+        // buffer keeps draining ours, so the window reopens until that
+        // is full too.
+        for(int i = 0; i < 512; ++i)
+            std::ignore = ::send(fd, chunk.data(), chunk.size(), MSG_DONTWAIT);
+        for(int i = 0; i < 4096; ++i)
+        {
+            if(::send(fd, chunk.data(), 8, MSG_DONTWAIT) < 0)
+                return true;
+        }
+        return false;
+    }
+
+    /* Empty a peer's receive buffer so the sender's window reopens.
+
+       The counterpart to fill_send_buffer: the sender is blocked on a
+       closed window rather than on its own buffer, so what reopens it
+       is the far end reading.
+    */
+    static void drain_receive_buffer(tcp_socket& s)
+    {
+        std::vector<char> buf(64 * 1024);
+        int const fd = static_cast<int>(s.native_handle());
+        while(::recv(fd, buf.data(), buf.size(), MSG_DONTWAIT) > 0)
+        {
+        }
+    }
+
+    // Report a kernel this test cannot put into the state it needs.
+    static void skip_unfillable(char const* what)
+    {
+        std::fprintf(stderr,
+            "fault harness: the send window would not stay closed on "
+            "this kernel; skipping %s\n", what);
+    }
+
+    /* Raise an error condition on the far end of `peer`.
+
+       epoll and kqueue report a reset as an error event, so SO_LINGER
+       0 plus a close is enough. select reports an exceptional
+       condition only for out-of-band data, which is why the two
+       backends need different triggers for the same dispatch arm.
+    */
+    static void raise_error_condition(tcp_socket& peer)
+    {
+        // A parked operation that resolved early leaves nothing here to
+        // raise the condition on. Report that rather than throwing out
+        // of a coroutine, where it would abort the process and hide
+        // whichever assertion actually failed.
+        BOOST_TEST(peer.is_open());
+        if(!peer.is_open())
+            return;
+        if constexpr(is_select)
+        {
+            char oob = '!';
+            BOOST_TEST_EQ(
+                ::send(peer.native_handle(), &oob, 1, MSG_OOB), 1);
+        }
+        else
+        {
+            peer.set_option(socket_option::linger(true, 0));
+            peer.close();
+        }
+    }
+
+    /* An error arriving on a descriptor with an operation parked on it.
+
+       The dispatch has a separate arm per parked op kind, each of
+       which completes the op with the error instead of running its
+       I/O. The SO_ERROR probe is faulted so what the op reports is the
+       armed code rather than whatever the kernel recorded — the same
+       trick testErrorEventSoError uses for the plain read arm.
+    */
+    void testErrorEventOnParkedWaitRead()
+    {
+        io_context ioc(Backend);
+        auto [c, peer] = test::make_socket_pair(ioc);
+        std::stop_source guard;
+        std::error_code wec;
+        auto waiter = [&]() -> capy::task<>
+        {
+            fault_scope probe(sys::getsockopt, EBADF);
+            auto [ec] = co_await c.wait(wait_type::read);
+            wec = ec;
+            BOOST_TEST(probe.fired());
+            // An out-of-band byte keeps select's except set raised, so
+            // the socket that raised it goes before the next pass.
+            peer.close();
+            guard.request_stop();
+        };
+        auto trigger = [&]() -> capy::task<>
+        {
+            std::ignore = co_await corosio::delay(
+                std::chrono::milliseconds(1));
+            raise_error_condition(peer);
+        };
+        bool expired = false;
+        capy::run_async(ioc.get_executor())(waiter());
+        capy::run_async(ioc.get_executor())(trigger());
+        capy::run_async(ioc.get_executor(), guard.get_token())(
+            stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(wec == std::errc::bad_file_descriptor);
+        BOOST_TEST(c.is_open());
+    }
+
+    void testErrorEventOnParkedWaitError()
+    {
+        io_context ioc(Backend);
+        auto [c, peer] = test::make_socket_pair(ioc);
+        std::stop_source guard;
+        std::error_code wec;
+        auto waiter = [&]() -> capy::task<>
+        {
+            fault_scope probe(sys::getsockopt, EBADF);
+            auto [ec] = co_await c.wait(wait_type::error);
+            wec = ec;
+            BOOST_TEST(probe.fired());
+            peer.close();
+            guard.request_stop();
+        };
+        auto trigger = [&]() -> capy::task<>
+        {
+            std::ignore = co_await corosio::delay(
+                std::chrono::milliseconds(1));
+            raise_error_condition(peer);
+        };
+        bool expired = false;
+        capy::run_async(ioc.get_executor())(waiter());
+        capy::run_async(ioc.get_executor())(trigger());
+        capy::run_async(ioc.get_executor(), guard.get_token())(
+            stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(wec == std::errc::bad_file_descriptor);
+        BOOST_TEST(c.is_open());
+    }
+
+    /* The two write-direction arms, on Linux only.
+
+       Both need an operation that is still parked when the error
+       arrives, so the trigger runs in the run-loop turn straight after
+       the one that parked it, with nothing posted in between; a socket
+       whose send window can reopen on its own does not stay parked any
+       longer than that. Where it resolves even in that gap the test
+       reports a skip rather than asserting on a dispatch that never
+       ran.
+
+       The BSD family never reaches the arm at all. A reset delivered
+       to a parked write surfaces there as writability rather than as
+       an error condition, on kqueue and on select alike, so the op
+       re-runs its I/O and reports the real error instead of the
+       faulted probe's. The trigger that does raise an error condition
+       on the write side is testErrorEventOnWritableWrite's, which runs
+       everywhere and covers the same two arms; what these two add is
+       the reset, and only where a reset reaches them.
+    */
+    void testErrorEventOnParkedWrite()
+    {
+        io_context ioc(Backend);
+        auto [c, peer] = make_backpressured_pair(ioc);
+        if(!fill_send_buffer(c))
+        {
+            skip_unfillable("testErrorEventOnParkedWrite");
+            return;
+        }
+        char buf[8] = "1234567";
+        std::stop_source guard;
+        std::error_code wec;
+        bool done = false, parked = false, probe_fired = false;
+        auto writer = [&]() -> capy::task<>
+        {
+            fault_scope probe(sys::getsockopt, EBADF);
+            auto [ec, n] = co_await c.write_some(
+                capy::const_buffer(buf, 7));
+            std::ignore = n;
+            wec = ec;
+            probe_fired = probe.fired();
+            done = true;
+            peer.close();
+            guard.request_stop();
+        };
+        auto trigger = [&]() -> capy::task<>
+        {
+            parked = !done;
+            if(parked)
+                raise_error_condition(peer);
+            co_return;
+        };
+        bool expired = false;
+        capy::run_async(ioc.get_executor())(writer());
+        capy::run_async(ioc.get_executor())(trigger());
+        capy::run_async(ioc.get_executor(), guard.get_token())(
+            stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        if(!parked)
+        {
+            skip_unfillable("testErrorEventOnParkedWrite");
+            return;
+        }
+        BOOST_TEST(probe_fired);
+        BOOST_TEST(wec == std::errc::bad_file_descriptor);
+        BOOST_TEST(c.is_open());
+    }
+
+    void testErrorEventOnParkedWaitWrite()
+    {
+        io_context ioc(Backend);
+        auto [c, peer] = make_backpressured_pair(ioc);
+        if(!fill_send_buffer(c))
+        {
+            skip_unfillable("testErrorEventOnParkedWaitWrite");
+            return;
+        }
+        std::stop_source guard;
+        std::error_code wec;
+        bool done = false, parked = false, probe_fired = false;
+        auto waiter = [&]() -> capy::task<>
+        {
+            fault_scope probe(sys::getsockopt, EBADF);
+            auto [ec] = co_await c.wait(wait_type::write);
+            wec = ec;
+            probe_fired = probe.fired();
+            done = true;
+            peer.close();
+            guard.request_stop();
+        };
+        auto trigger = [&]() -> capy::task<>
+        {
+            parked = !done;
+            if(parked)
+                raise_error_condition(peer);
+            co_return;
+        };
+        bool expired = false;
+        capy::run_async(ioc.get_executor())(waiter());
+        capy::run_async(ioc.get_executor())(trigger());
+        capy::run_async(ioc.get_executor(), guard.get_token())(
+            stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        if(!parked)
+        {
+            skip_unfillable("testErrorEventOnParkedWaitWrite");
+            return;
+        }
+        BOOST_TEST(probe_fired);
+        BOOST_TEST(wec == std::errc::bad_file_descriptor);
+        BOOST_TEST(c.is_open());
+    }
+
+    /* Poll `target` until the except set is raised, and -- where the
+       parked operation is waiting on the send window -- until it is
+       writable in the same answer.
+
+       The dispatch arms need one round to report writability and the
+       except set together. Probing for both is the only way the test
+       can tell that premise from the two halves holding at different
+       moments, which is what a kernel that reopens the window a beat
+       late gives it. Bounded well inside the stop_guard's two seconds,
+       so a kernel that never shows the pair fails the test rather than
+       the guard.
+
+       @param target The descriptor the parked operation is on.
+       @param and_writable Whether writability is part of the premise.
+
+       @return True once every bit the caller needs holds at once.
+    */
+    static bool await_condition(tcp_socket& target, bool and_writable)
+    {
+        int const fd = static_cast<int>(target.native_handle());
+        for(int i = 0; i < 200; ++i)
+        {
+            fd_set w, ex;
+            FD_ZERO(&w);
+            FD_ZERO(&ex);
+            FD_SET(fd, &w);
+            FD_SET(fd, &ex);
+            timeval tv{0, 1000};
+            if(::select(fd + 1, nullptr, and_writable ? &w : nullptr,
+                    &ex, &tv) > 0 &&
+                FD_ISSET(fd, &ex) &&
+                (!and_writable || FD_ISSET(fd, &w)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /* Raise an except condition on `target` from its peer.
+
+       Out-of-band data is the one condition select reports in the
+       except set, and it stays raised until the byte is consumed --
+       which is what lets a write-direction readiness bit arrive in the
+       same round. The order is load-bearing twice over. A condition
+       raised before the operation parks is dispatched on its own, and
+       the operation then leaves through the tail block for an error
+       with no readiness bit rather than through the write arm; and a
+       send is not a delivery, so the turn goes back to the run loop
+       only once the condition is observable.
+
+       @return True once the except set is raised on `target`.
+    */
+    static bool raise_urgent_byte(tcp_socket& peer, tcp_socket& target)
+    {
+        char oob = '!';
+        BOOST_TEST_EQ(::send(peer.native_handle(), &oob, 1, MSG_OOB), 1);
+        return await_condition(target, false);
+    }
+
+    /* Raise the condition and reopen the window a parked write is
+       waiting on.
+
+       Draining comes before the probe, not after: the window has to be
+       open for the probe to find it and the except set in one answer,
+       and one answer is what the dispatch arm needs.
+
+       @return True once writability and the except set hold together.
+    */
+    static bool
+    raise_writable_error_condition(tcp_socket& peer, tcp_socket& target)
+    {
+        char oob = '!';
+        BOOST_TEST_EQ(::send(peer.native_handle(), &oob, 1, MSG_OOB), 1);
+        drain_receive_buffer(peer);
+        return await_condition(target, true);
+    }
+
+    // Report a kernel that will not show us the condition the two
+    // write-direction arms need.
+    static void skip_unraisable(char const* what)
+    {
+        std::fprintf(stderr,
+            "fault harness: an urgent byte did not raise the except set "
+            "on this kernel; skipping %s\n", what);
+    }
+
+    /* Report a premise that held for the probe and not for the reactor.
+
+       Only the round before the reactor's can be probed from a
+       coroutine, so a kernel that drops one of the two bits in between
+       leaves the operation resolving normally -- the arm never ran, and
+       there is nothing here to assert about.
+    */
+    static void skip_unpaired(char const* what)
+    {
+        std::fprintf(stderr,
+            "fault harness: the reactor's round did not carry both "
+            "writability and the except set; skipping %s\n", what);
+    }
+
+    /* The write-direction error arms, reached without a socket error.
+
+       Both arms need the same round to report writability and an error
+       condition on one descriptor, and a reset does not do that on the
+       BSD family -- it surfaces as plain writability, so the operation
+       re-runs its I/O and reports the real error instead. An urgent
+       byte does: it raises select's except set on a descriptor that is
+       writable in its own right.
+
+       The SO_ERROR probe is left unfaulted here on purpose. An
+       out-of-band condition leaves no socket error behind, so the probe
+       reads back zero and the dispatch substitutes EIO
+       (reactor_descriptor_state::invoke_deferred_io) -- which is also
+       what the operation reports, on a socket that is in no way
+       broken.
+    */
+    void testErrorEventOnWritableWrite()
+    {
+        if constexpr(is_select)
+        {
+            io_context ioc(Backend);
+            auto [c, peer] = test::make_socket_pair(ioc);
+            char buf[8] = "1234567";
+            std::stop_source guard;
+            std::error_code wec;
+            bool open_after = false, spec_fired = false, raised = false;
+            auto writer = [&]() -> capy::task<>
+            {
+                // Refusing the speculative write is what parks the
+                // operation. Backpressure would do it too, but how much
+                // a socket takes before it refuses is the kernel's
+                // business and a window that closed can reopen before
+                // the operation reaches it.
+                fault_scope spec(spec_write, EAGAIN);
+                auto [ec, n] = co_await c.write_some(
+                    capy::const_buffer(buf, 7));
+                std::ignore = n;
+                wec = ec;
+                spec_fired = spec.fired();
+                // Nothing broke: the condition the dispatch reported
+                // was one byte of urgent data.
+                open_after = c.is_open();
+                // The byte is never consumed, so the except set stays
+                // raised; the descriptor that raised it goes before the
+                // run loop is asked for another pass.
+                c.close();
+                guard.request_stop();
+            };
+            auto trigger = [&]() -> capy::task<>
+            {
+                raised = raise_urgent_byte(peer, c);
+                co_return;
+            };
+            bool expired = false;
+            capy::run_async(ioc.get_executor())(writer());
+            capy::run_async(ioc.get_executor())(trigger());
+            capy::run_async(ioc.get_executor(), guard.get_token())(
+                stop_guard(ioc, expired));
+            ioc.run();
+            BOOST_TEST(!expired);
+            BOOST_TEST(spec_fired);
+            if(!raised)
+            {
+                skip_unraisable("testErrorEventOnWritableWrite");
+                return;
+            }
+            BOOST_TEST(wec == std::errc::io_error);
+            BOOST_TEST(open_after);
+        }
+    }
+
+    void testErrorEventOnWritableWaitWrite()
+    {
+        if constexpr(is_select)
+        {
+            io_context ioc(Backend);
+            auto [c, peer] = make_backpressured_pair(ioc);
+            if(!fill_send_buffer(c))
+            {
+                skip_unfillable("testErrorEventOnWritableWaitWrite");
+                return;
+            }
+            std::stop_source guard;
+            std::error_code wec;
+            bool done = false, parked = false, open_after = false;
+            bool raised = false;
+            auto waiter = [&]() -> capy::task<>
+            {
+                auto [ec] = co_await c.wait(wait_type::write);
+                wec = ec;
+                done = true;
+                open_after = c.is_open();
+                c.close();
+                guard.request_stop();
+            };
+            auto trigger = [&]() -> capy::task<>
+            {
+                parked = !done;
+                if(parked)
+                    raised = raise_writable_error_condition(peer, c);
+                co_return;
+            };
+            bool expired = false;
+            capy::run_async(ioc.get_executor())(waiter());
+            capy::run_async(ioc.get_executor())(trigger());
+            capy::run_async(ioc.get_executor(), guard.get_token())(
+                stop_guard(ioc, expired));
+            ioc.run();
+            BOOST_TEST(!expired);
+            if(!parked)
+            {
+                skip_unfillable("testErrorEventOnWritableWaitWrite");
+                return;
+            }
+            if(!raised)
+            {
+                skip_unraisable("testErrorEventOnWritableWaitWrite");
+                return;
+            }
+            if(!wec)
+            {
+                skip_unpaired("testErrorEventOnWritableWaitWrite");
+                return;
+            }
+            BOOST_TEST(wec == std::errc::io_error);
+            BOOST_TEST(open_after);
+        }
+    }
+
+    /* The address family a socket was created with is read back from
+       the kernel, not remembered, and a v4 destination on a v6 socket
+       is the one case where the answer changes the sockaddr handed to
+       connect(). A failed probe reports AF_UNSPEC, which yields the
+       v4 shape and an address the v6 socket cannot use.
+    */
+    void testSocketFamilyProbeFails()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc, loopback());
+        tcp_socket s(ioc);
+        if(s.open(tcp::v6()))
+        {
+            std::fprintf(stderr,
+                "fault harness: no IPv6 socket on this host; skipping "
+                "testSocketFamilyProbeFails\n");
+            return;
+        }
+        std::error_code cec;
+        unsigned probes = 0;
+        auto body = [&]() -> capy::task<>
+        {
+            fault_scope f(sys::getsockname, EBADF);
+            auto [ec] = co_await s.connect(acc.local_endpoint());
+            cec = ec;
+            probes = f.count();
+            BOOST_TEST(f.fired());
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST_EQ(probes, 1u);
+        // Which code a kernel picks for an address in the wrong family
+        // is its own choice: Linux rejects the sockaddr as too short
+        // for AF_INET6, the BSDs reject the family itself.
+#if defined(__linux__)
+        BOOST_TEST(cec == std::errc::invalid_argument);
+#else
+        BOOST_TEST(cec == std::errc::address_family_not_supported);
+#endif
+        BOOST_TEST(s.is_open());
+    }
+
     void testErrorEventSoError()
     {
         io_context ioc(Backend);
@@ -693,6 +1240,15 @@ struct reactor_common_faults
         testDeferredWriteFails();
         testShutdownAndWaitFails();
         testErrorEventSoError();
+        testErrorEventOnParkedWaitRead();
+        testErrorEventOnParkedWaitError();
+#if defined(__linux__)
+        testErrorEventOnParkedWrite();
+        testErrorEventOnParkedWaitWrite();
+#endif
+        testErrorEventOnWritableWrite();
+        testErrorEventOnWritableWaitWrite();
+        testSocketFamilyProbeFails();
         testDatagramFails();
     }
 };

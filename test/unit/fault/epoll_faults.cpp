@@ -24,6 +24,7 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <stop_token>
 #include <system_error>
 #include <tuple>
 
@@ -309,6 +310,7 @@ struct epoll_faults
         // Opened before any arm so its own registration is not counted.
         BOOST_TEST(!client.open(tcp::v4()));
         std::error_code aec;
+        std::stop_source guard;
         auto accept_body = [&]() -> capy::task<>
         {
             {
@@ -322,15 +324,23 @@ struct epoll_faults
             // still open and the connection still pending.
             auto [ec] = co_await acc.accept(server);
             BOOST_TEST(!ec);
+            guard.request_stop();
         };
         auto connect_body = [&]() -> capy::task<>
         {
             auto [ec] = co_await client.connect(acc.local_endpoint());
             BOOST_TEST(!ec);
         };
+        // The second accept only resolves if the refused one left the
+        // pending connection alone; a run loop that never returns
+        // would otherwise read as a job timeout rather than a failure.
+        bool expired = false;
         capy::run_async(ioc.get_executor())(accept_body());
         capy::run_async(ioc.get_executor())(connect_body());
+        capy::run_async(ioc.get_executor(), guard.get_token())(
+            stop_guard(ioc, expired));
         ioc.run();
+        BOOST_TEST(!expired);
         BOOST_TEST(aec == std::errc::too_many_files_open);
         BOOST_TEST(server.is_open());
     }

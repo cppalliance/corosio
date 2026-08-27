@@ -312,6 +312,9 @@ struct select_faults
             skip_no_high_fd("testOpenAboveFdSetsize");
             return;
         }
+        // The descriptor exists by the time its number is rejected, so
+        // the failure path owns closing it.
+        int const before = open_fds();
         tcp_socket s(ioc);
         auto ec = s.open(tcp::v4());
         BOOST_TEST(ec == std::errc::too_many_files_open);
@@ -319,6 +322,7 @@ struct select_faults
         tcp_acceptor acc(ioc);
         BOOST_TEST(acc.open() == std::errc::too_many_files_open);
         BOOST_TEST(!acc.is_open());
+        BOOST_TEST_EQ(open_fds(), before);
     }
 
     void testAcceptAboveFdSetsize()
