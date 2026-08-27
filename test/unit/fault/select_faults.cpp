@@ -11,6 +11,7 @@
 #include "fault_test_utils.hpp"
 #include "context.hpp"
 #include "test_suite.hpp"
+#include "test_utils.hpp"
 
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
@@ -23,6 +24,10 @@
 #include <chrono>
 #include <system_error>
 #include <tuple>
+
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #if BOOST_COROSIO_HAS_SELECT
 
@@ -252,6 +257,186 @@ struct select_faults
         BOOST_TEST(done);
     }
 
+    /* Descriptors this backend cannot represent.
+
+       select() addresses descriptors by bit position in an fd_set, so
+       a number at or above FD_SETSIZE has nowhere to go and FD_SET on
+       it would write past the set. Every entry point that can be
+       handed such a number rejects it instead, and the rejection is
+       what these three tests drive: adoption (validate_assigned_fd),
+       creation (set_fd_options) and acceptance (accept_policy).
+    */
+    void testAssignAboveFdSetsize()
+    {
+        io_context ioc(select);
+        int const before = open_fds();
+        auto h = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(static_cast<int>(h) >= 0);
+        make_native_adoptable(h);
+        int const high = dup_above_fd_setsize(static_cast<int>(h));
+        if(high < 0)
+        {
+            skip_no_high_fd("testAssignAboveFdSetsize");
+            close_native_socket(h);
+            return;
+        }
+        {
+            tcp_socket s(ioc);
+            auto ec = s.assign(static_cast<native_handle_type>(high));
+            BOOST_TEST(ec == std::errc::too_many_files_open);
+            BOOST_TEST(!s.is_open());
+        }
+        {
+            tcp_acceptor acc(ioc);
+            auto ec = acc.assign(static_cast<native_handle_type>(high));
+            BOOST_TEST(ec == std::errc::too_many_files_open);
+            BOOST_TEST(!acc.is_open());
+        }
+        // The rejection is non-mutating: the caller still owns both.
+        BOOST_TEST(native_socket_valid(
+            static_cast<native_handle_type>(high)));
+        BOOST_TEST(native_socket_valid(h));
+        ::close(high);
+        close_native_socket(h);
+        BOOST_TEST_EQ(open_fds(), before);
+    }
+
+    void testOpenAboveFdSetsize()
+    {
+        // The context first: the scheduler's own self-pipe has to be
+        // representable, and the wall would deny it a number.
+        io_context ioc(select);
+        fd_wall wall;
+        if(!wall.ok())
+        {
+            skip_no_high_fd("testOpenAboveFdSetsize");
+            return;
+        }
+        tcp_socket s(ioc);
+        auto ec = s.open(tcp::v4());
+        BOOST_TEST(ec == std::errc::too_many_files_open);
+        BOOST_TEST(!s.is_open());
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(acc.open() == std::errc::too_many_files_open);
+        BOOST_TEST(!acc.is_open());
+    }
+
+    void testAcceptAboveFdSetsize()
+    {
+        io_context ioc(select);
+        tcp_acceptor acc(ioc, loopback());
+        tcp_socket client(ioc), server(ioc);
+        std::error_code aec;
+        bool skipped = false;
+        int leaked = 0;
+        auto body = [&]() -> capy::task<>
+        {
+            {
+                auto [ec] = co_await client.connect(acc.local_endpoint());
+                BOOST_TEST(!ec);
+            }
+            fd_wall wall;
+            if(!wall.ok())
+            {
+                skipped = true;
+                co_return;
+            }
+            int const before = open_fds();
+            auto [ec] = co_await acc.accept(server);
+            // accept_policy closes the descriptor it cannot represent
+            // before reporting, so the pending connection is consumed
+            // and nothing is left behind.
+            leaked = open_fds() - before;
+            aec = ec;
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        if(skipped)
+        {
+            skip_no_high_fd("testAcceptAboveFdSetsize");
+            return;
+        }
+        BOOST_TEST(aec == std::errc::invalid_argument);
+        BOOST_TEST(!server.is_open());
+        BOOST_TEST_EQ(leaked, 0);
+    }
+
+#ifdef SO_NOSIGPIPE
+    /* The per-descriptor SIGPIPE guard, where the platform has one.
+
+       This backend is portable rather than Linux-shaped: its write
+       policy falls back to write(), which carries no per-call flag, so
+       on a platform that defines SO_NOSIGPIPE the socket-level flag is
+       the only guard there is and select_traits::set_fd_options
+       treats a refusal as fatal. Linux has no such option and compiles
+       both arms away.
+    */
+    void testOpenNoSigPipeFails()
+    {
+        io_context ioc(select);
+        int const before = open_fds();
+        {
+            // SO_NOSIGPIPE is the only setsockopt an AF_INET open
+            // makes, so the first call is that one.
+            tcp_socket s(ioc);
+            fault_scope f(sys::setsockopt, ENOPROTOOPT);
+            auto ec = s.open(tcp::v4());
+            BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(f.count(), 1u);
+            BOOST_TEST(ec == std::errc::no_protocol_option);
+            BOOST_TEST(!s.is_open());
+        }
+        {
+            tcp_acceptor acc(ioc);
+            fault_scope f(sys::setsockopt, ENOPROTOOPT);
+            auto ec = acc.open();
+            BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(f.count(), 1u);
+            BOOST_TEST(ec == std::errc::no_protocol_option);
+            BOOST_TEST(!acc.is_open());
+        }
+        // The descriptor exists before the option is refused, so the
+        // failure path owns closing it.
+        BOOST_TEST_EQ(open_fds(), before);
+    }
+
+    void testAcceptNoSigPipeFails()
+    {
+        io_context ioc(select);
+        tcp_acceptor acc(ioc, loopback());
+        std::error_code aec;
+        int leaked = 0;
+        unsigned calls = 0;
+        auto body = [&]() -> capy::task<>
+        {
+            tcp_socket c(ioc), s(ioc);
+            {
+                auto [ec] = co_await c.connect(acc.local_endpoint());
+                BOOST_TEST(!ec);
+            }
+            int const before = open_fds();
+            // Armed after the connect, so the first setsockopt is the
+            // one accept_policy makes on the accepted descriptor
+            // (accept_policy::do_accept).
+            fault_scope f(sys::setsockopt, ENOPROTOOPT);
+            auto [ec] = co_await acc.accept(s);
+            aec = ec;
+            calls = f.count();
+            leaked = open_fds() - before;
+            BOOST_TEST(f.fired());
+            BOOST_TEST(!s.is_open());
+            c.close();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST_EQ(calls, 1u);
+        BOOST_TEST(aec == std::errc::no_protocol_option);
+        // accept_policy closes the descriptor it could not guard, and
+        // the errno it preserves is the option's, not close()'s.
+        BOOST_TEST_EQ(leaked, 0);
+    }
+#endif
+
     void run()
     {
         if(skip_under_valgrind())
@@ -260,8 +445,15 @@ struct select_faults
         testOpenFcntlFails();
         testAcceptFails();
         testAcceptFcntlFails();
+#ifdef SO_NOSIGPIPE
+        testOpenNoSigPipeFails();
+        testAcceptNoSigPipeFails();
+#endif
         testRunLoopFaults();
         testInterruptWriteFails();
+        testAssignAboveFdSetsize();
+        testOpenAboveFdSetsize();
+        testAcceptAboveFdSetsize();
     }
 };
 
