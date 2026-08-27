@@ -27,6 +27,9 @@
 #include <system_error>
 #include <tuple>
 
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 #if BOOST_COROSIO_HAS_KQUEUE
 
 namespace boost::corosio::test::fault {
@@ -124,6 +127,32 @@ struct kqueue_faults
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == std::errc::not_enough_memory);
             BOOST_TEST(!s.is_open());
+            BOOST_TEST_EQ(open_fds(), before);
+        }
+        // An acceptor reaches the same options through a configure
+        // function of its own (kqueue_traits::configure_ip_acceptor),
+        // which has its own error leg to leave through.
+        {
+            int before = open_fds();
+            tcp_acceptor acc(ioc);
+            fault_scope f(sys::fcntl, EINVAL);
+            auto ec = acc.open();
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ec == std::errc::invalid_argument);
+            BOOST_TEST(!acc.is_open());
+            BOOST_TEST_EQ(open_fds(), before);
+        }
+        {
+            int before = open_fds();
+            tcp_acceptor acc(ioc);
+            fault_scope f(sys::setsockopt, ENOPROTOOPT);
+            auto ec = acc.open();
+            BOOST_TEST(f.fired());
+            // v4 asks for no address-family option, so SO_NOSIGPIPE is
+            // the only setsockopt the open makes.
+            BOOST_TEST_EQ(f.count(), 1u);
+            BOOST_TEST(ec == std::errc::no_protocol_option);
+            BOOST_TEST(!acc.is_open());
             BOOST_TEST_EQ(open_fds(), before);
         }
     }
@@ -399,6 +428,90 @@ struct kqueue_faults
         });
     }
 
+    void testAcceptorAssignRegisterFails()
+    {
+        io_context ioc(kqueue);
+        auto h = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(static_cast<int>(h) >= 0);
+        make_native_adoptable(h);
+        sockaddr_in sa{};
+        sa.sin_family = AF_INET;
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        BOOST_TEST_EQ(::bind(static_cast<int>(h),
+            reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+        BOOST_TEST_EQ(::listen(static_cast<int>(h), 1), 0);
+
+        int const before = open_fds();
+        tcp_acceptor acc(ioc);
+        {
+            // Nothing else on the adopt path reaches kevent, so the
+            // first call is the registration itself.
+            fault_scope f(sys::kevent, ENOMEM);
+            auto ec = acc.assign(h);
+            BOOST_TEST(f.fired());
+            BOOST_TEST_EQ(f.count(), 1u);
+            BOOST_TEST(ec == std::errc::not_enough_memory);
+        }
+        // The rollback puts the acceptor back where it was and leaves
+        // the caller owning the descriptor it passed in
+        // (reactor_acceptor::init_and_register).
+        BOOST_TEST(!acc.is_open());
+        BOOST_TEST(native_socket_valid(h));
+        BOOST_TEST_EQ(open_fds(), before);
+        BOOST_TEST(!acc.assign(h));
+        acc.close();
+    }
+
+    /* Registering the descriptor the reactor's own accept produced.
+
+       An accept that runs inline registers from the initiator; one the
+       reactor dispatches registers from the completion instead, which
+       is a different arm with a rollback of its own. A first accept
+       with no peer waiting reports EAGAIN and parks the operation, so
+       the connection has to arrive afterwards for the retry to be the
+       reactor's.
+    */
+    void testPostedAcceptRegisterFails()
+    {
+        io_context ioc(kqueue);
+        tcp_acceptor acc(ioc, loopback());
+        tcp_socket client(ioc), server(ioc);
+        // Opened before any arm so its own registration is not counted.
+        BOOST_TEST(!client.open(tcp::v4()));
+        std::error_code aec;
+        int leaked = 0;
+        unsigned calls = 0;
+        auto accept_body = [&]() -> capy::task<>
+        {
+            int const before = open_fds();
+            // Both filters of both descriptors are already registered,
+            // so the next descriptor the kqueue is asked to add is the
+            // one the reactor's retry accepts. Counting registrations
+            // rather than kevent calls keeps the arm off the waits the
+            // run loop makes while the connection is on its way.
+            fault_scope f(sys::kevent_register, ENOMEM);
+            auto [ec] = co_await acc.accept(server);
+            aec = ec;
+            calls = f.count();
+            // The peer implementation owns the accepted descriptor by
+            // then, so destroying it is what closes it.
+            leaked = open_fds() - before;
+            BOOST_TEST(f.fired());
+        };
+        auto connect_body = [&]() -> capy::task<>
+        {
+            auto [ec] = co_await client.connect(acc.local_endpoint());
+            BOOST_TEST(!ec);
+        };
+        capy::run_async(ioc.get_executor())(accept_body());
+        capy::run_async(ioc.get_executor())(connect_body());
+        ioc.run();
+        BOOST_TEST_EQ(calls, 1u);
+        BOOST_TEST(aec == std::errc::not_enough_memory);
+        BOOST_TEST(!server.is_open());
+        BOOST_TEST_EQ(leaked, 0);
+    }
+
     void run()
     {
         if(skip_under_valgrind())
@@ -407,7 +520,9 @@ struct kqueue_faults
         testOpenFails();
         testAssignRegisterFails();
         testAcceptorRegisterFails();
+        testAcceptorAssignRegisterFails();
         testAcceptFails();
+        testPostedAcceptRegisterFails();
         testAcceptConfigureFails();
         testRunLoopFaults();
         testInterruptTriggerFails();

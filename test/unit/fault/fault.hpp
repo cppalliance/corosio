@@ -26,6 +26,11 @@ namespace boost::corosio::test::fault {
     `uring_sqe_full` enumerator is not a symbol: arming it clamps the
     next ring to one SQE and turns `io_uring_submit` into a no-op so
     `io_uring_get_sqe` returns null on the second acquisition.
+    `kevent_register` is not a symbol either: it names the subset of
+    `kevent` calls that add a descriptor to the kqueue, so a test can
+    reach a registration without counting the waits the run loop makes
+    on its way there. An arm on `kevent` still counts every call,
+    registrations included.
 */
 enum class sys
 {
@@ -37,7 +42,7 @@ enum class sys
     fdatasync, posix_fadvise, unlink, sigaction, getaddrinfo,
     freeaddrinfo, getnameinfo, gethostname,
     epoll_create1, epoll_ctl, epoll_wait, eventfd, timerfd_create,
-    timerfd_settime, select, kqueue, kevent,
+    timerfd_settime, select, kqueue, kevent, kevent_register,
     io_uring_queue_init_params, io_uring_queue_exit, io_uring_submit,
     io_uring_submit_and_wait_timeout, io_uring_submit_and_get_events,
     io_uring_wait_cqe_timeout, uring_sqe_full,

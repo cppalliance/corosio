@@ -229,10 +229,30 @@ COROSIO_FAULT_HOOK_NX(timerfd_settime, int, -1, (int fd, int f, itimerspec const
 
 #if defined(__APPLE__) || defined(__FreeBSD__)
 COROSIO_FAULT_HOOK(kqueue, int, -1, (), ())
-COROSIO_FAULT_HOOK(kevent, int, -1,
-    (int kq, struct kevent const* ch, int nch, struct kevent* ev, int nev,
-        timespec const* ts),
-    (kq, ch, nch, ev, nev, ts))
+// Hand-written rather than COROSIO_FAULT_HOOK: a registration and a
+// wait are the same symbol, so the changelist is the only thing that
+// tells them apart. Both arms are consulted on every call so their
+// counters stay in step whichever one fires.
+extern "C" int kevent(
+    int kq, struct kevent const* ch, int nch, struct kevent* ev, int nev,
+    timespec const* ts)
+{
+    COROSIO_FAULT_REAL(kevent, int(*)(int, struct kevent const*, int,
+        struct kevent*, int, timespec const*));
+    bool adds = false;
+    for(int i = 0; i < nch; ++i)
+    {
+        if(ch[i].flags & EV_ADD)
+            adds = true;
+    }
+    // A call that satisfies both arms fails once: the plain kevent arm
+    // publishes last, so its errno is the one the caller sees.
+    bool const fail_add = adds && should_fail(sys::kevent_register);
+    bool const fail_any = should_fail(sys::kevent);
+    if(fail_add || fail_any)
+        return -1;
+    return real(kq, ch, nch, ev, nev, ts);
+}
 #endif
 
 #if defined(__APPLE__)
@@ -1041,6 +1061,9 @@ bool hook_is_live(sys which) noexcept
     // shadows drive, so it lives exactly when they do.
     if(which == sys::uring_sqe_full)
         which = sys::io_uring_submit;
+    // Not a symbol either: it is a slice of the kevent shadow.
+    if(which == sys::kevent_register)
+        which = sys::kevent;
     for(std::size_t i = 0; i < census_count; ++i)
     {
         if(census[i].id == which && census_live[i])
