@@ -303,6 +303,104 @@ struct tcp_acceptor_test
         acc.close();
     }
 
+    // Destroy the io_context with an accept completion already queued.
+    // Two listeners each have a connection waiting before the accepts
+    // are posted, so the one handler the loop dispatches leaves the
+    // other completion for the scheduler's shutdown to drain.
+    void testDestroyWithQueuedAccept()
+    {
+        int resumed        = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+
+            tcp_acceptor acc1(ioc), acc2(ioc);
+            endpoint eps[2];
+            tcp_acceptor* accs[2] = {&acc1, &acc2};
+            for (int i = 0; i < 2; ++i)
+            {
+                BOOST_TEST(!accs[i]->open());
+                accs[i]->set_option(socket_option::reuse_address(true));
+                BOOST_TEST(
+                    !accs[i]->bind(endpoint(ipv4_address::loopback(), 0)));
+                BOOST_TEST(!accs[i]->listen());
+                eps[i] = endpoint(
+                    ipv4_address::loopback(), accs[i]->local_endpoint().port());
+            }
+
+            tcp_socket c1(ioc), c2(ioc), s1(ioc), s2(ioc);
+            auto connect_both = [&]() -> capy::task<> {
+                std::ignore = co_await c1.connect(eps[0]);
+                std::ignore = co_await c2.connect(eps[1]);
+            };
+            capy::run_async(ex)(connect_both());
+            ioc.run();
+            ioc.restart();
+
+            auto accepter = [&](tcp_acceptor& a,
+                                tcp_socket& s) -> capy::task<> {
+                std::ignore = co_await a.accept(s);
+                ++resumed;
+            };
+            capy::run_async(ex)(accepter(acc1, s1));
+            capy::run_async(ex)(accepter(acc2, s2));
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
+    // Destroy the io_context with an acceptor-wait completion already
+    // queued. The acceptor wait has a handler of its own, distinct from
+    // the accept's, and only its shutdown arm is reached this way.
+    void testDestroyWithQueuedAcceptorWait()
+    {
+        int resumed        = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+
+            tcp_acceptor acc1(ioc), acc2(ioc);
+            endpoint eps[2];
+            tcp_acceptor* accs[2] = {&acc1, &acc2};
+            for (int i = 0; i < 2; ++i)
+            {
+                BOOST_TEST(!accs[i]->open());
+                accs[i]->set_option(socket_option::reuse_address(true));
+                BOOST_TEST(
+                    !accs[i]->bind(endpoint(ipv4_address::loopback(), 0)));
+                BOOST_TEST(!accs[i]->listen());
+                eps[i] = endpoint(
+                    ipv4_address::loopback(), accs[i]->local_endpoint().port());
+            }
+
+            tcp_socket c1(ioc), c2(ioc);
+            auto connect_both = [&]() -> capy::task<> {
+                std::ignore = co_await c1.connect(eps[0]);
+                std::ignore = co_await c2.connect(eps[1]);
+            };
+            capy::run_async(ex)(connect_both());
+            ioc.run();
+            ioc.restart();
+
+            auto waiter = [&](tcp_acceptor& a) -> capy::task<> {
+                std::ignore = co_await a.wait(wait_type::read);
+                ++resumed;
+            };
+            capy::run_async(ex)(waiter(acc1));
+            capy::run_async(ex)(waiter(acc2));
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
     // Destroy the io_context with a read still parked on a connected
     // socket; service shutdown must drain the abandoned operation
     // without resuming it.
@@ -1742,6 +1840,8 @@ struct tcp_acceptor_test
         // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithParkedAccept();
         testDestroyWithParkedRead();
+        testDestroyWithQueuedAccept();
+        testDestroyWithQueuedAcceptorWait();
 #endif
 
         // IPv6

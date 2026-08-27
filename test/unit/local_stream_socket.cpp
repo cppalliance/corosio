@@ -1188,6 +1188,147 @@ struct local_stream_socket_test
         BOOST_TEST_PASS();
     }
 
+    // Destroy the io_context with a read completion already queued.
+    // Both pairs are made readable before the loop runs, so the single
+    // dispatched handler leaves the other completion behind and the
+    // scheduler's shutdown has to drain it rather than deliver it.
+    void testDestroyWithQueuedRead()
+    {
+        int resumed = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            local_stream_socket a1(ioc), b1(ioc), a2(ioc), b2(ioc);
+            if (auto ec = connect_pair(a1, b1))
+                throw std::system_error(ec, "connect_pair");
+            if (auto ec = connect_pair(a2, b2))
+                throw std::system_error(ec, "connect_pair");
+
+            char buf1[8], buf2[8];
+            auto reader = [&](local_stream_socket& s,
+                              char* p) -> capy::task<> {
+                std::ignore = co_await s.read_some(
+                    capy::mutable_buffer(p, 8));
+                ++resumed;
+            };
+            capy::run_async(ex)(reader(a1, buf1));
+            capy::run_async(ex)(reader(a2, buf2));
+            // Two handlers, one per coroutine, park both reads.
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+
+            BOOST_TEST(::send(b1.native_handle(), "x", 1, 0) == 1);
+            BOOST_TEST(::send(b2.native_handle(), "x", 1, 0) == 1);
+
+            std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST(before_destroy < 2);
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
+    // Destroy the io_context with a connect completion already queued.
+    // Both handshakes finish before the loop dispatches, so one is
+    // still waiting in the queue when the scheduler shuts down.
+    void testDestroyWithQueuedConnect()
+    {
+        int resumed        = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            test::temp_socket_dir tmp;
+
+            local_stream_acceptor acc(ioc);
+            BOOST_TEST(!acc.open());
+            auto const ep = local_endpoint(tmp.path());
+            BOOST_TEST(!acc.bind(ep));
+            BOOST_TEST(!acc.listen());
+
+            local_stream_socket c1(ioc), c2(ioc);
+            auto client = [&](local_stream_socket& s) -> capy::task<> {
+                std::ignore = co_await s.connect(ep);
+                ++resumed;
+            };
+            capy::run_async(ex)(client(c1));
+            capy::run_async(ex)(client(c2));
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
+    // Destroy the io_context with a wait completion already queued.
+    // Both sockets become readable while the waits are parked, so the
+    // one handler the loop dispatches leaves the other wait for the
+    // scheduler's shutdown to drain.
+    void testDestroyWithQueuedWait()
+    {
+        int resumed        = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            local_stream_socket a1(ioc), b1(ioc), a2(ioc), b2(ioc);
+            if (auto ec = connect_pair(a1, b1))
+                throw std::system_error(ec, "connect_pair");
+            if (auto ec = connect_pair(a2, b2))
+                throw std::system_error(ec, "connect_pair");
+
+            auto waiter = [&](local_stream_socket& s) -> capy::task<> {
+                std::ignore = co_await s.wait(wait_type::read);
+                ++resumed;
+            };
+            capy::run_async(ex)(waiter(a1));
+            capy::run_async(ex)(waiter(a2));
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+
+            BOOST_TEST(::send(b1.native_handle(), "x", 1, 0) == 1);
+            BOOST_TEST(::send(b2.native_handle(), "x", 1, 0) == 1);
+
+            std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST(before_destroy < 2);
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
+    // Destroy the io_context with a write completion already queued.
+    // Only the proactor backends reach that state: a POSIX write to a
+    // socket with room finishes in the initiator, so there the scope
+    // ends with nothing outstanding and the test is a no-op.
+    void testDestroyWithQueuedWrite()
+    {
+        int resumed        = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            local_stream_socket a1(ioc), b1(ioc), a2(ioc), b2(ioc);
+            if (auto ec = connect_pair(a1, b1))
+                throw std::system_error(ec, "connect_pair");
+            if (auto ec = connect_pair(a2, b2))
+                throw std::system_error(ec, "connect_pair");
+
+            auto writer = [&](local_stream_socket& s) -> capy::task<> {
+                std::ignore =
+                    co_await s.write_some(capy::const_buffer("x", 1));
+                ++resumed;
+            };
+            capy::run_async(ex)(writer(a1));
+            capy::run_async(ex)(writer(a2));
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
     void testAcceptorOnClosedNoOp()
     {
         // cancel/close on a never-opened acceptor are no-ops.
@@ -1662,6 +1803,10 @@ struct local_stream_socket_test
         // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithParkedAccept();
         testDestroyWithParkedRead();
+        testDestroyWithQueuedRead();
+        testDestroyWithQueuedConnect();
+        testDestroyWithQueuedWait();
+        testDestroyWithQueuedWrite();
 #endif
         testAcceptorOnClosedNoOp();
         testAcceptorBindClosedThrows();

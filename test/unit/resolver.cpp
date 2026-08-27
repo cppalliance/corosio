@@ -17,12 +17,16 @@
 #endif
 
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
 #include <stop_token>
+#include <tuple>
 
+#include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -1076,6 +1080,33 @@ struct resolver_test
         BOOST_TEST(converted == ep);
     }
 
+    // Destroy the io_context with a resolver the service still owns.
+    // The resolver and the parked accept share a coroutine frame that
+    // the accept never unwinds, so the service reclaims a live
+    // implementation at shutdown instead of an empty list.
+    void testDestroyWithLiveResolver()
+    {
+        bool resumed = false;
+        {
+            io_context ioc;
+            auto keeper = [&]() -> capy::task<> {
+                resolver r(ioc);
+                tcp_acceptor acc(ioc);
+                std::ignore = acc.open();
+                std::ignore = acc.bind(
+                    endpoint(ipv4_address::loopback(), 0));
+                std::ignore = acc.listen();
+                tcp_socket peer(ioc);
+                std::ignore = co_await acc.accept(peer);
+                resumed = true;
+            };
+            capy::run_async(ioc.get_executor())(keeper());
+            // One handler carries the coroutine to the parked accept.
+            std::ignore = ioc.run_one();
+        }
+        BOOST_TEST(!resumed);
+    }
+
     void run()
     {
         // Construction and move semantics
@@ -1140,6 +1171,11 @@ struct resolver_test
         testReverseFlagsOperators();
         testSequentialReverseResolves();
         testMixedResolveAndReverseResolve();
+
+#if !COROSIO_TEST_HAS_ASAN
+        // Abandon parked coroutine frames by design; see context.hpp.
+        testDestroyWithLiveResolver();
+#endif
     }
 };
 

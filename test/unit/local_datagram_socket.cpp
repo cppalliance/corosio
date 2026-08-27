@@ -883,6 +883,46 @@ struct local_datagram_socket_test
         BOOST_TEST(recv_ec == capy::cond::canceled);
     }
 
+    // Destroy the io_context with a receive completion already queued.
+    // Both sockets have a datagram waiting while the receives are
+    // parked, so the one handler the loop dispatches leaves the other
+    // completion for the scheduler's shutdown to drain.
+    void testDestroyWithQueuedReceive()
+    {
+        int resumed        = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            local_datagram_socket a1(ioc), b1(ioc), a2(ioc), b2(ioc);
+            if (auto ec = connect_pair(a1, b1))
+                throw std::system_error(ec, "connect_pair");
+            if (auto ec = connect_pair(a2, b2))
+                throw std::system_error(ec, "connect_pair");
+
+            char buf1[8], buf2[8];
+            local_endpoint from1, from2;
+            auto reader = [&](local_datagram_socket& s, char* p,
+                              local_endpoint& from) -> capy::task<> {
+                std::ignore = co_await s.recv_from(
+                    capy::mutable_buffer(p, 8), from);
+                ++resumed;
+            };
+            capy::run_async(ex)(reader(a1, buf1, from1));
+            capy::run_async(ex)(reader(a2, buf2, from2));
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+
+            BOOST_TEST(::send(b1.native_handle(), "x", 1, 0) == 1);
+            BOOST_TEST(::send(b2.native_handle(), "x", 1, 0) == 1);
+
+            std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST(before_destroy < 2);
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
     void run()
     {
         testConstruction();
@@ -912,6 +952,10 @@ struct local_datagram_socket_test
         testDatagramBoundary();
         testRecvPeek();
         testRecvFromPeek();
+#if !COROSIO_TEST_HAS_ASAN
+        // Abandon parked coroutine frames by design; see context.hpp.
+        testDestroyWithQueuedReceive();
+#endif
 #ifdef __linux__
         testAbstractSocket();
 #endif

@@ -1650,6 +1650,54 @@ struct udp_socket_test
         BOOST_TEST(done);
     }
 
+    // Destroy the io_context with datagram completions already queued.
+    // Both receives are parked before either datagram is sent, so the
+    // one handler the loop dispatches leaves the rest of that batch
+    // for the scheduler's shutdown to drain.
+    void testDestroyWithQueuedDatagrams()
+    {
+        int resumed        = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            udp_socket r1(ioc), r2(ioc), s1(ioc), s2(ioc);
+            BOOST_TEST(!r1.open());
+            BOOST_TEST(!r2.open());
+            BOOST_TEST(!s1.open());
+            BOOST_TEST(!s2.open());
+            BOOST_TEST(!r1.bind(endpoint(ipv4_address::loopback(), 0)));
+            BOOST_TEST(!r2.bind(endpoint(ipv4_address::loopback(), 0)));
+
+            auto const ep1 = r1.local_endpoint();
+            auto const ep2 = r2.local_endpoint();
+
+            char b1[8], b2[8];
+            endpoint from1, from2;
+            auto reader = [&](udp_socket& s, char* p,
+                              endpoint& from) -> capy::task<> {
+                std::ignore = co_await s.recv_from(
+                    capy::mutable_buffer(p, 8), from);
+                ++resumed;
+            };
+            auto writer = [&](udp_socket& s, endpoint dest) -> capy::task<> {
+                std::ignore =
+                    co_await s.send_to(capy::const_buffer("x", 1), dest);
+                ++resumed;
+            };
+            capy::run_async(ex)(reader(r1, b1, from1));
+            capy::run_async(ex)(reader(r2, b2, from2));
+            capy::run_async(ex)(writer(s1, ep1));
+            capy::run_async(ex)(writer(s2, ep2));
+            // Four handlers start the four coroutines; the fifth
+            // delivers one completion out of the batch they produce.
+            for (int i = 0; i < 5; ++i)
+                std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
     void run()
     {
         testConstruction();
@@ -1703,6 +1751,11 @@ struct udp_socket_test
         testRelease();
         testReleaseClosedThrows();
         testAssignV6();
+
+#if !COROSIO_TEST_HAS_ASAN
+        // Abandon parked coroutine frames by design; see context.hpp.
+        testDestroyWithQueuedDatagrams();
+#endif
     }
 };
 

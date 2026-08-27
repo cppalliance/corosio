@@ -1710,6 +1710,99 @@ struct tcp_socket_test
         s2.close();
     }
 
+    // Destroy the io_context with a write completion already queued.
+    // The loop dispatches one handler, so any completion that arrived
+    // with it is left for the scheduler's shutdown to drain.
+    void testDestroyWithQueuedWrite()
+    {
+        int resumed        = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            auto [a1, b1] =
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+            auto [a2, b2] =
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+
+            auto writer = [&](tcp_socket& s) -> capy::task<> {
+                std::ignore =
+                    co_await s.write_some(capy::const_buffer("x", 1));
+                ++resumed;
+            };
+            capy::run_async(ex)(writer(a1));
+            capy::run_async(ex)(writer(a2));
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
+    // The connect twin: two handshakes finish before the loop
+    // dispatches, so one of them is still queued at destruction.
+    void testDestroyWithQueuedConnect()
+    {
+        int resumed        = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            tcp_acceptor acc(ioc);
+            BOOST_TEST(!acc.open());
+            acc.set_option(socket_option::reuse_address(true));
+            BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+            BOOST_TEST(!acc.listen());
+            auto const ep = endpoint(
+                ipv4_address::loopback(), acc.local_endpoint().port());
+
+            tcp_socket c1(ioc), c2(ioc);
+            auto client = [&](tcp_socket& s) -> capy::task<> {
+                std::ignore = co_await s.connect(ep);
+                ++resumed;
+            };
+            capy::run_async(ex)(client(c1));
+            capy::run_async(ex)(client(c2));
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
+    // The wait twin: both sockets are readable before the loop runs.
+    void testDestroyWithQueuedWait()
+    {
+        int resumed        = 0;
+        int before_destroy = 0;
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            auto [a1, b1] =
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+            auto [a2, b2] =
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+
+            auto waiter = [&](tcp_socket& s) -> capy::task<> {
+                std::ignore = co_await s.wait(wait_type::read);
+                ++resumed;
+            };
+            capy::run_async(ex)(waiter(a1));
+            capy::run_async(ex)(waiter(a2));
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+
+            BOOST_TEST(::send(b1.native_handle(), "x", 1, 0) == 1);
+            BOOST_TEST(::send(b2.native_handle(), "x", 1, 0) == 1);
+
+            std::ignore = ioc.run_one();
+            before_destroy = resumed;
+        }
+        BOOST_TEST_EQ(resumed, before_destroy);
+    }
+
     void run()
     {
         testConstruction();
@@ -1806,6 +1899,13 @@ struct tcp_socket_test
         testRelease();
         testReleaseClosedThrows();
         testAssignV6();
+
+#if !COROSIO_TEST_HAS_ASAN
+        // Abandon parked coroutine frames by design; see context.hpp.
+        testDestroyWithQueuedWrite();
+        testDestroyWithQueuedConnect();
+        testDestroyWithQueuedWait();
+#endif
     }
 
     void testConnectV6()

@@ -17,6 +17,8 @@
 #endif
 
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -35,6 +37,7 @@
 #include <stop_token>
 #include <string>
 #include <system_error>
+#include <tuple>
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -633,6 +636,39 @@ struct random_access_file_test
         BOOST_TEST_EQ(completed.load(), num_ops);
     }
 
+    // Destroy the io_context with a file the service still owns. The
+    // file and the parked accept share a coroutine frame that the
+    // accept never unwinds, so the service reclaims a live implementation
+    // at shutdown instead of an empty list.
+    void testDestroyWithLiveFile()
+    {
+        temp_file tmp("raf_teardown_", "hello world");
+        // Copy out of the anonymous-namespace type: capturing it
+        // by reference gives the lambda a member whose type has
+        // internal linkage, which -Wsubobject-linkage rejects.
+        auto const path = tmp.path;
+        bool resumed = false;
+        {
+            io_context ioc(Backend);
+            auto keeper = [&]() -> capy::task<> {
+                random_access_file f(ioc);
+                std::ignore = f.open(path, file_base::read_only);
+                tcp_acceptor acc(ioc);
+                std::ignore = acc.open();
+                std::ignore = acc.bind(
+                    endpoint(ipv4_address::loopback(), 0));
+                std::ignore = acc.listen();
+                tcp_socket peer(ioc);
+                std::ignore = co_await acc.accept(peer);
+                resumed = true;
+            };
+            capy::run_async(ioc.get_executor())(keeper());
+            // One handler carries the coroutine to the parked accept.
+            std::ignore = ioc.run_one();
+        }
+        BOOST_TEST(!resumed);
+    }
+
     void run()
     {
         testConstruction();
@@ -684,6 +720,11 @@ struct random_access_file_test
         testReadAtPastEofErrorPath();
         testCancelInflightOperation();
         testCancelWithStoppedToken();
+
+#if !COROSIO_TEST_HAS_ASAN
+        // Abandon parked coroutine frames by design; see context.hpp.
+        testDestroyWithLiveFile();
+#endif
     }
 
     // Operations on closed file
