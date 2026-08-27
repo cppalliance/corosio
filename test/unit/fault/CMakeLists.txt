@@ -64,6 +64,30 @@ target_link_libraries(boost_corosio_fault_tests PRIVATE
 target_include_directories(boost_corosio_fault_tests PRIVATE
     . .. ../../../ ../../../src/corosio)
 
+# in_child's forked child looks up libgcov's __gcov_dump and calls it
+# before _Exit, but nothing else in the program references that symbol,
+# so the archive member holding it is never pulled in and the lookup
+# would answer null. Ask the linker for it where the tree is
+# instrumented.
+#
+# The name is the linker's spelling, not C's: Mach-O prefixes every C
+# symbol with an underscore. Windows needs none of this: it has no
+# fork, so in_child runs the body directly.
+#
+# The guard reads the flags the coverage jobs actually set. A tree
+# instrumented some other way -- a toolchain file, or per-configuration
+# flags -- goes undetected, and the cost of that is a forked child's
+# counters going unrecorded again.
+if(NOT WIN32 AND CMAKE_CXX_FLAGS MATCHES "--coverage|-fprofile-arcs")
+    if(APPLE)
+        target_link_options(boost_corosio_fault_tests PRIVATE
+            "LINKER:-u,___gcov_dump")
+    else()
+        target_link_options(boost_corosio_fault_tests PRIVATE
+            "LINKER:-u,__gcov_dump")
+    endif()
+endif()
+
 if(NOT WIN32)
     target_link_libraries(boost_corosio_fault_tests PRIVATE ${CMAKE_DL_LIBS})
     # Interposition only works if the shadows land in the executable's

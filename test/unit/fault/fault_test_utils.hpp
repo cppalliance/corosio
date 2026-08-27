@@ -37,6 +37,7 @@
 #include <Windows.h>
 #else
 #include <dirent.h>
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <sys/resource.h>
 #include <sys/select.h>
@@ -171,6 +172,28 @@ inline int open_fds()
 #endif
 }
 
+// Write out this binary's coverage counters, if it has any. The child
+// below ends with _Exit, which runs no atexit handler, so an
+// instrumented child would discard everything it counted and every
+// branch only it reached would measure as unreached however many times
+// the test passed.
+//
+// Looked up rather than declared. An optional symbol is spelled
+// differently by each linker -- ELF takes a weak undefined reference,
+// ld64 rejects one outright and does not accept weak_import for a
+// symbol no library provides -- and an uninstrumented build has to
+// link either way. A lookup leaves nothing undefined at link time and
+// answers null where there is no libgcov, which is the same thing the
+// weak reference was meant to say. The CMake side is what keeps the
+// symbol in an instrumented binary for this to find.
+inline void flush_coverage_counters()
+{
+    static auto const dump =
+        reinterpret_cast<void(*)()>(::dlsym(RTLD_DEFAULT, "__gcov_dump"));
+    if(dump)
+        dump();
+}
+
 // Run `body` in a forked child and assert it returned true. Process-wide
 // state that is created once — the signal self-pipe and its sigaction
 // handlers — can only be faulted in a fresh process, and installing it
@@ -183,7 +206,11 @@ void in_child(F&& body)
     if(pid < 0)
         return;
     if(pid == 0)
-        std::_Exit(body() ? 0 : 1);
+    {
+        bool const ok = body();
+        flush_coverage_counters();
+        std::_Exit(ok ? 0 : 1);
+    }
     int status = 0;
     ::waitpid(pid, &status, 0);
     BOOST_TEST(WIFEXITED(status) && WEXITSTATUS(status) == 0);

@@ -7,6 +7,7 @@
 # Official repository: https://github.com/cppalliance/corosio
 #
 
+import configure ;
 import os ;
 import testing ;
 
@@ -43,6 +44,21 @@ project boost/corosio/test/unit/fault
       <toolset>clang-win,<address-sanitizer>on:<build>no
       <toolset>clang-win,<address-sanitizer>norecover:<build>no
     ;
+
+# A forked child ends with _Exit, so its counters only reach disk if
+# the harness can call __gcov_dump itself. --coverage arrives as a raw
+# linkflag rather than <coverage>on, so probe for libgcov by linking
+# against it and only then force the entry point into the executable
+# and into its dynamic symbol table, where the runtime lookup reads.
+exe gcov_dump_check : check/gcov_dump.cpp ;
+explicit gcov_dump_check ;
+local gcov-dump = [ check-target-builds gcov_dump_check "gcov dump linkable"
+    : <target-os>linux:<linkflags>-Wl,-u,__gcov_dump
+      <target-os>linux:<linkflags>-Wl,--export-dynamic-symbol=__gcov_dump
+      <target-os>freebsd:<linkflags>-Wl,-u,__gcov_dump
+      <target-os>freebsd:<linkflags>-Wl,--export-dynamic-symbol=__gcov_dump
+      <target-os>darwin:<linkflags>-Wl,-u,___gcov_dump
+    : ] ;
 
 # The POSIX shadows are written against glibc, Darwin libc and the
 # FreeBSD libc and the Windows hooks against the PE import table, so
@@ -86,5 +102,5 @@ else if [ os.name ] = LINUX
 
 for local f in $(tests)
 {
-    run $(f) $(hooks) : : : $(uring-hook) ;
+    run $(f) $(hooks) : : : $(uring-hook) $(gcov-dump) ;
 }
