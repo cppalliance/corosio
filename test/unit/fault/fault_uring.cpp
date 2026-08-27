@@ -71,7 +71,7 @@ void scan_pending_sqes(io_uring* ring) noexcept
     for(unsigned i = ring->sq.sqe_head; i != ring->sq.sqe_tail; ++i)
     {
         auto const& sqe = ring->sq.sqes[i & ring->sq.ring_mask];
-        if(int(sqe.opcode) == c.opcode && sqe.fd == c.fd)
+        if(int(sqe.opcode) == c.opcode && (c.fd < 0 || sqe.fd == c.fd))
         {
             c.user_data = sqe.user_data;
             c.have_user_data = true;
@@ -93,6 +93,7 @@ void rewrite_visible_cqes(io_uring* ring) noexcept
         if(cqe->user_data == c.user_data)
         {
             cqe->res = c.res;
+            cqe->flags &= ~c.flags_clear;
             c.fired = true;
             c.armed = false;
             return;

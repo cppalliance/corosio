@@ -153,6 +153,19 @@ public:
     /// Return true once the armed call has been intercepted.
     bool fired() const noexcept;
 
+    /** Return how many calls to the armed symbol this arm has counted.
+
+        Every live arm watching a symbol counts each call to it, so this
+        is the arm's own view of the call ordinal an `nth` selects. A
+        test that has to reach past calls the library makes on the way
+        in can arm a counting scope first and read the number off it
+        instead of hard-coding one.
+
+        @return Calls seen since the scope was constructed, including
+            the one that fired.
+    */
+    unsigned count() const noexcept;
+
     fault_scope(fault_scope const&) = delete;
     fault_scope& operator=(fault_scope const&) = delete;
 
@@ -171,8 +184,10 @@ private:
     Matches the first unsubmitted SQE whose `fd` and `opcode`
     (`IORING_OP_*`) equal the arguments, remembers its `user_data`,
     and overwrites `res` on the CQE carrying that `user_data` when it
-    becomes visible. Only meaningful with the io_uring backend; the
-    scope is inert on the reactor backends.
+    becomes visible. An `fd` of -1 matches on the opcode alone, for
+    the polls the library arms on descriptors it never hands out.
+    Only meaningful with the io_uring backend; the scope is inert on
+    the reactor backends.
 */
 class cqe_fault_scope
 {
@@ -182,11 +197,27 @@ public:
 
     /** Construct a scope that rewrites the matched CQE's `res`.
 
-        @param fd The descriptor the SQE was prepared on.
+        @param fd The descriptor the SQE was prepared on, or -1 to
+            match on `opcode` alone.
         @param opcode The `IORING_OP_*` the SQE carries.
         @param res The value to write into the CQE's `res`.
     */
     cqe_fault_scope(int fd, int opcode, int res);
+
+    /** Construct a scope that also clears `flags_to_clear` on the CQE.
+
+        The multishot re-arm paths key off `IORING_CQE_F_MORE`, which
+        the kernel clears only when it terminates the multishot; there
+        is no way to provoke that from userspace, so the bit is cleared
+        here instead.
+
+        @param fd The descriptor the SQE was prepared on, or -1 to
+            match on `opcode` alone.
+        @param opcode The `IORING_OP_*` the SQE carries.
+        @param res The value to write into the CQE's `res`.
+        @param flags_to_clear Bits to clear in the CQE's `flags`.
+    */
+    cqe_fault_scope(int fd, int opcode, int res, unsigned flags_to_clear);
 
     /// Return true once a CQE has been rewritten.
     bool fired() const noexcept;
@@ -233,15 +264,23 @@ public:
     a program imports is decided when it is linked: a name no module
     references has no thunk to patch and no arm on it will ever fire.
     The harness reports those at startup; a test asks here rather than
-    driving a hook that cannot fire. Windows only; on other platforms
-    nothing defines this.
+    driving a hook that cannot fire.
 
-    @param which The entry point to ask about. The four reached through
-        a pointer the OS hands out (`AcceptEx`, `ConnectEx`,
-        `NtSetInformationFile`, `NtFlushBuffersFileEx`) answer for the
-        hook that substitutes that pointer.
+    On POSIX the answer comes from the census: `which` has a shadow on
+    this platform, and — in a shared build — the readback found the
+    loader binding the library's call to it. A symbol this platform
+    does not spell (`kevent` on Linux, `accept4` on Darwin) answers
+    false, which is what lets one portable test skip loudly instead of
+    asserting `fired()` on an arm that can never fire.
 
-    @return `true` if a hook for `which` is installed in some module.
+    @param which The entry point to ask about. On Windows the four
+        reached through a pointer the OS hands out (`AcceptEx`,
+        `ConnectEx`, `NtSetInformationFile`, `NtFlushBuffersFileEx`)
+        answer for the hook that substitutes that pointer;
+        `uring_sqe_full` is not a symbol and answers for the liburing
+        shadows it works through.
+
+    @return `true` if a hook for `which` is installed and reachable.
 */
 bool hook_is_live(sys which) noexcept;
 

@@ -105,12 +105,19 @@ int truncate_iov(iovec const* in, int n, std::size_t count, iovec* out) noexcept
 } // namespace
 
 cqe_fault_scope::cqe_fault_scope(int fd, int opcode, int res)
+    : cqe_fault_scope(fd, opcode, res, 0u)
+{
+}
+
+cqe_fault_scope::cqe_fault_scope(int fd, int opcode, int res,
+    unsigned flags_to_clear)
 {
     claim_completion_slot(tls_cqe,
         "cqe_fault_scope: a completion fault is already armed on this thread");
     tls_cqe.fd = fd;
     tls_cqe.opcode = opcode;
     tls_cqe.res = res;
+    tls_cqe.flags_clear = flags_to_clear;
 }
 
 cqe_fault_scope::~cqe_fault_scope()
@@ -620,9 +627,19 @@ struct census_entry
 {
     char const* name;
     void const* hook;
+    // The enumerator a test arms to reach this shadow, or count_ for a
+    // second spelling of a symbol that already has one.
+    sys id;
 };
 
-#define COROSIO_FAULT_CENSUS(name) { #name, reinterpret_cast<void const*>(&::name) }
+#define COROSIO_FAULT_CENSUS(name) \
+    { #name, reinterpret_cast<void const*>(&::name), sys::name }
+
+// A second spelling (the glibc fortify wrappers, the Darwin `$`
+// suffixes) shares the arm of the name it wraps, so it carries no
+// enumerator of its own.
+#define COROSIO_FAULT_CENSUS_ALIAS(name) \
+    { #name, reinterpret_cast<void const*>(&::name), sys::count_ }
 
 } // namespace
 
@@ -680,19 +697,21 @@ namespace {
     COROSIO_FAULT_CENSUS(epoll_create1), COROSIO_FAULT_CENSUS(epoll_ctl),
     COROSIO_FAULT_CENSUS(epoll_wait), COROSIO_FAULT_CENSUS(eventfd),
     COROSIO_FAULT_CENSUS(timerfd_create), COROSIO_FAULT_CENSUS(timerfd_settime),
-    COROSIO_FAULT_CENSUS(__read_chk), COROSIO_FAULT_CENSUS(__recv_chk),
-    COROSIO_FAULT_CENSUS(__recvfrom_chk), COROSIO_FAULT_CENSUS(__poll_chk),
-    COROSIO_FAULT_CENSUS(__pread64_chk),
-    COROSIO_FAULT_CENSUS(__open_2), COROSIO_FAULT_CENSUS(__gethostname_chk),
+    COROSIO_FAULT_CENSUS_ALIAS(__read_chk), COROSIO_FAULT_CENSUS_ALIAS(__recv_chk),
+    COROSIO_FAULT_CENSUS_ALIAS(__recvfrom_chk), COROSIO_FAULT_CENSUS_ALIAS(__poll_chk),
+    COROSIO_FAULT_CENSUS_ALIAS(__pread64_chk),
+    COROSIO_FAULT_CENSUS_ALIAS(__open_2), COROSIO_FAULT_CENSUS_ALIAS(__gethostname_chk),
 #endif
 #if defined(__APPLE__) || defined(__FreeBSD__)
     COROSIO_FAULT_CENSUS(writev), COROSIO_FAULT_CENSUS(kqueue),
     COROSIO_FAULT_CENSUS(kevent),
 #endif
 #if defined(__APPLE__)
-    { "select", reinterpret_cast<void const*>(&::corosio_fault_select) },
+    { "select", reinterpret_cast<void const*>(&::corosio_fault_select),
+        sys::select },
     { "select$DARWIN_EXTSN",
-        reinterpret_cast<void const*>(&::corosio_fault_select_extsn) },
+        reinterpret_cast<void const*>(&::corosio_fault_select_extsn),
+        sys::count_ },
 #endif
 #if BOOST_COROSIO_HAVE_LIBURING
     COROSIO_FAULT_CENSUS(io_uring_queue_init_params),
@@ -703,6 +722,13 @@ namespace {
     COROSIO_FAULT_CENSUS(io_uring_wait_cqe_timeout),
 #endif
 };
+
+constexpr std::size_t census_count = sizeof(census) / sizeof(census[0]);
+
+// What the readback below concluded, per census entry: whether a call
+// the library makes actually lands in the shadow. Written once during
+// static initialisation, read by hook_is_live.
+bool census_live[census_count];
 
 // Alias entries name a second spelling of a symbol the library may or
 // may not have been built to call: the glibc fortify wrappers and the
@@ -965,28 +991,41 @@ void interpose_corosio_dylib() noexcept
 // binding has to be installed here first.
 int const readback = []
 {
+    // A static build resolved the calls at link time, so every shadow
+    // this platform has is reached by construction.
+    for(auto& live : census_live)
+        live = true;
     if(!corosio_is_shared())
         return 0;
 #if defined(__APPLE__)
     interpose_corosio_dylib();
+    // It dies unless every non-alias name was rebound, so surviving it
+    // settles those; the aliases it skipped bind nothing.
+    for(std::size_t i = 0; i < census_count; ++i)
+        census_live[i] = !is_alias_entry(census[i].name);
 #else
     bool ok = true;
-    for(auto const& e : census)
+    for(std::size_t i = 0; i < census_count; ++i)
     {
+        auto const& e = census[i];
         void* bound = ::dlsym(RTLD_DEFAULT, e.name);
-        // The linker exports an executable symbol into .dynsym only
-        // when a linked .so references it; a mismatch here just means
-        // the library wasn't built to call this alias. A genuinely
-        // broken interposition (-Bsymbolic, -fno-plt) fails on the
-        // plain census names first, not here.
-        if(bound != e.hook && is_alias_entry(e.name))
+        census_live[i] = (bound == e.hook);
+        if(bound == e.hook)
             continue;
-        if(bound != e.hook)
-        {
-            std::fprintf(stderr, "fault harness: %s is bound to %p, hook is %p\n",
-                e.name, bound, e.hook);
-            ok = false;
-        }
+        // A null binding means this libc does not expose the name as a
+        // dynamic symbol at all: an old-glibc inline like `fstat` that
+        // redirects to `__fxstat`, so the library never reaches it
+        // through a PLT slot and the shadow is simply inapplicable. An
+        // alias is likewise a name the library was not built to call.
+        // Neither is a broken interposition, so leave the entry not live.
+        if(bound == nullptr || is_alias_entry(e.name))
+            continue;
+        // A non-null binding to something other than our hook is the real
+        // failure: the call resolved to the actual libc function,
+        // bypassing the shadow (-Bsymbolic, -fno-plt).
+        std::fprintf(stderr, "fault harness: %s is bound to %p, hook is %p\n",
+            e.name, bound, e.hook);
+        ok = false;
     }
     if(!ok)
         die("fault harness: shadows are not interposing libboost_corosio.so");
@@ -995,4 +1034,19 @@ int const readback = []
 }();
 
 } // namespace
+
+bool hook_is_live(sys which) noexcept
+{
+    // Not a symbol: it works by clamping the ring liburing's own
+    // shadows drive, so it lives exactly when they do.
+    if(which == sys::uring_sqe_full)
+        which = sys::io_uring_submit;
+    for(std::size_t i = 0; i < census_count; ++i)
+    {
+        if(census[i].id == which && census_live[i])
+            return true;
+    }
+    return false;
+}
+
 } // boost::corosio::test::fault

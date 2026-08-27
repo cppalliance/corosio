@@ -348,7 +348,14 @@ struct self_test
         expect(sys::fcntl, [&]{ return ::fcntl(fd, F_GETFL); });
         expect(sys::ioctl, [&]{ return ::ioctl(fd, FIONREAD, &one); });
         expect(sys::open, [&]{ return ::open("/dev/null", O_RDONLY); });
-        expect(sys::fstat, [&]{ return ::fstat(fd, &st); });
+        // fstat is an inline redirect to __fxstat on pre-2.33 glibc, so the
+        // "fstat" symbol has no shadow to arm there: the readback marks it
+        // not live and the call goes straight to libc. Expect not-live
+        // rather than asserting a fire that cannot happen.
+        if(hook_is_live(sys::fstat))
+            expect(sys::fstat, [&]{ return ::fstat(fd, &st); });
+        else
+            skip_dead_hook("fstat");
         expect(sys::lseek, [&]{ return (long)::lseek(fd, 0, SEEK_SET); });
         expect(sys::ftruncate, [&]{ return ::ftruncate(fd, 0); });
         expect(sys::fsync, [&]{ return ::fsync(fd); });
@@ -527,6 +534,94 @@ struct self_test
     }
 #endif
 
+    // `nth` arithmetic in the backend suites has to reach past calls
+    // the library makes on the way in. count() is what lets a test say
+    // how many there were instead of hard-coding the number.
+    void testCountTracksCalls()
+    {
+        fault_scope f(sys::socket, EMFILE, 3);
+        BOOST_TEST_EQ(f.count(), 0u);
+        int a = ::socket(AF_INET, SOCK_STREAM, 0);
+        int b = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST_EQ(f.count(), 2u);
+        BOOST_TEST(!f.fired());
+        BOOST_TEST_EQ(::socket(AF_INET, SOCK_STREAM, 0), -1);
+        BOOST_TEST_EQ(f.count(), 3u);
+        BOOST_TEST(f.fired());
+        // A spent arm stops counting: it no longer claims calls.
+        int c = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST_EQ(f.count(), 3u);
+        ::close(a);
+        ::close(b);
+        ::close(c);
+    }
+
+    // Every backend suite asserts fired() on the arms it sets. A symbol
+    // this platform has no shadow for would fail that assertion with
+    // nothing to say why, so a portable test asks first.
+    void testHookIsLiveAnswersPerPlatform()
+    {
+        BOOST_TEST(hook_is_live(sys::socket));
+        BOOST_TEST(hook_is_live(sys::getsockopt));
+        BOOST_TEST(hook_is_live(sys::select));
+        // No POSIX shadow spells a Win32 entry point.
+        BOOST_TEST(!hook_is_live(sys::WSASocketW));
+        BOOST_TEST(!hook_is_live(sys::CreateIoCompletionPort));
+#if defined(__linux__)
+        BOOST_TEST(hook_is_live(sys::epoll_ctl));
+        BOOST_TEST(hook_is_live(sys::accept4));
+        BOOST_TEST(!hook_is_live(sys::kevent));
+#endif
+#if defined(__APPLE__) || defined(__FreeBSD__)
+        BOOST_TEST(hook_is_live(sys::kevent));
+        BOOST_TEST(!hook_is_live(sys::epoll_ctl));
+#endif
+#if BOOST_COROSIO_HAVE_LIBURING
+        BOOST_TEST(hook_is_live(sys::io_uring_submit));
+        BOOST_TEST(hook_is_live(sys::uring_sqe_full));
+#else
+        BOOST_TEST(!hook_is_live(sys::uring_sqe_full));
+#endif
+    }
+
+    // The select backend rejects descriptors it cannot represent, and a
+    // descriptor number is not something a caller picks: the tests that
+    // reach those arms need these two seams to work.
+    void testHighFdHelpers()
+    {
+        int const fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(fd >= 0);
+        int const hi = dup_above_fd_setsize(fd);
+        if(hi < 0)
+        {
+            skip_no_high_fd("the high-descriptor helper self-test");
+            ::close(fd);
+            return;
+        }
+        BOOST_TEST(hi >= FD_SETSIZE);
+        BOOST_TEST_EQ(::fcntl(hi, F_GETFD) == -1, false);
+        ::close(hi);
+        ::close(fd);
+
+        {
+            fd_wall wall;
+            if(!wall.ok())
+            {
+                skip_no_high_fd("the descriptor-wall self-test");
+                return;
+            }
+            int const walled = ::socket(AF_INET, SOCK_STREAM, 0);
+            BOOST_TEST(walled >= FD_SETSIZE);
+            ::close(walled);
+        }
+        // The wall releases the numbers it held, or every later test
+        // would run against a table it did not ask for.
+        int const freed = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(freed >= 0);
+        BOOST_TEST(freed < FD_SETSIZE);
+        ::close(freed);
+    }
+
 #if BOOST_COROSIO_HAVE_LIBURING
     void testUringSubmitFails()
     {
@@ -583,6 +678,38 @@ struct self_test
         ::close(sv[1]);
         io_uring_queue_exit(&ring);
     }
+
+    // The multishot re-arm paths key off IORING_CQE_F_MORE, which only
+    // the kernel clears. Rewriting `res` alone cannot reach them.
+    void testCqeFlagsCleared()
+    {
+        io_uring ring;
+        io_uring_params p{};
+        BOOST_TEST_EQ(io_uring_queue_init_params(4, &ring, &p), 0);
+        int sv[2];
+        BOOST_TEST_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);
+        {
+            // fd -1: match on the opcode alone, the way a test reaches
+            // a poll armed on a descriptor the library never handed out.
+            cqe_fault_scope c(-1, IORING_OP_POLL_ADD, POLLIN,
+                IORING_CQE_F_MORE);
+            auto* sqe = io_uring_get_sqe(&ring);
+            io_uring_prep_poll_multishot(sqe, sv[1], POLLIN);
+            io_uring_sqe_set_data64(sqe, 7);
+            BOOST_TEST_EQ(io_uring_submit(&ring), 1);
+            BOOST_TEST_EQ(::write(sv[0], "x", 1), 1);
+            io_uring_cqe* cqe = nullptr;
+            BOOST_TEST_EQ(
+                io_uring_wait_cqe_timeout(&ring, &cqe, nullptr), 0);
+            BOOST_TEST(c.fired());
+            BOOST_TEST_EQ(cqe->user_data, 7u);
+            BOOST_TEST_EQ(cqe->flags & IORING_CQE_F_MORE, 0u);
+            io_uring_cqe_seen(&ring, cqe);
+        }
+        ::close(sv[0]);
+        ::close(sv[1]);
+        io_uring_queue_exit(&ring);
+    }
 #endif
 
     void run()
@@ -605,6 +732,9 @@ struct self_test
         testOnlyMatchingSymbolFires();
         testEveryCensusSymbolFails();
         testReturningTruncatesAndForwards();
+        testCountTracksCalls();
+        testHookIsLiveAnswersPerPlatform();
+        testHighFdHelpers();
 #if defined(__APPLE__)
         testDarwinSelectAliasReachesHook();
 #endif
@@ -615,6 +745,7 @@ struct self_test
         testUringSubmitFails();
         testUringSqeFull();
         testCqeRewrite();
+        testCqeFlagsCleared();
 #endif
     }
 };
@@ -762,6 +893,31 @@ struct self_test
         SOCKET a = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         BOOST_TEST(a != INVALID_SOCKET);
         std::ignore = ::closesocket(a);
+    }
+
+    // `nth` arithmetic in the backend suites has to reach past calls
+    // the library makes on the way in. count() is what lets a test say
+    // how many there were instead of hard-coding the number. The arm
+    // model is shared with the POSIX harness, so what this pins down
+    // is that the Windows hooks feed it.
+    void testCountTracksCalls()
+    {
+        fault_scope f(sys::socket, WSAEMFILE, 3);
+        BOOST_TEST_EQ(f.count(), 0u);
+        SOCKET a = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        SOCKET b = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        BOOST_TEST_EQ(f.count(), 2u);
+        BOOST_TEST(!f.fired());
+        BOOST_TEST(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) ==
+            INVALID_SOCKET);
+        BOOST_TEST_EQ(f.count(), 3u);
+        BOOST_TEST(f.fired());
+        // A spent arm stops counting: it no longer claims calls.
+        SOCKET c = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        BOOST_TEST_EQ(f.count(), 3u);
+        std::ignore = ::closesocket(a);
+        std::ignore = ::closesocket(b);
+        std::ignore = ::closesocket(c);
     }
 
     void testFiredScopeStaysFired()
@@ -1319,6 +1475,7 @@ struct self_test
         winsock_guard guard;
         testFiresOnNth();
         testDisarmsOnScopeExit();
+        testCountTracksCalls();
         testFiredScopeStaysFired();
         testOpenFdsProbeWorks();
         testTransparentWhenUnarmed();

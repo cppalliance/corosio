@@ -88,9 +88,12 @@ void* real_symbol(char const* name) noexcept;
 // pair an SQ-full fault with a completion rewrite.
 struct cqe_slot
 {
+    // -1 matches any fd: the multishot polls the harness has to reach
+    // are armed on descriptors the library never hands out.
     int fd = -1;
     int opcode = -1;
     int res = 0;
+    unsigned flags_clear = 0;
     unsigned long long user_data = 0;
     bool have_user_data = false;
     bool fired = false;

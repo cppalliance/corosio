@@ -50,13 +50,17 @@ project boost/corosio/test/unit/fault
 # Darwin and FreeBSD drop only epoll_faults.cpp and uring_faults.cpp,
 # which have no counterpart there.
 # fault_arm.cpp holds the arm model every hook translation unit shares.
+# The two signal sources and iocp_dissociate_faults.cpp are separate
+# because the state they fault is created once per process: b2 builds
+# one executable per source, which is the isolation they need.
 local hooks = fault_arm.cpp fault_posix.cpp ;
 local tests ;
 local uring-hook ;
 if [ os.name ] = NT
 {
     hooks = fault_arm.cpp fault_win.cpp ;
-    tests = self_test.cpp win_faults.cpp iocp_faults.cpp ;
+    tests = self_test.cpp win_faults.cpp iocp_faults.cpp
+        iocp_dissociate_faults.cpp ;
 }
 else if [ os.name ] = MACOSX
 {

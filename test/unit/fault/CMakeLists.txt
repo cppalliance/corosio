@@ -43,7 +43,8 @@ if(WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/fault_win.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/self_test.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/win_faults.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/iocp_faults.cpp)
+        ${CMAKE_CURRENT_SOURCE_DIR}/iocp_faults.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/iocp_dissociate_faults.cpp)
 else()
     list(FILTER FAULT_FILES EXCLUDE REGEX "fault_win\\.cpp$")
     if(NOT BOOST_COROSIO_HAVE_LIBURING)

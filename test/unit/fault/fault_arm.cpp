@@ -216,4 +216,9 @@ bool fault_scope::fired() const noexcept
     return global_ ? global_storage.fired : tls_arms.arms[idx_].fired;
 }
 
+unsigned fault_scope::count() const noexcept
+{
+    return global_ ? global_storage.seen : tls_arms.arms[idx_].seen;
+}
+
 } // boost::corosio::test::fault

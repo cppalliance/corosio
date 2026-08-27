@@ -204,14 +204,23 @@ struct posix_common_faults
         // opening for append; the ring backend leaves that to O_APPEND.
         if constexpr(!ring_files)
         {
-            int before = open_fds();
-            fault_scope f(sys::fstat, EIO);
-            auto ec = sf.open(path, file_base::write_only |
-                file_base::create | file_base::append);
-            BOOST_TEST(f.fired());
-            BOOST_TEST(ec == std::errc::io_error);
-            BOOST_TEST(!sf.is_open());
-            BOOST_TEST_EQ(open_fds(), before);
+            // fstat is unshadowed on pre-2.33 glibc (an inline redirect to
+            // __fxstat), so the append-offset seed cannot be faulted there.
+            if(!hook_is_live(sys::fstat))
+            {
+                skip_dead_hook("fstat");
+            }
+            else
+            {
+                int before = open_fds();
+                fault_scope f(sys::fstat, EIO);
+                auto ec = sf.open(path, file_base::write_only |
+                    file_base::create | file_base::append);
+                BOOST_TEST(f.fired());
+                BOOST_TEST(ec == std::errc::io_error);
+                BOOST_TEST(!sf.is_open());
+                BOOST_TEST_EQ(open_fds(), before);
+            }
         }
         ::unlink(path.c_str());
     }
@@ -222,6 +231,11 @@ struct posix_common_faults
         auto path = temp_path("sf2");
         stream_file sf(ioc);
         BOOST_TEST(!sf.open(path, file_base::read_write | file_base::create));
+        if(!hook_is_live(sys::fstat))
+        {
+            skip_dead_hook("fstat");
+        }
+        else
         {
             fault_scope f(sys::fstat, EIO);
             expect_system_error(
@@ -245,11 +259,18 @@ struct posix_common_faults
         }
         {
             constexpr sys seek_end_call = ring_files ? sys::lseek : sys::fstat;
-            fault_scope f(seek_end_call, EIO);
-            auto [ec, pos] = sf.seek(0, file_base::seek_end);
-            BOOST_TEST(f.fired());
-            BOOST_TEST(ec == std::errc::io_error);
-            BOOST_TEST_EQ(pos, 0u);
+            if(!hook_is_live(seek_end_call))
+            {
+                skip_dead_hook(ring_files ? "lseek" : "fstat");
+            }
+            else
+            {
+                fault_scope f(seek_end_call, EIO);
+                auto [ec, pos] = sf.seek(0, file_base::seek_end);
+                BOOST_TEST(f.fired());
+                BOOST_TEST(ec == std::errc::io_error);
+                BOOST_TEST_EQ(pos, 0u);
+            }
         }
         sf.close();
         ::unlink(path.c_str());
@@ -331,6 +352,11 @@ struct posix_common_faults
             BOOST_TEST(f.fired());
         }
         BOOST_TEST(!rf.open(path, file_base::read_write | file_base::create));
+        if(!hook_is_live(sys::fstat))
+        {
+            skip_dead_hook("fstat");
+        }
+        else
         {
             fault_scope f(sys::fstat, EIO);
             expect_system_error(

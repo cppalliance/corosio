@@ -24,6 +24,7 @@
 #include <cstring>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -37,6 +38,8 @@
 #else
 #include <dirent.h>
 #include <fcntl.h>
+#include <sys/resource.h>
+#include <sys/select.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -250,6 +253,109 @@ inline void skip_dead_hook(char const* name)
         "fault harness: %s not imported by this executable; skipping the "
         "test that arms it\n", name);
 }
+
+#if !defined(_WIN32)
+
+// Raise the soft descriptor limit to `want` if it is lower, so a
+// descriptor numbered at or above FD_SETSIZE can exist at all. The
+// raise is not undone: the descriptors it permits outlive the call
+// that asked for it, and lowering the limit under them is what would
+// be surprising.
+inline bool raise_fd_limit(rlim_t want)
+{
+    rlimit rl{};
+    if(::getrlimit(RLIMIT_NOFILE, &rl) != 0)
+        return false;
+    if(rl.rlim_cur >= want)
+        return true;
+    if(rl.rlim_max != RLIM_INFINITY && rl.rlim_max < want)
+        return false;
+    rl.rlim_cur = want;
+    return ::setrlimit(RLIMIT_NOFILE, &rl) == 0;
+}
+
+// Report a descriptor table this process is not allowed to grow. Reads
+// like skip_dead_hook: the run had a reason not to take the coverage,
+// and the log has to say so rather than pass silently.
+inline void skip_no_high_fd(char const* what)
+{
+    std::fprintf(stderr,
+        "fault harness: this process cannot hold a descriptor at or above "
+        "FD_SETSIZE; skipping %s\n", what);
+}
+
+// Duplicate `fd` onto a descriptor number above FD_SETSIZE. Returns -1
+// when the limit forbids it, which the caller reports through
+// skip_no_high_fd. The select backend rejects such a descriptor rather
+// than letting FD_SET clobber unrelated memory, and that rejection is
+// what the assign tests are after.
+inline int dup_above_fd_setsize(int fd)
+{
+    constexpr int target = FD_SETSIZE + 8;
+    if(!raise_fd_limit(static_cast<rlim_t>(target) + 8))
+        return -1;
+    if(::dup2(fd, target) != target)
+        return -1;
+    return target;
+}
+
+/* Hold every free descriptor number below FD_SETSIZE.
+
+   While one of these is alive the kernel has no low number left to
+   hand out, so the next socket, pipe or accepted connection lands at
+   or above FD_SETSIZE. That is the only way to watch the select
+   backend reject a descriptor it cannot represent, since a descriptor
+   number is not something a caller chooses.
+
+   Construct it after the io_context: the select scheduler's own
+   self-pipe has to be representable too.
+*/
+class fd_wall
+{
+public:
+    ~fd_wall()
+    {
+        for(auto it = held_.rbegin(); it != held_.rend(); ++it)
+            ::close(*it);
+    }
+
+    fd_wall()
+    {
+        if(!raise_fd_limit(FD_SETSIZE + 64))
+            return;
+        // /dev/null rather than a dup of 0: a test runner may hand the
+        // process a closed or non-duplicable stdin.
+        int const seed = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+        if(seed < 0)
+            return;
+        held_.push_back(seed);
+        for(;;)
+        {
+            int const fd = ::fcntl(seed, F_DUPFD_CLOEXEC, 0);
+            if(fd < 0)
+                return;
+            held_.push_back(fd);
+            if(fd >= FD_SETSIZE - 1)
+                break;
+        }
+        raised_ = true;
+    }
+
+    /// Return true if the next descriptor the process opens lands above.
+    bool ok() const noexcept
+    {
+        return raised_;
+    }
+
+    fd_wall(fd_wall const&) = delete;
+    fd_wall& operator=(fd_wall const&) = delete;
+
+private:
+    std::vector<int> held_;
+    bool raised_ = false;
+};
+
+#endif
 
 // BOOST_TEST_THROWS accepts any std::system_error, which would pass
 // even if the library reported an error the fault never injected.
