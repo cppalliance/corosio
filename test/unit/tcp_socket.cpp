@@ -35,6 +35,7 @@
 #include <stdexcept>
 #include <system_error>
 #include <tuple>
+#include <type_traits>
 
 #if BOOST_COROSIO_POSIX
 #include <unistd.h> // getpid()
@@ -893,6 +894,94 @@ struct tcp_socket_test
 
         s1.close();
         s2.close();
+    }
+
+    // An error wait must not cost the context its readiness
+    // machinery. What a platform makes of the reset itself differs --
+    // select reports no exceptional condition for one -- but a wait
+    // registered afterwards has to be answered either way.
+    void testWaitForErrorThenWait()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        // The default pair lingers zero, so close() sends RST and
+        // leaves an error condition behind on the survivor.
+        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s3, s4] = test::make_socket_pair(ioc);
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await s1.wait(wait_type::error);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        auto closer = [&]() -> capy::task<> {
+            s2.close();
+            // Bound the wait: a backend that does not report a reset
+            // as an error condition would park it for good. Stepped,
+            // so a backend that reports it pays one step and not the
+            // whole bound.
+            for(int i = 0; i < 20 && !wait_done; ++i)
+            {
+                std::ignore = co_await corosio::delay(
+                    std::chrono::milliseconds(10));
+            }
+            if(!wait_done)
+                s1.cancel();
+        };
+
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(closer());
+        ioc.run();
+        BOOST_TEST(wait_done);
+#if BOOST_COROSIO_HAS_SELECT
+        // select's exceptional set carries out-of-band data and not a
+        // reset, so on that backend the bound above is what ends the
+        // wait and there is nothing to insist on.
+        constexpr bool is_select = std::is_same_v<
+            std::remove_const_t<decltype(Backend)>, select_t>;
+#else
+        constexpr bool is_select = false;
+#endif
+#if BOOST_COROSIO_HAS_IO_URING
+        constexpr bool is_uring = std::is_same_v<
+            std::remove_const_t<decltype(Backend)>, io_uring_t>;
+#else
+        constexpr bool is_uring = false;
+#endif
+        if constexpr (!is_select)
+        {
+            // Never the cancel: that would say the reset reached
+            // nothing and the bound is what ended the wait.
+            BOOST_TEST(wait_ec != capy::cond::canceled);
+            // Whether the completion also names the error is the
+            // backend's own: the reactors read it out of SO_ERROR and
+            // IOCP substitutes an abort where that reads zero, while
+            // io_uring reports the poll's readiness with no error.
+            if constexpr (!is_uring)
+                BOOST_TEST(wait_ec);
+        }
+
+        // The wait above is what the readiness machinery had to
+        // survive; this one is what says it did.
+        ioc.restart();
+        std::error_code write_ec;
+        bool write_done = false;
+        auto writer = [&]() -> capy::task<> {
+            auto [ec] = co_await s3.wait(wait_type::write);
+            write_ec   = ec;
+            write_done = true;
+        };
+        capy::run_async(ex)(writer());
+        ioc.run();
+        BOOST_TEST(write_done);
+        BOOST_TEST(!write_ec);
+
+        s1.close();
+        s3.close();
+        s4.close();
     }
 
     // Composed Operations
@@ -1846,6 +1935,7 @@ struct tcp_socket_test
         testCancelRead();
         testCloseWhileReading();
         testStopTokenCancellation();
+        testWaitForErrorThenWait();
 
         // Socket options
         testNoDelay();

@@ -69,11 +69,28 @@ namespace boost::corosio::detail {
        op from the table and posts a completion; invoke_handler sees
        op.cancelled==true and yields capy::cond::canceled.
 
+    A poll the provider refuses on account of one descriptor answers
+    that descriptor's op with the refusal and leaves the rest of the
+    table polling. Such an error reaches the caller only where nothing
+    flagged the op first: close() and cancel() set the cancelled flag
+    before the handle goes, and a flagged op yields canceled whatever
+    the completion carries.
+
+    A refusal none of the entries accounts for is the end of the
+    reactor: the error is latched, the ops it still holds are completed
+    with it, and every later register_wait is completed with it too,
+    since nothing would drain an op parked after that point. Both
+    answers name the reason waits can no longer be served; canceled is
+    reserved for ops close() or cancel() flagged, and for the ops a
+    stop() drain finds parked.
+
     The constructor builds the wakeup channel and throws if it cannot:
     a reactor that cannot be woken can never report readiness, so
     there is no reactor worth handing back. The polling thread is a
     separate cost, paid by the first register_wait, so a context that
-    never waits never carries one.
+    never waits never carries one. A thread the system refuses costs
+    only the wait that asked for it: that wait completes with
+    `resource_unavailable_try_again` and the next one tries again.
 
     Thread-safe: register_wait, cancel_wait, and stop may be called
     from any thread.
@@ -118,6 +135,7 @@ private:
     };
 
     void run();
+    bool drop_refused_entries();
     DWORD queue_register(entry const& e);
     void wake_self() noexcept;
     DWORD make_wakeup_pair() noexcept;
@@ -125,7 +143,7 @@ private:
 
     // A failed call that left a zero last error would answer "no
     // error" and put the reactor straight back on the silent path.
-    static DWORD wakeup_error() noexcept
+    static DWORD last_error() noexcept
     {
         DWORD const err = ::WSAGetLastError();
         return err != 0 ? err : static_cast<DWORD>(WSAEINVAL);
@@ -137,7 +155,13 @@ private:
         {
         case wait_type::read:  return POLLRDNORM;
         case wait_type::write: return POLLWRNORM;
-        default:               return POLLPRI;
+        // The Microsoft provider does not implement POLLPRI and
+        // refuses the whole call when it is asked for, which would
+        // take every other registration in the set with it. The band
+        // it does implement carries the same out-of-band meaning, and
+        // the error conditions an error wait is really after arrive in
+        // revents whether or not they were asked for.
+        default:               return POLLRDBAND;
         }
     }
 
@@ -151,7 +175,7 @@ private:
         case wait_type::write:
             return (revents & (POLLWRNORM | POLLWRBAND | err_bits)) != 0;
         default:
-            return (revents & (POLLPRI | err_bits)) != 0;
+            return (revents & (POLLRDBAND | err_bits)) != 0;
         }
     }
 
@@ -169,13 +193,15 @@ private:
     std::atomic<bool> stop_{false};
     std::atomic<bool> wake_pending_{false};
 
-    // Set by the polling thread on its way out, guarded by mutex_.
-    // stop() is the ordinary way the thread leaves and has stop_ to
-    // announce it; this covers the thread leaving on its own after a
-    // WSAPoll error, which stop_ must not be used for -- stop() reads
-    // it as "already stopped" and would skip the join that keeps the
-    // thread from being destroyed joinable.
-    bool dead_ = false;
+    // What the exit told the ops it was still holding, kept so a later
+    // register_wait can be told the same thing instead of inventing a
+    // cancellation nobody asked for. Non-zero is also what says the
+    // polling thread left on its own after a WSAPoll error: stop_ must
+    // not be used for that exit -- stop() reads it as "already
+    // stopped" and would skip the join that keeps the thread from
+    // being destroyed joinable. Nothing latches a zero here, because
+    // a failed call that left a zero last error is substituted for.
+    DWORD dead_err_ = 0;
 
     std::vector<entry> registered_; // reactor-thread-only
 
@@ -215,7 +241,7 @@ win_wait_reactor::make_wakeup_pair() noexcept
     // anything: closesocket() overwrites it.
     SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listener == INVALID_SOCKET)
-        return wakeup_error();
+        return last_error();
 
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
@@ -229,7 +255,7 @@ win_wait_reactor::make_wakeup_pair() noexcept
         ::getsockname(listener, reinterpret_cast<sockaddr*>(&addr), &len) ==
             SOCKET_ERROR)
     {
-        DWORD const err = wakeup_error();
+        DWORD const err = last_error();
         ::closesocket(listener);
         return err;
     }
@@ -237,7 +263,7 @@ win_wait_reactor::make_wakeup_pair() noexcept
     wakeup_write_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (wakeup_write_ == INVALID_SOCKET)
     {
-        DWORD const err = wakeup_error();
+        DWORD const err = last_error();
         ::closesocket(listener);
         return err;
     }
@@ -246,7 +272,7 @@ win_wait_reactor::make_wakeup_pair() noexcept
             wakeup_write_, reinterpret_cast<sockaddr*>(&addr), len) ==
         SOCKET_ERROR)
     {
-        DWORD const err = wakeup_error();
+        DWORD const err = last_error();
         ::closesocket(wakeup_write_);
         wakeup_write_ = INVALID_SOCKET;
         ::closesocket(listener);
@@ -256,7 +282,7 @@ win_wait_reactor::make_wakeup_pair() noexcept
     wakeup_read_ = ::accept(listener, nullptr, nullptr);
     if (wakeup_read_ == INVALID_SOCKET)
     {
-        DWORD const err = wakeup_error();
+        DWORD const err = last_error();
         ::closesocket(listener);
         ::closesocket(wakeup_write_);
         wakeup_write_ = INVALID_SOCKET;
@@ -270,7 +296,7 @@ win_wait_reactor::make_wakeup_pair() noexcept
     u_long non_blocking = 1;
     if (::ioctlsocket(wakeup_read_, FIONBIO, &non_blocking) == SOCKET_ERROR)
     {
-        DWORD const err = wakeup_error();
+        DWORD const err = last_error();
         close_wakeup_pair();
         return err;
     }
@@ -331,9 +357,9 @@ win_wait_reactor::register_wait(
 
     if (DWORD const err = queue_register(entry{fd, w, op}); err != 0)
     {
-        // The reactor is stopped, or its polling thread has died, so
-        // nothing would ever drain a parked op. Report the abort its
-        // own shutdown drain gives the ops it was still holding.
+        // Nothing would ever drain a parked op, and the refusal knows
+        // why: the abort a stop drains with, the error the polling
+        // thread died of, or the system declining a thread.
         sched_.on_completion(op, err, 0);
         return;
     }
@@ -351,11 +377,16 @@ win_wait_reactor::queue_register(entry const& e)
     // which ends the process, and an op queued after it would have no
     // drainer. Queueing under the flag instead leaves the op for the
     // drain run() performs on its way out.
-    // dead_ says the same thing for the other exit: a thread that left
-    // on a WSAPoll error drained what it held and will not poll again,
-    // so a register queued after it would wait on nobody.
-    if (stop_.load(std::memory_order_acquire) || dead_)
+    // dead_err_ says the same thing for the other exit: a thread that
+    // left on a WSAPoll error drained what it held and will not poll
+    // again, so a register queued after it would wait on nobody. It
+    // answers with what killed it, so the caller learns why its waits
+    // stopped being served instead of hearing that something cancelled
+    // them.
+    if (stop_.load(std::memory_order_acquire))
         return ERROR_OPERATION_ABORTED;
+    if (dead_err_)
+        return dead_err_;
 
     // A polling thread costs a thread per context, and a context that
     // never waits never pays for one; the first wait is what starts it.
@@ -389,7 +420,7 @@ win_wait_reactor::cancel_wait(overlapped_op* op)
         // has nothing to cancel either -- the drain those exits run
         // already answered whatever was parked, and a register that
         // arrived after them was refused at its caller.
-        if (stop_.load(std::memory_order_acquire) || dead_)
+        if (stop_.load(std::memory_order_acquire) || dead_err_)
             return;
         pending_cancel_.push_back(op);
     }
@@ -415,10 +446,41 @@ win_wait_reactor::stop()
         t.join();
 }
 
+inline bool
+win_wait_reactor::drop_refused_entries()
+{
+    // A descriptor the provider no longer recognises either comes back
+    // POLLNVAL on its own entry, which the revents walk already
+    // answers, or refuses the whole call and reaches here. Asking
+    // about each entry alone covers both without depending on which
+    // one this provider does. A socket closed under a parked wait is
+    // the ordinary way to get here: the reactor is told to drop the
+    // entry, but the handle can go before that ask is read.
+    bool dropped = false;
+    for (std::size_t i = registered_.size(); i > 0; --i)
+    {
+        auto const& e = registered_[i - 1];
+        WSAPOLLFD pfd{e.fd, events_for_wait(e.w), 0};
+        if (::WSAPoll(&pfd, 1, 0) != SOCKET_ERROR)
+            continue;
+
+        sched_.on_completion(e.op, last_error(), 0);
+        registered_.erase(registered_.begin() + (i - 1));
+        dropped = true;
+    }
+    return dropped;
+}
+
 inline void
 win_wait_reactor::run()
 {
     std::vector<WSAPOLLFD> pollfds;
+
+    // What the ops still parked here are told on the way out, and what
+    // every later register_wait is told too. Ending on a poll the
+    // provider refused is not a cancellation, and an op that reports
+    // one hides the reason its wait could not be kept.
+    DWORD drain_err = ERROR_OPERATION_ABORTED;
 
     while (!stop_.load(std::memory_order_acquire))
     {
@@ -480,7 +542,19 @@ win_wait_reactor::run()
             static_cast<ULONG>(pollfds.size()),
             -1 /* infinite */);
         if (n == SOCKET_ERROR)
-            break;
+        {
+            // A refusal one entry accounts for costs that entry its
+            // wait and nothing else; the rest of the set keeps being
+            // polled, and a later register still finds a live reactor.
+            // Only a failure no entry explains ends the loop.
+            DWORD const err = last_error();
+            if (registered_.empty() || !drop_refused_entries())
+            {
+                drain_err = err;
+                break;
+            }
+            continue;
+        }
 
         // Drain the wakeup socket so it stops reporting readable.
         if (pollfds[0].revents != 0)
@@ -532,24 +606,25 @@ win_wait_reactor::run()
         }
     }
 
-    // Drain remaining ops as cancelled on shutdown. This must cover
-    // both the active set and anything still queued by user threads
-    // that hasn't been moved into registered_ yet, otherwise those
-    // ops leak work_started credit and stall scheduler shutdown.
+    // Drain remaining ops on the way out. This must cover both the
+    // active set and anything still queued by user threads that hasn't
+    // been moved into registered_ yet, otherwise those ops leak
+    // work_started credit and stall scheduler shutdown.
     {
         std::lock_guard lock(mutex_);
         // Closing the door and taking what is behind it in one critical
         // section is what leaves no register in between: one that got
         // in is drained here, one that arrives after is refused by
-        // queue_register and completes as aborted at its caller.
-        dead_ = true;
+        // queue_register and completes with the same code at its
+        // caller.
+        dead_err_ = drain_err;
         for (auto& e : pending_register_)
             registered_.push_back(e);
         pending_register_.clear();
         pending_cancel_.clear();
     }
     for (auto& e : registered_)
-        sched_.on_completion(e.op, ERROR_OPERATION_ABORTED, 0);
+        sched_.on_completion(e.op, drain_err, 0);
     registered_.clear();
 }
 

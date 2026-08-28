@@ -97,13 +97,15 @@ capy::task<> stop_guard(io_context& ioc, bool& expired)
 // Wait until the provider reports the error condition on `s`, and say
 // whether it ever did. The wait reactor keys off the same bits, so a
 // round that never carried them is a premise the caller did not have
-// rather than a failure of the code under test.
-bool wait_for_poll_error(tcp_socket& s)
+// rather than a failure of the code under test. `events` is what the
+// reactor would have asked for, since whether the error bits come back
+// at all is the provider's answer to that question and not to another.
+bool wait_for_poll_error(tcp_socket& s, SHORT events)
 {
     constexpr SHORT err_bits = POLLERR | POLLHUP | POLLNVAL;
     WSAPOLLFD pfd{};
     pfd.fd     = static_cast<SOCKET>(s.native_handle());
-    pfd.events = POLLWRNORM;
+    pfd.events = events;
     for(int i = 0; i < 200; ++i)
     {
         pfd.revents = 0;
@@ -111,6 +113,25 @@ bool wait_for_poll_error(tcp_socket& s)
             return true;
     }
     return false;
+}
+
+// Say what the provider makes of `s` for each mask an error wait
+// could register with. Only reached where the mask the reactor uses
+// carried no error condition, so a round that has to choose another
+// one is not blind.
+void report_poll_masks(tcp_socket& s)
+{
+    SHORT const masks[] = {0, POLLRDNORM, POLLWRNORM, POLLRDBAND};
+    for(SHORT m : masks)
+    {
+        WSAPOLLFD pfd{static_cast<SOCKET>(s.native_handle()), m, 0};
+        ::WSASetLastError(0);
+        int const n = ::WSAPoll(&pfd, 1, 0);
+        std::fprintf(stderr,
+            "fault harness: events %d -> %d, revents %d, error %d\n",
+            static_cast<int>(m), n, static_cast<int>(pfd.revents),
+            ::WSAGetLastError());
+    }
 }
 
 // Run into the reset, so the socket has a chance to record it where
@@ -1046,11 +1067,10 @@ struct iocp_faults
             s.close();
         }
         // And a context whose wakes all failed still answers a wait
-        // rather than leaving it outstanding. What ends this one it
-        // does not say: an error wait resolves as cancelled whether
-        // the cancel below reached the reactor or the reactor drained
-        // it on the way out, and nothing here is armed to tell those
-        // apart -- testErrorWaitOnThisProvider is what asks which.
+        // rather than leaving it outstanding. Nothing raises the error
+        // condition on a healthy pair, so the cancel below is the only
+        // thing that can end this wait: a reactor whose wakes were
+        // swallowed would leave it parked.
         io_context ioc(iocp);
         auto pair = make_socket_pair(ioc);
         auto& s1 = pair.first;
@@ -1114,15 +1134,18 @@ struct iocp_faults
         ioc.run();
         BOOST_TEST(!expired);
         BOOST_TEST(arm.has_value() && arm->fired());
-        BOOST_TEST(parked_ec == capy::error::canceled);
+        // No entry of the poll set accounts for WSAENOBUFS, so the
+        // reactor leaves for good -- and the op it was holding is told
+        // what happened rather than that someone cancelled it.
+        BOOST_TEST(parked_ec == win_err(WSAENOBUFS));
         arm.reset();
 
         // The polling thread left for good and nothing restarts it, so
         // a wait registered afterwards has nobody to report its
         // readiness. Refusing it is the only answer that is not a park
-        // forever, and it is the same abort the drain on the way out
-        // gave the ops the reactor was holding. io_context::stop() does
-        // not reach the reactor, so this is the reactor's own state
+        // forever, and the refusal names what killed the thread rather
+        // than claiming a cancellation. io_context::stop() does not
+        // reach the reactor, so this is the reactor's own state
         // answering and not a stopped scheduler.
         ioc.restart();
         std::error_code late_ec;
@@ -1137,7 +1160,7 @@ struct iocp_faults
         capy::run_async(ioc.get_executor())(stop_guard(ioc, late_expired));
         ioc.run();
         BOOST_TEST(!late_expired);
-        BOOST_TEST(late_ec == capy::error::canceled);
+        BOOST_TEST(late_ec == win_err(WSAENOBUFS));
         s1.close();
         s2.close();
     }
@@ -1469,10 +1492,10 @@ struct iocp_faults
        the condition in hand and nothing here depends on a round
        landing between two coroutines.
 
-       A write wait rather than an error wait, and the second half
-       reports no error at all rather than WSAECONNABORTED, because
-       `events_for_wait(wait_type::error)` asks WSAPoll for POLLPRI --
-       see the report for what this round found that costs.
+       A write wait, so the second half reports no error at all rather
+       than WSAECONNABORTED: the substitution the probe falls through
+       to is for error waits only, and this is the probe's own answer
+       that is under test.
     */
     void testWaitReactorErrorProbe()
     {
@@ -1490,7 +1513,7 @@ struct iocp_faults
                 // so this is a reset rather than an orderly shutdown
                 // and it leaves SO_ERROR set on the survivor.
                 s2.close();
-                premise = wait_for_poll_error(s1);
+                premise = wait_for_poll_error(s1, POLLWRNORM);
                 touch_after_reset(s1);
                 auto [ec] = co_await s1.wait(wait_type::write);
                 wec = ec;
@@ -1529,7 +1552,7 @@ struct iocp_faults
         auto body = [&]() -> capy::task<>
         {
             s2.close();
-            premise = wait_for_poll_error(s1);
+            premise = wait_for_poll_error(s1, POLLWRNORM);
             // The probe runs on the reactor's polling thread, so the
             // arm has to be process-wide; nothing else calls
             // getsockopt while it is up.
@@ -1557,18 +1580,15 @@ struct iocp_faults
         s1.close();
     }
 
-    /* What this provider makes of an error wait.
+    /* An error wait is answered, and costs the context nothing.
 
-       events_for_wait asks WSAPoll for POLLPRI on wait_type::error
-       (win_wait_reactor.hpp:133-141), and a poll the provider refuses
-       ends the reactor's loop for the whole context: it sets dead_ and
-       drains everything it holds as aborted (:471-472, :534, :541),
-       after which register_wait refuses the next comer (:333-340).
-       Which of those two worlds this runner is in is the provider's
-       answer and not the library's, so it is recorded rather than
-       asserted -- the branch a run took is legible in the coverage of
-       this test. What is asserted either way is that neither answer
-       leaves an operation outstanding.
+       events_for_wait used to ask WSAPoll for POLLPRI, which this
+       provider does not implement and refuses the whole call for: the
+       reactor left its loop, drained every op it held and refused
+       every later register, so one error wait disabled waiting on the
+       context for good. The bit it asks for now has to be one the
+       provider takes, and the error condition an error wait is after
+       arrives in revents either way.
     */
     void testErrorWaitOnThisProvider()
     {
@@ -1576,85 +1596,156 @@ struct iocp_faults
             // The provider on its own, with none of the library in it.
             io_context ioc(iocp);
             auto pair = make_socket_pair(ioc);
-            WSAPOLLFD pfd{};
-            pfd.fd     = static_cast<SOCKET>(pair.first.native_handle());
-            pfd.events = POLLPRI;
+            auto const fd =
+                static_cast<SOCKET>(pair.first.native_handle());
+            WSAPOLLFD pfd{fd, POLLRDBAND, 0};
             ::WSASetLastError(0);
             int const n   = ::WSAPoll(&pfd, 1, 0);
             int const err = ::WSAGetLastError();
             if(n == SOCKET_ERROR)
             {
+                // The other bit an error wait could register with,
+                // named here so a round that has to choose again is
+                // not blind.
+                WSAPOLLFD quiet{fd, 0, 0};
+                ::WSASetLastError(0);
+                int const qn = ::WSAPoll(&quiet, 1, 0);
                 std::fprintf(stderr,
-                    "fault harness: WSAPoll refuses POLLPRI with %d\n",
-                    err);
-                BOOST_TEST(err != 0);
+                    "fault harness: WSAPoll refuses POLLRDBAND with "
+                    "%d; asked for nothing it answers %d, revents %d, "
+                    "error %d\n",
+                    err, qn, static_cast<int>(quiet.revents),
+                    ::WSAGetLastError());
             }
-            else
-            {
-                std::fprintf(stderr,
-                    "fault harness: WSAPoll accepts POLLPRI, %d ready, "
-                    "revents %d\n", n, static_cast<int>(pfd.revents));
-                // Accepted or ignored, the bit must not cost a live
-                // socket its validity.
-                BOOST_TEST((pfd.revents & POLLNVAL) == 0);
-            }
+            BOOST_TEST(n != SOCKET_ERROR);
+            // Accepted or ignored, the bit must not cost a live socket
+            // its validity.
+            BOOST_TEST((pfd.revents & POLLNVAL) == 0);
             pair.first.close();
             pair.second.close();
         }
 
-        // And what registering one costs the context: a write wait on
-        // a healthy socket is answered by a live reactor and refused
-        // by a dead one.
+        // The contract: a reset answers the error wait, and a wait
+        // registered afterwards is answered too. Both pairs are built
+        // before the run, since make_socket_pair runs the context.
         io_context ioc(iocp);
-        auto pair = make_socket_pair(ioc);
+        auto pair    = make_socket_pair(ioc);
+        auto healthy = make_socket_pair(ioc);
         auto& s1 = pair.first;
         auto& s2 = pair.second;
         std::error_code eec, wec;
-        bool done_err = false;
-        bool done_w   = false;
-        bool expired  = false;
-        auto error_wait = [&]() -> capy::task<>
+        bool premise = false;
+        bool expired = false;
+        auto body = [&]() -> capy::task<>
         {
+            // Zero linger on both ends, so this is a reset and not an
+            // orderly shutdown.
+            s2.close();
+            premise = wait_for_poll_error(s1, POLLRDBAND);
+            if(!premise)
+            {
+                report_poll_masks(s1);
+                ioc.stop();
+                co_return;
+            }
+            auto [ec] = co_await s1.wait(wait_type::error);
+            eec = ec;
+            auto [wc] = co_await healthy.first.wait(wait_type::write);
+            wec = wc;
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(premise);
+        // The reset itself, or the substitution the reactor makes when
+        // SO_ERROR has nothing to add -- but never a cancellation,
+        // which nothing here cancelled.
+        BOOST_TEST(eec);
+        BOOST_TEST(eec != capy::error::canceled);
+        BOOST_TEST(!wec);
+        s1.close();
+        healthy.first.close();
+        healthy.second.close();
+    }
+
+    /* A descriptor the provider refuses costs its own wait and no
+       other.
+
+       WSAPoll validates the whole array before it polls any of it, so
+       one socket it no longer recognises refuses the call for every
+       registration in the set. close_socket asks the reactor to drop
+       the entry before it closes the handle, but the ask is read on
+       the reactor's next pass and the handle is gone before then, so
+       a poll carrying the dead descriptor is reachable in ordinary
+       use (win_tcp_socket_internal::close_socket says so).
+
+       Closed behind the library's back rather than through a
+       fault_scope: the reactor answers the refusal by asking about
+       each entry on its own, so the arm would have to fail the set
+       poll and that entry's own poll, and the harness arms one call
+       ordinal at a time.
+    */
+    void testWaitReactorEntryRefused()
+    {
+        io_context ioc(iocp);
+        // Both pairs exist before anything is closed, so no socket id
+        // freed below can come back as one of these.
+        auto pair    = make_socket_pair(ioc);
+        auto healthy = make_socket_pair(ioc);
+        auto& s1 = pair.first;
+        auto& s2 = pair.second;
+        std::error_code eec, wec, lec;
+        bool done_err  = false;
+        bool done_late = false;
+        bool expired   = false;
+        auto parked = [&]() -> capy::task<>
+        {
+            // Nothing raises the error condition on a healthy pair, so
+            // this wait stays parked while the handle under it goes.
             auto [ec] = co_await s1.wait(wait_type::error);
             eec      = ec;
             done_err = true;
-            if(done_w)
+            if(done_late)
                 ioc.stop();
         };
-        auto write_wait = [&]() -> capy::task<>
+        auto breaker = [&]() -> capy::task<>
         {
-            auto [ec] = co_await s2.wait(wait_type::write);
-            wec    = ec;
-            done_w = true;
-            // Nothing raises the error condition on s1, so a reactor
-            // still polling has to be told to let that wait go.
-            s1.cancel();
+            ::closesocket(static_cast<SOCKET>(s1.native_handle()));
+            // A register is what makes the reactor rebuild its poll
+            // set around the entry that is now gone.
+            auto [wc] = co_await healthy.first.wait(wait_type::write);
+            wec = wc;
+            // And one more afterwards: a reactor that survived the
+            // refusal still takes registrations.
+            auto [lc] = co_await healthy.second.wait(wait_type::write);
+            lec       = lc;
+            done_late = true;
             if(done_err)
                 ioc.stop();
         };
-        capy::run_async(ioc.get_executor())(error_wait());
-        capy::run_async(ioc.get_executor())(write_wait());
+        capy::run_async(ioc.get_executor())(parked());
+        capy::run_async(ioc.get_executor())(breaker());
         capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
         ioc.run();
         BOOST_TEST(!expired);
         BOOST_TEST(done_err);
-        BOOST_TEST(done_w);
-        BOOST_TEST(eec == capy::error::canceled);
-        if(wec == capy::error::canceled)
-        {
-            // Refused rather than answered: the reactor was already
-            // gone when this wait asked to register.
-            std::fprintf(stderr,
-                "fault harness: a write wait was refused after an error "
-                "wait had been registered\n");
-            BOOST_TEST(s2.is_open());
-        }
-        else
-        {
-            BOOST_TEST(!wec);
-        }
+        BOOST_TEST(done_late);
+        // Whether the provider refused the call or flagged the entry
+        // POLLNVAL, the wait on the dead descriptor is answered with
+        // an error of its own and not with the abort a drained reactor
+        // hands out.
+        BOOST_TEST(eec);
+        BOOST_TEST(eec != capy::error::canceled);
+        BOOST_TEST(!wec);
+        BOOST_TEST(!lec);
+        // s1's handle is already gone; this closes a socket id no
+        // later call of this test's own asked for.
         s1.close();
         s2.close();
+        healthy.first.close();
+        healthy.second.close();
     }
 
     /* A context whose extension-pointer bootstrap never ran.
@@ -1910,6 +2001,7 @@ struct iocp_faults
         testWaitReactorPollFails();
         testWaitReactorErrorProbe();
         testErrorWaitOnThisProvider();
+        testWaitReactorEntryRefused();
         testLocalSetupFails();
         testLocalConnectAcceptFails();
         testLocalIoFails();

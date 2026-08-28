@@ -212,6 +212,10 @@ second channel:
   `capy::cond::eof`, `capy::cond::canceled` (a stop token, not
   `errc::operation_canceled`), `capy::cond::timeout` (our deadline,
   not a kernel `ETIMEDOUT`).
+- A background thread that dies mid-flight owes one answer, not two:
+  the error that killed it, latched, both to the operations it was
+  holding and to the ones that arrive afterwards. `canceled` is a
+  stop token and belongs only to operations something cancelled.
 
 ## 8. Testing
 
