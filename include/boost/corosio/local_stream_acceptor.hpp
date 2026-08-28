@@ -65,18 +65,7 @@ enum class bind_option
     accept operations.
 
     @par Example
-    @code
-    io_context ioc;
-    local_stream_acceptor acc(ioc);
-    if (auto ec = acc.open())
-        co_return ec;
-    if (auto ec = acc.bind(local_endpoint("/tmp/my.sock"),
-                           bind_option::unlink_existing))
-        co_return ec;
-    if (auto ec = acc.listen())
-        co_return ec;
-    auto [aec, peer] = co_await acc.accept();
-    @endcode
+    @par !example bind_listen_accept
 */
 class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
 {

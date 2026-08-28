@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -27,22 +28,7 @@ namespace boost::corosio {
     with the machine's monotonic clock.
 
     @par Example
-    @code
-    // Observe wall-clock steps within one second
-    struct capped_traits
-    {
-        static std::chrono::system_clock::duration
-        to_wait_duration(std::chrono::system_clock::duration d)
-        {
-            return (std::min)(d,
-                std::chrono::system_clock::duration(
-                    std::chrono::seconds(1)));
-        }
-    };
-
-    auto [ec] = co_await delay<capped_traits>(
-        std::chrono::system_clock::now() + std::chrono::hours(1));
-    @endcode
+    @par !example capped_traits
 
     @tparam Clock The clock type whose durations are converted.
 

@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2026 Steve Gerbino
+# Copyright (c) 2026 Michael Vandeberg
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -16,13 +17,19 @@ on:
       - develop*
     paths:
       - 'doc/**'
+      - 'include/**'
+      - 'test/doc/reference/**'
       - '*.adoc'
       - 'README.adoc'
+      - '.github/workflows/docs.yml'
   pull_request:
     paths:
       - 'doc/**'
+      - 'include/**'
+      - 'test/doc/reference/**'
       - '*.adoc'
       - 'README.adoc'
+      - '.github/workflows/docs.yml'
 
 jobs:
   antora:
@@ -128,13 +135,41 @@ jobs:
           cd boost-root/libs/corosio
 
           cd doc
-          bash ./build_antora.sh
+          # Tee'd purely to keep the build log readable in the step output;
+          # Antora exits zero even on failure, which is why the checks below
+          # exist.
+          set -o pipefail
+          bash ./build_antora.sh 2>&1 | tee "$RUNNER_TEMP/antora.log"
 
           # Antora returns zero even if it fails, so we check if the site directory exists
           if [ ! -d "build/site" ]; then
               echo "Antora build failed"
               exit 1
           fi
+
+      # BLOCKING, but deliberately not a count. A MrDocs without the
+      # extension installed ignores the script entirely and renders the
+      # reference with no examples while still reporting success, so something
+      # has to notice. Checking that one known example reached the HTML catches
+      # that without asking anyone to maintain a number: this example exists
+      # only in test/doc/reference/socket_option__no_delay.record.cpp, never in
+      # a header.
+      - name: Doc-quality - reference examples were injected (BLOCKING)
+        run: |
+          set -euo pipefail
+          site=boost-root/libs/corosio/doc/build/site
+          if ! grep -rqF disable_nagle_on_a_connected_socket "$site/corosio/reference"; then
+            echo "No injected example found in the rendered reference." >&2
+            echo "The reference-snippets transform did not run, or its output" >&2
+            echo "did not reach the HTML. doc/build_antora.sh installs the" >&2
+            echo "extension into a MrDocs and exports MRDOCS_ROOT; check that it" >&2
+            echo "did, and that the Antora reference extension accepted it -- it" >&2
+            echo "logs 'Using local MrDocs' at debug level, and setting a" >&2
+            echo "'version' in doc/local-playbook.yml makes it reject a local" >&2
+            echo "install and silently download its own instead." >&2
+            exit 1
+          fi
+          echo "the rendered reference carries its injected examples"
 
       - name: Create Antora Docs Artifact
         uses: actions/upload-artifact@v4

@@ -72,14 +72,7 @@ enum class locking_mode
     silently ignored when the active backend does not support them.
 
     @par Example
-    @code
-    io_context_options opts;
-    opts.max_events_per_poll  = 256;   // larger batch per syscall
-    opts.inline_budget_max    = 32;    // more speculative completions
-    opts.thread_pool_size     = 4;     // more file-I/O workers
-
-    io_context ioc(opts);
-    @endcode
+    @par !example configure
 
     @see io_context, native_io_context
 */
@@ -207,10 +200,7 @@ effective_concurrency_hint(
     choose a specific backend at compile time:
 
     @par Example
-    @code
-    io_context ioc;                   // platform default
-    io_context ioc2(corosio::epoll);  // explicit backend
-    @endcode
+    @par !example construct
 
     @par Preconditions
     The context must outlive every operation posted or dispatched

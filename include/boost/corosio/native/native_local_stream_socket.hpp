@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -60,15 +61,7 @@ namespace boost::corosio {
     Same as @ref local_stream_socket.
 
     @par Example
-    @code
-    #include <boost/corosio/native/native_local_stream_socket.hpp>
-
-    native_io_context<epoll> ctx;
-    native_local_stream_socket<epoll> s(ctx);
-    auto [ec] = co_await s.connect(local_endpoint("/tmp/my.sock"));
-    if (ec)
-        co_return;
-    @endcode
+    @par !example connect
 
     @see local_stream_socket, epoll_t, iocp_t
 */

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -46,11 +47,7 @@ namespace boost::corosio {
     cross-thread cancellation.
 
     @par Example
-    @code
-    auto [ec, n] = co_await timeout(sock.read_some(buf), 50ms);
-    if (ec == capy::cond::timeout)
-        co_return;
-    @endcode
+    @par !example timeout
 
     @param a The awaitable to race against the deadline.
     @param dur The maximum duration to wait, measured from

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -63,37 +64,7 @@ namespace boost::corosio {
     One send_to and one recv_from may be in flight simultaneously.
 
     @par Example
-    @code
-    // Connectionless mode
-    io_context ioc;
-    udp_socket sock( ioc );
-    if ( auto ec = sock.open( udp::v4() ) )
-        co_return;
-    if ( auto ec = sock.bind( endpoint( ipv4_address::any(), 9000 ) ) )
-        co_return;
-
-    char buf[1024];
-    endpoint sender;
-    auto [ec, n] = co_await sock.recv_from(
-        capy::mutable_buffer( buf, sizeof( buf ) ), sender );
-    if ( ec )
-        co_return;
-    auto [sec, sn] = co_await sock.send_to(
-        capy::const_buffer( buf, n ), sender );
-    if ( sec )
-        co_return;
-
-    // Connected mode
-    udp_socket csock( ioc );
-    auto [cec] = co_await csock.connect(
-        endpoint( ipv4_address::loopback(), 9000 ) );
-    if ( cec )
-        co_return;
-    auto [wec, wn] = co_await csock.send(
-        capy::const_buffer( buf, n ) );
-    if ( wec )
-        co_return;
-    @endcode
+    @par !example udp_socket
 */
 class BOOST_COROSIO_DECL udp_socket : public io_object
 {

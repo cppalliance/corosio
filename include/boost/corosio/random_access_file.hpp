@@ -52,16 +52,7 @@ namespace boost::corosio {
     operations (open, close, size, resize, etc.).
 
     @par Example
-    @code
-    io_context ioc;
-    random_access_file f(ioc);
-    if (auto ec = f.open("data.bin", file_base::read_only))
-        co_return;  // report the error
-
-    char buf[4096];
-    auto [ec, n] = co_await f.read_some_at(
-        0, capy::mutable_buffer(buf, sizeof(buf)));
-    @endcode
+    @par !example random_access_file
 */
 class BOOST_COROSIO_DECL random_access_file : public io_object
 {

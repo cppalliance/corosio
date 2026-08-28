@@ -80,29 +80,7 @@ namespace boost::corosio {
     send and send_to share the write slot.
 
     @par Example
-    @code
-    // Connectionless
-    local_datagram_socket sender(ioc);
-    if (auto ec = sender.open())
-        co_return;
-    if (auto ec = sender.bind(local_endpoint("/tmp/sender.sock")))
-        co_return;
-    auto [ec, n] = co_await sender.send_to(
-        capy::const_buffer("hello", 5),
-        local_endpoint("/tmp/receiver.sock"));
-    if (ec)
-        co_return;
-
-    // Connected
-    local_datagram_socket sock(ioc);
-    auto [cec] = co_await sock.connect(local_endpoint("/tmp/peer.sock"));
-    if (cec)
-        co_return;
-    auto [ec2, n2] = co_await sock.send(
-        capy::const_buffer("hi", 2));
-    if (ec2)
-        co_return;
-    @endcode
+    @par !example connectionless_and_connected
 */
 class BOOST_COROSIO_DECL local_datagram_socket : public io_object
 {

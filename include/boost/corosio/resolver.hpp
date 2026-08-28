@@ -172,23 +172,7 @@ operator&=(reverse_flags& a, reverse_flags b) noexcept
     thread pool.
 
     @par Example
-    @code
-    io_context ioc;
-    resolver r(ioc);
-
-    // Using structured bindings
-    auto [ec, results] = co_await r.resolve("www.example.com", "https");
-    if (ec)
-        co_return;
-
-    for (auto const& entry : results)
-        std::cout << entry.get_endpoint().port() << std::endl;
-
-    // Or, to convert errors into exceptions:
-    auto [ec2, results2] = co_await r.resolve("www.example.com", "https");
-    if (ec2)
-        throw std::system_error(ec2);
-    @endcode
+    @par !example resolver
 */
 class BOOST_COROSIO_DECL resolver : public io_object
 {
@@ -330,9 +314,7 @@ public:
             a by-value sink such as @ref connect.
 
         @par Example
-        @code
-        auto [ec, results] = co_await r.resolve("www.example.com", "https");
-        @endcode
+        @par !example forward_resolve
     */
     [[nodiscard]] auto resolve(std::string_view host, std::string_view service)
     {
@@ -372,12 +354,7 @@ public:
             `io_result<reverse_resolver_result>`.
 
         @par Example
-        @code
-        endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
-        auto [ec, result] = co_await r.resolve(ep);
-        if (!ec)
-            std::cout << result.host_name() << ":" << result.service_name();
-        @endcode
+        @par !example reverse_resolve
     */
     [[nodiscard]] auto resolve(endpoint const& ep)
     {

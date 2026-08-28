@@ -13,11 +13,15 @@ include-symbols:
 implementation-defined:
   - 'boost::corosio::detail'
   - 'boost::corosio::*::detail'
-inaccessible-members: never
-inaccessible-bases: never
+# `inaccessible-members`/`inaccessible-bases` are gone on develop, which is the
+# channel the docs are pinned to (see doc/local-playbook.yml). Their job is done
+# by the extract-private* defaults: dropping the two keys left the generated page
+# set identical, and the rendered corpus is diffed against a pre-change baseline
+# to confirm no inaccessible member or base leaked into the reference.
 
-# Generator
-generate: adoc
+# Generator. Spelled `generator` since develop; the Antora reference extension
+# passes --generator=adoc explicitly in any case.
+generator: adoc
 base-url: https://www.github.com/cppalliance/corosio/blob/develop/
 
 # Style
@@ -28,5 +32,12 @@ multipage: true
 
 # Sorting
 sort-members-relational-last: false
+
+# Reference examples are injected by addons/extensions/reference-snippets.lua.
+# MrDocs loads extensions from <install>/share/mrdocs/addons/extensions, so the
+# doc build installs it there (see doc/build_antora.sh). Setting
+# `addons-supplemental` here does NOT work: the key is recognised but only the
+# command-line flag reaches extension discovery, and the Antora extension does
+# not expose one.
 
 cmake: '-DCMAKE_CXX_STANDARD=20 -DBOOST_COROSIO_MRDOCS_BUILD=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF'

@@ -29,11 +29,7 @@ class local_stream_acceptor;
     the system socket headers.
 
     @par Example
-    @code
-    local_stream_socket sock(ctx);
-    if (auto ec = sock.open(local_stream{}))
-        return;
-    @endcode
+    @par !example open_with_protocol
 
     @see native_local_stream, local_stream_socket, local_stream_acceptor
 */

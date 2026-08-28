@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -32,12 +33,7 @@ namespace boost::corosio {
     Strong guarantee; throws only on allocation failure.
 
     @par Example
-    @code
-    auto [ec, h] = boost::corosio::host_name();
-    if (ec)
-        return;
-    std::cout << "running on " << h << "\n";
-    @endcode
+    @par !example host_name
 
     @return The error code, empty on success, and the hostname as a
         UTF-8 string — empty on failure.

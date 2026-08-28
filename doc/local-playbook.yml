@@ -25,6 +25,17 @@ antora:
         using-namespaces:
           - 'boost::'
     - require: '@cppalliance/antora-cpp-reference-extension'
+      # Deliberately NO `version` key. The reference examples are injected by
+      # doc/addons/extensions/reference-snippets.lua, which needs MrDocs'
+      # extension API -- not in any tagged release (corpus transforms shipped in
+      # cppalliance/mrdocs#1196), after v0.8.0. The docs workflow therefore
+      # installs a develop build with that extension copied in and points here
+      # via MRDOCS_ROOT, which is the real pin.
+      #
+      # Setting `version` DEFEATS that: a local install reports its version as
+      # `0.8.0+<sha>`, which can never satisfy "develop", so the extension
+      # rejects MRDOCS_ROOT and downloads its own copy -- one without the
+      # extension, which then renders the reference with no examples at all.
       dependencies:
         - name: 'boost'
           repo: 'https://github.com/boostorg/boost.git'

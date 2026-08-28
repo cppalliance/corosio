@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -61,20 +62,7 @@ namespace boost::corosio {
     Same as @ref local_datagram_socket.
 
     @par Example
-    @code
-    #include <boost/corosio/native/native_local_datagram_socket.hpp>
-
-    native_io_context<epoll> ctx;
-    native_local_datagram_socket<epoll> s(ctx);
-    if (auto ec = s.open())
-        co_return;
-    if (auto ec = s.bind(local_endpoint("/tmp/recv.sock")))
-        co_return;
-    char buf[1024];
-    local_endpoint sender;
-    auto [ec, n] = co_await s.recv_from(
-        capy::mutable_buffer(buf, sizeof(buf)), sender);
-    @endcode
+    @par !example open_bind_recv
 
     @see local_datagram_socket, epoll_t, iocp_t
 */

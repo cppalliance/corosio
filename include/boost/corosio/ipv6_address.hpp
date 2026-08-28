@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -170,13 +171,7 @@ public:
         contain surrounding square brackets.
 
         @par Example
-        @code
-        ipv6_address::bytes_type b = {{
-                0, 1, 0, 2, 0, 3, 0, 4,
-                0, 5, 0, 6, 0, 7, 0, 8 }};
-        ipv6_address a(b);
-        assert(a.to_string() == "1:2:3:4:5:6:7:8");
-        @endcode
+        @par !example to_string
 
         @return The address as a string.
 

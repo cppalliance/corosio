@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -60,20 +61,7 @@ namespace boost::corosio {
     kqueue). Satisfies @ref capy::Stream.
 
     @par Example
-    @code
-    io_context ioc;
-    tcp_socket s(ioc);
-
-    // Using structured bindings
-    auto [ec] = co_await s.connect(
-        endpoint(ipv4_address::loopback(), 8080));
-    if (ec)
-        co_return;
-
-    char buf[1024];
-    auto [read_ec, n] = co_await s.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
-    @endcode
+    @par !example connect_and_read
 */
 class BOOST_COROSIO_DECL tcp_socket : public io_stream
 {
@@ -384,12 +372,7 @@ public:
         This socket must outlive the returned awaitable.
 
         @par Example
-        @code
-        // Socket opened automatically with correct address family:
-        auto [ec] = co_await s.connect(endpoint);
-        if (ec)
-            co_return;
-        @endcode
+        @par !example connect
     */
     [[nodiscard]] auto connect(endpoint ep)
     {
@@ -520,11 +503,7 @@ public:
         Use the portable condition test rather than comparing error
         codes directly:
 
-        @code
-        auto [ec, n] = co_await sock.read_some(buffer);
-        if (ec == capy::cond::eof)
-            co_return;  // Peer closed their send direction
-        @endcode
+        @par !example shutdown
 
         Failures such as a peer that already disconnected are
         normal runtime conditions and are reported through the
@@ -543,10 +522,7 @@ public:
         The option type encodes the protocol level and option name.
 
         @par Example
-        @code
-        sock.set_option( socket_option::no_delay( true ) );
-        sock.set_option( socket_option::receive_buffer_size( 65536 ) );
-        @endcode
+        @par !example set_option
 
         @param opt The option to set.
 
@@ -571,10 +547,7 @@ public:
         Retrieves the current value of a type-safe socket option.
 
         @par Example
-        @code
-        auto nd = sock.get_option<socket_option::no_delay>();
-        bool disabled = nd.value();  // true: Nagle's algorithm is off
-        @endcode
+        @par !example get_option
 
         @return The current option value.
 

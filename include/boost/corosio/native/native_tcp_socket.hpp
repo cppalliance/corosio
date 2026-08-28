@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -59,16 +60,7 @@ namespace boost::corosio {
     Same as @ref tcp_socket.
 
     @par Example
-    @code
-    #include <boost/corosio/native/native_tcp_socket.hpp>
-
-    native_io_context<epoll> ctx;
-    native_tcp_socket<epoll> s(ctx);
-    auto [ec] = co_await s.connect(ep);
-    if (ec)
-        co_return;
-    auto [ec2, n] = co_await s.read_some(buf);
-    @endcode
+    @par !example native_tcp_socket
 
     @see tcp_socket, epoll_t, iocp_t
 */

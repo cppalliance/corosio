@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -330,9 +331,7 @@ public:
     synchronously.
 
     @par Example
-    @code
-    auto [ec] = co_await delay(std::chrono::milliseconds(100));
-    @endcode
+    @par !example duration
 
     @param dur The duration to wait.
 
@@ -377,10 +376,7 @@ delay(std::chrono::steady_clock::time_point tp) noexcept
     on the io_context's run thread and must not throw or block.
 
     @par Example
-    @code
-    auto [ec] = co_await delay(
-        std::chrono::system_clock::now() + std::chrono::minutes(5));
-    @endcode
+    @par !example system_clock_deadline
 
     @tparam Traits The wait-traits policy; `void` selects
         @ref wait_traits.
