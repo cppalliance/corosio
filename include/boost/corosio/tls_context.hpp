@@ -189,6 +189,11 @@ struct tls_context_data;
 tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
 } // namespace detail
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251) // shared_ptr needs dll-interface
+#endif
+
 /** A portable TLS context for certificate and settings storage.
 
     The `tls_context` class provides a backend-agnostic interface for
@@ -224,27 +229,10 @@ tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
     any thread is creating streams from it.
 
     @par Example
-    @code
-    // Create a client context with system trust anchors
-    corosio::tls_context ctx;
-    if (auto ec = ctx.set_default_verify_paths())
-        co_return;
-    if (auto ec = ctx.set_verify_mode( corosio::tls_verify_mode::peer ))
-        co_return;
-
-    // Use with a TLS stream
-    corosio::openssl_stream secure( &sock, ctx );
-    secure.set_hostname( "example.com" );
-    if (auto [ec] = co_await secure.handshake( corosio::tls_role::client ); ec)
-        co_return;
-    @endcode
+    @par !example tls_context
 
     @see tls_role
 */
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4251) // shared_ptr needs dll-interface
-#endif
 class BOOST_COROSIO_DECL tls_context
 {
     struct implementation;
@@ -262,9 +250,7 @@ public:
         and verification.
 
         @par Example
-        @code
-        corosio::tls_context ctx;
-        @endcode
+        @par !example tls_context
     */
     tls_context();
 
@@ -359,11 +345,7 @@ public:
             a malformed certificate surfaces as a handshake failure.
 
         @par Example
-        @code
-        if (auto ec = ctx.use_certificate_file(
-                "server.crt", tls_file_format::pem ))
-            return;
-        @endcode
+        @par !example use_certificate_file
 
         @see use_certificate
         @see use_private_key_file
@@ -401,10 +383,7 @@ public:
             malformed chain surfaces as a handshake failure.
 
         @par Example
-        @code
-        if (auto ec = ctx.use_certificate_chain_file( "fullchain.pem" ))
-            return;
-        @endcode
+        @par !example use_certificate_chain_file
 
         @see use_certificate_chain
     */
@@ -453,11 +432,7 @@ public:
             handshake failure.
 
         @par Example
-        @code
-        if (auto ec = ctx.use_private_key_file(
-                "server.key", tls_file_format::pem ))
-            return;
-        @endcode
+        @par !example use_private_key_file
 
         @see use_private_key
         @see set_password_callback
@@ -508,10 +483,7 @@ public:
             sent during the handshake on both backends.
 
         @par Example
-        @code
-        if (auto ec = ctx.use_pkcs12_file( "credentials.pfx", "secret" ))
-            return;
-        @endcode
+        @par !example use_pkcs12_file
 
         @see use_pkcs12
     */
@@ -551,11 +523,7 @@ public:
             built; malformed certificates surface as a handshake failure.
 
         @par Example
-        @code
-        if (auto ec = ctx.load_verify_file(
-                "/etc/ssl/certs/ca-certificates.crt" ))
-            return;
-        @endcode
+        @par !example load_verify_file
 
         @see add_certificate_authority
         @see add_verify_path
@@ -581,10 +549,7 @@ public:
             is skipped rather than reported here.
 
         @par Example
-        @code
-        if (auto ec = ctx.add_verify_path( "/etc/ssl/certs" ))
-            return;
-        @endcode
+        @par !example add_verify_path
 
         @see load_verify_file
         @see set_default_verify_paths
@@ -615,13 +580,7 @@ public:
             system store is unavailable and this call has no effect.
 
         @par Example
-        @code
-        // Trust the same CAs as the system
-        if (auto ec = ctx.set_default_verify_paths())
-            return;
-        if (auto ec = ctx.set_verify_mode( tls_verify_mode::peer ))
-            return;
-        @endcode
+        @par !example set_default_verify_paths
 
         @see load_verify_file
         @see add_verify_path
@@ -644,11 +603,7 @@ public:
             native context is first built.
 
         @par Example
-        @code
-        // Require TLS 1.3 minimum
-        if (auto ec = ctx.set_min_protocol_version( tls_version::tls_1_3 ))
-            return;
-        @endcode
+        @par !example set_min_protocol_version
 
         @see set_max_protocol_version
     */
@@ -686,11 +641,7 @@ public:
             surfaces as a handshake failure.
 
         @par Example
-        @code
-        // TLS 1.2 cipher suites (OpenSSL format)
-        if (auto ec = ctx.set_ciphersuites( "ECDHE+AESGCM:ECDHE+CHACHA20" ))
-            return;
-        @endcode
+        @par !example set_ciphersuites
 
         @note This configures cipher suites for TLS 1.2 and below. For
             TLS 1.3, use @ref set_ciphersuites_tls13.
@@ -710,11 +661,7 @@ public:
             surfaces as a handshake failure.
 
         @par Example
-        @code
-        if (auto ec = ctx.set_ciphersuites_tls13(
-                "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256" ))
-            return;
-        @endcode
+        @par !example set_ciphersuites_tls13
 
         @note On the WolfSSL backend, TLS 1.2 and TLS 1.3 suites share a
             single cipher list; this call and @ref set_ciphersuites are
@@ -744,11 +691,7 @@ public:
             than negotiate nothing silently.
 
         @par Example
-        @code
-        // Prefer HTTP/2, fall back to HTTP/1.1
-        if (auto ec = ctx.set_alpn( { "h2", "http/1.1" } ))
-            return;
-        @endcode
+        @par !example set_alpn
     */
     [[nodiscard]] std::error_code set_alpn(std::initializer_list<std::string_view> protocols);
 
@@ -767,12 +710,7 @@ public:
             context is first built.
 
         @par Example
-        @code
-        // Verify peer certificate (typical for clients; servers doing
-        // mTLS use tls_verify_mode::require_peer instead)
-        if (auto ec = ctx.set_verify_mode( tls_verify_mode::peer ))
-            return;
-        @endcode
+        @par !example set_verify_mode
 
         @see tls_verify_mode
     */
@@ -832,20 +770,7 @@ public:
             `std::errc::function_not_supported` (see Backend Support).
 
         @par Example
-        @code
-        if (auto ec = ctx.set_verify_mode( tls_verify_mode::peer ))
-            return;
-        ctx.set_verify_callback(
-            []( bool preverified, verify_context& ctx ) -> bool
-            {
-                if( ! preverified )
-                    return false;
-                // Pin: accept only a certificate whose DER matches.
-                auto der = ctx.certificate();
-                return der.size() == expected_pin.size() &&
-                    std::equal( der.begin(), der.end(), expected_pin.begin() );
-            });
-        @endcode
+        @par !example set_verify_callback
 
         @see verify_context
         @see set_verify_mode
@@ -867,15 +792,7 @@ public:
             connection or `false` to reject it with an alert.
 
         @par Example
-        @code
-        // Accept connections for specific domains only
-        ctx.set_servername_callback(
-            []( std::string_view hostname ) -> bool
-            {
-                return hostname == "api.example.com" ||
-                       hostname == "www.example.com";
-            });
-        @endcode
+        @par !example set_servername_callback
 
         @note For virtual hosting with different certificates per hostname,
             create separate contexts and select the appropriate one before
@@ -941,10 +858,7 @@ public:
             build).
 
         @par Example
-        @code
-        if (auto ec = ctx.add_crl_file( "issuer.crl" ))
-            return;
-        @endcode
+        @par !example add_crl_file
 
         @see add_crl
         @see set_revocation_policy
@@ -959,13 +873,7 @@ public:
         @param policy The revocation checking policy.
 
         @par Example
-        @code
-        // Require successful revocation check
-        ctx.set_revocation_policy( tls_revocation_policy::hard_fail );
-
-        // Check but allow unknown status
-        ctx.set_revocation_policy( tls_revocation_policy::soft_fail );
-        @endcode
+        @par !example set_revocation_policy
 
         @note Revocation is checked via CRLs supplied with @ref add_crl /
             @ref add_crl_file. `soft_fail` accepts a certificate whose
@@ -999,19 +907,7 @@ public:
             returns the password string.
 
         @par Example
-        @code
-        ctx.set_password_callback(
-            []( std::size_t max_len, tls_password_purpose purpose )
-            {
-                // In practice, prompt user or read from secure storage
-                return std::string( "my-key-password" );
-            });
-
-        // Now load encrypted key
-        if (auto ec = ctx.use_private_key_file(
-                "encrypted.key", tls_file_format::pem ))
-            return;
-        @endcode
+        @par !example set_password_callback
 
         @see tls_password_purpose
     */

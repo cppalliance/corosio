@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -30,16 +31,7 @@ class tcp_acceptor;
     those headers, use @ref native_tcp.
 
     @par Example
-    @code
-    tcp_acceptor acc( ioc );
-    if ( auto ec = acc.open( tcp::v6() ) )  // IPv6 socket
-        return;
-    acc.set_option( socket_option::reuse_address( true ) );
-    if ( auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ) )
-        return;
-    if ( auto ec = acc.listen() )
-        return;
-    @endcode
+    @par !example tcp
 
     @see native_tcp, tcp_socket, tcp_acceptor
 */

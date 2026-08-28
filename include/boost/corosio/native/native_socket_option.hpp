@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -65,11 +66,7 @@ namespace boost::corosio::native_socket_option {
     includes, use `boost::corosio::socket_option` instead.
 
     @par Example
-    @code
-    sock.set_option( native_socket_option::no_delay( true ) );
-    auto nd = sock.get_option<native_socket_option::no_delay>();
-    bool disabled = nd.value();  // true: Nagle's algorithm is off
-    @endcode
+    @par !example boolean
 
     @tparam Level The protocol level (e.g. `SOL_SOCKET`, `IPPROTO_TCP`).
     @tparam Name The option name (e.g. `TCP_NODELAY`, `SO_KEEPALIVE`).
@@ -168,11 +165,7 @@ public:
     includes, use `boost::corosio::socket_option` instead.
 
     @par Example
-    @code
-    sock.set_option( native_socket_option::receive_buffer_size( 65536 ) );
-    auto opt = sock.get_option<native_socket_option::receive_buffer_size>();
-    int sz = opt.value();
-    @endcode
+    @par !example integer
 
     @tparam Level The protocol level (e.g. `SOL_SOCKET`).
     @tparam Name The option name (e.g. `SO_RCVBUF`).
@@ -338,12 +331,7 @@ public:
     version.
 
     @par Example
-    @code
-    sock.set_option( native_socket_option::linger( true, 5 ) );
-    auto opt = sock.get_option<native_socket_option::linger>();
-    if ( opt.enabled() )
-        std::cout << "linger timeout: " << opt.timeout() << "s\n";
-    @endcode
+    @par !example linger
 */
 class linger
 {
@@ -471,10 +459,7 @@ using multicast_interface_v6 = integer<IPPROTO_IPV6, IPV6_MULTICAST_IF>;
 /** Join an IPv4 multicast group (IP_ADD_MEMBERSHIP).
 
     @par Example
-    @code
-    sock.set_option( native_socket_option::join_group_v4(
-        ipv4_address( "239.255.0.1" ) ) );
-    @endcode
+    @par !example join_group_v4
 */
 class join_group_v4
 {
@@ -535,10 +520,7 @@ public:
 /** Leave an IPv4 multicast group (IP_DROP_MEMBERSHIP).
 
     @par Example
-    @code
-    sock.set_option( native_socket_option::leave_group_v4(
-        ipv4_address( "239.255.0.1" ) ) );
-    @endcode
+    @par !example leave_group_v4
 */
 class leave_group_v4
 {
@@ -599,10 +581,7 @@ public:
 /** Join an IPv6 multicast group (IPV6_JOIN_GROUP).
 
     @par Example
-    @code
-    sock.set_option( native_socket_option::join_group_v6(
-        ipv6_address( "ff02::1" ), 0 ) );
-    @endcode
+    @par !example join_group_v6
 */
 class join_group_v6
 {
@@ -661,10 +640,7 @@ public:
 /** Leave an IPv6 multicast group (IPV6_LEAVE_GROUP).
 
     @par Example
-    @code
-    sock.set_option( native_socket_option::leave_group_v6(
-        ipv6_address( "ff02::1" ), 0 ) );
-    @endcode
+    @par !example leave_group_v6
 */
 class leave_group_v6
 {
@@ -726,10 +702,7 @@ public:
     takes an `ipv4_address` identifying the local interface.
 
     @par Example
-    @code
-    sock.set_option( native_socket_option::multicast_interface_v4(
-        ipv4_address( "192.168.1.1" ) ) );
-    @endcode
+    @par !example multicast_interface_v4
 */
 class multicast_interface_v4
 {

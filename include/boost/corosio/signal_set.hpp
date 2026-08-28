@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -72,14 +73,7 @@ namespace boost::corosio {
     SIGINT, SIGTERM, SIGABRT, SIGFPE, SIGILL, SIGSEGV.
 
     @par Example
-    @code
-    signal_set signals(ctx, SIGINT, SIGTERM);
-    auto [ec, signum] = co_await signals.wait();
-    if (ec == capy::cond::canceled)
-        co_return;
-    if (!ec)
-        std::cout << "Received signal " << signum << std::endl;
-    @endcode
+    @par !example wait_for_shutdown
 */
 class BOOST_COROSIO_DECL signal_set : public io_signal_set
 {

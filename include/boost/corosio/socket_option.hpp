@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -300,11 +301,7 @@ public:
 /** Disable Nagle's algorithm (TCP_NODELAY).
 
     @par Example
-    @code
-    sock.set_option( socket_option::no_delay( true ) );
-    auto nd = sock.get_option<socket_option::no_delay>();
-    bool disabled = nd.value();  // true: Nagle's algorithm is off
-    @endcode
+    @par !example no_delay
 */
 class BOOST_COROSIO_DECL no_delay : public boolean_option
 {
@@ -322,9 +319,7 @@ public:
 /** Enable periodic keepalive probes (SO_KEEPALIVE).
 
     @par Example
-    @code
-    sock.set_option( socket_option::keep_alive( true ) );
-    @endcode
+    @par !example keep_alive
 */
 class BOOST_COROSIO_DECL keep_alive : public boolean_option
 {
@@ -346,9 +341,7 @@ public:
     connections (dual-stack mode).
 
     @par Example
-    @code
-    sock.set_option( socket_option::v6_only( true ) );
-    @endcode
+    @par !example v6_only
 */
 class BOOST_COROSIO_DECL v6_only : public boolean_option
 {
@@ -366,9 +359,7 @@ public:
 /** Allow local address reuse (SO_REUSEADDR).
 
     @par Example
-    @code
-    acc.set_option( socket_option::reuse_address( true ) );
-    @endcode
+    @par !example reuse_address
 */
 class BOOST_COROSIO_DECL reuse_address : public boolean_option
 {
@@ -390,12 +381,7 @@ public:
     returns an error.
 
     @par Example
-    @code
-    udp_socket sock( ioc );
-    if ( auto ec = sock.open() )
-        return;
-    sock.set_option( socket_option::broadcast( true ) );
-    @endcode
+    @par !example broadcast
 */
 class BOOST_COROSIO_DECL broadcast : public boolean_option
 {
@@ -416,15 +402,7 @@ public:
     `set_option` throws `std::system_error`.
 
     @par Example
-    @code
-    if ( auto ec = acc.open( tcp::v6() ) )
-        return;
-    acc.set_option( socket_option::reuse_port( true ) );
-    if ( auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ) )
-        return;
-    if ( auto ec = acc.listen() )
-        return;
-    @endcode
+    @par !example reuse_port
 */
 class BOOST_COROSIO_DECL reuse_port : public boolean_option
 {
@@ -442,11 +420,7 @@ public:
 /** Set the receive buffer size (SO_RCVBUF).
 
     @par Example
-    @code
-    sock.set_option( socket_option::receive_buffer_size( 65536 ) );
-    auto opt = sock.get_option<socket_option::receive_buffer_size>();
-    int sz = opt.value();
-    @endcode
+    @par !example receive_buffer_size
 */
 class BOOST_COROSIO_DECL receive_buffer_size : public integer_option
 {
@@ -464,9 +438,7 @@ public:
 /** Set the send buffer size (SO_SNDBUF).
 
     @par Example
-    @code
-    sock.set_option( socket_option::send_buffer_size( 65536 ) );
-    @endcode
+    @par !example send_buffer_size
 */
 class BOOST_COROSIO_DECL send_buffer_size : public integer_option
 {
@@ -488,12 +460,7 @@ public:
     or the timeout expires.
 
     @par Example
-    @code
-    sock.set_option( socket_option::linger( true, 5 ) );
-    auto opt = sock.get_option<socket_option::linger>();
-    if ( opt.enabled() )
-        std::cout << "linger timeout: " << opt.timeout() << "s\n";
-    @endcode
+    @par !example linger
 */
 class BOOST_COROSIO_DECL linger
 {
@@ -562,9 +529,7 @@ public:
     reject the four-byte form with `EINVAL`. Linux accepts either size.
 
     @par Example
-    @code
-    sock.set_option( socket_option::multicast_loop_v4( true ) );
-    @endcode
+    @par !example multicast_loop_v4
 */
 class BOOST_COROSIO_DECL multicast_loop_v4 : public byte_boolean_option
 {
@@ -582,9 +547,7 @@ public:
 /** Enable loopback of outgoing multicast on IPv6 (IPV6_MULTICAST_LOOP).
 
     @par Example
-    @code
-    sock.set_option( socket_option::multicast_loop_v6( true ) );
-    @endcode
+    @par !example multicast_loop_v6
 */
 class BOOST_COROSIO_DECL multicast_loop_v6 : public boolean_option
 {
@@ -606,9 +569,7 @@ public:
     Values are truncated to the 0–255 range.
 
     @par Example
-    @code
-    sock.set_option( socket_option::multicast_hops_v4( 4 ) );
-    @endcode
+    @par !example multicast_hops_v4
 */
 class BOOST_COROSIO_DECL multicast_hops_v4 : public byte_integer_option
 {
@@ -626,9 +587,7 @@ public:
 /** Set the multicast hop limit for IPv6 (IPV6_MULTICAST_HOPS).
 
     @par Example
-    @code
-    sock.set_option( socket_option::multicast_hops_v6( 4 ) );
-    @endcode
+    @par !example multicast_hops_v6
 */
 class BOOST_COROSIO_DECL multicast_hops_v6 : public integer_option
 {
@@ -646,9 +605,7 @@ public:
 /** Set the outgoing interface for IPv6 multicast (IPV6_MULTICAST_IF).
 
     @par Example
-    @code
-    sock.set_option( socket_option::multicast_interface_v6( 1 ) );
-    @endcode
+    @par !example multicast_interface_v6
 */
 class BOOST_COROSIO_DECL multicast_interface_v6 : public integer_option
 {
@@ -666,10 +623,7 @@ public:
 /** Join an IPv4 multicast group (IP_ADD_MEMBERSHIP).
 
     @par Example
-    @code
-    sock.set_option( socket_option::join_group_v4(
-        ipv4_address( "239.255.0.1" ) ) );
-    @endcode
+    @par !example join_group_v4
 */
 class BOOST_COROSIO_DECL join_group_v4
 {
@@ -716,10 +670,7 @@ public:
 /** Leave an IPv4 multicast group (IP_DROP_MEMBERSHIP).
 
     @par Example
-    @code
-    sock.set_option( socket_option::leave_group_v4(
-        ipv4_address( "239.255.0.1" ) ) );
-    @endcode
+    @par !example leave_group_v4
 */
 class BOOST_COROSIO_DECL leave_group_v4
 {
@@ -766,10 +717,7 @@ public:
 /** Join an IPv6 multicast group (IPV6_JOIN_GROUP).
 
     @par Example
-    @code
-    sock.set_option( socket_option::join_group_v6(
-        ipv6_address( "ff02::1" ), 0 ) );
-    @endcode
+    @par !example join_group_v6
 */
 class BOOST_COROSIO_DECL join_group_v6
 {
@@ -815,10 +763,7 @@ public:
 /** Leave an IPv6 multicast group (IPV6_LEAVE_GROUP).
 
     @par Example
-    @code
-    sock.set_option( socket_option::leave_group_v6(
-        ipv6_address( "ff02::1" ), 0 ) );
-    @endcode
+    @par !example leave_group_v6
 */
 class BOOST_COROSIO_DECL leave_group_v6
 {
@@ -867,10 +812,7 @@ public:
     takes an `ipv4_address` identifying the local interface.
 
     @par Example
-    @code
-    sock.set_option( socket_option::multicast_interface_v4(
-        ipv4_address( "192.168.1.1" ) ) );
-    @endcode
+    @par !example multicast_interface_v4
 */
 class BOOST_COROSIO_DECL multicast_interface_v4
 {

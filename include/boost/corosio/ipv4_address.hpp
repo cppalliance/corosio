@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -146,9 +147,7 @@ public:
     /** Return the address as a string in dotted decimal format.
 
         @par Example
-        @code
-        assert( ipv4_address(0x01020304).to_string() == "1.2.3.4" );
-        @endcode
+        @par !example to_string
 
         @return The address as a string.
     */

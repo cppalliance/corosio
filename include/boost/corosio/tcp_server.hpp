@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -66,41 +67,17 @@ namespace boost::corosio {
     @endcode
 
     @par Running the Server
-    @code
-    io_context ioc;
-    tcp_server srv(ioc, ioc.get_executor());
-    srv.set_workers(make_workers(ioc, 100));
-    if (auto ec = srv.bind(endpoint{ipv4_address::any(), 8080}))
-        return;
-    srv.start();
-    ioc.run();  // Blocks until all work completes
-    @endcode
+    @par !example running_the_server
 
     @par Graceful Shutdown
     To shut down gracefully, call @ref stop then drain the io_context:
-    @code
-    // From a signal handler or timer callback:
-    srv.stop();
-
-    // ioc.run() returns after pending work drains.
-    // Then from the thread that called ioc.run():
-    srv.join();  // Wait for accept loops to finish
-    @endcode
+    @par !example graceful_shutdown
 
     @par Restart After Stop
     The server can be restarted after a complete shutdown cycle.
-    You must drain the io_context and call @ref join before restarting:
-    @code
-    srv.start();
-    ioc.run_for( 10s );   // Run for a while
-    srv.stop();           // Signal shutdown
-    ioc.run();            // REQUIRED: drain pending completions
-    srv.join();           // REQUIRED: wait for accept loops
-
-    // Now safe to restart
-    srv.start();
-    ioc.run();
-    @endcode
+    You must drain the io_context, call @ref join, and restart the
+    io_context itself (`ioc.restart()`) before restarting:
+    @par !example restart_after_stop
 
     @par WARNING: What NOT to Do
     - Do NOT call @ref join from inside a worker coroutine (deadlock).
@@ -109,43 +86,7 @@ namespace boost::corosio {
     - Do NOT call `ioc.stop()` for graceful shutdown; use @ref stop instead.
 
     @par Example
-    @code
-    class my_worker : public tcp_server::worker_base
-    {
-        corosio::tcp_socket sock_;
-        capy::any_executor ex_;
-    public:
-        my_worker(io_context& ctx)
-            : sock_(ctx)
-            , ex_(ctx.get_executor())
-        {
-        }
-
-        corosio::tcp_socket& socket() override { return sock_; }
-
-        void run(launcher launch) override
-        {
-            launch(ex_, [](corosio::tcp_socket* sock) -> capy::task<>
-            {
-                // handle connection using sock
-                co_return;
-            }(&sock_));
-        }
-    };
-
-    auto make_workers(io_context& ctx, int n)
-    {
-        std::vector<std::unique_ptr<tcp_server::worker_base>> v;
-        v.reserve(n);
-        for(int i = 0; i < n; ++i)
-            v.push_back(std::make_unique<my_worker>(ctx));
-        return v;
-    }
-
-    io_context ioc;
-    tcp_server srv(ioc, ioc.get_executor());
-    srv.set_workers(make_workers(ioc, 100));
-    @endcode
+    @par !example custom_worker
 
     @see worker_base, set_workers, launcher
 */
@@ -593,13 +534,7 @@ public:
         @param ex The executor for dispatching coroutines.
 
         @par Example
-        @code
-        tcp_server srv(ctx, ctx.get_executor());
-        srv.set_workers(make_workers(ctx, 100));
-        if (auto ec = srv.bind(endpoint{...}))
-            return;
-        srv.start();
-        @endcode
+        @par !example tcp_server
     */
     template<capy::ExecutionContext Ctx, capy::Executor Ex>
     tcp_server(Ctx& ctx, Ex ex) : impl_(make_impl(ctx))
@@ -654,12 +589,7 @@ public:
             support `std::to_address()` yielding `worker_base*`.
 
         @par Example
-        @code
-        std::vector<std::unique_ptr<my_worker>> workers;
-        for(int i = 0; i < 100; ++i)
-            workers.push_back(std::make_unique<my_worker>(ctx));
-        srv.set_workers(std::move(workers));
-        @endcode
+        @par !example set_workers
     */
     template<std::ranges::forward_range Range>
         requires std::convertible_to<
@@ -693,7 +623,8 @@ public:
         @par Preconditions
         - At least one endpoint bound via @ref bind.
         - Workers provided via @ref set_workers.
-        - If restarting, @ref join must have completed first.
+        - If restarting, @ref join must have completed first, and the
+          io_context must have been restarted (`ioc.restart()`).
 
         @par Effects
         Creates one accept coroutine per bound endpoint. Each coroutine
@@ -702,17 +633,7 @@ public:
 
         @par Restart Sequence
         To restart after stopping, complete the full shutdown cycle:
-        @code
-        srv.start();
-        ioc.run_for( 1s );
-        srv.stop();       // 1. Signal shutdown
-        ioc.run();        // 2. Drain remaining completions
-        srv.join();       // 3. Wait for accept loops
-
-        // Now safe to restart
-        srv.start();
-        ioc.run();
-        @endcode
+        @par !example start
 
         @par Thread Safety
         Not thread safe.
@@ -782,32 +703,12 @@ public:
         state and may be restarted via @ref start.
 
         @par Example (Correct Usage)
-        @code
-        // main thread
-        srv.start();
-        ioc.run();      // Blocks until work completes
-        srv.join();     // Safe: called after ioc.run() returns
-        @endcode
+        @par !example correct_usage
 
-        @par WARNING: Deadlock Scenarios
-        Calling `join()` from the wrong context causes deadlock:
+        @par WARNING: Deadlock Scenario
+        Calling `join()` from inside a worker coroutine deadlocks:
 
-        @code
-        // WRONG: calling join() from inside a worker coroutine
-        void run( launcher launch ) override
-        {
-            launch( ex, [this]() -> capy::task<>
-            {
-                srv_.join();  // DEADLOCK: blocks the executor
-                co_return;
-            }());
-        }
-
-        // WRONG: calling join() while ioc.run() is still active
-        std::thread t( [&]{ ioc.run(); } );
-        srv.stop();
-        srv.join();  // DEADLOCK: ioc.run() still running in thread t
-        @endcode
+        @par !example deadlock_scenarios
 
         @par Thread Safety
         May be called from any thread, but will deadlock if called

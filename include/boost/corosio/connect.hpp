@@ -129,13 +129,7 @@ connect(Socket& s, Iter begin, Iter end, ConnectCondition cond);
     `Socket::connect`).
 
     @par Example
-    @code
-    resolver r(ioc);
-    auto [rec, results] = co_await r.resolve("www.boost.org", "80");
-    if (rec) co_return;
-    tcp_socket s(ioc);
-    auto [cec, ep] = co_await corosio::connect(s, results);
-    @endcode
+    @par !example connect
 */
 template<class Socket, std::ranges::input_range Range>
     requires std::convertible_to<

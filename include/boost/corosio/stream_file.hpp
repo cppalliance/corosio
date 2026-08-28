@@ -47,23 +47,7 @@ namespace boost::corosio {
     may be in flight at a time.
 
     @par Example
-    @code
-    io_context ioc;
-    stream_file f(ioc);
-    if (auto ec = f.open("data.bin", file_base::read_only))
-        co_return;  // report the error
-
-    char buf[4096];
-    for (;;)
-    {
-        auto [ec, n] = co_await f.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
-        if (ec == capy::cond::eof)
-            break;
-        if (ec)
-            co_return;
-    }
-    @endcode
+    @par !example stream_file
 */
 class BOOST_COROSIO_DECL stream_file : public io_stream
 {

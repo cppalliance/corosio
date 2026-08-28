@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2026 Steve Gerbino
+# Copyright (c) 2026 Michael Vandeberg
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -21,7 +22,29 @@ project boost/corosio/test/doc
       <toolset>gcc:<cxxflags>-Wno-maybe-uninitialized
     ;
 
-run [ glob snippets/*.cpp ]
+# reference/*.cpp holds the examples MrDocs injects into the reference; they are
+# compiled here so the b2 legs check them too, not just the CMake ones.
+#
+# Except under coverage. The examples are never executed, and the coverage build
+# passes -fkeep-static-functions (see boost-ci ci/codecov.sh), which keeps the
+# unused internal-linkage template instantiations an example pulls in from the
+# headers. Those land in include/boost/corosio as never-entered lines and read
+# as lost coverage. Today, every coverage leg corosio runs builds with CMake --
+# code-coverage.yml has no b2 step, and ci.yml's b2-workflow step is skipped
+# whenever matrix.coverage is set -- so the CMakeLists.txt guard is the one
+# actually doing the work. This guard is defensive: it exists so a b2 coverage
+# leg added later inherits the same protection without anyone having to
+# remember to add it.
+import modules ;
+local argv = [ modules.peek : ARGV ] ;
+local coverage-build = [ MATCH "(--coverage|-fkeep-static-functions)" : $(argv) ] ;
+local reference-snippets ;
+if ! $(coverage-build)
+{
+    reference-snippets = [ glob reference/*.cpp ] ;
+}
+
+run [ glob snippets/*.cpp ] $(reference-snippets)
     ../../../capy/extra/test_suite/test_main.cpp
     ../../../capy/extra/test_suite/test_suite.cpp
     : : : <include>../../../capy/extra/test_suite

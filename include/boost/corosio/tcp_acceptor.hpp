@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -55,32 +56,10 @@ namespace boost::corosio {
     OS accept APIs via the io_context reactor.
 
     @par Example
-    @code
-    // Convenience constructor: open + configure + bind + listen
-    io_context ioc;
-    tcp_acceptor acc( ioc, endpoint( 8080 ) );
-
-    tcp_socket peer( ioc );
-    auto [ec] = co_await acc.accept( peer );
-    if ( !ec ) {
-        // peer is now a connected socket
-        auto [ec2, n] = co_await peer.read_some( buf );
-    }
-    @endcode
+    @par !example convenience_construction
 
     @par Example
-    @code
-    // Fine-grained setup
-    tcp_acceptor acc( ioc );
-    if ( auto ec = acc.open( tcp::v6() ) )
-        return ec;
-    acc.set_option( socket_option::reuse_address( true ) );
-    acc.set_option( socket_option::v6_only( true ) );
-    if ( auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ) )
-        return ec;
-    if ( auto ec = acc.listen() )
-        return ec;
-    @endcode
+    @par !example fine_grained_setup
 */
 class BOOST_COROSIO_DECL tcp_acceptor : public io_object
 {
@@ -303,15 +282,7 @@ public:
             `tcp::v4()`.
 
         @par Example
-        @code
-        if (auto ec = acc.open( tcp::v6() ))
-            return;  // report the error
-        acc.set_option( socket_option::reuse_address( true ) );
-        if (auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ))
-            return;
-        if (auto ec = acc.listen())
-            return;
-        @endcode
+        @par !example open
 
         @see bind, listen
 
@@ -401,13 +372,7 @@ public:
         awaitable.
 
         @par Example
-        @code
-        tcp_socket peer(ioc);
-        auto [ec] = co_await acc.accept(peer);
-        if (ec)
-            co_return;
-        auto [wec, n] = co_await peer.write_some(buffer);
-        @endcode
+        @par !example accept_into_a_reused_socket
 
         @see accept()
     */
@@ -448,12 +413,7 @@ public:
         This acceptor must outlive the returned awaitable.
 
         @par Example
-        @code
-        auto [ec, peer] = co_await acc.accept();
-        if (ec)
-            co_return;
-        auto [wec, n] = co_await peer.write_some(buffer);
-        @endcode
+        @par !example accept_returning_a_new_socket
 
         @see accept(tcp_socket&)
     */
@@ -590,15 +550,7 @@ public:
         `listen()`, such as `socket_option::reuse_port`.
 
         @par Example
-        @code
-        if ( auto ec = acc.open( tcp::v6() ) )
-            return ec;
-        acc.set_option( socket_option::reuse_port( true ) );
-        if ( auto ec = acc.bind( endpoint( ipv6_address::any(), 8080 ) ) )
-            return ec;
-        if ( auto ec = acc.listen() )
-            return ec;
-        @endcode
+        @par !example set_option
 
         @param opt The option to set.
 
@@ -623,9 +575,7 @@ public:
         Retrieves the current value of a type-safe socket option.
 
         @par Example
-        @code
-        auto opt = acc.get_option<socket_option::reuse_address>();
-        @endcode
+        @par !example get_option
 
         @return The current option value.
 

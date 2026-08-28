@@ -55,25 +55,7 @@ namespace boost::corosio {
     concurrently); a single-threaded context needs no strand.
 
     @par Example
-    @code
-    tls_context ctx;
-    ctx.set_verify_mode(tls_verify_mode::peer);
-
-    corosio::tcp_socket sock(ioc);
-    auto [ec] = co_await sock.connect(endpoint);
-    if (ec)
-        co_return;
-
-    // Reference mode - sock must outlive tls
-    corosio::openssl_stream tls(&sock, ctx);
-    tls.set_hostname("example.com");
-    auto [hec] = co_await tls.handshake(tls_role::client);
-    if (hec)
-        co_return;
-
-    // Or owning mode - tls owns the socket
-    corosio::openssl_stream tls2(std::move(sock), ctx);
-    @endcode
+    @par !example openssl_stream
 
     @see tls_stream, wolfssl_stream
 */

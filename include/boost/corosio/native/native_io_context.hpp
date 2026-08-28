@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -55,12 +56,7 @@ namespace boost::corosio {
     Same as the underlying context type.
 
     @par Example
-    @code
-    #include <boost/corosio/native/native_io_context.hpp>
-
-    native_io_context<epoll> ctx;
-    ctx.poll();  // devirtualized call
-    @endcode
+    @par !example poll
 
     @see io_context, epoll_t, iocp_t
 */

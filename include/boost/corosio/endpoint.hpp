@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -38,21 +39,7 @@ namespace boost::corosio {
     Shared objects: Safe.
 
     @par Example
-    @code
-    // IPv4 endpoint
-    endpoint ep4(ipv4_address::loopback(), 8080);
-
-    // IPv6 endpoint
-    endpoint ep6(ipv6_address::loopback(), 8080);
-
-    // Port only (defaults to IPv4 any address)
-    endpoint bind_addr(8080);
-
-    // Create from string
-    auto [ec, ep] = make_endpoint("192.168.1.1:8080");
-    if (ec)
-        return;
-    @endcode
+    @par !example endpoint
 */
 class endpoint
 {
@@ -286,17 +273,7 @@ endpoint_format detect_endpoint_format(std::string_view s) noexcept;
     @li IPv6 with port (bracketed): `[::1]:8080`
 
     @par Example
-    @code
-    auto [ec, ep] = make_endpoint("192.168.1.1:8080");
-    if (ec)
-        return;
-    assert( ep.is_v4() && ep.port() == 8080 );
-
-    auto [ec6, ep6] = make_endpoint("[::1]:443");
-    if (ec6)
-        return;
-    assert( ep6.is_v6() && ep6.port() == 443 );
-    @endcode
+    @par !example make_endpoint
 
     @param s The string to parse.
     @return The error code, empty on success, and the parsed

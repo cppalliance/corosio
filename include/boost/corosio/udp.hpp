@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -29,13 +30,7 @@ class udp_socket;
     those headers, use @ref native_udp.
 
     @par Example
-    @code
-    udp_socket sock( ioc );
-    if ( auto ec = sock.open( udp::v4() ) )
-        return;
-    if ( auto ec = sock.bind( endpoint( ipv4_address::any(), 9000 ) ) )
-        return;
-    @endcode
+    @par !example udp
 
     @see native_udp, udp_socket
 */

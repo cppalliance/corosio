@@ -61,18 +61,7 @@ namespace boost::corosio {
     (epoll, kqueue, select, or IOCP). Satisfies @ref capy::Stream.
 
     @par Example
-    @code
-    io_context ioc;
-    local_stream_socket s(ioc);
-
-    auto [ec] = co_await s.connect(local_endpoint("/tmp/my.sock"));
-    if (ec)
-        co_return;
-
-    char buf[1024];
-    auto [read_ec, n] = co_await s.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
-    @endcode
+    @par !example connect_and_read
 */
 class BOOST_COROSIO_DECL local_stream_socket : public io_stream
 {

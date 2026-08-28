@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -51,23 +52,7 @@ namespace boost::corosio {
     from the same implicit or explicit serialization context.
 
     @par Example
-    @code
-    // Read until buffer full or EOF
-    capy::task<> read_all( io_stream& stream, std::span<char> buf )
-    {
-        std::size_t total = 0;
-        while( total < buf.size() )
-        {
-            auto [ec, n] = co_await stream.read_some(
-                capy::mutable_buffer( buf.data() + total, buf.size() - total ) );
-            if( ec == capy::cond::eof )
-                break;
-            if( ec )
-                throw std::system_error( ec );
-            total += n;
-        }
-    }
-    @endcode
+    @par !example io_stream
 
     @see io_read_stream, io_write_stream, tcp_socket
 */

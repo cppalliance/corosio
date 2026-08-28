@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -59,17 +60,7 @@ namespace boost::corosio {
     Same as @ref stream_file.
 
     @par Example
-    @code
-    #include <boost/corosio/native/native_stream_file.hpp>
-
-    native_io_context<epoll> ctx;
-    native_stream_file<epoll> f(ctx);
-    if (auto ec = f.open("data.bin", file_base::read_only))
-        co_return;
-    char buf[4096];
-    auto [ec, n] = co_await f.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
-    @endcode
+    @par !example native_stream_file
 
     @see stream_file, epoll_t, iocp_t
 */
