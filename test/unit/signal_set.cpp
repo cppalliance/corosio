@@ -25,6 +25,10 @@
 #include "context.hpp"
 #include "test_suite.hpp"
 
+#if BOOST_COROSIO_POSIX
+#include <signal.h>
+#endif
+
 namespace boost::corosio {
 
 // Signal set tests
@@ -364,19 +368,129 @@ struct signal_set_test
 
     void testShutdownWithPendingSignalSet()
     {
-        // Construct a signal_set that owns a signal registration, then let
-        // the io_context shutdown drain the impl_list (covers shutdown
-        // loop deleting registrations).
+        // A set destroyed in the documented order gives its registrations
+        // back through destroy(), so the service's shutdown finds an
+        // empty impl_list_ here; the walk itself is reached by
+        // testShutdownReleasesRegistration below.
         [[maybe_unused]] int destroyed = 0;
 
         {
             io_context ioc(Backend);
             [[maybe_unused]] signal_set s(ioc, SIGINT, SIGTERM);
-            // No run() — drop directly into io_context destruction so the
-            // service's shutdown path walks impl_list_ and frees both
-            // signal_registration nodes.
         }
         BOOST_TEST_PASS();
+    }
+
+    // The process signal table outlives every io_context, so a set still
+    // registered when its context shuts down -- which an abandoned frame
+    // is the only way to arrange -- has to hand the registration back
+    // there: a stale entry keeps the signal installed with the old flags
+    // and refuses the next add() of it.
+    void testShutdownReleasesRegistration()
+    {
+#if BOOST_COROSIO_POSIX
+        constexpr auto parked_flags = signal_set::restart;
+        constexpr auto reuse_flags  = signal_set::no_defer;
+#else
+        constexpr auto parked_flags = signal_set::none;
+        constexpr auto reuse_flags  = signal_set::none;
+#endif
+        bool resumed = false;
+        {
+            io_context ioc(Backend);
+            auto keeper = [&]() -> capy::task<> {
+                signal_set sig(ioc);
+                BOOST_TEST(!sig.add(SIGINT, parked_flags));
+                std::ignore = co_await sig.wait();
+                resumed = true;
+            };
+            capy::run_async(ioc.get_executor())(keeper());
+            // Exactly one handler, the coroutine start: anything else
+            // would leave the wait unparked and the set unregistered by
+            // the time the context is destroyed.
+            BOOST_TEST(ioc.run_one() == 1);
+        }
+        BOOST_TEST(!resumed);
+
+        io_context ioc(Backend);
+        signal_set s(ioc);
+        auto add_ec = s.add(SIGINT, reuse_flags);
+        BOOST_TEST(!add_ec);
+        // Raising with no handler installed would kill the process.
+        if (add_ec)
+            return;
+
+        // Raised before the wait starts, so nothing here is timed.
+        std::raise(SIGINT);
+
+        bool completed      = false;
+        int received_signal = 0;
+
+        auto wait_task = [](signal_set& s_ref, int& sig_out,
+                            bool& done_out) -> capy::task<> {
+            auto [ec, signum] = co_await s_ref.wait();
+            sig_out           = signum;
+            done_out          = !ec;
+        };
+        capy::run_async(ioc.get_executor())(
+            wait_task(s, received_signal, completed));
+
+        ioc.run();
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(received_signal, SIGINT);
+    }
+
+    // The walk gives back one entry, not the signal: with a second
+    // context registered on SIGINT the disposition has to survive the
+    // first context's teardown, and the survivor has to keep receiving.
+    void testShutdownKeepsOtherContextRegistered()
+    {
+        io_context survivor(Backend);
+        signal_set kept(survivor);
+        BOOST_TEST(!kept.add(SIGINT));
+
+        bool resumed = false;
+        {
+            io_context ioc(Backend);
+            auto keeper = [&]() -> capy::task<> {
+                signal_set sig(ioc);
+                BOOST_TEST(!sig.add(SIGINT));
+                std::ignore = co_await sig.wait();
+                resumed = true;
+            };
+            capy::run_async(ioc.get_executor())(keeper());
+            BOOST_TEST(ioc.run_one() == 1);
+        }
+        BOOST_TEST(!resumed);
+
+#if BOOST_COROSIO_POSIX
+        // A disposition restored out from under the survivor would make
+        // the raise below kill the process, so say so as a failure.
+        struct sigaction cur = {};
+        BOOST_TEST(::sigaction(SIGINT, nullptr, &cur) == 0);
+        BOOST_TEST(cur.sa_handler != SIG_DFL);
+        if (cur.sa_handler == SIG_DFL)
+            return;
+#endif
+
+        // Raised before the wait starts, so nothing here is timed.
+        std::raise(SIGINT);
+
+        bool completed      = false;
+        int received_signal = 0;
+
+        auto wait_task = [](signal_set& s_ref, int& sig_out,
+                            bool& done_out) -> capy::task<> {
+            auto [ec, signum] = co_await s_ref.wait();
+            sig_out           = signum;
+            done_out          = !ec;
+        };
+        capy::run_async(survivor.get_executor())(
+            wait_task(kept, received_signal, completed));
+
+        survivor.run();
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(received_signal, SIGINT);
     }
 
     // Multiple signal set tests
@@ -915,6 +1029,12 @@ struct signal_set_test
 #else
         // Signal flags tests (Windows only)
         testFlagsNotSupportedOnWindows();
+#endif
+
+#if !COROSIO_TEST_HAS_ASAN
+        // Abandon parked coroutine frames by design; see context.hpp.
+        testShutdownReleasesRegistration();
+        testShutdownKeepsOtherContextRegistered();
 #endif
     }
 };

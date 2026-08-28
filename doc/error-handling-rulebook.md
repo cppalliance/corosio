@@ -32,6 +32,10 @@ by classifying its failures:
   a byte a failed write never sent, so the failure path disarms it.
   The cost is then the wakes already in flight rather than every wake
   after them. Never throw from a wake path.
+- A service's `shutdown()` is the same shape. Handing process-wide
+  state back (`sigaction`/`signal` restored to `SIG_DFL`) has no
+  channel and no caller left to act on one, so its result is
+  `std::ignore`d deliberately.
 - Never both channels for one operation. Never `std::error_code&`
   out-params. Never a throwing/non-throwing overload pair.
 
@@ -173,8 +177,11 @@ second channel:
   functions with a `-DBOOST_COROSIO_DYN_LINK -DBOOST_COROSIO_SOURCE`
   syntax check.
 - Deliberate discards use `std::ignore = expr;`, never `(void)`
-  casts. Reserve them for calls whose outcome is asserted downstream
-  (hostile-input tests, best-effort bench teardown).
+  casts and never `[[maybe_unused]]` on a named result. Reserve them
+  for calls whose outcome is asserted downstream (hostile-input tests,
+  best-effort bench teardown), whose failure is impossible by
+  construction at that site, or which have no channel to report on at
+  all (§1's wake and `shutdown()` paths).
 - Unused names — parameters kept for signature clarity, structured
   bindings partially consumed, `#if`-gated uses — are declared
   `[[maybe_unused]]`, never silenced with a void cast.

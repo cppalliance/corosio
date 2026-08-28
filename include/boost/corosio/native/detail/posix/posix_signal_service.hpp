@@ -24,6 +24,7 @@
 #include <boost/capy/error.hpp>
 
 #include <mutex>
+#include <tuple>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -172,6 +173,11 @@ public:
         destroy_impl(impl);
     }
 
+    /** Shut down the service.
+
+        Destroys every implementation the service still owns and gives
+        each of their registrations back to the process-global table.
+    */
     void shutdown() override;
 
     void destroy_impl(posix_signal& impl);
@@ -496,6 +502,9 @@ inline posix_signal_service::~posix_signal_service()
 inline void
 posix_signal_service::shutdown()
 {
+    posix_signal_detail::signal_state* state =
+        posix_signal_detail::get_signal_state();
+    std::lock_guard state_lock(state->mutex);
     std::lock_guard lock(mutex_);
 
     for (auto* impl = impl_list_.pop_front(); impl != nullptr;
@@ -503,11 +512,40 @@ posix_signal_service::shutdown()
     {
         while (auto* reg = impl->signals_)
         {
+            int const signal_number = reg->signal_number;
+
+            // The registration table outlives every io_context, so a set
+            // still registered here has to give its count and disposition
+            // back the way clear() would: otherwise the signal stays
+            // installed with these flags and the next add() of it is
+            // refused. The per-node table unlink clear() also does is
+            // skipped in favour of the wholesale null-out below.
+            if (state->registration_count[signal_number] == 1)
+            {
+                struct sigaction sa = {};
+                sa.sa_handler       = SIG_DFL;
+                sigemptyset(&sa.sa_mask);
+                sa.sa_flags = 0;
+                std::ignore = ::sigaction(signal_number, &sa, nullptr);
+                state->registered_flags[signal_number] = signal_set::none;
+            }
+
+            --state->registration_count[signal_number];
+            --registration_count_[signal_number];
+
             impl->signals_ = reg->next_in_set;
             delete reg;
         }
         delete impl;
     }
+
+    // Every live registration hung off an implementation in impl_list_,
+    // so the whole table goes stale at once and can be dropped wholesale
+    // rather than node by node. It has to be dropped: deliver_signal()
+    // walks this service until the destructor unlinks it from the global
+    // list.
+    for (int i = 0; i < max_signal_number; ++i)
+        registrations_[i] = nullptr;
 }
 
 inline io_object::implementation*

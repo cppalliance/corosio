@@ -26,6 +26,7 @@
 
 #include <csignal>
 #include <mutex>
+#include <tuple>
 
 #include <signal.h>
 
@@ -170,7 +171,11 @@ public:
     win_signals(win_signals const&)            = delete;
     win_signals& operator=(win_signals const&) = delete;
 
-    /** Shut down the service. */
+    /** Shut down the service.
+
+        Destroys every implementation the service still owns and gives
+        each of their registrations back to the process-global table.
+    */
     void shutdown() override;
 
     /** Destroy a signal implementation. */
@@ -397,19 +402,41 @@ inline win_signals::~win_signals()
 inline void
 win_signals::shutdown()
 {
+    signal_detail::signal_state* state = signal_detail::get_signal_state();
+    std::lock_guard<std::mutex> state_lock(state->mutex);
     std::lock_guard<win_mutex> lock(mutex_);
 
     for (auto* impl = impl_list_.pop_front(); impl != nullptr;
          impl       = impl_list_.pop_front())
     {
-        // Clear registrations
         while (auto* reg = impl->signals_)
         {
+            int const signal_number = reg->signal_number;
+
+            // The registration table outlives every io_context, so a set
+            // still registered here has to give its count and handler
+            // back the way clear() would: otherwise the handler stays
+            // installed for a signal no set owns any more. The per-node
+            // table unlink clear() also does is skipped in favour of the
+            // wholesale null-out below.
+            if (state->registration_count[signal_number] == 1)
+                std::ignore = ::signal(signal_number, SIG_DFL);
+
+            --state->registration_count[signal_number];
+
             impl->signals_ = reg->next_in_set;
             delete reg;
         }
         delete impl;
     }
+
+    // Every live registration hung off an implementation in impl_list_,
+    // so the whole table goes stale at once and can be dropped wholesale
+    // rather than node by node. It has to be dropped: deliver_signal()
+    // walks this service until the destructor unlinks it from the global
+    // list.
+    for (int i = 0; i < max_signal_number; ++i)
+        registrations_[i] = nullptr;
 }
 
 inline io_object::implementation*

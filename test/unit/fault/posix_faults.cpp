@@ -39,6 +39,7 @@
 #include <type_traits>
 
 #include <netdb.h>
+#include <signal.h>
 #include <unistd.h>
 
 namespace boost::corosio::test::fault {
@@ -575,11 +576,10 @@ struct posix_common_faults
     }
 
     // The signal service's shutdown walks the implementations it still
-    // owns, deleting each set and the registrations hanging off it. A
-    // signal set that outlives its io_context is the only way to reach
-    // that walk, and the SIGINT registration it leaves behind stays in
-    // the process signal table and fails every later add() of the same
-    // signal -- so the whole thing happens in a child that dies with it.
+    // owns, giving back each registration hanging off them. A set held
+    // in an abandoned coroutine frame is the only way to reach that
+    // walk; the frame dies with the child rather than being reported
+    // against the suite.
     void testSignalTeardownWalk()
     {
         in_child([]{
@@ -598,7 +598,10 @@ struct posix_common_faults
                 if(ioc.run_one() != 1)
                     return false;
             }
-            return !resumed;
+            struct sigaction cur = {};
+            if(::sigaction(SIGINT, nullptr, &cur) < 0)
+                return false;
+            return !resumed && cur.sa_handler == SIG_DFL;
         });
     }
 
