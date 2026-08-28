@@ -134,8 +134,12 @@ On POSIX platforms, file I/O (`stream_file`, `random_access_file`)
 and DNS resolution use a shared thread pool.
 
 * *Concurrent file operations*: increase to match expected
-  parallelism (e.g. 4 for four concurrent file reads).
-* *No file I/O*: leave at 1 (the pool is created lazily).
+  parallelism (e.g. 4 for four concurrent file reads).  The whole set
+  starts at once, on the first file or resolver call, so a larger pool
+  makes that one call more expensive and no other.
+* *No file I/O*: leave at 1; the pool is created with the context, but
+  its workers start on the first file or resolver operation, so a pool
+  nothing uses costs nothing.
 
 [#single-threaded-mode]
 === Locking Tiers (`locking`)

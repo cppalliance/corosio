@@ -148,24 +148,41 @@ io_uring_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
 
 namespace {
 
-// Pre-create services that must exist before construct() runs.
+// Reject options that construct() would otherwise act on.
 void
-pre_create_services(
-    [[maybe_unused]] capy::execution_context& ctx,
-    [[maybe_unused]] io_context_options const& opts)
+check_options([[maybe_unused]] io_context_options const& opts)
 {
 #if BOOST_COROSIO_POSIX
     if (opts.thread_pool_size < 1)
         throw std::invalid_argument(
             "thread_pool_size must be at least 1");
-    // Pre-create the shared thread pool with the configured size.
-    // This must happen before construct() because the scheduler
-    // constructor creates file and resolver services that call
-    // get_or_create_pool(), which would create a 1-thread pool.
-    if (opts.thread_pool_size != 1)
-        ctx.make_service<detail::thread_pool>(opts.thread_pool_size);
 #endif
+}
 
+// Create the shared pool that runs blocking file and DNS work. Runs
+// after construct() so the pool is newer than the scheduler its work
+// items post completions to: services shut down newest first, and the
+// pool must join its workers while that scheduler can still drain what
+// the last of them posted. Only the service is built here; its workers
+// wait for a first post, so a context that hands off no blocking work
+// carries no thread for the pool it holds.
+//
+// Every io_context constructor has to reach here, and reach it before
+// anything can call thread_pool_ref::get(): that is what keeps the
+// binding from ever constructing a pool on an initiator's thread, and
+// make_service throws on a duplicate if get() got there first.
+void
+create_thread_pool(
+    capy::execution_context& ctx,
+    [[maybe_unused]] io_context_options const& opts)
+{
+#if BOOST_COROSIO_POSIX
+    ctx.make_service<detail::thread_pool>(opts.thread_pool_size);
+#else
+    // thread_pool_size is a POSIX file-service option; the IOCP
+    // backend uses the pool for DNS alone.
+    ctx.make_service<detail::thread_pool>();
+#endif
 }
 
 // Map the locking tier to the scheduler's threading facilities. one_thread is
@@ -300,7 +317,7 @@ io_context::io_context(
 void
 io_context::apply_options_pre_(io_context_options const& opts)
 {
-    pre_create_services(*this, opts);
+    check_options(opts);
 }
 
 void
@@ -308,6 +325,7 @@ io_context::apply_options_post_(
     io_context_options const& opts_in,
     unsigned concurrency_hint)
 {
+    create_thread_pool(*this, opts_in);
     apply_scheduler_options(*sched_, opts_in, concurrency_hint);
     finish_construction(*sched_);
 }
@@ -315,6 +333,7 @@ io_context::apply_options_post_(
 void
 io_context::apply_threading_(io_context_options const& opts_in)
 {
+    create_thread_pool(*this, opts_in);
     sched_->configure_threading(make_threading_config(opts_in));
     finish_construction(*sched_);
 }

@@ -33,7 +33,7 @@ public:
     posix_random_access_file_service(
         capy::execution_context& ctx, scheduler& sched)
         : sched_(&sched)
-        , pool_(get_or_create_pool(ctx))
+        , pool_(ctx)
     {
     }
 
@@ -123,22 +123,27 @@ public:
         sched_->work_finished();
     }
 
-    thread_pool& pool() noexcept
+    /** Return the thread pool that runs this service's file work.
+
+        The pool's service is created on first use, so this can fail
+        where a plain accessor could not. Its workers start later, on
+        the first post, and a thread the system refuses there is
+        reported by that post rather than thrown here.
+
+        @throws std::bad_alloc If the service cannot be allocated.
+
+        @return The context's shared blocking-I/O pool.
+
+        @see thread_pool_ref::get
+    */
+    thread_pool& pool()
     {
-        return pool_;
+        return pool_.get();
     }
 
 private:
-    static thread_pool& get_or_create_pool(capy::execution_context& ctx)
-    {
-        auto* p = ctx.find_service<thread_pool>();
-        if (p)
-            return *p;
-        return ctx.make_service<thread_pool>();
-    }
-
     scheduler* sched_;
-    thread_pool& pool_;
+    thread_pool_ref pool_;
     std::mutex mutex_;
     intrusive_list<posix_random_access_file> file_list_;
     std::unordered_map<
@@ -213,10 +218,18 @@ posix_random_access_file::read_some_at(
     }
 
     static_cast<pool_work_item*>(op)->func_ = &raf_op::do_work;
-    if (!svc_.pool().post(static_cast<pool_work_item*>(op)))
+    if (auto pec = svc_.pool().post(static_cast<pool_work_item*>(op)))
     {
-        op->cancelled.store(true, std::memory_order_release);
-        svc_.post(static_cast<scheduler_op*>(op));
+        // The pool is shutting down, or the system refused it a thread.
+        // Nothing of this read went cross-thread, so it answers here
+        // like the closed-descriptor and zero-length exits above rather
+        // than through a completion the scheduler has to carry back.
+        // destroy() is the discard the op never reaching the queue
+        // needs: it unlinks, unwinds the work count and frees.
+        op->destroy();
+        *ec        = pec;
+        *bytes_out = 0;
+        return h;
     }
     return std::noop_coroutine();
 }
@@ -276,10 +289,18 @@ posix_random_access_file::write_some_at(
     }
 
     static_cast<pool_work_item*>(op)->func_ = &raf_op::do_work;
-    if (!svc_.pool().post(static_cast<pool_work_item*>(op)))
+    if (auto pec = svc_.pool().post(static_cast<pool_work_item*>(op)))
     {
-        op->cancelled.store(true, std::memory_order_release);
-        svc_.post(static_cast<scheduler_op*>(op));
+        // The pool is shutting down, or the system refused it a thread.
+        // Nothing of this write went cross-thread, so it answers here
+        // like the closed-descriptor and zero-length exits above rather
+        // than through a completion the scheduler has to carry back.
+        // destroy() is the discard the op never reaching the queue
+        // needs: it unlinks, unwinds the work count and frees.
+        op->destroy();
+        *ec        = pec;
+        *bytes_out = 0;
+        return h;
     }
     return std::noop_coroutine();
 }

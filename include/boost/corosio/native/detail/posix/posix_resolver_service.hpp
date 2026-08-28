@@ -37,7 +37,7 @@ public:
 
     posix_resolver_service(capy::execution_context& ctx, scheduler& sched)
         : sched_(&sched)
-        , pool_(ctx.use_service<thread_pool>())
+        , pool_(ctx)
     {
     }
 
@@ -59,13 +59,23 @@ public:
     void destroy_impl(posix_resolver& impl);
 
     void post(scheduler_op* op);
-    void work_started() noexcept;
-    void work_finished() noexcept;
 
-    /** Return the resolver thread pool. */
-    thread_pool& pool() noexcept
+    /** Return the resolver thread pool.
+
+        The pool's service is created on first use, so this can fail
+        where a plain accessor could not. Its workers start later, on
+        the first post, and a thread the system refuses there is
+        reported by that post rather than thrown here.
+
+        @throws std::bad_alloc If the service cannot be allocated.
+
+        @return The context's shared blocking-I/O pool.
+
+        @see thread_pool_ref::get
+    */
+    thread_pool& pool()
     {
-        return pool_;
+        return pool_.get();
     }
 
     /// True when the resolver thread pool is unavailable: the `unsafe` tier,
@@ -78,7 +88,7 @@ public:
 
 private:
     scheduler* sched_;
-    thread_pool& pool_;
+    thread_pool_ref pool_;
     std::mutex mutex_;
     intrusive_list<posix_resolver> resolver_list_;
     std::unordered_map<posix_resolver*, std::shared_ptr<posix_resolver>>
@@ -274,7 +284,10 @@ posix_resolver::resolve_op::operator()()
     if (out && !was_cancelled && gai_error == 0)
         *out = std::move(stored_results);
 
-    impl->svc_.work_finished();
+    // Hold the keepalive across the dispatch: it may be the last
+    // reference to the implementation this op is embedded in.
+    auto prevent_destroy = std::move(impl_ptr);
+    ex.on_work_finished();
     cont.h = h;
     dispatch_coro(ex, cont).resume();
 }
@@ -283,22 +296,10 @@ inline void
 posix_resolver::resolve_op::destroy()
 {
     stop_cb.reset();
-}
-
-inline void
-posix_resolver::resolve_op::request_cancel() noexcept
-{
-    cancelled.store(true, std::memory_order_release);
-}
-
-inline void
-posix_resolver::resolve_op::start(std::stop_token const& token)
-{
-    cancelled.store(false, std::memory_order_release);
-    stop_cb.reset();
-
-    if (token.stop_possible())
-        stop_cb.emplace(token, canceller{this});
+    auto local_ex = ex;
+    // May destroy the implementation, and with it this op.
+    impl_ptr.reset();
+    local_ex.on_work_finished();
 }
 
 // posix_resolver::reverse_resolve_op implementation
@@ -340,7 +341,10 @@ posix_resolver::reverse_resolve_op::operator()()
             ep, std::move(stored_host), std::move(stored_service));
     }
 
-    impl->svc_.work_finished();
+    // Hold the keepalive across the dispatch: it may be the last
+    // reference to the implementation this op is embedded in.
+    auto prevent_destroy = std::move(impl_ptr);
+    ex.on_work_finished();
     cont.h = h;
     dispatch_coro(ex, cont).resume();
 }
@@ -349,22 +353,10 @@ inline void
 posix_resolver::reverse_resolve_op::destroy()
 {
     stop_cb.reset();
-}
-
-inline void
-posix_resolver::reverse_resolve_op::request_cancel() noexcept
-{
-    cancelled.store(true, std::memory_order_release);
-}
-
-inline void
-posix_resolver::reverse_resolve_op::start(std::stop_token const& token)
-{
-    cancelled.store(false, std::memory_order_release);
-    stop_cb.reset();
-
-    if (token.stop_possible())
-        stop_cb.emplace(token, canceller{this});
+    auto local_ex = ex;
+    // May destroy the implementation, and with it this op.
+    impl_ptr.reset();
+    local_ex.on_work_finished();
 }
 
 // posix_resolver implementation
@@ -391,7 +383,6 @@ posix_resolver::resolve(
     op.reset();
     op.h       = h;
     op.ex      = ex;
-    op.impl    = this;
     op.ec_out  = ec;
     op.out     = out;
     op.host    = host;
@@ -406,12 +397,18 @@ posix_resolver::resolve(
     resolve_pool_op_.resolver_ = this;
     resolve_pool_op_.ref_      = this->shared_from_this();
     resolve_pool_op_.func_     = &posix_resolver::do_resolve_work;
-    if (!svc_.pool().post(&resolve_pool_op_))
+    if (auto pec = svc_.pool().post(&resolve_pool_op_))
     {
-        // Pool shut down — complete with cancellation
+        // The pool is shutting down, or the system refused it a thread.
+        // Nothing of this resolve went cross-thread, so it answers here
+        // like the no-resolver exit above rather than through a
+        // completion the scheduler has to carry back.
         resolve_pool_op_.ref_.reset();
-        op.cancelled.store(true, std::memory_order_release);
-        svc_.post(&op_);
+        op.stop_cb.reset();
+        op.ex.on_work_finished();
+        *ec       = pec;
+        op.cont.h = h;
+        return dispatch_coro(ex, op.cont);
     }
     return std::noop_coroutine();
 }
@@ -437,7 +434,6 @@ posix_resolver::reverse_resolve(
     op.reset();
     op.h          = h;
     op.ex         = ex;
-    op.impl       = this;
     op.ec_out     = ec;
     op.result_out = result_out;
     op.ep         = ep;
@@ -451,12 +447,18 @@ posix_resolver::reverse_resolve(
     reverse_pool_op_.resolver_ = this;
     reverse_pool_op_.ref_      = this->shared_from_this();
     reverse_pool_op_.func_     = &posix_resolver::do_reverse_resolve_work;
-    if (!svc_.pool().post(&reverse_pool_op_))
+    if (auto pec = svc_.pool().post(&reverse_pool_op_))
     {
-        // Pool shut down — complete with cancellation
+        // The pool is shutting down, or the system refused it a thread.
+        // Nothing of this resolve went cross-thread, so it answers here
+        // like the no-resolver exit above rather than through a
+        // completion the scheduler has to carry back.
         reverse_pool_op_.ref_.reset();
-        op.cancelled.store(true, std::memory_order_release);
-        svc_.post(&reverse_op_);
+        op.stop_cb.reset();
+        op.ex.on_work_finished();
+        *ec       = pec;
+        op.cont.h = h;
+        return dispatch_coro(ex, op.cont);
     }
     return std::noop_coroutine();
 }
@@ -502,9 +504,10 @@ posix_resolver::do_resolve_work(pool_work_item* w) noexcept
     if (ai)
         ::freeaddrinfo(ai);
 
-    // Move ref to stack before post — post may trigger destroy_impl
-    // which erases the last shared_ptr, destroying *self (and *pw)
-    auto ref = std::move(pw->ref_);
+    // Hand the keepalive to the op: the completion waits in the
+    // scheduler's queue, and the implementation embedding it must
+    // outlive that wait. Nothing may touch *self after the post.
+    self->op_.impl_ptr = std::move(pw->ref_);
     self->svc_.post(&self->op_);
 }
 
@@ -552,9 +555,10 @@ posix_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
         }
     }
 
-    // Move ref to stack before post — post may trigger destroy_impl
-    // which erases the last shared_ptr, destroying *self (and *pw)
-    auto ref = std::move(pw->ref_);
+    // Hand the keepalive to the op: the completion waits in the
+    // scheduler's queue, and the implementation embedding it must
+    // outlive that wait. Nothing may touch *self after the post.
+    self->reverse_op_.impl_ptr = std::move(pw->ref_);
     self->svc_.post(&self->reverse_op_);
 }
 
@@ -605,18 +609,6 @@ inline void
 posix_resolver_service::post(scheduler_op* op)
 {
     sched_->post(op);
-}
-
-inline void
-posix_resolver_service::work_started() noexcept
-{
-    sched_->work_started();
-}
-
-inline void
-posix_resolver_service::work_finished() noexcept
-{
-    sched_->work_finished();
 }
 
 // Free function to get/create the resolver service

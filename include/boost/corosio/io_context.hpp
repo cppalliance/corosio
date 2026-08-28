@@ -241,22 +241,24 @@ effective_concurrency_hint(
 */
 class BOOST_COROSIO_DECL io_context : public capy::execution_context
 {
-    /// Pre-create services that depend on options (before construct).
+    /// Reject invalid options before the backend is constructed.
     void apply_options_pre_(io_context_options const& opts);
 
-    /** Apply runtime tuning to the scheduler and finish bringing the
-        backend up. The tail of every options constructor: the backend
-        infrastructure whose setup reads these options is created here,
-        so a failure to create it throws from the constructor. */
+    /** Create the blocking-I/O thread pool, apply runtime tuning to the
+        scheduler and finish bringing the backend up. The tail of every
+        options constructor: the backend infrastructure whose setup reads
+        these options is created here, so a failure to create it throws
+        from the constructor. */
     void apply_options_post_(
         io_context_options const& opts,
         unsigned concurrency_hint);
 
-    /** Apply only the decomposed threading configuration (locking tiers),
-        then finish bringing the backend up. The tail of every plain
-        constructor, which — unlike the options constructors —
-        deliberately leaves the reactor budget at its defaults rather than
-        engaging the multi-thread post-everything heuristic. */
+    /** Create the blocking-I/O thread pool and apply only the decomposed
+        threading configuration (locking tiers), then finish bringing the
+        backend up. The tail of every plain constructor, which — unlike
+        the options constructors — deliberately leaves the reactor budget
+        at its defaults rather than engaging the multi-thread
+        post-everything heuristic. */
     void apply_threading_(io_context_options const& opts);
 
 protected:

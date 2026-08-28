@@ -85,15 +85,27 @@ public:
     /** Notify scheduler that I/O work completed. */
     void work_finished() noexcept;
 
-    /** Return the resolver thread pool. */
-    thread_pool& pool() noexcept
+    /** Return the resolver thread pool.
+
+        The pool's service is created on first use, so this can fail
+        where a plain accessor could not. Its workers start later, on
+        the first post, and a thread the system refuses there is
+        reported by that post rather than thrown here.
+
+        @throws std::bad_alloc If the service cannot be allocated.
+
+        @return The context's shared blocking-I/O pool.
+
+        @see thread_pool_ref::get
+    */
+    thread_pool& pool()
     {
-        return pool_;
+        return pool_.get();
     }
 
 private:
     scheduler& sched_;
-    thread_pool& pool_;
+    thread_pool_ref pool_;
     win_mutex mutex_;
     intrusive_list<win_resolver> resolver_list_;
     std::unordered_map<win_resolver*, std::shared_ptr<win_resolver>>
@@ -298,6 +310,9 @@ reverse_resolve_op::do_complete(
     if (!owner)
     {
         op->stop_cb.reset();
+        // Dropping the keepalive may destroy the implementation this
+        // op is embedded in, so nothing may touch it afterwards.
+        auto suicide = std::move(op->impl_ptr);
         return;
     }
 
@@ -321,6 +336,9 @@ reverse_resolve_op::do_complete(
     }
 
     op->cont.h = op->h;
+    // Hold the keepalive across the dispatch: it may be the last
+    // reference to the implementation this op is embedded in.
+    auto prevent_destroy = std::move(op->impl_ptr);
     dispatch_coro(op->ex, op->cont).resume();
 }
 
@@ -418,15 +436,21 @@ win_resolver::reverse_resolve(
     reverse_pool_op_.resolver_ = this;
     reverse_pool_op_.ref_      = this->shared_from_this();
     reverse_pool_op_.func_     = &win_resolver::do_reverse_resolve_work;
-    if (!svc_.pool().post(&reverse_pool_op_))
+    if (auto pec = svc_.pool().post(&reverse_pool_op_))
     {
-        // Pool shut down — complete with cancellation
+        // The pool is shutting down, or the system refused it a thread.
+        // Nothing of this resolve went cross-thread, so it answers here
+        // rather than through a completion the scheduler has to carry
+        // back.
         reverse_pool_op_.ref_.reset();
-        op.cancelled.store(true, std::memory_order_release);
+        op.stop_cb.reset();
         svc_.work_finished();
-        svc_.post(&reverse_op_);
+        *ec       = pec;
+        op.cont.h = h;
+        return dispatch_coro(d, op.cont);
     }
-    // completion is always posted to scheduler queue, never inline.
+    // The work the pool took completes on its own thread and is always
+    // posted to the scheduler queue, never inline.
     return std::noop_coroutine();
 }
 
@@ -489,9 +513,10 @@ win_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
 
     self->svc_.work_finished();
 
-    // Move ref to stack before post — post may trigger destroy_impl
-    // which erases the last shared_ptr, destroying *self (and *pw)
-    auto ref = std::move(pw->ref_);
+    // Hand the keepalive to the op: the completion waits in the
+    // scheduler's queue, and the implementation embedding it must
+    // outlive that wait. Nothing may touch *self after the post.
+    self->reverse_op_.impl_ptr = std::move(pw->ref_);
     self->svc_.post(&self->reverse_op_);
 }
 
@@ -500,7 +525,7 @@ win_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
 inline win_resolver_service::win_resolver_service(
     capy::execution_context& ctx, scheduler& sched)
     : sched_(sched)
-    , pool_(ctx.use_service<thread_pool>())
+    , pool_(ctx)
 {
 }
 

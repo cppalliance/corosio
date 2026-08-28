@@ -230,7 +230,9 @@ struct iocp_faults
         // the thread that holds it, and an arm whose nth is out of
         // reach never fires, so `shield` turns every wait on this
         // thread into a plain forward and leaves the process-wide arm
-        // for the only other thread in the process.
+        // for the timer thread, the only other one this context
+        // starts: the blocking-I/O pool holds no worker until
+        // something posts blocking work, and this test posts none.
         fault_scope shield(sys::WaitForSingleObject, ERROR_INVALID_HANDLE,
             (std::numeric_limits<unsigned>::max)());
         fault_scope f(sys::WaitForSingleObject, ERROR_INVALID_HANDLE, 1,

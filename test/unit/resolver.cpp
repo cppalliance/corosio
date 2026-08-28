@@ -20,13 +20,17 @@
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <coroutine>
+#include <optional>
 #include <stop_token>
 #include <tuple>
 
 #include "context.hpp"
+#include "pool_teardown.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -1107,6 +1111,79 @@ struct resolver_test
         BOOST_TEST(!resumed);
     }
 
+#if BOOST_COROSIO_POSIX
+    // A resolve queued behind a worker that is released only once
+    // teardown has begun. The pool has to join before the scheduler
+    // drains, or the completion the worker posts on its way out is
+    // neither run nor destroyed and the operation's keepalive leaks.
+    //
+    // The task is started by hand and owned by the test, so the frame
+    // the library abandons at teardown is destroyed here rather than
+    // leaked: what LeakSanitizer sees left over is the defect alone.
+    //
+    // Forward resolution reaches the pool on POSIX only; IOCP resolves
+    // through GetAddrInfoExW and the completion port.
+    void testDestroyWithPoolResolveQueued()
+    {
+        bool resumed = false;
+        test::pool_blocker blocker;
+        std::optional<io_context::executor_type> ex;
+        std::optional<capy::io_env> env;
+        std::optional<capy::task<>> parked;
+        {
+            io_context ioc;
+            BOOST_TEST(test::park_pool_worker(ioc, blocker));
+
+            resolver r(ioc);
+            auto query = [&]() -> capy::task<> {
+                // Numeric, so the queued work needs no name service.
+                std::ignore = co_await r.resolve(
+                    "127.0.0.1", "80",
+                    resolve_flags::numeric_host
+                        | resolve_flags::numeric_service);
+                resumed = true;
+            };
+
+            ex.emplace(ioc.get_executor());
+            env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
+            parked.emplace(query());
+            parked->await_suspend(std::noop_coroutine(), &*env).resume();
+        }
+        BOOST_TEST(!resumed);
+    }
+#endif
+
+    // The reverse half of the test above, which reaches the pool on
+    // every platform.
+    void testDestroyWithPoolReverseQueued()
+    {
+        bool resumed = false;
+        test::pool_blocker blocker;
+        std::optional<io_context::executor_type> ex;
+        std::optional<capy::io_env> env;
+        std::optional<capy::task<>> parked;
+        {
+            io_context ioc;
+            BOOST_TEST(test::park_pool_worker(ioc, blocker));
+
+            resolver r(ioc);
+            auto query = [&]() -> capy::task<> {
+                // Numeric, so the queued work needs no name service.
+                std::ignore = co_await r.resolve(
+                    endpoint(ipv4_address::loopback(), 80),
+                    reverse_flags::numeric_host
+                        | reverse_flags::numeric_service);
+                resumed = true;
+            };
+
+            ex.emplace(ioc.get_executor());
+            env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
+            parked.emplace(query());
+            parked->await_suspend(std::noop_coroutine(), &*env).resume();
+        }
+        BOOST_TEST(!resumed);
+    }
+
     void run()
     {
         // Construction and move semantics
@@ -1171,6 +1248,11 @@ struct resolver_test
         testReverseFlagsOperators();
         testSequentialReverseResolves();
         testMixedResolveAndReverseResolve();
+
+#if BOOST_COROSIO_POSIX
+        testDestroyWithPoolResolveQueued();
+#endif
+        testDestroyWithPoolReverseQueued();
 
 #if !COROSIO_TEST_HAS_ASAN
         // Abandon parked coroutine frames by design; see context.hpp.

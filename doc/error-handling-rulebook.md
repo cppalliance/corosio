@@ -74,7 +74,10 @@ construction, so a system that refuses any of it throws from the
 constructor instead of from the first operation, and the failed
 construction leaves nothing open. An initiator may then assume that
 infrastructure exists, which is what makes "initiators never throw"
-reachable at all.
+reachable at all. The one piece held back is the thread pool's
+workers, which start on the first blocking operation: a thread the
+system refuses there is reported through that operation's own channel,
+never thrown.
 
 ## 3. The Classification Test
 
@@ -147,6 +150,15 @@ second channel:
   `work_finished()` on everything it dispatches needs a matching
   `work_started()`. An operation nothing counted reports through its
   owner's channel instead of the completion queue.
+- Infrastructure an operation needs but does not own — the
+  blocking-I/O pool's worker threads, the wait reactor's polling
+  thread — is created on the first operation that needs it, and a
+  system that refuses it answers through that operation's completion.
+  The refusal is that operation's alone: the next one asks again. A
+  refusal the initiator learns of on its own thread, before any part of
+  the operation is cross-thread, completes there — the same exit the
+  closed-object and zero-length contracts take a few lines above it,
+  not a completion posted back through the scheduler.
 
 ## 6. Attributes and Spelling
 
@@ -215,7 +227,11 @@ second channel:
 - A background thread that dies mid-flight owes one answer, not two:
   the error that killed it, latched, both to the operations it was
   holding and to the ones that arrive afterwards. `canceled` is a
-  stop token and belongs only to operations something cancelled.
+  stop token and belongs only to operations something cancelled — a
+  thread that never started is the same rule from the other end: the
+  operation that asked for it reports the code the system gave
+  (`resource_unavailable_try_again` where the refusal carries no code
+  of its own), never `canceled`.
 
 ## 8. Testing
 

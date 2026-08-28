@@ -23,6 +23,7 @@
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
+#include <boost/corosio/native/detail/coro_op.hpp>
 
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/resolver_results.hpp>
@@ -163,26 +164,10 @@ class posix_resolver final
 public:
     // resolve_op - operation state for a single DNS resolution
 
-    struct resolve_op : scheduler_op
+    struct resolve_op : coro_op
     {
-        struct canceller
-        {
-            resolve_op* op;
-            void operator()() const noexcept
-            {
-                op->request_cancel();
-            }
-        };
-
-        // Coroutine state
-        std::coroutine_handle<> h;
-        capy::continuation cont;
-        capy::executor_ref ex;
-        posix_resolver* impl = nullptr;
-
-        // Output parameters
-        std::error_code* ec_out = nullptr;
-        resolver_results* out   = nullptr;
+        /// Where the endpoints are handed back.
+        resolver_results* out = nullptr;
 
         // Input parameters (owned copies for thread safety)
         std::string host;
@@ -193,40 +178,18 @@ public:
         resolver_results stored_results;
         int gai_error = 0;
 
-        // Thread coordination
-        std::atomic<bool> cancelled{false};
-        std::optional<std::stop_callback<canceller>> stop_cb;
-
         resolve_op() = default;
 
         void reset() noexcept;
         void operator()() override;
         void destroy() override;
-        void request_cancel() noexcept;
-        void start(std::stop_token const& token);
     };
 
     // reverse_resolve_op - operation state for reverse DNS resolution
 
-    struct reverse_resolve_op : scheduler_op
+    struct reverse_resolve_op : coro_op
     {
-        struct canceller
-        {
-            reverse_resolve_op* op;
-            void operator()() const noexcept
-            {
-                op->request_cancel();
-            }
-        };
-
-        // Coroutine state
-        std::coroutine_handle<> h;
-        capy::continuation cont;
-        capy::executor_ref ex;
-        posix_resolver* impl = nullptr;
-
-        // Output parameters
-        std::error_code* ec_out             = nullptr;
+        /// Where the name is handed back.
         reverse_resolver_result* result_out = nullptr;
 
         // Input parameters
@@ -238,17 +201,11 @@ public:
         std::string stored_service;
         int gai_error = 0;
 
-        // Thread coordination
-        std::atomic<bool> cancelled{false};
-        std::optional<std::stop_callback<canceller>> stop_cb;
-
         reverse_resolve_op() = default;
 
         void reset() noexcept;
         void operator()() override;
         void destroy() override;
-        void request_cancel() noexcept;
-        void start(std::stop_token const& token);
     };
 
     /// Embedded pool work item for thread pool dispatch.

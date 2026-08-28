@@ -21,16 +21,20 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
 #include "context.hpp"
+#include "pool_teardown.hpp"
 #include "test_suite.hpp"
 
+#include <coroutine>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <random>
 #include <atomic>
 #include <limits>
@@ -971,6 +975,50 @@ struct stream_file_test
         BOOST_TEST(!resumed);
     }
 
+    // A read queued behind a worker that is released only once teardown
+    // has begun. The pool has to join before the scheduler drains, or
+    // the completion the worker posts on its way out is neither run nor
+    // destroyed and the operation's keepalive leaks.
+    //
+    // The task is started by hand and owned by the test, so the frame
+    // the library abandons at teardown is destroyed here rather than
+    // leaked: what LeakSanitizer sees left over is the defect alone.
+    void testDestroyWithPoolWorkQueued()
+    {
+#if BOOST_COROSIO_HAS_IO_URING
+        // io_uring reads through the ring, never through the pool.
+        if constexpr (std::is_same_v<
+                std::remove_const_t<decltype(Backend)>, io_uring_t>)
+            return;
+#endif
+        temp_file tmp("sf_pool_teardown_", "hello world");
+        auto const path = tmp.path;
+        bool resumed = false;
+        test::pool_blocker blocker;
+        std::optional<io_context::executor_type> ex;
+        std::optional<capy::io_env> env;
+        std::optional<capy::task<>> parked;
+        {
+            io_context ioc(Backend);
+            BOOST_TEST(test::park_pool_worker(ioc, blocker));
+
+            stream_file f(ioc);
+            std::ignore = f.open(path, file_base::read_only);
+            auto reader = [&]() -> capy::task<> {
+                char buf[16];
+                std::ignore = co_await f.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+                resumed = true;
+            };
+
+            ex.emplace(ioc.get_executor());
+            env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
+            parked.emplace(reader());
+            parked->await_suspend(std::noop_coroutine(), &*env).resume();
+        }
+        BOOST_TEST(!resumed);
+    }
+
     void run()
     {
         testConstruction();
@@ -1019,6 +1067,11 @@ struct stream_file_test
         testAssignOverOpenAdopts();
         testSeekNegative();
         testCancelWithStoppedToken();
+
+#if BOOST_COROSIO_POSIX
+        // POSIX file work runs on the pool; IOCP uses overlapped I/O.
+        testDestroyWithPoolWorkQueued();
+#endif
 
 #if !COROSIO_TEST_HAS_ASAN
         // Abandon parked coroutine frames by design; see context.hpp.

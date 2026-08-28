@@ -36,7 +36,7 @@ public:
     posix_stream_file_service(
         capy::execution_context& ctx, scheduler& sched)
         : sched_(&sched)
-        , pool_(get_or_create_pool(ctx))
+        , pool_(ctx)
     {
     }
 
@@ -123,22 +123,27 @@ public:
         sched_->work_finished();
     }
 
-    thread_pool& pool() noexcept
+    /** Return the thread pool that runs this service's file work.
+
+        The pool's service is created on first use, so this can fail
+        where a plain accessor could not. Its workers start later, on
+        the first post, and a thread the system refuses there is
+        reported by that post rather than thrown here.
+
+        @throws std::bad_alloc If the service cannot be allocated.
+
+        @return The context's shared blocking-I/O pool.
+
+        @see thread_pool_ref::get
+    */
+    thread_pool& pool()
     {
-        return pool_;
+        return pool_.get();
     }
 
 private:
-    static thread_pool& get_or_create_pool(capy::execution_context& ctx)
-    {
-        auto* p = ctx.find_service<thread_pool>();
-        if (p)
-            return *p;
-        return ctx.make_service<thread_pool>();
-    }
-
     scheduler* sched_;
-    thread_pool& pool_;
+    thread_pool_ref pool_;
     std::mutex mutex_;
     intrusive_list<posix_stream_file> file_list_;
     std::unordered_map<posix_stream_file*, std::shared_ptr<posix_stream_file>>
@@ -206,11 +211,19 @@ posix_stream_file::read_some(
     read_pool_op_.file_ = this;
     read_pool_op_.ref_  = this->shared_from_this();
     read_pool_op_.func_ = &posix_stream_file::do_read_work;
-    if (!svc_.pool().post(&read_pool_op_))
+    if (auto pec = svc_.pool().post(&read_pool_op_))
     {
-        op.impl_ref = std::move(read_pool_op_.ref_);
-        op.cancelled.store(true, std::memory_order_release);
-        svc_.post(&read_op_);
+        // The pool is shutting down, or the system refused it a thread.
+        // Nothing of this read went cross-thread, so it answers here
+        // like the closed-descriptor and zero-length exits above rather
+        // than through a completion the scheduler has to carry back.
+        read_pool_op_.ref_.reset();
+        op.stop_cb.reset();
+        op.ex.on_work_finished();
+        *ec        = pec;
+        *bytes_out = 0;
+        op.cont.h  = h;
+        return dispatch_coro(ex, op.cont);
     }
     return std::noop_coroutine();
 }
@@ -299,11 +312,19 @@ posix_stream_file::write_some(
     write_pool_op_.file_ = this;
     write_pool_op_.ref_  = this->shared_from_this();
     write_pool_op_.func_ = &posix_stream_file::do_write_work;
-    if (!svc_.pool().post(&write_pool_op_))
+    if (auto pec = svc_.pool().post(&write_pool_op_))
     {
-        op.impl_ref = std::move(write_pool_op_.ref_);
-        op.cancelled.store(true, std::memory_order_release);
-        svc_.post(&write_op_);
+        // The pool is shutting down, or the system refused it a thread.
+        // Nothing of this write went cross-thread, so it answers here
+        // like the closed-descriptor and zero-length exits above rather
+        // than through a completion the scheduler has to carry back.
+        write_pool_op_.ref_.reset();
+        op.stop_cb.reset();
+        op.ex.on_work_finished();
+        *ec        = pec;
+        *bytes_out = 0;
+        op.cont.h  = h;
+        return dispatch_coro(ex, op.cont);
     }
     return std::noop_coroutine();
 }
