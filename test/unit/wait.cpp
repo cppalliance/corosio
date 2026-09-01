@@ -935,6 +935,54 @@ struct wait_test
             local_endpoint(tmp.path()));
     }
 
+#if BOOST_COROSIO_POSIX
+    // TCP urgent (out-of-band) data is a readiness condition, not a
+    // fault: a read on an otherwise-healthy socket that also carries an
+    // urgent byte must return the normal data, never io_error. select
+    // maps the urgent byte onto except_fds -> reactor_event_error and,
+    // with SO_ERROR still zero, synthesizes EIO; epoll/kqueue/io_uring do
+    // not treat OOB as an error.
+    void testOobDoesNotFaultRead()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        std::error_code read_ec;
+        std::size_t bytes_read = 0;
+        bool read_done = false;
+        std::array<char, 8> buf{};
+
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] = co_await s1.read_some(
+                capy::mutable_buffer(buf.data(), buf.size()));
+            read_ec    = ec;
+            bytes_read = n;
+            read_done  = true;
+        };
+        // Spawn order is park order: the read parks before the writer's
+        // urgent byte trips the exceptional condition and the normal
+        // byte satisfies the read.
+        auto writer = [&]() -> capy::task<> {
+            int fd = static_cast<int>(s2.native_handle());
+            char urg = '!';
+            ::send(fd, &urg, 1, MSG_OOB);
+            char normal = 'x';
+            ::send(fd, &normal, 1, 0);
+            co_return;
+        };
+
+        capy::run_async(ex)(reader());
+        capy::run_async(ex)(writer());
+        ioc.run();
+
+        BOOST_TEST(read_done);
+        BOOST_TEST(read_ec != std::errc::io_error);
+        BOOST_TEST(!read_ec);
+        BOOST_TEST_EQ(bytes_read, 1u);
+    }
+#endif
+
     void run()
     {
         testWaitReadAndNoConsume();
@@ -944,6 +992,9 @@ struct wait_test
         testWaitWriteCancelDoesNotLeak();
         testAcceptorWait();
         testAcceptorErrorWaitCancel();
+#if BOOST_COROSIO_POSIX
+        testOobDoesNotFaultRead();
+#endif
         testWaitOnLocalStream();
         testWaitOnUdp();
         testWaitReadAfterShortRead();

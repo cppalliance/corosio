@@ -171,8 +171,12 @@ reactor_descriptor_state::invoke_deferred_io()
             socklen_t len = sizeof(err);
             if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
                 err = errno;
-            if (err == 0)
-                err = EIO;
+            // select raises its exceptional set for out-of-band/urgent
+            // data as well as for genuine faults; on a healthy socket the
+            // probe then reads SO_ERROR == 0. Faulting a pending read or
+            // write on that is wrong, so an I/O operation completes only
+            // on a real (non-zero) error. wait(error) still names a code
+            // below.
         }
 
         if (ev & reactor_event_read)
@@ -295,7 +299,11 @@ reactor_descriptor_state::invoke_deferred_io()
         {
             if (wait_error_op)
             {
-                wait_error_op->complete(err, 0);
+                // wait(error) fired on the exceptional condition; name a
+                // code even when the kernel exposed none (e.g. urgent
+                // data leaves SO_ERROR == 0).
+                int const werr = err ? err : EIO;
+                wait_error_op->complete(werr, 0);
                 local_ops.push(std::exchange(wait_error_op, nullptr));
             }
         }

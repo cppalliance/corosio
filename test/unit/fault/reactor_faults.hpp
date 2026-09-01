@@ -797,35 +797,20 @@ struct reactor_common_faults
             "on this kernel; skipping %s\n", what);
     }
 
-    /* Report a premise that held for the probe and not for the reactor.
+    /* The write-direction dispatch when the except set is raised
+       without a socket error.
 
-       Only the round before the reactor's can be probed from a
-       coroutine, so a kernel that drops one of the two bits in between
-       leaves the operation resolving normally -- the arm never ran, and
-       there is nothing here to assert about.
-    */
-    static void skip_unpaired(char const* what)
-    {
-        std::fprintf(stderr,
-            "fault harness: the reactor's round did not carry both "
-            "writability and the except set; skipping %s\n", what);
-    }
-
-    /* The write-direction error arms, reached without a socket error.
-
-       Both arms need the same round to report writability and an error
-       condition on one descriptor, and a reset does not do that on the
-       BSD family -- it surfaces as plain writability, so the operation
-       re-runs its I/O and reports the real error instead. An urgent
-       byte does: it raises select's except set on a descriptor that is
+       Both arms need the same round to report writability and an
+       exceptional condition on one descriptor. An urgent byte does
+       that: it raises select's except set on a descriptor that is
        writable in its own right.
 
-       The SO_ERROR probe is left unfaulted here on purpose. An
-       out-of-band condition leaves no socket error behind, so the probe
-       reads back zero and the dispatch substitutes EIO
-       (reactor_descriptor_state::invoke_deferred_io) -- which is also
-       what the operation reports, on a socket that is in no way
-       broken.
+       The SO_ERROR probe is left unfaulted on purpose. Out-of-band data
+       leaves no socket error behind, so the probe reads back zero -- and
+       a healthy socket must not be faulted for it
+       (reactor_descriptor_state::invoke_deferred_io). The write simply
+       re-runs its I/O and completes normally, on a socket that is in no
+       way broken.
     */
     void testErrorEventOnWritableWrite()
     {
@@ -850,8 +835,8 @@ struct reactor_common_faults
                 std::ignore = n;
                 wec = ec;
                 spec_fired = spec.fired();
-                // Nothing broke: the condition the dispatch reported
-                // was one byte of urgent data.
+                // Nothing broke: the condition was one byte of urgent
+                // data, so the write completes normally.
                 open_after = c.is_open();
                 // The byte is never consumed, so the except set stays
                 // raised; the descriptor that raised it goes before the
@@ -877,7 +862,7 @@ struct reactor_common_faults
                 skip_unraisable("testErrorEventOnWritableWrite");
                 return;
             }
-            BOOST_TEST(wec == std::errc::io_error);
+            BOOST_TEST(!wec);
             BOOST_TEST(open_after);
         }
     }
@@ -930,12 +915,10 @@ struct reactor_common_faults
                 skip_unraisable("testErrorEventOnWritableWaitWrite");
                 return;
             }
-            if(!wec)
-            {
-                skip_unpaired("testErrorEventOnWritableWaitWrite");
-                return;
-            }
-            BOOST_TEST(wec == std::errc::io_error);
+            // Urgent data on a writable socket is not a fault: the wait
+            // completes on the writability, never with an error.
+            BOOST_TEST(done);
+            BOOST_TEST(!wec);
             BOOST_TEST(open_after);
         }
     }
