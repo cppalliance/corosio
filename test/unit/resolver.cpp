@@ -1184,6 +1184,49 @@ struct resolver_test
         BOOST_TEST(!resumed);
     }
 
+#if BOOST_COROSIO_HAS_IOCP
+    // Forward resolution on IOCP dispatches through GetAddrInfoExW and
+    // posts its completion (resolve_op, embedded in the win_resolver) to
+    // the scheduler queue. Unlike the reverse path and both POSIX paths,
+    // the forward op takes no shared_from_this()/impl_ptr keepalive, so
+    // destroying the resolver frees the win_resolver the queued
+    // resolve_op lives in before teardown drains that op -- a
+    // use-after-free that ASan catches. localhost resolves from the hosts
+    // file synchronously, so GetAddrInfoExW posts the op inline and it is
+    // reliably queued when the resolver is freed.
+    //
+    // The task is started by hand and owned by the test, so the frame the
+    // library abandons at teardown is destroyed here rather than leaked:
+    // what a sanitizer reports is the defect alone. The bug is observable
+    // only under ASan; without a sanitizer the freed read is silent.
+    //
+    // Contrast the reverse path, which holds the keepalive on
+    // reverse_op_.impl_ptr across the queued completion
+    // (win_resolver_service.hpp do_reverse_resolve_work / do_complete),
+    // and so survives teardown intact.
+    void testDestroyWithForwardResolveQueued()
+    {
+        bool resumed = false;
+        std::optional<io_context::executor_type> ex;
+        std::optional<capy::io_env> env;
+        std::optional<capy::task<>> parked;
+        {
+            io_context ioc;
+            resolver r(ioc);
+            auto query = [&]() -> capy::task<> {
+                std::ignore = co_await r.resolve("localhost", "80");
+                resumed = true;
+            };
+
+            ex.emplace(ioc.get_executor());
+            env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
+            parked.emplace(query());
+            parked->await_suspend(std::noop_coroutine(), &*env).resume();
+        }
+        BOOST_TEST(!resumed);
+    }
+#endif
+
     void run()
     {
         // Construction and move semantics
@@ -1253,6 +1296,10 @@ struct resolver_test
         testDestroyWithPoolResolveQueued();
 #endif
         testDestroyWithPoolReverseQueued();
+
+#if BOOST_COROSIO_HAS_IOCP
+        testDestroyWithForwardResolveQueued();
+#endif
 
 #if !COROSIO_TEST_HAS_ASAN
         // Abandon parked coroutine frames by design; see context.hpp.

@@ -257,6 +257,9 @@ resolve_op::do_complete(
             op->results = nullptr;
         }
         op->cancel_handle = nullptr;
+        // Dropping the keepalive may destroy the implementation this op
+        // is embedded in, so nothing may touch it afterwards.
+        auto suicide = std::move(op->impl_ptr);
         return;
     }
 
@@ -288,6 +291,9 @@ resolve_op::do_complete(
     op->cancel_handle = nullptr;
 
     op->cont.h = op->h;
+    // Hold the keepalive across the dispatch: it may be the last
+    // reference to the implementation this op is embedded in.
+    auto prevent_destroy = std::move(op->impl_ptr);
     dispatch_coro(op->ex, op->cont).resume();
 }
 
@@ -380,6 +386,12 @@ win_resolver::resolve(
 
     // Keep io_context alive while resolution is pending
     svc_.work_started();
+
+    // Prevent impl destruction while the async resolve is in flight and
+    // its completion waits in the scheduler queue: the op is embedded in
+    // this win_resolver, which teardown may otherwise free before the
+    // queued completion drains. Mirrors the reverse path's keepalive.
+    op.impl_ptr = this->shared_from_this();
 
     int result = ::GetAddrInfoExW(
         op.host_w.empty() ? nullptr : op.host_w.c_str(),
