@@ -1045,4 +1045,61 @@ struct wait_closed_test
 
 COROSIO_BACKEND_TESTS(wait_closed_test, "boost.corosio.wait_closed")
 
+// A faulted socket's wait(error) must name why it faulted: the delivered
+// error_code must be a real, non-empty code (SO_ERROR, e.g.
+// connection_reset), never an empty error_code — which is
+// indistinguishable from a benign readiness signal — and never the
+// canceled condition.
+//
+// Scoped to epoll (the control, which reads SO_ERROR and names the code)
+// and io_uring (which completes the POLL_ADD with res>=0 and therefore an
+// empty error_code — the bug). Not run on select, where a peer RST does
+// not set except_fds and the error wait would never fire, nor on kqueue,
+// which is not exercised on this host.
+#if BOOST_COROSIO_HAS_EPOLL && BOOST_COROSIO_HAS_IO_URING
+struct error_wait_names_reset_test
+{
+    template<auto Backend>
+    void check()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        // Both ends linger with a zero timeout, so closing the peer
+        // sends an RST rather than a graceful FIN.
+        auto [s1, s2] = test::make_socket_pair(ioc);
+
+        std::error_code wait_ec;
+        bool wait_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await s1.wait(wait_type::error);
+            wait_ec   = ec;
+            wait_done = true;
+        };
+        // Spawn order is park order: the error wait is outstanding
+        // before the peer's RST reaches the socket.
+        auto resetter = [&]() -> capy::task<> {
+            s2.close();
+            co_return;
+        };
+
+        capy::run_async(ex)(waiter());
+        capy::run_async(ex)(resetter());
+        ioc.run();
+
+        BOOST_TEST(wait_done);
+        BOOST_TEST(wait_ec);
+        BOOST_TEST(wait_ec != capy::cond::canceled);
+    }
+
+    void run()
+    {
+        check<epoll>();     // control: names the code, passes
+        check<io_uring>();  // bug D1: empty error_code, fails
+    }
+};
+
+TEST_SUITE(error_wait_names_reset_test, "boost.corosio.wait_error_reset");
+#endif
+
 } // namespace boost::corosio

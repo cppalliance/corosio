@@ -31,6 +31,7 @@
 
 #include <system_error>
 
+#include <errno.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -650,11 +651,32 @@ struct uring_wait_op : io_uring_op
         if (self->sched_)
             self->sched_->reset_inline_budget();
 
+        // A POLL_ADD completion carries the error band in its revents
+        // (res), not as a negative res, so name the reason the reactor
+        // way — SO_ERROR, or EIO when the kernel has none — instead of
+        // completing wait(error) with an empty, benign-looking code.
+        // OOB (POLLPRI) is a readiness signal, not an error.
+        std::error_code ec{};
+        if (self->res < 0)
+        {
+            ec = make_err(-self->res);
+        }
+        else if (self->res & (POLLERR | POLLHUP | POLLNVAL))
+        {
+            int so_err = 0;
+            socklen_t len = sizeof(so_err);
+            if (::getsockopt(self->fd, SOL_SOCKET, SO_ERROR, &so_err, &len) < 0)
+                so_err = errno;
+            if (so_err == 0)
+                so_err = EIO;
+            ec = make_err(so_err);
+        }
+
         // Wait reports only success/cancel/error — no bytes, no EOF.
         decode_io_result(
             self->ec_out,
             self->cancelled.load(std::memory_order_acquire),
-            self->res < 0 ? make_err(-self->res) : std::error_code{},
+            ec,
             /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
         coro_resume(self);
