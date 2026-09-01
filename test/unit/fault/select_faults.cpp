@@ -360,7 +360,11 @@ struct select_faults
             skip_no_high_fd("testAcceptAboveFdSetsize");
             return;
         }
-        BOOST_TEST(aec == std::errc::invalid_argument);
+        // A descriptor out of select's addressable range is the same
+        // logical failure the adoption (validate_assigned_fd) and
+        // creation (set_fd_options) checks report as too_many_files_open;
+        // the accept path must answer with the same code, not EINVAL.
+        BOOST_TEST(aec == std::errc::too_many_files_open);
         BOOST_TEST(!server.is_open());
         BOOST_TEST_EQ(leaked, 0);
     }

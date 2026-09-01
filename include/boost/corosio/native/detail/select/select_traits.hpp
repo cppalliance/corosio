@@ -128,7 +128,7 @@ struct select_traits
             if (new_fd >= FD_SETSIZE)
             {
                 ::close(new_fd);
-                errno = EINVAL;
+                errno = EMFILE;
                 return -1;
             }
 
