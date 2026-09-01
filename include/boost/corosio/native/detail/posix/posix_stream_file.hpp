@@ -23,6 +23,7 @@
 #include <boost/corosio/detail/thread_pool.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
+#include <boost/corosio/native/detail/coro_op.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
@@ -90,27 +91,13 @@ class posix_stream_file final
 public:
     static constexpr std::size_t max_buffers = 16;
 
-    /** Operation state for a single file read or write. */
-    struct file_op : scheduler_op
+    /** Operation state for a single file read or write.
+
+        The coroutine, cancellation and keepalive machinery is inherited
+        from `coro_op`; only the pool-path result state lives here.
+    */
+    struct file_op : coro_op
     {
-        struct canceller
-        {
-            file_op* op;
-            void operator()() const noexcept
-            {
-                op->request_cancel();
-            }
-        };
-
-        // Coroutine state
-        std::coroutine_handle<> h;
-        capy::continuation cont;
-        capy::executor_ref ex;
-
-        // Output pointers
-        std::error_code* ec_out = nullptr;
-        std::size_t* bytes_out  = nullptr;
-
         // Buffer data (copied from buffer_param at submission time)
         iovec iovecs[max_buffers];
         int iovec_count = 0;
@@ -118,14 +105,6 @@ public:
         // Result storage (populated by worker thread)
         int errn                    = 0;
         std::size_t bytes_transferred = 0;
-        bool is_read                = false;
-
-        // Thread coordination
-        std::atomic<bool> cancelled{false};
-        std::optional<std::stop_callback<canceller>> stop_cb;
-
-        /// Prevents use-after-free when file is closed with pending ops.
-        std::shared_ptr<void> impl_ref;
 
         file_op() = default;
 
@@ -137,26 +116,13 @@ public:
             is_read           = false;
             cancelled.store(false, std::memory_order_relaxed);
             stop_cb.reset();
-            impl_ref.reset();
+            impl_ptr.reset();
             ec_out    = nullptr;
             bytes_out = nullptr;
         }
 
         void operator()() override;
         void destroy() override;
-
-        void request_cancel() noexcept
-        {
-            cancelled.store(true, std::memory_order_release);
-        }
-
-        void start(std::stop_token const& token)
-        {
-            cancelled.store(false, std::memory_order_release);
-            stop_cb.reset();
-            if (token.stop_possible())
-                stop_cb.emplace(token, canceller{this});
-        }
     };
 
     /** Pool work item for thread pool dispatch. */
@@ -428,10 +394,10 @@ posix_stream_file::file_op::operator()()
     if (bytes_out)
         *bytes_out = was_cancelled ? 0 : bytes_transferred;
 
-    // Move impl_ref to a local so members remain valid through
-    // dispatch — impl_ref may be the last shared_ptr keeping
+    // Move impl_ptr to a local so members remain valid through
+    // dispatch — impl_ptr may be the last shared_ptr keeping
     // the parent posix_stream_file (which embeds this file_op) alive.
-    auto prevent_destroy = std::move(impl_ref);
+    auto prevent_destroy = std::move(impl_ptr);
     ex.on_work_finished();
     cont.h = h;
     dispatch_coro(ex, cont).resume();
@@ -442,7 +408,7 @@ posix_stream_file::file_op::destroy()
 {
     stop_cb.reset();
     auto local_ex = ex;
-    impl_ref.reset();
+    impl_ptr.reset();
     local_ex.on_work_finished();
 }
 

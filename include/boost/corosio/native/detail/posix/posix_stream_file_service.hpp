@@ -258,7 +258,7 @@ posix_stream_file::do_read_work(pool_work_item* w) noexcept
         }
     }
 
-    op.impl_ref = std::move(pw->ref_);
+    op.impl_ptr = std::move(pw->ref_);
     self->svc_.post(&op);
 }
 
@@ -359,7 +359,7 @@ posix_stream_file::do_write_work(pool_work_item* w) noexcept
         }
     }
 
-    op.impl_ref = std::move(pw->ref_);
+    op.impl_ptr = std::move(pw->ref_);
     self->svc_.post(&op);
 }
 

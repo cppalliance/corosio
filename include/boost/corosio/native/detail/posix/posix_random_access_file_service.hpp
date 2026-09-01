@@ -207,7 +207,7 @@ posix_random_access_file::read_some_at(
     op->ec_out    = ec;
     op->bytes_out = bytes_out;
     op->file_     = this;
-    op->file_ref  = this->shared_from_this();
+    op->impl_ptr  = this->shared_from_this();
     op->start(token);
 
     op->ex.on_work_started();
@@ -278,7 +278,7 @@ posix_random_access_file::write_some_at(
     op->ec_out    = ec;
     op->bytes_out = bytes_out;
     op->file_     = this;
-    op->file_ref  = this->shared_from_this();
+    op->impl_ptr  = this->shared_from_this();
     op->start(token);
 
     op->ex.on_work_started();

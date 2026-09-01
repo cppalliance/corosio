@@ -22,6 +22,7 @@
 #include <boost/corosio/detail/thread_pool.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
+#include <boost/corosio/native/detail/coro_op.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
@@ -75,51 +76,26 @@ public:
 
     /** Per-operation state, heap-allocated for each async call.
 
-        Inherits from scheduler_op (for scheduler completion) and
-        pool_work_item (for thread-pool dispatch). Linked into the
-        file's outstanding_ops_ list for cancellation tracking.
+        Inherits from `coro_op` (for scheduler completion plus the shared
+        coroutine, cancellation and keepalive machinery) and
+        `pool_work_item` (for thread-pool dispatch). Linked into the
+        file's outstanding_ops_ list for cancellation tracking. `coro_op`
+        leads the base list so a `scheduler_op*` round-trips.
     */
     struct raf_op final
-        : scheduler_op
+        : coro_op
         , pool_work_item
         , intrusive_list<raf_op>::node
     {
-        struct canceller
-        {
-            raf_op* op;
-            void operator()() const noexcept
-            {
-                op->cancelled.store(true, std::memory_order_release);
-            }
-        };
-
-        std::coroutine_handle<> h;
-        capy::executor_ref ex;
-
-        std::error_code* ec_out = nullptr;
-        std::size_t* bytes_out  = nullptr;
-
         iovec iovecs[max_buffers];
         int iovec_count = 0;
         std::uint64_t offset = 0;
 
         int errn                    = 0;
         std::size_t bytes_transferred = 0;
-        bool is_read                = false;
 
-        std::atomic<bool> cancelled{false};
-        std::optional<std::stop_callback<canceller>> stop_cb;
-
+        // Raw back-pointer for the typed work; `impl_ptr` is the keepalive.
         posix_random_access_file* file_ = nullptr;
-        std::shared_ptr<posix_random_access_file> file_ref;
-
-        void start(std::stop_token const& token)
-        {
-            cancelled.store(false, std::memory_order_release);
-            stop_cb.reset();
-            if (token.stop_possible())
-                stop_cb.emplace(token, canceller{this});
-        }
 
         void operator()() override;
         void destroy() override;
@@ -330,7 +306,7 @@ posix_random_access_file::raf_op::operator()()
         file_->outstanding_ops_.remove(this);
     }
 
-    file_ref.reset();
+    impl_ptr.reset();
 
     auto coro = h;
     ex.on_work_finished();
@@ -348,7 +324,7 @@ posix_random_access_file::raf_op::destroy()
         std::lock_guard<std::mutex> lock(file_->ops_mutex_);
         file_->outstanding_ops_.remove(this);
     }
-    file_ref.reset();
+    impl_ptr.reset();
     ex.on_work_finished();
     delete this;
 }
