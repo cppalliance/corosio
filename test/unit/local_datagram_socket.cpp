@@ -923,8 +923,63 @@ struct local_datagram_socket_test
         BOOST_TEST_EQ(resumed, before_destroy);
     }
 
+    void testSendToMissingPathReportsError()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        test::temp_socket_dir tmp;
+
+        local_datagram_socket d(ioc);
+        BOOST_TEST(!d.open());
+
+        std::error_code sec;
+        auto task = [&]() -> capy::task<> {
+            auto [ec, n] = co_await d.send_to(
+                capy::const_buffer("x", 1), local_endpoint(tmp.path()));
+            std::ignore = n;
+            sec         = ec;
+        };
+        capy::run_async(ex)(task());
+        ioc.run();
+        BOOST_TEST(!!sec);
+    }
+
+
+    void testWaitWriteReady()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_datagram_socket d1(ioc), d2(ioc);
+        BOOST_TEST(!connect_pair(d1, d2));
+
+        std::error_code wec = std::make_error_code(std::errc::io_error);
+        auto task = [&]() -> capy::task<> {
+            auto [ec] = co_await d1.wait(wait_type::write);
+            wec       = ec;
+        };
+        capy::run_async(ex)(task());
+        ioc.run();
+        BOOST_TEST(!wec);
+    }
+
+    void testAssignSelfRejected()
+    {
+        io_context ioc(Backend);
+        local_datagram_socket d(ioc);
+        BOOST_TEST(!d.open());
+        BOOST_TEST(
+            d.assign(d.native_handle()) ==
+            std::make_error_code(std::errc::invalid_argument));
+        BOOST_TEST(d.is_open());
+    }
+
+
     void run()
     {
+        testSendToMissingPathReportsError();
+        testWaitWriteReady();
+        testAssignSelfRejected();
+
         testConstruction();
         testOpen();
         testMove();
