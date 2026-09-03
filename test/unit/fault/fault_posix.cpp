@@ -198,6 +198,19 @@ COROSIO_FAULT_HOOK_NX(ftruncate, int, -1, (int fd, off_t len), (fd, len))
 COROSIO_FAULT_HOOK(fsync, int, -1, (int fd), (fd))
 COROSIO_FAULT_HOOK_NX(unlink, int, -1, (char const* p), (p))
 COROSIO_FAULT_HOOK_NX(sigaction, int, -1, (int sig, struct sigaction const* a, struct sigaction* o), (sig, a, o))
+
+// pthread_create reports through its return value, not errno; the
+// armed error published to errno is handed back directly, which is
+// what turns std::thread's construction into a std::system_error.
+extern "C" int pthread_create(pthread_t* t, pthread_attr_t const* a,
+    void* (*fn)(void*), void* arg) COROSIO_FAULT_NOTHROW
+{
+    COROSIO_FAULT_REAL(pthread_create,
+        int(*)(pthread_t*, pthread_attr_t const*, void* (*)(void*), void*));
+    if(should_fail(sys::pthread_create))
+        return errno ? errno : EAGAIN;
+    return real(t, a, fn, arg);
+}
 COROSIO_FAULT_HOOK_NX(gethostname, int, -1, (char* n, size_t l), (n, l))
 
 // Linux and FreeBSD both publish these; Darwin has neither, and
@@ -701,7 +714,8 @@ namespace {
     COROSIO_FAULT_CENSUS(open), COROSIO_FAULT_CENSUS(fstat),
     COROSIO_FAULT_CENSUS(ftruncate),
     COROSIO_FAULT_CENSUS(fsync), COROSIO_FAULT_CENSUS(unlink),
-    COROSIO_FAULT_CENSUS(sigaction), COROSIO_FAULT_CENSUS(getaddrinfo),
+    COROSIO_FAULT_CENSUS(sigaction), COROSIO_FAULT_CENSUS(pthread_create),
+    COROSIO_FAULT_CENSUS(getaddrinfo),
     COROSIO_FAULT_CENSUS(freeaddrinfo),
     COROSIO_FAULT_CENSUS(getnameinfo), COROSIO_FAULT_CENSUS(gethostname),
 #if defined(__linux__) || defined(__FreeBSD__)
