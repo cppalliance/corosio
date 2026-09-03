@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <stop_token>
 #include <system_error>
+#include <vector>
 #include <tuple>
 
 #if BOOST_COROSIO_POSIX
@@ -1698,8 +1699,168 @@ struct udp_socket_test
         BOOST_TEST_EQ(resumed, before_destroy);
     }
 
+    void testRecvReportsIcmpRefusal()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        udp_socket probe(ioc), s(ioc);
+        BOOST_TEST(!probe.open(udp::v4()));
+        BOOST_TEST(!probe.bind(endpoint(ipv4_address::loopback(), 0)));
+        auto dead = probe.local_endpoint();
+        probe.close();
+
+        BOOST_TEST(!s.open(udp::v4()));
+        std::error_code cec, sec;
+        auto setup = [&]() -> capy::task<> {
+            auto [c] = co_await s.connect(dead);
+            cec      = c;
+            auto [e, n] = co_await s.send(capy::const_buffer("x", 1));
+            std::ignore = n;
+            sec         = e;
+        };
+        capy::run_async(ex)(setup());
+        ioc.run();
+        ioc.restart();
+        BOOST_TEST(!cec);
+
+        // Loopback queues the port-unreachable error before the recv
+        // initiates; if a platform does not, the canceller keeps the
+        // test bounded and the recv still completes with an error.
+        char buf[8];
+        std::error_code rec;
+        auto receiver = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await s.recv(capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore = n;
+            rec         = ec;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            s.cancel();
+            co_return;
+        };
+        capy::run_async(ex)(receiver());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+        BOOST_TEST(!!rec);
+    }
+
+
+    void testConnectedShutdownSendSucceeds()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        udp_socket s1(ioc), s2(ioc);
+        BOOST_TEST(!s1.open(udp::v4()));
+        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!s2.bind(endpoint(ipv4_address::loopback(), 0)));
+
+        bool ok   = false;
+        auto task = [&]() -> capy::task<> {
+            auto [cec] = co_await s1.connect(s2.local_endpoint());
+            if (!cec && !s1.shutdown(shutdown_send))
+                ok = true;
+        };
+        capy::run_async(ex)(task());
+        ioc.run();
+        BOOST_TEST(ok);
+    }
+
+    void testWaitWriteReady()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        udp_socket s(ioc);
+        BOOST_TEST(!s.open(udp::v4()));
+        BOOST_TEST(!s.bind(endpoint(ipv4_address::loopback(), 0)));
+
+        std::error_code wec = std::make_error_code(std::errc::io_error);
+        auto task = [&]() -> capy::task<> {
+            auto [ec] = co_await s.wait(wait_type::write);
+            wec       = ec;
+        };
+        capy::run_async(ex)(task());
+        ioc.run();
+        BOOST_TEST(!wec);
+    }
+
+    void testOversizedSendReportsError()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        udp_socket s1(ioc), s2(ioc);
+        BOOST_TEST(!s1.open(udp::v4()));
+        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!s2.bind(endpoint(ipv4_address::loopback(), 0)));
+
+        // Larger than any UDP datagram can be.
+        std::vector<char> big(70000, 'x');
+        std::error_code sec;
+        auto task = [&]() -> capy::task<> {
+            auto [ec, n] = co_await s1.send_to(
+                capy::const_buffer(big.data(), big.size()),
+                s2.local_endpoint());
+            std::ignore = n;
+            sec         = ec;
+        };
+        capy::run_async(ex)(task());
+        ioc.run();
+#if BOOST_COROSIO_POSIX
+        BOOST_TEST(sec == std::errc::message_size);
+#else
+        // Which WSA codes a toolchain's system_category maps to errc
+        // conditions differs between MSVC and MinGW.
+        BOOST_TEST(!!sec);
+#endif
+    }
+
+    void testAssignSelfRejected()
+    {
+        io_context ioc(Backend);
+        udp_socket s(ioc);
+        BOOST_TEST(!s.open(udp::v4()));
+        BOOST_TEST(
+            s.assign(s.native_handle()) ==
+            std::make_error_code(std::errc::invalid_argument));
+        BOOST_TEST(s.is_open());
+    }
+
+    void testAssignConnectedFdCachesRemote()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        udp_socket s1(ioc), s2(ioc), s3(ioc);
+        BOOST_TEST(!s1.open(udp::v4()));
+        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!s2.bind(endpoint(ipv4_address::loopback(), 0)));
+        auto target = s1.local_endpoint();
+
+        bool ok   = false;
+        auto task = [&]() -> capy::task<> {
+            auto [cec] = co_await s2.connect(target);
+            if (cec)
+                co_return;
+            auto fd = s2.release();
+            if (!s3.assign(fd) && s3.remote_endpoint() == target)
+                ok = true;
+        };
+        capy::run_async(ex)(task());
+        ioc.run();
+        BOOST_TEST(ok);
+    }
+
+
     void run()
     {
+        testRecvReportsIcmpRefusal();
+        testConnectedShutdownSendSucceeds();
+        testWaitWriteReady();
+        testOversizedSendReportsError();
+        testAssignSelfRejected();
+        testAssignConnectedFdCachesRemote();
+
         testConstruction();
         testOpen();
         testOpenV6();

@@ -12,6 +12,7 @@
 
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/local_connect_pair.hpp>
+#include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/socket_option.hpp>
@@ -1757,8 +1758,44 @@ struct local_stream_socket_test
     }
 #endif
 
+    void testAssignSelfRejected()
+    {
+        io_context ioc(Backend);
+        local_stream_socket s(ioc);
+        BOOST_TEST(!s.open());
+        BOOST_TEST(
+            s.assign(s.native_handle()) ==
+            std::make_error_code(std::errc::invalid_argument));
+        BOOST_TEST(s.is_open());
+    }
+
+    void testAcceptorAssignSelfAndWrongType()
+    {
+        io_context ioc(Backend);
+        local_stream_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        BOOST_TEST(
+            acc.assign(acc.native_handle()) ==
+            std::make_error_code(std::errc::invalid_argument));
+        BOOST_TEST(acc.is_open());
+
+#if BOOST_COROSIO_POSIX
+        // A datagram fd is not a listenable stream socket. Windows
+        // AF_UNIX has no datagram sockets, so the probe is POSIX-only.
+        local_datagram_socket d(ioc);
+        BOOST_TEST(!d.open());
+        auto dfd = d.release();
+        BOOST_TEST(!!acc.assign(dfd));
+        ::close(dfd);
+#endif
+    }
+
+
     void run()
     {
+        testAssignSelfRejected();
+        testAcceptorAssignSelfAndWrongType();
+
         testConstruction();
         testOpen();
         testMove();
