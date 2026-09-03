@@ -673,6 +673,46 @@ struct random_access_file_test
         BOOST_TEST(!resumed);
     }
 
+    // The pool refuses work once it has shut down; the service must
+    // complete the op inline with the refusal instead of parking it.
+    void testReadWriteAtAfterPoolShutdown()
+    {
+#if BOOST_COROSIO_HAS_IO_URING
+        // io_uring reads through the ring, never through the pool.
+        if constexpr (std::is_same_v<
+                std::remove_const_t<decltype(Backend)>, io_uring_t>)
+            return;
+#endif
+        temp_file tmp("raf_pool_shut_", "hello world");
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        random_access_file f(ioc);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_write));
+        ioc.use_service<detail::thread_pool>().shutdown();
+
+        std::error_code rec, wec;
+        int done    = 0;
+        auto driver = [&]() -> capy::task<> {
+            char buf[16];
+            auto [r, rn] = co_await f.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore = rn;
+            rec         = r;
+            ++done;
+            auto [w, wn] =
+                co_await f.write_some_at(0, capy::const_buffer("x", 1));
+            std::ignore = wn;
+            wec         = w;
+            ++done;
+        };
+        capy::run_async(ex)(driver());
+        ioc.run();
+
+        BOOST_TEST_EQ(done, 2);
+        BOOST_TEST(rec == capy::cond::canceled);
+        BOOST_TEST(wec == capy::cond::canceled);
+    }
+
     // A read queued behind a worker that is released only once teardown
     // has begun. The pool has to join before the scheduler drains, or
     // the completion the worker posts on its way out is neither run nor
@@ -772,6 +812,7 @@ struct random_access_file_test
 #if BOOST_COROSIO_POSIX
         // POSIX file work runs on the pool; IOCP uses overlapped I/O.
         testDestroyWithPoolWorkQueued();
+        testReadWriteAtAfterPoolShutdown();
 #endif
 
 #if !COROSIO_TEST_HAS_ASAN

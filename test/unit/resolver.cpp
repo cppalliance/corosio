@@ -1227,6 +1227,43 @@ struct resolver_test
     }
 #endif
 
+#if BOOST_COROSIO_POSIX
+    // The pool refuses work once it has shut down; the resolver must
+    // complete both directions inline with the refusal.
+    void testResolveAfterPoolShutdown()
+    {
+        io_context ioc;
+        auto ex = ioc.get_executor();
+        resolver r(ioc);
+        ioc.use_service<detail::thread_pool>().shutdown();
+
+        std::error_code fec, rec;
+        int done    = 0;
+        auto driver = [&]() -> capy::task<> {
+            {
+                auto [ec, res] = co_await r.resolve("localhost", "80");
+                std::ignore    = res;
+                fec            = ec;
+                ++done;
+            }
+            {
+                auto [ec, res] =
+                    co_await r.resolve(endpoint(ipv4_address::loopback(), 80));
+                std::ignore = res;
+                rec         = ec;
+                ++done;
+            }
+        };
+        capy::run_async(ex)(driver());
+        ioc.run();
+
+        BOOST_TEST_EQ(done, 2);
+        BOOST_TEST(fec == capy::cond::canceled);
+        BOOST_TEST(rec == capy::cond::canceled);
+    }
+#endif
+
+
     void run()
     {
         // Construction and move semantics
@@ -1258,6 +1295,9 @@ struct resolver_test
         // Cancellation
         testCancel();
         testCancelNoOperation();
+#if BOOST_COROSIO_POSIX
+        testResolveAfterPoolShutdown();
+#endif
         testResolveStopTokenCancellation();
         testReverseResolveStopTokenCancellation();
 
