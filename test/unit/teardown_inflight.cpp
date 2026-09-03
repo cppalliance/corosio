@@ -321,6 +321,45 @@ struct io_uring_teardown_test
     // undispatched when the context dies, so the drain must run its
     // handler ownerless.
 
+    void testDestroyWithBrokenPipeWriteSurvives()
+    {
+        // Both ends of one pipe are wrapped, with a write parked on
+        // the full pipe. Service shutdown closes the read end first,
+        // so the flushed write executes against a broken pipe; the
+        // library must absorb the SIGPIPE instead of dying.
+        int p[2];
+        BOOST_TEST(::pipe2(p, O_NONBLOCK) == 0);
+        fill_pipe(p[1]);
+
+        bool read_resumed = false, write_resumed = false;
+        {
+            io_context ioc(io_uring);
+            auto reader = [&]() -> capy::task<> {
+                stream_file f(ioc);
+                std::ignore = f.assign(static_cast<native_handle_type>(p[0]));
+                char buf[16];
+                std::ignore = co_await f.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+                read_resumed = true;
+            };
+            auto writer = [&]() -> capy::task<> {
+                stream_file f(ioc);
+                std::ignore = f.assign(static_cast<native_handle_type>(p[1]));
+                char big[4096] = {};
+                std::ignore    = co_await f.write_some(
+                    capy::const_buffer(big, sizeof(big)));
+                write_resumed = true;
+            };
+            capy::run_async(ioc.get_executor())(reader());
+            capy::run_async(ioc.get_executor())(writer());
+            std::ignore = ioc.run_one();
+            std::ignore = ioc.run_one();
+        }
+        BOOST_TEST(!read_resumed);
+        BOOST_TEST(!write_resumed);
+    }
+
+
     void testDestroyWithQueuedSocketWrites()
     {
         int resumed = 0;
@@ -509,6 +548,7 @@ struct io_uring_teardown_test
         testDestroyWithPendingDatagramSend();
         testDestroyWithPendingFileOps();
         testDestroyWithSubmittedRandomAccessOps();
+        testDestroyWithBrokenPipeWriteSurvives();
         testDestroyWithQueuedSocketWrites();
         testDestroyWithQueuedDatagramSends();
         testDestroyWithQueuedFileOps();

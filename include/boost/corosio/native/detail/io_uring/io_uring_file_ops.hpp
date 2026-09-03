@@ -180,8 +180,10 @@ struct uring_random_access_read_op : uring_file_read_op_base
 
     Stream files pass `offset == -1` (kernel f_pos); random-access
     files pass an explicit caller-supplied offset. Unlike socket
-    writes, no `MSG_NOSIGNAL` is needed — files don't generate
-    SIGPIPE on closed peers.
+    writes there is no `MSG_NOSIGNAL` equivalent: a write to a pipe
+    or FIFO whose reader has closed raises SIGPIPE when the kernel
+    executes it, so the teardown paths that flush queued writes hold
+    the signal blocked (see `scoped_sigpipe_block`).
 */
 /// Shared state and submission logic for file write ops. Concrete
 /// subclasses pick a `do_handler` matching their storage model.

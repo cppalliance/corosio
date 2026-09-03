@@ -46,10 +46,62 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <pthread.h>
+#include <signal.h>
 #include <sys/eventfd.h>
+#include <time.h>
 #include <unistd.h>
 
 namespace boost::corosio::detail {
+
+/** Block SIGPIPE on the calling thread for the current scope.
+
+    A queued pipe write can execute inline while this thread is in
+    the kernel submitting SQEs; if the pipe's reader is already gone
+    the kernel raises a thread-directed SIGPIPE, which kills any
+    process that has not ignored the signal. The write's CQE still
+    reports `EPIPE`, so the signal carries no information the
+    completion path does not already deliver. The destructor consumes
+    any SIGPIPE raised while blocked and restores the caller's mask.
+*/
+class scoped_sigpipe_block
+{
+    sigset_t old_{};
+    bool restore_ = false;
+
+public:
+    /// Consume any SIGPIPE raised in scope and restore the mask.
+    ~scoped_sigpipe_block()
+    {
+        if (!restore_)
+            return;
+        if (!sigismember(&old_, SIGPIPE))
+        {
+            // Only consume what this scope could have generated; a
+            // caller who blocked SIGPIPE keeps their pending state.
+            sigset_t set;
+            sigemptyset(&set);
+            sigaddset(&set, SIGPIPE);
+            timespec zero{};
+            while (::sigtimedwait(&set, nullptr, &zero) == SIGPIPE)
+            {
+            }
+        }
+        ::pthread_sigmask(SIG_SETMASK, &old_, nullptr);
+    }
+
+    /// Construct and block SIGPIPE for the calling thread.
+    scoped_sigpipe_block() noexcept
+    {
+        sigset_t set;
+        sigemptyset(&set);
+        sigaddset(&set, SIGPIPE);
+        restore_ = ::pthread_sigmask(SIG_BLOCK, &set, &old_) == 0;
+    }
+
+    scoped_sigpipe_block(scoped_sigpipe_block const&)            = delete;
+    scoped_sigpipe_block& operator=(scoped_sigpipe_block const&) = delete;
+};
 
 // Forward-declared so the out-of-line inline definitions below the class
 // can reference the frame stack without a circular dependency.
@@ -556,6 +608,9 @@ io_uring_scheduler::~io_uring_scheduler()
 {
     if (ring_inited_)
     {
+        // Ring teardown can still run a doomed pipe write as task
+        // work; absorb the SIGPIPE it would raise.
+        scoped_sigpipe_block no_sigpipe;
         if (wakeup_eventfd_ >= 0)
             ::close(wakeup_eventfd_);
         ::io_uring_queue_exit(&ring_);
@@ -1493,6 +1548,12 @@ io_uring_op::on_cancel() noexcept
 inline void
 io_uring_scheduler::cancel_and_flush(int fd) noexcept
 {
+    // The flush can execute a queued write on `fd` inline; when the
+    // fd is a pipe whose reader has already closed — service
+    // shutdown closes impls one at a time, so teardown itself
+    // creates that state — the kernel raises SIGPIPE.
+    scoped_sigpipe_block no_sigpipe;
+
     lazy_init_ring();
     interrupt_reactor();
     lock_type lock(ring_mutex_);
