@@ -12,6 +12,8 @@
 // Test that header file is self-contained.
 #include <boost/corosio/openssl_stream.hpp>
 
+#include <boost/capy/read.hpp>
+
 #include "tls_stream_tests.hpp"
 
 #ifdef BOOST_COROSIO_HAS_OPENSSL
@@ -252,6 +254,185 @@ struct openssl_stream_test
             make_stream);
     }
 
+    // Transport wrapper whose writes fail on demand; reads pass
+    // through. Drives the driver's deferred-flush-error latch.
+    struct flush_fail_stream
+    {
+        corosio::test::mocket* m_;
+        bool fail_writes_ = false;
+        std::error_code inject_ec_{};
+
+        template<class MutableBufferSequence>
+        capy::io_task<std::size_t> read_some(MutableBufferSequence buffers)
+        {
+            co_return co_await m_->read_some(buffers);
+        }
+
+        template<class ConstBufferSequence>
+        capy::io_task<std::size_t> write_some(ConstBufferSequence buffers)
+        {
+            if (fail_writes_)
+                co_return {inject_ec_, 0};
+            co_return co_await m_->write_some(buffers);
+        }
+    };
+
+    // Handshake a client/server pair over mockets, wrapping the client
+    // transport, then hand control to `scenario`.
+    template<class Wrapper, class Scenario>
+    static void runWrappedSession(Wrapper& w, Scenario scenario)
+    {
+        io_context ioc;
+        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        w.m_ = &m1;
+
+        auto client_ctx = test::make_client_context();
+        auto server_ctx = test::make_server_context();
+        auto client     = openssl_stream(&w, client_ctx);
+        auto server     = openssl_stream(&m2, server_ctx);
+
+        {
+            auto hs_client = [&]() -> capy::task<> {
+                auto [ec] = co_await client.handshake(tls_role::client);
+                BOOST_TEST(!ec);
+            };
+            auto hs_server = [&]() -> capy::task<> {
+                auto [ec] = co_await server.handshake(tls_role::server);
+                BOOST_TEST(!ec);
+            };
+            capy::run_async(ioc.get_executor())(hs_client());
+            capy::run_async(ioc.get_executor())(hs_server());
+            ioc.run();
+            ioc.restart();
+        }
+        scenario(ioc, client, server, m1, m2);
+    }
+
+    void testZeroLengthBufferInSequence()
+    {
+        flush_fail_stream w{};
+        runWrappedSession(w, [](io_context& ioc, auto& client, auto& server,
+                                 auto&, auto&) {
+            char rx[16] = {};
+            bool wrote = false, read = false;
+            auto writer = [&]() -> capy::task<> {
+                std::array<capy::const_buffer, 2> bufs = {
+                    capy::const_buffer("", 0), capy::const_buffer("hey", 3)};
+                auto [ec, n] = co_await client.write_some(bufs);
+                wrote        = !ec && n == 3;
+            };
+            auto reader = [&]() -> capy::task<> {
+                std::array<capy::mutable_buffer, 2> bufs = {
+                    capy::mutable_buffer(rx, 0),
+                    capy::mutable_buffer(rx, sizeof(rx))};
+                auto [ec, n] = co_await server.read_some(bufs);
+                read         = !ec && n == 3;
+            };
+            capy::run_async(ioc.get_executor())(writer());
+            capy::run_async(ioc.get_executor())(reader());
+            ioc.run();
+            BOOST_TEST(wrote);
+            BOOST_TEST(read);
+            BOOST_TEST_EQ(std::string_view(rx, 3), "hey");
+        });
+    }
+
+    void testWriteFlushErrorIsLatched()
+    {
+        flush_fail_stream w{};
+        w.inject_ec_ = std::make_error_code(std::errc::connection_reset);
+        runWrappedSession(w, [&w](io_context& ioc, auto& client, auto&,
+                                   auto&, auto&) {
+            // The engine accepts the whole payload, so the failed
+            // transport flush must be deferred to the next operation,
+            // not conflated with this one's success.
+            bool first_ok = false;
+            std::error_code second_ec;
+            auto writer = [&]() -> capy::task<> {
+                w.fail_writes_ = true;
+                auto [ec, n]   = co_await client.write_some(
+                    capy::const_buffer("hello", 5));
+                first_ok = !ec && n == 5;
+                auto [ec2, n2] =
+                    co_await client.write_some(capy::const_buffer("x", 1));
+                std::ignore = n2;
+                second_ec   = ec2;
+            };
+            capy::run_async(ioc.get_executor())(writer());
+            ioc.run();
+            BOOST_TEST(first_ok);
+            BOOST_TEST(second_ec ==
+                       std::make_error_code(std::errc::connection_reset));
+        });
+    }
+
+    void testCorruptRecordFailsReadAndShutdown()
+    {
+        flush_fail_stream w{};
+        runWrappedSession(w, [](io_context& ioc, auto& client, auto&,
+                                 auto&, auto& m2) {
+            // Raw junk on the transport: the engine rejects the record
+            // and queues a fatal alert the driver must still flush.
+            char junk[64];
+            for (std::size_t i = 0; i < sizeof(junk); ++i)
+                junk[i] = static_cast<char>(0x5a ^ i);
+            char rx[16];
+            std::error_code rec;
+            bool shut_done = false;
+            auto peer = [&]() -> capy::task<> {
+                auto [ec, n] = co_await m2.write_some(
+                    capy::const_buffer(junk, sizeof(junk)));
+                std::ignore = ec;
+                std::ignore = n;
+            };
+            auto reader = [&]() -> capy::task<> {
+                auto [ec, n] =
+                    co_await client.read_some(capy::mutable_buffer(rx, sizeof(rx)));
+                std::ignore = n;
+                rec         = ec;
+                auto [sec] = co_await client.shutdown();
+                std::ignore = sec;
+                shut_done   = true;
+            };
+            capy::run_async(ioc.get_executor())(peer());
+            capy::run_async(ioc.get_executor())(reader());
+            ioc.run();
+            BOOST_TEST(!!rec);
+            BOOST_TEST(shut_done);
+        });
+    }
+
+    void testOversizedWriteRoundTrips()
+    {
+        flush_fail_stream w{};
+        runWrappedSession(w, [](io_context& ioc, auto& client, auto& server,
+                                 auto&, auto&) {
+            // Larger than the engine's staging capacity: the driver
+            // must flush and retry until the payload is accepted.
+            std::string const payload(64 * 1024, 'q');
+            std::string rx;
+            bool wrote = false, read = false;
+            auto writer = [&]() -> capy::task<> {
+                auto [ec, n] = co_await capy::write(client,
+                    capy::const_buffer(payload.data(), payload.size()));
+                wrote = !ec && n == payload.size();
+            };
+            auto reader = [&]() -> capy::task<> {
+                rx.resize(payload.size());
+                auto [ec, n] = co_await capy::read(server,
+                    capy::mutable_buffer(rx.data(), rx.size()));
+                read = !ec && n == rx.size();
+            };
+            capy::run_async(ioc.get_executor())(writer());
+            capy::run_async(ioc.get_executor())(reader());
+            ioc.run();
+            BOOST_TEST(wrote);
+            BOOST_TEST(read);
+            BOOST_TEST(rx == payload);
+        });
+    }
+
+
     void run()
     {
         test::testIoBeforeHandshake(make_stream);
@@ -308,6 +489,10 @@ struct openssl_stream_test
         testBadTls13SuitesFailsHandshake();
         testBadCrlWithRevocationFailsHandshake();
         testDuplicateCaTolerated();
+        testZeroLengthBufferInSequence();
+        testWriteFlushErrorIsLatched();
+        testCorruptRecordFailsReadAndShutdown();
+        testOversizedWriteRoundTrips();
 
         test::testReset(make_stream, cert_modes);
         test::testResetViaHandshake(make_stream, cert_modes);
