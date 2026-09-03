@@ -803,10 +803,135 @@ struct signal_set_test
         BOOST_TEST(!result);
     }
 
+    void testRemoveOneOfTwoSignals()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc);
+
+        BOOST_TEST(!s.add(SIGINT));
+        BOOST_TEST(!s.add(SIGTERM));
+        // Removing the higher signal number walks the sorted per-set
+        // list past the lower one.
+        BOOST_TEST(!s.remove(SIGTERM));
+        BOOST_TEST(!s.remove(SIGINT));
+    }
+
+    void testTwoSetsSameSignalRemoveInBothOrders()
+    {
+        io_context ioc(Backend);
+        {
+            signal_set s1(ioc), s2(ioc);
+            BOOST_TEST(!s1.add(SIGINT));
+            BOOST_TEST(!s2.add(SIGINT));
+            BOOST_TEST(!s1.remove(SIGINT));
+            BOOST_TEST(!s2.remove(SIGINT));
+        }
+        {
+            signal_set s1(ioc), s2(ioc);
+            BOOST_TEST(!s1.add(SIGINT));
+            BOOST_TEST(!s2.add(SIGINT));
+            BOOST_TEST(!s2.remove(SIGINT));
+            BOOST_TEST(!s1.remove(SIGINT));
+        }
+        {
+            // clear() walks the same per-signal table links.
+            signal_set s1(ioc), s2(ioc);
+            BOOST_TEST(!s1.add(SIGINT));
+            BOOST_TEST(!s2.add(SIGINT));
+            BOOST_TEST(!s1.clear());
+            BOOST_TEST(!s2.clear());
+        }
+    }
+
+    void testSignalDeliveredBeforeWait()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        // Two sets on one signal, only one waiting: delivery posts to
+        // the waiter and queues on the idle registration, whose later
+        // wait must consume the queued signal immediately.
+        signal_set s1(ioc), s2(ioc);
+        BOOST_TEST(!s1.add(SIGINT));
+        BOOST_TEST(!s2.add(SIGINT));
+
+        int got1  = 0;
+        auto wait1 = [&]() -> capy::task<> {
+            auto [ec, sig] = co_await s1.wait();
+            if (!ec)
+                got1 = sig;
+        };
+        capy::run_async(ex)(wait1());
+        std::raise(SIGINT);
+        ioc.run();
+        ioc.restart();
+        BOOST_TEST_EQ(got1, SIGINT);
+
+        int got2  = 0;
+        auto wait2 = [&]() -> capy::task<> {
+            auto [ec, sig] = co_await s2.wait();
+            if (!ec)
+                got2 = sig;
+        };
+        capy::run_async(ex)(wait2());
+        ioc.run();
+
+        BOOST_TEST_EQ(got2, SIGINT);
+    }
+
+    void testTwoServicesDestroyInBothOrders()
+    {
+        // Two io_contexts give the process-wide service list two
+        // entries; destroying them in each order exercises both
+        // unlink shapes. Each set dies before its own context.
+        {
+            std::optional<io_context> a(std::in_place, Backend);
+            std::optional<io_context> b(std::in_place, Backend);
+            std::optional<signal_set> sa(std::in_place, *a);
+            std::optional<signal_set> sb(std::in_place, *b);
+            BOOST_TEST(!sa->add(SIGINT));
+            BOOST_TEST(!sb->add(SIGINT));
+            sa.reset();
+            a.reset();
+            sb.reset();
+            b.reset();
+        }
+        {
+            std::optional<io_context> a(std::in_place, Backend);
+            std::optional<io_context> b(std::in_place, Backend);
+            std::optional<signal_set> sa(std::in_place, *a);
+            std::optional<signal_set> sb(std::in_place, *b);
+            BOOST_TEST(!sa->add(SIGINT));
+            BOOST_TEST(!sb->add(SIGINT));
+            sb.reset();
+            b.reset();
+            sa.reset();
+            a.reset();
+        }
+    }
+
+
 #if BOOST_COROSIO_POSIX
     // Signal flags tests (POSIX only)
     // Windows returns operation_not_supported for
     // flags other than none/dont_care
+
+    void testAddWithChildAndResetFlags()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc);
+
+        // Never raised here: only the sigaction flag translation is
+        // under test.
+        BOOST_TEST(!s.add(SIGCHLD,
+            signal_set::no_child_stop | signal_set::no_child_wait));
+        BOOST_TEST(!s.remove(SIGCHLD));
+
+        signal_set r(ioc);
+        BOOST_TEST(!r.add(SIGWINCH, signal_set::reset_handler));
+        BOOST_TEST(!r.remove(SIGWINCH));
+    }
+
 
     void testAddWithFlags()
     {
@@ -996,6 +1121,12 @@ struct signal_set_test
 
         // Queued signal tests
         testQueuedSignal();
+        testRemoveOneOfTwoSignals();
+        testTwoSetsSameSignalRemoveInBothOrders();
+        testSignalDeliveredBeforeWait();
+        testTwoServicesDestroyInBothOrders();
+
+        // Registration list surgery
 
         // Sequential wait tests
         testSequentialWaits();
@@ -1017,6 +1148,7 @@ struct signal_set_test
 #if BOOST_COROSIO_POSIX
         // Signal flags tests (POSIX only)
         testAddWithFlags();
+        testAddWithChildAndResetFlags();
         testAddWithMultipleFlags();
         testAddSameSignalSameFlags();
         testAddSameSignalDifferentFlags();
