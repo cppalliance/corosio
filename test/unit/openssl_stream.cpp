@@ -166,6 +166,92 @@ struct openssl_stream_test
         std::filesystem::remove_all(dir);
     }
 
+    // One handshake attempt over a mocket pair against a server
+    // context configured with bad material; the deferred native-context
+    // build must surface the rejection from the handshake.
+    bool serverHandshakeFails(tls_context const& server_ctx)
+    {
+        io_context ioc;
+        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+
+        auto client_ctx = test::make_client_context();
+        auto client     = make_stream(m1, client_ctx);
+        auto server     = make_stream(m2, server_ctx);
+
+        bool client_done = false, server_done = false;
+        std::error_code client_ec, server_ec;
+        auto client_hs = [&]() -> capy::task<> {
+            auto [ec]   = co_await client.handshake(tls_role::client);
+            client_ec   = ec;
+            client_done = true;
+            m1.close();
+        };
+        auto server_hs = [&]() -> capy::task<> {
+            auto [ec]   = co_await server.handshake(tls_role::server);
+            server_ec   = ec;
+            server_done = true;
+            m2.close();
+        };
+        capy::run_async(ioc.get_executor())(client_hs());
+        capy::run_async(ioc.get_executor())(server_hs());
+        ioc.run();
+
+        BOOST_TEST(client_done);
+        BOOST_TEST(server_done);
+        return !!client_ec || !!server_ec;
+    }
+
+    void testGarbagePkcs12FailsHandshake()
+    {
+        tls_context ctx;
+        test::require_ok(ctx.use_pkcs12("not-pkcs12-data", "password"));
+        test::require_ok(ctx.set_verify_mode(tls_verify_mode::none));
+        BOOST_TEST(serverHandshakeFails(ctx));
+    }
+
+    void testGarbageCaFailsHandshake()
+    {
+        auto ctx = test::make_server_context();
+        test::require_ok(ctx.add_certificate_authority(
+            "-----BEGIN JUNK-----\nnope\n-----END JUNK-----\n"));
+        BOOST_TEST(serverHandshakeFails(ctx));
+    }
+
+    void testBadCipherListFailsHandshake()
+    {
+        auto ctx = test::make_server_context();
+        test::require_ok(ctx.set_ciphersuites("NOT-A-CIPHER"));
+        BOOST_TEST(serverHandshakeFails(ctx));
+    }
+
+    void testBadTls13SuitesFailsHandshake()
+    {
+        auto ctx = test::make_server_context();
+        test::require_ok(ctx.set_ciphersuites_tls13("garbage"));
+        BOOST_TEST(serverHandshakeFails(ctx));
+    }
+
+    void testBadCrlWithRevocationFailsHandshake()
+    {
+        auto ctx = test::make_server_context();
+        test::require_ok(ctx.add_crl("not a crl"));
+        ctx.set_revocation_policy(tls_revocation_policy::soft_fail);
+        BOOST_TEST(serverHandshakeFails(ctx));
+    }
+
+    void testDuplicateCaTolerated()
+    {
+        io_context ioc;
+        auto client_ctx = test::make_client_context();
+        // The store already holds this CA; the duplicate must be
+        // tolerated, not fail the whole context build.
+        test::require_ok(
+            client_ctx.add_certificate_authority(test::ca_cert_pem));
+        auto server_ctx = test::make_server_context();
+        test::run_tls_test(ioc, client_ctx, server_ctx, make_stream,
+            make_stream);
+    }
+
     void run()
     {
         test::testIoBeforeHandshake(make_stream);
@@ -216,6 +302,12 @@ struct openssl_stream_test
         test::testAbruptClose(make_stream);
         test::testEncryptedKey(make_stream);
         test::testInvalidContextHandshake(make_stream);
+        testGarbagePkcs12FailsHandshake();
+        testGarbageCaFailsHandshake();
+        testBadCipherListFailsHandshake();
+        testBadTls13SuitesFailsHandshake();
+        testBadCrlWithRevocationFailsHandshake();
+        testDuplicateCaTolerated();
 
         test::testReset(make_stream, cert_modes);
         test::testResetViaHandshake(make_stream, cert_modes);
