@@ -286,6 +286,45 @@ struct ipv6_address_test
         BOOST_TEST_EQ(oss.str(), "::1");
     }
 
+    void testParseRejectionArms()
+    {
+        // Each string lands on a distinct rejection arm of the
+        // IPv4-in-IPv6 tail validation.
+        auto check_invalid = [](std::string_view sv) {
+            auto [ec, addr] = make_ipv6_address(sv);
+            BOOST_TEST(ec == std::errc::invalid_argument);
+            BOOST_TEST(addr == ipv6_address());
+        };
+        // decimal reinterpretation exceeds 255
+        check_invalid("::256.0.0.0");
+        // middle hex nibble is not a decimal digit
+        check_invalid("::1a1.2.3.4");
+        // low hex nibble is not a decimal digit
+        check_invalid("::10a.2.3.4");
+        // h16 expected at end of input
+        check_invalid("::1:");
+        check_invalid("1:2:3:4:5:6:7:");
+        // IPv4 tail cut short
+        check_invalid("::1.2.3.");
+        check_invalid("::1.2.3.4.5");
+    }
+
+    void testToBufferBoundaries()
+    {
+        char exact[ipv6_address::max_str_len];
+        auto sv = ipv6_address::loopback().to_buffer(exact, sizeof(exact));
+        BOOST_TEST_EQ(sv, "::1");
+
+        char short_by_one[ipv6_address::max_str_len - 1];
+        BOOST_TEST_THROWS(
+            ipv6_address::loopback().to_buffer(
+                short_by_one, sizeof(short_by_one)),
+            std::length_error);
+        BOOST_TEST_THROWS(
+            ipv6_address::loopback().to_buffer(exact, 0), std::length_error);
+    }
+
+
     void run()
     {
         testConstruction();
@@ -293,6 +332,8 @@ struct ipv6_address_test
         testParseEndsWithDoubleColon();
         testParseInvalidIPv4Suffix();
         testParseMoreEdges();
+        testParseRejectionArms();
+        testToBufferBoundaries();
         testToString();
         testToStringHexWidths();
         testToBuffer();
