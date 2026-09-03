@@ -25,6 +25,9 @@
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/stream_file.hpp>
+
+#include <cstdio>
+#include <fstream>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -670,5 +673,70 @@ struct reactor_acceptor_option_faults
 
 COROSIO_REACTOR_BACKEND_TESTS(
     reactor_acceptor_option_faults, "boost.corosio.fault.posix.acceptor_opts")
+
+// The pool's first post spawns its workers; a refused thread must
+// surface as a refusal from post(), reported through the operation,
+// with the pool empty and the next post free to retry.
+struct pool_thread_spawn_faults
+{
+    void testSpawnRefusalReachesOperation()
+    {
+        if(!hook_is_live(sys::pthread_create))
+        {
+            test_suite::log << "pthread_create hook not live; skipping\n";
+            return;
+        }
+
+        auto path = temp_path("pool_spawn");
+        {
+            std::ofstream out(path);
+            out << "payload";
+        }
+
+        io_context ioc;
+        stream_file f(ioc);
+        BOOST_TEST(!f.open(path, file_base::read_only));
+
+        char buf[8];
+        std::error_code first_ec, second_ec;
+        int done    = 0;
+        auto reader = [&](std::error_code& out) -> capy::task<> {
+            auto [ec, n] =
+                co_await f.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore = n;
+            out         = ec;
+            ++done;
+        };
+
+        {
+            fault_scope fault(sys::pthread_create, EAGAIN);
+            capy::run_async(ioc.get_executor())(reader(first_ec));
+            ioc.run();
+            BOOST_TEST(fault.fired());
+        }
+        ioc.restart();
+
+        // With the fault gone the next post spawns the worker and the
+        // read succeeds: the refusal left no latched state behind.
+        capy::run_async(ioc.get_executor())(reader(second_ec));
+        ioc.run();
+
+        BOOST_TEST_EQ(done, 2);
+        // Condition comparison: which category the stdlib throws
+        // thread-creation failure with differs (libc++ uses system).
+        BOOST_TEST(first_ec == std::errc::resource_unavailable_try_again);
+        BOOST_TEST(!second_ec);
+
+        std::remove(path.c_str());
+    }
+
+    void run()
+    {
+        testSpawnRefusalReachesOperation();
+    }
+};
+
+TEST_SUITE(pool_thread_spawn_faults, "boost.corosio.fault.posix.pool_spawn");
+
 
 } // boost::corosio::test::fault
