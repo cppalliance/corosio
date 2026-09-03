@@ -30,7 +30,10 @@ namespace boost::corosio::test::fault {
     `kevent` calls that add a descriptor to the kqueue, so a test can
     reach a registration without counting the waits the run loop makes
     on its way there. An arm on `kevent` still counts every call,
-    registrations included.
+    registrations included. `cpp_new` is not an OS symbol: it names the
+    global allocation functions the fault target replaces, so arming it
+    makes the nth `new` on the armed thread report `bad_alloc` (the
+    nothrow forms return null).
 */
 enum class sys
 {
@@ -45,7 +48,7 @@ enum class sys
     timerfd_settime, select, kqueue, kevent, kevent_register,
     io_uring_queue_init_params, io_uring_queue_exit, io_uring_submit,
     io_uring_submit_and_wait_timeout, io_uring_submit_and_get_events,
-    io_uring_wait_cqe_timeout, uring_sqe_full,
+    io_uring_wait_cqe_timeout, uring_sqe_full, cpp_new,
     WSASocketW, WSAConnect, WSARecv, WSASend, WSARecvFrom, WSASendTo,
     WSAPoll, WSAIoctl, WSAStartup, WSACleanup, closesocket, ioctlsocket,
     GetAddrInfoExW, GetAddrInfoExCancel, FreeAddrInfoExW, GetNameInfoW,

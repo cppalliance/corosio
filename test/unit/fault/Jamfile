@@ -69,32 +69,35 @@ local gcov-dump = [ check-target-builds gcov_dump_check "gcov dump linkable"
 # The two signal sources and iocp_dissociate_faults.cpp are separate
 # because the state they fault is created once per process: b2 builds
 # one executable per source, which is the isolation they need.
-local hooks = fault_arm.cpp fault_posix.cpp ;
+local hooks = fault_arm.cpp fault_posix.cpp fault_alloc.cpp ;
 local tests ;
 local uring-hook ;
 if [ os.name ] = NT
 {
-    hooks = fault_arm.cpp fault_win.cpp ;
+    hooks = fault_arm.cpp fault_win.cpp fault_alloc.cpp ;
     tests = self_test.cpp win_faults.cpp iocp_faults.cpp
-        iocp_dissociate_faults.cpp ;
+        iocp_dissociate_faults.cpp alloc_faults.cpp ;
 }
 else if [ os.name ] = MACOSX
 {
     tests = self_test.cpp posix_faults.cpp select_faults.cpp
         kqueue_faults.cpp reactor_faults.cpp
-        signal_pipe_faults.cpp signal_sigaction_faults.cpp ;
+        signal_pipe_faults.cpp signal_sigaction_faults.cpp
+        alloc_faults.cpp ;
 }
 else if [ os.name ] = FREEBSD
 {
     tests = self_test.cpp posix_faults.cpp select_faults.cpp
         kqueue_faults.cpp reactor_faults.cpp
-        signal_pipe_faults.cpp signal_sigaction_faults.cpp ;
+        signal_pipe_faults.cpp signal_sigaction_faults.cpp
+        alloc_faults.cpp ;
 }
 else if [ os.name ] = LINUX
 {
     tests = self_test.cpp posix_faults.cpp select_faults.cpp
         epoll_faults.cpp reactor_faults.cpp uring_faults.cpp
-        signal_pipe_faults.cpp signal_sigaction_faults.cpp ;
+        signal_pipe_faults.cpp signal_sigaction_faults.cpp
+        alloc_faults.cpp ;
     # The io_uring hook includes <liburing.h> unconditionally, so it can
     # only build where the library's own probe found liburing. Without
     # it uring_faults.cpp compiles away behind BOOST_COROSIO_HAS_IO_URING
