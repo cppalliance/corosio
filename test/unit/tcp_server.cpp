@@ -18,6 +18,7 @@
 #include <boost/capy/task.hpp>
 
 #include <atomic>
+#include <optional>
 #include <tuple>
 
 #include "context.hpp"
@@ -803,8 +804,98 @@ struct tcp_server_test
         BOOST_TEST_EQ(echoed.load(), 2);
     }
 
+    void testLauncherDropWakesWaitingAccept()
+    {
+        // A worker parks its launcher, so the pool is empty when the
+        // next connection arrives and the accept loop waits for a
+        // worker. Destroying the parked launcher must hand the worker
+        // straight to that waiter.
+        io_context ioc(Backend);
+
+        class parking_worker : public tcp_server::worker_base
+        {
+            corosio::tcp_socket sock_;
+
+        public:
+            std::optional<tcp_server::launcher>* slot = nullptr;
+            std::atomic<int>* run_count               = nullptr;
+
+            parking_worker(io_context& ctx,
+                std::optional<tcp_server::launcher>* s, std::atomic<int>* c)
+                : sock_(ctx), slot(s), run_count(c)
+            {
+            }
+
+            corosio::tcp_socket& socket() override { return sock_; }
+
+            void run(tcp_server::launcher launch) override
+            {
+                sock_.close();
+                if (run_count->fetch_add(1) == 0)
+                    slot->emplace(std::move(launch));
+            }
+        };
+
+        std::optional<tcp_server::launcher> parked;
+        std::atomic<int> run_count{0};
+
+        class parking_server : public tcp_server
+        {
+        public:
+            parking_server(io_context& ctx,
+                std::optional<tcp_server::launcher>* s, std::atomic<int>* c)
+                : tcp_server(ctx, ctx.get_executor())
+            {
+                std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+                v.push_back(std::make_unique<parking_worker>(ctx, s, c));
+                set_workers(std::move(v));
+            }
+        };
+
+        parking_server srv(ioc, &parked, &run_count);
+        auto ec = srv.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(!ec);
+        auto port = srv.local_endpoint().port();
+
+        srv.start();
+
+        auto driver = [](io_context* ioc, std::uint16_t port,
+                          parking_server* srv,
+                          std::optional<tcp_server::launcher>* parked)
+            -> capy::task<> {
+            tcp_socket c1(*ioc);
+            BOOST_TEST(!c1.open());
+            [[maybe_unused]] auto [e1] = co_await c1.connect(
+                endpoint(ipv4_address::loopback(), port));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+
+            // Pool is now empty; this connection parks the accept loop.
+            tcp_socket c2(*ioc);
+            BOOST_TEST(!c2.open());
+            [[maybe_unused]] auto [e2] = co_await c2.connect(
+                endpoint(ipv4_address::loopback(), port));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+
+            // Dropping the parked launcher wakes the waiting accept.
+            parked->reset();
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+
+            c1.close();
+            c2.close();
+            srv->stop();
+        }(&ioc, port, &srv, &parked);
+
+        capy::run_async(ioc.get_executor())(std::move(driver));
+        ioc.run();
+        srv.join();
+
+        BOOST_TEST_EQ(run_count.load(), 2);
+    }
+
+
     void run()
     {
+        testLauncherDropWakesWaitingAccept();
         testStopServer();
         testStopWithActiveConnection();
         testStartIdempotent();
