@@ -207,6 +207,10 @@ public:
     {
         if (fd_ >= 0)
         {
+            // The kernel may run a queued pipe write as task work at
+            // either kernel entry below; with the reader already gone
+            // that raises SIGPIPE.
+            scoped_sigpipe_block no_sigpipe;
             sched_->cancel_and_flush(fd_);
             ::close(fd_);
             fd_ = -1;
