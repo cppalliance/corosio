@@ -1057,6 +1057,9 @@ int const readback = []
 
 bool hook_is_live(sys which) noexcept
 {
+    // Not a symbol: the replacement allocation functions always link.
+    if(which == sys::cpp_new)
+        return true;
     // Not a symbol: it works by clamping the ring liburing's own
     // shadows drive, so it lives exactly when they do.
     if(which == sys::uring_sqe_full)

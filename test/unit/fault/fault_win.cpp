@@ -841,6 +841,9 @@ bool corosio_is_shared() noexcept
 
 bool hook_is_live(sys which) noexcept
 {
+    // Not a symbol: the replacement allocation functions always link.
+    if(which == sys::cpp_new)
+        return true;
     switch(which)
     {
     // Substituted through the pointer WSAIoctl hands out.
