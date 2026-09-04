@@ -1680,13 +1680,22 @@ struct tcp_acceptor_test
         close_native_socket(released);
         close_native_socket(stale);
 
-        BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
-        ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
-        BOOST_TEST(!ec);
-        ec = acc.listen();
-        BOOST_TEST(!ec);
-        auto port_b = acc.local_endpoint().port();
+        // SO_REUSEADDR lets the kernel hand back the just-freed port_a;
+        // retry the ephemeral re-bind until it differs so the accept
+        // below can tell the new listener apart from the released one.
+        auto port_b = port_a;
+        for (int attempt = 0; attempt < 16 && port_b == port_a; ++attempt)
+        {
+            BOOST_TEST(!acc.open());
+            acc.set_option(socket_option::reuse_address(true));
+            ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
+            BOOST_TEST(!ec);
+            ec = acc.listen();
+            BOOST_TEST(!ec);
+            port_b = acc.local_endpoint().port();
+            if (port_b == port_a)
+                close_native_socket(acc.release());
+        }
         BOOST_TEST(port_b != port_a);
 
         auto client = make_native_socket(AF_INET, SOCK_STREAM);
