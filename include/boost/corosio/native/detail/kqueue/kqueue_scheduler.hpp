@@ -156,7 +156,7 @@ public:
 
 private:
     void
-    run_task(lock_type& lock, context_type* ctx,
+    run_task(lock_type& lock, context_type& ctx,
         long timeout_us) override;
     void interrupt_reactor() const override;
     long calculate_timeout(long requested_timeout_us) const;
@@ -335,7 +335,7 @@ kqueue_scheduler::calculate_timeout(long requested_timeout_us) const
 
 inline void
 kqueue_scheduler::run_task(
-    lock_type& lock, context_type* ctx, long timeout_us)
+    lock_type& lock, context_type& ctx, long timeout_us)
 {
     long effective_timeout_us =
         task_interrupted_ ? 0 : calculate_timeout(timeout_us);

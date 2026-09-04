@@ -257,7 +257,7 @@ protected:
     {
         reactor_scheduler const* sched;
         lock_type* lock;
-        context_type* ctx;
+        context_type& ctx;
         ~task_cleanup();
     };
 
@@ -303,7 +303,7 @@ protected:
         errors it retries rather than reports.
     */
     virtual void
-    run_task(lock_type& lock, context_type* ctx,
+    run_task(lock_type& lock, context_type& ctx,
         long timeout_us) = 0;
 
     /// Wake a blocked reactor (e.g. write to eventfd or pipe).
@@ -314,12 +314,12 @@ private:
     {
         reactor_scheduler* sched;
         lock_type* lock;
-        context_type* ctx;
+        context_type& ctx;
         ~work_cleanup();
     };
 
     std::size_t do_one(
-        lock_type& lock, long timeout_us, context_type* ctx);
+        lock_type& lock, long timeout_us, context_type& ctx);
 
     void signal_all(lock_type& lock) const;
     bool maybe_unlock_and_signal_one(lock_type& lock) const;
@@ -572,7 +572,7 @@ reactor_scheduler::run()
     std::size_t n = 0;
     for (;;)
     {
-        if (!do_one(lock, -1, &ctx.frame_))
+        if (!do_one(lock, -1, ctx.frame_))
             break;
         if (n != (std::numeric_limits<std::size_t>::max)())
             ++n;
@@ -593,7 +593,7 @@ reactor_scheduler::run_one()
 
     reactor_thread_context_guard ctx(this);
     lock_type lock(mutex_);
-    return do_one(lock, -1, &ctx.frame_);
+    return do_one(lock, -1, ctx.frame_);
 }
 
 inline std::size_t
@@ -607,7 +607,7 @@ reactor_scheduler::wait_one(long usec)
 
     reactor_thread_context_guard ctx(this);
     lock_type lock(mutex_);
-    return do_one(lock, usec, &ctx.frame_);
+    return do_one(lock, usec, ctx.frame_);
 }
 
 inline std::size_t
@@ -625,7 +625,7 @@ reactor_scheduler::poll()
     std::size_t n = 0;
     for (;;)
     {
-        if (!do_one(lock, 0, &ctx.frame_))
+        if (!do_one(lock, 0, ctx.frame_))
             break;
         if (n != (std::numeric_limits<std::size_t>::max)())
             ++n;
@@ -646,7 +646,7 @@ reactor_scheduler::poll_one()
 
     reactor_thread_context_guard ctx(this);
     lock_type lock(mutex_);
-    return do_one(lock, 0, &ctx.frame_);
+    return do_one(lock, 0, ctx.frame_);
 }
 
 inline void
@@ -800,41 +800,41 @@ reactor_scheduler::wake_one_thread_and_unlock(
 
 inline reactor_scheduler::work_cleanup::~work_cleanup()
 {
-    std::int64_t produced = ctx->private_outstanding_work;
+    std::int64_t produced = ctx.private_outstanding_work;
     if (produced > 1)
         sched->outstanding_work_.fetch_add(
             produced - 1, std::memory_order_relaxed);
     else if (produced < 1)
         sched->work_finished();
-    ctx->private_outstanding_work = 0;
+    ctx.private_outstanding_work = 0;
 
-    if (!ctx->private_queue.empty())
+    if (!ctx.private_queue.empty())
     {
         lock->lock();
-        sched->completed_ops_.splice(ctx->private_queue);
+        sched->completed_ops_.splice(ctx.private_queue);
     }
 }
 
 inline reactor_scheduler::task_cleanup::~task_cleanup()
 {
-    if (ctx->private_outstanding_work > 0)
+    if (ctx.private_outstanding_work > 0)
     {
         sched->outstanding_work_.fetch_add(
-            ctx->private_outstanding_work, std::memory_order_relaxed);
-        ctx->private_outstanding_work = 0;
+            ctx.private_outstanding_work, std::memory_order_relaxed);
+        ctx.private_outstanding_work = 0;
     }
 
-    if (!ctx->private_queue.empty())
+    if (!ctx.private_queue.empty())
     {
         if (!lock->owns_lock())
             lock->lock();
-        sched->completed_ops_.splice(ctx->private_queue);
+        sched->completed_ops_.splice(ctx.private_queue);
     }
 }
 
 inline std::size_t
 reactor_scheduler::do_one(
-    lock_type& lock, long timeout_us, context_type* ctx)
+    lock_type& lock, long timeout_us, context_type& ctx)
 {
     for (;;)
     {
@@ -892,12 +892,12 @@ reactor_scheduler::do_one(
             {
                 // Wake a peer for the remaining work; unassisted if none
                 // was parked to take it.
-                ctx->unassisted = !unlock_and_signal_one(lock);
+                ctx.unassisted = !unlock_and_signal_one(lock);
             }
             else
             {
                 // No peer to wake (one_thread_, or nothing more queued).
-                ctx->unassisted = more;
+                ctx.unassisted = more;
                 lock.unlock();
             }
 

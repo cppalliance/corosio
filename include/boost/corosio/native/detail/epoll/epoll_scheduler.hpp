@@ -135,7 +135,7 @@ public:
 
 private:
     void
-    run_task(lock_type& lock, context_type* ctx,
+    run_task(lock_type& lock, context_type& ctx,
         long timeout_us) override;
     void interrupt_reactor() const override;
     void update_timerfd() const;
@@ -347,7 +347,7 @@ epoll_scheduler::update_timerfd() const
 
 inline void
 epoll_scheduler::run_task(
-    lock_type& lock, context_type* ctx, long timeout_us)
+    lock_type& lock, context_type& ctx, long timeout_us)
 {
     int timeout_ms;
     if (task_interrupted_)
