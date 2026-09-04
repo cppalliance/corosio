@@ -254,17 +254,21 @@ struct openssl_stream_test
             make_stream);
     }
 
-    // Transport wrapper whose writes fail on demand; reads pass
-    // through. Drives the driver's deferred-flush-error latch.
+    // Transport wrapper whose writes fail on demand and whose reads
+    // can turn into a clean zero-byte EOF. Drives the driver's
+    // deferred-flush-error latch and the shutdown truncation check.
     struct flush_fail_stream
     {
         corosio::test::mocket* m_;
         bool fail_writes_ = false;
+        bool eof_reads_   = false;
         std::error_code inject_ec_{};
 
         template<class MutableBufferSequence>
         capy::io_task<std::size_t> read_some(MutableBufferSequence buffers)
         {
+            if (eof_reads_)
+                co_return {std::error_code{}, 0};
             co_return co_await m_->read_some(buffers);
         }
 
@@ -433,6 +437,32 @@ struct openssl_stream_test
     }
 
 
+    void testShutdownOnDeadTransportReportsTruncation()
+    {
+        flush_fail_stream w{};
+        runWrappedSession(w, [&w](io_context& ioc, auto& client, auto&,
+                                   auto& m1, auto& m2) {
+            // The peer vanishes without a close_notify: the transport
+            // reads clean EOF, and the driver must report the
+            // truncation on shutdown rather than a clean close.
+            w.eof_reads_ = true;
+            std::ignore  = m1;
+            std::ignore  = m2;
+            std::error_code sec;
+            bool done     = false;
+            auto shutter  = [&]() -> capy::task<> {
+                auto [ec] = co_await client.shutdown();
+                sec       = ec;
+                done      = true;
+            };
+            capy::run_async(ioc.get_executor())(shutter());
+            ioc.run();
+            BOOST_TEST(done);
+            BOOST_TEST(!!sec);
+        });
+    }
+
+
     void run()
     {
         test::testIoBeforeHandshake(make_stream);
@@ -493,6 +523,7 @@ struct openssl_stream_test
         testWriteFlushErrorIsLatched();
         testCorruptRecordFailsReadAndShutdown();
         testOversizedWriteRoundTrips();
+        testShutdownOnDeadTransportReportsTruncation();
 
         test::testReset(make_stream, cert_modes);
         test::testResetViaHandshake(make_stream, cert_modes);
