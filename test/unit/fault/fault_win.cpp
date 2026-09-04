@@ -29,6 +29,7 @@
 #include <signal.h>
 #include <tlhelp32.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -197,7 +198,10 @@ using proc_t = void (*)();
     X(WideCharToMultiByte, int, 0, WINAPI,                                   \
         (UINT cp, DWORD flags, wchar_t const* in, int inlen, char* out,      \
             int outlen, char const* dflt, LPBOOL used),                      \
-        (cp, flags, in, inlen, out, outlen, dflt, used))
+        (cp, flags, in, inlen, out, outlen, dflt, used))                     \
+    X(pthread_create, int, static_cast<int>(::GetLastError()), WINAPIV,      \
+        (void* t, void const* attr, void* (*fn)(void*), void* arg),          \
+        (t, attr, fn, arg))
 
 // Entry points whose hook does more than fail: it substitutes a
 // pointer, rewrites a completion, or clamps a transfer.
@@ -213,6 +217,7 @@ enum hook_id
 {
     COROSIO_FAULT_WIN_SIMPLE(COROSIO_FAULT_WIN_ID)
     COROSIO_FAULT_WIN_MANUAL(COROSIO_FAULT_WIN_ID1)
+    h_beginthreadex,
     hook_count
 };
 
@@ -518,6 +523,22 @@ BOOL WINAPI hooked_GetQueuedCompletionStatus(HANDLE port, LPDWORD bytes,
     return r;
 }
 
+// MSVC's std::thread reaches _beginthreadex through msvcp's import
+// table (or, with a static msvcp, through the executable's), and the
+// CRT reports failure as a zero return with errno set.
+std::uintptr_t WINAPIV hooked_beginthreadex(void* security, unsigned stack,
+    unsigned(__stdcall* fn)(void*), void* arg, unsigned flags, unsigned* id)
+{
+    if(should_fail(sys::pthread_create))
+    {
+        errno = EAGAIN;
+        return 0;
+    }
+    return COROSIO_FAULT_WIN_CALL(beginthreadex, std::uintptr_t, WINAPIV,
+        (void*, unsigned, unsigned(__stdcall*)(void*), void*, unsigned,
+            unsigned*))(security, stack, fn, arg, flags, id);
+}
+
 struct hook_entry
 {
     char const* name;
@@ -536,6 +557,8 @@ struct hook_entry
 hook_entry hooks[] = {
     COROSIO_FAULT_WIN_SIMPLE(COROSIO_FAULT_WIN_ROW)
     COROSIO_FAULT_WIN_MANUAL(COROSIO_FAULT_WIN_ROW1)
+    { "_beginthreadex", sys::pthread_create,
+        reinterpret_cast<proc_t>(&hooked_beginthreadex), 0 },
 };
 
 static_assert(sizeof(hooks) / sizeof(hooks[0]) == hook_count,
@@ -691,6 +714,39 @@ void patch_module(HMODULE mod) noexcept
     });
 }
 
+// Patch exactly one import in a module the harness does not otherwise
+// own: msvcp carries std::thread's call to _beginthreadex, and patching
+// its whole table would let the harness intercept the runtime's
+// unrelated calls, perturbing every other arm's call ordinals. The
+// store is re-read in place, so the entry's `bound` is trustworthy
+// without a separate verify pass.
+void patch_module_one(HMODULE mod, hook_entry& h) noexcept
+{
+    for_each_import(mod, [&](char const* name, IMAGE_THUNK_DATA& thunk)
+    {
+        if(std::strcmp(name, h.name) != 0)
+            return;
+        auto const idx = static_cast<std::size_t>(&h - hooks);
+        if(!reals[idx])
+            reals[idx] = reinterpret_cast<proc_t>(thunk.u1.Function);
+        DWORD old = 0;
+        if(!::VirtualProtect(&thunk.u1.Function, sizeof(void*),
+            PAGE_READWRITE, &old))
+        {
+            char msg[192];
+            std::snprintf(msg, sizeof(msg),
+                "fault harness: the import thunk for %s refused to become "
+                "writable", name);
+            die(msg);
+        }
+        thunk.u1.Function = reinterpret_cast<ULONG_PTR>(h.hook);
+        std::ignore = ::VirtualProtect(&thunk.u1.Function, sizeof(void*),
+            old, &old);
+        if(thunk.u1.Function == reinterpret_cast<ULONG_PTR>(h.hook))
+            ++h.bound;
+    });
+}
+
 // Re-read the memory as it stands rather than trusting what the patch
 // pass believed it wrote: a thunk that silently refused the store, or
 // a second thunk for the same name that the walk skipped, would leave
@@ -816,6 +872,17 @@ int const installed = []
     for(std::size_t i = 0; i < n; ++i)
         verify_module(mods[i], ok);
 
+    // std::thread's _beginthreadex call lives in msvcp's import table
+    // on dynamic-CRT MSVC toolchains; only that one slot is patched
+    // there. A static msvcp puts the call in the executable, which the
+    // walk above already covered, and MinGW reaches pthread_create the
+    // same way.
+    HMODULE msvcp = ::GetModuleHandleW(L"msvcp140.dll");
+    if(!msvcp)
+        msvcp = ::GetModuleHandleW(L"msvcp140d.dll");
+    if(msvcp)
+        patch_module_one(msvcp, hooks[h_beginthreadex]);
+
     for(auto const& h : hooks)
     {
         if(h.bound != 0)
@@ -857,10 +924,12 @@ bool hook_is_live(sys which) noexcept
     default:
         break;
     }
+    // Two rows can share an id (`pthread_create` also names
+    // `_beginthreadex`); any bound row makes the arm live.
     for(auto const& h : hooks)
     {
-        if(h.which == which)
-            return h.bound != 0;
+        if(h.which == which && h.bound != 0)
+            return true;
     }
     return false;
 }
