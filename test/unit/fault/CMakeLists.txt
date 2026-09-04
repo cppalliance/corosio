@@ -66,6 +66,16 @@ target_link_libraries(boost_corosio_fault_tests PRIVATE
 target_include_directories(boost_corosio_fault_tests PRIVATE
     . .. ../../../ ../../../src/corosio)
 
+# The OpenSSL shadows only have callers when the engine is linked; the
+# TLS fault suite gates itself on this define. b2 never builds it: the
+# coverage legs that publish the badges are all CMake.
+if (NOT WIN32 AND OpenSSL_FOUND)
+    target_link_libraries(boost_corosio_fault_tests PRIVATE
+        boost_corosio_openssl)
+    target_compile_definitions(boost_corosio_fault_tests PRIVATE
+        COROSIO_FAULT_HAS_OPENSSL=1)
+endif()
+
 # in_child's forked child looks up libgcov's __gcov_dump and calls it
 # before _Exit, but nothing else in the program references that symbol,
 # so the archive member holding it is never pulled in and the lookup

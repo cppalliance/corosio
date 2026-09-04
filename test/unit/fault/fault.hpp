@@ -49,6 +49,11 @@ enum class sys
     io_uring_queue_init_params, io_uring_queue_exit, io_uring_submit,
     io_uring_submit_and_wait_timeout, io_uring_submit_and_get_events,
     io_uring_wait_cqe_timeout, uring_sqe_full, cpp_new,
+    // OpenSSL entry points the TLS engine drives; live only when the
+    // process loads libssl/libcrypto.
+    BIO_new_mem_buf, BIO_new_bio_pair, BIO_read, BIO_nwrite0,
+    SSL_CTX_new, SSL_new, SSL_clear, SSL_set_session, SSL_get0_param,
+    X509_STORE_add_cert, X509_dup, X509_VERIFY_PARAM_set1_host,
     WSASocketW, WSAConnect, WSARecv, WSASend, WSARecvFrom, WSASendTo,
     WSAPoll, WSAIoctl, WSAStartup, WSACleanup, closesocket, ioctlsocket,
     GetAddrInfoExW, GetAddrInfoExCancel, FreeAddrInfoExW, GetNameInfoW,
