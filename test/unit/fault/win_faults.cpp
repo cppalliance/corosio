@@ -21,6 +21,9 @@
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/stream_file.hpp>
+#include <boost/corosio/udp.hpp>
+#include <boost/corosio/udp_socket.hpp>
+#include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -29,6 +32,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <future>
 #include <string>
 #include <system_error>
@@ -891,6 +895,56 @@ struct win_signal_faults
 };
 
 TEST_SUITE(win_signal_faults, "boost.corosio.fault.win.signals");
+
+// The first wait() on a socket spawns the wait reactor's poll thread.
+// When that thread cannot be created the reactor is left untouched and
+// the wait completes synchronously with resource_unavailable_try_again
+// (queue_register returns ERROR_MAX_THRDS_REACHED, register_wait
+// completes the op) rather than parking, so the run drains and returns.
+// The bounded run is belt-and-suspenders: if that synchronous
+// completion ever regressed the test would fail fast instead of
+// stranding a runner.
+struct win_wait_reactor_thread_faults
+{
+    void testWaitThreadSpawnRefusal()
+    {
+        if(!hook_is_live(sys::pthread_create))
+        {
+            test_suite::log << "thread-creation hook not live; skipping\n";
+            return;
+        }
+
+        io_context ioc;
+        auto ex = ioc.get_executor();
+        udp_socket u(ioc);
+        BOOST_TEST(!u.open(udp::v4()));
+        BOOST_TEST(!u.bind(endpoint(ipv4_address::loopback(), 0)));
+
+        std::error_code wec = win_err(WSAEINTR); // sentinel, must change
+        bool done = false;
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await u.wait(wait_type::read);
+            wec  = ec;
+            done = true;
+        };
+
+        fault_scope fault(sys::pthread_create, ERROR_MAX_THRDS_REACHED);
+        capy::run_async(ex)(waiter());
+        std::ignore = ioc.run_for(std::chrono::seconds(5));
+
+        BOOST_TEST(fault.fired());
+        BOOST_TEST(done);
+        BOOST_TEST(wec == std::errc::resource_unavailable_try_again);
+    }
+
+    void run()
+    {
+        testWaitThreadSpawnRefusal();
+    }
+};
+
+TEST_SUITE(win_wait_reactor_thread_faults,
+    "boost.corosio.fault.win.wait_thread");
 
 } // boost::corosio::test::fault
 

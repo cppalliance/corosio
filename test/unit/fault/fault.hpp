@@ -33,7 +33,10 @@ namespace boost::corosio::test::fault {
     registrations included. `cpp_new` is not an OS symbol: it names the
     global allocation functions the fault target replaces, so arming it
     makes the nth `new` on the armed thread report `bad_alloc` (the
-    nothrow forms return null).
+    nothrow forms return null). `pthread_create` names thread creation
+    wherever it happens: the libc symbol on POSIX, and on Windows both
+    the winpthreads `pthread_create` and the CRT `_beginthreadex` that
+    MSVC's `std::thread` reaches through msvcp's import table.
 */
 enum class sys
 {
