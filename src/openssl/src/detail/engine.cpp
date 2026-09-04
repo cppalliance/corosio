@@ -84,8 +84,8 @@ build_alpn_wire(std::vector<std::string> const& protocols)
     std::string wire;
     for (auto const& p : protocols)
     {
-        if (p.empty() || p.size() > 255)
-            continue;
+        if (p.empty() || p.size() > 255)    // LCOV_EXCL_LINE set_alpn validates eagerly
+            continue;                       // LCOV_EXCL_LINE set_alpn validates eagerly
         wire.push_back(static_cast<char>(p.size()));
         wire.append(p);
     }
@@ -158,8 +158,8 @@ static int
 password_callback(char* buf, int size, int rwflag, void* userdata)
 {
     auto* cd = static_cast<tls_context_data const*>(userdata);
-    if (!cd || !cd->password_callback)
-        return 0;
+    if (!cd || !cd->password_callback)      // LCOV_EXCL_LINE installed only with a callback
+        return 0;                           // LCOV_EXCL_LINE installed only with a callback
 
     tls_password_purpose purpose = (rwflag == 0)
         ? tls_password_purpose::for_reading
@@ -186,13 +186,13 @@ verify_callback_trampoline(int preverified, X509_STORE_CTX* store_ctx)
 {
     SSL* ssl = static_cast<SSL*>(X509_STORE_CTX_get_ex_data(
         store_ctx, SSL_get_ex_data_X509_STORE_CTX_idx()));
-    if (!ssl)
-        return preverified;
+    if (!ssl)                               // LCOV_EXCL_LINE ex-data set before verify runs
+        return preverified;                 // LCOV_EXCL_LINE ex-data set before verify runs
 
     auto* cd = static_cast<tls_context_data const*>(
         SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), sni_ctx_data_index));
-    if (!cd)
-        return preverified;
+    if (!cd)                                // LCOV_EXCL_LINE set at context build
+        return preverified;                 // LCOV_EXCL_LINE set at context build
 
     bool ok = preverified != 0;
 
@@ -246,8 +246,8 @@ alpn_select_cb(
     unsigned char const* in, unsigned int inlen, void* arg)
 {
     auto const* prefs = static_cast<std::vector<std::string> const*>(arg);
-    if (!prefs || prefs->empty())
-        return SSL_TLSEXT_ERR_NOACK; // nothing configured (defensive)
+    if (!prefs || prefs->empty())           // LCOV_EXCL_LINE installed only with a non-empty list
+        return SSL_TLSEXT_ERR_NOACK;        // LCOV_EXCL_LINE installed only with a non-empty list
 
     // Server preference order wins: for each server protocol, look for a
     // matching entry in the client's offered list.
@@ -707,8 +707,8 @@ engine::init(tls_context const& ctx)
 void
 engine::reset()
 {
-    if (!ssl_)
-        return;
+    if (!ssl_)          // LCOV_EXCL_LINE reset() runs only on a used stream
+        return;         // LCOV_EXCL_LINE reset() runs only on a used stream
 
     // Preserves SSL* and BIO pair, releases session state
     if (SSL_clear(ssl_) != 1)
@@ -911,9 +911,11 @@ engine::perform(engine_op op, void* data, std::size_t len)
             // apart, and the documented contract promises
             // stream_truncated for the latter, matching the read path
             // and the driver's `map_fill_error` policy.
-            ec = received_shutdown()
-                ? std::error_code{}
-                : make_error_code(capy::error::stream_truncated);
+            // The driver's map_fill_error reports the truncation
+            // before a BIO-pair engine can see SYSCALL.
+            ec = received_shutdown()                                // LCOV_EXCL_LINE driver maps truncation first
+                ? std::error_code{}                                 // LCOV_EXCL_LINE driver maps truncation first
+                : make_error_code(capy::error::stream_truncated);   // LCOV_EXCL_LINE driver maps truncation first
         }
         else
         {

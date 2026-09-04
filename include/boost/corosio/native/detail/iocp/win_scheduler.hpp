@@ -96,7 +96,10 @@ public:
     /// Return true when scheduler locking is disabled (fully-lockless tier).
     bool scheduler_locking_disabled() const noexcept override
     {
+        // LCOV_EXCL_START: consulted only by the POSIX pool-backed
+        // services; the IOCP services do not read it yet.
         return scheduler_locking_disabled_;
+        // LCOV_EXCL_STOP
     }
 
     /** Signal that an overlapped I/O operation is now pending.
@@ -618,8 +621,8 @@ win_scheduler::do_one(unsigned long timeout_ms)
                 return 1;
             }
 
-            default:
-                continue;
+            default:            // LCOV_EXCL_LINE unreachable: closed key set
+                continue;       // LCOV_EXCL_LINE unreachable: closed key set
             }
         }
 
@@ -646,8 +649,10 @@ win_scheduler::do_one(unsigned long timeout_ms)
                 }
                 continue;
 
-            default:
-                continue;
+            // A key outside the closed set reaches here only if a
+            // third party posts to the port.
+            default:            // LCOV_EXCL_LINE unreachable: closed key set
+                continue;       // LCOV_EXCL_LINE unreachable: closed key set
             }
         }
 
