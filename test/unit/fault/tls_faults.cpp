@@ -15,7 +15,7 @@
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if defined(COROSIO_FAULT_HAS_OPENSSL) && !defined(_WIN32)
+#if defined(COROSIO_FAULT_HAS_OPENSSL)
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/openssl_stream.hpp>
