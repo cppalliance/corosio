@@ -86,37 +86,6 @@ reactor_find_context(reactor_scheduler const* self) noexcept
     return nullptr;
 }
 
-/// Flush private work count to global counter.
-inline void
-reactor_flush_private_work(
-    reactor_scheduler_context* ctx,
-    std::atomic<std::int64_t>& outstanding_work) noexcept
-{
-    if (ctx && ctx->private_outstanding_work > 0)
-    {
-        outstanding_work.fetch_add(
-            ctx->private_outstanding_work, std::memory_order_relaxed);
-        ctx->private_outstanding_work = 0;
-    }
-}
-
-/** Drain private queue to global queue, flushing work count first.
-
-    @return True if any ops were drained.
-*/
-inline bool
-reactor_drain_private_queue(
-    reactor_scheduler_context* ctx,
-    std::atomic<std::int64_t>& outstanding_work,
-    ready_queue& completed_ops) noexcept
-{
-    if (!ctx || ctx->private_queue.empty())
-        return false;
-
-    reactor_flush_private_work(ctx, outstanding_work);
-    completed_ops.splice(ctx->private_queue);
-    return true;
-}
 
 /** Non-template base for reactor-backed scheduler implementations.
 
@@ -212,15 +181,6 @@ public:
     */
     void compensating_work_started() const noexcept;
 
-    /** Drain work from thread context's private queue to global queue.
-
-        Flushes private work count to the global counter, then
-        transfers the queue under mutex protection.
-
-        @param queue The private queue to drain.
-        @param count Private work count to flush before draining.
-    */
-    void drain_thread_queue(ready_queue& queue, std::int64_t count) const;
 
     /** Post completed operations for deferred invocation.
 
@@ -387,12 +347,14 @@ struct reactor_thread_context_guard
         reactor_context_stack.set(&frame_);
     }
 
-    /// Destroy the guard, draining private work and popping the frame.
+    /** Destroy the guard, popping the frame.
+
+        The private queue is empty here by invariant: work_cleanup and
+        task_cleanup splice it to the global queue after every handler
+        and every reactor pass.
+    */
     ~reactor_thread_context_guard() noexcept
     {
-        if (!frame_.private_queue.empty())
-            frame_.key->drain_thread_queue(
-                frame_.private_queue, frame_.private_outstanding_work);
         reactor_context_stack.set(frame_.next);
     }
 };
@@ -705,18 +667,6 @@ reactor_scheduler::compensating_work_started() const noexcept
         ++ctx->private_outstanding_work;
 }
 
-inline void
-reactor_scheduler::drain_thread_queue(
-    ready_queue& queue, std::int64_t count) const
-{
-    if (count > 0)
-        outstanding_work_.fetch_add(count, std::memory_order_relaxed);
-
-    lock_type lock(mutex_);
-    completed_ops_.splice(queue);
-    if (count > 0)
-        maybe_unlock_and_signal_one(lock);
-}
 
 inline void
 reactor_scheduler::post_deferred_completions(ready_queue& ops) const
@@ -847,33 +797,23 @@ reactor_scheduler::wake_one_thread_and_unlock(
 
 inline reactor_scheduler::work_cleanup::~work_cleanup()
 {
-    if (ctx)
-    {
-        std::int64_t produced = ctx->private_outstanding_work;
-        if (produced > 1)
-            sched->outstanding_work_.fetch_add(
-                produced - 1, std::memory_order_relaxed);
-        else if (produced < 1)
-            sched->work_finished();
-        ctx->private_outstanding_work = 0;
-
-        if (!ctx->private_queue.empty())
-        {
-            lock->lock();
-            sched->completed_ops_.splice(ctx->private_queue);
-        }
-    }
-    else
-    {
+    std::int64_t produced = ctx->private_outstanding_work;
+    if (produced > 1)
+        sched->outstanding_work_.fetch_add(
+            produced - 1, std::memory_order_relaxed);
+    else if (produced < 1)
         sched->work_finished();
+    ctx->private_outstanding_work = 0;
+
+    if (!ctx->private_queue.empty())
+    {
+        lock->lock();
+        sched->completed_ops_.splice(ctx->private_queue);
     }
 }
 
 inline reactor_scheduler::task_cleanup::~task_cleanup()
 {
-    if (!ctx)
-        return;
-
     if (ctx->private_outstanding_work > 0)
     {
         sched->outstanding_work_.fetch_add(
@@ -904,8 +844,7 @@ reactor_scheduler::do_one(
         // Handle reactor sentinel — time to poll for I/O
         if (op == &task_op_)
         {
-            bool more_handlers =
-                !completed_ops_.empty() || (ctx && !ctx->private_queue.empty());
+            bool more_handlers = !completed_ops_.empty();
 
             if (!more_handlers &&
                 (outstanding_work_.load(std::memory_order_acquire) == 0 ||
@@ -967,10 +906,6 @@ reactor_scheduler::do_one(
                 (*op)();
             return 1;
         }
-
-        // Try private queue before blocking
-        if (reactor_drain_private_queue(ctx, outstanding_work_, completed_ops_))
-            continue;
 
         if (outstanding_work_.load(std::memory_order_acquire) == 0 ||
             timeout_us == 0)

@@ -248,7 +248,8 @@ public:
 
         Tries connect() speculatively. On synchronous completion,
         returns via inline budget or posts through queue.
-        On EINPROGRESS, registers with the reactor.
+        The result is always synchronous: a datagram connect only
+        records the peer address in the kernel.
     */
     std::coroutine_handle<> do_connect(
         std::coroutine_handle<>,
@@ -372,27 +373,6 @@ private:
         return nullptr;
     }
 
-    template<class Op>
-    bool* op_to_cancel_flag(Op& op) noexcept
-    {
-        if (&op == static_cast<void*>(&conn_))
-            return &this->desc_state_.connect_cancel_pending;
-        if (&op == static_cast<void*>(&rd_))
-            return &this->desc_state_.read_cancel_pending;
-        if (&op == static_cast<void*>(&wr_))
-            return &this->desc_state_.write_cancel_pending;
-        if (&op == static_cast<void*>(&recv_rd_))
-            return &this->desc_state_.read_cancel_pending;
-        if (&op == static_cast<void*>(&send_wr_))
-            return &this->desc_state_.write_cancel_pending;
-        if (&op == static_cast<void*>(&wait_rd_))
-            return &this->desc_state_.wait_read_cancel_pending;
-        if (&op == static_cast<void*>(&wait_wr_))
-            return &this->desc_state_.wait_write_cancel_pending;
-        if (&op == static_cast<void*>(&wait_er_))
-            return &this->desc_state_.wait_error_cancel_pending;
-        return nullptr;
-    }
 
     template<class Fn>
     void for_each_op(Fn fn) noexcept
@@ -528,8 +508,7 @@ reactor_datagram_socket<
     op.impl_ptr = this->shared_from_this();
 
     this->register_op(
-        op, this->desc_state_.write_op, this->desc_state_.write_ready,
-        this->desc_state_.write_cancel_pending, true);
+        op, this->desc_state_.write_op, this->desc_state_.write_ready, true);
     return std::noop_coroutine();
 }
 
@@ -653,8 +632,7 @@ reactor_datagram_socket<
     op.impl_ptr = this->shared_from_this();
 
     this->register_op(
-        op, this->desc_state_.read_op, this->desc_state_.read_ready,
-        this->desc_state_.read_cancel_pending);
+        op, this->desc_state_.read_op, this->desc_state_.read_ready);
     return std::noop_coroutine();
 }
 
@@ -711,29 +689,16 @@ reactor_datagram_socket<
         remote_endpoint_ = ep;
     }
 
-    if (result == 0 || errno != EINPROGRESS)
+    // A datagram connect cannot block — it only records the peer
+    // address — so the result is handled synchronously; the deferred
+    // arm exists for a spent inline budget, not for a parked op.
+    int err = (result < 0) ? errno : 0;
+    if (this->svc_.scheduler().try_consume_inline_budget())
     {
-        int err = (result < 0) ? errno : 0;
-        if (this->svc_.scheduler().try_consume_inline_budget())
-        {
-            *ec = err ? make_err(err) : std::error_code{};
-            op.cont.h = h;
-            return dispatch_coro(ex, op.cont);
-        }
-        op.reset();
-        op.h               = h;
-        op.ex              = ex;
-        op.ec_out          = ec;
-        op.fd              = this->fd_;
-        op.target_endpoint = ep;
-        op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
-        op.complete(err, 0);
-        this->svc_.post(&op);
-        return std::noop_coroutine();
+        *ec = err ? make_err(err) : std::error_code{};
+        op.cont.h = h;
+        return dispatch_coro(ex, op.cont);
     }
-
-    // EINPROGRESS — register with reactor
     op.reset();
     op.h               = h;
     op.ex              = ex;
@@ -742,10 +707,8 @@ reactor_datagram_socket<
     op.target_endpoint = ep;
     op.start(token, static_cast<Derived*>(this));
     op.impl_ptr = this->shared_from_this();
-
-    this->register_op(
-        op, this->desc_state_.connect_op, this->desc_state_.write_ready,
-        this->desc_state_.connect_cancel_pending);
+    op.complete(err, 0);
+    this->svc_.post(&op);
     return std::noop_coroutine();
 }
 
@@ -850,8 +813,7 @@ reactor_datagram_socket<
     op.impl_ptr = this->shared_from_this();
 
     this->register_op(
-        op, this->desc_state_.write_op, this->desc_state_.write_ready,
-        this->desc_state_.write_cancel_pending, true);
+        op, this->desc_state_.write_op, this->desc_state_.write_ready, true);
     return std::noop_coroutine();
 }
 
@@ -963,8 +925,7 @@ reactor_datagram_socket<
     op.impl_ptr = this->shared_from_this();
 
     this->register_op(
-        op, this->desc_state_.read_op, this->desc_state_.read_ready,
-        this->desc_state_.read_cancel_pending);
+        op, this->desc_state_.read_op, this->desc_state_.read_ready);
     return std::noop_coroutine();
 }
 
@@ -1004,28 +965,24 @@ reactor_datagram_socket<
 {
     WaitOp* op_ptr;
     reactor_op_base** desc_slot_ptr;
-    bool* cancel_flag_ptr;
     std::uint32_t event;
 
     if (w == wait_type::read)
     {
         op_ptr          = &wait_rd_;
         desc_slot_ptr   = &this->desc_state_.wait_read_op;
-        cancel_flag_ptr = &this->desc_state_.wait_read_cancel_pending;
         event           = reactor_event_read;
     }
     else if (w == wait_type::write)
     {
         op_ptr          = &wait_wr_;
         desc_slot_ptr   = &this->desc_state_.wait_write_op;
-        cancel_flag_ptr = &this->desc_state_.wait_write_cancel_pending;
         event           = reactor_event_write;
     }
     else // wait_type::error
     {
         op_ptr          = &wait_er_;
         desc_slot_ptr   = &this->desc_state_.wait_error_op;
-        cancel_flag_ptr = &this->desc_state_.wait_error_cancel_pending;
         event           = reactor_event_error;
     }
 
@@ -1073,7 +1030,7 @@ reactor_datagram_socket<
     // otherwise leave the wait parked on a ready socket.
     bool force_probe = true;
     this->register_op(
-        op, *desc_slot_ptr, force_probe, *cancel_flag_ptr,
+        op, *desc_slot_ptr, force_probe,
         event == reactor_event_write);
     return std::noop_coroutine();
 }

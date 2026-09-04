@@ -834,7 +834,7 @@ struct reactor_paths_test
 
     // Stop-token cancel of a parked wait(read). Exercises cancel_single_op
     // via the per-op canceller (not socket.cancel()), which dispatches
-    // through op_to_desc_slot/op_to_cancel_flag for the wait_rd_ slot.
+    // through op_to_desc_slot for the wait_rd_ slot.
     void testStopTokenWaitRead()
     {
         io_context ioc(Backend);
