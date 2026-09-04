@@ -72,24 +72,6 @@ struct reactor_descriptor_state : scheduler_op
     /// True if a write edge event arrived before an op was registered.
     bool write_ready = false;
 
-    /// Deferred read cancellation (IOCP-style cancel semantics).
-    bool read_cancel_pending = false;
-
-    /// Deferred write cancellation (IOCP-style cancel semantics).
-    bool write_cancel_pending = false;
-
-    /// Deferred connect cancellation (IOCP-style cancel semantics).
-    bool connect_cancel_pending = false;
-
-    /// Deferred wait-read cancellation (IOCP-style cancel semantics).
-    bool wait_read_cancel_pending = false;
-
-    /// Deferred wait-write cancellation (IOCP-style cancel semantics).
-    bool wait_write_cancel_pending = false;
-
-    /// Deferred wait-error cancellation (IOCP-style cancel semantics).
-    bool wait_error_cancel_pending = false;
-
     /// Event mask set during registration (no mutex needed).
     std::uint32_t registered_events = 0;
 

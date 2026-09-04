@@ -301,23 +301,6 @@ private:
         return nullptr;
     }
 
-    template<class Op>
-    bool* op_to_cancel_flag(Op& op) noexcept
-    {
-        if (&op == static_cast<void*>(&conn_))
-            return &this->desc_state_.connect_cancel_pending;
-        if (&op == static_cast<void*>(&rd_))
-            return &this->desc_state_.read_cancel_pending;
-        if (&op == static_cast<void*>(&wr_))
-            return &this->desc_state_.write_cancel_pending;
-        if (&op == static_cast<void*>(&wait_rd_))
-            return &this->desc_state_.wait_read_cancel_pending;
-        if (&op == static_cast<void*>(&wait_wr_))
-            return &this->desc_state_.wait_write_cancel_pending;
-        if (&op == static_cast<void*>(&wait_er_))
-            return &this->desc_state_.wait_error_cancel_pending;
-        return nullptr;
-    }
 
     template<class Fn>
     void for_each_op(Fn fn) noexcept
@@ -413,8 +396,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
     op.impl_ptr = this->shared_from_this();
 
     this->register_op(
-        op, this->desc_state_.connect_op, this->desc_state_.write_ready,
-        this->desc_state_.connect_cancel_pending, true);
+        op, this->desc_state_.connect_op, this->desc_state_.write_ready, true);
     return std::noop_coroutine();
 }
 
@@ -537,8 +519,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
     op.impl_ptr = this->shared_from_this();
 
     this->register_op(
-        op, this->desc_state_.read_op, this->desc_state_.read_ready,
-        this->desc_state_.read_cancel_pending);
+        op, this->desc_state_.read_op, this->desc_state_.read_ready);
     return std::noop_coroutine();
 }
 
@@ -651,8 +632,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
     op.impl_ptr = this->shared_from_this();
 
     this->register_op(
-        op, this->desc_state_.write_op, this->desc_state_.write_ready,
-        this->desc_state_.write_cancel_pending, true);
+        op, this->desc_state_.write_op, this->desc_state_.write_ready, true);
     return std::noop_coroutine();
 }
 
@@ -678,28 +658,24 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
     // Pick refs up-front to avoid duplicating the register_op call.
     WaitOp* op_ptr;
     reactor_op_base** desc_slot_ptr;
-    bool* cancel_flag_ptr;
     std::uint32_t event;
 
     if (w == wait_type::read)
     {
         op_ptr          = &wait_rd_;
         desc_slot_ptr   = &this->desc_state_.wait_read_op;
-        cancel_flag_ptr = &this->desc_state_.wait_read_cancel_pending;
         event           = reactor_event_read;
     }
     else if (w == wait_type::write)
     {
         op_ptr          = &wait_wr_;
         desc_slot_ptr   = &this->desc_state_.wait_write_op;
-        cancel_flag_ptr = &this->desc_state_.wait_write_cancel_pending;
         event           = reactor_event_write;
     }
     else // wait_type::error
     {
         op_ptr          = &wait_er_;
         desc_slot_ptr   = &this->desc_state_.wait_error_op;
-        cancel_flag_ptr = &this->desc_state_.wait_error_cancel_pending;
         event           = reactor_event_error;
     }
 
@@ -746,7 +722,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
     // read, or an error event dispatched to an empty slot) would
     // otherwise leave the wait parked on a ready socket.
     bool force_probe = true;
-    this->register_op(op, *desc_slot_ptr, force_probe, *cancel_flag_ptr,
+    this->register_op(op, *desc_slot_ptr, force_probe,
                       event == reactor_event_write);
     return std::noop_coroutine();
 }

@@ -117,16 +117,14 @@ public:
 
     /** Register an op with the reactor.
 
-        Handles cached edge events and deferred cancellation.
-        Called on the EAGAIN/EINPROGRESS path when speculative
-        I/O failed.
+        Handles cached edge events. Called on the EAGAIN/EINPROGRESS
+        path when speculative I/O failed.
     */
     template<class Op>
     void register_op(
         Op& op,
         reactor_op_base*& desc_slot,
         bool& ready_flag,
-        bool& cancel_flag,
         bool is_write_direction = false) noexcept;
 
     /** Cancel a single pending operation.
@@ -135,7 +133,6 @@ public:
         the mutex and posts it to the scheduler as cancelled.
         Derived must implement:
           op_to_desc_slot(Op&) -> reactor_op_base**
-          op_to_cancel_flag(Op&) -> bool*
     */
     template<class Op>
     void cancel_single_op(Op& op) noexcept;
@@ -175,7 +172,6 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::register_
     Op& op,
     reactor_op_base*& desc_slot,
     bool& ready_flag,
-    bool& cancel_flag,
     bool is_write_direction) noexcept
 {
     svc_.work_started();
@@ -191,11 +187,6 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::register_
             op.errn = 0;
     }
 
-    if (cancel_flag)
-    {
-        cancel_flag = false;
-        op.cancelled.store(true, std::memory_order_relaxed);
-    }
 
     if (io_done || op.cancelled.load(std::memory_order_acquire))
     {
@@ -332,12 +323,6 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
                 });
             desc_state_.read_ready             = false;
             desc_state_.write_ready            = false;
-            desc_state_.read_cancel_pending       = false;
-            desc_state_.write_cancel_pending      = false;
-            desc_state_.connect_cancel_pending    = false;
-            desc_state_.wait_read_cancel_pending  = false;
-            desc_state_.wait_write_cancel_pending = false;
-            desc_state_.wait_error_cancel_pending = false;
 
             if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
                 desc_state_.impl_ref_ = self;
@@ -398,12 +383,6 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
                 });
             desc_state_.read_ready             = false;
             desc_state_.write_ready            = false;
-            desc_state_.read_cancel_pending       = false;
-            desc_state_.write_cancel_pending      = false;
-            desc_state_.connect_cancel_pending    = false;
-            desc_state_.wait_read_cancel_pending  = false;
-            desc_state_.wait_write_cancel_pending = false;
-            desc_state_.wait_error_cancel_pending = false;
 
             if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
                 desc_state_.impl_ref_ = self;
