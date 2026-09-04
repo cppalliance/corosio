@@ -243,8 +243,8 @@ parse_h16(
     unsigned char& hi,
     unsigned char& lo) noexcept
 {
-    if (it == end)
-        return false;
+    if (it == end)          // LCOV_EXCL_LINE callers pre-check end-of-input
+        return false;       // LCOV_EXCL_LINE callers pre-check end-of-input
 
     int d = hexdig_value(*it);
     if (d < 0)
@@ -377,8 +377,8 @@ parse_ipv6_impl(std::string_view s, ipv6_address& addr) noexcept
             // Verify it parsed correctly by re-parsing the exact substring
             auto [ckec, v4_check] = make_ipv4_address(
                 std::string_view(it, static_cast<std::size_t>(v4_it - it)));
-            if (ckec)
-                return ckec;
+            if (ckec)               // LCOV_EXCL_LINE prefix of a parsed tail cannot fail
+                return ckec;        // LCOV_EXCL_LINE prefix of a parsed tail cannot fail
             it                     = v4_it;
             auto const b4          = v4_check.to_bytes();
             bytes[2 * (7 - n) + 0] = b4[0];

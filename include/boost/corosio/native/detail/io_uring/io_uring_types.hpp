@@ -2594,6 +2594,9 @@ public:
         return remote_endpoint_;
     }
 
+    // LCOV_EXCL_START: the public bind routes through the
+    // service's bind_socket; nothing calls the implementation
+    // interface's bind on this backend.
     std::error_code bind(corosio::local_endpoint ep) noexcept override
     {
         sockaddr_storage addr{};
@@ -2609,6 +2612,7 @@ public:
             local_endpoint_ = sockaddr_to_local_endpoint(local, local_len);
         return {};
     }
+    // LCOV_EXCL_STOP
 
 private:
     std::coroutine_handle<> submit_send(

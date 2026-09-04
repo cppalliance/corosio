@@ -286,8 +286,11 @@ protected:
     /// Sentinel op that triggers a reactor poll when dequeued.
     struct task_op final : scheduler_op
     {
+        // LCOV_EXCL_START: the sentinel is intercepted by pointer
+        // identity; its virtuals exist for vtable completeness.
         void operator()() override {}
         void destroy() override {}
+        // LCOV_EXCL_STOP
     };
     task_op task_op_;
 

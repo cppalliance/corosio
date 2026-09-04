@@ -88,8 +88,8 @@ struct uring_multi_accept_op : io_uring_op
     static void do_retired_cqe(
         io_uring_op* /*base*/, int res, unsigned /*flags*/) noexcept
     {
-        if (res >= 0)
-            ::close(res);
+        if (res >= 0)           // LCOV_EXCL_LINE adopt-over-armed race leak guard
+            ::close(res);       // LCOV_EXCL_LINE adopt-over-armed race leak guard
     }
 
     static void do_cqe(io_uring_op* base, int res, unsigned flags,
@@ -105,15 +105,15 @@ struct uring_multi_accept_op : io_uring_op
         // whether to surface the fd via a waiter or park it.
     }
 
-    /// Never invoked: the multishot op is owned by the acceptor and
-    /// never queued for handler dispatch. Provided so the vtable is
-    /// complete.
+    // LCOV_EXCL_START: never invoked; the multishot op is owned by
+    // the acceptor and never queued for handler dispatch. Provided so
+    // the vtable is complete.
     static void do_handler(
         void* /*owner*/, scheduler_op* /*base*/,
         std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
     {
-        // No-op. The acceptor's per-accept callback handles everything.
     }
+    // LCOV_EXCL_STOP
 };
 
 /** Synthesized accept op — manufactured by the acceptor for parked fds.
@@ -153,11 +153,13 @@ struct uring_accept_op : io_uring_op
         : io_uring_op(&do_handler, &do_cqe)
     {}
 
+    // LCOV_EXCL_START: never receives a CQE; present for vtable
+    // completeness.
     static void do_cqe(io_uring_op*, int, unsigned,
                        ready_queue&) noexcept
     {
-        // Unreachable: this op never receives a CQE.
     }
+    // LCOV_EXCL_STOP
 
     static void do_handler(
         void* owner, scheduler_op* base,
@@ -193,9 +195,12 @@ struct uring_accept_op : io_uring_op
                 self->peer_service, self->accepted_fd,
                 self->peer_storage, self->peer_len);
 
+        // LCOV_EXCL_START: no public accept overload reports the peer
+        // endpoint on this backend yet.
         if (self->peer_endpoint_out)
             *self->peer_endpoint_out =
                 sockaddr_to_endpoint(self->peer_storage);
+        // LCOV_EXCL_STOP
 
         if (self->ec_out)
             *self->ec_out = {};

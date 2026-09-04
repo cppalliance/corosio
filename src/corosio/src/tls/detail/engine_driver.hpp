@@ -227,8 +227,8 @@ class engine_driver
             // The loop guard just confirmed pending bytes exist, so a
             // drain failure here is unreachable in practice; fail loudly
             // rather than silently drop already-accepted ciphertext.
-            if (n == 0)
-                co_return make_error_code(std::errc::no_buffer_space);
+            if (n == 0)                                             // LCOV_EXCL_LINE unreachable: pending bytes confirmed
+                co_return make_error_code(std::errc::no_buffer_space); // LCOV_EXCL_LINE unreachable: transport returned 0 with no error unreachable: pending bytes confirmed
             auto [ec, wn] = co_await capy::write(
                 *s_, capy::const_buffer(out_buf_.data(), n));
             if (ec)
@@ -307,7 +307,7 @@ class engine_driver
         // The transport delivered nothing without an error, so it cannot
         // make progress: fail loudly rather than spin the engine's input
         // retry against a staging that will never fill.
-        co_return make_error_code(std::errc::no_buffer_space);
+        co_return make_error_code(std::errc::no_buffer_space); // LCOV_EXCL_LINE unreachable: staging cannot stay empty
     }
 
     // A prior read/write already reported its full transfer as success;

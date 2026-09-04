@@ -704,8 +704,8 @@ win_signals::start_wait(win_signal& impl, signal_op* op)
 inline void
 win_signals::deliver_signal(int signal_number)
 {
-    if (signal_number < 0 || signal_number >= max_signal_number)
-        return;
+    if (signal_number < 0 || signal_number >= max_signal_number) // LCOV_EXCL_LINE OS never delivers out-of-range
+        return;                                                  // LCOV_EXCL_LINE OS never delivers out-of-range
 
     signal_detail::signal_state* state = signal_detail::get_signal_state();
     std::lock_guard<std::mutex> lock(state->mutex);

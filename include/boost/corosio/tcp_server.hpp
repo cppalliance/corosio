@@ -274,7 +274,10 @@ private:
             void return_void() noexcept {}
             void unhandled_exception()
             {
+                // LCOV_EXCL_START: terminating by contract is not a
+                // coverable outcome.
                 std::terminate();
+                // LCOV_EXCL_STOP
             }
 
             // Inject io_env for IoAwaitable
