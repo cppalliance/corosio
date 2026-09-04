@@ -199,6 +199,117 @@ COROSIO_FAULT_HOOK(fsync, int, -1, (int fd), (fd))
 COROSIO_FAULT_HOOK_NX(unlink, int, -1, (char const* p), (p))
 COROSIO_FAULT_HOOK_NX(sigaction, int, -1, (int sig, struct sigaction const* a, struct sigaction* o), (sig, a, o))
 
+// The OpenSSL shadows use opaque pointer signatures: the symbols have
+// C linkage, so no OpenSSL headers are needed. They rely on ELF
+// strong-symbol interposition, which only libcrypto's own callers reach
+// on Linux; macOS's two-level namespace resolves those calls to
+// libcrypto directly, so the shadows would never fire and their
+// RTLD_NEXT lookup has nothing to bind. Gate them to Linux, where the
+// coverage badge is measured; elsewhere hook_is_live reports them not
+// live and the TLS fault suite skips.
+#if defined(__linux__)
+extern "C" void* BIO_new_mem_buf(void const* buf, int len)
+{
+    COROSIO_FAULT_REAL(BIO_new_mem_buf, void*(*)(void const*, int));
+    if(should_fail(sys::BIO_new_mem_buf))
+        return nullptr;
+    return real(buf, len);
+}
+
+extern "C" int BIO_new_bio_pair(void** b1, std::size_t w1, void** b2,
+    std::size_t w2)
+{
+    COROSIO_FAULT_REAL(BIO_new_bio_pair,
+        int(*)(void**, std::size_t, void**, std::size_t));
+    if(should_fail(sys::BIO_new_bio_pair))
+        return 0;
+    return real(b1, w1, b2, w2);
+}
+
+extern "C" void* SSL_CTX_new(void const* method)
+{
+    COROSIO_FAULT_REAL(SSL_CTX_new, void*(*)(void const*));
+    if(should_fail(sys::SSL_CTX_new))
+        return nullptr;
+    return real(method);
+}
+
+extern "C" void* SSL_new(void* ctx)
+{
+    COROSIO_FAULT_REAL(SSL_new, void*(*)(void*));
+    if(should_fail(sys::SSL_new))
+        return nullptr;
+    return real(ctx);
+}
+
+extern "C" int SSL_clear(void* ssl)
+{
+    COROSIO_FAULT_REAL(SSL_clear, int(*)(void*));
+    if(should_fail(sys::SSL_clear))
+        return 0;
+    return real(ssl);
+}
+
+extern "C" int SSL_set_session(void* ssl, void* session)
+{
+    COROSIO_FAULT_REAL(SSL_set_session, int(*)(void*, void*));
+    if(should_fail(sys::SSL_set_session))
+        return 0;
+    return real(ssl, session);
+}
+
+extern "C" int X509_STORE_add_cert(void* store, void* x)
+{
+    COROSIO_FAULT_REAL(X509_STORE_add_cert, int(*)(void*, void*));
+    if(should_fail(sys::X509_STORE_add_cert))
+        return 0;
+    return real(store, x);
+}
+
+extern "C" void* X509_dup(void* x)
+{
+    COROSIO_FAULT_REAL(X509_dup, void*(*)(void*));
+    if(should_fail(sys::X509_dup))
+        return nullptr;
+    return real(x);
+}
+
+extern "C" int BIO_read(void* bio, void* buf, int len)
+{
+    COROSIO_FAULT_REAL(BIO_read, int(*)(void*, void*, int));
+    if(should_fail(sys::BIO_read))
+        return -1;
+    return real(bio, buf, len);
+}
+
+extern "C" int BIO_nwrite0(void* bio, char** buf)
+{
+    COROSIO_FAULT_REAL(BIO_nwrite0, int(*)(void*, char**));
+    if(should_fail(sys::BIO_nwrite0))
+        return -1;
+    return real(bio, buf);
+}
+
+
+extern "C" void* SSL_get0_param(void* ssl)
+{
+    COROSIO_FAULT_REAL(SSL_get0_param, void*(*)(void*));
+    if(should_fail(sys::SSL_get0_param))
+        return nullptr;
+    return real(ssl);
+}
+
+extern "C" int X509_VERIFY_PARAM_set1_host(void* p, char const* name,
+    std::size_t namelen)
+{
+    COROSIO_FAULT_REAL(X509_VERIFY_PARAM_set1_host,
+        int(*)(void*, char const*, std::size_t));
+    if(should_fail(sys::X509_VERIFY_PARAM_set1_host))
+        return 0;
+    return real(p, name, namelen);
+}
+#endif // __linux__
+
 // pthread_create reports through its return value, not errno; the
 // armed error published to errno is handed back directly, which is
 // what turns std::thread's construction into a std::system_error.
@@ -623,6 +734,9 @@ namespace {
 // the library name must not read as shared.
 int corosio_image_index() noexcept
 {
+    // The main library only: the char after the prefix must be '.',
+    // so the openssl/wolfssl satellite dylibs (which share the prefix
+    // but import no libc socket family) are not mistaken for it.
     static constexpr char prefix[] = "libboost_corosio";
     for(std::uint32_t i = 1, n = ::_dyld_image_count(); i < n; ++i)
     {
@@ -631,7 +745,8 @@ int corosio_image_index() noexcept
             continue;
         char const* slash = std::strrchr(path, '/');
         char const* base = slash ? slash + 1 : path;
-        if(std::strncmp(base, prefix, sizeof(prefix) - 1) == 0)
+        if(std::strncmp(base, prefix, sizeof(prefix) - 1) == 0 &&
+           base[sizeof(prefix) - 1] == '.')
             return static_cast<int>(i);
     }
     return -1;
@@ -715,6 +830,15 @@ namespace {
     COROSIO_FAULT_CENSUS(ftruncate),
     COROSIO_FAULT_CENSUS(fsync), COROSIO_FAULT_CENSUS(unlink),
     COROSIO_FAULT_CENSUS(sigaction), COROSIO_FAULT_CENSUS(pthread_create),
+#if defined(__linux__)
+    COROSIO_FAULT_CENSUS(BIO_new_mem_buf), COROSIO_FAULT_CENSUS(BIO_new_bio_pair),
+    COROSIO_FAULT_CENSUS(SSL_CTX_new), COROSIO_FAULT_CENSUS(SSL_new),
+    COROSIO_FAULT_CENSUS(SSL_clear), COROSIO_FAULT_CENSUS(SSL_set_session),
+    COROSIO_FAULT_CENSUS(X509_STORE_add_cert), COROSIO_FAULT_CENSUS(X509_dup),
+    COROSIO_FAULT_CENSUS(BIO_read), COROSIO_FAULT_CENSUS(BIO_nwrite0),
+    COROSIO_FAULT_CENSUS(SSL_get0_param),
+    COROSIO_FAULT_CENSUS(X509_VERIFY_PARAM_set1_host),
+#endif
     COROSIO_FAULT_CENSUS(getaddrinfo),
     COROSIO_FAULT_CENSUS(freeaddrinfo),
     COROSIO_FAULT_CENSUS(getnameinfo), COROSIO_FAULT_CENSUS(gethostname),
