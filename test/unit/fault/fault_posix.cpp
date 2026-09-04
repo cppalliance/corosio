@@ -207,7 +207,7 @@ COROSIO_FAULT_HOOK_NX(sigaction, int, -1, (int sig, struct sigaction const* a, s
 // RTLD_NEXT lookup has nothing to bind. Gate them to Linux, where the
 // coverage badge is measured; elsewhere hook_is_live reports them not
 // live and the TLS fault suite skips.
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 extern "C" void* BIO_new_mem_buf(void const* buf, int len)
 {
     COROSIO_FAULT_REAL(BIO_new_mem_buf, void*(*)(void const*, int));
@@ -308,7 +308,7 @@ extern "C" int X509_VERIFY_PARAM_set1_host(void* p, char const* name,
         return 0;
     return real(p, name, namelen);
 }
-#endif // __linux__
+#endif // __linux__ || __APPLE__
 
 // pthread_create reports through its return value, not errno; the
 // armed error published to errno is handed back directly, which is
@@ -752,6 +752,25 @@ int corosio_image_index() noexcept
     return -1;
 }
 
+// dyld's index for the loaded OpenSSL satellite dylib, or -1 when the
+// engine is not linked into this process.
+int corosio_openssl_image_index() noexcept
+{
+    static constexpr char prefix[] = "libboost_corosio_openssl";
+    for(std::uint32_t i = 1, n = ::_dyld_image_count(); i < n; ++i)
+    {
+        char const* path = ::_dyld_get_image_name(i);
+        if(!path)
+            continue;
+        char const* slash = std::strrchr(path, '/');
+        char const* base = slash ? slash + 1 : path;
+        if(std::strncmp(base, prefix, sizeof(prefix) - 1) == 0 &&
+           base[sizeof(prefix) - 1] == '.')
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
 } // namespace
 #endif
 
@@ -830,7 +849,7 @@ namespace {
     COROSIO_FAULT_CENSUS(ftruncate),
     COROSIO_FAULT_CENSUS(fsync), COROSIO_FAULT_CENSUS(unlink),
     COROSIO_FAULT_CENSUS(sigaction), COROSIO_FAULT_CENSUS(pthread_create),
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
     COROSIO_FAULT_CENSUS(BIO_new_mem_buf), COROSIO_FAULT_CENSUS(BIO_new_bio_pair),
     COROSIO_FAULT_CENSUS(SSL_CTX_new), COROSIO_FAULT_CENSUS(SSL_new),
     COROSIO_FAULT_CENSUS(SSL_clear), COROSIO_FAULT_CENSUS(SSL_set_session),
@@ -838,7 +857,7 @@ namespace {
     COROSIO_FAULT_CENSUS(BIO_read), COROSIO_FAULT_CENSUS(BIO_nwrite0),
     COROSIO_FAULT_CENSUS(SSL_get0_param),
     COROSIO_FAULT_CENSUS(X509_VERIFY_PARAM_set1_host),
-#endif
+#endif // __linux__ || __APPLE__
     COROSIO_FAULT_CENSUS(getaddrinfo),
     COROSIO_FAULT_CENSUS(freeaddrinfo),
     COROSIO_FAULT_CENSUS(getnameinfo), COROSIO_FAULT_CENSUS(gethostname),
@@ -894,6 +913,16 @@ bool census_live[census_count];
 [[maybe_unused]] bool is_alias_entry(char const* name) noexcept
 {
     return std::strncmp(name, "__", 2) == 0 || std::strchr(name, '$');
+}
+
+// The OpenSSL entry points, distinguished by their library prefix (no
+// libc symbol begins with any of these). They live in the
+// libboost_corosio_openssl satellite, not the main library.
+[[maybe_unused]] bool is_openssl_entry(char const* name) noexcept
+{
+    return std::strncmp(name, "BIO_", 4) == 0 ||
+        std::strncmp(name, "SSL_", 4) == 0 ||
+        std::strncmp(name, "X509_", 5) == 0;
 }
 
 #if defined(__APPLE__)
@@ -1080,8 +1109,9 @@ void interpose_corosio_dylib() noexcept
     {
         // An alias is a second spelling the library is not known to
         // bind; libSystem may even give both spellings one entry
-        // point, which a value match cannot tell apart.
-        if(is_alias_entry(e.name))
+        // point, which a value match cannot tell apart. OpenSSL names
+        // belong to the satellite dylib, handled by its own pass.
+        if(is_alias_entry(e.name) || is_openssl_entry(e.name))
             continue;
         void* real = ::dlsym(RTLD_NEXT, e.name);
         if(!real)
@@ -1139,6 +1169,65 @@ void interpose_corosio_dylib() noexcept
         die("fault harness: the corosio dylib's imports were not rebound");
     }
 }
+
+// Interpose the OpenSSL entry points in the satellite dylib. Fail-soft
+// by design: an entry that cannot be resolved or rebound is simply left
+// not live (its census_live stays false, so the TLS fault suite skips
+// it), never fatal. This keeps a build where the engine is absent, or a
+// linker layout the rebinder cannot reach, from breaking every other
+// fault suite in the binary. `census_live` for the OpenSSL entries is
+// set here.
+void interpose_openssl_dylib() noexcept
+{
+    int const image = corosio_openssl_image_index();
+    if(image < 0)
+        return;
+    auto const* hdr = reinterpret_cast<mach_header_64 const*>(
+        ::_dyld_get_image_header(static_cast<std::uint32_t>(image)));
+    if(!hdr || hdr->magic != MH_MAGIC_64)
+        return;
+    auto const slide =
+        ::_dyld_get_image_vmaddr_slide(static_cast<std::uint32_t>(image));
+
+    rebind_target targets[sizeof(census) / sizeof(census[0])] = {};
+    std::size_t census_of[sizeof(census) / sizeof(census[0])] = {};
+    std::size_t n = 0;
+    for(std::size_t i = 0; i < census_count; ++i)
+    {
+        auto const& e = census[i];
+        if(!is_openssl_entry(e.name))
+            continue;
+        // Resolve the real function the same way the shadow will; if it
+        // cannot be found here it would only die when first called, so
+        // skip it and leave the entry not live.
+        void* real = ::dlsym(RTLD_NEXT, e.name);
+        if(!real)
+            continue;
+        targets[n].name = e.name;
+        targets[n].hook = e.hook;
+        targets[n].real = real;
+        census_of[n] = i;
+        ++n;
+    }
+    if(n == 0)
+        return;
+
+    bool ok = true;
+    rebind_imports(hdr, slide, targets, n, ok);
+    std::size_t sections = 0, scanned = 0;
+    tally_imports(hdr, slide, targets, n, sections, scanned);
+    for(std::size_t k = 0; k < n; ++k)
+    {
+        // Live only if every slot for the symbol moved to the hook.
+        bool const bound = targets[k].rebound != 0 && targets[k].unbound == 0;
+        census_live[census_of[k]] = bound;
+        if(!bound)
+            std::fprintf(stderr,
+                "fault harness: OpenSSL %s not interposed in the satellite "
+                "dylib (rebound %u, still real %u)\n",
+                targets[k].name, targets[k].rebound, targets[k].unbound);
+    }
+}
 #endif
 
 // A shared build only reaches the shadows through the dynamic loader,
@@ -1157,10 +1246,14 @@ int const readback = []
         return 0;
 #if defined(__APPLE__)
     interpose_corosio_dylib();
-    // It dies unless every non-alias name was rebound, so surviving it
-    // settles those; the aliases it skipped bind nothing.
+    // It dies unless every non-alias, non-OpenSSL name was rebound, so
+    // surviving it settles those; the aliases it skipped bind nothing.
     for(std::size_t i = 0; i < census_count; ++i)
-        census_live[i] = !is_alias_entry(census[i].name);
+        census_live[i] = !is_alias_entry(census[i].name) &&
+                         !is_openssl_entry(census[i].name);
+    // The OpenSSL satellite is optional and its rebinding is best-effort;
+    // this sets census_live for the entries it interposes.
+    interpose_openssl_dylib();
 #else
     bool ok = true;
     for(std::size_t i = 0; i < census_count; ++i)
