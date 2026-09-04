@@ -67,9 +67,12 @@ target_include_directories(boost_corosio_fault_tests PRIVATE
     . .. ../../../ ../../../src/corosio)
 
 # The OpenSSL shadows only have callers when the engine is linked; the
-# TLS fault suite gates itself on this define. b2 never builds it: the
-# coverage legs that publish the badges are all CMake.
-if (NOT WIN32 AND OpenSSL_FOUND)
+# TLS fault suite gates itself on this define. Linking the engine also
+# loads its satellite so the interposers can reach it: POSIX and Darwin
+# rebind the shadowed symbols, Windows patches the DLL's import table.
+# b2 never builds it: the coverage legs that publish the badges are all
+# CMake.
+if (OpenSSL_FOUND)
     target_link_libraries(boost_corosio_fault_tests PRIVATE
         boost_corosio_openssl)
     target_compile_definitions(boost_corosio_fault_tests PRIVATE

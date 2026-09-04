@@ -30,6 +30,7 @@
 #include <tlhelp32.h>
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -210,12 +211,40 @@ using proc_t = void (*)();
     X(WSAIoctl) X(GetQueuedCompletionStatus) X(GetProcAddress)               \
     X(FreeAddrInfoExW) X(signal)
 
+// OpenSSL entry points the TLS engine drives, reached through the
+// libboost_corosio_openssl satellite DLL's import table. Opaque
+// pointer signatures: cdecl like the rest of OpenSSL, and no OpenSSL
+// headers needed. Live only when that DLL is loaded, which the fault
+// target arranges on the CMake legs.
+#define COROSIO_FAULT_WIN_OPENSSL(X)                                          \
+    X(BIO_new_mem_buf, void*, nullptr, __cdecl,                              \
+        (void const* buf, int len), (buf, len))                             \
+    X(BIO_new_bio_pair, int, 0, __cdecl,                                    \
+        (void** b1, std::size_t w1, void** b2, std::size_t w2),             \
+        (b1, w1, b2, w2))                                                   \
+    X(BIO_read, int, -1, __cdecl, (void* bio, void* buf, int len),          \
+        (bio, buf, len))                                                    \
+    X(BIO_nwrite0, int, -1, __cdecl, (void* bio, char** buf), (bio, buf))   \
+    X(SSL_CTX_new, void*, nullptr, __cdecl, (void const* method), (method)) \
+    X(SSL_new, void*, nullptr, __cdecl, (void* ctx), (ctx))                 \
+    X(SSL_clear, int, 0, __cdecl, (void* ssl), (ssl))                       \
+    X(SSL_set_session, int, 0, __cdecl, (void* ssl, void* session),         \
+        (ssl, session))                                                     \
+    X(SSL_get0_param, void*, nullptr, __cdecl, (void* ssl), (ssl))          \
+    X(X509_STORE_add_cert, int, 0, __cdecl, (void* store, void* x),         \
+        (store, x))                                                         \
+    X(X509_dup, void*, nullptr, __cdecl, (void* x), (x))                    \
+    X(X509_VERIFY_PARAM_set1_host, int, 0, __cdecl,                         \
+        (void* p, char const* name, std::size_t namelen),                  \
+        (p, name, namelen))
+
 #define COROSIO_FAULT_WIN_ID(name, ret, failval, cc, params, args) h_##name,
 #define COROSIO_FAULT_WIN_ID1(name) h_##name,
 
 enum hook_id
 {
     COROSIO_FAULT_WIN_SIMPLE(COROSIO_FAULT_WIN_ID)
+    COROSIO_FAULT_WIN_OPENSSL(COROSIO_FAULT_WIN_ID)
     COROSIO_FAULT_WIN_MANUAL(COROSIO_FAULT_WIN_ID1)
     h_beginthreadex,
     hook_count
@@ -238,6 +267,7 @@ proc_t reals[hook_count] = {};
     }
 
 COROSIO_FAULT_WIN_SIMPLE(COROSIO_FAULT_WIN_HOOK)
+COROSIO_FAULT_WIN_OPENSSL(COROSIO_FAULT_WIN_HOOK)
 
 // Copy the prefix of `in` holding at most `count` bytes into `out`.
 // Corosio never passes more than a handful of buffers; 64 is a hard
@@ -556,6 +586,7 @@ struct hook_entry
 
 hook_entry hooks[] = {
     COROSIO_FAULT_WIN_SIMPLE(COROSIO_FAULT_WIN_ROW)
+    COROSIO_FAULT_WIN_OPENSSL(COROSIO_FAULT_WIN_ROW)
     COROSIO_FAULT_WIN_MANUAL(COROSIO_FAULT_WIN_ROW1)
     { "_beginthreadex", sys::pthread_create,
         reinterpret_cast<proc_t>(&hooked_beginthreadex), 0 },
