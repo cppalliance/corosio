@@ -61,6 +61,48 @@ slot* sqe_full_armed() noexcept
     return armed_arm(sys::uring_sqe_full);
 }
 
+// On-demand SQ exhaustion: while an arm is live the ring's user-side
+// tail is pushed to capacity so io_uring_get_sqe returns null, and
+// io_uring_submit is a no-op so the fake tail never reaches the
+// kernel. The first liburing call after the scope dies restores the
+// saved tail; a ring torn down while filled is simply forgotten.
+struct sq_fill_state
+{
+    io_uring* ring = nullptr;
+    unsigned saved_tail = 0;
+    bool filled = false;
+};
+
+thread_local sq_fill_state tls_sq_fill;
+
+void apply_sq_fill(io_uring* ring) noexcept
+{
+    auto& st = tls_sq_fill;
+    if(auto* s = armed_arm(sys::uring_sq_fill))
+    {
+        if(!st.filled)
+        {
+            st.ring = ring;
+            st.saved_tail = ring->sq.sqe_tail;
+            ring->sq.sqe_tail += io_uring_sq_space_left(ring);
+            st.filled = true;
+            s->fired = true;
+        }
+        return;
+    }
+    if(st.filled && st.ring == ring)
+    {
+        ring->sq.sqe_tail = st.saved_tail;
+        st = sq_fill_state{};
+    }
+}
+
+bool sq_filled(io_uring* ring) noexcept
+{
+    return tls_sq_fill.filled && tls_sq_fill.ring == ring &&
+        armed_arm(sys::uring_sq_fill) != nullptr;
+}
+
 // Record the user_data of the first pending SQE matching the armed
 // fd/opcode. The SQ array is user memory, so this is a plain read.
 void scan_pending_sqes(io_uring* ring) noexcept
@@ -112,7 +154,10 @@ extern "C" int io_uring_queue_init_params(unsigned entries, io_uring* ring,
         return rc;
     if(sqe_full_armed())
         entries = 1;
-    return real(entries, ring, p);
+    int const r = real(entries, ring, p);
+    if(r == 0)
+        apply_sq_fill(ring);
+    return r;
 }
 
 extern "C" void io_uring_queue_exit(io_uring* ring) LIBURING_NOEXCEPT
@@ -120,6 +165,8 @@ extern "C" void io_uring_queue_exit(io_uring* ring) LIBURING_NOEXCEPT
     COROSIO_FAULT_REAL(io_uring_queue_exit, void(*)(io_uring*));
     // Cannot fail; counted so a test can assert teardown reached it.
     std::ignore = should_fail(sys::io_uring_queue_exit);
+    if(tls_sq_fill.filled && tls_sq_fill.ring == ring)
+        tls_sq_fill = sq_fill_state{};
     real(ring);
 }
 
@@ -135,6 +182,14 @@ extern "C" int io_uring_submit(io_uring* ring) LIBURING_NOEXCEPT
         return 0;
     }
     scan_pending_sqes(ring);
+    apply_sq_fill(ring);
+    if(sq_filled(ring))
+    {
+        // The queue reads full, but completions already visible must
+        // still be rewritten or a composed arm misses its CQE.
+        rewrite_visible_cqes(ring);
+        return 0;
+    }
     rc = real(ring);
     // A buffered write can complete inside this io_uring_enter, so the
     // CQE the arm is waiting for may already be visible when it
@@ -154,6 +209,12 @@ extern "C" int io_uring_submit_and_wait_timeout(io_uring* ring, io_uring_cqe** c
     if(uring_fail(sys::io_uring_submit_and_wait_timeout, rc))
         return rc;
     scan_pending_sqes(ring);
+    apply_sq_fill(ring);
+    if(sq_filled(ring))
+    {
+        rewrite_visible_cqes(ring);
+        return 0;
+    }
     rc = real(ring, cqe, wait_nr, ts, sigmask);
     rewrite_visible_cqes(ring);
     return rc;
@@ -166,6 +227,14 @@ extern "C" int io_uring_submit_and_get_events(io_uring* ring) LIBURING_NOEXCEPT
     if(uring_fail(sys::io_uring_submit_and_get_events, rc))
         return rc;
     scan_pending_sqes(ring);
+    apply_sq_fill(ring);
+    if(sq_filled(ring))
+    {
+        // The queue reads full, but completions already visible must
+        // still be rewritten or a composed arm misses its CQE.
+        rewrite_visible_cqes(ring);
+        return 0;
+    }
     rc = real(ring);
     rewrite_visible_cqes(ring);
     return rc;
@@ -178,6 +247,7 @@ extern "C" int io_uring_wait_cqe_timeout(io_uring* ring, io_uring_cqe** cqe,
     int rc;
     if(uring_fail(sys::io_uring_wait_cqe_timeout, rc))
         return rc;
+    apply_sq_fill(ring);
     rc = real(ring, cqe, ts);
     rewrite_visible_cqes(ring);
     return rc;

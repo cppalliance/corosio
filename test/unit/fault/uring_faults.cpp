@@ -32,8 +32,10 @@
 #include <boost/capy/task.hpp>
 
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <thread>
 #include <csignal>
 #include <cstring>
 #include <optional>
@@ -801,8 +803,263 @@ struct uring_faults
         BOOST_TEST(s2.is_open());
     }
 
+    // Ring construction with no SQE for the wakeup poll must tear the
+    // ring back down and throw rather than run without a wake path.
+    void testRingInitSqExhaustion()
+    {
+        fault_scope f(sys::uring_sq_fill, 0);
+        BOOST_TEST_THROWS(
+            ([] { io_context tmp(io_uring); }()), std::system_error);
+        BOOST_TEST(f.fired());
+    }
+
+    // Cancellation is best-effort when the submission queue stays
+    // full after one flush: the op stays parked, and closing the
+    // socket still completes it.
+    void testCancelSqFullBestEffort()
+    {
+        io_context ioc(io_uring);
+        auto ex       = ioc.get_executor();
+        auto [s1, s2] =
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+
+        std::stop_source ss;
+        char buf[8];
+        std::error_code rec;
+        bool done   = false;
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore = n;
+            rec         = ec;
+            done        = true;
+        };
+        auto stopper = [&]() -> capy::task<> {
+            // The arm needs a run-loop flush to apply the fill before
+            // the stop callback submits its cancel inline; the delay
+            // hop provides one, and the scope legally spans the awaits
+            // on a single-threaded context.
+            fault_scope f(sys::uring_sq_fill, 0);
+            // A real suspension: a zero delay can complete inline
+            // without the run-loop flush that applies the fill.
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(1));
+            ss.request_stop();
+            BOOST_TEST(f.fired());
+        };
+        capy::run_async(ex, ss.get_token())(reader());
+        capy::run_async(ex)(stopper());
+        // The skipped cancel leaves the read parked; the bounded run
+        // lets everything else settle, then the close completes it.
+        std::ignore = ioc.run_for(std::chrono::seconds(2));
+        s1.close();
+        ioc.restart();
+        ioc.run();
+
+        BOOST_TEST(done);
+        BOOST_TEST(rec == capy::cond::canceled);
+    }
+
+    // A multishot accept whose arming cannot get an SQE must complete
+    // the parked waiter with the error instead of parking it forever.
+    void testMultishotArmFailure()
+    {
+        io_context ioc(io_uring);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+
+        tcp_socket peer(ioc);
+        std::error_code aec;
+        bool done     = false;
+        bool fired    = false;
+        auto arming   = [&]() -> capy::task<> {
+            fault_scope f(sys::uring_sq_fill, 0);
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(0));
+            // The fill is applied; initiate the accept while the
+            // submission queue reads full so the multishot arming
+            // takes the failure path with the waiter parked.
+            auto [ec] = co_await acc.accept(peer);
+            aec       = ec;
+            done      = true;
+            fired     = f.fired();
+        };
+        capy::run_async(ex)(arming());
+        std::ignore = ioc.run_for(std::chrono::seconds(2));
+        if (!done)
+        {
+            // The arming path did not consume the waiter; close so
+            // the run can finish and the assertions report it.
+            acc.close();
+            ioc.restart();
+            ioc.run();
+        }
+
+        BOOST_TEST(done);
+        BOOST_TEST(fired);
+        BOOST_TEST(!!aec);
+        BOOST_TEST(!peer.is_open());
+    }
+
+    // A multishot accept the kernel terminates (F_MORE cleared, no
+    // fatal error) is re-armed; a re-arm that cannot get an SQE must
+    // drain the parked waiters with the error rather than strand them.
+    void testMultishotRearmFailureWithWaiter()
+    {
+        io_context ioc(io_uring);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+
+        // The multishot arms at listen(), so the scope watches before
+        // that: the arming SQE's CQE is rewritten to a spurious result
+        // with the termination bit cleared.
+        cqe_fault_scope q(-1, IORING_OP_ACCEPT, -EAGAIN, IORING_CQE_F_MORE);
+        BOOST_TEST(!acc.listen());
+
+        tcp_socket peer(ioc);
+        std::error_code aec;
+        bool done     = false;
+        auto accepter = [&]() -> capy::task<> {
+            auto [ec] = co_await acc.accept(peer);
+            aec       = ec;
+            done      = true;
+        };
+        auto trip = [&]() -> capy::task<> {
+            // Keep the queue full across the re-arm the rewritten CQE
+            // provokes; the raw connect generates that CQE.
+            fault_scope f(sys::uring_sq_fill, 0);
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(1));
+            int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+            BOOST_TEST_GE(fd, 0);
+            sockaddr_in sa{};
+            sa.sin_family      = AF_INET;
+            sa.sin_port        = htons(acc.local_endpoint().port());
+            sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            BOOST_TEST_EQ(::connect(
+                fd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+            // The rewritten CQE and the failed re-arm happen while the
+            // fill is held; the hop gives the run loop a chance to
+            // reach both.
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
+            ::close(fd);
+        };
+        capy::run_async(ex)(accepter());
+        capy::run_async(ex)(trip());
+        std::ignore = ioc.run_for(std::chrono::seconds(2));
+        if (!done)
+        {
+            acc.close();
+            ioc.restart();
+            ioc.run();
+        }
+
+        BOOST_TEST(done);
+        BOOST_TEST(q.fired());
+        BOOST_TEST(!!aec);
+    }
+
+
+    // The kernel may clear IORING_CQE_F_MORE on the wakeup eventfd's
+    // multishot poll; the scheduler must re-arm it or every later
+    // cross-thread wake is lost.
+    void testWakeupPollRearm()
+    {
+        cqe_fault_scope q(-1, IORING_OP_POLL_ADD, 1, IORING_CQE_F_MORE);
+        io_context ioc(io_uring);
+        auto ex = ioc.get_executor();
+
+        std::atomic<int> ran{0};
+        for (int round = 0; round < 2; ++round)
+        {
+            std::thread poster([&] {
+                // The counter travels as a parameter: the poster's
+                // stack (and any closure on it) is gone before the
+                // run loop executes the frame.
+                capy::run_async(ex)([](std::atomic<int>* n) -> capy::task<> {
+                    n->fetch_add(1);
+                    co_return;
+                }(&ran));
+            });
+            poster.join();
+            ioc.restart();
+            std::ignore = ioc.run();
+        }
+        int const total = ran.load();
+        BOOST_TEST(q.fired());
+        BOOST_TEST_EQ(total, 2);
+    }
+
+    // Same termination on the signal pipe's poll, during a run and
+    // during the shutdown drain. The process-global signal state must
+    // not leak into the parent, or the signal-pipe fault suite later
+    // in this binary finds the pipe already made and its arms never
+    // fire; the bodies fork.
+    void testSignalPipePollRearm()
+    {
+        in_child([] {
+            io_context ioc(io_uring);
+            auto ex = ioc.get_executor();
+            // Armed after the ring exists, so the first pending
+            // POLL_ADD the scope matches is the signal pipe's.
+            cqe_fault_scope q(-1, IORING_OP_POLL_ADD, 1, IORING_CQE_F_MORE);
+            signal_set sigs(ioc);
+            if (sigs.add(SIGUSR1))
+                return false;
+
+            int got   = 0;
+            auto task = [&]() -> capy::task<> {
+                auto [ec, sig] = co_await sigs.wait();
+                if (!ec)
+                    got = sig;
+            };
+            capy::run_async(ex)(task());
+            std::raise(SIGUSR1);
+            ioc.run();
+            if (got != SIGUSR1 || !q.fired())
+                return false;
+
+            // The rearm must keep delivery alive.
+            int got2   = 0;
+            auto task2 = [&]() -> capy::task<> {
+                auto [ec, sig] = co_await sigs.wait();
+                if (!ec)
+                    got2 = sig;
+            };
+            ioc.restart();
+            capy::run_async(ex)(task2());
+            std::raise(SIGUSR1);
+            ioc.run();
+            return got2 == SIGUSR1;
+        });
+        in_child([] {
+            // A terminated pipe poll arriving in the teardown drain.
+            io_context ioc(io_uring);
+            cqe_fault_scope q(-1, IORING_OP_POLL_ADD, 1, IORING_CQE_F_MORE);
+            signal_set sigs(ioc);
+            if (sigs.add(SIGUSR1))
+                return false;
+            std::raise(SIGUSR1);
+            return true;
+        });
+    }
+
     void run()
     {
+        testRingInitSqExhaustion();
+        testCancelSqFullBestEffort();
+        testMultishotArmFailure();
+        testMultishotRearmFailureWithWaiter();
+        testWakeupPollRearm();
+        testSignalPipePollRearm();
         if(skip_under_valgrind())
             return;
         testRingInitFails();
