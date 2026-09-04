@@ -26,6 +26,12 @@ namespace boost::corosio::test::fault {
     `uring_sqe_full` enumerator is not a symbol: arming it clamps the
     next ring to one SQE and turns `io_uring_submit` into a no-op so
     `io_uring_get_sqe` returns null on the second acquisition.
+    `uring_sq_full` has an on-demand sibling, `uring_sq_fill`: while
+    armed, the next liburing call marks the ring's submission queue
+    full (reversibly, with submit a no-op so nothing fake reaches the
+    kernel), so `io_uring_get_sqe` fails at a chosen moment on a
+    normally sized ring; the fill is undone on the first liburing call
+    after the scope ends.
     `kevent_register` is not a symbol either: it names the subset of
     `kevent` calls that add a descriptor to the kqueue, so a test can
     reach a registration without counting the waits the run loop makes
@@ -51,7 +57,7 @@ enum class sys
     timerfd_settime, select, kqueue, kevent, kevent_register,
     io_uring_queue_init_params, io_uring_queue_exit, io_uring_submit,
     io_uring_submit_and_wait_timeout, io_uring_submit_and_get_events,
-    io_uring_wait_cqe_timeout, uring_sqe_full, cpp_new,
+    io_uring_wait_cqe_timeout, uring_sqe_full, uring_sq_fill, cpp_new,
     // OpenSSL entry points the TLS engine drives; live only when the
     // process loads libssl/libcrypto.
     BIO_new_mem_buf, BIO_new_bio_pair, BIO_read, BIO_nwrite0,

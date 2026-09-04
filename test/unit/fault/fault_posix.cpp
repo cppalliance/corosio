@@ -1200,7 +1200,7 @@ bool hook_is_live(sys which) noexcept
         return true;
     // Not a symbol: it works by clamping the ring liburing's own
     // shadows drive, so it lives exactly when they do.
-    if(which == sys::uring_sqe_full)
+    if(which == sys::uring_sqe_full || which == sys::uring_sq_fill)
         which = sys::io_uring_submit;
     // Not a symbol either: it is a slice of the kevent shadow.
     if(which == sys::kevent_register)
