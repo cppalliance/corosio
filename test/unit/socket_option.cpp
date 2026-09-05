@@ -137,6 +137,20 @@ struct socket_option_test
         sock.close();
     }
 
+    // leave_group_v6's static traits and byte layout, exercised directly
+    // so they are covered on hosts with no multicast route to join.
+    void testLeaveGroupV6Traits()
+    {
+        socket_option::leave_group_v6 leave(ipv6_address("ff02::1"), 0);
+        socket_option::join_group_v6 join(ipv6_address("ff02::1"));
+        BOOST_TEST_EQ(socket_option::leave_group_v6::level(),
+            socket_option::join_group_v6::level());
+        BOOST_TEST(socket_option::leave_group_v6::name() !=
+            socket_option::join_group_v6::name());
+        BOOST_TEST_EQ(leave.size(), join.size());
+        BOOST_TEST(leave.data() != nullptr);
+    }
+
     void testV6Only()
     {
         io_context ioc(Backend);
@@ -247,6 +261,7 @@ struct socket_option_test
         testTcpLocalEndpoint();
         testUdpOptions();
         testMulticastOptions();
+        testLeaveGroupV6Traits();
         testV6Only();
         testClosedSocketThrows();
         testInvalidOptionReportsError();
