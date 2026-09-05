@@ -17,6 +17,8 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #include <boost/corosio/native/native_io_context.hpp>
+#include <boost/corosio/native/native_random_access_file.hpp>
+#include <boost/corosio/native/native_stream_file.hpp>
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/corosio/native/native_tcp_socket.hpp>
 #include <boost/corosio/native/native_udp_socket.hpp>
@@ -29,6 +31,8 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <filesystem>
+#include <fstream>
 #include <stop_token>
 #include <system_error>
 
@@ -140,13 +144,16 @@ struct native_resume_cancel_test
             auto [aec] = co_await acc.accept(peer);
             if (aec == capy::cond::canceled)
                 ++canceled;
+            auto [sec, sock] = co_await acc.accept();
+            if (sec == capy::cond::canceled)
+                ++canceled;
             auto [wec] = co_await acc.wait(wait_type::read);
             if (wec == capy::cond::canceled)
                 ++canceled;
         };
         capy::run_async(ex, ss.get_token())(driver());
         ioc.run();
-        BOOST_TEST_EQ(canceled, 2);
+        BOOST_TEST_EQ(canceled, 3);
         BOOST_TEST(!peer.is_open());
     }
 
@@ -204,6 +211,53 @@ struct native_resume_cancel_test
         capy::run_async(ex, ss.get_token())(driver());
         ioc.run();
         BOOST_TEST_EQ(canceled, 6);
+    }
+
+    // The file awaitables carry the same resume-time stop check as the
+    // sockets; no other suite drives a file op with a stopped token.
+    void testFileResumeCancel()
+    {
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        auto rp   = std::filesystem::temp_directory_path() / "corosio_rc_r.tmp";
+        auto wp   = std::filesystem::temp_directory_path() / "corosio_rc_w.tmp";
+        { std::ofstream(rp) << "hello"; }
+        { std::ofstream w(wp); }
+
+        native_stream_file<Backend> sfr(ioc), sfw(ioc);
+        native_random_access_file<Backend> rfr(ioc), rfw(ioc);
+        BOOST_TEST(!sfr.open(rp.string(), file_base::read_only));
+        BOOST_TEST(!sfw.open(wp.string(), file_base::write_only));
+        BOOST_TEST(!rfr.open(rp.string(), file_base::read_only));
+        BOOST_TEST(!rfw.open(wp.string(), file_base::write_only));
+
+        std::stop_source ss;
+        ss.request_stop();
+        char buf[8];
+        int canceled = 0;
+        auto driver  = [&]() -> capy::task<> {
+            auto [a, an] =
+                co_await sfr.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            if (a == capy::cond::canceled && an == 0)
+                ++canceled;
+            auto [b, bn] = co_await sfw.write_some(capy::const_buffer("x", 1));
+            if (b == capy::cond::canceled && bn == 0)
+                ++canceled;
+            auto [c, cn] = co_await rfr.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            if (c == capy::cond::canceled && cn == 0)
+                ++canceled;
+            auto [d, dn] =
+                co_await rfw.write_some_at(0, capy::const_buffer("x", 1));
+            if (d == capy::cond::canceled && dn == 0)
+                ++canceled;
+        };
+        capy::run_async(ex, ss.get_token())(driver());
+        ioc.run();
+        BOOST_TEST_EQ(canceled, 4);
+        std::error_code rm;
+        std::filesystem::remove(rp, rm);
+        std::filesystem::remove(wp, rm);
     }
 
 #if BOOST_COROSIO_POSIX
@@ -264,13 +318,16 @@ struct native_resume_cancel_test
             auto [aec] = co_await acc.accept(peer);
             if (aec == capy::cond::canceled)
                 ++canceled;
+            auto [sec, sock] = co_await acc.accept();
+            if (sec == capy::cond::canceled)
+                ++canceled;
             auto [wec] = co_await acc.wait(wait_type::read);
             if (wec == capy::cond::canceled)
                 ++canceled;
         };
         capy::run_async(ex, ss.get_token())(driver());
         ioc.run();
-        BOOST_TEST_EQ(canceled, 2);
+        BOOST_TEST_EQ(canceled, 3);
         BOOST_TEST(!peer.is_open());
     }
 
@@ -339,6 +396,7 @@ struct native_resume_cancel_test
         testTcpStopAfterDataBuffered();
         testTcpAcceptorPreStopped();
         testUdpPreStopped();
+        testFileResumeCancel();
 #if BOOST_COROSIO_POSIX
         testLocalStreamPreStopped();
         testLocalStreamAcceptorPreStopped();
