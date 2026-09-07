@@ -266,7 +266,7 @@ public:
         Safe to call after the handshake completes; not safe to call
         concurrently with a handshake or reset.
     */
-    virtual std::string_view alpn_protocol() const noexcept { return {}; }
+    virtual std::string_view alpn_protocol() const noexcept { return {}; } // LCOV_EXCL_LINE every concrete stream overrides this; the base default is never called
 
 protected:
     tls_stream() = default;
