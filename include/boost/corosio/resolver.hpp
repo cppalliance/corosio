@@ -13,6 +13,7 @@
 #define BOOST_COROSIO_RESOLVER_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
@@ -192,14 +193,12 @@ operator&=(reverse_flags& a, reverse_flags b) noexcept
 class BOOST_COROSIO_DECL resolver : public io_object
 {
     struct resolve_awaitable
+        : detail::value_op_base<resolve_awaitable, resolver_results>
     {
         resolver& r_;
         std::string host_;
         std::string service_;
         resolve_flags flags_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable resolver_results results_;
 
         resolve_awaitable(
             resolver& r,
@@ -213,36 +212,20 @@ class BOOST_COROSIO_DECL resolver : public io_object
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<resolver_results> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), {}};
-            return {ec_, std::move(results_)};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return r_.get().resolve(
-                h, env->executor, host_, service_, flags_, token_, &ec_,
-                &results_);
+                h, ex, host_, service_, flags_, token_, &ec_, &value_);
         }
     };
 
     struct reverse_resolve_awaitable
+        : detail::value_op_base<reverse_resolve_awaitable, reverse_resolver_result>
     {
         resolver& r_;
         endpoint ep_;
         reverse_flags flags_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable reverse_resolver_result result_;
 
         reverse_resolve_awaitable(
             resolver& r, endpoint const& ep, reverse_flags flags) noexcept
@@ -252,24 +235,11 @@ class BOOST_COROSIO_DECL resolver : public io_object
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<reverse_resolver_result> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), {}};
-            return {ec_, std::move(result_)};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return r_.get().reverse_resolve(
-                h, env->executor, ep_, flags_, token_, &ec_, &result_);
+                h, ex, ep_, flags_, token_, &ec_, &value_);
         }
     };
 

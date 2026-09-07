@@ -82,7 +82,7 @@ class native_resolver : public resolver
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<resolver_results> await_resume() const noexcept
@@ -123,7 +123,7 @@ class native_resolver : public resolver
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<reverse_resolver_result> await_resume() const noexcept
