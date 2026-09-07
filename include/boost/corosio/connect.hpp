@@ -144,8 +144,8 @@ template<class Socket, std::ranges::input_range Range>
 capy::task<capy::io_result<typename Socket::endpoint_type>>
 connect(Socket& s, Range endpoints)
 {
-    return corosio::connect(
-        s, std::move(endpoints), detail::default_connect_condition{});
+    detail::default_connect_condition cond;
+    return corosio::connect(s, std::move(endpoints), cond);
 }
 
 /** Asynchronously connect a socket by trying each endpoint in a range,
