@@ -120,10 +120,10 @@ struct BOOST_COROSIO_DECL scheduler
 
     /// True in the fully-lockless (`unsafe`) tier. The resolver and POSIX
     /// file services gate their `operation_not_supported` result on this.
-    virtual bool scheduler_locking_disabled() const noexcept { return false; }
+    virtual bool scheduler_locking_disabled() const noexcept = 0;
 
-    /// Apply @ref threading_config. Default no-op.
-    virtual void configure_threading(threading_config) noexcept {}
+    /// Apply @ref threading_config.
+    virtual void configure_threading(threading_config) noexcept = 0;
 };
 
 } // namespace boost::corosio::detail
