@@ -11,9 +11,11 @@
 #include <boost/corosio/native/native_io_context.hpp>
 
 #include <boost/corosio/detail/platform.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <stop_token>
 #include <string_view>
 #include <system_error>
 #include <type_traits>
@@ -78,6 +80,33 @@ struct native_resolver_test
         BOOST_TEST(!result_ec);
     }
 
+    void testResolverStopToken()
+    {
+        io_context ctx(Backend);
+        native_resolver<Backend> r(ctx);
+
+        std::stop_source ss;
+        bool done = false;
+        std::error_code result_ec;
+
+        auto task = [](native_resolver<Backend>& r_ref, std::error_code& ec_out,
+                       bool& done_out) -> capy::task<> {
+            auto [ec, res] = co_await r_ref.resolve("localhost", "80");
+            ec_out   = ec;
+            done_out = true;
+        };
+        // run_async drives the task to its first suspension before
+        // returning, so requesting stop now lands while the resolve is
+        // in flight and the cancel surfaces at await_resume.
+        capy::run_async(ctx.get_executor(), ss.get_token())(
+            task(r, result_ec, done));
+        ss.request_stop();
+        ctx.run();
+
+        BOOST_TEST(done);
+        BOOST_TEST(result_ec == capy::cond::canceled);
+    }
+
     void testResolverPolymorphicSlice()
     {
         io_context ctx(Backend);
@@ -91,6 +120,7 @@ struct native_resolver_test
     {
         testResolverConstruct();
         testResolverResolve();
+        testResolverStopToken();
         testResolverPolymorphicSlice();
     }
 };
