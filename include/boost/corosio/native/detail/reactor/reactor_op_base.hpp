@@ -46,8 +46,8 @@ struct reactor_op_base : coro_op
         bytes_transferred = bytes;
     }
 
-    /// Perform the I/O syscall (overridden by concrete op types).
-    virtual void perform_io() noexcept {}
+    /// Perform the I/O syscall (implemented by concrete op types).
+    virtual void perform_io() noexcept = 0;
 
     /// Destroy without invoking — drop the keepalive (impl_ptr from coro_op).
     void destroy() override
