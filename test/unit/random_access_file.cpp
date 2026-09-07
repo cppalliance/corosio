@@ -808,6 +808,7 @@ struct random_access_file_test
         testReadAtPastEofErrorPath();
         testCancelInflightOperation();
         testCancelWithStoppedToken();
+        testStopTokenInflight();
 
 #if BOOST_COROSIO_POSIX
         // POSIX file work runs on the pool; IOCP uses overlapped I/O.
@@ -1161,6 +1162,53 @@ struct random_access_file_test
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == capy::cond::canceled);
+    }
+
+    // A stop requested while a read/write is in flight surfaces at
+    // await_resume as operation_canceled (the token branch), distinct
+    // from the backend cancel() path. run_async drives each task to its
+    // first suspension, so requesting stop before run() lands mid-flight.
+    void testStopTokenInflight()
+    {
+        std::string data(std::size_t{64} * 1024, 'X');
+        temp_file tmp("raf_stoptok_inflight_", data);
+        io_context ioc(Backend);
+        random_access_file f(ioc);
+
+        BOOST_TEST(!f.open(tmp.path, file_base::read_write));
+
+        std::stop_source ss;
+        std::error_code rec, wec;
+        bool rdone = false, wdone = false;
+
+        auto reader = [](random_access_file& f_ref, std::error_code& ec,
+                         bool& d) -> capy::task<> {
+            char buf[1024];
+            auto [e, n] = co_await f_ref.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            ec = e;
+            d  = true;
+        };
+        auto writer = [](random_access_file& f_ref, std::error_code& ec,
+                         bool& d) -> capy::task<> {
+            char buf[1024] = {};
+            auto [e, n] = co_await f_ref.write_some_at(
+                0, capy::const_buffer(buf, sizeof(buf)));
+            ec = e;
+            d  = true;
+        };
+
+        capy::run_async(ioc.get_executor(), ss.get_token())(
+            reader(f, rec, rdone));
+        capy::run_async(ioc.get_executor(), ss.get_token())(
+            writer(f, wec, wdone));
+        ss.request_stop();
+        ioc.run();
+
+        BOOST_TEST(rdone);
+        BOOST_TEST(wdone);
+        BOOST_TEST(rec == capy::cond::canceled);
+        BOOST_TEST(wec == capy::cond::canceled);
     }
 
     // sync_all
