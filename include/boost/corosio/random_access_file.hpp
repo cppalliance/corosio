@@ -163,11 +163,13 @@ public:
         {
             // A pre-set ec_ means the initiator failed before
             // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_);
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
         {
+            if (token_.stop_requested())
+                return {make_error_code(std::errc::operation_canceled), 0};
             return {ec_, bytes_};
         }
 
@@ -206,11 +208,13 @@ public:
         {
             // A pre-set ec_ means the initiator failed before
             // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_);
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
         {
+            if (token_.stop_requested())
+                return {make_error_code(std::errc::operation_canceled), 0};
             return {ec_, bytes_};
         }
 
