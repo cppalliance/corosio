@@ -79,6 +79,35 @@ struct local_datagram_socket_test
         BOOST_TEST_EQ(s1.is_open(), false);
     }
 
+    // connect() opens a closed socket before setting the default peer.
+    void testConnectAutoOpen()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        test::temp_socket_dir tmp;
+        auto path = tmp.path();
+
+        local_datagram_socket peer(ioc);
+        BOOST_TEST(!peer.open());
+        BOOST_TEST(!peer.bind(local_endpoint(path)));
+
+        local_datagram_socket sender(ioc); // left closed on purpose
+        std::error_code cec;
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            auto [ec] = co_await sender.connect(local_endpoint(path));
+            cec  = ec;
+            done = true;
+        };
+        capy::run_async(ex)(task());
+        ioc.run();
+
+        BOOST_TEST(done);
+        BOOST_TEST(sender.is_open()); // connect() opened it
+        BOOST_TEST(!cec);
+    }
+
     void testSendRecvConnected()
     {
         io_context ioc(Backend);
@@ -983,6 +1012,7 @@ struct local_datagram_socket_test
         testConstruction();
         testOpen();
         testMove();
+        testConnectAutoOpen();
         testMoveAssign();
         testCancelOnClosed();
         testNativeHandleClosed();
