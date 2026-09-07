@@ -298,7 +298,7 @@ inline long
 select_scheduler::calculate_timeout(long requested_timeout_us) const
 {
     if (requested_timeout_us == 0)
-        return 0;
+        return 0; // LCOV_EXCL_LINE run_task passes 0 via task_interrupted_, never through this argument
 
     auto nearest = timer_svc_->nearest_expiry();
     if (nearest == timer_service::time_point::max())
