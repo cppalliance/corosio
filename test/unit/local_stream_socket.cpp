@@ -774,6 +774,43 @@ struct local_stream_socket_test
         BOOST_TEST(accept_ec == capy::cond::canceled);
     }
 
+    // The socket-returning accept() overload carries the same stop path
+    // as accept(peer); cancel one in flight to reach its await_resume.
+    void testStopTokenAcceptMove()
+    {
+        io_context ioc(Backend);
+        auto ex   = ioc.get_executor();
+        test::temp_socket_dir tmp;
+
+        local_stream_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        auto ec = acc.bind(local_endpoint(tmp.path()));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        std::stop_source ss;
+        std::error_code accept_ec;
+        bool accept_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [aec, peer] = co_await acc.accept();
+            accept_ec        = aec;
+            accept_done      = true;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            ss.request_stop();
+        };
+
+        capy::run_async(ex, ss.get_token())(waiter());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(accept_ec == capy::cond::canceled);
+    }
+
     // wait(wait_type::error) has no immediate-completion path; it
     // parks until cancel() retracts it. On IOCP this routes through
     // the auxiliary wait reactor rather than the completion port.
@@ -1824,6 +1861,7 @@ struct local_stream_socket_test
         testConnectToNonexistent();
         testCancelPendingAccept();
         testStopTokenAccept();
+        testStopTokenAcceptMove();
         testWaitErrorCancel();
         testCancelPendingRead();
         testStopTokenRead();
