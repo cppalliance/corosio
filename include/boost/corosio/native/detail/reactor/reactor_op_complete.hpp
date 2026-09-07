@@ -61,33 +61,6 @@ complete_io_op(Op& op)
     coro_resume(&op);
 }
 
-/** Complete a datagram recv operation (connected mode).
-
-    Like complete_io_op but does not translate zero bytes into
-    EOF. Zero-length datagrams are valid and should be reported
-    as success with 0 bytes transferred.
-
-    @param op The operation to complete.
-*/
-template<typename Op>
-void
-complete_dgram_recv_op(Op& op)
-{
-    op.stop_cb.reset();
-    op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
-
-    // No EOF: a zero-length datagram is valid (success with 0 bytes).
-    decode_io_result(
-        op.ec_out,
-        op.cancelled.load(std::memory_order_acquire),
-        op.errn != 0 ? make_err(op.errn) : std::error_code{},
-        /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
-
-    *op.bytes_out = op.bytes_transferred;
-
-    coro_resume(&op);
-}
-
 /** Complete a wait operation.
 
     Wait operations report only an error_code — no bytes_transferred,
