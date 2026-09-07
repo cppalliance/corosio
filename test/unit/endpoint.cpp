@@ -279,11 +279,15 @@ struct endpoint_parse_test
         endpoint b(ipv4_address::loopback(), 80);
         endpoint c(ipv4_address::loopback(), 81);
         endpoint d(ipv6_address::loopback(), 80);
+        endpoint e(ipv6_address::loopback(), 80);
+        endpoint f(ipv6_address::any(), 80);
 
         BOOST_TEST(a == b);
         BOOST_TEST(!(a != b));
         BOOST_TEST(a != c);
         BOOST_TEST(a != d); // same port, different family
+        BOOST_TEST(d == e); // both v6, same port: compares the v6 address
+        BOOST_TEST(d != f); // both v6, same port, different address
     }
 
     void testOrdering()
