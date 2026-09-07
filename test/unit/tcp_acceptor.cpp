@@ -1115,6 +1115,42 @@ struct tcp_acceptor_test
         BOOST_TEST(accept_ec == capy::cond::canceled);
     }
 
+    // The socket-returning accept() overload carries its own cancel path;
+    // cancel one in flight to reach its await_resume.
+    void testStopTokenAcceptValue()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        acc.set_option(socket_option::reuse_address(true));
+        auto ec = acc.bind(endpoint(0));
+        BOOST_TEST(!ec);
+        ec = acc.listen();
+        BOOST_TEST(!ec);
+
+        std::stop_source ss;
+        std::error_code accept_ec;
+        bool accept_done = false;
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [aec, peer] = co_await acc.accept();
+            accept_ec        = aec;
+            accept_done      = true;
+        };
+        auto canceller = [&]() -> capy::task<> {
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            ss.request_stop();
+        };
+
+        capy::run_async(ex, ss.get_token())(waiter());
+        capy::run_async(ex)(canceller());
+        ioc.run();
+
+        BOOST_TEST(accept_done);
+        BOOST_TEST(accept_ec == capy::cond::canceled);
+    }
+
     // Accept a connection that is already queued in the listen backlog
     // before the io_context ever runs. The accept can then complete on
     // the immediate path instead of parking a waiter.
@@ -1887,6 +1923,7 @@ struct tcp_acceptor_test
 
         // Waiter lifecycle
         testStopTokenAccept();
+        testStopTokenAcceptValue();
         testAcceptPendingConnection();
         testAcceptWithoutListen();
 
