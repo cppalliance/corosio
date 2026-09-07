@@ -491,10 +491,13 @@ struct reactor_recv_op : Base
     int msg_flags = 0;
 
     /// Return true (this is a read-direction operation).
+    // LCOV_EXCL_START: devirtualized and inlined at the templated
+    // completion call site; the out-of-line body is never entered.
     bool is_read_operation() const noexcept override
     {
         return true;
     }
+    // LCOV_EXCL_STOP
 
     void reset() noexcept
     {
@@ -619,10 +622,13 @@ struct reactor_recv_from_op : Base
     int msg_flags = 0;
 
     /// Return true (this is a read-direction operation).
+    // LCOV_EXCL_START: devirtualized and inlined at the templated
+    // completion call site; the out-of-line body is never entered.
     bool is_read_operation() const noexcept override
     {
         return true;
     }
+    // LCOV_EXCL_STOP
 
     void reset() noexcept
     {
