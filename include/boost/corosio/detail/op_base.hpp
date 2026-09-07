@@ -66,6 +66,52 @@ public:
     }
 };
 
+/* CRTP base for awaitables that return io_result<Value> for a
+   moved-out result object (e.g. the resolver's result lists).
+
+   Derived classes must provide:
+
+     std::coroutine_handle<> dispatch(
+         std::coroutine_handle<> h,
+         capy::executor_ref ex) const;
+
+   which forwards to the backend implementation method, passing
+   token_, &ec_, and &value_ as the cancellation/output parameters.
+*/
+template<class Derived, class Value>
+class value_op_base
+{
+    friend Derived;
+    value_op_base() = default;
+
+public:
+    std::stop_token token_;
+    mutable std::error_code ec_;
+    mutable Value value_{};
+
+    bool await_ready() const noexcept
+    {
+        // A pre-set ec_ means the initiator failed before dispatch;
+        // complete immediately with that error.
+        return static_cast<bool>(ec_) || token_.stop_requested();
+    }
+
+    [[nodiscard]] capy::io_result<Value> await_resume() const noexcept
+    {
+        if (token_.stop_requested())
+            return {make_error_code(std::errc::operation_canceled), {}};
+        return {ec_, std::move(value_)};
+    }
+
+    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+        -> std::coroutine_handle<>
+    {
+        token_ = env->stop_token;
+        return static_cast<Derived const*>(this)->dispatch(
+            h, env->executor);
+    }
+};
+
 /* CRTP base for awaitables that return io_result<>.
 
    Derived classes must provide:
