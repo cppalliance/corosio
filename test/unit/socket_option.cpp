@@ -255,8 +255,24 @@ struct socket_option_test
 
 #endif // BOOST_COROSIO_POSIX
 
+    // getsockopt writes a single byte for boolean/integer options on some
+    // platforms; resize() normalizes the stored value afterwards. Drive it
+    // directly so the single-byte branch is covered on hosts whose
+    // getsockopt writes the full width.
+    void testResizeNormalization()
+    {
+        socket_option::no_delay b(true);
+        b.resize(1);
+        BOOST_TEST(b.value());
+
+        socket_option::receive_buffer_size i(1);
+        i.resize(1);
+        BOOST_TEST_EQ(i.value(), 1);
+    }
+
     void run()
     {
+        testResizeNormalization();
         testTcpOptions();
         testTcpLocalEndpoint();
         testUdpOptions();
