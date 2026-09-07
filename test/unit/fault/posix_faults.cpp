@@ -307,6 +307,18 @@ struct posix_common_faults
         BOOST_TEST(name.empty());
     }
 
+    // A too-long system hostname fills gethostname's buffer without a
+    // NUL; host_name() reports it rather than return a non-terminated
+    // string.
+    void testHostNameTruncated()
+    {
+        auto f          = fault_scope::returning(sys::gethostname, 256);
+        auto [ec, name] = host_name();
+        BOOST_TEST(f.fired());
+        BOOST_TEST(ec == std::errc::value_too_large);
+        BOOST_TEST(name.empty());
+    }
+
     void testStreamFileOpenFails()
     {
         io_context ioc(Backend);
@@ -623,6 +635,7 @@ struct posix_common_faults
         testAcceptorConstructorThrows();
         testAvailableThrows();
         testHostNameFails();
+        testHostNameTruncated();
         testStreamFileOpenFails();
         testStreamFileSyncOps();
         testStreamFileIoFails();
