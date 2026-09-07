@@ -102,7 +102,7 @@ struct BOOST_COROSIO_DECL scheduler
     [[nodiscard]] virtual std::error_code
     register_signal_reader([[maybe_unused]] int read_fd)
     {
-        return {};
+        return {}; // LCOV_EXCL_LINE POSIX overrides; the only caller never runs on IOCP
     }
 
     /// Decomposed threading configuration applied via @ref configure_threading.
