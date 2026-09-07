@@ -322,7 +322,22 @@ extern "C" int pthread_create(pthread_t* t, pthread_attr_t const* a,
         return errno ? errno : EAGAIN;
     return real(t, a, fn, arg);
 }
-COROSIO_FAULT_HOOK_NX(gethostname, int, -1, (char* n, size_t l), (n, l))
+// gethostname arms two ways: fail with the armed errno, or -- via a
+// shorten arm -- succeed with a name that fills the buffer without a
+// NUL, the truncated form POSIX permits and host_name() must reject.
+extern "C" int gethostname(char* n, size_t l)
+{
+    COROSIO_FAULT_REAL(gethostname, int(*)(char*, size_t));
+    if(should_fail(sys::gethostname))
+        return -1;
+    std::size_t c;
+    if(should_shorten(sys::gethostname, c))
+    {
+        std::memset(n, 'x', c < l ? c : l);
+        return 0;
+    }
+    return real(n, l);
+}
 
 // Linux and FreeBSD both publish these; Darwin has neither, and
 // sync_data() lowers to fsync there instead.
