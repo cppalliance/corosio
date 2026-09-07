@@ -71,7 +71,7 @@ class native_signal_set : public signal_set
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<int> await_resume() const noexcept

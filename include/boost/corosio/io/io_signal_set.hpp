@@ -48,7 +48,7 @@ class BOOST_COROSIO_DECL io_signal_set : public io_object
 
         bool await_ready() const noexcept
         {
-            return token_.stop_requested();
+            return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
         [[nodiscard]] capy::io_result<int> await_resume() const noexcept
