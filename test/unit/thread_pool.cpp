@@ -256,6 +256,25 @@ struct thread_pool_test
         BOOST_TEST(pool->worker_count() == 0);
     }
 
+    // A pool created outside the context's service registry (so the
+    // context's shutdown walk never reaches it) must join its worker and
+    // drain queued work from the destructor net when destroyed directly.
+    void testDestructorShutsDown()
+    {
+        io_context ioc;
+        std::atomic<int> counter{0};
+        test_work w;
+        w.counter = &counter;
+        w.func_   = &test_work::execute;
+        {
+            detail::thread_pool pool(ioc, 1);
+            BOOST_TEST(!pool.post(&w));
+            BOOST_TEST(pool.worker_count() == 1);
+            // No explicit shutdown: the destructor must do it.
+        }
+        BOOST_TEST(counter.load() == 1);
+    }
+
     void run()
     {
         testDrainOnShutdown();
@@ -264,6 +283,7 @@ struct thread_pool_test
         testZeroThreads();
         testMultipleThreads();
         testLazyWorkers();
+        testDestructorShutsDown();
     }
 };
 
