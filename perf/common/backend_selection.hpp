@@ -49,8 +49,8 @@ print_available_backends()
 #if BOOST_COROSIO_HAS_IOCP
     std::cout << "  iocp     - Windows I/O Completion Ports (default)\n";
 #endif
-#if BOOST_COROSIO_HAS_IO_URING
-    std::cout << "  io_uring - Linux io_uring\n";
+#if BOOST_COROSIO_HAS_URING
+    std::cout << "  uring    - Linux io_uring\n";
 #endif
 #if BOOST_COROSIO_HAS_EPOLL
     std::cout << "  epoll    - Linux epoll (default)\n";
@@ -80,14 +80,14 @@ dispatch_backend(const char* backend, Func&& func)
 {
     namespace corosio = boost::corosio;
 
-#if BOOST_COROSIO_HAS_IO_URING
-    if (std::strcmp(backend, "io_uring") == 0)
+#if BOOST_COROSIO_HAS_URING
+    if (std::strcmp(backend, "uring") == 0)
     {
         func(
             []() -> std::unique_ptr<corosio::io_context> {
-                return std::make_unique<corosio::io_context>(corosio::io_uring);
+                return std::make_unique<corosio::io_context>(corosio::uring);
             },
-            corosio::io_uring, "io_uring");
+            corosio::uring, "uring");
         return 0;
     }
 #endif

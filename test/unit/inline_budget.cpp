@@ -215,9 +215,9 @@ struct budget_disabled_test
 
 COROSIO_REACTOR_BACKEND_TESTS(budget_disabled_test, "boost.corosio.budget_disabled")
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
-struct io_uring_budget_test
+struct uring_budget_test
 {
     // Interleaved cycles: wherever the deferral boundary lands, every op
     // kind in the cycle crosses it at some iteration.
@@ -225,7 +225,7 @@ struct io_uring_budget_test
     void
     testStreamStoppedOpsDefer()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex       = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
@@ -262,7 +262,7 @@ struct io_uring_budget_test
     void
     testStreamSuccessOpsDefer()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex       = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
@@ -303,7 +303,7 @@ struct io_uring_budget_test
     void
     testUdpStoppedOpsDefer()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         udp_socket s1(ioc), s2(ioc);
@@ -364,7 +364,7 @@ struct io_uring_budget_test
     void
     testUdpSuccessOpsDefer()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         udp_socket s1(ioc), s2(ioc);
@@ -447,7 +447,7 @@ struct io_uring_budget_test
     void
     testLocalStreamStoppedOpsDefer()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         local_stream_socket a(ioc), b(ioc);
@@ -488,7 +488,7 @@ struct io_uring_budget_test
     void
     testLocalStreamSuccessOpsDefer()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         local_stream_socket a(ioc), b(ioc);
@@ -531,7 +531,7 @@ struct io_uring_budget_test
     void
     testLocalDatagramStoppedOpsDefer()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         test::temp_socket_dir tmp1;
@@ -594,7 +594,7 @@ struct io_uring_budget_test
     void
     testLocalDatagramSuccessOpsDefer()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         test::temp_socket_dir tmp1;
@@ -690,8 +690,8 @@ struct io_uring_budget_test
     }
 };
 
-TEST_SUITE(io_uring_budget_test, "boost.corosio.io_uring_budget");
+TEST_SUITE(uring_budget_test, "boost.corosio.uring_budget");
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
 } // namespace boost::corosio

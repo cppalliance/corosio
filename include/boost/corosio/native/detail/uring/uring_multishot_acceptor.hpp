@@ -7,21 +7,21 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_MULTISHOT_ACCEPTOR_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_MULTISHOT_ACCEPTOR_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_MULTISHOT_ACCEPTOR_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_MULTISHOT_ACCEPTOR_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <liburing.h>
 
 #include <boost/corosio/detail/intrusive.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_acceptor_ops.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_buffer.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_op.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_scheduler.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_socket_ops.hpp>
+#include <boost/corosio/native/detail/uring/uring_acceptor_ops.hpp>
+#include <boost/corosio/native/detail/uring/uring_buffer.hpp>
+#include <boost/corosio/native/detail/uring/uring_op.hpp>
+#include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
+#include <boost/corosio/native/detail/uring/uring_socket_ops.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/io/io_object.hpp>
@@ -62,7 +62,7 @@ fd_is_listening(int fd) noexcept
 }
 
 template<class Derived, class ImplBase, class Endpoint, class PeerService>
-class io_uring_multishot_acceptor_base
+class uring_multishot_acceptor_base
     : public ImplBase
     , public std::enable_shared_from_this<Derived>
 {
@@ -101,7 +101,7 @@ protected:
     };
 
     int                                          fd_ = -1;
-    io_uring_scheduler*                          sched_;
+    uring_scheduler*                          sched_;
     PeerService*                                 peer_service_;
     Endpoint                                     local_endpoint_{};
     mutable std::mutex                           mutex_;
@@ -134,15 +134,15 @@ private:
     // constructed except as a CRTP base of Derived
     // (clang-tidy bugprone-crtp-constructor-accessibility).
     friend Derived;
-    io_uring_multishot_acceptor_base(
-        io_uring_scheduler& sched, PeerService& peer_svc) noexcept
+    uring_multishot_acceptor_base(
+        uring_scheduler& sched, PeerService& peer_svc) noexcept
         : sched_(&sched)
         , peer_service_(&peer_svc)
     {}
 
 public:
 
-    ~io_uring_multishot_acceptor_base() override
+    ~uring_multishot_acceptor_base() override
     {
         {
             std::lock_guard lk(mutex_);
@@ -513,7 +513,7 @@ public:
             multi_op_->listen_fd     = fd_;
             multi_op_->acceptor_impl = this;
             multi_op_->on_cqe        =
-                &io_uring_multishot_acceptor_base::on_accept_cqe;
+                &uring_multishot_acceptor_base::on_accept_cqe;
             multi_op_->impl_ptr      = this->shared_from_this();
         }
         else
@@ -538,7 +538,7 @@ public:
         // The try_ spelling is what says so: it keeps a failed submission
         // off the scheduler's completion queue, which spends a
         // work_finished() on everything it dispatches.
-        if (io_uring_try_submit_op(*sched_, op))
+        if (uring_try_submit_op(*sched_, op))
         {
             std::lock_guard lk(mutex_);
             arm_err_ = 0;
@@ -966,7 +966,7 @@ protected:
 
 template<class Derived, class ImplBase, class Endpoint, class PeerService>
 inline void
-io_uring_multishot_acceptor_base<Derived, ImplBase, Endpoint, PeerService>
+uring_multishot_acceptor_base<Derived, ImplBase, Endpoint, PeerService>
     ::waiter_canceller::operator()() const noexcept
 {
     if (w->cancelled.exchange(true, std::memory_order_acq_rel))
@@ -976,6 +976,6 @@ io_uring_multishot_acceptor_base<Derived, ImplBase, Endpoint, PeerService>
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_MULTISHOT_ACCEPTOR_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_MULTISHOT_ACCEPTOR_HPP

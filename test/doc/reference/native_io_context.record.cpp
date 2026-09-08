@@ -17,7 +17,7 @@
 // reference slug drops the template parameter, but the example must still
 // name a concrete backend tag. corosio::epoll is what this library actually
 // offers as a compile-time tag on Linux (see backend.hpp); other platforms
-// get iocp_t/kqueue_t/select_t/io_uring_t instead, so the whole example is
+// get iocp_t/kqueue_t/select_t/uring_t instead, so the whole example is
 // guarded on the tag it names actually existing.
 
 #include "../doc_warnings.hpp"

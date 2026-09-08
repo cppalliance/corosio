@@ -50,7 +50,7 @@ namespace boost::corosio::detail {
 
 /** Non-template op envelope shared by every native backend's operations.
 
-    `reactor_op_base`, `io_uring_op`, and `overlapped_op` all derive from this.
+    `reactor_op_base`, `uring_op`, and `overlapped_op` all derive from this.
     Derives from scheduler_op so ops queue intrusively and dispatch through the
     function-pointer (io_uring/IOCP) or virtual (reactors) completion path —
     hence both a default and a func_type constructor.

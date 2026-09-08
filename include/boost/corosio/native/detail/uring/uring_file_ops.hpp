@@ -8,15 +8,15 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_FILE_OPS_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_FILE_OPS_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_FILE_OPS_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_FILE_OPS_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
-#include <boost/corosio/native/detail/io_uring/io_uring_op.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_socket_ops.hpp>
+#include <boost/corosio/native/detail/uring/uring_op.hpp>
+#include <boost/corosio/native/detail/uring/uring_socket_ops.hpp>
 #include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 
@@ -42,16 +42,16 @@ namespace boost::corosio::detail {
 /// `uring_random_access_read_op` for heap-allocated per-call ops
 /// (random_access_file, where concurrent reads at different offsets
 /// are legitimate).
-struct uring_file_read_op_base : io_uring_op
+struct uring_file_read_op_base : uring_op
 {
-    iovec        iovecs[io_uring_max_iov];
+    iovec        iovecs[uring_max_iov];
     int          iovec_count = 0;
     int          fd          = -1;
     std::int64_t offset      = -1;  // -1 means kernel f_pos
 
 protected:
     explicit uring_file_read_op_base(func_type handler) noexcept
-        : io_uring_op(handler, &do_cqe, &do_prep)
+        : uring_op(handler, &do_cqe, &do_prep)
     {
         is_read = true;
     }
@@ -70,7 +70,7 @@ public:
         std::size_t*             bytes,
         int                      file_descriptor,
         std::int64_t             file_offset,
-        io_uring_scheduler*      scheduler,
+        uring_scheduler*      scheduler,
         std::shared_ptr<void>    impl,
         buffer_param             buffers,
         std::stop_token const&   token) noexcept
@@ -90,7 +90,7 @@ public:
         start(token);
     }
 
-    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_file_read_op_base*>(base);
         ::io_uring_prep_readv(
@@ -99,7 +99,7 @@ public:
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags,
+        uring_op* base, int res, unsigned flags,
         ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_file_read_op_base*>(base);
@@ -187,16 +187,16 @@ struct uring_random_access_read_op : uring_file_read_op_base
 */
 /// Shared state and submission logic for file write ops. Concrete
 /// subclasses pick a `do_handler` matching their storage model.
-struct uring_file_write_op_base : io_uring_op
+struct uring_file_write_op_base : uring_op
 {
-    iovec        iovecs[io_uring_max_iov];
+    iovec        iovecs[uring_max_iov];
     int          iovec_count = 0;
     int          fd          = -1;
     std::int64_t offset      = -1;
 
 protected:
     explicit uring_file_write_op_base(func_type handler) noexcept
-        : io_uring_op(handler, &do_cqe, &do_prep) {}
+        : uring_op(handler, &do_cqe, &do_prep) {}
 
 public:
     /** Reset and initialize for a new submission.
@@ -210,7 +210,7 @@ public:
         std::size_t*             bytes,
         int                      file_descriptor,
         std::int64_t             file_offset,
-        io_uring_scheduler*      scheduler,
+        uring_scheduler*      scheduler,
         std::shared_ptr<void>    impl,
         buffer_param             buffers,
         std::stop_token const&   token) noexcept
@@ -230,7 +230,7 @@ public:
         start(token);
     }
 
-    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_file_write_op_base*>(base);
         ::io_uring_prep_writev(
@@ -239,7 +239,7 @@ public:
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags,
+        uring_op* base, int res, unsigned flags,
         ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_file_write_op_base*>(base);
@@ -312,6 +312,6 @@ struct uring_random_access_write_op : uring_file_write_op_base
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_FILE_OPS_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_FILE_OPS_HPP

@@ -7,18 +7,18 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_OP_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_OP_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_OP_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_OP_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/native/detail/coro_op.hpp>
 #include <boost/corosio/detail/ready_queue.hpp>
 
-// Forward declare to avoid circular include with io_uring_scheduler.hpp.
-namespace boost::corosio::detail { class io_uring_scheduler; }
+// Forward declare to avoid circular include with uring_scheduler.hpp.
+namespace boost::corosio::detail { class uring_scheduler; }
 
 #include <atomic>
 
@@ -36,30 +36,30 @@ namespace boost::corosio::detail {
     pointers the run loop uses to prep an SQE and dispatch a CQE without
     template instantiation.
 */
-struct io_uring_op : coro_op
+struct uring_op : coro_op
 {
     /// CQE-side dispatcher type. Called once per completion event.
     /// Pushes self into `local` rather than dispatching inline so
     /// process_completions can splice the batch into completed_ops_
     /// atomically and do_one dispatches one handler at a time.
     using cqe_func_type =
-        void (*)(io_uring_op*, int res, unsigned flags, ready_queue& local) noexcept;
+        void (*)(uring_op*, int res, unsigned flags, ready_queue& local) noexcept;
 
     /// SQE-preparation dispatcher type. Called by the leader during
     /// its drain step to fill an SQE for this op. Concrete op types
     /// set this at construction so the new submit path is purely
     /// data-driven (no template instantiation, no allocation).
     using prep_func_type =
-        void (*)(io_uring_op*, ::io_uring_sqe*) noexcept;
+        void (*)(uring_op*, ::io_uring_sqe*) noexcept;
 
     /// Retired-CQE dispatcher type. Called in place of `cqe_func` once
     /// the op is retired, so the op type can release whatever `res`
     /// owns (an accepted descriptor, a registered buffer) that no
     /// handler will now take delivery of.
     using retire_func_type =
-        void (*)(io_uring_op*, int res, unsigned flags) noexcept;
+        void (*)(uring_op*, int res, unsigned flags) noexcept;
 
-    explicit io_uring_op(
+    explicit uring_op(
         func_type      post_func,
         cqe_func_type  cqe_fn,
         prep_func_type prep_fn = nullptr) noexcept
@@ -75,16 +75,16 @@ struct io_uring_op : coro_op
     std::atomic<bool>                            sqe_set{false};
     cqe_func_type                                cqe_func;
     /// SQE-preparation dispatcher. nullptr for ops still using the
-    /// old `io_uring_submit_op<PrepFn>(prep)` template path
+    /// old `uring_submit_op<PrepFn>(prep)` template path
     /// (UDP/local/file/dgram during plan 5a). Set non-null by ops
     /// migrated to the queue-based submit path.
     prep_func_type                               prep_func;
 
     /// Scheduler reference for submitting cancel SQEs on stop_token.
-    io_uring_scheduler*                          sched_ = nullptr;
+    uring_scheduler*                          sched_ = nullptr;
 
     /// Set when the op's owner went away while the kernel still held
-    /// its user_data (see `io_uring_scheduler::retire_op`). A retired
+    /// its user_data (see `uring_scheduler::retire_op`). A retired
     /// op belongs to the scheduler: the run loop routes its CQEs to
     /// `retire_func` instead of `cqe_func` and frees the op on the
     /// terminal CQE.
@@ -116,6 +116,6 @@ struct io_uring_op : coro_op
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_OP_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_OP_HPP

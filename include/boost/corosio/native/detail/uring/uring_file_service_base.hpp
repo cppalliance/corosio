@@ -7,16 +7,16 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_FILE_SERVICE_BASE_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_FILE_SERVICE_BASE_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_FILE_SERVICE_BASE_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_FILE_SERVICE_BASE_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/io/io_object.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_scheduler.hpp>
+#include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
 
 #include <memory>
 #include <mutex>
@@ -25,13 +25,13 @@
 /*
     Shared lifecycle plumbing for io_uring file services.
 
-    io_uring_stream_file_service and io_uring_random_access_file_service were
+    uring_stream_file_service and uring_random_access_file_service were
     byte-for-byte identical apart from the impl type and open_file's parameter
     type: both make_shared the file impl from the scheduler, track it in an
     intrusive list + raw->shared_ptr map, and close every file on shutdown.
     This base factors that out; the concrete services add only open_file.
 
-    This is a separate base from io_uring_socket_service_base because file
+    This is a separate base from uring_socket_service_base because file
     services differ from socket services in three ways that match the reactor
     socket service instead: they track via an intrusive list + map (sockets:
     map only), they CLOSE files on shutdown (sockets: cancel only), and the
@@ -39,7 +39,7 @@
     tasks/proactor-dedup-decisions.md (#14).
 
     Requirements on File: derive from enable_shared_from_this<File> and
-    intrusive_list<File>::node, a `File(io_uring_scheduler&)` constructor, and
+    intrusive_list<File>::node, a `File(uring_scheduler&)` constructor, and
     a `void close_file() noexcept` method (cancel in-flight ops + close fd).
 
     @tparam Derived     The concrete service (CRTP; unused today but kept for
@@ -52,20 +52,20 @@
 namespace boost::corosio::detail {
 
 template<class Derived, class ServiceBase, class File>
-class io_uring_file_service_base : public ServiceBase
+class uring_file_service_base : public ServiceBase
 {
     friend Derived;
 
     // Private CRTP ctor: only `Derived` (the concrete service, a friend)
     // constructs the base — prevents inheriting with the wrong Derived
     // (bugprone-crtp-constructor-accessibility).
-    explicit io_uring_file_service_base(io_uring_scheduler& sched) noexcept
+    explicit uring_file_service_base(uring_scheduler& sched) noexcept
         : sched_(&sched)
     {
     }
 
 public:
-    ~io_uring_file_service_base() override = default;
+    ~uring_file_service_base() override = default;
 
     io_object::implementation* construct() override
     {
@@ -107,22 +107,22 @@ public:
     }
 
     /// Return the scheduler used by files created by this service.
-    io_uring_scheduler& scheduler() noexcept { return *sched_; }
+    uring_scheduler& scheduler() noexcept { return *sched_; }
 
 protected:
-    io_uring_scheduler*  sched_;
+    uring_scheduler*  sched_;
     std::mutex           mutex_;
     intrusive_list<File> file_list_;
     std::unordered_map<File*, std::shared_ptr<File>> file_ptrs_;
 
 private:
-    io_uring_file_service_base(io_uring_file_service_base const&) = delete;
-    io_uring_file_service_base&
-    operator=(io_uring_file_service_base const&) = delete;
+    uring_file_service_base(uring_file_service_base const&) = delete;
+    uring_file_service_base&
+    operator=(uring_file_service_base const&) = delete;
 };
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_FILE_SERVICE_BASE_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_FILE_SERVICE_BASE_HPP

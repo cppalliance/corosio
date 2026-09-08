@@ -14,7 +14,7 @@
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/local_connect_pair.hpp>
@@ -81,11 +81,11 @@ fill_pipe(int fd)
 
 } // namespace
 
-struct io_uring_teardown_test
+struct uring_teardown_test
 {
     void testAcceptorWaitAfterClose()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
@@ -110,7 +110,7 @@ struct io_uring_teardown_test
 
     void testAcceptorWaitStopRequested()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
@@ -140,7 +140,7 @@ struct io_uring_teardown_test
 
     void testAcceptorCloseWithParkedWait()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
@@ -182,7 +182,7 @@ struct io_uring_teardown_test
     {
         bool resumed = false;
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             // The pair is made outside the coroutine (it drains the
             // context internally); the socket moves into the frame so
             // its fd stays open when the frame is abandoned.
@@ -205,7 +205,7 @@ struct io_uring_teardown_test
     {
         bool resumed = false;
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             local_datagram_socket d1(ioc), d2(ioc);
             if (auto ec = connect_pair(d1, d2))
                 throw std::system_error(ec, "connect_pair");
@@ -232,7 +232,7 @@ struct io_uring_teardown_test
 
         bool read_resumed = false, write_resumed = false;
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             auto reader = [&]() -> capy::task<> {
                 stream_file f(ioc);
                 std::ignore = f.assign(static_cast<native_handle_type>(rp[0]));
@@ -269,7 +269,7 @@ struct io_uring_teardown_test
         auto const path = tmp.path;
         bool read_resumed = false, write_resumed = false;
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             auto reader = [&]() -> capy::task<> {
                 random_access_file f(ioc);
                 std::ignore = f.open(path, file_base::read_write);
@@ -311,7 +311,7 @@ struct io_uring_teardown_test
 
         bool read_resumed = false, write_resumed = false;
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             auto reader = [&]() -> capy::task<> {
                 stream_file f(ioc);
                 std::ignore = f.assign(static_cast<native_handle_type>(p[0]));
@@ -342,7 +342,7 @@ struct io_uring_teardown_test
     {
         int resumed = 0;
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             auto [s1, s2] =
                 test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
             auto [s3, s4] =
@@ -380,7 +380,7 @@ struct io_uring_teardown_test
     {
         int resumed = 0;
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             local_datagram_socket d1(ioc), d2(ioc), d3(ioc), d4(ioc);
             if (auto ec = connect_pair(d1, d2))
                 throw std::system_error(ec, "connect_pair");
@@ -419,7 +419,7 @@ struct io_uring_teardown_test
 
         int resumed = 0;
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             auto reader = [](io_context& ctx, int fd, int& count)
                 -> capy::task<> {
                 stream_file f(ctx);
@@ -460,7 +460,7 @@ struct io_uring_teardown_test
         auto const path = tmp.path;
         int resumed     = 0;
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             auto reader = [](io_context& ctx, std::filesystem::path p,
                               int& count) -> capy::task<> {
                 random_access_file f(ctx);
@@ -498,7 +498,7 @@ struct io_uring_teardown_test
     {
         bool resumed = false;
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             auto keeper = [&]() -> capy::task<> {
                 test::temp_socket_dir tmp;
                 local_stream_acceptor acc(ioc);
@@ -536,8 +536,8 @@ struct io_uring_teardown_test
     }
 };
 
-TEST_SUITE(io_uring_teardown_test, "boost.corosio.io_uring_teardown");
+TEST_SUITE(uring_teardown_test, "boost.corosio.uring_teardown");
 
 } // namespace boost::corosio
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING

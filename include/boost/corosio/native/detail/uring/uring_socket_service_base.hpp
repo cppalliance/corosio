@@ -7,15 +7,15 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_SOCKET_SERVICE_BASE_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_SOCKET_SERVICE_BASE_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_SOCKET_SERVICE_BASE_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_SOCKET_SERVICE_BASE_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/io/io_object.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_scheduler.hpp>
+#include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <memory>
@@ -27,8 +27,8 @@
     Shared lifecycle plumbing for io_uring socket/datagram services.
 
     construct / destroy / shutdown / close / scheduler() are identical across
-    io_uring_tcp_service, io_uring_udp_service, io_uring_local_stream_service,
-    and io_uring_local_datagram_service — they all make_shared the impl, track
+    uring_tcp_service, uring_udp_service, uring_local_stream_service,
+    and uring_local_datagram_service — they all make_shared the impl, track
     it in a raw->shared_ptr map, cancel on shutdown, and close eagerly. This
     base factors that out; the concrete services add only the protocol-
     specific open/bind/adopt.
@@ -42,7 +42,7 @@
     teardown behavior change for marginal extra sharing. See
     tasks/proactor-dedup-decisions.md (#13).
 
-    Requirements on Socket: a `(Derived& service, io_uring_scheduler& sched)`
+    Requirements on Socket: a `(Derived& service, uring_scheduler& sched)`
     constructor and a `void close_socket() noexcept` method (cancel in-flight
     ops + close fd + reset cached endpoints).
 
@@ -54,20 +54,20 @@
 namespace boost::corosio::detail {
 
 template<class Derived, class ServiceBase, class Socket>
-class io_uring_socket_service_base : public ServiceBase
+class uring_socket_service_base : public ServiceBase
 {
     friend Derived;
 
     // Private CRTP ctor: only `Derived` (the concrete service, a friend)
     // constructs the base — prevents inheriting with the wrong Derived
     // (bugprone-crtp-constructor-accessibility).
-    explicit io_uring_socket_service_base(capy::execution_context& ctx)
-        : sched_(&ctx.template use_service<io_uring_scheduler>())
+    explicit uring_socket_service_base(capy::execution_context& ctx)
+        : sched_(&ctx.template use_service<uring_scheduler>())
     {
     }
 
 public:
-    ~io_uring_socket_service_base() override = default;
+    ~uring_socket_service_base() override = default;
 
     void shutdown() override
     {
@@ -113,7 +113,7 @@ public:
     }
 
     /// Return the scheduler used by sockets created by this service.
-    io_uring_scheduler& scheduler() noexcept { return *sched_; }
+    uring_scheduler& scheduler() noexcept { return *sched_; }
 
 protected:
     /// Register an externally-built impl (used by adopt_fd on stream
@@ -126,18 +126,18 @@ protected:
         return raw;
     }
 
-    io_uring_scheduler* sched_;
+    uring_scheduler* sched_;
     std::mutex          mutex_;
     std::unordered_map<Socket*, std::shared_ptr<Socket>> impls_;
 
 private:
-    io_uring_socket_service_base(io_uring_socket_service_base const&) = delete;
-    io_uring_socket_service_base&
-    operator=(io_uring_socket_service_base const&) = delete;
+    uring_socket_service_base(uring_socket_service_base const&) = delete;
+    uring_socket_service_base&
+    operator=(uring_socket_service_base const&) = delete;
 };
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_SOCKET_SERVICE_BASE_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_SOCKET_SERVICE_BASE_HPP

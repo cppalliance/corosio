@@ -945,9 +945,9 @@ struct tcp_socket_test
 #else
         constexpr bool is_select = false;
 #endif
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
         constexpr bool is_uring = std::is_same_v<
-            std::remove_const_t<decltype(Backend)>, io_uring_t>;
+            std::remove_const_t<decltype(Backend)>, uring_t>;
 #else
         constexpr bool is_uring = false;
 #endif

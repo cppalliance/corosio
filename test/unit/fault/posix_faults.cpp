@@ -53,9 +53,9 @@ struct posix_common_faults
     // The io_uring backend has its own file implementation: reads and
     // writes go through the ring instead of preadv/pwritev, seek uses
     // lseek instead of fstat, and open never stats an appending file.
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
     static constexpr bool ring_files = std::is_same_v<
-        std::remove_cvref_t<decltype(Backend)>, io_uring_t>;
+        std::remove_cvref_t<decltype(Backend)>, uring_t>;
 #else
     static constexpr bool ring_files = false;
 #endif

@@ -332,7 +332,7 @@ struct local_datagram_socket_test
 
         // Abstract socket: null byte prefix, no filesystem entry. The
         // abstract namespace is global per network namespace, so the
-        // .epoll/.select/.io_uring variants -- separate processes run
+        // .epoll/.select/.uring variants -- separate processes run
         // concurrently by `ctest --parallel` -- must not share a name, or
         // they race to bind it and the loser gets EADDRINUSE. The pid makes
         // each process's names unique; abstract names are released on close,

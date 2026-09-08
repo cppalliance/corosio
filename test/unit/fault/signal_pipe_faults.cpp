@@ -117,10 +117,10 @@ struct signal_pipe_faults
 #endif
     }
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
     void testUringReaderSubmitFails()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         signal_set ss(ioc);
         std::error_code ec;
         {
@@ -147,7 +147,7 @@ struct signal_pipe_faults
         // while the context is built, so it is armed before that.
         std::optional<fault_scope> f;
         f.emplace(sys::uring_sqe_full, 0);
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         signal_set ss(ioc);
         std::error_code const ec = ss.add(SIGUSR2);
         BOOST_TEST(f->fired());
@@ -166,7 +166,7 @@ struct signal_pipe_faults
         testPipeCreateFails();
         testSelectReaderRejectsHighFd();
         testReaderRegisterFails();
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
         testUringReaderSubmitFails();
         testUringReaderSqFull();
 #endif

@@ -27,8 +27,8 @@
 #include <boost/corosio/native/detail/kqueue/kqueue_types.hpp>
 #endif
 
-#if BOOST_COROSIO_HAS_IO_URING
-#include <boost/corosio/native/detail/io_uring/io_uring_types.hpp>
+#if BOOST_COROSIO_HAS_URING
+#include <boost/corosio/native/detail/uring/uring_types.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP

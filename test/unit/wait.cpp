@@ -1107,7 +1107,7 @@ COROSIO_BACKEND_TESTS(wait_closed_test, "boost.corosio.wait_closed")
 // empty error_code — the bug). Not run on select, where a peer RST does
 // not set except_fds and the error wait would never fire, nor on kqueue,
 // which is not exercised on this host.
-#if BOOST_COROSIO_HAS_EPOLL && BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_EPOLL && BOOST_COROSIO_HAS_URING
 struct error_wait_names_reset_test
 {
     template<auto Backend>
@@ -1146,7 +1146,7 @@ struct error_wait_names_reset_test
     void run()
     {
         check<epoll>();     // control: names the code, passes
-        check<io_uring>();  // bug D1: empty error_code, fails
+        check<uring>();  // bug D1: empty error_code, fails
     }
 };
 
