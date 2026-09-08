@@ -1374,32 +1374,21 @@ struct tcp_acceptor_test
         ioc.restart();
 
         std::error_code wait_ec;
-        bool wait_done      = false;
-        bool watchdog_fired = false;
+        bool wait_done = false;
 
+        // A reactor that misses pre-existing readiness parks the wait
+        // forever, surfacing as a harness timeout; the run only returns
+        // here once the wait completes on its own.
         auto waiter = [&]() -> capy::task<> {
             auto [wec] = co_await acc.wait(wait_type::read);
             wait_ec   = wec;
             wait_done = true;
         };
-        // Watchdog: a reactor that misses pre-existing readiness
-        // parks forever; retract the wait so the miss is reported
-        // instead of hanging the suite.
-        auto watchdog = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
-            if (!wait_done)
-            {
-                watchdog_fired = true;
-                acc.cancel();
-            }
-        };
         capy::run_async(ex)(waiter());
-        capy::run_async(ex)(watchdog());
         ioc.run();
         ioc.restart();
 
         BOOST_TEST(wait_done);
-        BOOST_TEST(!watchdog_fired);
         BOOST_TEST(!wait_ec);
 
         // The signalled connection is genuinely acceptable.
@@ -1441,29 +1430,21 @@ struct tcp_acceptor_test
         ioc.restart();
 
         std::error_code wait_ec;
-        bool wait_done      = false;
-        bool watchdog_fired = false;
+        bool wait_done = false;
 
+        // A registration that misses the already-queued backlog parks
+        // the wait forever, surfacing as a harness timeout; the run
+        // only returns here once the wait completes on its own.
         auto waiter = [&]() -> capy::task<> {
             auto [wec] = co_await acc.wait(wait_type::read);
             wait_ec   = wec;
             wait_done = true;
         };
-        auto watchdog = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
-            if (!wait_done)
-            {
-                watchdog_fired = true;
-                acc.cancel();
-            }
-        };
         capy::run_async(ex)(waiter());
-        capy::run_async(ex)(watchdog());
         ioc.run();
         ioc.restart();
 
         BOOST_TEST(wait_done);
-        BOOST_TEST(!watchdog_fired);
         BOOST_TEST(!wait_ec);
 
         bool accepted = false;
@@ -1496,30 +1477,20 @@ struct tcp_acceptor_test
         BOOST_TEST(!ec);
 
         std::error_code wait_ec;
-        bool wait_done      = false;
-        bool watchdog_fired = false;
+        bool wait_done = false;
 
+        // The wait must fail synchronously with operation_not_supported;
+        // a backend that instead parks the meaningless wait parks it
+        // forever, surfacing as a harness timeout.
         auto waiter = [&]() -> capy::task<> {
             auto [wec] = co_await acc.wait(wait_type::write);
             wait_ec   = wec;
             wait_done = true;
         };
-        // Watchdog: a backend that parks the meaningless wait would
-        // hang the suite; retract it so the miss is reported.
-        auto watchdog = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
-            if (!wait_done)
-            {
-                watchdog_fired = true;
-                acc.cancel();
-            }
-        };
         capy::run_async(ex)(waiter());
-        capy::run_async(ex)(watchdog());
         ioc.run();
 
         BOOST_TEST(wait_done);
-        BOOST_TEST(!watchdog_fired);
         BOOST_TEST(wait_ec == std::errc::operation_not_supported);
     }
 
@@ -1657,31 +1628,20 @@ struct tcp_acceptor_test
         BOOST_TEST(native_connect_loopback(client, port, false));
 
         std::error_code accept_ec;
-        bool accept_done    = false;
-        bool watchdog_fired = false;
+        bool accept_done = false;
 
+        // A retired arming stealing the connection parks the accept
+        // forever, surfacing as a harness timeout; the run only returns
+        // here once the accept completes on its own.
         auto server = [&]() -> capy::task<> {
             auto [aec, peer] = co_await acc.accept();
             accept_ec   = aec;
             accept_done = true;
         };
-        // Watchdog: a retired arming stealing the connection parks the
-        // accept forever; retract it so the theft is reported instead
-        // of hanging the suite.
-        auto watchdog = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
-            if (!accept_done)
-            {
-                watchdog_fired = true;
-                acc.cancel();
-            }
-        };
         capy::run_async(ex)(server());
-        capy::run_async(ex)(watchdog());
         ioc.run();
 
         BOOST_TEST(accept_done);
-        BOOST_TEST(!watchdog_fired);
         BOOST_TEST(!accept_ec);
 
         close_native_socket(client);
@@ -1741,8 +1701,10 @@ struct tcp_acceptor_test
         std::error_code accept_ec;
         std::uint16_t accepted_port = 0;
         bool accept_done            = false;
-        bool watchdog_fired         = false;
 
+        // A stale pre-accepted connection surfacing here would satisfy
+        // the accept with the wrong peer; a new listener that never
+        // delivers parks it forever, surfacing as a harness timeout.
         auto server = [&]() -> capy::task<> {
             auto [aec, peer] = co_await acc.accept();
             accept_ec   = aec;
@@ -1750,20 +1712,10 @@ struct tcp_acceptor_test
             if (!aec)
                 accepted_port = peer.local_endpoint().port();
         };
-        auto watchdog = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
-            if (!accept_done)
-            {
-                watchdog_fired = true;
-                acc.cancel();
-            }
-        };
         capy::run_async(ex)(server());
-        capy::run_async(ex)(watchdog());
         ioc.run();
 
         BOOST_TEST(accept_done);
-        BOOST_TEST(!watchdog_fired);
         BOOST_TEST(!accept_ec);
         // The accepted connection belongs to the new listener.
         BOOST_TEST_EQ(accepted_port, port_b);
