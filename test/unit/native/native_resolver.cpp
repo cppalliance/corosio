@@ -54,14 +54,14 @@ struct native_resolver_test
 
     void testResolverConstruct()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_resolver<Backend> r(ctx);
         BOOST_TEST_PASS();
     }
 
     void testResolverResolve()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_resolver<Backend> r(ctx);
 
         bool done = false;
@@ -82,7 +82,7 @@ struct native_resolver_test
 
     void testResolverStopToken()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_resolver<Backend> r(ctx);
 
         std::stop_source ss;
@@ -109,7 +109,7 @@ struct native_resolver_test
 
     void testResolverPolymorphicSlice()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_resolver<Backend> nr(ctx);
 
         [[maybe_unused]] resolver& base = nr;

@@ -79,14 +79,14 @@ struct native_udp_socket_test
 
     void testConstruct()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_udp_socket<Backend> s(ctx);
         BOOST_TEST_PASS();
     }
 
     void testMoveConstruct()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_udp_socket<Backend> s1(ctx);
         BOOST_TEST(!s1.open());
         BOOST_TEST(s1.is_open());
@@ -97,7 +97,7 @@ struct native_udp_socket_test
 
     void testPolymorphicSlice()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_udp_socket<Backend> ns(ctx);
         BOOST_TEST(!ns.open());
 
@@ -109,7 +109,7 @@ struct native_udp_socket_test
 
     void testSendRecvLoopback()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
 
         native_udp_socket<Backend> sender(ioc);
         native_udp_socket<Backend> receiver(ioc);
@@ -148,7 +148,7 @@ struct native_udp_socket_test
 
     void testCancelRecv()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
 
         native_udp_socket<Backend> sock(ioc);
         BOOST_TEST(!sock.open());
@@ -186,7 +186,7 @@ struct native_udp_socket_test
 
     void testCloseWhileRecving()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
 
         native_udp_socket<Backend> sock(ioc);
         BOOST_TEST(!sock.open());
@@ -223,7 +223,7 @@ struct native_udp_socket_test
 
     void testSendRecvConnected()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
 
         native_udp_socket<Backend> a(ioc);
         native_udp_socket<Backend> b(ioc);
@@ -277,7 +277,7 @@ struct native_udp_socket_test
 
     void testConnectAutoOpen()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
 
         native_udp_socket<Backend> receiver(ioc);
         BOOST_TEST(!receiver.open());
@@ -303,7 +303,7 @@ struct native_udp_socket_test
     void testVirtualDispatchFallback()
     {
         // Verify that calling through udp_socket& uses virtual dispatch
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
 
         native_udp_socket<Backend> sender(ioc);
         native_udp_socket<Backend> receiver(ioc);
@@ -342,7 +342,7 @@ struct native_udp_socket_test
     // bound UDP socket resolves when a datagram arrives from a peer.
     void testWait()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto       ex = ioc.get_executor();
 
         native_udp_socket<Backend> recv(ioc);
@@ -383,7 +383,7 @@ struct native_udp_socket_test
     // multicast option storage classes without library indirection.
     void testNativeSocketOptions()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_udp_socket<Backend> sock(ioc);
         BOOST_TEST(!sock.open());
 
@@ -437,7 +437,7 @@ struct native_udp_socket_test
 
     void testNativeMulticastV4Groups()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_udp_socket<Backend> sock(ioc);
         BOOST_TEST(!sock.open());
 
@@ -471,7 +471,7 @@ struct native_udp_socket_test
 
     void testNativeMulticastV6Groups()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_udp_socket<Backend> sock(ioc);
         BOOST_TEST(!sock.open(udp::v6()));
 
@@ -546,7 +546,7 @@ struct native_udp_socket_test
     {
         // Datagram operations on a closed socket complete with
         // bad_file_descriptor instead of dispatching.
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_udp_socket<Backend> s(ioc);
 
         bool done = false;

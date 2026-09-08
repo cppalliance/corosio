@@ -49,14 +49,14 @@ struct native_tcp_acceptor_test
 
     void testAcceptorConstruct()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_tcp_acceptor<Backend> acc(ctx);
         BOOST_TEST_PASS();
     }
 
     void testAcceptorMoveConstruct()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_tcp_acceptor<Backend> a1(ctx);
         BOOST_TEST(!a1.open());
         a1.set_option(native_socket_option::reuse_address(true));
@@ -72,7 +72,7 @@ struct native_tcp_acceptor_test
 
     void testAcceptorPolymorphicSlice()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_tcp_acceptor<Backend> na(ctx);
         BOOST_TEST(!na.open());
         na.set_option(native_socket_option::reuse_address(true));
@@ -89,7 +89,7 @@ struct native_tcp_acceptor_test
     // listening acceptor resolves when a connection arrives.
     void testWait()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto       ex = ioc.get_executor();
 
         native_tcp_acceptor<Backend> acc(ioc);
@@ -129,7 +129,7 @@ struct native_tcp_acceptor_test
     // devirtualized path: it yields a connected peer socket.
     void testNativeAcceptReturning()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto       ex = ioc.get_executor();
 
         native_tcp_acceptor<Backend> acc(ioc);
@@ -172,7 +172,7 @@ struct native_tcp_acceptor_test
 #ifdef SO_REUSEPORT
     void testNativeReusePort()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_tcp_acceptor<Backend> acc(ctx);
         BOOST_TEST(!acc.open());
 
@@ -190,7 +190,7 @@ struct native_tcp_acceptor_test
     {
         // Accepts on a closed (not moved-from) acceptor complete
         // with bad_file_descriptor instead of dispatching.
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_tcp_acceptor<Backend> acc(ioc);
         tcp_socket peer(ioc);
 
@@ -210,7 +210,7 @@ struct native_tcp_acceptor_test
 
     void testMovedFromValueAcceptThrows()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_tcp_acceptor<Backend> a(ioc);
         native_tcp_acceptor<Backend> b(std::move(a));
 
@@ -230,7 +230,7 @@ struct native_tcp_acceptor_test
     // matching the base-class contract.
     void testWaitOnClosedAcceptor()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_tcp_acceptor<Backend> acc(ioc);
 
         std::error_code wait_ec;

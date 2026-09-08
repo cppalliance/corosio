@@ -85,14 +85,14 @@ struct native_stream_file_test
 
     void testConstruct()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_stream_file<Backend> f(ioc);
         BOOST_TEST_EQ(f.is_open(), false);
     }
 
     void testPolymorphicSlice()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         temp_file tmp("native_sf_slice_", "x");
         native_stream_file<Backend> f(ioc);
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
@@ -106,7 +106,7 @@ struct native_stream_file_test
         std::string data = "hello native";
         temp_file tmp("native_sf_read_", data);
 
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_stream_file<Backend> f(ioc);
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
@@ -130,7 +130,7 @@ struct native_stream_file_test
     {
         temp_file tmp("native_sf_write_");
 
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_stream_file<Backend> f(ioc);
         BOOST_TEST(!f.open(
             tmp.path,
@@ -162,7 +162,7 @@ struct native_stream_file_test
     // complete with bad_file_descriptor.
     void testReadWriteOnClosedFile()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_stream_file<Backend> f(ioc);
 
         bool done = false;
@@ -188,7 +188,7 @@ struct native_stream_file_test
         std::string data = "fallback";
         temp_file tmp("native_sf_fb_", data);
 
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_stream_file<Backend> f(ioc);
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 

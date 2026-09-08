@@ -56,7 +56,7 @@ struct native_resume_cancel_test
 {
     void testTcpPreStopped()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto ex       = ioc.get_executor();
         auto [s1, s2] = test::make_socket_pair<
             native_tcp_socket<Backend>,
@@ -90,7 +90,7 @@ struct native_resume_cancel_test
 
     void testTcpStopAfterDataBuffered()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto ex       = ioc.get_executor();
         auto [s1, s2] = test::make_socket_pair<
             native_tcp_socket<Backend>,
@@ -127,7 +127,7 @@ struct native_resume_cancel_test
 
     void testTcpAcceptorPreStopped()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto ex = ioc.get_executor();
 
         native_tcp_acceptor<Backend> acc(ioc);
@@ -159,7 +159,7 @@ struct native_resume_cancel_test
 
     void testUdpPreStopped()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto ex = ioc.get_executor();
 
         native_udp_socket<Backend> s1(ioc), s2(ioc);
@@ -217,7 +217,7 @@ struct native_resume_cancel_test
     // sockets; no other suite drives a file op with a stopped token.
     void testFileResumeCancel()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto ex   = ioc.get_executor();
         auto rp   = std::filesystem::temp_directory_path() / "corosio_rc_r.tmp";
         auto wp   = std::filesystem::temp_directory_path() / "corosio_rc_w.tmp";
@@ -263,7 +263,7 @@ struct native_resume_cancel_test
 #if BOOST_COROSIO_POSIX
     void testLocalStreamPreStopped()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto ex = ioc.get_executor();
 
         native_local_stream_socket<Backend> a(ioc), b(ioc);
@@ -300,7 +300,7 @@ struct native_resume_cancel_test
 
     void testLocalStreamAcceptorPreStopped()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto ex = ioc.get_executor();
 
         test::temp_socket_dir tmp;
@@ -333,7 +333,7 @@ struct native_resume_cancel_test
 
     void testLocalDatagramPreStopped()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto ex = ioc.get_executor();
 
         test::temp_socket_dir tmp1;

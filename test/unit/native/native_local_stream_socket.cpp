@@ -83,14 +83,14 @@ struct native_local_stream_socket_test
 
     void testConstruct()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_stream_socket<Backend> s(ioc);
         BOOST_TEST_EQ(s.is_open(), false);
     }
 
     void testOpen()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_stream_socket<Backend> s(ioc);
         BOOST_TEST(!s.open());
         BOOST_TEST(s.is_open());
@@ -100,7 +100,7 @@ struct native_local_stream_socket_test
 
     void testPolymorphicSlice()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_stream_socket<Backend> s(ioc);
         BOOST_TEST(!s.open());
         local_stream_socket& base = s;
@@ -109,7 +109,7 @@ struct native_local_stream_socket_test
 
     void testConnectAcceptReadWrite()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         test::temp_socket_dir tmp;
         auto path = tmp.path();
 
@@ -156,7 +156,7 @@ struct native_local_stream_socket_test
 
     void testMoveAccept()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         test::temp_socket_dir tmp;
         auto path = tmp.path();
 
@@ -202,7 +202,7 @@ struct native_local_stream_socket_test
 
     void testVirtualDispatchFallback()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         test::temp_socket_dir tmp;
         auto path = tmp.path();
 
@@ -253,7 +253,7 @@ struct native_local_stream_socket_test
     // wait_type::write resolves without parking on every backend.
     void testSocketWait()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto       ex   = ioc.get_executor();
         test::temp_socket_dir tmp;
         auto       path = tmp.path();
@@ -298,7 +298,7 @@ struct native_local_stream_socket_test
     // wait_type::read resolves once a client connects.
     void testAcceptorWait()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto       ex   = ioc.get_executor();
         test::temp_socket_dir tmp;
         auto       path = tmp.path();
@@ -333,7 +333,7 @@ struct native_local_stream_socket_test
 
     void testMovedFromValueAcceptThrows()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_stream_acceptor<Backend> a(ioc);
         native_local_stream_acceptor<Backend> b(std::move(a));
 
@@ -353,7 +353,7 @@ struct native_local_stream_socket_test
     {
         // Accepts on a closed acceptor complete with
         // bad_file_descriptor instead of throwing.
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_stream_acceptor<Backend> acc(ioc);
         native_local_stream_socket<Backend> peer(ioc);
 
@@ -373,7 +373,7 @@ struct native_local_stream_socket_test
 
     void testConnectAutoOpens()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto ex   = ioc.get_executor();
         // temp dir exists, but the socket file inside it does not
         test::temp_socket_dir tmp;
@@ -405,7 +405,7 @@ struct native_local_stream_socket_test
     // bad_file_descriptor instead of dispatching.
     void testSocketClosedOpsComplete()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_stream_socket<Backend> s(ioc);
 
         bool done = false;
@@ -433,7 +433,7 @@ struct native_local_stream_socket_test
 
     void testAcceptorWaitOnClosed()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_stream_acceptor<Backend> acc(ioc);
 
         std::error_code wait_ec;
