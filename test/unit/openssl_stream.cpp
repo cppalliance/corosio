@@ -18,9 +18,9 @@
 
 #ifdef BOOST_COROSIO_HAS_OPENSSL
 
-#include <filesystem>
+#include "temp_path.hpp"
+
 #include <fstream>
-#include <random>
 
 namespace boost::corosio {
 
@@ -145,10 +145,8 @@ struct openssl_stream_test
         // run concurrently, and a shared path would let one process remove
         // the CA file while another loads it, emptying the trust store and
         // failing the handshake.
-        auto dir = std::filesystem::temp_directory_path() /
-            ("corosio_test_capath_" +
-                std::to_string(std::random_device{}()));
-        std::filesystem::create_directories(dir);
+        temp_dir capath("corosio_test_capath_");
+        auto const& dir = capath.path;
         auto ca_file = dir / "d13e2296.0"; // subject hash of ca_cert_pem
         {
             std::ofstream out(ca_file, std::ios::binary);
@@ -164,8 +162,6 @@ struct openssl_stream_test
             auto server_ctx = make_server_context();
             run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
         }
-
-        std::filesystem::remove_all(dir);
     }
 
     // One handshake attempt over a mocket pair against a server

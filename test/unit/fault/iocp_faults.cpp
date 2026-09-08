@@ -22,7 +22,7 @@
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
-#include <boost/corosio/test/temp_path.hpp>
+#include "temp_path.hpp"
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/continuation.hpp>

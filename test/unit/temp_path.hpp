@@ -14,9 +14,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 namespace boost::corosio::test {
@@ -106,6 +108,104 @@ public:
 
 private:
     std::filesystem::path dir_;
+};
+
+namespace detail {
+
+// A unique filename: `prefix` plus 64 bits of entropy (a one-time
+// random seed XORed with a process-wide atomic counter). Enough to
+// avoid collisions between parallel test runs — including the separate
+// per-backend ctest processes of one suite — without a retry loop.
+inline std::string
+unique_temp_name(std::string_view prefix)
+{
+    static std::uint64_t const seed = [] {
+        std::random_device rd;
+        return (static_cast<std::uint64_t>(rd()) << 32) |
+               static_cast<std::uint64_t>(rd());
+    }();
+    static std::atomic<std::uint64_t> counter{0};
+
+    auto const tag = seed ^ counter.fetch_add(1, std::memory_order_relaxed);
+    char buf[24];
+    std::snprintf(
+        buf, sizeof(buf), "%016llx", static_cast<unsigned long long>(tag));
+    return std::string(prefix) + buf;
+}
+
+} // namespace detail
+
+/** RAII unique regular temp file, removed on destruction.
+
+    Use this instead of a fixed name under `temp_directory_path()`: the
+    per-backend variants of a suite run as separate ctest processes, and
+    a shared name lets one remove or truncate the file while another is
+    opening it. The name carries process-safe entropy (see
+    @ref detail::unique_temp_name).
+
+    Construct with a prefix alone to reserve a unique path *without*
+    creating the file (for exclusive-create tests); add contents to
+    create it. The destructor removes the file if present.
+*/
+class temp_file
+{
+public:
+    /// The reserved unique path.
+    std::filesystem::path path;
+
+    explicit temp_file(std::string_view prefix = "corosio_test_")
+        : path(std::filesystem::temp_directory_path() /
+               detail::unique_temp_name(prefix))
+    {
+    }
+
+    temp_file(std::string_view prefix, std::string_view contents)
+        : temp_file(prefix)
+    {
+        std::ofstream ofs(path, std::ios::binary);
+        ofs.write(
+            contents.data(), static_cast<std::streamsize>(contents.size()));
+    }
+
+    ~temp_file()
+    {
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+    }
+
+    temp_file(temp_file const&)            = delete;
+    temp_file& operator=(temp_file const&) = delete;
+
+    /// The path as a string, for APIs taking a filename.
+    std::string str() const { return path.string(); }
+};
+
+/** RAII unique temp directory, removed recursively on destruction.
+
+    Like @ref temp_file but for a directory (e.g. an OpenSSL/WolfSSL CA
+    path holding one or more PEM files). Created on construction.
+*/
+class temp_dir
+{
+public:
+    /// The created unique directory.
+    std::filesystem::path path;
+
+    explicit temp_dir(std::string_view prefix = "corosio_test_dir_")
+        : path(std::filesystem::temp_directory_path() /
+               detail::unique_temp_name(prefix))
+    {
+        std::filesystem::create_directories(path);
+    }
+
+    ~temp_dir()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(path, ec);
+    }
+
+    temp_dir(temp_dir const&)            = delete;
+    temp_dir& operator=(temp_dir const&) = delete;
 };
 
 } // namespace boost::corosio::test

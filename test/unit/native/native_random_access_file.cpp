@@ -16,54 +16,19 @@
 #include <boost/capy/task.hpp>
 
 #include <cstring>
-#include <filesystem>
 #include <fstream>
-#include <random>
 #include <string>
 #include <type_traits>
 #include <utility>
+
+#include "temp_path.hpp"
 
 #include "context.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
 
-namespace {
-
-struct temp_file
-{
-    std::filesystem::path path;
-
-    explicit temp_file(std::string_view prefix = "corosio_native_raf_")
-    {
-        // Per-process random_device-seeded RNG so concurrent test
-        // processes (e.g. ctest --parallel running .epoll and .select
-        // variants of the same suite) don't collide on identical paths.
-        static thread_local std::mt19937_64 gen{std::random_device{}()};
-        path = std::filesystem::temp_directory_path()
-             / (std::string(prefix) + std::to_string(gen()));
-    }
-
-    temp_file(std::string_view prefix, std::string_view contents)
-        : temp_file(prefix)
-    {
-        std::ofstream ofs(path, std::ios::binary);
-        ofs.write(
-            contents.data(),
-            static_cast<std::streamsize>(contents.size()));
-    }
-
-    ~temp_file()
-    {
-        std::error_code ec;
-        std::filesystem::remove(path, ec);
-    }
-
-    temp_file(temp_file const&)            = delete;
-    temp_file& operator=(temp_file const&) = delete;
-};
-
-} // namespace
+using test::temp_file;
 
 template<auto Backend>
 struct native_random_access_file_test

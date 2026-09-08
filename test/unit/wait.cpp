@@ -23,7 +23,7 @@
 #include <boost/corosio/udp_socket.hpp>
 
 #include <boost/corosio/test/socket_pair.hpp>
-#include <boost/corosio/test/temp_path.hpp>
+#include "temp_path.hpp"
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>

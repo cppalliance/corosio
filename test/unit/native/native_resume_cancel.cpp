@@ -32,7 +32,6 @@
 #include <boost/capy/task.hpp>
 
 #include <filesystem>
-#include <fstream>
 #include <stop_token>
 #include <system_error>
 
@@ -42,11 +41,10 @@
 #include <boost/corosio/native/native_local_datagram_socket.hpp>
 #include <boost/corosio/native/native_local_stream_acceptor.hpp>
 #include <boost/corosio/native/native_local_stream_socket.hpp>
-
-#include <boost/corosio/test/temp_path.hpp>
 #endif
 
 #include "context.hpp"
+#include "temp_path.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -219,10 +217,10 @@ struct native_resume_cancel_test
     {
         native_io_context<Backend> ioc;
         auto ex   = ioc.get_executor();
-        auto rp   = std::filesystem::temp_directory_path() / "corosio_rc_r.tmp";
-        auto wp   = std::filesystem::temp_directory_path() / "corosio_rc_w.tmp";
-        { std::ofstream(rp) << "hello"; }
-        { std::ofstream w(wp); }
+        test::temp_file rf("corosio_rc_r_", "hello");
+        test::temp_file wf("corosio_rc_w_", "");
+        auto const rp = rf.path;
+        auto const wp = wf.path;
 
         native_stream_file<Backend> sfr(ioc), sfw(ioc);
         native_random_access_file<Backend> rfr(ioc), rfw(ioc);
@@ -255,9 +253,6 @@ struct native_resume_cancel_test
         capy::run_async(ex, ss.get_token())(driver());
         ioc.run();
         BOOST_TEST_EQ(canceled, 4);
-        std::error_code rm;
-        std::filesystem::remove(rp, rm);
-        std::filesystem::remove(wp, rm);
     }
 
 #if BOOST_COROSIO_POSIX

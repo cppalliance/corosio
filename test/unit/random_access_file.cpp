@@ -35,7 +35,6 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
-#include <random>
 #include <atomic>
 #include <limits>
 #include <stop_token>
@@ -44,6 +43,7 @@
 #include <tuple>
 
 #include <boost/corosio/detail/platform.hpp>
+#include "temp_path.hpp"
 
 #if BOOST_COROSIO_POSIX
 #include <fcntl.h>
@@ -54,47 +54,7 @@
 
 namespace boost::corosio {
 
-namespace {
-
-// Unique across concurrently running per-backend test processes;
-// unseeded std::rand() yields the same sequence in every process.
-inline std::string
-unique_path_suffix()
-{
-    static unsigned const seed = std::random_device{}();
-    static std::atomic<unsigned> counter{0};
-    return std::to_string(seed) + "_"
-        + std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
-}
-
-struct temp_file
-{
-    std::filesystem::path path;
-
-    temp_file(std::string_view prefix = "corosio_raf_test_")
-    {
-        path = std::filesystem::temp_directory_path()
-             / (std::string(prefix) + unique_path_suffix());
-    }
-
-    temp_file(std::string_view prefix, std::string_view contents)
-        : temp_file(prefix)
-    {
-        std::ofstream ofs(path, std::ios::binary);
-        ofs.write(contents.data(), static_cast<std::streamsize>(contents.size()));
-    }
-
-    ~temp_file()
-    {
-        std::error_code ec;
-        std::filesystem::remove(path, ec);
-    }
-
-    temp_file(temp_file const&) = delete;
-    temp_file& operator=(temp_file const&) = delete;
-};
-
-} // namespace
+using test::temp_file;
 
 template<auto Backend>
 struct random_access_file_test

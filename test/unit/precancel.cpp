@@ -41,7 +41,7 @@
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 
-#include <boost/corosio/test/temp_path.hpp>
+#include "temp_path.hpp"
 #endif
 
 #include "context.hpp"
