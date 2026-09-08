@@ -22,7 +22,7 @@ macro(corosio_resolve_deps)
     if(BOOST_COROSIO_IS_ROOT
             AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/cmake/include/BoostRoot.cmake")
         set(BOOST_INCLUDE_LIBRARIES capy)
-        if(BOOST_COROSIO_BUILD_PERF)
+        if(BOOST_COROSIO_BUILD_BENCH)
             list(APPEND BOOST_INCLUDE_LIBRARIES asio)
         endif()
         set(BOOST_EXCLUDE_LIBRARIES corosio)

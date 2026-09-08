@@ -11,7 +11,7 @@
 #define BOOST_COROSIO_BENCH_SUITE_HPP
 
 #include "benchmark.hpp"
-#include "../../common/perf.hpp"
+#include "perf.hpp"
 
 #include <atomic>
 #include <chrono>

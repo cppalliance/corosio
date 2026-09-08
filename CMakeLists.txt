@@ -30,7 +30,7 @@ if(BOOST_COROSIO_IS_ROOT AND BUILD_SHARED_LIBS)
 endif()
 
 option(BOOST_COROSIO_BUILD_TESTS "Build boost::corosio tests" ${BUILD_TESTING})
-option(BOOST_COROSIO_BUILD_PERF "Build boost::corosio performance tools" ${BOOST_COROSIO_IS_ROOT})
+option(BOOST_COROSIO_BUILD_BENCH "Build boost::corosio benchmarks" ${BOOST_COROSIO_IS_ROOT})
 option(BOOST_COROSIO_BUILD_EXAMPLES "Build boost::corosio examples" ${BOOST_COROSIO_IS_ROOT})
 option(BOOST_COROSIO_MRDOCS_BUILD "Building for MrDocs documentation generation" OFF)
 
@@ -124,6 +124,6 @@ if (BOOST_COROSIO_BUILD_EXAMPLES)
     add_subdirectory(example)
 endif ()
 
-if (BOOST_COROSIO_BUILD_PERF)
-    add_subdirectory(perf)
+if (BOOST_COROSIO_BUILD_BENCH)
+    add_subdirectory(bench)
 endif ()

@@ -20,7 +20,7 @@
 #include <cstring>
 #include <iostream>
 
-#include "../common/backend_selection.hpp"
+#include "common/backend_selection.hpp"
 #include "common/suite.hpp"
 
 namespace {

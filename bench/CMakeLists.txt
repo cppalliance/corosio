@@ -7,6 +7,19 @@
 # Official repository: https://github.com/cppalliance/corosio
 #
 
+# Find Boost.Asio for comparison benchmarks (sibling or system-installed).
+# This lives here (not in the root CMakeLists.txt) because the Boost
+# superproject's dependency scanner greps Boost::* from the root file
+# and would pull in Asio's full transitive dependency tree.
+if(NOT TARGET Boost::asio)
+    find_package(Boost 1.84 QUIET COMPONENTS asio)
+    if(TARGET Boost::asio)
+        message(STATUS "Found system Boost.Asio -- comparison benchmarks enabled")
+    else()
+        message(STATUS "Boost.Asio not found -- comparison benchmarks disabled")
+    endif()
+endif()
+
 # Check LTO support for benchmarks
 # MinGW GCC LTO mishandles virtual thunks from multiple inheritance,
 # discarding COMDAT sections that contain needed thunk relocations.
@@ -40,7 +53,7 @@ target_link_libraries(corosio_bench
 target_compile_options(corosio_bench PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/EHsc>)
 
-set_property(TARGET corosio_bench PROPERTY FOLDER "perf/benchmarks")
+set_property(TARGET corosio_bench PROPERTY FOLDER "bench")
 
 if (COROSIO_BENCH_LTO_SUPPORTED)
     set_property(TARGET corosio_bench PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)

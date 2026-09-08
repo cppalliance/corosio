@@ -9,7 +9,7 @@
 
 #include "benchmarks.hpp"
 #include <boost/corosio/detail/platform.hpp>
-#include "../../common/native_includes.hpp"
+#include "../common/native_includes.hpp"
 
 #if BOOST_COROSIO_POSIX
 

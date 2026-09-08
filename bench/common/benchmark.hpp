@@ -10,7 +10,7 @@
 #ifndef BOOST_COROSIO_BENCH_RESULT_HPP
 #define BOOST_COROSIO_BENCH_RESULT_HPP
 
-#include "../../common/perf.hpp"
+#include "perf.hpp"
 
 #include <chrono>
 #include <ctime>
