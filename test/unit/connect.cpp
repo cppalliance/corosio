@@ -82,15 +82,16 @@ struct connect_test
         auto task = [&]() -> capy::task<> {
             std::vector<endpoint> endpoints;
             auto [ec, ep] = co_await corosio::connect(sock, endpoints);
-            result_ec = ec;
-            result_ep = ep;
-            done      = true;
+            result_ec     = ec;
+            result_ep     = ep;
+            done          = true;
         };
         capy::run_async(ioc.get_executor())(task());
         ioc.run();
 
         BOOST_TEST(done);
-        BOOST_TEST(result_ec ==
+        BOOST_TEST(
+            result_ec ==
             std::make_error_code(std::errc::no_such_device_or_address));
         BOOST_TEST(result_ep == endpoint());
     }
@@ -112,9 +113,9 @@ struct connect_test
             std::vector<endpoint> endpoints{
                 endpoint(ipv4_address::loopback(), port)};
             auto [ec, ep] = co_await corosio::connect(client, endpoints);
-            connect_ec   = ec;
-            connected_ep = ep;
-            connect_done = true;
+            connect_ec    = ec;
+            connected_ep  = ep;
+            connect_done  = true;
         };
 
         auto accept_task = [&]() -> capy::task<> {
@@ -151,9 +152,9 @@ struct connect_test
                 endpoint(ipv4_address::loopback(), bad_port),
                 endpoint(ipv4_address::loopback(), good_port)};
             auto [ec, ep] = co_await corosio::connect(client, endpoints);
-            connect_ec   = ec;
-            connected_ep = ep;
-            connect_done = true;
+            connect_ec    = ec;
+            connected_ep  = ep;
+            connect_done  = true;
         };
 
         auto accept_task = [&]() -> capy::task<> {
@@ -186,9 +187,9 @@ struct connect_test
                 endpoint(ipv4_address::loopback(), bad1),
                 endpoint(ipv4_address::loopback(), bad2)};
             auto [ec, ep] = co_await corosio::connect(client, endpoints);
-            connect_ec   = ec;
-            connected_ep = ep;
-            done = true;
+            connect_ec    = ec;
+            connected_ep  = ep;
+            done          = true;
         };
         capy::run_async(ioc.get_executor())(task());
         ioc.run();
@@ -196,7 +197,8 @@ struct connect_test
         BOOST_TEST(done);
         BOOST_TEST(connect_ec);
         // Distinguish from the empty-range case.
-        BOOST_TEST(connect_ec !=
+        BOOST_TEST(
+            connect_ec !=
             std::make_error_code(std::errc::no_such_device_or_address));
         BOOST_TEST(connected_ep == endpoint());
     }
@@ -205,8 +207,8 @@ struct connect_test
     {
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        auto port    = open_listener(acc, tcp::v6());
-        auto bad_v4  = pick_closed_port(ioc);
+        auto port   = open_listener(acc, tcp::v6());
+        auto bad_v4 = pick_closed_port(ioc);
 
         tcp_socket client(ioc);
         tcp_socket peer(ioc);
@@ -220,9 +222,9 @@ struct connect_test
                 endpoint(ipv4_address::loopback(), bad_v4),
                 endpoint(ipv6_address::loopback(), port)};
             auto [ec, ep] = co_await corosio::connect(client, endpoints);
-            connect_ec   = ec;
-            connected_ep = ep;
-            connect_done = true;
+            connect_ec    = ec;
+            connected_ep  = ep;
+            connect_done  = true;
         };
 
         auto accept_task = [&]() -> capy::task<> {
@@ -255,17 +257,17 @@ struct connect_test
             std::vector<endpoint> endpoints{
                 endpoint(ipv4_address::loopback(), port)};
             auto [ec, ep] = co_await corosio::connect(
-                client,
-                endpoints,
+                client, endpoints,
                 [](std::error_code const&, endpoint const&) { return false; });
             connect_ec   = ec;
             connected_ep = ep;
-            done = true;
+            done         = true;
         };
 
         // Must also cancel the acceptor since nothing will ever connect.
         auto cancel_task = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             acc.cancel();
         };
 
@@ -274,7 +276,8 @@ struct connect_test
         ioc.run();
 
         BOOST_TEST(done);
-        BOOST_TEST(connect_ec ==
+        BOOST_TEST(
+            connect_ec ==
             std::make_error_code(std::errc::no_such_device_or_address));
         BOOST_TEST(connected_ep == endpoint());
     }
@@ -291,7 +294,7 @@ struct connect_test
 
         std::error_code connect_ec{};
         endpoint connected_ep;
-        int cond_calls = 0;
+        int cond_calls    = 0;
         bool connect_done = false;
 
         auto connect_task = [&]() -> capy::task<> {
@@ -300,15 +303,14 @@ struct connect_test
                 endpoint(ipv4_address::loopback(), good_port)};
             // Skip the first (bad) endpoint, allow the second.
             auto cond = [&, good_port](
-                std::error_code const&, endpoint const& e) {
+                            std::error_code const&, endpoint const& e) {
                 ++cond_calls;
                 return e.port() == good_port;
             };
-            auto [ec, ep] = co_await corosio::connect(
-                client, endpoints, cond);
-            connect_ec   = ec;
-            connected_ep = ep;
-            connect_done = true;
+            auto [ec, ep] = co_await corosio::connect(client, endpoints, cond);
+            connect_ec    = ec;
+            connected_ep  = ep;
+            connect_done  = true;
         };
 
         auto accept_task = [&]() -> capy::task<> {
@@ -373,8 +375,8 @@ struct connect_test
             endpoint(ipv4_address::loopback(), bad)};
 
         std::error_code connect_ec{};
-        bool connect_done     = false;
-        bool iter_is_end      = false;
+        bool connect_done = false;
+        bool iter_is_end  = false;
 
         auto task = [&]() -> capy::task<> {
             auto [ec, it] = co_await corosio::connect(
@@ -408,13 +410,15 @@ struct connect_test
         bool connect_done = false;
 
         auto connect_task = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec, ep] = co_await corosio::connect(client, endpoints);
-            connect_ec    = ec;
-            connect_done  = true;
+            [[maybe_unused]] auto [ec, ep] =
+                co_await corosio::connect(client, endpoints);
+            connect_ec   = ec;
+            connect_done = true;
         };
 
         auto cancel_task = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             client.cancel();
         };
 

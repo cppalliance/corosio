@@ -26,7 +26,8 @@ namespace boost::corosio::test::fault {
 thread_local arm_set tls_arms;
 std::atomic<slot*> global_slot{nullptr};
 
-[[noreturn]] void die(char const* msg) noexcept
+[[noreturn]] void
+die(char const* msg) noexcept
 {
     std::fputs(msg, stderr);
     std::fputc('\n', stderr);
@@ -40,26 +41,28 @@ slot global_storage;
 
 // Single place that claims an arm, shared by every constructor.
 // Returns the arm index, or -1 for the process-wide slot.
-int arm(slot desired, bool global) noexcept
+int
+arm(slot desired, bool global) noexcept
 {
     desired.owned = true;
     desired.armed = true;
-    if(!global)
+    if (!global)
     {
-        for(int i = 0; i < arm_set::max_arms; ++i)
+        for (int i = 0; i < arm_set::max_arms; ++i)
         {
-            if(tls_arms.arms[i].owned)
+            if (tls_arms.arms[i].owned)
                 continue;
             tls_arms.arms[i] = desired;
             return i;
         }
         char msg[96];
-        std::snprintf(msg, sizeof(msg),
+        std::snprintf(
+            msg, sizeof(msg),
             "fault_scope: all %d fault arms are in use on this thread",
             arm_set::max_arms);
         die(msg);
     }
-    if(global_slot.load(std::memory_order_acquire))
+    if (global_slot.load(std::memory_order_acquire))
         die("fault_scope: a process-wide fault is already armed");
     global_storage = desired;
     global_slot.store(&global_storage, std::memory_order_release);
@@ -68,11 +71,12 @@ int arm(slot desired, bool global) noexcept
 
 } // namespace
 
-slot* armed_arm(sys which) noexcept
+slot*
+armed_arm(sys which) noexcept
 {
-    for(auto& s : tls_arms.arms)
+    for (auto& s : tls_arms.arms)
     {
-        if(s.armed && s.which == which)
+        if (s.armed && s.which == which)
             return &s;
     }
     return nullptr;
@@ -90,40 +94,42 @@ namespace {
 // through `matched` whether this thread watches `which` at all, which
 // is what keeps the process-wide slot a fallback rather than a second
 // chance.
-slot* claim_arm(sys which, bool short_mode, bool& matched) noexcept
+slot*
+claim_arm(sys which, bool short_mode, bool& matched) noexcept
 {
     slot* won = nullptr;
-    for(auto& s : tls_arms.arms)
+    for (auto& s : tls_arms.arms)
     {
-        if(!s.armed || s.which != which)
+        if (!s.armed || s.which != which)
             continue;
         matched = true;
-        if(s.short_mode != short_mode)
+        if (s.short_mode != short_mode)
             continue;
-        if(++s.seen != s.nth)
+        if (++s.seen != s.nth)
             continue;
-        if(won)
+        if (won)
         {
             --s.seen;
             continue;
         }
         s.armed = false;
         s.fired = true;
-        won = &s;
+        won     = &s;
     }
     return won;
 }
 
 // The process-wide slot, if it is armed for `which` in this mode.
-slot* claim_global(sys which, bool short_mode) noexcept
+slot*
+claim_global(sys which, bool short_mode) noexcept
 {
     slot* p = global_slot.load(std::memory_order_acquire);
-    if(!p)
+    if (!p)
         return nullptr;
     auto& s = *p;
-    if(!s.armed || s.which != which || s.short_mode != short_mode)
+    if (!s.armed || s.which != which || s.short_mode != short_mode)
         return nullptr;
-    if(++s.seen != s.nth)
+    if (++s.seen != s.nth)
         return nullptr;
     s.armed = false;
     s.fired = true;
@@ -132,25 +138,27 @@ slot* claim_global(sys which, bool short_mode) noexcept
 
 } // namespace
 
-bool should_fail(sys which) noexcept
+bool
+should_fail(sys which) noexcept
 {
     bool matched = false;
-    slot* s = claim_arm(which, false, matched);
-    if(!s && !matched)
+    slot* s      = claim_arm(which, false, matched);
+    if (!s && !matched)
         s = claim_global(which, false);
-    if(!s)
+    if (!s)
         return false;
     publish_error(s->err);
     return true;
 }
 
-bool should_shorten(sys which, std::size_t& count) noexcept
+bool
+should_shorten(sys which, std::size_t& count) noexcept
 {
     bool matched = false;
-    slot* s = claim_arm(which, true, matched);
-    if(!s && !matched)
+    slot* s      = claim_arm(which, true, matched);
+    if (!s && !matched)
         s = claim_global(which, true);
-    if(!s)
+    if (!s)
         return false;
     count = s->count;
     return true;
@@ -160,9 +168,9 @@ fault_scope::fault_scope(sys which, int err, unsigned nth)
 {
     slot s;
     s.which = which;
-    s.err = err;
-    s.nth = nth;
-    idx_ = arm(s, false);
+    s.err   = err;
+    s.nth   = nth;
+    idx_    = arm(s, false);
 }
 
 fault_scope::fault_scope(sys which, int err, unsigned nth, any_thread_t)
@@ -170,37 +178,38 @@ fault_scope::fault_scope(sys which, int err, unsigned nth, any_thread_t)
 {
     slot s;
     s.which = which;
-    s.err = err;
-    s.nth = nth;
-    idx_ = arm(s, true);
+    s.err   = err;
+    s.nth   = nth;
+    idx_    = arm(s, true);
 }
 
-fault_scope::fault_scope(short_tag, sys which, std::size_t count,
-    unsigned nth, bool global)
+fault_scope::fault_scope(
+    short_tag, sys which, std::size_t count, unsigned nth, bool global)
     : global_(global)
 {
     slot s;
-    s.which = which;
-    s.count = count;
+    s.which      = which;
+    s.count      = count;
     s.short_mode = true;
-    s.nth = nth;
-    idx_ = arm(s, global);
+    s.nth        = nth;
+    idx_         = arm(s, global);
 }
 
-fault_scope fault_scope::returning(sys which, std::size_t count, unsigned nth)
+fault_scope
+fault_scope::returning(sys which, std::size_t count, unsigned nth)
 {
     return fault_scope(short_tag{}, which, count, nth, false);
 }
 
-fault_scope fault_scope::returning_any_thread(sys which, std::size_t count,
-    unsigned nth)
+fault_scope
+fault_scope::returning_any_thread(sys which, std::size_t count, unsigned nth)
 {
     return fault_scope(short_tag{}, which, count, nth, true);
 }
 
 fault_scope::~fault_scope()
 {
-    if(global_)
+    if (global_)
     {
         global_slot.store(nullptr, std::memory_order_release);
         global_storage.armed = false;
@@ -211,14 +220,16 @@ fault_scope::~fault_scope()
     tls_arms.arms[idx_].owned = false;
 }
 
-bool fault_scope::fired() const noexcept
+bool
+fault_scope::fired() const noexcept
 {
     return global_ ? global_storage.fired : tls_arms.arms[idx_].fired;
 }
 
-unsigned fault_scope::count() const noexcept
+unsigned
+fault_scope::count() const noexcept
 {
     return global_ ? global_storage.seen : tls_arms.arms[idx_].seen;
 }
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault

@@ -57,7 +57,7 @@
 namespace boost::corosio::detail {
 
 class uring_tcp_service;
-class uring_tcp_acceptor_service;  // Task 18
+class uring_tcp_acceptor_service; // Task 18
 class uring_local_stream_service;
 class uring_local_stream_acceptor_service;
 class uring_udp_service;
@@ -80,13 +80,15 @@ class uring_local_datagram_service;
 */
 class BOOST_COROSIO_DECL uring_tcp_socket final
     : public native_socket_base<
-          uring_tcp_socket, tcp_socket::implementation, endpoint>
+          uring_tcp_socket,
+          tcp_socket::implementation,
+          endpoint>
 {
     friend uring_tcp_service;
 
-    int                   family_ = AF_UNSPEC;  // cached at open_socket
-    uring_scheduler*   sched_  = nullptr;
-    [[maybe_unused]] uring_tcp_service* svc_    = nullptr;
+    int family_             = AF_UNSPEC; // cached at open_socket
+    uring_scheduler* sched_ = nullptr;
+    [[maybe_unused]] uring_tcp_service* svc_ = nullptr;
 
     // fd_ and local_endpoint_ are provided by native_socket_base (the
     // readiness/completion-agnostic socket base shared with the reactor
@@ -102,19 +104,24 @@ class BOOST_COROSIO_DECL uring_tcp_socket final
     //                   first read
     //   resolved      — local_endpoint_ is authoritative; accessor
     //                   returns the cached value
-    enum class endpoint_state : int { unresolved, lazy_pending, resolved };
-    mutable std::atomic<endpoint_state> local_endpoint_state_
-        { endpoint_state::unresolved };
+    enum class endpoint_state : int
+    {
+        unresolved,
+        lazy_pending,
+        resolved
+    };
+    mutable std::atomic<endpoint_state> local_endpoint_state_{
+        endpoint_state::unresolved};
     endpoint remote_endpoint_;
 
     // Per-fd op slots — embedded to eliminate per-call heap allocation.
     // Single-pending invariant per slot: at most one read, write, or
     // connect in flight on this socket at any time (the awaitable
     // contract).
-    uring_read_op    rd_;
-    uring_write_op   wr_;
+    uring_read_op rd_;
+    uring_write_op wr_;
     uring_connect_op conn_;
-    uring_wait_op    wait_op_;
+    uring_wait_op wait_op_;
 
     mutable detail::speculative_state spec_;
 
@@ -129,16 +136,17 @@ public:
         @param sched The io_uring scheduler owned by the context.
     */
     explicit uring_tcp_socket(
-        uring_tcp_service& svc,
-        uring_scheduler&   sched) noexcept
+        uring_tcp_service& svc, uring_scheduler& sched) noexcept
         : sched_(&sched)
         , svc_(&svc)
-    {}
+    {
+    }
 
     ~uring_tcp_socket() override
     {
         if (fd_ >= 0)
-            ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
+            ::close(
+                fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
     }
 
     // ----------------------------------------------------------------
@@ -147,28 +155,32 @@ public:
 
     std::coroutine_handle<> read_some(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        buffer_param            buffers,
-        std::stop_token         token,
-        std::error_code*        ec,
-        std::size_t*            bytes) override
+        capy::executor_ref ex,
+        buffer_param buffers,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes) override
     {
         iovec iovecs[uring_max_iov];
-        int   iovec_count = copy_to_iovec(buffers, iovecs);
-        bool stop_now  = token.stop_possible() && token.stop_requested();
-        bool empty_buf = (iovec_count == 0);
+        int iovec_count = copy_to_iovec(buffers, iovecs);
+        bool stop_now   = token.stop_possible() && token.stop_requested();
+        bool empty_buf  = (iovec_count == 0);
 
-        ssize_t n             = 0;
-        int     err           = 0;
-        bool    have_sync_res = stop_now || empty_buf;
+        ssize_t n          = 0;
+        int err            = 0;
+        bool have_sync_res = stop_now || empty_buf;
         if (!have_sync_res && spec_.may_speculate_read())
         {
-            do { n = ::readv(fd_, iovecs, iovec_count); }
+            do
+            {
+                n = ::readv(fd_, iovecs, iovec_count);
+            }
             while (n < 0 && errno == EINTR);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
-                if (n < 0) err = errno;
+                if (n < 0)
+                    err = errno;
                 // Speculative read produced a definitive answer (data
                 // or non-EAGAIN error); reset the failure streak so a
                 // burst of past EAGAINs doesn't latch perma-off when
@@ -188,15 +200,16 @@ public:
             {
                 decode_io_result(
                     ec, stop_now, err ? make_err(err) : std::error_code{},
-                    /*is_read=*/true,
-                    n < 0 ? 0u : static_cast<std::size_t>(n), empty_buf);
+                    /*is_read=*/true, n < 0 ? 0u : static_cast<std::size_t>(n),
+                    empty_buf);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 rd_.cont.h = h;
                 return dispatch_coro(ex, rd_.cont);
             }
-            rd_.prepare(h, ex, ec, bytes, fd_, sched_,
-                shared_from_this(), &spec_, buffers, token);
+            rd_.prepare(
+                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                buffers, token);
             if (stop_now)
                 rd_.cancelled.store(true, std::memory_order_release);
             else
@@ -209,8 +222,9 @@ public:
             return std::noop_coroutine();
         }
 
-        rd_.prepare(h, ex, ec, bytes, fd_, sched_,
-            shared_from_this(), &spec_, buffers, token);
+        rd_.prepare(
+            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            token);
         sched_->work_started();
         if (rd_.cancelled.load(std::memory_order_acquire))
         {
@@ -224,31 +238,35 @@ public:
 
     std::coroutine_handle<> write_some(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        buffer_param            buffers,
-        std::stop_token         token,
-        std::error_code*        ec,
-        std::size_t*            bytes) override
+        capy::executor_ref ex,
+        buffer_param buffers,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes) override
     {
         iovec iovecs[uring_max_iov];
-        int   iovec_count = copy_to_iovec(buffers, iovecs);
-        bool stop_now  = token.stop_possible() && token.stop_requested();
-        bool empty_buf = (iovec_count == 0);
+        int iovec_count = copy_to_iovec(buffers, iovecs);
+        bool stop_now   = token.stop_possible() && token.stop_requested();
+        bool empty_buf  = (iovec_count == 0);
 
-        ssize_t n             = 0;
-        int     err           = 0;
-        bool    have_sync_res = stop_now || empty_buf;
+        ssize_t n          = 0;
+        int err            = 0;
+        bool have_sync_res = stop_now || empty_buf;
         if (!have_sync_res && spec_.may_speculate_write())
         {
             msghdr msg{};
             msg.msg_iov    = iovecs;
             msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(iovec_count);
-            do { n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL); }
+            do
+            {
+                n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
+            }
             while (n < 0 && errno == EINTR);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
-                if (n < 0) err = errno;
+                if (n < 0)
+                    err = errno;
             }
             else
             {
@@ -268,8 +286,9 @@ public:
                 wr_.cont.h = h;
                 return dispatch_coro(ex, wr_.cont);
             }
-            wr_.prepare(h, ex, ec, bytes, fd_, sched_,
-                shared_from_this(), &spec_, buffers, token);
+            wr_.prepare(
+                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                buffers, token);
             if (stop_now)
                 wr_.cancelled.store(true, std::memory_order_release);
             else
@@ -282,8 +301,9 @@ public:
             return std::noop_coroutine();
         }
 
-        wr_.prepare(h, ex, ec, bytes, fd_, sched_,
-            shared_from_this(), &spec_, buffers, token);
+        wr_.prepare(
+            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            token);
         sched_->work_started();
         if (wr_.cancelled.load(std::memory_order_acquire))
         {
@@ -301,23 +321,25 @@ public:
 
     std::coroutine_handle<> connect(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        endpoint                ep,
-        std::stop_token         token,
-        std::error_code*        ec) override
+        capy::executor_ref ex,
+        endpoint ep,
+        std::stop_token token,
+        std::error_code* ec) override
     {
         bool stop_now = token.stop_possible() && token.stop_requested();
         if (stop_now)
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec) *ec = capy::error::canceled;
+                if (ec)
+                    *ec = capy::error::canceled;
                 conn_.cont.h = h;
                 return dispatch_coro(ex, conn_.cont);
             }
             conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
-            conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
-                ep, &remote_endpoint_, &local_endpoint_, token);
+            conn_.prepare(
+                h, ex, ec, fd_, sched_, shared_from_this(), ep,
+                &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
             {
@@ -330,8 +352,9 @@ public:
         // A speculative ::connect would leave the fd in EINPROGRESS and
         // a subsequent IORING_OP_CONNECT would see EALREADY — avoid.
         conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
-        conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
-            ep, &remote_endpoint_, &local_endpoint_, token);
+        conn_.prepare(
+            h, ex, ec, fd_, sched_, shared_from_this(), ep, &remote_endpoint_,
+            &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
@@ -345,20 +368,26 @@ public:
 
     std::coroutine_handle<> wait(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        wait_type               w,
-        std::stop_token         token,
-        std::error_code*        ec) override
+        capy::executor_ref ex,
+        wait_type w,
+        std::stop_token token,
+        std::error_code* ec) override
     {
         int poll_flags = 0;
         switch (w)
         {
-            case wait_type::read:  poll_flags = POLLIN;  break;
-            case wait_type::write: poll_flags = POLLOUT; break;
-            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+        case wait_type::read:
+            poll_flags = POLLIN;
+            break;
+        case wait_type::write:
+            poll_flags = POLLOUT;
+            break;
+        case wait_type::error:
+            poll_flags = POLLPRI | POLLERR | POLLHUP;
+            break;
         }
-        wait_op_.prepare(h, ex, ec, fd_, sched_,
-            shared_from_this(), poll_flags, token);
+        wait_op_.prepare(
+            h, ex, ec, fd_, sched_, shared_from_this(), poll_flags, token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -387,8 +416,8 @@ public:
         // number (same reasoning as close_socket).
         if (fd_ >= 0)
             sched_->cancel_and_flush(fd_);
-        int fd = fd_;
-        fd_    = -1;
+        int fd           = fd_;
+        fd_              = -1;
         local_endpoint_  = endpoint{};
         remote_endpoint_ = endpoint{};
         local_endpoint_state_.store(
@@ -429,15 +458,14 @@ public:
         // syscall. The mutable update races benignly with concurrent
         // readers — both threads would compute the same value from
         // the same fd.
-        if (local_endpoint_state_.load(std::memory_order_acquire)
-            == endpoint_state::lazy_pending
-            && fd_ >= 0)
+        if (local_endpoint_state_.load(std::memory_order_acquire) ==
+                endpoint_state::lazy_pending &&
+            fd_ >= 0)
         {
             sockaddr_storage local{};
             socklen_t len = sizeof(local);
-            if (::getsockname(
-                    fd_,
-                    reinterpret_cast<sockaddr*>(&local), &len) == 0)
+            if (::getsockname(fd_, reinterpret_cast<sockaddr*>(&local), &len) ==
+                0)
                 local_endpoint_ = sockaddr_to_endpoint(local);
             local_endpoint_state_.store(
                 endpoint_state::resolved, std::memory_order_release);
@@ -466,10 +494,14 @@ public:
 */
 class BOOST_COROSIO_DECL uring_tcp_service final
     : public uring_socket_service_base<
-          uring_tcp_service, tcp_service, uring_tcp_socket>
+          uring_tcp_service,
+          tcp_service,
+          uring_tcp_socket>
 {
     using base_service = uring_socket_service_base<
-        uring_tcp_service, tcp_service, uring_tcp_socket>;
+        uring_tcp_service,
+        tcp_service,
+        uring_tcp_socket>;
 
 public:
     /// Identifies this service for `execution_context` lookup.
@@ -480,9 +512,9 @@ public:
         @param ctx The owning execution context. The io_uring scheduler
             must already be registered.
     */
-    explicit uring_tcp_service(capy::execution_context& ctx)
-        : base_service(ctx)
-    {}
+    explicit uring_tcp_service(capy::execution_context& ctx) : base_service(ctx)
+    {
+    }
 
     // construct / destroy / shutdown / close / scheduler() are inherited
     // from uring_socket_service_base. The methods below are TCP-specific.
@@ -499,11 +531,13 @@ public:
     */
     std::error_code open_socket(
         tcp_socket::implementation& impl,
-        int family, int type, int protocol) override
+        int family,
+        int type,
+        int protocol) override
     {
         auto& sock = static_cast<uring_tcp_socket&>(impl);
-        int fd = ::socket(
-            family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
+        int fd =
+            ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
         // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
@@ -537,11 +571,10 @@ public:
         @return Error code on failure, empty on success.
     */
     std::error_code assign_socket(
-        tcp_socket::implementation& impl,
-        native_handle_type fd) override
+        tcp_socket::implementation& impl, native_handle_type fd) override
     {
         auto& sock = static_cast<uring_tcp_socket&>(impl);
-        int nfd = static_cast<int>(fd);
+        int nfd    = static_cast<int>(fd);
         if (nfd >= 0 && nfd == sock.fd_)
             return std::make_error_code(std::errc::invalid_argument);
         if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, true))
@@ -559,8 +592,8 @@ public:
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
-        if (::getsockname(sock.fd_,
-                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+        if (::getsockname(
+                sock.fd_, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
         {
             sock.local_endpoint_ = sockaddr_to_endpoint(local);
             sock.family_         = local.ss_family;
@@ -571,8 +604,9 @@ public:
 
         sockaddr_storage remote{};
         socklen_t remote_len = sizeof(remote);
-        if (::getpeername(sock.fd_,
-                reinterpret_cast<sockaddr*>(&remote), &remote_len) == 0)
+        if (::getpeername(
+                sock.fd_, reinterpret_cast<sockaddr*>(&remote), &remote_len) ==
+            0)
             sock.remote_endpoint_ = sockaddr_to_endpoint(remote);
 
         return {};
@@ -584,22 +618,19 @@ public:
         @param ep   The local endpoint to bind to.
         @return Error code on failure, empty on success.
     */
-    std::error_code bind_socket(
-        tcp_socket::implementation& impl, endpoint ep) override
+    std::error_code
+    bind_socket(tcp_socket::implementation& impl, endpoint ep) override
     {
         auto& sock = static_cast<uring_tcp_socket&>(impl);
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(ep, addr);
-        if (::bind(
-                sock.fd_,
-                reinterpret_cast<sockaddr*>(&addr), len) < 0)
+        if (::bind(sock.fd_, reinterpret_cast<sockaddr*>(&addr), len) < 0)
             return make_err(errno);
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
         if (::getsockname(
-                sock.fd_,
-                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+                sock.fd_, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             sock.local_endpoint_ = sockaddr_to_endpoint(local);
         sock.local_endpoint_state_.store(
             uring_tcp_socket::endpoint_state::resolved,
@@ -620,7 +651,7 @@ public:
     uring_tcp_socket* adopt_fd(int fd, endpoint const& peer)
     {
         auto p = std::make_shared<uring_tcp_socket>(*this, *sched_);
-        p->fd_              = fd;
+        p->fd_ = fd;
         p->remote_endpoint_ = peer;
         // Mark the local endpoint as authoritative-but-unresolved.
         // The accessor will fetch it via getsockname on first call.
@@ -666,16 +697,17 @@ class BOOST_COROSIO_DECL uring_tcp_acceptor final
 public:
     explicit uring_tcp_acceptor(
         uring_tcp_acceptor_service&,
-        uring_scheduler&   sched,
+        uring_scheduler& sched,
         uring_tcp_service& peer_svc) noexcept
         : base_type(sched, peer_svc)
-    {}
+    {
+    }
 
     std::coroutine_handle<> accept(
-        std::coroutine_handle<>     h,
-        capy::executor_ref          ex,
-        std::stop_token             token,
-        std::error_code*            ec,
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        std::stop_token token,
+        std::error_code* ec,
         io_object::implementation** impl_out) override
     {
         base_type::dispatch_or_queue(h, ex, token, ec, impl_out);
@@ -684,10 +716,10 @@ public:
 
     std::coroutine_handle<> wait(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        wait_type               w,
-        std::stop_token         token,
-        std::error_code*        ec) override
+        capy::executor_ref ex,
+        wait_type w,
+        std::stop_token token,
+        std::error_code* ec) override
     {
         // Closed-object contract: complete with bad_file_descriptor
         // instead of parking a waiter no accept machinery will signal.
@@ -725,8 +757,9 @@ public:
         }
         // Errors are not consumed by the accept machinery, so the
         // error wait still polls the descriptor.
-        wait_op_.prepare(h, ex, ec, this->fd_, this->sched_,
-            this->shared_from_this(), POLLPRI | POLLERR | POLLHUP, token);
+        wait_op_.prepare(
+            h, ex, ec, this->fd_, this->sched_, this->shared_from_this(),
+            POLLPRI | POLLERR | POLLHUP, token);
         this->sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -739,8 +772,10 @@ public:
     }
 
     static io_object::implementation* adopt_thunk(
-        void* peer_service, int fd,
-        sockaddr_storage const& peer, socklen_t /*peer_len*/) noexcept
+        void* peer_service,
+        int fd,
+        sockaddr_storage const& peer,
+        socklen_t /*peer_len*/) noexcept
     {
         auto* svc = static_cast<uring_tcp_service*>(peer_service);
         return svc->adopt_fd(fd, sockaddr_to_endpoint(peer));
@@ -776,7 +811,8 @@ public:
     explicit uring_tcp_acceptor_service(capy::execution_context& ctx)
         : sched_(&ctx.use_service<uring_scheduler>())
         , peer_svc_(&ctx.use_service<uring_tcp_service>())
-    {}
+    {
+    }
 
     void shutdown() override
     {
@@ -795,8 +831,8 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto p   = std::make_shared<uring_tcp_acceptor>(
-            *this, *sched_, *peer_svc_);
+        auto p =
+            std::make_shared<uring_tcp_acceptor>(*this, *sched_, *peer_svc_);
         auto* raw = p.get();
         std::lock_guard lk(mutex_);
         impls_.emplace(raw, std::move(p));
@@ -852,8 +888,8 @@ public:
         int protocol) override
     {
         auto& acc = static_cast<uring_tcp_acceptor&>(impl);
-        int fd = ::socket(
-            family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
+        int fd =
+            ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
         // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
@@ -885,7 +921,7 @@ public:
         tcp_acceptor::implementation& impl, native_handle_type fd) override
     {
         auto& acc = static_cast<uring_tcp_acceptor&>(impl);
-        int   nfd = static_cast<int>(fd);
+        int nfd   = static_cast<int>(fd);
         if (nfd >= 0 && nfd == acc.fd_)
             return std::make_error_code(std::errc::invalid_argument);
         if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, true))
@@ -907,7 +943,7 @@ public:
 
         acc.local_endpoint_ = endpoint{};
         sockaddr_storage local{};
-        socklen_t        local_len = sizeof(local);
+        socklen_t local_len = sizeof(local);
         if (::getsockname(
                 nfd, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             acc.local_endpoint_ = sockaddr_to_endpoint(local);
@@ -923,22 +959,19 @@ public:
         @param ep   The local endpoint to bind to.
         @return Error code on failure, empty on success.
     */
-    std::error_code bind_acceptor(
-        tcp_acceptor::implementation& impl, endpoint ep) override
+    std::error_code
+    bind_acceptor(tcp_acceptor::implementation& impl, endpoint ep) override
     {
         auto& acc = static_cast<uring_tcp_acceptor&>(impl);
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(ep, addr);
-        if (::bind(
-                acc.fd_,
-                reinterpret_cast<sockaddr*>(&addr), len) < 0)
+        if (::bind(acc.fd_, reinterpret_cast<sockaddr*>(&addr), len) < 0)
             return make_err(errno);
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
         if (::getsockname(
-                acc.fd_,
-                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+                acc.fd_, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             acc.local_endpoint_ = sockaddr_to_endpoint(local);
         return {};
     }
@@ -952,8 +985,8 @@ public:
         @param backlog Maximum pending-connection queue length.
         @return Error code on failure, empty on success.
     */
-    std::error_code listen_acceptor(
-        tcp_acceptor::implementation& impl, int backlog) override
+    std::error_code
+    listen_acceptor(tcp_acceptor::implementation& impl, int backlog) override
     {
         auto& acc = static_cast<uring_tcp_acceptor&>(impl);
         if (::listen(acc.fd_, backlog) < 0)
@@ -964,14 +997,17 @@ public:
     }
 
     /// Return the scheduler used by acceptors created by this service.
-    uring_scheduler& scheduler() noexcept { return *sched_; }
+    uring_scheduler& scheduler() noexcept
+    {
+        return *sched_;
+    }
 
 private:
-    uring_scheduler*   sched_;
+    uring_scheduler* sched_;
     uring_tcp_service* peer_svc_;
-    std::mutex            mutex_;
-    std::unordered_map<uring_tcp_acceptor*,
-                       std::shared_ptr<uring_tcp_acceptor>> impls_;
+    std::mutex mutex_;
+    std::unordered_map<uring_tcp_acceptor*, std::shared_ptr<uring_tcp_acceptor>>
+        impls_;
 };
 
 /** Unix domain stream socket implementation for io_uring.
@@ -998,8 +1034,8 @@ class BOOST_COROSIO_DECL uring_local_stream_socket final
 {
     friend uring_local_stream_service;
 
-    uring_scheduler*           sched_ = nullptr;
-    [[maybe_unused]] uring_local_stream_service* svc_  = nullptr;
+    uring_scheduler* sched_                           = nullptr;
+    [[maybe_unused]] uring_local_stream_service* svc_ = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -1007,10 +1043,10 @@ class BOOST_COROSIO_DECL uring_local_stream_socket final
 
     // Per-fd op slots — embedded to eliminate per-call heap allocation.
     // Single-pending invariant per slot.
-    uring_read_op          rd_;
-    uring_write_op         wr_;
+    uring_read_op rd_;
+    uring_write_op wr_;
     uring_local_connect_op conn_;
-    uring_wait_op          wait_op_;
+    uring_wait_op wait_op_;
 
     mutable detail::speculative_state spec_;
 
@@ -1023,16 +1059,17 @@ public:
         @param sched The io_uring scheduler owned by the context.
     */
     explicit uring_local_stream_socket(
-        uring_local_stream_service& svc,
-        uring_scheduler&            sched) noexcept
+        uring_local_stream_service& svc, uring_scheduler& sched) noexcept
         : sched_(&sched)
         , svc_(&svc)
-    {}
+    {
+    }
 
     ~uring_local_stream_socket() override
     {
         if (fd_ >= 0)
-            ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
+            ::close(
+                fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
     }
 
     // ----------------------------------------------------------------
@@ -1041,28 +1078,32 @@ public:
 
     std::coroutine_handle<> read_some(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        buffer_param            buffers,
-        std::stop_token         token,
-        std::error_code*        ec,
-        std::size_t*            bytes) override
+        capy::executor_ref ex,
+        buffer_param buffers,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes) override
     {
         iovec iovecs[uring_max_iov];
-        int   iovec_count = copy_to_iovec(buffers, iovecs);
-        bool stop_now  = token.stop_possible() && token.stop_requested();
-        bool empty_buf = (iovec_count == 0);
+        int iovec_count = copy_to_iovec(buffers, iovecs);
+        bool stop_now   = token.stop_possible() && token.stop_requested();
+        bool empty_buf  = (iovec_count == 0);
 
-        ssize_t n             = 0;
-        int     err           = 0;
-        bool    have_sync_res = stop_now || empty_buf;
+        ssize_t n          = 0;
+        int err            = 0;
+        bool have_sync_res = stop_now || empty_buf;
         if (!have_sync_res && spec_.may_speculate_read())
         {
-            do { n = ::readv(fd_, iovecs, iovec_count); }
+            do
+            {
+                n = ::readv(fd_, iovecs, iovec_count);
+            }
             while (n < 0 && errno == EINTR);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
-                if (n < 0) err = errno;
+                if (n < 0)
+                    err = errno;
                 // Speculative read produced a definitive answer (data
                 // or non-EAGAIN error); reset the failure streak so a
                 // burst of past EAGAINs doesn't latch perma-off when
@@ -1082,15 +1123,16 @@ public:
             {
                 decode_io_result(
                     ec, stop_now, err ? make_err(err) : std::error_code{},
-                    /*is_read=*/true,
-                    n < 0 ? 0u : static_cast<std::size_t>(n), empty_buf);
+                    /*is_read=*/true, n < 0 ? 0u : static_cast<std::size_t>(n),
+                    empty_buf);
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 rd_.cont.h = h;
                 return dispatch_coro(ex, rd_.cont);
             }
-            rd_.prepare(h, ex, ec, bytes, fd_, sched_,
-                shared_from_this(), &spec_, buffers, token);
+            rd_.prepare(
+                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                buffers, token);
             if (stop_now)
                 rd_.cancelled.store(true, std::memory_order_release);
             else
@@ -1103,8 +1145,9 @@ public:
             return std::noop_coroutine();
         }
 
-        rd_.prepare(h, ex, ec, bytes, fd_, sched_,
-            shared_from_this(), &spec_, buffers, token);
+        rd_.prepare(
+            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            token);
         sched_->work_started();
         if (rd_.cancelled.load(std::memory_order_acquire))
         {
@@ -1118,31 +1161,35 @@ public:
 
     std::coroutine_handle<> write_some(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        buffer_param            buffers,
-        std::stop_token         token,
-        std::error_code*        ec,
-        std::size_t*            bytes) override
+        capy::executor_ref ex,
+        buffer_param buffers,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes) override
     {
         iovec iovecs[uring_max_iov];
-        int   iovec_count = copy_to_iovec(buffers, iovecs);
-        bool stop_now  = token.stop_possible() && token.stop_requested();
-        bool empty_buf = (iovec_count == 0);
+        int iovec_count = copy_to_iovec(buffers, iovecs);
+        bool stop_now   = token.stop_possible() && token.stop_requested();
+        bool empty_buf  = (iovec_count == 0);
 
-        ssize_t n             = 0;
-        int     err           = 0;
-        bool    have_sync_res = stop_now || empty_buf;
+        ssize_t n          = 0;
+        int err            = 0;
+        bool have_sync_res = stop_now || empty_buf;
         if (!have_sync_res && spec_.may_speculate_write())
         {
             msghdr msg{};
             msg.msg_iov    = iovecs;
             msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(iovec_count);
-            do { n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL); }
+            do
+            {
+                n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
+            }
             while (n < 0 && errno == EINTR);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
-                if (n < 0) err = errno;
+                if (n < 0)
+                    err = errno;
             }
             else
             {
@@ -1162,8 +1209,9 @@ public:
                 wr_.cont.h = h;
                 return dispatch_coro(ex, wr_.cont);
             }
-            wr_.prepare(h, ex, ec, bytes, fd_, sched_,
-                shared_from_this(), &spec_, buffers, token);
+            wr_.prepare(
+                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                buffers, token);
             if (stop_now)
                 wr_.cancelled.store(true, std::memory_order_release);
             else
@@ -1176,8 +1224,9 @@ public:
             return std::noop_coroutine();
         }
 
-        wr_.prepare(h, ex, ec, bytes, fd_, sched_,
-            shared_from_this(), &spec_, buffers, token);
+        wr_.prepare(
+            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            token);
         sched_->work_started();
         if (wr_.cancelled.load(std::memory_order_acquire))
         {
@@ -1194,24 +1243,26 @@ public:
     // ----------------------------------------------------------------
 
     std::coroutine_handle<> connect(
-        std::coroutine_handle<>  h,
-        capy::executor_ref       ex,
-        corosio::local_endpoint  ep,
-        std::stop_token          token,
-        std::error_code*         ec) override
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        corosio::local_endpoint ep,
+        std::stop_token token,
+        std::error_code* ec) override
     {
         bool stop_now = token.stop_possible() && token.stop_requested();
         if (stop_now)
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec) *ec = capy::error::canceled;
+                if (ec)
+                    *ec = capy::error::canceled;
                 conn_.cont.h = h;
                 return dispatch_coro(ex, conn_.cont);
             }
             conn_.addrlen = to_sockaddr(ep, conn_.addr);
-            conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
-                ep, &remote_endpoint_, &local_endpoint_, token);
+            conn_.prepare(
+                h, ex, ec, fd_, sched_, shared_from_this(), ep,
+                &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
             {
@@ -1224,8 +1275,9 @@ public:
         // A speculative ::connect would leave the fd in EINPROGRESS and
         // a subsequent IORING_OP_CONNECT would see EALREADY — avoid.
         conn_.addrlen = to_sockaddr(ep, conn_.addr);
-        conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
-            ep, &remote_endpoint_, &local_endpoint_, token);
+        conn_.prepare(
+            h, ex, ec, fd_, sched_, shared_from_this(), ep, &remote_endpoint_,
+            &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
@@ -1239,20 +1291,26 @@ public:
 
     std::coroutine_handle<> wait(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        wait_type               w,
-        std::stop_token         token,
-        std::error_code*        ec) override
+        capy::executor_ref ex,
+        wait_type w,
+        std::stop_token token,
+        std::error_code* ec) override
     {
         int poll_flags = 0;
         switch (w)
         {
-            case wait_type::read:  poll_flags = POLLIN;  break;
-            case wait_type::write: poll_flags = POLLOUT; break;
-            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+        case wait_type::read:
+            poll_flags = POLLIN;
+            break;
+        case wait_type::write:
+            poll_flags = POLLOUT;
+            break;
+        case wait_type::error:
+            poll_flags = POLLPRI | POLLERR | POLLHUP;
+            break;
         }
-        wait_op_.prepare(h, ex, ec, fd_, sched_,
-            shared_from_this(), poll_flags, token);
+        wait_op_.prepare(
+            h, ex, ec, fd_, sched_, shared_from_this(), poll_flags, token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -1264,7 +1322,8 @@ public:
         return std::noop_coroutine();
     }
 
-    std::error_code shutdown(local_stream_socket::shutdown_type what) noexcept override
+    std::error_code
+    shutdown(local_stream_socket::shutdown_type what) noexcept override
     {
         if (::shutdown(fd_, static_cast<int>(what)) != 0)
             return make_err(errno);
@@ -1281,8 +1340,8 @@ public:
         // number (same reasoning as close_socket).
         if (fd_ >= 0)
             sched_->cancel_and_flush(fd_);
-        int fd = fd_;
-        fd_ = -1;
+        int fd           = fd_;
+        fd_              = -1;
         local_endpoint_  = corosio::local_endpoint{};
         remote_endpoint_ = corosio::local_endpoint{};
         return fd;
@@ -1330,11 +1389,13 @@ public:
 */
 class BOOST_COROSIO_DECL uring_local_stream_service final
     : public uring_socket_service_base<
-          uring_local_stream_service, local_stream_service,
+          uring_local_stream_service,
+          local_stream_service,
           uring_local_stream_socket>
 {
     using base_service = uring_socket_service_base<
-        uring_local_stream_service, local_stream_service,
+        uring_local_stream_service,
+        local_stream_service,
         uring_local_stream_socket>;
 
 public:
@@ -1348,7 +1409,8 @@ public:
     */
     explicit uring_local_stream_service(capy::execution_context& ctx)
         : base_service(ctx)
-    {}
+    {
+    }
 
     // construct / destroy / shutdown / close / scheduler() are inherited
     // from uring_socket_service_base.
@@ -1366,10 +1428,13 @@ public:
     */
     std::error_code open_socket(
         local_stream_socket::implementation& impl,
-        int family, int type, int protocol) override
+        int family,
+        int type,
+        int protocol) override
     {
         auto& sock = static_cast<uring_local_stream_socket&>(impl);
-        int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
+        int fd =
+            ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
         // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
@@ -1398,7 +1463,7 @@ public:
         native_handle_type fd) override
     {
         auto& sock = static_cast<uring_local_stream_socket&>(impl);
-        int nfd = static_cast<int>(fd);
+        int nfd    = static_cast<int>(fd);
         if (nfd >= 0 && nfd == sock.fd_)
             return std::make_error_code(std::errc::invalid_argument);
         if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, false))
@@ -1413,15 +1478,17 @@ public:
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
-        if (::getsockname(sock.fd_,
-                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+        if (::getsockname(
+                sock.fd_, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             sock.local_endpoint_ = sockaddr_to_local_endpoint(local, local_len);
 
         sockaddr_storage remote{};
         socklen_t remote_len = sizeof(remote);
-        if (::getpeername(sock.fd_,
-                reinterpret_cast<sockaddr*>(&remote), &remote_len) == 0)
-            sock.remote_endpoint_ = sockaddr_to_local_endpoint(remote, remote_len);
+        if (::getpeername(
+                sock.fd_, reinterpret_cast<sockaddr*>(&remote), &remote_len) ==
+            0)
+            sock.remote_endpoint_ =
+                sockaddr_to_local_endpoint(remote, remote_len);
 
         return {};
     }
@@ -1436,11 +1503,11 @@ public:
         @param peer Peer endpoint from `accept(2)`.
         @return Raw pointer to the registered impl.
     */
-    uring_local_stream_socket* adopt_fd(
-        int fd, corosio::local_endpoint const& peer)
+    uring_local_stream_socket*
+    adopt_fd(int fd, corosio::local_endpoint const& peer)
     {
         auto p = std::make_shared<uring_local_stream_socket>(*this, *sched_);
-        p->fd_              = fd;
+        p->fd_ = fd;
         p->remote_endpoint_ = peer;
 
         sockaddr_storage local{};
@@ -1481,16 +1548,17 @@ class BOOST_COROSIO_DECL uring_local_stream_acceptor final
 public:
     explicit uring_local_stream_acceptor(
         uring_local_stream_acceptor_service&,
-        uring_scheduler&            sched,
+        uring_scheduler& sched,
         uring_local_stream_service& peer_svc) noexcept
         : base_type(sched, peer_svc)
-    {}
+    {
+    }
 
     std::coroutine_handle<> accept(
-        std::coroutine_handle<>     h,
-        capy::executor_ref          ex,
-        std::stop_token             token,
-        std::error_code*            ec,
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        std::stop_token token,
+        std::error_code* ec,
         io_object::implementation** impl_out) override
     {
         base_type::dispatch_or_queue(h, ex, token, ec, impl_out);
@@ -1499,10 +1567,10 @@ public:
 
     std::coroutine_handle<> wait(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        wait_type               w,
-        std::stop_token         token,
-        std::error_code*        ec) override
+        capy::executor_ref ex,
+        wait_type w,
+        std::stop_token token,
+        std::error_code* ec) override
     {
         // Closed-object contract: complete with bad_file_descriptor
         // instead of parking a waiter no accept machinery will signal.
@@ -1540,8 +1608,9 @@ public:
         }
         // Errors are not consumed by the accept machinery, so the
         // error wait still polls the descriptor.
-        wait_op_.prepare(h, ex, ec, this->fd_, this->sched_,
-            this->shared_from_this(), POLLPRI | POLLERR | POLLHUP, token);
+        wait_op_.prepare(
+            h, ex, ec, this->fd_, this->sched_, this->shared_from_this(),
+            POLLPRI | POLLERR | POLLHUP, token);
         this->sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -1554,8 +1623,10 @@ public:
     }
 
     static io_object::implementation* adopt_thunk(
-        void* peer_service, int fd,
-        sockaddr_storage const& peer, socklen_t peer_len) noexcept
+        void* peer_service,
+        int fd,
+        sockaddr_storage const& peer,
+        socklen_t peer_len) noexcept
     {
         auto* svc = static_cast<uring_local_stream_service*>(peer_service);
         return svc->adopt_fd(fd, sockaddr_to_local_endpoint(peer, peer_len));
@@ -1592,7 +1663,8 @@ public:
     explicit uring_local_stream_acceptor_service(capy::execution_context& ctx)
         : sched_(&ctx.use_service<uring_scheduler>())
         , peer_svc_(&ctx.use_service<uring_local_stream_service>())
-    {}
+    {
+    }
 
     void shutdown() override
     {
@@ -1611,7 +1683,7 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto p   = std::make_shared<uring_local_stream_acceptor>(
+        auto p = std::make_shared<uring_local_stream_acceptor>(
             *this, *sched_, *peer_svc_);
         auto* raw = p.get();
         std::lock_guard lk(mutex_);
@@ -1664,7 +1736,8 @@ public:
         int protocol) override
     {
         auto& acc = static_cast<uring_local_stream_acceptor&>(impl);
-        int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
+        int fd =
+            ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
         // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
@@ -1690,7 +1763,7 @@ public:
         native_handle_type fd) override
     {
         auto& acc = static_cast<uring_local_stream_acceptor&>(impl);
-        int   nfd = static_cast<int>(fd);
+        int nfd   = static_cast<int>(fd);
         if (nfd >= 0 && nfd == acc.fd_)
             return std::make_error_code(std::errc::invalid_argument);
         if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, false))
@@ -1712,7 +1785,7 @@ public:
 
         acc.local_endpoint_ = corosio::local_endpoint{};
         sockaddr_storage local{};
-        socklen_t        local_len = sizeof(local);
+        socklen_t local_len = sizeof(local);
         if (::getsockname(
                 nfd, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             acc.local_endpoint_ = sockaddr_to_local_endpoint(local, local_len);
@@ -1741,8 +1814,7 @@ public:
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
         if (::getsockname(
-                acc.fd_,
-                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+                acc.fd_, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             acc.local_endpoint_ = sockaddr_to_local_endpoint(local, local_len);
         return {};
     }
@@ -1757,8 +1829,7 @@ public:
         @return Error code on failure, empty on success.
     */
     std::error_code listen_acceptor(
-        local_stream_acceptor::implementation& impl,
-        int backlog) override
+        local_stream_acceptor::implementation& impl, int backlog) override
     {
         auto& acc = static_cast<uring_local_stream_acceptor&>(impl);
         if (::listen(acc.fd_, backlog) < 0)
@@ -1769,14 +1840,19 @@ public:
     }
 
     /// Return the scheduler used by acceptors created by this service.
-    uring_scheduler& scheduler() noexcept { return *sched_; }
+    uring_scheduler& scheduler() noexcept
+    {
+        return *sched_;
+    }
 
 private:
-    uring_scheduler*             sched_;
-    uring_local_stream_service*  peer_svc_;
-    std::mutex                      mutex_;
-    std::unordered_map<uring_local_stream_acceptor*,
-        std::shared_ptr<uring_local_stream_acceptor>> impls_;
+    uring_scheduler* sched_;
+    uring_local_stream_service* peer_svc_;
+    std::mutex mutex_;
+    std::unordered_map<
+        uring_local_stream_acceptor*,
+        std::shared_ptr<uring_local_stream_acceptor>>
+        impls_;
 };
 
 /** UDP socket implementation for io_uring.
@@ -1797,13 +1873,15 @@ private:
 */
 class BOOST_COROSIO_DECL uring_udp_socket final
     : public native_socket_base<
-          uring_udp_socket, udp_socket::implementation, corosio::endpoint>
+          uring_udp_socket,
+          udp_socket::implementation,
+          corosio::endpoint>
 {
     friend uring_udp_service;
 
-    int                    family_ = AF_UNSPEC;  // cached at open_socket
-    uring_scheduler*    sched_  = nullptr;
-    [[maybe_unused]] uring_udp_service*  svc_    = nullptr;
+    int family_             = AF_UNSPEC; // cached at open_socket
+    uring_scheduler* sched_ = nullptr;
+    [[maybe_unused]] uring_udp_service* svc_ = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -1811,10 +1889,10 @@ class BOOST_COROSIO_DECL uring_udp_socket final
 
     // Per-fd op slots — embedded to eliminate per-call heap allocation.
     // Single-pending invariant per slot.
-    uring_connect_op    conn_;
+    uring_connect_op conn_;
     uring_dgram_send_op send_;
     uring_dgram_recv_op recv_;
-    uring_wait_op       wait_op_;
+    uring_wait_op wait_op_;
 
     mutable detail::speculative_state spec_;
 
@@ -1827,16 +1905,17 @@ public:
         @param sched The io_uring scheduler owned by the context.
     */
     explicit uring_udp_socket(
-        uring_udp_service& svc,
-        uring_scheduler&   sched) noexcept
+        uring_udp_service& svc, uring_scheduler& sched) noexcept
         : sched_(&sched)
         , svc_(&svc)
-    {}
+    {
+    }
 
     ~uring_udp_socket() override
     {
         if (fd_ >= 0)
-            ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
+            ::close(
+                fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
     }
 
     // ----------------------------------------------------------------
@@ -1845,80 +1924,80 @@ public:
 
     std::coroutine_handle<> send_to(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        buffer_param            buf,
-        endpoint                dest,
-        int                     flags,
-        std::stop_token         token,
-        std::error_code*        ec,
-        std::size_t*            bytes_out) override
+        capy::executor_ref ex,
+        buffer_param buf,
+        endpoint dest,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
     {
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(dest, addr);
-        return submit_send(h, ex, buf, len, addr, flags,
-            token, ec, bytes_out);
+        return submit_send(h, ex, buf, len, addr, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv_from(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        buffer_param            buf,
-        endpoint*               source,
-        int                     flags,
-        std::stop_token         token,
-        std::error_code*        ec,
-        std::size_t*            bytes_out) override
+        capy::executor_ref ex,
+        buffer_param buf,
+        endpoint* source,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
     {
-        return submit_recv(h, ex, buf, source != nullptr, source, flags,
-            token, ec, bytes_out);
+        return submit_recv(
+            h, ex, buf, source != nullptr, source, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> send(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        buffer_param            buf,
-        int                     flags,
-        std::stop_token         token,
-        std::error_code*        ec,
-        std::size_t*            bytes_out) override
+        capy::executor_ref ex,
+        buffer_param buf,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
     {
         sockaddr_storage empty{};
-        return submit_send(h, ex, buf, 0, empty, flags,
-            token, ec, bytes_out);
+        return submit_send(h, ex, buf, 0, empty, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        buffer_param            buf,
-        int                     flags,
-        std::stop_token         token,
-        std::error_code*        ec,
-        std::size_t*            bytes_out) override
+        capy::executor_ref ex,
+        buffer_param buf,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
     {
-        return submit_recv(h, ex, buf, false, nullptr, flags,
-            token, ec, bytes_out);
+        return submit_recv(
+            h, ex, buf, false, nullptr, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> connect(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        endpoint                ep,
-        std::stop_token         token,
-        std::error_code*        ec) override
+        capy::executor_ref ex,
+        endpoint ep,
+        std::stop_token token,
+        std::error_code* ec) override
     {
         bool stop_now = token.stop_possible() && token.stop_requested();
         if (stop_now)
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec) *ec = capy::error::canceled;
+                if (ec)
+                    *ec = capy::error::canceled;
                 conn_.cont.h = h;
                 return dispatch_coro(ex, conn_.cont);
             }
             conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
-            conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
-                ep, &remote_endpoint_, &local_endpoint_, token);
+            conn_.prepare(
+                h, ex, ec, fd_, sched_, shared_from_this(), ep,
+                &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
             {
@@ -1931,8 +2010,9 @@ public:
         // io_uring's IORING_OP_CONNECT re-invokes connect(2) internally;
         // a prior speculative ::connect would leave EINPROGRESS → EALREADY.
         conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
-        conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
-            ep, &remote_endpoint_, &local_endpoint_, token);
+        conn_.prepare(
+            h, ex, ec, fd_, sched_, shared_from_this(), ep, &remote_endpoint_,
+            &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
@@ -1946,20 +2026,26 @@ public:
 
     std::coroutine_handle<> wait(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        wait_type               w,
-        std::stop_token         token,
-        std::error_code*        ec) override
+        capy::executor_ref ex,
+        wait_type w,
+        std::stop_token token,
+        std::error_code* ec) override
     {
         int poll_flags = 0;
         switch (w)
         {
-            case wait_type::read:  poll_flags = POLLIN;  break;
-            case wait_type::write: poll_flags = POLLOUT; break;
-            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+        case wait_type::read:
+            poll_flags = POLLIN;
+            break;
+        case wait_type::write:
+            poll_flags = POLLOUT;
+            break;
+        case wait_type::error:
+            poll_flags = POLLPRI | POLLERR | POLLHUP;
+            break;
         }
-        wait_op_.prepare(h, ex, ec, fd_, sched_,
-            shared_from_this(), poll_flags, token);
+        wait_op_.prepare(
+            h, ex, ec, fd_, sched_, shared_from_this(), poll_flags, token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -1974,8 +2060,7 @@ public:
     // native_handle / is_open / set_option / get_option / local_endpoint
     // are inherited from native_socket_base.
 
-    std::error_code shutdown(
-        udp_socket::shutdown_type what) noexcept override
+    std::error_code shutdown(udp_socket::shutdown_type what) noexcept override
     {
         if (::shutdown(fd_, static_cast<int>(what)) != 0)
             return make_err(errno);
@@ -1989,8 +2074,8 @@ public:
         // number (same reasoning as close_socket).
         if (fd_ >= 0)
             sched_->cancel_and_flush(fd_);
-        int fd = fd_;
-        fd_    = -1;
+        int fd           = fd_;
+        fd_              = -1;
         local_endpoint_  = endpoint{};
         remote_endpoint_ = endpoint{};
         return fd;
@@ -2023,24 +2108,24 @@ public:
 
 private:
     std::coroutine_handle<> submit_send(
-        std::coroutine_handle<>        h,
-        capy::executor_ref             ex,
-        buffer_param                   buffers,
-        socklen_t                      dest_len,
-        sockaddr_storage const&        dest_storage,
-        int                            flags,
-        std::stop_token const&         token,
-        std::error_code*               ec,
-        std::size_t*                   bytes)
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buffers,
+        socklen_t dest_len,
+        sockaddr_storage const& dest_storage,
+        int flags,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes)
     {
         iovec iovecs[uring_max_iov];
-        int   iovec_count = copy_to_iovec(buffers, iovecs);
-        bool stop_now  = token.stop_possible() && token.stop_requested();
-        bool empty_buf = (iovec_count == 0);
+        int iovec_count = copy_to_iovec(buffers, iovecs);
+        bool stop_now   = token.stop_possible() && token.stop_requested();
+        bool empty_buf  = (iovec_count == 0);
 
-        ssize_t n             = 0;
-        int     err           = 0;
-        bool    have_sync_res = stop_now || empty_buf;
+        ssize_t n          = 0;
+        int err            = 0;
+        bool have_sync_res = stop_now || empty_buf;
         if (!have_sync_res && spec_.may_speculate_write())
         {
             msghdr msg{};
@@ -2053,12 +2138,16 @@ private:
                 msg.msg_namelen = dest_len;
             }
             int native_flags = to_native_msg_flags(flags) | MSG_NOSIGNAL;
-            do { n = ::sendmsg(fd_, &msg, native_flags); }
+            do
+            {
+                n = ::sendmsg(fd_, &msg, native_flags);
+            }
             while (n < 0 && errno == EINTR);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
-                if (n < 0) err = errno;
+                if (n < 0)
+                    err = errno;
             }
             else
             {
@@ -2078,9 +2167,10 @@ private:
                 send_.cont.h = h;
                 return dispatch_coro(ex, send_.cont);
             }
-            send_.prepare(h, ex, ec, bytes, fd_, sched_,
-                shared_from_this(), &spec_, buffers, dest_len, dest_storage,
-                to_native_msg_flags(flags), token);
+            send_.prepare(
+                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                buffers, dest_len, dest_storage, to_native_msg_flags(flags),
+                token);
             if (stop_now)
                 send_.cancelled.store(true, std::memory_order_release);
             else
@@ -2093,9 +2183,9 @@ private:
             return std::noop_coroutine();
         }
 
-        send_.prepare(h, ex, ec, bytes, fd_, sched_, shared_from_this(),
-            &spec_, buffers, dest_len, dest_storage,
-            to_native_msg_flags(flags), token);
+        send_.prepare(
+            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            dest_len, dest_storage, to_native_msg_flags(flags), token);
         sched_->work_started();
         if (send_.cancelled.load(std::memory_order_acquire))
         {
@@ -2108,26 +2198,26 @@ private:
     }
 
     std::coroutine_handle<> submit_recv(
-        std::coroutine_handle<>  h,
-        capy::executor_ref       ex,
-        buffer_param             buffers,
-        bool                     want_source,
-        corosio::endpoint*       source_out,
-        int                      flags,
-        std::stop_token const&   token,
-        std::error_code*         ec,
-        std::size_t*             bytes)
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buffers,
+        bool want_source,
+        corosio::endpoint* source_out,
+        int flags,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes)
     {
         iovec iovecs[uring_max_iov];
-        int   iovec_count = copy_to_iovec(buffers, iovecs);
-        bool stop_now  = token.stop_possible() && token.stop_requested();
-        bool empty_buf = (iovec_count == 0);
+        int iovec_count = copy_to_iovec(buffers, iovecs);
+        bool stop_now   = token.stop_possible() && token.stop_requested();
+        bool empty_buf  = (iovec_count == 0);
 
-        ssize_t          n             = 0;
-        int              err           = 0;
-        bool             have_sync_res = stop_now || empty_buf;
+        ssize_t n          = 0;
+        int err            = 0;
+        bool have_sync_res = stop_now || empty_buf;
         sockaddr_storage src_storage{};
-        socklen_t        src_namelen   = 0;
+        socklen_t src_namelen = 0;
         if (!have_sync_res && spec_.may_speculate_read())
         {
             msghdr msg{};
@@ -2139,12 +2229,16 @@ private:
                 msg.msg_namelen = sizeof(src_storage);
             }
             int native_flags = to_native_msg_flags(flags);
-            do { n = ::recvmsg(fd_, &msg, native_flags); }
+            do
+            {
+                n = ::recvmsg(fd_, &msg, native_flags);
+            }
             while (n < 0 && errno == EINTR);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
-                if (n < 0) err = errno;
+                if (n < 0)
+                    err = errno;
                 src_namelen = (n >= 0) ? msg.msg_namelen : 0;
             }
             else
@@ -2167,9 +2261,9 @@ private:
                 recv_.cont.h = h;
                 return dispatch_coro(ex, recv_.cont);
             }
-            recv_.prepare(h, ex, ec, bytes, fd_, sched_, shared_from_this(),
-                &spec_, buffers, source_out,
-                want_source ? &write_ip_source : nullptr,
+            recv_.prepare(
+                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                buffers, source_out, want_source ? &write_ip_source : nullptr,
                 to_native_msg_flags(flags), token);
             if (stop_now)
                 recv_.cancelled.store(true, std::memory_order_release);
@@ -2193,9 +2287,9 @@ private:
             return std::noop_coroutine();
         }
 
-        recv_.prepare(h, ex, ec, bytes, fd_, sched_, shared_from_this(),
-            &spec_, buffers, source_out,
-            want_source ? &write_ip_source : nullptr,
+        recv_.prepare(
+            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            source_out, want_source ? &write_ip_source : nullptr,
             to_native_msg_flags(flags), token);
         sched_->work_started();
         if (recv_.iovec_count == 0 ||
@@ -2233,10 +2327,14 @@ private:
 */
 class BOOST_COROSIO_DECL uring_udp_service final
     : public uring_socket_service_base<
-          uring_udp_service, udp_service, uring_udp_socket>
+          uring_udp_service,
+          udp_service,
+          uring_udp_socket>
 {
     using base_service = uring_socket_service_base<
-        uring_udp_service, udp_service, uring_udp_socket>;
+        uring_udp_service,
+        udp_service,
+        uring_udp_socket>;
 
 public:
     /// Identifies this service for `execution_context` lookup.
@@ -2247,9 +2345,9 @@ public:
         @param ctx The owning execution context. The io_uring scheduler
             must already be registered.
     */
-    explicit uring_udp_service(capy::execution_context& ctx)
-        : base_service(ctx)
-    {}
+    explicit uring_udp_service(capy::execution_context& ctx) : base_service(ctx)
+    {
+    }
 
     // construct / destroy / shutdown / close / scheduler() are inherited
     // from uring_socket_service_base.
@@ -2266,11 +2364,13 @@ public:
     */
     std::error_code open_datagram_socket(
         udp_socket::implementation& impl,
-        int family, int type, int protocol) override
+        int family,
+        int type,
+        int protocol) override
     {
         auto& sock = static_cast<uring_udp_socket&>(impl);
-        int fd = ::socket(
-            family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
+        int fd =
+            ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
         // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
@@ -2301,11 +2401,10 @@ public:
         @return Error code on failure, empty on success.
     */
     std::error_code assign_socket(
-        udp_socket::implementation& impl,
-        native_handle_type fd) override
+        udp_socket::implementation& impl, native_handle_type fd) override
     {
         auto& sock = static_cast<uring_udp_socket&>(impl);
-        int nfd = static_cast<int>(fd);
+        int nfd    = static_cast<int>(fd);
         if (nfd >= 0 && nfd == sock.fd_)
             return std::make_error_code(std::errc::invalid_argument);
         if (auto ec = validate_socket_fd(nfd, SOCK_DGRAM, true))
@@ -2323,8 +2422,8 @@ public:
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
-        if (::getsockname(sock.fd_,
-                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+        if (::getsockname(
+                sock.fd_, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
         {
             sock.local_endpoint_ = sockaddr_to_endpoint(local);
             sock.family_         = local.ss_family;
@@ -2332,8 +2431,9 @@ public:
 
         sockaddr_storage remote{};
         socklen_t remote_len = sizeof(remote);
-        if (::getpeername(sock.fd_,
-                reinterpret_cast<sockaddr*>(&remote), &remote_len) == 0)
+        if (::getpeername(
+                sock.fd_, reinterpret_cast<sockaddr*>(&remote), &remote_len) ==
+            0)
             sock.remote_endpoint_ = sockaddr_to_endpoint(remote);
 
         return {};
@@ -2345,22 +2445,19 @@ public:
         @param ep   The local endpoint to bind to.
         @return Error code on failure, empty on success.
     */
-    std::error_code bind_datagram(
-        udp_socket::implementation& impl, endpoint ep) override
+    std::error_code
+    bind_datagram(udp_socket::implementation& impl, endpoint ep) override
     {
         auto& sock = static_cast<uring_udp_socket&>(impl);
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(ep, addr);
-        if (::bind(
-                sock.fd_,
-                reinterpret_cast<sockaddr*>(&addr), len) < 0)
+        if (::bind(sock.fd_, reinterpret_cast<sockaddr*>(&addr), len) < 0)
             return make_err(errno);
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
         if (::getsockname(
-                sock.fd_,
-                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+                sock.fd_, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             sock.local_endpoint_ = sockaddr_to_endpoint(local);
         return {};
     }
@@ -2390,8 +2487,8 @@ class BOOST_COROSIO_DECL uring_local_datagram_socket final
 {
     friend uring_local_datagram_service;
 
-    uring_scheduler*              sched_ = nullptr;
-    [[maybe_unused]] uring_local_datagram_service* svc_   = nullptr;
+    uring_scheduler* sched_                             = nullptr;
+    [[maybe_unused]] uring_local_datagram_service* svc_ = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -2400,9 +2497,9 @@ class BOOST_COROSIO_DECL uring_local_datagram_socket final
     // Per-fd op slots — embedded to eliminate per-call heap allocation.
     // Single-pending invariant per slot.
     uring_local_connect_op conn_;
-    uring_dgram_send_op    send_;
-    uring_dgram_recv_op    recv_;
-    uring_wait_op          wait_op_;
+    uring_dgram_send_op send_;
+    uring_dgram_recv_op recv_;
+    uring_wait_op wait_op_;
 
     mutable detail::speculative_state spec_;
 
@@ -2415,16 +2512,17 @@ public:
         @param sched The io_uring scheduler owned by the context.
     */
     explicit uring_local_datagram_socket(
-        uring_local_datagram_service& svc,
-        uring_scheduler&              sched) noexcept
+        uring_local_datagram_service& svc, uring_scheduler& sched) noexcept
         : sched_(&sched)
         , svc_(&svc)
-    {}
+    {
+    }
 
     ~uring_local_datagram_socket() override
     {
         if (fd_ >= 0)
-            ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
+            ::close(
+                fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
     }
 
     // ----------------------------------------------------------------
@@ -2432,81 +2530,81 @@ public:
     // ----------------------------------------------------------------
 
     std::coroutine_handle<> send_to(
-        std::coroutine_handle<>  h,
-        capy::executor_ref       ex,
-        buffer_param             buf,
-        corosio::local_endpoint  dest,
-        int                      flags,
-        std::stop_token          token,
-        std::error_code*         ec,
-        std::size_t*             bytes_out) override
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buf,
+        corosio::local_endpoint dest,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
     {
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(dest, addr);
-        return submit_send(h, ex, buf, len, addr, flags,
-            token, ec, bytes_out);
+        return submit_send(h, ex, buf, len, addr, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv_from(
-        std::coroutine_handle<>    h,
-        capy::executor_ref         ex,
-        buffer_param               buf,
-        corosio::local_endpoint*   source,
-        int                        flags,
-        std::stop_token            token,
-        std::error_code*           ec,
-        std::size_t*               bytes_out) override
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buf,
+        corosio::local_endpoint* source,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
     {
-        return submit_recv(h, ex, buf, source != nullptr, source, flags,
-            token, ec, bytes_out);
+        return submit_recv(
+            h, ex, buf, source != nullptr, source, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> send(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        buffer_param            buf,
-        int                     flags,
-        std::stop_token         token,
-        std::error_code*        ec,
-        std::size_t*            bytes_out) override
+        capy::executor_ref ex,
+        buffer_param buf,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
     {
         sockaddr_storage empty{};
-        return submit_send(h, ex, buf, 0, empty, flags,
-            token, ec, bytes_out);
+        return submit_send(h, ex, buf, 0, empty, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        buffer_param            buf,
-        int                     flags,
-        std::stop_token         token,
-        std::error_code*        ec,
-        std::size_t*            bytes_out) override
+        capy::executor_ref ex,
+        buffer_param buf,
+        int flags,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes_out) override
     {
-        return submit_recv(h, ex, buf, false, nullptr, flags,
-            token, ec, bytes_out);
+        return submit_recv(
+            h, ex, buf, false, nullptr, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> connect(
-        std::coroutine_handle<>  h,
-        capy::executor_ref       ex,
-        corosio::local_endpoint  ep,
-        std::stop_token          token,
-        std::error_code*         ec) override
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        corosio::local_endpoint ep,
+        std::stop_token token,
+        std::error_code* ec) override
     {
         bool stop_now = token.stop_possible() && token.stop_requested();
         if (stop_now)
         {
             if (sched_->try_consume_inline_budget())
             {
-                if (ec) *ec = capy::error::canceled;
+                if (ec)
+                    *ec = capy::error::canceled;
                 conn_.cont.h = h;
                 return dispatch_coro(ex, conn_.cont);
             }
             conn_.addrlen = to_sockaddr(ep, conn_.addr);
-            conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
-                ep, &remote_endpoint_, &local_endpoint_, token);
+            conn_.prepare(
+                h, ex, ec, fd_, sched_, shared_from_this(), ep,
+                &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
             {
@@ -2519,8 +2617,9 @@ public:
         // io_uring's IORING_OP_CONNECT re-invokes connect(2) internally;
         // a prior speculative ::connect would leave EINPROGRESS → EALREADY.
         conn_.addrlen = to_sockaddr(ep, conn_.addr);
-        conn_.prepare(h, ex, ec, fd_, sched_, shared_from_this(),
-            ep, &remote_endpoint_, &local_endpoint_, token);
+        conn_.prepare(
+            h, ex, ec, fd_, sched_, shared_from_this(), ep, &remote_endpoint_,
+            &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
@@ -2534,20 +2633,26 @@ public:
 
     std::coroutine_handle<> wait(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        wait_type               w,
-        std::stop_token         token,
-        std::error_code*        ec) override
+        capy::executor_ref ex,
+        wait_type w,
+        std::stop_token token,
+        std::error_code* ec) override
     {
         int poll_flags = 0;
         switch (w)
         {
-            case wait_type::read:  poll_flags = POLLIN;  break;
-            case wait_type::write: poll_flags = POLLOUT; break;
-            case wait_type::error: poll_flags = POLLPRI | POLLERR | POLLHUP; break;
+        case wait_type::read:
+            poll_flags = POLLIN;
+            break;
+        case wait_type::write:
+            poll_flags = POLLOUT;
+            break;
+        case wait_type::error:
+            poll_flags = POLLPRI | POLLERR | POLLHUP;
+            break;
         }
-        wait_op_.prepare(h, ex, ec, fd_, sched_,
-            shared_from_this(), poll_flags, token);
+        wait_op_.prepare(
+            h, ex, ec, fd_, sched_, shared_from_this(), poll_flags, token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -2559,8 +2664,8 @@ public:
         return std::noop_coroutine();
     }
 
-    std::error_code shutdown(
-        local_datagram_socket::shutdown_type what) noexcept override
+    std::error_code
+    shutdown(local_datagram_socket::shutdown_type what) noexcept override
     {
         if (::shutdown(fd_, static_cast<int>(what)) != 0)
             return make_err(errno);
@@ -2577,8 +2682,8 @@ public:
         // number (same reasoning as close_socket).
         if (fd_ >= 0)
             sched_->cancel_and_flush(fd_);
-        int fd = fd_;
-        fd_ = -1;
+        int fd           = fd_;
+        fd_              = -1;
         local_endpoint_  = corosio::local_endpoint{};
         remote_endpoint_ = corosio::local_endpoint{};
         return fd;
@@ -2622,8 +2727,7 @@ public:
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
         if (::getsockname(
-                fd_,
-                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+                fd_, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             local_endpoint_ = sockaddr_to_local_endpoint(local, local_len);
         return {};
     }
@@ -2631,24 +2735,24 @@ public:
 
 private:
     std::coroutine_handle<> submit_send(
-        std::coroutine_handle<>        h,
-        capy::executor_ref             ex,
-        buffer_param                   buffers,
-        socklen_t                      dest_len,
-        sockaddr_storage const&        dest_storage,
-        int                            flags,
-        std::stop_token const&         token,
-        std::error_code*               ec,
-        std::size_t*                   bytes)
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buffers,
+        socklen_t dest_len,
+        sockaddr_storage const& dest_storage,
+        int flags,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes)
     {
         iovec iovecs[uring_max_iov];
-        int   iovec_count = copy_to_iovec(buffers, iovecs);
-        bool stop_now  = token.stop_possible() && token.stop_requested();
-        bool empty_buf = (iovec_count == 0);
+        int iovec_count = copy_to_iovec(buffers, iovecs);
+        bool stop_now   = token.stop_possible() && token.stop_requested();
+        bool empty_buf  = (iovec_count == 0);
 
-        ssize_t n             = 0;
-        int     err           = 0;
-        bool    have_sync_res = stop_now || empty_buf;
+        ssize_t n          = 0;
+        int err            = 0;
+        bool have_sync_res = stop_now || empty_buf;
         if (!have_sync_res && spec_.may_speculate_write())
         {
             msghdr msg{};
@@ -2661,12 +2765,16 @@ private:
                 msg.msg_namelen = dest_len;
             }
             int native_flags = to_native_msg_flags(flags) | MSG_NOSIGNAL;
-            do { n = ::sendmsg(fd_, &msg, native_flags); }
+            do
+            {
+                n = ::sendmsg(fd_, &msg, native_flags);
+            }
             while (n < 0 && errno == EINTR);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
-                if (n < 0) err = errno;
+                if (n < 0)
+                    err = errno;
             }
             else
             {
@@ -2686,9 +2794,10 @@ private:
                 send_.cont.h = h;
                 return dispatch_coro(ex, send_.cont);
             }
-            send_.prepare(h, ex, ec, bytes, fd_, sched_,
-                shared_from_this(), &spec_, buffers, dest_len, dest_storage,
-                to_native_msg_flags(flags), token);
+            send_.prepare(
+                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                buffers, dest_len, dest_storage, to_native_msg_flags(flags),
+                token);
             if (stop_now)
                 send_.cancelled.store(true, std::memory_order_release);
             else
@@ -2701,9 +2810,9 @@ private:
             return std::noop_coroutine();
         }
 
-        send_.prepare(h, ex, ec, bytes, fd_, sched_, shared_from_this(),
-            &spec_, buffers, dest_len, dest_storage,
-            to_native_msg_flags(flags), token);
+        send_.prepare(
+            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            dest_len, dest_storage, to_native_msg_flags(flags), token);
         sched_->work_started();
         if (send_.cancelled.load(std::memory_order_acquire))
         {
@@ -2716,26 +2825,26 @@ private:
     }
 
     std::coroutine_handle<> submit_recv(
-        std::coroutine_handle<>    h,
-        capy::executor_ref         ex,
-        buffer_param               buffers,
-        bool                       want_source,
-        corosio::local_endpoint*   source_out,
-        int                        flags,
-        std::stop_token const&     token,
-        std::error_code*           ec,
-        std::size_t*               bytes)
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buffers,
+        bool want_source,
+        corosio::local_endpoint* source_out,
+        int flags,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes)
     {
         iovec iovecs[uring_max_iov];
-        int   iovec_count = copy_to_iovec(buffers, iovecs);
-        bool stop_now  = token.stop_possible() && token.stop_requested();
-        bool empty_buf = (iovec_count == 0);
+        int iovec_count = copy_to_iovec(buffers, iovecs);
+        bool stop_now   = token.stop_possible() && token.stop_requested();
+        bool empty_buf  = (iovec_count == 0);
 
-        ssize_t          n             = 0;
-        int              err           = 0;
-        bool             have_sync_res = stop_now || empty_buf;
+        ssize_t n          = 0;
+        int err            = 0;
+        bool have_sync_res = stop_now || empty_buf;
         sockaddr_storage src_storage{};
-        socklen_t        src_namelen   = 0;
+        socklen_t src_namelen = 0;
         if (!have_sync_res && spec_.may_speculate_read())
         {
             msghdr msg{};
@@ -2747,12 +2856,16 @@ private:
                 msg.msg_namelen = sizeof(src_storage);
             }
             int native_flags = to_native_msg_flags(flags);
-            do { n = ::recvmsg(fd_, &msg, native_flags); }
+            do
+            {
+                n = ::recvmsg(fd_, &msg, native_flags);
+            }
             while (n < 0 && errno == EINTR);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
-                if (n < 0) err = errno;
+                if (n < 0)
+                    err = errno;
                 src_namelen = (n >= 0) ? msg.msg_namelen : 0;
             }
             else
@@ -2771,12 +2884,14 @@ private:
                 if (bytes)
                     *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 if (n >= 0 && want_source && source_out && !empty_buf)
-                    *source_out = sockaddr_to_local_endpoint(src_storage, src_namelen);
+                    *source_out =
+                        sockaddr_to_local_endpoint(src_storage, src_namelen);
                 recv_.cont.h = h;
                 return dispatch_coro(ex, recv_.cont);
             }
-            recv_.prepare(h, ex, ec, bytes, fd_, sched_, shared_from_this(),
-                &spec_, buffers, source_out,
+            recv_.prepare(
+                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                buffers, source_out,
                 want_source ? &write_local_source : nullptr,
                 to_native_msg_flags(flags), token);
             if (stop_now)
@@ -2801,9 +2916,9 @@ private:
             return std::noop_coroutine();
         }
 
-        recv_.prepare(h, ex, ec, bytes, fd_, sched_, shared_from_this(),
-            &spec_, buffers, source_out,
-            want_source ? &write_local_source : nullptr,
+        recv_.prepare(
+            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            source_out, want_source ? &write_local_source : nullptr,
             to_native_msg_flags(flags), token);
         sched_->work_started();
         if (recv_.iovec_count == 0 ||
@@ -2841,11 +2956,13 @@ private:
 */
 class BOOST_COROSIO_DECL uring_local_datagram_service final
     : public uring_socket_service_base<
-          uring_local_datagram_service, local_datagram_service,
+          uring_local_datagram_service,
+          local_datagram_service,
           uring_local_datagram_socket>
 {
     using base_service = uring_socket_service_base<
-        uring_local_datagram_service, local_datagram_service,
+        uring_local_datagram_service,
+        local_datagram_service,
         uring_local_datagram_socket>;
 
 public:
@@ -2859,7 +2976,8 @@ public:
     */
     explicit uring_local_datagram_service(capy::execution_context& ctx)
         : base_service(ctx)
-    {}
+    {
+    }
 
     // construct / destroy / shutdown / close / scheduler() are inherited
     // from uring_socket_service_base.
@@ -2877,10 +2995,13 @@ public:
     */
     std::error_code open_socket(
         local_datagram_socket::implementation& impl,
-        int family, int type, int protocol) override
+        int family,
+        int type,
+        int protocol) override
     {
         auto& sock = static_cast<uring_local_datagram_socket&>(impl);
-        int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
+        int fd =
+            ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
         // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
@@ -2909,7 +3030,7 @@ public:
         native_handle_type fd) override
     {
         auto& sock = static_cast<uring_local_datagram_socket&>(impl);
-        int nfd = static_cast<int>(fd);
+        int nfd    = static_cast<int>(fd);
         if (nfd >= 0 && nfd == sock.fd_)
             return std::make_error_code(std::errc::invalid_argument);
         if (auto ec = validate_socket_fd(nfd, SOCK_DGRAM, false))
@@ -2924,15 +3045,17 @@ public:
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
-        if (::getsockname(sock.fd_,
-                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+        if (::getsockname(
+                sock.fd_, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             sock.local_endpoint_ = sockaddr_to_local_endpoint(local, local_len);
 
         sockaddr_storage remote{};
         socklen_t remote_len = sizeof(remote);
-        if (::getpeername(sock.fd_,
-                reinterpret_cast<sockaddr*>(&remote), &remote_len) == 0)
-            sock.remote_endpoint_ = sockaddr_to_local_endpoint(remote, remote_len);
+        if (::getpeername(
+                sock.fd_, reinterpret_cast<sockaddr*>(&remote), &remote_len) ==
+            0)
+            sock.remote_endpoint_ =
+                sockaddr_to_local_endpoint(remote, remote_len);
 
         return {};
     }
@@ -2950,16 +3073,13 @@ public:
         auto& sock = static_cast<uring_local_datagram_socket&>(impl);
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(ep, addr);
-        if (::bind(
-                sock.fd_,
-                reinterpret_cast<sockaddr*>(&addr), len) < 0)
+        if (::bind(sock.fd_, reinterpret_cast<sockaddr*>(&addr), len) < 0)
             return make_err(errno);
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
         if (::getsockname(
-                sock.fd_,
-                reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
+                sock.fd_, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             sock.local_endpoint_ = sockaddr_to_local_endpoint(local, local_len);
         return {};
     }

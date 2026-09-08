@@ -18,7 +18,8 @@
 
 #include <liburing.h>
 
-int main()
+int
+main()
 {
     struct io_uring ring;
     struct io_uring_params params{};

@@ -48,7 +48,7 @@ struct bounded_run_test
     void testRunForLeavesParkedReadParked()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -77,7 +77,7 @@ struct bounded_run_test
     void testRunOneForLeavesParkedReadParked()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -126,7 +126,7 @@ struct bounded_run_test
     void testPollLeavesParkedReadParked()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -179,7 +179,7 @@ struct bounded_run_test
         // the follower timed wait. Bounds cap blocking; nothing
         // asserts elapsed time.
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -212,12 +212,10 @@ struct bounded_run_test
         BOOST_TEST(resumed);
     }
 
-
     void testOversizeBudgetThrows()
     {
         io_context_options opts;
-        opts.inline_budget_max =
-            (std::numeric_limits<unsigned>::max)();
+        opts.inline_budget_max = (std::numeric_limits<unsigned>::max)();
         BOOST_TEST_THROWS(
             ([&] { io_context tmp(Backend, opts); }()), std::out_of_range);
     }

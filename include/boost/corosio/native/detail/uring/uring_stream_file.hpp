@@ -67,18 +67,18 @@ class BOOST_COROSIO_DECL uring_stream_file final
 {
     friend class uring_stream_file_service;
 
-    int                  fd_    = -1;
-    uring_scheduler*  sched_ = nullptr;
+    int fd_                 = -1;
+    uring_scheduler* sched_ = nullptr;
 
     // Per-fd op slots — embedded to eliminate per-call heap allocation.
     // Single-pending invariant per slot.
-    uring_file_read_op   rd_;
-    uring_file_write_op  wr_;
+    uring_file_read_op rd_;
+    uring_file_write_op wr_;
 
 public:
-    explicit uring_stream_file(uring_scheduler& sched) noexcept
-        : sched_(&sched)
-    {}
+    explicit uring_stream_file(uring_scheduler& sched) noexcept : sched_(&sched)
+    {
+    }
 
     ~uring_stream_file() override
     {
@@ -126,8 +126,8 @@ public:
 
     std::error_code resize(std::uint64_t new_size) noexcept override
     {
-        if (new_size > static_cast<std::uint64_t>(
-                (std::numeric_limits<off_t>::max)()))
+        if (new_size >
+            static_cast<std::uint64_t>((std::numeric_limits<off_t>::max)()))
             return make_err(EOVERFLOW);
         if (::ftruncate(fd_, static_cast<off_t>(new_size)) < 0)
             return make_err(errno);
@@ -155,7 +155,7 @@ public:
     native_handle_type release() override
     {
         int fd = fd_;
-        fd_ = -1;
+        fd_    = -1;
         return fd;
     }
 
@@ -166,12 +166,14 @@ public:
         return {};
     }
 
-    capy::io_result<std::uint64_t> seek(
-        std::int64_t offset, file_base::seek_basis origin) noexcept override
+    capy::io_result<std::uint64_t>
+    seek(std::int64_t offset, file_base::seek_basis origin) noexcept override
     {
         int whence = SEEK_SET;
-        if (origin == file_base::seek_cur) whence = SEEK_CUR;
-        else if (origin == file_base::seek_end) whence = SEEK_END;
+        if (origin == file_base::seek_cur)
+            whence = SEEK_CUR;
+        else if (origin == file_base::seek_end)
+            whence = SEEK_END;
 
         off_t r = ::lseek(fd_, static_cast<off_t>(offset), whence);
         if (r == static_cast<off_t>(-1))
@@ -182,12 +184,12 @@ public:
     // -- Internal --
 
     /// Open the file. Synchronous; sets `fd_`. Caller is the service.
-    std::error_code open_file(
-        std::filesystem::path const& path, file_base::flags mode)
+    std::error_code
+    open_file(std::filesystem::path const& path, file_base::flags mode)
     {
         close_file();
 
-        int oflags = 0;
+        int oflags      = 0;
         unsigned access = static_cast<unsigned>(mode) & 3u;
         if (access == static_cast<unsigned>(file_base::read_write))
             oflags |= O_RDWR;
@@ -243,14 +245,15 @@ public:
 inline std::coroutine_handle<>
 uring_stream_file::read_some(
     std::coroutine_handle<> h,
-    capy::executor_ref      ex,
-    buffer_param            buffers,
-    std::stop_token         token,
-    std::error_code*        ec,
-    std::size_t*            bytes)
+    capy::executor_ref ex,
+    buffer_param buffers,
+    std::stop_token token,
+    std::error_code* ec,
+    std::size_t* bytes)
 {
-    rd_.prepare(h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
-        shared_from_this(), buffers, token);
+    rd_.prepare(
+        h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_, shared_from_this(),
+        buffers, token);
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
@@ -263,8 +266,7 @@ uring_stream_file::read_some(
         return std::noop_coroutine();
     }
 
-    if (rd_.empty_buffer ||
-        rd_.cancelled.load(std::memory_order_acquire))
+    if (rd_.empty_buffer || rd_.cancelled.load(std::memory_order_acquire))
     {
         uring_scheduler::lock_type lock(sched_->dispatch_mutex());
         sched_->push_completed_locked(&rd_);
@@ -278,14 +280,15 @@ uring_stream_file::read_some(
 inline std::coroutine_handle<>
 uring_stream_file::write_some(
     std::coroutine_handle<> h,
-    capy::executor_ref      ex,
-    buffer_param            buffers,
-    std::stop_token         token,
-    std::error_code*        ec,
-    std::size_t*            bytes)
+    capy::executor_ref ex,
+    buffer_param buffers,
+    std::stop_token token,
+    std::error_code* ec,
+    std::size_t* bytes)
 {
-    wr_.prepare(h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
-        shared_from_this(), buffers, token);
+    wr_.prepare(
+        h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_, shared_from_this(),
+        buffers, token);
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
@@ -298,8 +301,7 @@ uring_stream_file::write_some(
         return std::noop_coroutine();
     }
 
-    if (wr_.empty_buffer ||
-        wr_.cancelled.load(std::memory_order_acquire))
+    if (wr_.empty_buffer || wr_.cancelled.load(std::memory_order_acquire))
     {
         uring_scheduler::lock_type lock(sched_->dispatch_mutex());
         sched_->push_completed_locked(&wr_);
@@ -318,16 +320,21 @@ uring_stream_file::write_some(
 */
 class BOOST_COROSIO_DECL uring_stream_file_service final
     : public uring_file_service_base<
-          uring_stream_file_service, file_service, uring_stream_file>
+          uring_stream_file_service,
+          file_service,
+          uring_stream_file>
 {
     using base_service = uring_file_service_base<
-        uring_stream_file_service, file_service, uring_stream_file>;
+        uring_stream_file_service,
+        file_service,
+        uring_stream_file>;
 
 public:
     explicit uring_stream_file_service(
         capy::execution_context& /*ctx*/, uring_scheduler& sched)
         : base_service(sched)
-    {}
+    {
+    }
 
     // construct / destroy / close / shutdown / scheduler() are inherited
     // from uring_file_service_base.
@@ -337,8 +344,7 @@ public:
         std::filesystem::path const& path,
         file_base::flags mode) override
     {
-        return static_cast<uring_stream_file&>(impl).open_file(
-            path, mode);
+        return static_cast<uring_stream_file&>(impl).open_file(path, mode);
     }
 };
 

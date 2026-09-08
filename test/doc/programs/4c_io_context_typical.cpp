@@ -16,17 +16,19 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 // The page focuses on the launch pattern; the coroutine body is a
 // placeholder so the program exits cleanly.
-capy::task<> main_coroutine(corosio::tcp_socket&)
+capy::task<>
+main_coroutine(corosio::tcp_socket&)
 {
     co_return;
 }
 
 // tag::full[]
-int main()
+int
+main()
 {
     corosio::io_context ioc;
 

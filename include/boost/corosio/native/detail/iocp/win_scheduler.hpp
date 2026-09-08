@@ -136,7 +136,8 @@ private:
     bool scheduler_locking_disabled_ = false;
 
     BOOST_COROSIO_MSVC_WARNING_PUSH
-    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // std::/detail:: members, dll-interface
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(
+        4251) // std::/detail:: members, dll-interface
     mutable win_mutex dispatch_mutex_;
     mutable op_queue completed_ops_;
     std::unique_ptr<win_timers> timers_;
@@ -345,8 +346,7 @@ win_scheduler::on_pending(overlapped_op* op) const
     // op memory itself — no packet, no count.
     long expected = 0;
     if (op->ready_.compare_exchange_strong(
-            expected, 1,
-            std::memory_order_acq_rel, std::memory_order_acquire))
+            expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
     {
         ::InterlockedIncrement(&pending_io_);
     }
@@ -590,8 +590,7 @@ win_scheduler::do_one(unsigned long timeout_ms)
                 // skip and let on_pending() re-post.
                 long expected = 0;
                 if (!ov_op->ready_.compare_exchange_strong(
-                        expected, 1,
-                        std::memory_order_acq_rel,
+                        expected, 1, std::memory_order_acq_rel,
                         std::memory_order_acquire))
                 {
                     ::InterlockedDecrement(&pending_io_);
@@ -621,8 +620,8 @@ win_scheduler::do_one(unsigned long timeout_ms)
                 return 1;
             }
 
-            default:            // LCOV_EXCL_LINE unreachable: closed key set
-                continue;       // LCOV_EXCL_LINE unreachable: closed key set
+            default:      // LCOV_EXCL_LINE unreachable: closed key set
+                continue; // LCOV_EXCL_LINE unreachable: closed key set
             }
         }
 
@@ -651,8 +650,8 @@ win_scheduler::do_one(unsigned long timeout_ms)
 
             // A key outside the closed set reaches here only if a
             // third party posts to the port.
-            default:            // LCOV_EXCL_LINE unreachable: closed key set
-                continue;       // LCOV_EXCL_LINE unreachable: closed key set
+            default:      // LCOV_EXCL_LINE unreachable: closed key set
+                continue; // LCOV_EXCL_LINE unreachable: closed key set
             }
         }
 
@@ -801,8 +800,7 @@ win_scheduler::shutdown()
         ULONG_PTR key;
         LPOVERLAPPED overlapped;
         ::GetQueuedCompletionStatus(
-            iocp_, &bytes, &key, &overlapped,
-            iocp::shutdown_drain_timeout_ms);
+            iocp_, &bytes, &key, &overlapped, iocp::shutdown_drain_timeout_ms);
         if (overlapped)
         {
             if (key == key_posted)

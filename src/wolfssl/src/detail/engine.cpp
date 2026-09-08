@@ -44,14 +44,12 @@ is_zero_return_error(int err) noexcept
 
 class wolfssl_category_impl final : public std::error_category
 {
-    char const*
-    name() const noexcept override
+    char const* name() const noexcept override
     {
         return "corosio.wolfssl";
     }
 
-    std::string
-    message(int value) const override
+    std::string message(int value) const override
     {
         char buf[WOLFSSL_MAX_ERROR_SZ];
         wolfSSL_ERR_error_string_n(
@@ -150,7 +148,9 @@ wolfssl_sni_callback(WOLFSSL* ssl, int* /* alert */, void* arg)
 // still reject "revoked".
 static int
 wolfssl_crl_soft_fail_cb(
-    int /*ret*/, WOLFSSL_CRL* /*crl*/, WOLFSSL_CERT_MANAGER* /*cm*/,
+    int /*ret*/,
+    WOLFSSL_CRL* /*crl*/,
+    WOLFSSL_CERT_MANAGER* /*cm*/,
     void* /*ctx*/)
 {
     return 1; // override missing/unknown-status CRL error -> accept
@@ -186,9 +186,9 @@ wolfssl_verify_callback(int preverified, WOLFSSL_X509_STORE_CTX* store)
         return preverified;
 
     WOLFSSL_CTX* wctx = wolfSSL_get_SSL_CTX(ssl);
-    auto* cd          = wctx ? static_cast<tls_context_data const*>(
-                             wolfSSL_CTX_get_ex_data(wctx, verify_cd_ex_index))
-                             : nullptr;
+    auto* cd = wctx ? static_cast<tls_context_data const*>(
+                          wolfSSL_CTX_get_ex_data(wctx, verify_cd_ex_index))
+                    : nullptr;
     if (!cd || !cd->verify_callback)
         return preverified;
 
@@ -198,10 +198,10 @@ wolfssl_verify_callback(int preverified, WOLFSSL_X509_STORE_CTX* store)
     // pointer into the certificate's own storage (no allocation, valid for
     // the callback's duration).
     unsigned char const* der = nullptr;
-    std::size_t der_len       = 0;
+    std::size_t der_len      = 0;
     if (WOLFSSL_X509* cert = wolfSSL_X509_STORE_CTX_get_current_cert(store))
     {
-        int sz             = 0;
+        int sz                 = 0;
         unsigned char const* d = wolfSSL_X509_get_der(cert, &sz);
         if (d && sz > 0)
         {
@@ -264,8 +264,7 @@ public:
     // / server candidates); caching it avoids rebuilding per connection.
     std::string alpn_list_;
 
-    void
-    apply_common_settings(WOLFSSL_CTX* ctx, tls_context_data const& cd)
+    void apply_common_settings(WOLFSSL_CTX* ctx, tls_context_data const& cd)
     {
         if (!ctx)
             return;
@@ -350,7 +349,8 @@ public:
                         std::vector<unsigned char> chain(cert, cert + certSz);
                         for (WC_DerCertList* n = ca; n; n = n->next)
                             chain.insert(
-                                chain.end(), n->buffer, n->buffer + n->bufferSz);
+                                chain.end(), n->buffer,
+                                n->buffer + n->bufferSz);
                         if (wolfSSL_CTX_use_certificate_chain_buffer_format(
                                 ctx, chain.data(),
                                 static_cast<long>(chain.size()),
@@ -473,8 +473,8 @@ public:
                         ctx,
                         reinterpret_cast<unsigned char const*>(
                             cd.private_key.data()),
-                        static_cast<long>(cd.private_key.size()), format) !=
-                    WOLFSSL_SUCCESS)
+                        static_cast<long>(cd.private_key.size()),
+                        format) != WOLFSSL_SUCCESS)
                     setup_error_ = setup_error_ ? setup_error_ : 1;
             }
         }
@@ -553,7 +553,8 @@ public:
                 // DER. A supplied CRL that parses as neither must not be
                 // silently dropped, so record it for a fail-closed handshake.
                 if (wolfSSL_CTX_LoadCRLBuffer(
-                        ctx, buf, sz, WOLFSSL_FILETYPE_PEM) != WOLFSSL_SUCCESS &&
+                        ctx, buf, sz, WOLFSSL_FILETYPE_PEM) !=
+                        WOLFSSL_SUCCESS &&
                     wolfSSL_CTX_LoadCRLBuffer(
                         ctx, buf, sz, WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS)
                     setup_error_ = setup_error_ ? setup_error_ : 1;
@@ -668,8 +669,7 @@ engine::recv_callback(WOLFSSL*, char* buf, int sz, void* ctx)
     if (available == 0)
         return WOLFSSL_CBIO_ERR_WANT_READ;
 
-    std::size_t to_copy =
-        (std::min)(available, static_cast<std::size_t>(sz));
+    std::size_t to_copy = (std::min)(available, static_cast<std::size_t>(sz));
     std::memcpy(buf, self->in_.data() + self->in_pos_, to_copy);
     self->in_pos_ += to_copy;
 
@@ -690,8 +690,7 @@ engine::send_callback(WOLFSSL*, char* buf, int sz, void* ctx)
     if (available == 0)
         return WOLFSSL_CBIO_ERR_WANT_WRITE;
 
-    std::size_t to_copy =
-        (std::min)(available, static_cast<std::size_t>(sz));
+    std::size_t to_copy = (std::min)(available, static_cast<std::size_t>(sz));
     std::memcpy(self->out_.data() + self->out_len_, buf, to_copy);
     self->out_len_ += to_copy;
 
@@ -724,9 +723,8 @@ engine::init(tls_context const& ctx, tls_role role, std::string const& hostname)
             ? std::error_code(native->setup_error_, wolfssl_category())
             : std::make_error_code(std::errc::invalid_argument);
 
-    WOLFSSL_CTX* native_ctx = (role == tls_role::client)
-        ? native->client_ctx_
-        : native->server_ctx_;
+    WOLFSSL_CTX* native_ctx =
+        (role == tls_role::client) ? native->client_ctx_ : native->server_ctx_;
 
     if (!native_ctx)
     {
@@ -839,21 +837,19 @@ engine::init(tls_context const& ctx, tls_role role, std::string const& hostname)
             // rather than skip the check silently.
             WOLFSSL_X509_VERIFY_PARAM* vp = wolfSSL_get0_param(ssl_);
             if (!vp ||
-                wolfSSL_X509_VERIFY_PARAM_set1_ip_asc(
-                    vp, hostname.c_str()) != WOLFSSL_SUCCESS)
+                wolfSSL_X509_VERIFY_PARAM_set1_ip_asc(vp, hostname.c_str()) !=
+                    WOLFSSL_SUCCESS)
             {
                 // Fail closed rather than handshake without the
                 // requested name check.
                 wolfSSL_free(ssl_);
                 ssl_ = nullptr;
-                return std::make_error_code(
-                    std::errc::invalid_argument);
+                return std::make_error_code(std::errc::invalid_argument);
             }
 #else
             wolfSSL_free(ssl_);
             ssl_ = nullptr;
-            return std::make_error_code(
-                std::errc::function_not_supported);
+            return std::make_error_code(std::errc::function_not_supported);
 #endif
         }
         else
@@ -892,9 +888,9 @@ engine::reset()
         wolfSSL_free(ssl_);
         ssl_ = nullptr;
     }
-    in_pos_ = 0;
-    in_len_ = 0;
-    out_len_ = 0;
+    in_pos_                = 0;
+    in_len_                = 0;
+    out_len_               = 0;
     received_close_notify_ = false;
 }
 
@@ -904,8 +900,8 @@ engine::capture_alpn([[maybe_unused]] std::string& out) const
 #if defined(HAVE_ALPN)
     char* name        = nullptr;
     unsigned short sz = 0;
-    if (wolfSSL_ALPN_GetProtocol(ssl_, &name, &sz) == WOLFSSL_SUCCESS &&
-        name && sz)
+    if (wolfSSL_ALPN_GetProtocol(ssl_, &name, &sz) == WOLFSSL_SUCCESS && name &&
+        sz)
         out.assign(name, sz);
 #endif
 }
@@ -946,7 +942,8 @@ engine::perform(engine_op op, void* data, std::size_t len)
             return {
                 pending_output() > 0 ? engine_want::output_then_done
                                      : engine_want::done,
-                {}, 0};
+                {},
+                0};
         ret = wolfSSL_shutdown(ssl_);
         break;
     }
@@ -967,7 +964,8 @@ engine::perform(engine_op op, void* data, std::size_t len)
             return {
                 pending_output() > 0 ? engine_want::output_then_done
                                      : engine_want::done,
-                {}, 0};
+                {},
+                0};
 
         // Once the peer's close_notify is latched the bidirectional
         // close is complete, so never park for more input: some
@@ -978,7 +976,8 @@ engine::perform(engine_op op, void* data, std::size_t len)
             return {
                 pending_output() > 0 ? engine_want::output_then_done
                                      : engine_want::done,
-                {}, 0};
+                {},
+                0};
 
         // Our close_notify was queued but the peer's has not arrived
         // yet: flush it, then read for it.
@@ -986,7 +985,8 @@ engine::perform(engine_op op, void* data, std::size_t len)
             return {
                 pending_output() > 0 ? engine_want::output_then_retry
                                      : engine_want::input,
-                {}, 0};
+                {},
+                0};
 
         int const err = wolfSSL_get_error(ssl_, ret);
 
@@ -1002,7 +1002,8 @@ engine::perform(engine_op op, void* data, std::size_t len)
             return {
                 pending_output() > 0 ? engine_want::output_then_retry
                                      : engine_want::input,
-                {}, 0};
+                {},
+                0};
 
         // A close_notify that races a concurrently parked read
         // surfaces here (ret == WOLFSSL_FATAL_ERROR) rather than
@@ -1012,7 +1013,8 @@ engine::perform(engine_op op, void* data, std::size_t len)
             return {
                 pending_output() > 0 ? engine_want::output_then_done
                                      : engine_want::done,
-                {}, 0};
+                {},
+                0};
 
         return {
             pending_output() > 0 ? engine_want::output_then_done
@@ -1026,7 +1028,8 @@ engine::perform(engine_op op, void* data, std::size_t len)
         return {
             pending_output() > 0 ? engine_want::output_then_done
                                  : engine_want::done,
-            {}, transfer ? static_cast<std::size_t>(ret) : 0};
+            {},
+            transfer ? static_cast<std::size_t>(ret) : 0};
 
     int const err = wolfSSL_get_error(ssl_, ret);
 
@@ -1044,8 +1047,7 @@ engine::perform(engine_op op, void* data, std::size_t len)
         // used here: some builds clear it on the very read that reaches
         // this branch, which is exactly why the latch exists.
         if (op == engine_op::read && received_close_notify_)
-            return {
-                engine_want::done, make_error_code(capy::error::eof), 0};
+            return {engine_want::done, make_error_code(capy::error::eof), 0};
 
         // A write cannot make progress once the peer's close_notify has
         // been latched: the connection is closed, so parking on transport
@@ -1062,7 +1064,8 @@ engine::perform(engine_op op, void* data, std::size_t len)
         return {
             pending_output() > 0 ? engine_want::output_then_retry
                                  : engine_want::input,
-            {}, 0};
+            {},
+            0};
     }
 
     if (transfer && is_zero_return_error(err))

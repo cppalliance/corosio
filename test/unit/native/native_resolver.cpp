@@ -42,7 +42,8 @@ struct native_resolver_test
             decltype(std::declval<resolver&>().resolve(
                 std::declval<std::string_view>(),
                 std::declval<std::string_view>()))>,
-        "native_resolver::resolve(host, service) must shadow resolver::resolve");
+        "native_resolver::resolve(host, service) must shadow "
+        "resolver::resolve");
     // resolve(endpoint) - reverse resolution
     static_assert(
         !std::is_same_v<
@@ -92,14 +93,14 @@ struct native_resolver_test
         auto task = [](native_resolver<Backend>& r_ref, std::error_code& ec_out,
                        bool& done_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve("localhost", "80");
-            ec_out   = ec;
-            done_out = true;
+            ec_out         = ec;
+            done_out       = true;
         };
         // run_async drives the task to its first suspension before
         // returning, so requesting stop now lands while the resolve is
         // in flight and the cancel surfaces at await_resume.
-        capy::run_async(ctx.get_executor(), ss.get_token())(
-            task(r, result_ec, done));
+        capy::run_async(
+            ctx.get_executor(), ss.get_token())(task(r, result_ec, done));
         ss.request_stop();
         ctx.run();
 
@@ -148,7 +149,7 @@ struct posix_resolver_gai_error_test
         check_mapped(EAI_SOCKTYPE, std::errc::not_supported);
 
         // EAI_SYSTEM reads errno; force a known value first.
-        errno = EINVAL;
+        errno       = EINVAL;
         auto sys_ec = detail::posix_resolver_detail::make_gai_error(EAI_SYSTEM);
         BOOST_TEST(sys_ec == std::errc::invalid_argument);
 

@@ -44,8 +44,7 @@ pool_thread_count()
         // Sized for the longest name the directory entry can carry,
         // so the path is never truncated.
         char path[sizeof("/proc/self/task//comm") + sizeof(e->d_name)];
-        std::snprintf(
-            path, sizeof(path), "/proc/self/task/%s/comm", e->d_name);
+        std::snprintf(path, sizeof(path), "/proc/self/task/%s/comm", e->d_name);
         auto* f = std::fopen(path, "r");
         if (!f)
             continue;

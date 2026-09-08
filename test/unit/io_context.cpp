@@ -130,11 +130,11 @@ make_atomic_coro(std::atomic<int>& counter)
 // Shared state for the peer-utilization barrier (see testHintOneWakesPeers).
 struct gate_state
 {
-    std::mutex              mtx;
+    std::mutex mtx;
     std::condition_variable cv;
-    int                     active     = 0;  // gates currently in the barrier
-    int                     peak       = 0;  // max concurrent gates observed
-    int                     release_at = 0;  // release once this many overlap
+    int active     = 0; // gates currently in the barrier
+    int peak       = 0; // max concurrent gates observed
+    int release_at = 0; // release once this many overlap
 };
 
 // Coroutine that, when resumed, blocks until `release_at` gates are running
@@ -154,8 +154,14 @@ struct gate_coro
             return {std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_never  final_suspend() noexcept { return {}; }
+        std::suspend_always initial_suspend() noexcept
+        {
+            return {};
+        }
+        std::suspend_never final_suspend() noexcept
+        {
+            return {};
+        }
 
         void return_void()
         {
@@ -166,24 +172,31 @@ struct gate_coro
             if (st->active >= st->release_at)
                 st->cv.notify_all();
             else
-                st->cv.wait_for(lk, std::chrono::seconds(2),
-                    [&] { return st->active >= st->release_at; });
+                st->cv.wait_for(lk, std::chrono::seconds(2), [&] {
+                    return st->active >= st->release_at;
+                });
             --st->active;
         }
 
-        void unhandled_exception() { std::terminate(); }
+        void unhandled_exception()
+        {
+            std::terminate();
+        }
     };
 
     std::coroutine_handle<promise_type> h;
 
-    operator std::coroutine_handle<>() const { return h; }
+    operator std::coroutine_handle<>() const
+    {
+        return h;
+    }
 };
 
 inline gate_coro
 make_gate(gate_state& st)
 {
-    auto c            = []() -> gate_coro { co_return; }();
-    c.h.promise().st  = &st;
+    auto c           = []() -> gate_coro { co_return; }();
+    c.h.promise().st = &st;
     return c;
 }
 
@@ -309,7 +322,8 @@ inline capy::task<void>
 when_all_set_event_main(bool& finished)
 {
     capy::async_event evt;
-    [[maybe_unused]] auto [ec, a, b] = co_await capy::when_all(evt.wait(), set_event_task(evt));
+    [[maybe_unused]] auto [ec, a, b] =
+        co_await capy::when_all(evt.wait(), set_event_task(evt));
     BOOST_TEST(!ec);
     finished = true;
 }
@@ -781,8 +795,8 @@ struct io_context_test
 
         // A leader runs on one thread, lets the other run() threads park,
         // then generates the gates from inside the loop (internal work).
-        auto leader = [](io_context::executor_type ex,
-                         gate_state& state, int gates) -> capy::task<> {
+        auto leader = [](io_context::executor_type ex, gate_state& state,
+                         int gates) -> capy::task<> {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             for (int i = 0; i < gates; ++i)
                 ex.post(make_gate(state));
@@ -952,7 +966,7 @@ struct io_context_test
     {
         io_context_options opts;
         opts.thread_pool_size = 0;
-        bool threw = false;
+        bool threw            = false;
         try
         {
             io_context ioc(opts);

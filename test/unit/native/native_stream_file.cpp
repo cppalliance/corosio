@@ -75,7 +75,7 @@ struct native_stream_file_test
         native_stream_file<Backend> f(ioc);
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
-        char buf[64] = {};
+        char buf[64]      = {};
         std::size_t n_out = 0;
 
         auto task = [&]() -> capy::task<> {
@@ -101,7 +101,7 @@ struct native_stream_file_test
             tmp.path,
             file_base::write_only | file_base::create | file_base::truncate));
 
-        char const msg[] = "native write";
+        char const msg[]    = "native write";
         std::size_t written = 0;
 
         auto task = [&]() -> capy::task<> {
@@ -159,11 +159,11 @@ struct native_stream_file_test
 
         stream_file& base = f;
 
-        char buf[64] = {};
+        char buf[64]      = {};
         std::size_t n_out = 0;
-        auto task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await base.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+        auto task         = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await base.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST_EQ(ec, std::error_code{});
             n_out = n;
         };

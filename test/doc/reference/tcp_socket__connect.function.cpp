@@ -21,12 +21,13 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::connect[]
-capy::task<> connect_to_a_server(corosio::io_context& ioc, corosio::endpoint ep)
+capy::task<>
+connect_to_a_server(corosio::io_context& ioc, corosio::endpoint ep)
 {
     // s is freshly constructed and so is not yet open: connect() only
     // opens the socket automatically when it is not already open, using

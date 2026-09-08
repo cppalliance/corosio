@@ -135,8 +135,7 @@ public:
         bool already_expired() const noexcept
         {
             return heap_index_.load(std::memory_order_relaxed) == npos &&
-                (expiry_ ==
-                     (std::chrono::steady_clock::time_point::min)() ||
+                (expiry_ == (std::chrono::steady_clock::time_point::min)() ||
                  expiry_ <= std::chrono::steady_clock::now());
         }
 
@@ -270,9 +269,8 @@ public:
             // (e.g. delay(hours::max())) would wrap now() + d past the
             // clock's range and appear already elapsed.
             auto const now = clock_type::now();
-            impl.expiry_ = ((time_point::max)() - now < d)
-                ? (time_point::max)()
-                : now + d;
+            impl.expiry_ =
+                ((time_point::max)() - now < d) ? (time_point::max)() : now + d;
         }
     }
 

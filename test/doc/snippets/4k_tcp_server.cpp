@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -40,7 +40,7 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 #include <boost/capy/buffers.hpp>
@@ -63,14 +63,15 @@ class echo_worker : public corosio::tcp_server::worker_base
     std::string buf;
 
 public:
-    explicit echo_worker(corosio::io_context& ctx)
-        : ctx_(ctx)
-        , sock_(ctx)
+    explicit echo_worker(corosio::io_context& ctx) : ctx_(ctx), sock_(ctx)
     {
         buf.reserve(4096);
     }
 
-    corosio::tcp_socket& socket() override { return sock_; }
+    corosio::tcp_socket& socket() override
+    {
+        return sock_;
+    }
 
     void run(corosio::tcp_server::launcher launch) override
     {
@@ -81,7 +82,8 @@ public:
 };
 
 // Build the worker pool as a range of pointer-like objects.
-auto make_echo_workers(corosio::io_context& ctx, int n)
+auto
+make_echo_workers(corosio::io_context& ctx, int n)
 {
     std::vector<std::unique_ptr<corosio::tcp_server::worker_base>> v;
     v.reserve(n);
@@ -101,7 +103,8 @@ public:
 };
 // end::overview[]
 
-capy::task<void> echo_worker::do_echo()
+capy::task<void>
+echo_worker::do_echo()
 {
     co_return;
 }
@@ -115,11 +118,12 @@ using launcher = corosio::tcp_server::launcher;
 class worker_base
 {
     // Private list/bookkeeping members managed by tcp_server.
+
 public:
     worker_base();
     virtual ~worker_base();
 
-    virtual void run(launcher launch) = 0;
+    virtual void run(launcher launch)     = 0;
     virtual corosio::tcp_socket& socket() = 0;
 };
 // end::worker_base[]
@@ -134,12 +138,12 @@ class my_worker : public corosio::tcp_server::worker_base
     std::string response_buf;
 
 public:
-    explicit my_worker(corosio::io_context& ctx)
-        : ctx_(ctx)
-        , sock_(ctx)
-    {}
+    explicit my_worker(corosio::io_context& ctx) : ctx_(ctx), sock_(ctx) {}
 
-    corosio::tcp_socket& socket() override { return sock_; }
+    corosio::tcp_socket& socket() override
+    {
+        return sock_;
+    }
 
     void run(corosio::tcp_server::launcher launch) override
     {
@@ -167,7 +171,8 @@ void set_workers(Range&& workers);
 } // namespace set_workers_synopsis
 
 // tag::make_workers[]
-auto make_workers(corosio::io_context& ctx, int n)
+auto
+make_workers(corosio::io_context& ctx, int n)
 {
     std::vector<std::unique_ptr<corosio::tcp_server::worker_base>> v;
     v.reserve(n);
@@ -196,11 +201,18 @@ public:
     explicit launcher_demo(corosio::io_context& ctx)
         : sock_(ctx)
         , executor(ctx.get_executor())
-    {}
+    {
+    }
 
-    corosio::tcp_socket& socket() override { return sock_; }
+    corosio::tcp_socket& socket() override
+    {
+        return sock_;
+    }
 
-    capy::task<void> my_coroutine() { co_return; }
+    capy::task<void> my_coroutine()
+    {
+        co_return;
+    }
 
     // tag::launcher_run[]
     void run(corosio::tcp_server::launcher launch) override
@@ -215,10 +227,10 @@ public:
 namespace launcher_synopsis {
 struct launcher
 {
-// tag::launcher_signature[]
-template<class Executor>
-void operator()(Executor const& ex, capy::task<void> task);
-// end::launcher_signature[]
+    // tag::launcher_signature[]
+    template<class Executor>
+    void operator()(Executor const& ex, capy::task<void> task);
+    // end::launcher_signature[]
 };
 } // namespace launcher_synopsis
 
@@ -239,7 +251,7 @@ bind_many(corosio::tcp_server& server)
 {
     // tag::bind_many[]
     if (auto ec = server.bind(corosio::endpoint(80)))
-        return;  // report the error
+        return; // report the error
     if (auto ec = server.bind(corosio::endpoint(443)))
         return;
     // end::bind_many[]
@@ -257,9 +269,9 @@ start_server(corosio::tcp_server& server)
 multiple_ports(corosio::tcp_server& server)
 {
     // tag::multiple_ports[]
-    if (auto ec = server.bind(corosio::endpoint(80)))    // HTTP
+    if (auto ec = server.bind(corosio::endpoint(80))) // HTTP
         return;
-    if (auto ec = server.bind(corosio::endpoint(443)))   // HTTPS
+    if (auto ec = server.bind(corosio::endpoint(443))) // HTTPS
         return;
     server.start();
     // end::multiple_ports[]
@@ -278,9 +290,9 @@ struct reuse_worker
         response_.clear();
 
         // ... handle connection ...
-    // end::worker_reuse[]
+        // end::worker_reuse[]
         co_return;
-    // tag::worker_reuse[]
+        // tag::worker_reuse[]
 
         // Socket closed, worker returns to pool
     }
@@ -289,8 +301,7 @@ struct reuse_worker
 
 struct tcp_server_test
 {
-    void
-    testEchoServer()
+    void testEchoServer()
     {
         // Constructing the server installs the worker pool; no port
         // is bound and the accept loop never starts.
@@ -299,16 +310,14 @@ struct tcp_server_test
         BOOST_TEST(server.local_endpoint().port() == 0);
     }
 
-    void
-    testMyServer()
+    void testMyServer()
     {
         corosio::io_context ioc;
         my_server server(ioc, 4);
         BOOST_TEST(server.local_endpoint().port() == 0);
     }
 
-    void
-    run()
+    void run()
     {
         testEchoServer();
         testMyServer();

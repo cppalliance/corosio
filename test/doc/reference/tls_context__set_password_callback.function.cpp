@@ -33,7 +33,8 @@ namespace {
 // tag::set_password_callback[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void supply_the_key_passphrase(corosio::tls_context& ctx)
+void
+supply_the_key_passphrase(corosio::tls_context& ctx)
 {
     // Keep the passphrase out of the source and out of the shipped binary:
     // read it from the environment, a secrets service, or a prompt. There is
@@ -42,14 +43,13 @@ void supply_the_key_passphrase(corosio::tls_context& ctx)
     // before the load below is a habit that keeps the pair legible rather
     // than a requirement.
     ctx.set_password_callback(
-        [](std::size_t max_length, corosio::tls_password_purpose purpose)
-        {
+        [](std::size_t max_length, corosio::tls_password_purpose purpose) {
             // purpose distinguishes decrypting existing key material from
             // encrypting new material; a context that only loads keys sees
             // tls_password_purpose::for_reading.
             char const* pw = std::getenv("TLS_KEY_PASSPHRASE");
             if (pw == nullptr)
-                return std::string();  // nothing to offer; the load fails
+                return std::string(); // nothing to offer; the load fails
 
             // A backend may copy at most max_length bytes, so returning a
             // longer string can silently truncate it into a different, wrong
@@ -64,7 +64,7 @@ void supply_the_key_passphrase(corosio::tls_context& ctx)
 
     if (auto ec = ctx.use_private_key_file(
             "encrypted.key", corosio::tls_file_format::pem))
-        return;  // report the error
+        return; // report the error
 }
 // end::set_password_callback[]
 

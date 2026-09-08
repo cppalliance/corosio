@@ -266,16 +266,40 @@ public:
         return *this;
     }
 
-    bool value() const noexcept { return value_ != 0; }
-    explicit operator bool() const noexcept { return value_ != 0; }
-    bool operator!() const noexcept { return value_ == 0; }
+    bool value() const noexcept
+    {
+        return value_ != 0;
+    }
+    explicit operator bool() const noexcept
+    {
+        return value_ != 0;
+    }
+    bool operator!() const noexcept
+    {
+        return value_ == 0;
+    }
 
-    static constexpr int level() noexcept { return Level; }
-    static constexpr int name() noexcept { return Name; }
+    static constexpr int level() noexcept
+    {
+        return Level;
+    }
+    static constexpr int name() noexcept
+    {
+        return Name;
+    }
 
-    void* data() noexcept { return &value_; }
-    void const* data() const noexcept { return &value_; }
-    std::size_t size() const noexcept { return sizeof(value_); }
+    void* data() noexcept
+    {
+        return &value_;
+    }
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
 
     void resize(std::size_t) noexcept {}
 };
@@ -300,7 +324,8 @@ public:
 
     explicit byte_integer(int v) noexcept
         : value_(static_cast<unsigned char>(v))
-    {}
+    {
+    }
 
     byte_integer& operator=(int v) noexcept
     {
@@ -308,14 +333,32 @@ public:
         return *this;
     }
 
-    int value() const noexcept { return value_; }
+    int value() const noexcept
+    {
+        return value_;
+    }
 
-    static constexpr int level() noexcept { return Level; }
-    static constexpr int name() noexcept { return Name; }
+    static constexpr int level() noexcept
+    {
+        return Level;
+    }
+    static constexpr int name() noexcept
+    {
+        return Name;
+    }
 
-    void* data() noexcept { return &value_; }
-    void const* data() const noexcept { return &value_; }
-    std::size_t size() const noexcept { return sizeof(value_); }
+    void* data() noexcept
+    {
+        return &value_;
+    }
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
 
     void resize(std::size_t) noexcept {}
 };

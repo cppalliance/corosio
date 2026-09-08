@@ -46,16 +46,26 @@ class epoll_local_datagram_service;
 
 class epoll_tcp_socket final
     : public reactor_stream_socket_impl<
-          epoll_tcp_socket, epoll_traits, epoll_tcp_service,
-          epoll_tcp_acceptor, tcp_socket::implementation, endpoint>
+          epoll_tcp_socket,
+          epoll_traits,
+          epoll_tcp_service,
+          epoll_tcp_acceptor,
+          tcp_socket::implementation,
+          endpoint>
 {
     using base_type = reactor_stream_socket_impl<
-        epoll_tcp_socket, epoll_traits, epoll_tcp_service,
-        epoll_tcp_acceptor, tcp_socket::implementation, endpoint>;
+        epoll_tcp_socket,
+        epoll_traits,
+        epoll_tcp_service,
+        epoll_tcp_acceptor,
+        tcp_socket::implementation,
+        endpoint>;
     friend epoll_tcp_service;
+
 public:
-    explicit epoll_tcp_socket(epoll_tcp_service& svc) noexcept
-        : base_type(svc) {}
+    explicit epoll_tcp_socket(epoll_tcp_service& svc) noexcept : base_type(svc)
+    {
+    }
 
     native_handle_type release_socket() noexcept override
     {
@@ -66,18 +76,27 @@ public:
 
 class epoll_local_stream_socket final
     : public reactor_stream_socket_impl<
-          epoll_local_stream_socket, epoll_traits,
-          epoll_local_stream_service, epoll_local_stream_acceptor,
-          local_stream_socket::implementation, corosio::local_endpoint>
+          epoll_local_stream_socket,
+          epoll_traits,
+          epoll_local_stream_service,
+          epoll_local_stream_acceptor,
+          local_stream_socket::implementation,
+          corosio::local_endpoint>
 {
     using base_type = reactor_stream_socket_impl<
-        epoll_local_stream_socket, epoll_traits,
-        epoll_local_stream_service, epoll_local_stream_acceptor,
-        local_stream_socket::implementation, corosio::local_endpoint>;
+        epoll_local_stream_socket,
+        epoll_traits,
+        epoll_local_stream_service,
+        epoll_local_stream_acceptor,
+        local_stream_socket::implementation,
+        corosio::local_endpoint>;
     friend epoll_local_stream_service;
+
 public:
     explicit epoll_local_stream_socket(epoll_local_stream_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 
     native_handle_type release_socket() noexcept override
     {
@@ -90,16 +109,26 @@ public:
 
 class epoll_udp_socket final
     : public reactor_dgram_socket_impl<
-          epoll_udp_socket, epoll_traits, epoll_udp_service,
-          epoll_tcp_acceptor, udp_socket::implementation, endpoint>
+          epoll_udp_socket,
+          epoll_traits,
+          epoll_udp_service,
+          epoll_tcp_acceptor,
+          udp_socket::implementation,
+          endpoint>
 {
     using base_type = reactor_dgram_socket_impl<
-        epoll_udp_socket, epoll_traits, epoll_udp_service,
-        epoll_tcp_acceptor, udp_socket::implementation, endpoint>;
+        epoll_udp_socket,
+        epoll_traits,
+        epoll_udp_service,
+        epoll_tcp_acceptor,
+        udp_socket::implementation,
+        endpoint>;
     friend epoll_udp_service;
+
 public:
-    explicit epoll_udp_socket(epoll_udp_service& svc) noexcept
-        : base_type(svc) {}
+    explicit epoll_udp_socket(epoll_udp_service& svc) noexcept : base_type(svc)
+    {
+    }
 
     std::error_code shutdown(corosio::shutdown_type what) noexcept override
     {
@@ -114,18 +143,28 @@ public:
 
 class epoll_local_datagram_socket final
     : public reactor_dgram_socket_impl<
-          epoll_local_datagram_socket, epoll_traits,
-          epoll_local_datagram_service, epoll_tcp_acceptor,
-          local_datagram_socket::implementation, corosio::local_endpoint>
+          epoll_local_datagram_socket,
+          epoll_traits,
+          epoll_local_datagram_service,
+          epoll_tcp_acceptor,
+          local_datagram_socket::implementation,
+          corosio::local_endpoint>
 {
     using base_type = reactor_dgram_socket_impl<
-        epoll_local_datagram_socket, epoll_traits,
-        epoll_local_datagram_service, epoll_tcp_acceptor,
-        local_datagram_socket::implementation, corosio::local_endpoint>;
+        epoll_local_datagram_socket,
+        epoll_traits,
+        epoll_local_datagram_service,
+        epoll_tcp_acceptor,
+        local_datagram_socket::implementation,
+        corosio::local_endpoint>;
     friend epoll_local_datagram_service;
+
 public:
-    explicit epoll_local_datagram_socket(epoll_local_datagram_service& svc) noexcept
-        : base_type(svc) {}
+    explicit epoll_local_datagram_socket(
+        epoll_local_datagram_service& svc) noexcept
+        : base_type(svc)
+    {
+    }
 
     std::error_code shutdown(corosio::shutdown_type what) noexcept override
     {
@@ -147,119 +186,169 @@ public:
 
 class epoll_tcp_acceptor final
     : public reactor_acceptor_impl<
-          epoll_tcp_acceptor, epoll_traits,
-          epoll_tcp_acceptor_service, epoll_tcp_socket,
-          tcp_acceptor::implementation, endpoint>
+          epoll_tcp_acceptor,
+          epoll_traits,
+          epoll_tcp_acceptor_service,
+          epoll_tcp_socket,
+          tcp_acceptor::implementation,
+          endpoint>
 {
     using base_type = reactor_acceptor_impl<
-        epoll_tcp_acceptor, epoll_traits,
-        epoll_tcp_acceptor_service, epoll_tcp_socket,
-        tcp_acceptor::implementation, endpoint>;
+        epoll_tcp_acceptor,
+        epoll_traits,
+        epoll_tcp_acceptor_service,
+        epoll_tcp_socket,
+        tcp_acceptor::implementation,
+        endpoint>;
     friend epoll_tcp_acceptor_service;
+
 public:
     explicit epoll_tcp_acceptor(epoll_tcp_acceptor_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 };
 
 class epoll_local_stream_acceptor final
     : public reactor_acceptor_impl<
-          epoll_local_stream_acceptor, epoll_traits,
+          epoll_local_stream_acceptor,
+          epoll_traits,
           epoll_local_stream_acceptor_service,
           epoll_local_stream_socket,
-          local_stream_acceptor::implementation, corosio::local_endpoint>
+          local_stream_acceptor::implementation,
+          corosio::local_endpoint>
 {
     using base_type = reactor_acceptor_impl<
-        epoll_local_stream_acceptor, epoll_traits,
+        epoll_local_stream_acceptor,
+        epoll_traits,
         epoll_local_stream_acceptor_service,
         epoll_local_stream_socket,
-        local_stream_acceptor::implementation, corosio::local_endpoint>;
+        local_stream_acceptor::implementation,
+        corosio::local_endpoint>;
     friend epoll_local_stream_acceptor_service;
+
 public:
     explicit epoll_local_stream_acceptor(
         epoll_local_stream_acceptor_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 };
 
 // --- Services ---
 
 class BOOST_COROSIO_DECL epoll_tcp_service final
     : public reactor_tcp_service_impl<
-          epoll_tcp_service, epoll_traits, epoll_tcp_socket>
+          epoll_tcp_service,
+          epoll_traits,
+          epoll_tcp_socket>
 {
     using base_type = reactor_tcp_service_impl<
-        epoll_tcp_service, epoll_traits, epoll_tcp_socket>;
+        epoll_tcp_service,
+        epoll_traits,
+        epoll_tcp_socket>;
+
 public:
-    explicit epoll_tcp_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+    explicit epoll_tcp_service(capy::execution_context& ctx) : base_type(ctx) {}
 };
 
 class BOOST_COROSIO_DECL epoll_local_stream_service final
     : public reactor_local_stream_service_impl<
-          epoll_local_stream_service, epoll_traits,
+          epoll_local_stream_service,
+          epoll_traits,
           epoll_local_stream_socket>
 {
     using base_type = reactor_local_stream_service_impl<
-        epoll_local_stream_service, epoll_traits,
+        epoll_local_stream_service,
+        epoll_traits,
         epoll_local_stream_socket>;
+
 public:
     explicit epoll_local_stream_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL epoll_udp_service final
     : public reactor_udp_service_impl<
-          epoll_udp_service, epoll_traits, epoll_udp_socket>
+          epoll_udp_service,
+          epoll_traits,
+          epoll_udp_socket>
 {
     using base_type = reactor_udp_service_impl<
-        epoll_udp_service, epoll_traits, epoll_udp_socket>;
+        epoll_udp_service,
+        epoll_traits,
+        epoll_udp_socket>;
+
 public:
-    explicit epoll_udp_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+    explicit epoll_udp_service(capy::execution_context& ctx) : base_type(ctx) {}
 };
 
 class BOOST_COROSIO_DECL epoll_local_datagram_service final
     : public reactor_local_dgram_service_impl<
-          epoll_local_datagram_service, epoll_traits,
+          epoll_local_datagram_service,
+          epoll_traits,
           epoll_local_datagram_socket>
 {
     using base_type = reactor_local_dgram_service_impl<
-        epoll_local_datagram_service, epoll_traits,
+        epoll_local_datagram_service,
+        epoll_traits,
         epoll_local_datagram_socket>;
+
 public:
     explicit epoll_local_datagram_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL epoll_tcp_acceptor_service final
     : public reactor_acceptor_service_impl<
-          epoll_tcp_acceptor_service, epoll_traits,
-          tcp_acceptor_service, epoll_tcp_acceptor,
-          epoll_tcp_service, endpoint>
+          epoll_tcp_acceptor_service,
+          epoll_traits,
+          tcp_acceptor_service,
+          epoll_tcp_acceptor,
+          epoll_tcp_service,
+          endpoint>
 {
     using base_type = reactor_acceptor_service_impl<
-        epoll_tcp_acceptor_service, epoll_traits,
-        tcp_acceptor_service, epoll_tcp_acceptor,
-        epoll_tcp_service, endpoint>;
+        epoll_tcp_acceptor_service,
+        epoll_traits,
+        tcp_acceptor_service,
+        epoll_tcp_acceptor,
+        epoll_tcp_service,
+        endpoint>;
+
 public:
     explicit epoll_tcp_acceptor_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL epoll_local_stream_acceptor_service final
     : public reactor_acceptor_service_impl<
-          epoll_local_stream_acceptor_service, epoll_traits,
+          epoll_local_stream_acceptor_service,
+          epoll_traits,
           local_stream_acceptor_service,
           epoll_local_stream_acceptor,
-          epoll_local_stream_service, corosio::local_endpoint>
+          epoll_local_stream_service,
+          corosio::local_endpoint>
 {
     using base_type = reactor_acceptor_service_impl<
-        epoll_local_stream_acceptor_service, epoll_traits,
+        epoll_local_stream_acceptor_service,
+        epoll_traits,
         local_stream_acceptor_service,
         epoll_local_stream_acceptor,
-        epoll_local_stream_service, corosio::local_endpoint>;
+        epoll_local_stream_service,
+        corosio::local_endpoint>;
+
 public:
     explicit epoll_local_stream_acceptor_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 } // namespace boost::corosio::detail

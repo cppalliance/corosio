@@ -26,15 +26,15 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#pragma warning(disable: 4390) // empty controlled statement; shown in the page
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
+#pragma warning(disable : 4390) // empty controlled statement; shown in the page
 #endif
 
 // tag::assume[]
@@ -46,7 +46,7 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 #include <boost/capy/cond.hpp>
@@ -65,8 +65,8 @@ open_by_family(corosio::io_context& ioc)
 {
     // tag::protocol[]
     corosio::udp_socket sock(ioc);
-    if (auto ec = sock.open(corosio::udp::v4()))   // SOCK_DGRAM, AF_INET
-        return;  // report the error
+    if (auto ec = sock.open(corosio::udp::v4())) // SOCK_DGRAM, AF_INET
+        return;                                  // report the error
     // or open(corosio::udp::v6()) for SOCK_DGRAM, AF_INET6
     // end::protocol[]
 }
@@ -77,11 +77,11 @@ open_and_bind(corosio::io_context& ioc)
     // tag::open_bind[]
     corosio::udp_socket sock(ioc);
     if (auto ec = sock.open(corosio::udp::v4()))
-        return;  // report the error
+        return; // report the error
 
-    if (auto ec = sock.bind(
-            corosio::endpoint(corosio::ipv4_address::any(), 9000)))
-        return;  // handle bind failure
+    if (auto ec =
+            sock.bind(corosio::endpoint(corosio::ipv4_address::any(), 9000)))
+        return; // handle bind failure
     // end::open_bind[]
 }
 
@@ -93,42 +93,45 @@ send_datagram(
     char const msg[] = "hello";
     corosio::endpoint dest(corosio::ipv4_address::loopback(), 9000);
 
-    auto [ec, n] = co_await sock.send_to(
-        capy::const_buffer(msg, sizeof(msg)), dest);
+    auto [ec, n] =
+        co_await sock.send_to(capy::const_buffer(msg, sizeof(msg)), dest);
     // end::send_to[]
     ec_out = ec;
-    n_out = n;
+    n_out  = n;
 }
 
 capy::task<>
 receive_datagram(
-    corosio::udp_socket& sock, std::error_code& ec_out,
-    std::size_t& n_out, corosio::endpoint& sender_out)
+    corosio::udp_socket& sock,
+    std::error_code& ec_out,
+    std::size_t& n_out,
+    corosio::endpoint& sender_out)
 {
     // tag::recv_from[]
     char buf[1500];
     corosio::endpoint sender;
 
-    auto [ec, n] = co_await sock.recv_from(
-        capy::mutable_buffer(buf, sizeof(buf)), sender);
+    auto [ec, n] =
+        co_await sock.recv_from(capy::mutable_buffer(buf, sizeof(buf)), sender);
     if (!ec)
     {
         // buf[0..n) holds the datagram; sender holds the source address.
     }
     // end::recv_from[]
-    ec_out = ec;
-    n_out = n;
+    ec_out     = ec;
+    n_out      = n;
     sender_out = sender;
 }
 
 // tag::echo[]
-capy::task<> echo(corosio::io_context& ioc)
+capy::task<>
+echo(corosio::io_context& ioc)
 {
     corosio::udp_socket sock(ioc);
     if (auto ec = sock.open(corosio::udp::v4()))
         co_return;
-    if (auto ec = sock.bind(
-            corosio::endpoint(corosio::ipv4_address::any(), 9000)))
+    if (auto ec =
+            sock.bind(corosio::endpoint(corosio::ipv4_address::any(), 9000)))
         co_return;
 
     char buf[1500];
@@ -137,10 +140,12 @@ capy::task<> echo(corosio::io_context& ioc)
         corosio::endpoint sender;
         auto [rec, n] = co_await sock.recv_from(
             capy::mutable_buffer(buf, sizeof(buf)), sender);
-        if (rec) co_return;
+        if (rec)
+            co_return;
 
-        if (auto [sec, sn] = co_await sock.send_to(
-                capy::const_buffer(buf, n), sender); sec)
+        if (auto [sec, sn] =
+                co_await sock.send_to(capy::const_buffer(buf, n), sender);
+            sec)
             co_return;
     }
 }
@@ -155,15 +160,14 @@ connected_mode(corosio::io_context& ioc)
     corosio::udp_socket sock(ioc);
     auto [cec] = co_await sock.connect(
         corosio::endpoint(corosio::ipv4_address::loopback(), 9000));
-    if (cec) co_return;
+    if (cec)
+        co_return;
 
-    if (auto [sec, sn] = co_await sock.send(
-            capy::const_buffer("ping", 4)); sec)
+    if (auto [sec, sn] = co_await sock.send(capy::const_buffer("ping", 4)); sec)
         co_return;
 
     char buf[64];
-    auto [rec, n] = co_await sock.recv(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [rec, n] = co_await sock.recv(capy::mutable_buffer(buf, sizeof(buf)));
     // end::connected[]
 }
 
@@ -183,8 +187,8 @@ peek_datagram(
     peeked = n;
 
     // The peeked datagram is still queued; a plain recv drains it.
-    auto [ec2, n2] = co_await sock.recv_from(
-        capy::mutable_buffer(buf, sizeof(buf)), sender);
+    auto [ec2, n2] =
+        co_await sock.recv_from(capy::mutable_buffer(buf, sizeof(buf)), sender);
     if (!ec2)
         drained = n2;
 }
@@ -213,12 +217,13 @@ multicast_join(corosio::io_context& ioc)
         co_return;
     sock.set_option(corosio::socket_option::reuse_address(true));
 
-    if (auto ec = sock.bind(
-            corosio::endpoint(corosio::ipv4_address::any(), 30001)))
+    if (auto ec =
+            sock.bind(corosio::endpoint(corosio::ipv4_address::any(), 30001)))
         co_return;
 
-    sock.set_option(corosio::socket_option::join_group_v4(
-        corosio::ipv4_address("239.255.0.1")));
+    sock.set_option(
+        corosio::socket_option::join_group_v4(
+            corosio::ipv4_address("239.255.0.1")));
     // end::multicast[]
 }
 
@@ -232,8 +237,7 @@ cancel_all(corosio::udp_socket& sock)
 
 struct udp_test
 {
-    void
-    testProtocolAndBind()
+    void testProtocolAndBind()
     {
         corosio::io_context ioc;
         open_by_family(ioc);
@@ -241,8 +245,7 @@ struct udp_test
         BOOST_TEST_PASS();
     }
 
-    void
-    testSendTo()
+    void testSendTo()
     {
         corosio::io_context ioc;
         corosio::udp_socket sock(ioc);
@@ -256,16 +259,15 @@ struct udp_test
         BOOST_TEST_EQ(n, 6u);
     }
 
-    void
-    testRecvFrom()
+    void testRecvFrom()
     {
         corosio::io_context ioc;
         auto ex = ioc.get_executor();
 
         corosio::udp_socket sock(ioc);
         BOOST_TEST(!sock.open(corosio::udp::v4()));
-        auto bec = sock.bind(
-            corosio::endpoint(corosio::ipv4_address::loopback(), 0));
+        auto bec =
+            sock.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
         corosio::udp_socket helper(ioc);
@@ -276,8 +278,7 @@ struct udp_test
         corosio::endpoint sender;
         capy::run_async(ex)(receive_datagram(sock, ec, n, sender));
 
-        auto feeder = [&]() -> capy::task<>
-        {
+        auto feeder = [&]() -> capy::task<> {
             co_await helper.send_to(
                 capy::const_buffer("hello", 5), sock.local_endpoint());
         };
@@ -288,8 +289,7 @@ struct udp_test
         BOOST_TEST_EQ(n, 5u);
     }
 
-    void
-    testEchoStops()
+    void testEchoStops()
     {
         // A pre-signaled stop token makes every path through echo()
         // terminate: bind failure returns, and an in-flight recv_from
@@ -299,38 +299,35 @@ struct udp_test
         ss.request_stop();
         bool done = false;
 
-        auto track = [](capy::task<> t, bool& d) -> capy::task<>
-        {
+        auto track = [](capy::task<> t, bool& d) -> capy::task<> {
             co_await std::move(t);
             d = true;
         };
-        capy::run_async(ioc.get_executor(), ss.get_token())(
-            track(echo(ioc), done));
+        capy::run_async(
+            ioc.get_executor(), ss.get_token())(track(echo(ioc), done));
         ioc.run();
         BOOST_TEST(done);
     }
 
-    void
-    testPeek()
+    void testPeek()
     {
         corosio::io_context ioc;
         auto ex = ioc.get_executor();
 
         corosio::udp_socket sock(ioc);
         BOOST_TEST(!sock.open(corosio::udp::v4()));
-        auto bec = sock.bind(
-            corosio::endpoint(corosio::ipv4_address::loopback(), 0));
+        auto bec =
+            sock.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
         corosio::udp_socket helper(ioc);
         BOOST_TEST(!helper.open(corosio::udp::v4()));
 
-        std::size_t peeked = 0;
+        std::size_t peeked  = 0;
         std::size_t drained = 0;
         capy::run_async(ex)(peek_datagram(sock, peeked, drained));
 
-        auto feeder = [&]() -> capy::task<>
-        {
+        auto feeder = [&]() -> capy::task<> {
             co_await helper.send_to(
                 capy::const_buffer("data", 4), sock.local_endpoint());
         };
@@ -341,8 +338,7 @@ struct udp_test
         BOOST_TEST_EQ(drained, 4u);
     }
 
-    void
-    testOptions()
+    void testOptions()
     {
         corosio::io_context ioc;
         corosio::udp_socket sock(ioc);
@@ -350,8 +346,7 @@ struct udp_test
         BOOST_TEST(tune_options(sock));
     }
 
-    void
-    testCancel()
+    void testCancel()
     {
         corosio::io_context ioc;
         corosio::udp_socket sock(ioc);
@@ -360,18 +355,16 @@ struct udp_test
         BOOST_TEST_PASS();
     }
 
-    void
-    testStopTokenCancel()
+    void testStopTokenCancel()
     {
         corosio::io_context ioc;
         std::error_code task_ec;
 
-        auto my_task = [&]() -> capy::task<>
-        {
+        auto my_task = [&]() -> capy::task<> {
             corosio::udp_socket s(ioc);
             BOOST_TEST(!s.open(corosio::udp::v4()));
-            if (auto bec = s.bind(corosio::endpoint(
-                    corosio::ipv4_address::loopback(), 0)))
+            if (auto bec = s.bind(
+                    corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
                 co_return;
             char buf[64];
             corosio::endpoint sender;
@@ -384,15 +377,14 @@ struct udp_test
         std::stop_source ss;
         capy::run_async(ioc.get_executor(), ss.get_token())(my_task());
         // ...
-        ss.request_stop();   // unblocks any in-flight recv_from inside my_task
+        ss.request_stop(); // unblocks any in-flight recv_from inside my_task
         // end::stop_cancel[]
 
         ioc.run();
         BOOST_TEST(task_ec == capy::cond::canceled);
     }
 
-    void
-    run()
+    void run()
     {
         testProtocolAndBind();
         testSendTo();

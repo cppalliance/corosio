@@ -56,8 +56,7 @@ parity_init(detail::openssl::engine& e, tls_context const& c, tls_role)
 }
 
 inline std::error_code
-parity_init(
-    detail::wolfssl::engine& e, tls_context const& c, tls_role role)
+parity_init(detail::wolfssl::engine& e, tls_context const& c, tls_role role)
 {
     return e.init(c, role, std::string());
 }
@@ -66,10 +65,10 @@ parity_init(
 // the two can be compared for equality.
 struct parity_result
 {
-    bool handshake_ok            = false;
-    bool wrong_ca_rejected       = false;
-    bool shutdown_ok             = false;
-    bool both_received_shutdown  = false;
+    bool handshake_ok           = false;
+    bool wrong_ca_rejected      = false;
+    bool shutdown_ok            = false;
+    bool both_received_shutdown = false;
     std::error_code read_after_close_ec;
     std::size_t read_after_close_n = ~std::size_t{0};
 };
@@ -118,8 +117,7 @@ run_parity()
         // server's certificate).
         BOOST_TEST(!parity_init(client, cctx, tls_role::client));
         BOOST_TEST(!parity_init(server, sctx, tls_role::server));
-        out.wrong_ca_rejected =
-            !test::run_engine_handshake(client, server);
+        out.wrong_ca_rejected = !test::run_engine_handshake(client, server);
     }
 
     return out;
@@ -130,8 +128,7 @@ run_parity()
 struct cross_engine_test
 {
     template<class Client, class Server>
-    void
-    exchange(Client& client, Server& server)
+    void exchange(Client& client, Server& server)
     {
         BOOST_TEST(test::run_engine_handshake(client, server));
 
@@ -148,28 +145,24 @@ struct cross_engine_test
         BOOST_TEST(got == s2c);
     }
 
-    void
-    testOpensslClientWolfsslServer()
+    void testOpensslClientWolfsslServer()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
         detail::openssl::engine client;
         detail::wolfssl::engine server;
         BOOST_TEST(!client.init(client_ctx));
-        BOOST_TEST(
-            !server.init(server_ctx, tls_role::server, std::string()));
+        BOOST_TEST(!server.init(server_ctx, tls_role::server, std::string()));
         exchange(client, server);
     }
 
-    void
-    testWolfsslClientOpensslServer()
+    void testWolfsslClientOpensslServer()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
         detail::wolfssl::engine client;
         detail::openssl::engine server;
-        BOOST_TEST(
-            !client.init(client_ctx, tls_role::client, std::string()));
+        BOOST_TEST(!client.init(client_ctx, tls_role::client, std::string()));
         BOOST_TEST(!server.init(server_ctx));
         exchange(client, server);
     }
@@ -179,8 +172,7 @@ struct cross_engine_test
         A pure function, cheap to exhaust exactly rather than sample
         through the engines that happen to call it.
     */
-    void
-    testMapFillErrorTable()
+    void testMapFillErrorTable()
     {
         using detail::engine_op;
         using detail::map_fill_error;
@@ -212,8 +204,8 @@ struct cross_engine_test
         BOOST_TEST(
             map_fill_error(
                 engine_op::shutdown,
-                make_error_code(std::errc::invalid_argument), true) ==
-            std::errc::invalid_argument);
+                make_error_code(std::errc::invalid_argument),
+                true) == std::errc::invalid_argument);
 
         // read / write: eof remaps on the received bit; anything else
         // passes through.
@@ -257,8 +249,7 @@ struct cross_engine_test
         Transport-truncation mapping is covered exhaustively by
         `testMapFillErrorTable`.
     */
-    void
-    testBackendParity()
+    void testBackendParity()
     {
         auto const w = run_parity<detail::wolfssl::engine>();
         auto const o = run_parity<detail::openssl::engine>();
@@ -287,8 +278,7 @@ struct cross_engine_test
         BOOST_TEST_EQ(w.read_after_close_n, std::size_t{0});
     }
 
-    void
-    run()
+    void run()
     {
         testOpensslClientWolfsslServer();
         testWolfsslClientOpensslServer();

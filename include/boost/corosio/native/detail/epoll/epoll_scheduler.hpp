@@ -127,16 +127,13 @@ public:
     void deregister_descriptor(int fd) const;
 
     /// Watch the read end of the POSIX signal self-pipe (see scheduler.hpp).
-    [[nodiscard]] std::error_code
-    register_signal_reader(int read_fd) override
+    [[nodiscard]] std::error_code register_signal_reader(int read_fd) override
     {
         return register_descriptor(read_fd, signal_pipe_reader_.arm());
     }
 
 private:
-    void
-    run_task(lock_type& lock, context_type& ctx,
-        long timeout_us) override;
+    void run_task(lock_type& lock, context_type& ctx, long timeout_us) override;
     void interrupt_reactor() const override;
     void update_timerfd() const;
 
@@ -258,7 +255,8 @@ epoll_scheduler::configure_reactor(
 }
 
 inline std::error_code
-epoll_scheduler::register_descriptor(int fd, reactor_descriptor_state* desc) const
+epoll_scheduler::register_descriptor(
+    int fd, reactor_descriptor_state* desc) const
 {
     epoll_event ev{};
     ev.events   = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLERR | EPOLLHUP;
@@ -346,8 +344,7 @@ epoll_scheduler::update_timerfd() const
 }
 
 inline void
-epoll_scheduler::run_task(
-    lock_type& lock, context_type& ctx, long timeout_us)
+epoll_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
 {
     int timeout_ms;
     if (task_interrupted_)
@@ -367,8 +364,8 @@ epoll_scheduler::run_task(
         update_timerfd();
 
     int nfds = ::epoll_wait(
-        epoll_fd_, event_buffer_.data(),
-        static_cast<int>(event_buffer_.size()), timeout_ms);
+        epoll_fd_, event_buffer_.data(), static_cast<int>(event_buffer_.size()),
+        timeout_ms);
 
     if (nfds < 0 && errno != EINTR)
         detail::throw_system_error(make_err(errno), "epoll_wait");

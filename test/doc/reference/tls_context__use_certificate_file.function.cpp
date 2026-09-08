@@ -23,20 +23,21 @@ namespace {
 // tag::use_certificate_file[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void load_the_entity_credentials(corosio::tls_context& ctx)
+void
+load_the_entity_credentials(corosio::tls_context& ctx)
 {
     // The certificate this endpoint presents to the peer. Use
     // use_certificate_chain_file instead when intermediates must be sent
     // with it, which is the usual case for a publicly trusted certificate.
     if (auto ec = ctx.use_certificate_file(
             "server.crt", corosio::tls_file_format::pem))
-        return;  // report the error
+        return; // report the error
 
     // The key this certificate was issued for. A mismatch is not detected
     // here; it surfaces as a handshake failure.
     if (auto ec = ctx.use_private_key_file(
             "server.key", corosio::tls_file_format::pem))
-        return;  // report the error
+        return; // report the error
 }
 // end::use_certificate_file[]
 

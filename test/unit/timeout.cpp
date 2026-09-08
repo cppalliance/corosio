@@ -51,9 +51,12 @@ struct payload_awaitable
 
     explicit payload_awaitable(int value) : value_(value) {}
 
-    bool await_ready() const noexcept { return false; }
-    std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, capy::io_env const*)
+    bool await_ready() const noexcept
+    {
+        return false;
+    }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, capy::io_env const*)
     {
         return h;
     }
@@ -86,8 +89,7 @@ struct timeout_test
         auto t = [](bool& ok_out) -> capy::task<> {
             // Inner (5ms) completes before the 10s deadline
             auto [ec] = co_await timeout(
-                delay(std::chrono::milliseconds(5)),
-                std::chrono::seconds(10));
+                delay(std::chrono::milliseconds(5)), std::chrono::seconds(10));
             ok_out = !ec;
         };
         capy::run_async(ioc.get_executor())(t(ok));
@@ -103,8 +105,7 @@ struct timeout_test
 
         auto t = [](bool& out) -> capy::task<> {
             auto [ec] = co_await timeout(
-                delay(std::chrono::seconds(10)),
-                std::chrono::milliseconds(5));
+                delay(std::chrono::seconds(10)), std::chrono::milliseconds(5));
             out = (ec == capy::cond::timeout);
         };
         capy::run_async(ioc.get_executor())(t(timed_out));
@@ -119,11 +120,10 @@ struct timeout_test
         bool timed_out = false;
 
         auto t = [](bool& out) -> capy::task<> {
-            auto tp = std::chrono::steady_clock::now() +
-                std::chrono::milliseconds(5);
-            auto [ec] = co_await timeout(
-                delay(std::chrono::seconds(10)), tp);
-            out = (ec == capy::cond::timeout);
+            auto tp =
+                std::chrono::steady_clock::now() + std::chrono::milliseconds(5);
+            auto [ec] = co_await timeout(delay(std::chrono::seconds(10)), tp);
+            out       = (ec == capy::cond::timeout);
         };
         capy::run_async(ioc.get_executor())(t(timed_out));
 
@@ -139,8 +139,7 @@ struct timeout_test
 
         auto t = [](bool& out) -> capy::task<> {
             auto [ec] = co_await timeout(
-                delay(std::chrono::seconds(10)),
-                std::chrono::seconds(10));
+                delay(std::chrono::seconds(10)), std::chrono::seconds(10));
             out = (ec == capy::cond::canceled);
         };
         capy::run_async(ioc.get_executor(), src.get_token())(t(canceled));
@@ -160,16 +159,18 @@ struct timeout_test
 
         struct erroring_awaitable
         {
-            bool await_ready() const noexcept { return false; }
-            std::coroutine_handle<> await_suspend(
-                std::coroutine_handle<> h, capy::io_env const*)
+            bool await_ready() const noexcept
+            {
+                return false;
+            }
+            std::coroutine_handle<>
+            await_suspend(std::coroutine_handle<> h, capy::io_env const*)
             {
                 return h;
             }
             capy::io_result<> await_resume() noexcept
             {
-                return {make_error_code(
-                    std::errc::connection_refused)};
+                return {make_error_code(std::errc::connection_refused)};
             }
         };
 
@@ -191,9 +192,12 @@ struct timeout_test
 
         struct throwing_awaitable
         {
-            bool await_ready() const noexcept { return false; }
-            std::coroutine_handle<> await_suspend(
-                std::coroutine_handle<> h, capy::io_env const*)
+            bool await_ready() const noexcept
+            {
+                return false;
+            }
+            std::coroutine_handle<>
+            await_suspend(std::coroutine_handle<> h, capy::io_env const*)
             {
                 return h;
             }
@@ -209,7 +213,7 @@ struct timeout_test
                 std::ignore = co_await timeout(
                     throwing_awaitable{}, std::chrono::seconds(10));
             }
-            catch(std::runtime_error const&)
+            catch (std::runtime_error const&)
             {
                 out = true;
             }
@@ -227,8 +231,7 @@ struct timeout_test
 
         auto t = [](bool& out) -> capy::task<> {
             auto [ec] = co_await timeout(
-                delay(std::chrono::seconds(10)),
-                std::chrono::milliseconds(5));
+                delay(std::chrono::seconds(10)), std::chrono::milliseconds(5));
             out = (ec == capy::cond::timeout);
         };
         capy::run_async(ioc.get_executor())(t(timed_out));
@@ -240,13 +243,13 @@ struct timeout_test
     void testPayloadPreservedOnInnerWin()
     {
         io_context ioc(Backend);
-        bool ok = false;
+        bool ok   = false;
         int value = 0;
 
         auto t = [](bool& ok_out, int& value_out) -> capy::task<> {
             auto [ec, n] = co_await timeout(
                 payload_awaitable(42), std::chrono::seconds(10));
-            ok_out = !ec;
+            ok_out    = !ec;
             value_out = n;
         };
         capy::run_async(ioc.get_executor())(t(ok, value));
@@ -262,7 +265,7 @@ struct timeout_test
         // through timeout() on the non-suspending path: await_suspend
         // is never driven and no deadline timer is armed.
         io_context ioc(Backend);
-        bool ok = false;
+        bool ok        = false;
         bool suspended = false;
 
         struct ready_awaitable
@@ -270,9 +273,12 @@ struct timeout_test
             int value_;
             bool* suspended_;
 
-            bool await_ready() const noexcept { return true; }
-            std::coroutine_handle<> await_suspend(
-                std::coroutine_handle<> h, capy::io_env const*)
+            bool await_ready() const noexcept
+            {
+                return true;
+            }
+            std::coroutine_handle<>
+            await_suspend(std::coroutine_handle<> h, capy::io_env const*)
             {
                 *suspended_ = true;
                 return h;
@@ -306,9 +312,12 @@ struct timeout_test
 
         struct ready_canceled_awaitable
         {
-            bool await_ready() const noexcept { return true; }
-            std::coroutine_handle<> await_suspend(
-                std::coroutine_handle<> h, capy::io_env const*)
+            bool await_ready() const noexcept
+            {
+                return true;
+            }
+            std::coroutine_handle<>
+            await_suspend(std::coroutine_handle<> h, capy::io_env const*)
             {
                 return h;
             }
@@ -337,13 +346,12 @@ struct timeout_test
         // with a default-initialized payload, not the inner's 99.
         io_context ioc(Backend);
         bool timed_out = false;
-        int value = -1;
+        int value      = -1;
 
         auto t = [](bool& out, int& value_out) -> capy::task<> {
             auto [ec, n] = co_await timeout(
-                stop_only_payload(),
-                std::chrono::milliseconds(5));
-            out = (ec == capy::cond::timeout);
+                stop_only_payload(), std::chrono::milliseconds(5));
+            out       = (ec == capy::cond::timeout);
             value_out = n;
         };
         capy::run_async(ioc.get_executor())(t(timed_out, value));
@@ -385,10 +393,10 @@ struct timeout_test
             bool timed_out = false;
 
             auto t = [](bool& out) -> capy::task<> {
-                auto tp = std::chrono::steady_clock::now() -
-                    std::chrono::seconds(1);
-                auto [ec] = co_await timeout(
-                    delay(std::chrono::seconds(10)), tp);
+                auto tp =
+                    std::chrono::steady_clock::now() - std::chrono::seconds(1);
+                auto [ec] =
+                    co_await timeout(delay(std::chrono::seconds(10)), tp);
                 out = (ec == capy::cond::timeout);
             };
             capy::run_async(ioc.get_executor())(t(timed_out));
@@ -427,12 +435,14 @@ struct timeout_test
                 struct guard
                 {
                     int& c_;
-                    ~guard() { ++c_; }
+                    ~guard()
+                    {
+                        ++c_;
+                    }
                 };
                 guard g{counter};
                 [[maybe_unused]] auto [ec] = co_await timeout(
-                    delay(std::chrono::hours(1)),
-                    std::chrono::hours(1));
+                    delay(std::chrono::hours(1)), std::chrono::hours(1));
             };
 
             capy::run_async(ioc.get_executor())(task(destroyed));
@@ -452,7 +462,7 @@ struct timeout_test
         auto ex = ioc.get_executor();
         // s2 is held open but silent.
         [[maybe_unused]] auto [s1, s2] = test::make_socket_pair(ioc);
-        bool timed_out = false;
+        bool timed_out                 = false;
         std::array<char, 32> buf{};
 
         auto t = [&]() -> capy::task<> {
@@ -483,8 +493,7 @@ struct timeout_test
 
             std::array<char, 64> buf{};
             auto [ec, n] = co_await timeout(
-                stream.read_some(
-                    capy::mutable_buffer(buf.data(), buf.size())),
+                stream.read_some(capy::mutable_buffer(buf.data(), buf.size())),
                 std::chrono::seconds(10));
             out = !ec && n == 11 &&
                 std::string_view(buf.data(), n) == "hello world";
@@ -505,14 +514,13 @@ struct timeout_test
         auto ex = ioc.get_executor();
         // s2 is held open but silent.
         [[maybe_unused]] auto [s1, s2] = test::make_socket_pair(ioc);
-        bool timed_out = false;
+        bool timed_out                 = false;
         std::array<char, 32> buf{};
 
         auto t = [&]() -> capy::task<> {
             capy::any_read_stream stream(&s1);
             [[maybe_unused]] auto [ec, n] = co_await timeout(
-                stream.read_some(
-                    capy::mutable_buffer(buf.data(), buf.size())),
+                stream.read_some(capy::mutable_buffer(buf.data(), buf.size())),
                 std::chrono::milliseconds(50));
             timed_out = (ec == capy::cond::timeout);
         };
@@ -542,8 +550,7 @@ struct timeout_test
                         capy::mutable_buffer(buf.data(), buf.size())),
                     std::chrono::seconds(10)),
                 std::chrono::seconds(10));
-            out = !ec && n == 2 &&
-                std::string_view(buf.data(), n) == "hi";
+            out = !ec && n == 2 && std::string_view(buf.data(), n) == "hi";
         };
         capy::run_async(ioc.get_executor())(t(ok));
 
@@ -565,8 +572,7 @@ struct timeout_test
             capy::any_write_stream stream(&mock);
 
             auto [ec, n] = co_await timeout(
-                stream.write_some(
-                    capy::const_buffer(msg.data(), msg.size())),
+                stream.write_some(capy::const_buffer(msg.data(), msg.size())),
                 std::chrono::seconds(10));
             out = !ec && n == msg.size() && mock.data() == msg;
         };
@@ -587,8 +593,7 @@ struct timeout_test
 
         auto t = [](bool& out) -> capy::task<> {
             auto [ec] = co_await timeout(
-                delay(std::chrono::seconds(10)),
-                std::chrono::seconds(10));
+                delay(std::chrono::seconds(10)), std::chrono::seconds(10));
             out = (ec == capy::cond::canceled);
         };
         capy::run_async(ioc.get_executor(), src.get_token())(t(canceled));
@@ -604,12 +609,10 @@ struct timeout_test
     {
         capy::thread_pool pool(1);
         auto ex = pool.get_executor();
-        auto ta = timeout(
-            payload_awaitable(0), std::chrono::milliseconds(1));
+        auto ta = timeout(payload_awaitable(0), std::chrono::milliseconds(1));
         capy::io_env env{ex, {}, {}};
         BOOST_TEST_THROWS(
-            ta.await_suspend(std::noop_coroutine(), &env),
-            std::logic_error);
+            ta.await_suspend(std::noop_coroutine(), &env), std::logic_error);
     }
 
     void testNarrowRepDeadlineClamp()
@@ -720,9 +723,9 @@ struct timeout_test
             };
 
             for (int i = 0; i < N; ++i)
-                capy::run_async(ex, srcs[i].get_token())(
-                    task(success, timed_out, canceled, other,
-                        i % 3, (i + 1) % 3)); // staggered 0-2ms each
+                capy::run_async(ex, srcs[i].get_token())(task(
+                    success, timed_out, canceled, other, i % 3,
+                    (i + 1) % 3)); // staggered 0-2ms each
 
             std::thread stopper([&] {
                 for (int i = 0; i < N; ++i)

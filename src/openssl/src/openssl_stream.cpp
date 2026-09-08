@@ -31,7 +31,8 @@ struct openssl_stream::implementation
 };
 
 openssl_stream::implementation*
-openssl_stream::make_implementation(capy::any_stream& stream, tls_context const& ctx)
+openssl_stream::make_implementation(
+    capy::any_stream& stream, tls_context const& ctx)
 {
     // Session creation is deferred to handshake time (the engine's
     // prepare hook builds it lazily), so a session setup failure

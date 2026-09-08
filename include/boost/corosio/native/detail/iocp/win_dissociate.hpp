@@ -57,8 +57,7 @@ dissociate_from_iocp(SOCKET s) noexcept
     // class FileReplaceCompletionInformation (61).
     ULONG_PTR iosb[2] = {0, 0};
     void* info[2]     = {nullptr, nullptr};
-    return fn(reinterpret_cast<HANDLE>(s), iosb, &info, sizeof(info), 61) ==
-        0;
+    return fn(reinterpret_cast<HANDLE>(s), iosb, &info, sizeof(info), 61) == 0;
 }
 
 } // namespace boost::corosio::detail

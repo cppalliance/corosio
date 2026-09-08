@@ -51,7 +51,7 @@ public:
         file_base::flags mode) = 0;
 
 protected:
-    file_service() = default;
+    file_service()           = default;
     ~file_service() override = default;
 };
 

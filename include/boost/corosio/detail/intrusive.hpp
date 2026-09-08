@@ -71,7 +71,7 @@ public:
 
     void push_back(T* w) noexcept
     {
-        auto* n = static_cast<node*>(w);
+        auto* n  = static_cast<node*>(w);
         n->next_ = nullptr;
         n->prev_ = tail_;
         if (tail_)
@@ -87,9 +87,9 @@ public:
             return;
         if (tail_)
         {
-            static_cast<node*>(tail_)->next_        = other.head_;
-            static_cast<node*>(other.head_)->prev_  = tail_;
-            tail_                                   = other.tail_;
+            static_cast<node*>(tail_)->next_       = other.head_;
+            static_cast<node*>(other.head_)->prev_ = tail_;
+            tail_                                  = other.tail_;
         }
         else
         {
@@ -112,7 +112,7 @@ public:
             tail_ = nullptr;
         // Defensive: clear stale linkage so remove() on a
         // popped node cannot corrupt the list.
-        auto* n = static_cast<node*>(w);
+        auto* n  = static_cast<node*>(w);
         n->next_ = nullptr;
         n->prev_ = nullptr;
         return w;

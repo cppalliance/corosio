@@ -164,9 +164,7 @@ struct reactor_connect_op : Base
         {
             // EAGAIN must not escape: it is the stay-parked sentinel.
             this->complete(
-                (errno == EAGAIN || errno == EWOULDBLOCK) ? ENOMEM
-                                                          : errno,
-                0);
+                (errno == EAGAIN || errno == EWOULDBLOCK) ? ENOMEM : errno, 0);
             return;
         }
 
@@ -254,9 +252,7 @@ struct reactor_wait_op : Base
             // EAGAIN must not escape here: callers treat it as the
             // stay-parked sentinel, and poll() can fail with it on
             // BSD/macOS under transient resource pressure.
-            err = (errno == EAGAIN || errno == EWOULDBLOCK)
-                ? ENOMEM
-                : errno;
+            err = (errno == EAGAIN || errno == EWOULDBLOCK) ? ENOMEM : errno;
             return true;
         }
         return r != 0;
@@ -390,17 +386,17 @@ struct reactor_accept_op : Base
     void reset() noexcept
     {
         Base::reset();
-        accepted_fd   = -1;
-        peer_impl     = nullptr;
-        impl_out      = nullptr;
-        peer_storage  = {};
-        peer_addrlen  = 0;
+        accepted_fd  = -1;
+        peer_impl    = nullptr;
+        impl_out     = nullptr;
+        peer_storage = {};
+        peer_addrlen = 0;
     }
 
     void perform_io() noexcept override
     {
-        int new_fd = AcceptPolicy::do_accept(
-            this->fd, peer_storage, peer_addrlen);
+        int new_fd =
+            AcceptPolicy::do_accept(this->fd, peer_storage, peer_addrlen);
         if (new_fd >= 0)
         {
             accepted_fd = new_fd;

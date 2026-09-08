@@ -68,15 +68,20 @@ class reactor_datagram_socket
           DescState,
           Endpoint>
 {
-    using base_type = reactor_basic_socket<
-        Derived,
-        ImplBase,
-        Service,
-        DescState,
-        Endpoint>;
+    using base_type =
+        reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>;
     using self_type = reactor_datagram_socket<
-        Derived, Service, ConnOp, SendToOp, RecvFromOp, SendOp, RecvOp, WaitOp,
-        DescState, ImplBase, Endpoint>;
+        Derived,
+        Service,
+        ConnOp,
+        SendToOp,
+        RecvFromOp,
+        SendOp,
+        RecvOp,
+        WaitOp,
+        DescState,
+        ImplBase,
+        Endpoint>;
     friend base_type;
     friend Derived;
 
@@ -315,7 +320,7 @@ public:
 
     native_handle_type do_release_socket() noexcept
     {
-        auto fd = base_type::do_release_socket();
+        auto fd          = base_type::do_release_socket();
         remote_endpoint_ = Endpoint{};
         return fd;
     }
@@ -372,7 +377,6 @@ private:
             return &this->desc_state_.wait_error_op;
         return nullptr;
     }
-
 
     template<class Fn>
     void for_each_op(Fn fn) noexcept
@@ -485,7 +489,7 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont.h = h;
+            op.cont.h  = h;
             return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
@@ -606,9 +610,7 @@ reactor_datagram_socket<
             *bytes_out = bytes;
             if (source && !err && n >= 0)
                 *source = from_sockaddr_as(
-                    op.source_storage,
-                    op.source_addrlen,
-                    Endpoint{});
+                    op.source_storage, op.source_addrlen, Endpoint{});
             op.cont.h = h;
             return dispatch_coro(ex, op.cont);
         }
@@ -695,7 +697,7 @@ reactor_datagram_socket<
     int err = (result < 0) ? errno : 0;
     if (this->svc_.scheduler().try_consume_inline_budget())
     {
-        *ec = err ? make_err(err) : std::error_code{};
+        *ec       = err ? make_err(err) : std::error_code{};
         op.cont.h = h;
         return dispatch_coro(ex, op.cont);
     }
@@ -790,7 +792,7 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont.h = h;
+            op.cont.h  = h;
             return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
@@ -902,7 +904,7 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont.h = h;
+            op.cont.h  = h;
             return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
@@ -969,21 +971,21 @@ reactor_datagram_socket<
 
     if (w == wait_type::read)
     {
-        op_ptr          = &wait_rd_;
-        desc_slot_ptr   = &this->desc_state_.wait_read_op;
-        event           = reactor_event_read;
+        op_ptr        = &wait_rd_;
+        desc_slot_ptr = &this->desc_state_.wait_read_op;
+        event         = reactor_event_read;
     }
     else if (w == wait_type::write)
     {
-        op_ptr          = &wait_wr_;
-        desc_slot_ptr   = &this->desc_state_.wait_write_op;
-        event           = reactor_event_write;
+        op_ptr        = &wait_wr_;
+        desc_slot_ptr = &this->desc_state_.wait_write_op;
+        event         = reactor_event_write;
     }
     else // wait_type::error
     {
-        op_ptr          = &wait_er_;
-        desc_slot_ptr   = &this->desc_state_.wait_error_op;
-        event           = reactor_event_error;
+        op_ptr        = &wait_er_;
+        desc_slot_ptr = &this->desc_state_.wait_error_op;
+        event         = reactor_event_error;
     }
 
     auto& op = *op_ptr;
@@ -1008,7 +1010,7 @@ reactor_datagram_socket<
         op.ec_out     = ec;
         op.fd         = this->fd_;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr   = this->shared_from_this();
+        op.impl_ptr = this->shared_from_this();
         op.complete(perr, 0);
         this->svc_.post(&op);
         return std::noop_coroutine();
@@ -1021,7 +1023,7 @@ reactor_datagram_socket<
     op.ec_out     = ec;
     op.fd         = this->fd_;
     op.start(token, static_cast<Derived*>(this));
-    op.impl_ptr   = this->shared_from_this();
+    op.impl_ptr = this->shared_from_this();
 
     // Force register_op's ready path so the wait op re-probes under
     // the descriptor mutex before parking. An edge consumed between
@@ -1030,8 +1032,7 @@ reactor_datagram_socket<
     // otherwise leave the wait parked on a ready socket.
     bool force_probe = true;
     this->register_op(
-        op, *desc_slot_ptr, force_probe,
-        event == reactor_event_write);
+        op, *desc_slot_ptr, force_probe, event == reactor_event_write);
     return std::noop_coroutine();
 }
 

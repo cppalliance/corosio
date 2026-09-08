@@ -153,7 +153,9 @@ public:
     */
     verify_context(
         void* handle, unsigned char const* der, std::size_t der_len) noexcept
-        : handle_(handle), der_(der), der_len_(der_len)
+        : handle_(handle)
+        , der_(der)
+        , der_len_(der_len)
     {
     }
 
@@ -165,7 +167,10 @@ public:
 
         @return The native handle, or `nullptr` if none is available.
     */
-    void* native_handle() const noexcept { return handle_; }
+    void* native_handle() const noexcept
+    {
+        return handle_;
+    }
 
     /** Return the DER encoding of the certificate being verified.
 
@@ -387,7 +392,8 @@ public:
 
         @see use_certificate_chain
     */
-    [[nodiscard]] std::error_code use_certificate_chain_file(std::string_view filename);
+    [[nodiscard]] std::error_code
+    use_certificate_chain_file(std::string_view filename);
 
     /** Load the private key from a memory buffer.
 
@@ -509,7 +515,8 @@ public:
         @see load_verify_file
         @see set_default_verify_paths
     */
-    [[nodiscard]] std::error_code add_certificate_authority(std::string_view ca);
+    [[nodiscard]] std::error_code
+    add_certificate_authority(std::string_view ca);
 
     /** Load CA certificates from a file.
 
@@ -669,7 +676,8 @@ public:
 
         @see set_ciphersuites
     */
-    [[nodiscard]] std::error_code set_ciphersuites_tls13(std::string_view ciphers);
+    [[nodiscard]] std::error_code
+    set_ciphersuites_tls13(std::string_view ciphers);
 
     /** Set the ALPN protocol list.
 
@@ -693,7 +701,8 @@ public:
         @par Example
         @par !example set_alpn
     */
-    [[nodiscard]] std::error_code set_alpn(std::initializer_list<std::string_view> protocols);
+    [[nodiscard]] std::error_code
+    set_alpn(std::initializer_list<std::string_view> protocols);
 
     //
     // Certificate Verification

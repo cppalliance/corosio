@@ -100,8 +100,7 @@ class native_tcp_acceptor : public tcp_acceptor
             -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return acc_.get_impl().wait(
-                h, env->executor, w_, token_, &ec_);
+            return acc_.get_impl().wait(h, env->executor, w_, token_, &ec_);
         }
     };
 
@@ -169,8 +168,9 @@ class native_tcp_acceptor : public tcp_acceptor
         [[nodiscard]] capy::io_result<tcp_socket> await_resume() noexcept
         {
             if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled),
-                        std::move(peer_)};
+                return {
+                    make_error_code(std::errc::operation_canceled),
+                    std::move(peer_)};
             if (!ec_ && peer_impl_)
                 acc_.reset_peer_impl(peer_, peer_impl_);
             return {ec_, std::move(peer_)};

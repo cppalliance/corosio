@@ -54,8 +54,8 @@ namespace boost::corosio::detail {
 inline bool
 fd_is_listening(int fd) noexcept
 {
-    int       accepting = 0;
-    socklen_t alen      = sizeof(accepting);
+    int accepting  = 0;
+    socklen_t alen = sizeof(accepting);
     if (::getsockopt(fd, SOL_SOCKET, SO_ACCEPTCONN, &accepting, &alen) != 0)
         return true;
     return accepting != 0;
@@ -69,9 +69,9 @@ class uring_multishot_acceptor_base
 protected:
     struct ready_fd_node : intrusive_list<ready_fd_node>::node
     {
-        int               fd       = -1;
-        sockaddr_storage  peer{};
-        socklen_t         peer_len = 0;
+        int fd = -1;
+        sockaddr_storage peer{};
+        socklen_t peer_len = 0;
     };
 
     struct waiter_node;
@@ -84,42 +84,42 @@ protected:
 
     struct waiter_node : intrusive_list<waiter_node>::node
     {
-        std::coroutine_handle<>                              h;
-        capy::executor_ref                                   ex;
-        std::error_code*                                     ec_out   = nullptr;
-        io_object::implementation**                          impl_out = nullptr;
-        Derived*                                             owner    = nullptr;
-        std::atomic<bool>                                    cancelled{false};
+        std::coroutine_handle<> h;
+        capy::executor_ref ex;
+        std::error_code* ec_out              = nullptr;
+        io_object::implementation** impl_out = nullptr;
+        Derived* owner                       = nullptr;
+        std::atomic<bool> cancelled{false};
         /// True once linked into `waiters_` (guarded by `mutex_`).
         /// The stop callback is armed before the node is queued, so
         /// cancel_waiter must not unlink a node it never queued.
-        bool                                                 queued = false;
+        bool queued = false;
         /// A readiness wait rather than an accept: completion
         /// observes a pending connection without consuming it.
-        bool                                                 peek = false;
-        std::optional<std::stop_callback<waiter_canceller>>  stop_cb;
+        bool peek = false;
+        std::optional<std::stop_callback<waiter_canceller>> stop_cb;
     };
 
-    int                                          fd_ = -1;
-    uring_scheduler*                          sched_;
-    PeerService*                                 peer_service_;
-    Endpoint                                     local_endpoint_{};
-    mutable std::mutex                           mutex_;
-    intrusive_list<ready_fd_node>                ready_fds_;
-    intrusive_list<waiter_node>                  waiters_;
+    int fd_ = -1;
+    uring_scheduler* sched_;
+    PeerService* peer_service_;
+    Endpoint local_endpoint_{};
+    mutable std::mutex mutex_;
+    intrusive_list<ready_fd_node> ready_fds_;
+    intrusive_list<waiter_node> waiters_;
     /// Single parked readiness wait (guarded by `mutex_`). Multishot
     /// accepting drains the kernel queue instantly, so a listener's
     /// readiness lives in `ready_fds_`, not in `poll()`; the wait is
     /// completed by the next delivery instead of a kernel poll.
-    waiter_node*                                 read_wait_ = nullptr;
-    std::unique_ptr<uring_multi_accept_op>       multi_op_;
-    bool                                         closing_ = false;
+    waiter_node* read_wait_ = nullptr;
+    std::unique_ptr<uring_multi_accept_op> multi_op_;
+    bool closing_ = false;
     /// Non-zero once an arming failed to reach the kernel (guarded by
     /// `mutex_`). Nothing will ever deliver a connection through an
     /// SQE the ring never took, so an accept reports this instead of
     /// parking on a delivery that cannot come. Cleared by the next
     /// arming that does reach the kernel.
-    int                                          arm_err_ = 0;
+    int arm_err_ = 0;
     /// Bumped whenever an arming is retired. A re-arm posted for an
     /// earlier generation must not resubmit: `multi_op_` now names a
     /// different op, and resubmitting a live one would alias a single
@@ -127,7 +127,7 @@ protected:
     /// not atomic with its submit — a retirement landing between them
     /// (concurrent `assign()` on another thread) can still double-arm;
     /// closing that needs a generation-aware submit.
-    std::atomic<std::uint64_t>                   arm_generation_{0};
+    std::atomic<std::uint64_t> arm_generation_{0};
 
 private:
     // CRTP ctor private + Derived friended so the base cannot be
@@ -138,10 +138,10 @@ private:
         uring_scheduler& sched, PeerService& peer_svc) noexcept
         : sched_(&sched)
         , peer_service_(&peer_svc)
-    {}
+    {
+    }
 
 public:
-
     ~uring_multishot_acceptor_base() override
     {
         {
@@ -249,7 +249,7 @@ public:
         {
             w->stop_cb.reset();
             // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept destructor path: OOM => std::terminate is the intended behavior
-            auto* op = new uring_accept_op();
+            auto* op     = new uring_accept_op();
             op->h        = w->h;
             op->ex       = w->ex;
             op->ec_out   = w->ec_out;
@@ -270,9 +270,9 @@ public:
     */
     void park_read_wait(
         std::coroutine_handle<> h,
-        capy::executor_ref      ex,
-        std::stop_token const&  token,
-        std::error_code*        ec) noexcept
+        capy::executor_ref ex,
+        std::stop_token const& token,
+        std::error_code* ec) noexcept
     {
         bool ready   = false;
         bool aborted = false;
@@ -316,7 +316,7 @@ public:
             w->stop_cb.emplace(token, waiter_canceller{w});
 
         bool was_cancelled = false;
-        int  arm_err       = 0;
+        int arm_err        = 0;
         {
             std::lock_guard lk(mutex_);
             if (w->cancelled.load(std::memory_order_acquire) || closing_)
@@ -355,25 +355,29 @@ public:
     }
 
     std::error_code set_option(
-        int level, int optname,
-        void const* data, std::size_t size) noexcept override
+        int level,
+        int optname,
+        void const* data,
+        std::size_t size) noexcept override
     {
-        if (fd_ < 0) return make_err(EBADF);
-        if (::setsockopt(fd_, level, optname,
-                reinterpret_cast<char const*>(data),
+        if (fd_ < 0)
+            return make_err(EBADF);
+        if (::setsockopt(
+                fd_, level, optname, reinterpret_cast<char const*>(data),
                 static_cast<socklen_t>(size)) < 0)
             return make_err(errno);
         return {};
     }
 
-    std::error_code get_option(
-        int level, int optname,
-        void* data, std::size_t* size) const noexcept override
+    std::error_code
+    get_option(int level, int optname, void* data, std::size_t* size)
+        const noexcept override
     {
-        if (fd_ < 0) return make_err(EBADF);
+        if (fd_ < 0)
+            return make_err(EBADF);
         socklen_t len = static_cast<socklen_t>(*size);
-        if (::getsockopt(fd_, level, optname,
-                reinterpret_cast<char*>(data), &len) < 0)
+        if (::getsockopt(
+                fd_, level, optname, reinterpret_cast<char*>(data), &len) < 0)
             return make_err(errno);
         *size = static_cast<std::size_t>(len);
         return {};
@@ -509,12 +513,11 @@ public:
     {
         if (!multi_op_)
         {
-            multi_op_ = std::make_unique<uring_multi_accept_op>();
-            multi_op_->listen_fd     = fd_;
+            multi_op_            = std::make_unique<uring_multi_accept_op>();
+            multi_op_->listen_fd = fd_;
             multi_op_->acceptor_impl = this;
-            multi_op_->on_cqe        =
-                &uring_multishot_acceptor_base::on_accept_cqe;
-            multi_op_->impl_ptr      = this->shared_from_this();
+            multi_op_->on_cqe   = &uring_multishot_acceptor_base::on_accept_cqe;
+            multi_op_->impl_ptr = this->shared_from_this();
         }
         else
         {
@@ -599,7 +602,7 @@ public:
             op->err      = err;
             delete w;
             sched_->post(op);
-            sched_->work_finished();  // balance the waiter's work_started
+            sched_->work_finished(); // balance the waiter's work_started
         }
     }
 
@@ -607,20 +610,20 @@ public:
     /// Either case ends with the calling coroutine suspending; the
     /// caller returns `std::noop_coroutine()` unconditionally.
     void dispatch_or_queue(
-        std::coroutine_handle<>     h,
-        capy::executor_ref          ex,
-        std::stop_token const&      token,
-        std::error_code*            ec,
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        std::stop_token const& token,
+        std::error_code* ec,
         io_object::implementation** impl_out)
     {
         sockaddr_storage peer_storage{};
-        socklen_t        peer_len = sizeof(peer_storage);
-        int accepted_fd = ::accept4(fd_,
-            reinterpret_cast<sockaddr*>(&peer_storage), &peer_len,
+        socklen_t peer_len = sizeof(peer_storage);
+        int accepted_fd    = ::accept4(
+            fd_, reinterpret_cast<sockaddr*>(&peer_storage), &peer_len,
             SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (accepted_fd >= 0)
         {
-            auto* op = new uring_accept_op();
+            auto* op         = new uring_accept_op();
             op->h            = h;
             op->ex           = ex;
             op->ec_out       = ec;
@@ -641,12 +644,12 @@ public:
         if (errno != EAGAIN && errno != EWOULDBLOCK)
         {
             int saved_errno = errno;
-            auto* op = new uring_accept_op();
-            op->h        = h;
-            op->ex       = ex;
-            op->ec_out   = ec;
-            op->impl_out = impl_out;
-            op->err      = saved_errno;
+            auto* op        = new uring_accept_op();
+            op->h           = h;
+            op->ex          = ex;
+            op->ec_out      = ec;
+            op->impl_out    = impl_out;
+            op->err         = saved_errno;
             sched_->post(op);
             return;
         }
@@ -656,7 +659,7 @@ public:
             std::lock_guard lk(mutex_);
             if (auto* r = ready_fds_.pop_front())
             {
-                ready_op = new uring_accept_op();
+                ready_op               = new uring_accept_op();
                 ready_op->h            = h;
                 ready_op->ex           = ex;
                 ready_op->ec_out       = ec;
@@ -706,7 +709,7 @@ public:
             {
                 // A connection arrived while the callback was armed;
                 // prefer it over parking the waiter behind it.
-                ready_op = new uring_accept_op();
+                ready_op               = new uring_accept_op();
                 ready_op->h            = h;
                 ready_op->ex           = ex;
                 ready_op->ec_out       = ec;
@@ -762,14 +765,15 @@ public:
     {
         {
             std::lock_guard lk(mutex_);
-            if (closing_) return;  // on_accept_cqe_impl will drain with closing_ set
+            if (closing_)
+                return; // on_accept_cqe_impl will drain with closing_ set
             if (!w->queued)
-                return;  // not queued yet; the parking path observes
-                         // `cancelled` and completes the op
+                return; // not queued yet; the parking path observes
+                        // `cancelled` and completes the op
             if (w->peek)
             {
                 if (read_wait_ != w)
-                    return;  // already claimed by a delivery
+                    return; // already claimed by a delivery
                 read_wait_ = nullptr;
             }
             else
@@ -778,7 +782,7 @@ public:
             }
         }
         // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — stop-token callback: noexcept, OOM => std::terminate is the intended behavior
-        auto* op = new uring_accept_op();
+        auto* op     = new uring_accept_op();
         op->h        = w->h;
         op->ex       = w->ex;
         op->ec_out   = w->ec_out;
@@ -788,22 +792,21 @@ public:
         // post() increments outstanding_work_; balances the work_started()
         // from accept() when the waiter was queued.
         sched_->post(op);
-        sched_->work_finished();  // balance the work_started() from accept()
+        sched_->work_finished(); // balance the work_started() from accept()
     }
 
 private:
-    static void on_accept_cqe(
-        void* self_ptr, int new_fd, int err, bool more) noexcept
+    static void
+    on_accept_cqe(void* self_ptr, int new_fd, int err, bool more) noexcept
     {
-        static_cast<Derived*>(self_ptr)
-            ->on_accept_cqe_impl(new_fd, err, more);
+        static_cast<Derived*>(self_ptr)->on_accept_cqe_impl(new_fd, err, more);
     }
 
 protected:
     void on_accept_cqe_impl(int new_fd, int err, bool more) noexcept
     {
-        bool was_closing = false;
-        waiter_node* matched = nullptr;
+        bool was_closing          = false;
+        waiter_node* matched      = nullptr;
         waiter_node* claimed_peek = nullptr;
         intrusive_list<waiter_node> closing_waiters;
         {
@@ -857,10 +860,10 @@ protected:
             else if (new_fd >= 0)
             {
                 // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler: noexcept, OOM => std::terminate is the intended behavior
-                auto* node      = new ready_fd_node{};
-                node->fd        = new_fd;
-                node->peer      = multi_op_->peer_storage;
-                node->peer_len  = multi_op_->peer_len;
+                auto* node     = new ready_fd_node{};
+                node->fd       = new_fd;
+                node->peer     = multi_op_->peer_storage;
+                node->peer_len = multi_op_->peer_len;
                 ready_fds_.push_back(node);
             }
         }
@@ -875,7 +878,7 @@ protected:
             op->ec_out = claimed_peek->ec_out;
             delete claimed_peek;
             sched_->post(op);
-            sched_->work_finished();  // balance the parking work_started
+            sched_->work_finished(); // balance the parking work_started
         }
 
         if (matched)
@@ -901,14 +904,14 @@ protected:
             }
             delete matched;
             sched_->post(op);
-            sched_->work_finished();  // balance waiter's work_started
+            sched_->work_finished(); // balance waiter's work_started
         }
 
         while (auto* w = closing_waiters.pop_front())
         {
             w->stop_cb.reset();
             // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler shutdown path: noexcept, OOM => std::terminate is the intended behavior
-            auto* op = new uring_accept_op();
+            auto* op     = new uring_accept_op();
             op->h        = w->h;
             op->ex       = w->ex;
             op->ec_out   = w->ec_out;
@@ -916,7 +919,7 @@ protected:
             op->cancelled.store(true, std::memory_order_release);
             delete w;
             sched_->post(op);
-            sched_->work_finished();  // balance waiter's work_started
+            sched_->work_finished(); // balance waiter's work_started
         }
 
         if (!more && !was_closing)
@@ -925,12 +928,14 @@ protected:
             struct rearm_op final : scheduler_op
             {
                 std::shared_ptr<Derived> self_;
-                std::uint64_t            generation_;
+                std::uint64_t generation_;
                 rearm_op(
                     std::shared_ptr<Derived> s,
-                    std::uint64_t            generation) noexcept
+                    std::uint64_t generation) noexcept
                     : self_(std::move(s))
-                    , generation_(generation) {}
+                    , generation_(generation)
+                {
+                }
 
                 void operator()() override
                 {
@@ -954,7 +959,10 @@ protected:
                     self->start_multishot();
                 }
 
-                void destroy() override { delete this; }
+                void destroy() override
+                {
+                    delete this;
+                }
             };
             // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler re-arm: noexcept, OOM => std::terminate is the intended behavior
             sched_->post(new rearm_op(
@@ -966,8 +974,8 @@ protected:
 
 template<class Derived, class ImplBase, class Endpoint, class PeerService>
 inline void
-uring_multishot_acceptor_base<Derived, ImplBase, Endpoint, PeerService>
-    ::waiter_canceller::operator()() const noexcept
+uring_multishot_acceptor_base<Derived, ImplBase, Endpoint, PeerService>::
+    waiter_canceller::operator()() const noexcept
 {
     if (w->cancelled.exchange(true, std::memory_order_acq_rel))
         return;

@@ -46,16 +46,27 @@ class kqueue_local_datagram_service;
 
 class kqueue_tcp_socket final
     : public reactor_stream_socket_impl<
-          kqueue_tcp_socket, kqueue_traits, kqueue_tcp_service,
-          kqueue_tcp_acceptor, tcp_socket::implementation, endpoint>
+          kqueue_tcp_socket,
+          kqueue_traits,
+          kqueue_tcp_service,
+          kqueue_tcp_acceptor,
+          tcp_socket::implementation,
+          endpoint>
 {
     using base_type = reactor_stream_socket_impl<
-        kqueue_tcp_socket, kqueue_traits, kqueue_tcp_service,
-        kqueue_tcp_acceptor, tcp_socket::implementation, endpoint>;
+        kqueue_tcp_socket,
+        kqueue_traits,
+        kqueue_tcp_service,
+        kqueue_tcp_acceptor,
+        tcp_socket::implementation,
+        endpoint>;
     friend kqueue_tcp_service;
+
 public:
     explicit kqueue_tcp_socket(kqueue_tcp_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 
     native_handle_type release_socket() noexcept override
     {
@@ -66,18 +77,28 @@ public:
 
 class kqueue_local_stream_socket final
     : public reactor_stream_socket_impl<
-          kqueue_local_stream_socket, kqueue_traits,
-          kqueue_local_stream_service, kqueue_local_stream_acceptor,
-          local_stream_socket::implementation, corosio::local_endpoint>
+          kqueue_local_stream_socket,
+          kqueue_traits,
+          kqueue_local_stream_service,
+          kqueue_local_stream_acceptor,
+          local_stream_socket::implementation,
+          corosio::local_endpoint>
 {
     using base_type = reactor_stream_socket_impl<
-        kqueue_local_stream_socket, kqueue_traits,
-        kqueue_local_stream_service, kqueue_local_stream_acceptor,
-        local_stream_socket::implementation, corosio::local_endpoint>;
+        kqueue_local_stream_socket,
+        kqueue_traits,
+        kqueue_local_stream_service,
+        kqueue_local_stream_acceptor,
+        local_stream_socket::implementation,
+        corosio::local_endpoint>;
     friend kqueue_local_stream_service;
+
 public:
-    explicit kqueue_local_stream_socket(kqueue_local_stream_service& svc) noexcept
-        : base_type(svc) {}
+    explicit kqueue_local_stream_socket(
+        kqueue_local_stream_service& svc) noexcept
+        : base_type(svc)
+    {
+    }
 
     native_handle_type release_socket() noexcept override
     {
@@ -90,16 +111,27 @@ public:
 
 class kqueue_udp_socket final
     : public reactor_dgram_socket_impl<
-          kqueue_udp_socket, kqueue_traits, kqueue_udp_service,
-          kqueue_tcp_acceptor, udp_socket::implementation, endpoint>
+          kqueue_udp_socket,
+          kqueue_traits,
+          kqueue_udp_service,
+          kqueue_tcp_acceptor,
+          udp_socket::implementation,
+          endpoint>
 {
     using base_type = reactor_dgram_socket_impl<
-        kqueue_udp_socket, kqueue_traits, kqueue_udp_service,
-        kqueue_tcp_acceptor, udp_socket::implementation, endpoint>;
+        kqueue_udp_socket,
+        kqueue_traits,
+        kqueue_udp_service,
+        kqueue_tcp_acceptor,
+        udp_socket::implementation,
+        endpoint>;
     friend kqueue_udp_service;
+
 public:
     explicit kqueue_udp_socket(kqueue_udp_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 
     std::error_code shutdown(corosio::shutdown_type what) noexcept override
     {
@@ -114,18 +146,28 @@ public:
 
 class kqueue_local_datagram_socket final
     : public reactor_dgram_socket_impl<
-          kqueue_local_datagram_socket, kqueue_traits,
-          kqueue_local_datagram_service, kqueue_tcp_acceptor,
-          local_datagram_socket::implementation, corosio::local_endpoint>
+          kqueue_local_datagram_socket,
+          kqueue_traits,
+          kqueue_local_datagram_service,
+          kqueue_tcp_acceptor,
+          local_datagram_socket::implementation,
+          corosio::local_endpoint>
 {
     using base_type = reactor_dgram_socket_impl<
-        kqueue_local_datagram_socket, kqueue_traits,
-        kqueue_local_datagram_service, kqueue_tcp_acceptor,
-        local_datagram_socket::implementation, corosio::local_endpoint>;
+        kqueue_local_datagram_socket,
+        kqueue_traits,
+        kqueue_local_datagram_service,
+        kqueue_tcp_acceptor,
+        local_datagram_socket::implementation,
+        corosio::local_endpoint>;
     friend kqueue_local_datagram_service;
+
 public:
-    explicit kqueue_local_datagram_socket(kqueue_local_datagram_service& svc) noexcept
-        : base_type(svc) {}
+    explicit kqueue_local_datagram_socket(
+        kqueue_local_datagram_service& svc) noexcept
+        : base_type(svc)
+    {
+    }
 
     std::error_code shutdown(corosio::shutdown_type what) noexcept override
     {
@@ -147,119 +189,173 @@ public:
 
 class kqueue_tcp_acceptor final
     : public reactor_acceptor_impl<
-          kqueue_tcp_acceptor, kqueue_traits,
-          kqueue_tcp_acceptor_service, kqueue_tcp_socket,
-          tcp_acceptor::implementation, endpoint>
+          kqueue_tcp_acceptor,
+          kqueue_traits,
+          kqueue_tcp_acceptor_service,
+          kqueue_tcp_socket,
+          tcp_acceptor::implementation,
+          endpoint>
 {
     using base_type = reactor_acceptor_impl<
-        kqueue_tcp_acceptor, kqueue_traits,
-        kqueue_tcp_acceptor_service, kqueue_tcp_socket,
-        tcp_acceptor::implementation, endpoint>;
+        kqueue_tcp_acceptor,
+        kqueue_traits,
+        kqueue_tcp_acceptor_service,
+        kqueue_tcp_socket,
+        tcp_acceptor::implementation,
+        endpoint>;
     friend kqueue_tcp_acceptor_service;
+
 public:
     explicit kqueue_tcp_acceptor(kqueue_tcp_acceptor_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 };
 
 class kqueue_local_stream_acceptor final
     : public reactor_acceptor_impl<
-          kqueue_local_stream_acceptor, kqueue_traits,
+          kqueue_local_stream_acceptor,
+          kqueue_traits,
           kqueue_local_stream_acceptor_service,
           kqueue_local_stream_socket,
-          local_stream_acceptor::implementation, corosio::local_endpoint>
+          local_stream_acceptor::implementation,
+          corosio::local_endpoint>
 {
     using base_type = reactor_acceptor_impl<
-        kqueue_local_stream_acceptor, kqueue_traits,
+        kqueue_local_stream_acceptor,
+        kqueue_traits,
         kqueue_local_stream_acceptor_service,
         kqueue_local_stream_socket,
-        local_stream_acceptor::implementation, corosio::local_endpoint>;
+        local_stream_acceptor::implementation,
+        corosio::local_endpoint>;
     friend kqueue_local_stream_acceptor_service;
+
 public:
     explicit kqueue_local_stream_acceptor(
         kqueue_local_stream_acceptor_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 };
 
 // --- Services ---
 
 class BOOST_COROSIO_DECL kqueue_tcp_service final
     : public reactor_tcp_service_impl<
-          kqueue_tcp_service, kqueue_traits, kqueue_tcp_socket>
+          kqueue_tcp_service,
+          kqueue_traits,
+          kqueue_tcp_socket>
 {
     using base_type = reactor_tcp_service_impl<
-        kqueue_tcp_service, kqueue_traits, kqueue_tcp_socket>;
+        kqueue_tcp_service,
+        kqueue_traits,
+        kqueue_tcp_socket>;
+
 public:
-    explicit kqueue_tcp_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+    explicit kqueue_tcp_service(capy::execution_context& ctx) : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL kqueue_local_stream_service final
     : public reactor_local_stream_service_impl<
-          kqueue_local_stream_service, kqueue_traits,
+          kqueue_local_stream_service,
+          kqueue_traits,
           kqueue_local_stream_socket>
 {
     using base_type = reactor_local_stream_service_impl<
-        kqueue_local_stream_service, kqueue_traits,
+        kqueue_local_stream_service,
+        kqueue_traits,
         kqueue_local_stream_socket>;
+
 public:
     explicit kqueue_local_stream_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL kqueue_udp_service final
     : public reactor_udp_service_impl<
-          kqueue_udp_service, kqueue_traits, kqueue_udp_socket>
+          kqueue_udp_service,
+          kqueue_traits,
+          kqueue_udp_socket>
 {
     using base_type = reactor_udp_service_impl<
-        kqueue_udp_service, kqueue_traits, kqueue_udp_socket>;
+        kqueue_udp_service,
+        kqueue_traits,
+        kqueue_udp_socket>;
+
 public:
-    explicit kqueue_udp_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+    explicit kqueue_udp_service(capy::execution_context& ctx) : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL kqueue_local_datagram_service final
     : public reactor_local_dgram_service_impl<
-          kqueue_local_datagram_service, kqueue_traits,
+          kqueue_local_datagram_service,
+          kqueue_traits,
           kqueue_local_datagram_socket>
 {
     using base_type = reactor_local_dgram_service_impl<
-        kqueue_local_datagram_service, kqueue_traits,
+        kqueue_local_datagram_service,
+        kqueue_traits,
         kqueue_local_datagram_socket>;
+
 public:
     explicit kqueue_local_datagram_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL kqueue_tcp_acceptor_service final
     : public reactor_acceptor_service_impl<
-          kqueue_tcp_acceptor_service, kqueue_traits,
-          tcp_acceptor_service, kqueue_tcp_acceptor,
-          kqueue_tcp_service, endpoint>
+          kqueue_tcp_acceptor_service,
+          kqueue_traits,
+          tcp_acceptor_service,
+          kqueue_tcp_acceptor,
+          kqueue_tcp_service,
+          endpoint>
 {
     using base_type = reactor_acceptor_service_impl<
-        kqueue_tcp_acceptor_service, kqueue_traits,
-        tcp_acceptor_service, kqueue_tcp_acceptor,
-        kqueue_tcp_service, endpoint>;
+        kqueue_tcp_acceptor_service,
+        kqueue_traits,
+        tcp_acceptor_service,
+        kqueue_tcp_acceptor,
+        kqueue_tcp_service,
+        endpoint>;
+
 public:
     explicit kqueue_tcp_acceptor_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL kqueue_local_stream_acceptor_service final
     : public reactor_acceptor_service_impl<
-          kqueue_local_stream_acceptor_service, kqueue_traits,
+          kqueue_local_stream_acceptor_service,
+          kqueue_traits,
           local_stream_acceptor_service,
           kqueue_local_stream_acceptor,
-          kqueue_local_stream_service, corosio::local_endpoint>
+          kqueue_local_stream_service,
+          corosio::local_endpoint>
 {
     using base_type = reactor_acceptor_service_impl<
-        kqueue_local_stream_acceptor_service, kqueue_traits,
+        kqueue_local_stream_acceptor_service,
+        kqueue_traits,
         local_stream_acceptor_service,
         kqueue_local_stream_acceptor,
-        kqueue_local_stream_service, corosio::local_endpoint>;
+        kqueue_local_stream_service,
+        corosio::local_endpoint>;
+
 public:
     explicit kqueue_local_stream_acceptor_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 } // namespace boost::corosio::detail

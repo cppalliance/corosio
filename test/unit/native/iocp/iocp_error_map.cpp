@@ -37,8 +37,7 @@ struct iocp_error_map_test
             std::errc::connection_aborted);
 
         BOOST_TEST(
-            iocp_make_err(WSAECONNRESET, false) ==
-            std::errc::connection_reset);
+            iocp_make_err(WSAECONNRESET, false) == std::errc::connection_reset);
         BOOST_TEST(
             iocp_make_err(WSAECONNREFUSED, false) ==
             std::errc::connection_refused);
@@ -63,8 +62,7 @@ struct iocp_error_map_test
         BOOST_TEST(
             iocp_make_err(ERROR_HOST_UNREACHABLE, false) ==
             std::errc::host_unreachable);
-        BOOST_TEST(
-            iocp_make_err(WSAETIMEDOUT, false) == std::errc::timed_out);
+        BOOST_TEST(iocp_make_err(WSAETIMEDOUT, false) == std::errc::timed_out);
         BOOST_TEST(
             iocp_make_err(ERROR_SEM_TIMEOUT, false) == std::errc::timed_out);
 
@@ -73,9 +71,10 @@ struct iocp_error_map_test
 
         // Closed-object contract spellings normalize to
         // bad_file_descriptor regardless of toolchain mapping.
-        BOOST_TEST(iocp_make_err(WSAEBADF, false) ==
-            std::errc::bad_file_descriptor);
-        BOOST_TEST(iocp_make_err(ERROR_INVALID_HANDLE, false) ==
+        BOOST_TEST(
+            iocp_make_err(WSAEBADF, false) == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            iocp_make_err(ERROR_INVALID_HANDLE, false) ==
             std::errc::bad_file_descriptor);
     }
 };

@@ -22,7 +22,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::multicast_loop_v6[]
-void loop_multicast_back_to_this_host_v6(corosio::udp_socket& sock)
+void
+loop_multicast_back_to_this_host_v6(corosio::udp_socket& sock)
 {
     // Precondition: sock is open on udp::v6().
     //

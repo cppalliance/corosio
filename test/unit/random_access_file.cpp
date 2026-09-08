@@ -108,8 +108,8 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        auto ec = f.open("/tmp/corosio_nonexistent_raf_zzz_12345",
-                         file_base::read_only);
+        auto ec = f.open(
+            "/tmp/corosio_nonexistent_raf_zzz_12345", file_base::read_only);
         BOOST_TEST(ec == std::errc::no_such_file_or_directory);
         BOOST_TEST(!f.is_open());
     }
@@ -139,8 +139,9 @@ struct random_access_file_test
 
 #if BOOST_COROSIO_POSIX
         // Larger than off_t can represent: rejected with EOVERFLOW.
-        BOOST_TEST(f.resize((std::numeric_limits<std::uint64_t>::max)())
-                   == std::errc::value_too_large);
+        BOOST_TEST(
+            f.resize((std::numeric_limits<std::uint64_t>::max)()) ==
+            std::errc::value_too_large);
 #endif
     }
 
@@ -156,7 +157,7 @@ struct random_access_file_test
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         bool completed = false;
-        char buf[5] = {};
+        char buf[5]    = {};
 
         auto task = [](random_access_file& f_ref, char* buf_ptr,
                        bool& done) -> capy::task<> {
@@ -185,7 +186,7 @@ struct random_access_file_test
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
         bool completed = false;
-        char buf[5] = {};
+        char buf[5]    = {};
 
         auto task = [](random_access_file& f_ref, char* buf_ptr,
                        bool& done) -> capy::task<> {
@@ -236,15 +237,16 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::read_write | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::read_write | file_base::create | file_base::truncate));
 
         bool completed = false;
 
         auto task = [](random_access_file& f_ref, bool& done) -> capy::task<> {
             // Write "hello" at offset 0
-            auto [ec, n] = co_await f_ref.write_some_at(
-                0, capy::const_buffer("hello", 5));
+            auto [ec, n] =
+                co_await f_ref.write_some_at(0, capy::const_buffer("hello", 5));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 5u);
             done = true;
@@ -270,8 +272,9 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::read_write | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::read_write | file_base::create | file_base::truncate));
 
         bool completed = false;
 
@@ -418,15 +421,15 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::truncate));
 
         bool completed = false;
 
-        auto task = [](random_access_file& f_ref,
-                       bool& done) -> capy::task<> {
-            auto [ec, n] = co_await f_ref.write_some_at(
-                0, capy::const_buffer("sync", 4));
+        auto task = [](random_access_file& f_ref, bool& done) -> capy::task<> {
+            auto [ec, n] =
+                co_await f_ref.write_some_at(0, capy::const_buffer("sync", 4));
             BOOST_TEST(!ec);
             BOOST_TEST(!f_ref.sync_data());
             done = true;
@@ -455,8 +458,8 @@ struct random_access_file_test
         auto reader = [](random_access_file& f_ref, std::uint64_t off,
                          char expected, int& count) -> capy::task<> {
             char buf[4] = {};
-            auto [ec, n] = co_await f_ref.read_some_at(
-                off, capy::mutable_buffer(buf, 4));
+            auto [ec, n] =
+                co_await f_ref.read_some_at(off, capy::mutable_buffer(buf, 4));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 4u);
             for (int i = 0; i < 4; ++i)
@@ -482,18 +485,19 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::read_write | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::read_write | file_base::create | file_base::truncate));
         BOOST_TEST(!f.resize(16));
 
         int completed = 0;
 
-        auto writer = [](random_access_file& f_ref, std::uint64_t off,
-                         char ch, int& count) -> capy::task<> {
+        auto writer = [](random_access_file& f_ref, std::uint64_t off, char ch,
+                         int& count) -> capy::task<> {
             char buf[4];
             std::memset(buf, ch, 4);
-            auto [ec, n] = co_await f_ref.write_some_at(
-                off, capy::const_buffer(buf, 4));
+            auto [ec, n] =
+                co_await f_ref.write_some_at(off, capy::const_buffer(buf, 4));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 4u);
             ++count;
@@ -533,8 +537,8 @@ struct random_access_file_test
         auto reader = [](random_access_file& f_ref,
                          bool& done) -> capy::task<> {
             char buf[4] = {};
-            auto [ec, n] = co_await f_ref.read_some_at(
-                0, capy::mutable_buffer(buf, 4));
+            auto [ec, n] =
+                co_await f_ref.read_some_at(0, capy::mutable_buffer(buf, 4));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 4u);
             done = true;
@@ -542,8 +546,8 @@ struct random_access_file_test
 
         auto writer = [](random_access_file& f_ref,
                          bool& done) -> capy::task<> {
-            auto [ec, n] = co_await f_ref.write_some_at(
-                12, capy::const_buffer("ZZZZ", 4));
+            auto [ec, n] =
+                co_await f_ref.write_some_at(12, capy::const_buffer("ZZZZ", 4));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 4u);
             done = true;
@@ -561,12 +565,11 @@ struct random_access_file_test
     void testManyConcurrentOps()
     {
         // Stress test: 100 concurrent reads
-        constexpr std::size_t num_ops = 100;
+        constexpr std::size_t num_ops  = 100;
         constexpr std::size_t block_sz = 4;
         std::string data(num_ops * block_sz, 'X');
         for (std::size_t i = 0; i < num_ops; ++i)
-            std::memset(data.data() + i * block_sz,
-                        'A' + (i % 26), block_sz);
+            std::memset(data.data() + i * block_sz, 'A' + (i % 26), block_sz);
 
         temp_file tmp("raf_many_", data);
         io_context ioc(Backend);
@@ -577,9 +580,10 @@ struct random_access_file_test
         std::atomic<int> completed{0};
 
         auto reader = [](random_access_file& f_ref, std::uint64_t off,
-                         char expected, std::atomic<int>& count) -> capy::task<> {
+                         char expected,
+                         std::atomic<int>& count) -> capy::task<> {
             char buf[block_sz] = {};
-            auto [ec, n] = co_await f_ref.read_some_at(
+            auto [ec, n]       = co_await f_ref.read_some_at(
                 off, capy::mutable_buffer(buf, block_sz));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, static_cast<std::size_t>(block_sz));
@@ -590,9 +594,8 @@ struct random_access_file_test
 
         for (std::size_t i = 0; i < num_ops; ++i)
         {
-            capy::run_async(ioc.get_executor())(
-                reader(f, i * block_sz,
-                       static_cast<char>('A' + (i % 26)), completed));
+            capy::run_async(ioc.get_executor())(reader(
+                f, i * block_sz, static_cast<char>('A' + (i % 26)), completed));
         }
 
         ioc.run();
@@ -611,7 +614,7 @@ struct random_access_file_test
         // by reference gives the lambda a member whose type has
         // internal linkage, which -Wsubobject-linkage rejects.
         auto const path = tmp.path;
-        bool resumed = false;
+        bool resumed    = false;
         {
             io_context ioc(Backend);
             auto keeper = [&]() -> capy::task<> {
@@ -619,12 +622,11 @@ struct random_access_file_test
                 std::ignore = f.open(path, file_base::read_only);
                 tcp_acceptor acc(ioc);
                 std::ignore = acc.open();
-                std::ignore = acc.bind(
-                    endpoint(ipv4_address::loopback(), 0));
+                std::ignore = acc.bind(endpoint(ipv4_address::loopback(), 0));
                 std::ignore = acc.listen();
                 tcp_socket peer(ioc);
                 std::ignore = co_await acc.accept(peer);
-                resumed = true;
+                resumed     = true;
             };
             capy::run_async(ioc.get_executor())(keeper());
             // One handler carries the coroutine to the parked accept.
@@ -639,8 +641,8 @@ struct random_access_file_test
     {
 #if BOOST_COROSIO_HAS_URING
         // io_uring reads through the ring, never through the pool.
-        if constexpr (std::is_same_v<
-                std::remove_const_t<decltype(Backend)>, uring_t>)
+        if constexpr (
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>)
             return;
 #endif
         temp_file tmp("raf_pool_shut_", "hello world");
@@ -685,13 +687,13 @@ struct random_access_file_test
     {
 #if BOOST_COROSIO_HAS_URING
         // io_uring reads through the ring, never through the pool.
-        if constexpr (std::is_same_v<
-                std::remove_const_t<decltype(Backend)>, uring_t>)
+        if constexpr (
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>)
             return;
 #endif
         temp_file tmp("raf_pool_teardown_", "hello world");
         auto const path = tmp.path;
-        bool resumed = false;
+        bool resumed    = false;
         test::pool_blocker blocker;
         std::optional<io_context::executor_type> ex;
         std::optional<capy::io_env> env;
@@ -799,8 +801,8 @@ struct random_access_file_test
             BOOST_TEST(e1 == std::errc::bad_file_descriptor);
             BOOST_TEST_EQ(n1, 0u);
 
-            auto [e2, n2] = co_await f.write_some_at(
-                0, capy::const_buffer("x", 1));
+            auto [e2, n2] =
+                co_await f.write_some_at(0, capy::const_buffer("x", 1));
             BOOST_TEST(e2 == std::errc::bad_file_descriptor);
             BOOST_TEST_EQ(n2, 0u);
             done = true;
@@ -834,11 +836,9 @@ struct random_access_file_test
 
 #if BOOST_COROSIO_HAS_IOCP
         HANDLE h = ::CreateFileW(
-            tmp2.path.c_str(), GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            tmp2.path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
             nullptr, OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
-            nullptr);
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, nullptr);
         BOOST_TEST(h != INVALID_HANDLE_VALUE);
         auto raw = reinterpret_cast<native_handle_type>(h);
 #else
@@ -884,8 +884,8 @@ struct random_access_file_test
                 0, capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(bool(rec));
 
-            auto [wec, wn] = co_await ro.write_some_at(
-                0, capy::const_buffer("x", 1));
+            auto [wec, wn] =
+                co_await ro.write_some_at(0, capy::const_buffer("x", 1));
             BOOST_TEST(bool(wec));
             done = true;
         };
@@ -911,8 +911,7 @@ struct random_access_file_test
             // Past off_t's range on the pool backend, and a negative
             // offset on io_uring (whose ~0 means "current position").
             auto [ec, n] = co_await f.read_some_at(
-                std::uint64_t(1) << 63,
-                capy::mutable_buffer(buf, sizeof(buf)));
+                std::uint64_t(1) << 63, capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(bool(ec));
             BOOST_TEST_EQ(n, 0u);
             done = true;
@@ -932,8 +931,14 @@ struct random_access_file_test
         // Exceptional-only operations throw bad_file_descriptor
         auto expect_throw = [](auto fn) {
             std::error_code caught;
-            try { fn(); }
-            catch (std::system_error const& e) { caught = e.code(); }
+            try
+            {
+                fn();
+            }
+            catch (std::system_error const& e)
+            {
+                caught = e.code();
+            }
             BOOST_TEST(caught == std::errc::bad_file_descriptor);
         };
 
@@ -955,14 +960,14 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-                   file_base::write_only | file_base::create
-                       | file_base::truncate | file_base::sync_all_on_write));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::truncate |
+                file_base::sync_all_on_write));
         BOOST_TEST(f.is_open());
 
         bool done = false;
-        auto task = [](random_access_file& f_ref,
-                       bool& d) -> capy::task<> {
+        auto task = [](random_access_file& f_ref, bool& d) -> capy::task<> {
             auto [ec, n] = co_await f_ref.write_some_at(
                 0, capy::const_buffer("synced", 6));
             BOOST_TEST(!ec);
@@ -982,9 +987,9 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        auto ec = f.open(tmp.path,
-                         file_base::write_only | file_base::create
-                             | file_base::exclusive);
+        auto ec = f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::exclusive);
         BOOST_TEST(ec == std::errc::file_exists);
         BOOST_TEST(!f.is_open());
     }
@@ -997,9 +1002,9 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-                   file_base::write_only | file_base::create
-                       | file_base::exclusive));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::exclusive));
         BOOST_TEST(f.is_open());
         f.close();
     }
@@ -1021,8 +1026,8 @@ struct random_access_file_test
             BOOST_TEST(!rec);
             BOOST_TEST_EQ(rn, 0u);
 
-            auto [wec, wn] = co_await f_ref.write_some_at(
-                0, capy::const_buffer(nullptr, 0));
+            auto [wec, wn] =
+                co_await f_ref.write_some_at(0, capy::const_buffer(nullptr, 0));
             BOOST_TEST(!wec);
             BOOST_TEST_EQ(wn, 0u);
             d = true;
@@ -1056,7 +1061,8 @@ struct random_access_file_test
         };
 
         for (std::uint64_t i = 0; i < num_ops; ++i)
-            capy::run_async(ioc.get_executor())(reader(&f, i * 1024, &completed));
+            capy::run_async(ioc.get_executor())(
+                reader(&f, i * 1024, &completed));
 
         // Immediately cancel before any op can complete.
         f.cancel();
@@ -1106,8 +1112,7 @@ struct random_access_file_test
         bool completed = false;
         std::error_code result_ec;
 
-        auto task = [](random_access_file& f_ref,
-                       std::error_code& ec_out,
+        auto task = [](random_access_file& f_ref, std::error_code& ec_out,
                        bool& done) -> capy::task<> {
             char buf[64];
             auto [ec, n] = co_await f_ref.read_some_at(
@@ -1152,16 +1157,16 @@ struct random_access_file_test
         auto writer = [](random_access_file& f_ref, std::error_code& ec,
                          bool& d) -> capy::task<> {
             char buf[1024] = {};
-            auto [e, n] = co_await f_ref.write_some_at(
+            auto [e, n]    = co_await f_ref.write_some_at(
                 0, capy::const_buffer(buf, sizeof(buf)));
             ec = e;
             d  = true;
         };
 
-        capy::run_async(ioc.get_executor(), ss.get_token())(
-            reader(f, rec, rdone));
-        capy::run_async(ioc.get_executor(), ss.get_token())(
-            writer(f, wec, wdone));
+        capy::run_async(
+            ioc.get_executor(), ss.get_token())(reader(f, rec, rdone));
+        capy::run_async(
+            ioc.get_executor(), ss.get_token())(writer(f, wec, wdone));
         ss.request_stop();
         ioc.run();
 
@@ -1179,13 +1184,13 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::truncate));
 
         bool completed = false;
 
-        auto task = [](random_access_file& f_ref,
-                       bool& done) -> capy::task<> {
+        auto task = [](random_access_file& f_ref, bool& done) -> capy::task<> {
             auto [ec, n] = co_await f_ref.write_some_at(
                 0, capy::const_buffer("sync_all", 8));
             BOOST_TEST(!ec);
@@ -1219,14 +1224,14 @@ struct random_access_file_test
         // The released handle is still IOCP-associated, so we must
         // set the low-order bit of hEvent to prevent the completion
         // from being posted to the (unserviced) IOCP port.
-        HANDLE h = reinterpret_cast<HANDLE>(handle);
+        HANDLE h   = reinterpret_cast<HANDLE>(handle);
         HANDLE evt = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);
         OVERLAPPED ov{};
         ov.Offset = 0;
-        ov.hEvent = reinterpret_cast<HANDLE>(
-            reinterpret_cast<ULONG_PTR>(evt) | 1);
+        ov.hEvent =
+            reinterpret_cast<HANDLE>(reinterpret_cast<ULONG_PTR>(evt) | 1);
         DWORD bytes_read = 0;
-        BOOL ok = ::ReadFile(h, buf, 5, &bytes_read, &ov);
+        BOOL ok          = ::ReadFile(h, buf, 5, &bytes_read, &ov);
         if (!ok && ::GetLastError() == ERROR_IO_PENDING)
             ok = ::GetOverlappedResult(h, &ov, &bytes_read, TRUE);
         BOOST_TEST(ok);
@@ -1254,11 +1259,9 @@ struct random_access_file_test
         // Open with raw platform API, then assign to random_access_file
 #if BOOST_COROSIO_HAS_IOCP
         HANDLE h = ::CreateFileW(
-            tmp.path.c_str(), GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            tmp.path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
             nullptr, OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
-            nullptr);
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, nullptr);
         BOOST_TEST(h != INVALID_HANDLE_VALUE);
         auto raw_handle = reinterpret_cast<native_handle_type>(h);
 #else
@@ -1274,11 +1277,10 @@ struct random_access_file_test
 
         bool completed = false;
 
-        auto task = [](random_access_file& f_ref,
-                       bool& done) -> capy::task<> {
+        auto task = [](random_access_file& f_ref, bool& done) -> capy::task<> {
             char buf[5] = {};
-            auto [ec, n] = co_await f_ref.read_some_at(
-                0, capy::mutable_buffer(buf, 5));
+            auto [ec, n] =
+                co_await f_ref.read_some_at(0, capy::mutable_buffer(buf, 5));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 5u);
             BOOST_TEST(std::memcmp(buf, "world", 5) == 0);
@@ -1292,6 +1294,7 @@ struct random_access_file_test
     }
 };
 
-COROSIO_BACKEND_TESTS(random_access_file_test, "boost.corosio.random_access_file")
+COROSIO_BACKEND_TESTS(
+    random_access_file_test, "boost.corosio.random_access_file")
 
 } // namespace boost::corosio

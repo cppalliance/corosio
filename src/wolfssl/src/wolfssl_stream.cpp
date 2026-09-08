@@ -31,7 +31,8 @@ struct wolfssl_stream::implementation
 };
 
 wolfssl_stream::implementation*
-wolfssl_stream::make_implementation(capy::any_stream& stream, tls_context const& ctx)
+wolfssl_stream::make_implementation(
+    capy::any_stream& stream, tls_context const& ctx)
 {
     // Session creation is deferred to handshake time when the role is
     // known (the engine's prepare hook builds it from the role's

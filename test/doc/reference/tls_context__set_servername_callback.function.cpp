@@ -25,19 +25,17 @@ namespace {
 // tag::set_servername_callback[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void accept_only_known_hostnames(corosio::tls_context& ctx)
+void
+accept_only_known_hostnames(corosio::tls_context& ctx)
 {
     // Server side: invoked during the handshake with the name the client
     // asked for. Returning false rejects the connection with an alert.
     // Write it as an allow-list, so a name this deployment does not serve
     // is refused rather than answered with whatever certificate this
     // context happens to hold.
-    ctx.set_servername_callback(
-        [](std::string_view hostname) -> bool
-        {
-            return hostname == "api.example.com" ||
-                   hostname == "www.example.com";
-        });
+    ctx.set_servername_callback([](std::string_view hostname) -> bool {
+        return hostname == "api.example.com" || hostname == "www.example.com";
+    });
 }
 // end::set_servername_callback[]
 

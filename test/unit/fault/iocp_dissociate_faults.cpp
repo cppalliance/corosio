@@ -40,7 +40,7 @@ struct iocp_dissociate_faults
 {
     void testReleaseWithoutNtEntryPoint()
     {
-        if(!hook_is_live(sys::GetModuleHandleW))
+        if (!hook_is_live(sys::GetModuleHandleW))
         {
             skip_dead_hook("GetModuleHandleW");
             return;
@@ -82,6 +82,6 @@ struct iocp_dissociate_faults
 
 TEST_SUITE(iocp_dissociate_faults, "boost.corosio.fault.dissociate");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

@@ -119,7 +119,8 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path, file_base::write_only | file_base::create));
+        BOOST_TEST(
+            !f.open(tmp.path, file_base::write_only | file_base::create));
         BOOST_TEST(f.is_open());
         f.close();
 
@@ -132,8 +133,8 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        auto ec = f.open("/tmp/corosio_nonexistent_file_zzz_12345",
-                         file_base::read_only);
+        auto ec = f.open(
+            "/tmp/corosio_nonexistent_file_zzz_12345", file_base::read_only);
         BOOST_TEST(ec == std::errc::no_such_file_or_directory);
         BOOST_TEST(!f.is_open());
     }
@@ -145,9 +146,9 @@ struct stream_file_test
         stream_file f(ioc);
 
         // Opening with create|exclusive on an existing file should fail
-        auto ec = f.open(tmp.path,
-                         file_base::write_only | file_base::create
-                             | file_base::exclusive);
+        auto ec = f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::exclusive);
         BOOST_TEST(ec == std::errc::file_exists);
     }
 
@@ -158,9 +159,10 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-                   file_base::write_only | file_base::create
-                       | file_base::truncate | file_base::sync_all_on_write));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::truncate |
+                file_base::sync_all_on_write));
         BOOST_TEST(f.is_open());
 
         bool done = false;
@@ -201,8 +203,9 @@ struct stream_file_test
 
 #if BOOST_COROSIO_POSIX
         // Larger than off_t can represent: rejected with EOVERFLOW.
-        BOOST_TEST(f.resize((std::numeric_limits<std::uint64_t>::max)())
-                   == std::errc::value_too_large);
+        BOOST_TEST(
+            f.resize((std::numeric_limits<std::uint64_t>::max)()) ==
+            std::errc::value_too_large);
 #endif
     }
 
@@ -246,13 +249,13 @@ struct stream_file_test
         bool completed = false;
         std::error_code result_ec;
         std::size_t result_bytes = 0;
-        char buf[64] = {};
+        char buf[64]             = {};
 
         auto task = [](stream_file& f_ref, char* buf_ptr,
                        std::error_code& ec_out, std::size_t& bytes_out,
                        bool& done) -> capy::task<> {
-            auto [ec, n] = co_await f_ref.read_some(
-                capy::mutable_buffer(buf_ptr, 64));
+            auto [ec, n] =
+                co_await f_ref.read_some(capy::mutable_buffer(buf_ptr, 64));
             ec_out    = ec;
             bytes_out = n;
             done      = true;
@@ -307,11 +310,12 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::truncate));
 
         std::string data = "written by corosio";
-        bool completed = false;
+        bool completed   = false;
 
         auto task = [](stream_file& f_ref, std::string const& data_ref,
                        bool& done) -> capy::task<> {
@@ -344,22 +348,23 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::read_write | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::read_write | file_base::create | file_base::truncate));
 
         bool completed = false;
 
         auto task = [](stream_file& f_ref, bool& done) -> capy::task<> {
             // Write "AAABBB"
             {
-                auto [ec, n] = co_await f_ref.write_some(
-                    capy::const_buffer("AAA", 3));
+                auto [ec, n] =
+                    co_await f_ref.write_some(capy::const_buffer("AAA", 3));
                 BOOST_TEST(!ec);
                 BOOST_TEST_EQ(n, 3u);
             }
             {
-                auto [ec, n] = co_await f_ref.write_some(
-                    capy::const_buffer("BBB", 3));
+                auto [ec, n] =
+                    co_await f_ref.write_some(capy::const_buffer("BBB", 3));
                 BOOST_TEST(!ec);
                 BOOST_TEST_EQ(n, 3u);
             }
@@ -395,14 +400,15 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::truncate));
 
         bool completed = false;
 
         auto task = [](stream_file& f_ref, bool& done) -> capy::task<> {
-            auto [ec, n] = co_await f_ref.write_some(
-                capy::const_buffer("data", 4));
+            auto [ec, n] =
+                co_await f_ref.write_some(capy::const_buffer("data", 4));
             BOOST_TEST(!ec);
             BOOST_TEST(!f_ref.sync_data());
             done = true;
@@ -477,8 +483,8 @@ struct stream_file_test
 #if BOOST_COROSIO_HAS_URING
         // io_uring performs file I/O through the ring itself, so the
         // single-threaded restriction below does not apply.
-        if constexpr (std::is_same_v<
-                std::remove_const_t<decltype(Backend)>, uring_t>)
+        if constexpr (
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>)
             return;
 #endif
         // POSIX file I/O requires the shared thread pool; in single-threaded
@@ -496,8 +502,8 @@ struct stream_file_test
     void testOpenUnsafeIoStillSupported()
     {
 #if BOOST_COROSIO_HAS_URING
-        if constexpr (std::is_same_v<
-                std::remove_const_t<decltype(Backend)>, uring_t>)
+        if constexpr (
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>)
             return;
 #endif
         // The unsafe_io tier keeps scheduler locking on, so the shared file
@@ -528,7 +534,8 @@ struct stream_file_test
 
         auto task = [](stream_file& f_ref, bool& done) -> capy::task<> {
             char b;
-            auto [ec, n] = co_await f_ref.read_some(capy::mutable_buffer(&b, 0));
+            auto [ec, n] =
+                co_await f_ref.read_some(capy::mutable_buffer(&b, 0));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 0u);
             done = true;
@@ -545,8 +552,9 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::truncate));
 
         bool completed = false;
 
@@ -570,7 +578,8 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path, file_base::write_only | file_base::truncate));
+        BOOST_TEST(
+            !f.open(tmp.path, file_base::write_only | file_base::truncate));
         BOOST_TEST_EQ(f.size(), 0u);
     }
 
@@ -582,14 +591,14 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::write_only | file_base::append));
+        BOOST_TEST(
+            !f.open(tmp.path, file_base::write_only | file_base::append));
 
         bool completed = false;
 
         auto task = [](stream_file& f_ref, bool& done) -> capy::task<> {
-            auto [ec, n] = co_await f_ref.write_some(
-                capy::const_buffer(" world", 6));
+            auto [ec, n] =
+                co_await f_ref.write_some(capy::const_buffer(" world", 6));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 6u);
             done = true;
@@ -617,14 +626,15 @@ struct stream_file_test
         io_context ioc(Backend);
         stream_file f(ioc);
 
-        BOOST_TEST(!f.open(tmp.path,
-               file_base::write_only | file_base::create | file_base::truncate));
+        BOOST_TEST(!f.open(
+            tmp.path,
+            file_base::write_only | file_base::create | file_base::truncate));
 
         bool completed = false;
 
         auto task = [](stream_file& f_ref, bool& done) -> capy::task<> {
-            auto [ec, n] = co_await f_ref.write_some(
-                capy::const_buffer("data", 4));
+            auto [ec, n] =
+                co_await f_ref.write_some(capy::const_buffer("data", 4));
             BOOST_TEST(!ec);
             BOOST_TEST(!f_ref.sync_all());
             done = true;
@@ -653,13 +663,13 @@ struct stream_file_test
         // The raw handle should still be usable
         char buf[5] = {};
 #if BOOST_COROSIO_HAS_IOCP
-        HANDLE h = reinterpret_cast<HANDLE>(handle);
+        HANDLE h         = reinterpret_cast<HANDLE>(handle);
         DWORD bytes_read = 0;
         OVERLAPPED ov{};
-        ov.Offset = 0;
+        ov.Offset  = 0;
         HANDLE evt = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);
-        ov.hEvent = reinterpret_cast<HANDLE>(
-            reinterpret_cast<ULONG_PTR>(evt) | 1);
+        ov.hEvent =
+            reinterpret_cast<HANDLE>(reinterpret_cast<ULONG_PTR>(evt) | 1);
         BOOL ok = ::ReadFile(h, buf, 5, &bytes_read, &ov);
         if (!ok && ::GetLastError() == ERROR_IO_PENDING)
             ok = ::GetOverlappedResult(h, &ov, &bytes_read, TRUE);
@@ -680,11 +690,10 @@ struct stream_file_test
 
 #if BOOST_COROSIO_HAS_IOCP
         HANDLE h = ::CreateFileW(
-            tmp.path.c_str(), GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            tmp.path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
             nullptr, OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED
-                | FILE_FLAG_SEQUENTIAL_SCAN,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED |
+                FILE_FLAG_SEQUENTIAL_SCAN,
             nullptr);
         BOOST_TEST(h != INVALID_HANDLE_VALUE);
         auto raw_handle = reinterpret_cast<native_handle_type>(h);
@@ -703,8 +712,8 @@ struct stream_file_test
 
         auto task = [](stream_file& f_ref, bool& done) -> capy::task<> {
             char buf[5] = {};
-            auto [ec, n] = co_await f_ref.read_some(
-                capy::mutable_buffer(buf, 5));
+            auto [ec, n] =
+                co_await f_ref.read_some(capy::mutable_buffer(buf, 5));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 5u);
             BOOST_TEST(std::memcmp(buf, "world", 5) == 0);
@@ -743,11 +752,10 @@ struct stream_file_test
 
 #if BOOST_COROSIO_HAS_IOCP
         HANDLE h = ::CreateFileW(
-            tmp2.path.c_str(), GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            tmp2.path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
             nullptr, OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED
-                | FILE_FLAG_SEQUENTIAL_SCAN,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED |
+                FILE_FLAG_SEQUENTIAL_SCAN,
             nullptr);
         BOOST_TEST(h != INVALID_HANDLE_VALUE);
         auto raw = reinterpret_cast<native_handle_type>(h);
@@ -794,13 +802,12 @@ struct stream_file_test
         bool done = false;
         auto task = [&]() -> capy::task<> {
             char buf[8];
-            auto [rec, rn] = co_await wo.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [rec, rn] =
+                co_await wo.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(bool(rec));
             BOOST_TEST_EQ(rn, 0u);
 
-            auto [wec, wn] = co_await ro.write_some(
-                capy::const_buffer("x", 1));
+            auto [wec, wn] = co_await ro.write_some(capy::const_buffer("x", 1));
             BOOST_TEST(bool(wec));
             BOOST_TEST_EQ(wn, 0u);
             done = true;
@@ -819,8 +826,14 @@ struct stream_file_test
         // Exceptional-only operations throw bad_file_descriptor
         auto expect_throw = [](auto fn) {
             std::error_code caught;
-            try { fn(); }
-            catch (std::system_error const& e) { caught = e.code(); }
+            try
+            {
+                fn();
+            }
+            catch (std::system_error const& e)
+            {
+                caught = e.code();
+            }
             BOOST_TEST(caught == std::errc::bad_file_descriptor);
         };
 
@@ -910,7 +923,7 @@ struct stream_file_test
         // by reference gives the lambda a member whose type has
         // internal linkage, which -Wsubobject-linkage rejects.
         auto const path = tmp.path;
-        bool resumed = false;
+        bool resumed    = false;
         {
             io_context ioc(Backend);
             auto keeper = [&]() -> capy::task<> {
@@ -918,12 +931,11 @@ struct stream_file_test
                 std::ignore = f.open(path, file_base::read_only);
                 tcp_acceptor acc(ioc);
                 std::ignore = acc.open();
-                std::ignore = acc.bind(
-                    endpoint(ipv4_address::loopback(), 0));
+                std::ignore = acc.bind(endpoint(ipv4_address::loopback(), 0));
                 std::ignore = acc.listen();
                 tcp_socket peer(ioc);
                 std::ignore = co_await acc.accept(peer);
-                resumed = true;
+                resumed     = true;
             };
             capy::run_async(ioc.get_executor())(keeper());
             // One handler carries the coroutine to the parked accept.
@@ -938,8 +950,8 @@ struct stream_file_test
     {
 #if BOOST_COROSIO_HAS_URING
         // io_uring reads through the ring, never through the pool.
-        if constexpr (std::is_same_v<
-                std::remove_const_t<decltype(Backend)>, uring_t>)
+        if constexpr (
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>)
             return;
 #endif
         temp_file tmp("sf_pool_shut_", "hello world");
@@ -971,7 +983,6 @@ struct stream_file_test
         BOOST_TEST(wec == capy::cond::canceled);
     }
 
-
     // A read queued behind a worker that is released only once teardown
     // has begun. The pool has to join before the scheduler drains, or
     // the completion the worker posts on its way out is neither run nor
@@ -984,13 +995,13 @@ struct stream_file_test
     {
 #if BOOST_COROSIO_HAS_URING
         // io_uring reads through the ring, never through the pool.
-        if constexpr (std::is_same_v<
-                std::remove_const_t<decltype(Backend)>, uring_t>)
+        if constexpr (
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>)
             return;
 #endif
         temp_file tmp("sf_pool_teardown_", "hello world");
         auto const path = tmp.path;
-        bool resumed = false;
+        bool resumed    = false;
         test::pool_blocker blocker;
         std::optional<io_context::executor_type> ex;
         std::optional<capy::io_env> env;
@@ -1095,8 +1106,7 @@ struct stream_file_test
         bool completed = false;
         std::error_code result_ec;
 
-        auto task = [](stream_file& f_ref,
-                       std::error_code& ec_out,
+        auto task = [](stream_file& f_ref, std::error_code& ec_out,
                        bool& done) -> capy::task<> {
             char buf[64];
             auto [ec, n] = co_await f_ref.read_some(

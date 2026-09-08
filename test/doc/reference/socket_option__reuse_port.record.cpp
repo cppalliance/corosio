@@ -25,10 +25,11 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::reuse_port[]
-void share_one_port_across_several_acceptors(corosio::tcp_acceptor& acc)
+void
+share_one_port_across_several_acceptors(corosio::tcp_acceptor& acc)
 {
     if (auto ec = acc.open(corosio::tcp::v6()))
-        return;  // report the error
+        return; // report the error
 
     // Every acceptor that sets this -- typically one per thread or process --
     // may bind the same port at the same time, and the kernel spreads
@@ -40,11 +41,11 @@ void share_one_port_across_several_acceptors(corosio::tcp_acceptor& acc)
     // std::system_error.
     acc.set_option(corosio::socket_option::reuse_port(true));
 
-    if (auto ec = acc.bind(
-            corosio::endpoint(corosio::ipv6_address::any(), 8080)))
-        return;  // report the error
+    if (auto ec =
+            acc.bind(corosio::endpoint(corosio::ipv6_address::any(), 8080)))
+        return; // report the error
     if (auto ec = acc.listen())
-        return;  // report the error
+        return; // report the error
 }
 // end::reuse_port[]
 

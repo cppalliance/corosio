@@ -123,8 +123,7 @@ map_fill_error(
             return ec;
 
         if (ec != capy::cond::eof && ec != std::errc::connection_reset &&
-            ec != std::errc::connection_aborted &&
-            ec != std::errc::broken_pipe)
+            ec != std::errc::connection_aborted && ec != std::errc::broken_pipe)
             return ec;
 
         if (received_shutdown)

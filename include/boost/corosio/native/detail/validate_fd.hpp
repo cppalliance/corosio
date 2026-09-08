@@ -55,10 +55,9 @@ validate_socket_fd(int fd, int expected_type, bool is_ip) noexcept
         return make_err(EAFNOSUPPORT);
     }
 
-    int sock_type = 0;
+    int sock_type     = 0;
     socklen_t opt_len = sizeof(sock_type);
-    if (::getsockopt(fd, SOL_SOCKET, SO_TYPE,
-            &sock_type, &opt_len) != 0)
+    if (::getsockopt(fd, SOL_SOCKET, SO_TYPE, &sock_type, &opt_len) != 0)
         return make_err(errno);
     if (sock_type != expected_type)
         return make_err(EPROTOTYPE);

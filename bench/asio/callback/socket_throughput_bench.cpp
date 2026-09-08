@@ -73,7 +73,7 @@ struct read_op
 void
 bench_throughput(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc;
@@ -94,7 +94,8 @@ bench_throughput(bench::state& state)
     rop.start();
 
     std::thread timer([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
     });
 
@@ -111,7 +112,7 @@ bench_throughput(bench::state& state)
 void
 bench_bidirectional_throughput(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc;
@@ -142,7 +143,8 @@ bench_bidirectional_throughput(bench::state& state)
     rop2.start();
 
     std::thread timer([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
     });
 
@@ -159,7 +161,7 @@ bench_bidirectional_throughput(bench::state& state)
 void
 bench_throughput_lockless(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
@@ -180,7 +182,8 @@ bench_throughput_lockless(bench::state& state)
     rop.start();
 
     std::thread timer([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
     });
 
@@ -197,7 +200,7 @@ bench_throughput_lockless(bench::state& state)
 void
 bench_bidirectional_throughput_lockless(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
@@ -228,7 +231,8 @@ bench_bidirectional_throughput_lockless(bench::state& state)
     rop2.start();
 
     std::thread timer([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
     });
 
@@ -363,7 +367,8 @@ bench_multithread_throughput(bench::state& state)
         threads.emplace_back([&ioc] { ioc.run(); });
 
     std::thread timer([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
     });
 
@@ -391,15 +396,15 @@ make_socket_throughput_suite()
     using F = bench::bench_flags;
     return bench::benchmark_suite("socket_throughput", F::needs_conntrack_drain)
         .add("unidirectional", bench_throughput)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("unidirectional_lockless", bench_throughput_lockless)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("bidirectional", bench_bidirectional_throughput)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("bidirectional_lockless", bench_bidirectional_throughput_lockless)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("multithread", bench_multithread_throughput)
-            .args({2, 4, 8});
+        .args({2, 4, 8});
 }
 
 } // namespace asio_callback_bench

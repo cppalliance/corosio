@@ -90,7 +90,8 @@ make_native_listener(bool v6, std::uint16_t& port)
     auto len = fill_loopback(storage, 0, v6);
 #if BOOST_COROSIO_HAS_IOCP
     SOCKET s = static_cast<SOCKET>(h);
-    if (::bind(s, reinterpret_cast<sockaddr const*>(&storage),
+    if (::bind(
+            s, reinterpret_cast<sockaddr const*>(&storage),
             static_cast<int>(len)) != 0 ||
         ::listen(s, 4) != 0)
     {
@@ -100,7 +101,8 @@ make_native_listener(bool v6, std::uint16_t& port)
     int name_len = static_cast<int>(sizeof(storage));
 #else
     int s = static_cast<int>(h);
-    if (::bind(s, reinterpret_cast<sockaddr const*>(&storage),
+    if (::bind(
+            s, reinterpret_cast<sockaddr const*>(&storage),
             static_cast<socklen_t>(len)) != 0 ||
         ::listen(s, 4) != 0)
     {
@@ -110,8 +112,7 @@ make_native_listener(bool v6, std::uint16_t& port)
     socklen_t name_len = sizeof(storage);
 #endif
     storage = sockaddr_storage{};
-    if (::getsockname(
-            s, reinterpret_cast<sockaddr*>(&storage), &name_len) != 0)
+    if (::getsockname(s, reinterpret_cast<sockaddr*>(&storage), &name_len) != 0)
     {
         close_native_socket(h);
         return invalid_native_socket;
@@ -138,8 +139,7 @@ native_connect_loopback(native_handle_type h, std::uint16_t port, bool v6)
                static_cast<int>(len)) == 0;
 #else
     return ::connect(
-               static_cast<int>(h),
-               reinterpret_cast<sockaddr const*>(&storage),
+               static_cast<int>(h), reinterpret_cast<sockaddr const*>(&storage),
                static_cast<socklen_t>(len)) == 0;
 #endif
 }
@@ -209,8 +209,12 @@ struct tcp_acceptor_test
         acc.close();
 
         tcp_acceptor closed(ioc);
-        BOOST_TEST_THROWS(closed.set_option(socket_option::reuse_address(true)), std::system_error);
-        BOOST_TEST_THROWS(std::ignore = closed.get_option<socket_option::reuse_address>(), std::system_error);
+        BOOST_TEST_THROWS(
+            closed.set_option(socket_option::reuse_address(true)),
+            std::system_error);
+        BOOST_TEST_THROWS(
+            std::ignore = closed.get_option<socket_option::reuse_address>(),
+            std::system_error);
     }
 
     void testMoveConstruct()
@@ -288,11 +292,13 @@ struct tcp_acceptor_test
             capy::run_async(ioc.get_executor())(nested_coro());
 
             // Wait then cancel
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             acc.cancel();
 
             // Wait for accept to complete
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(accept_done);
             BOOST_TEST(accept_ec == capy::cond::canceled);
@@ -345,9 +351,9 @@ struct tcp_acceptor_test
             };
             capy::run_async(ex)(accepter(acc1, s1));
             capy::run_async(ex)(accepter(acc2, s2));
-            std::ignore = ioc.run_one();
-            std::ignore = ioc.run_one();
-            std::ignore = ioc.run_one();
+            std::ignore    = ioc.run_one();
+            std::ignore    = ioc.run_one();
+            std::ignore    = ioc.run_one();
             before_destroy = resumed;
         }
         BOOST_TEST_EQ(resumed, before_destroy);
@@ -393,9 +399,9 @@ struct tcp_acceptor_test
             };
             capy::run_async(ex)(waiter(acc1));
             capy::run_async(ex)(waiter(acc2));
-            std::ignore = ioc.run_one();
-            std::ignore = ioc.run_one();
-            std::ignore = ioc.run_one();
+            std::ignore    = ioc.run_one();
+            std::ignore    = ioc.run_one();
+            std::ignore    = ioc.run_one();
             before_destroy = resumed;
         }
         BOOST_TEST_EQ(resumed, before_destroy);
@@ -418,20 +424,18 @@ struct tcp_acceptor_test
         BOOST_TEST(!ec);
         ec = acc.listen();
         BOOST_TEST(!ec);
-        auto ep = endpoint(
-            ipv4_address::loopback(), acc.local_endpoint().port());
+        auto ep =
+            endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
 
         tcp_socket server(ioc);
         tcp_socket client(ioc);
 
-        capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s) -> capy::task<> {
-                std::ignore = co_await a.accept(s);
-            }(acc, server));
-        capy::run_async(ex)(
-            [](tcp_socket& s, endpoint e) -> capy::task<> {
-                std::ignore = co_await s.connect(e);
-            }(client, ep));
+        capy::run_async(ex)([](tcp_acceptor& a, tcp_socket& s) -> capy::task<> {
+            std::ignore = co_await a.accept(s);
+        }(acc, server));
+        capy::run_async(ex)([](tcp_socket& s, endpoint e) -> capy::task<> {
+            std::ignore = co_await s.connect(e);
+        }(client, ep));
         ioc.run();
         BOOST_TEST(server.is_open());
         BOOST_TEST(client.is_open());
@@ -485,10 +489,12 @@ struct tcp_acceptor_test
             capy::run_async(ioc.get_executor())(nested_coro());
 
             // Wait then close the acceptor
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             acc.close();
 
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(accept_done);
             BOOST_TEST(accept_ec == capy::cond::canceled);
@@ -718,7 +724,8 @@ struct tcp_acceptor_test
 
         // Cancel lingering accept after connect completes
         auto cancel_task = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(200));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(200));
             acc.cancel();
         };
         capy::run_async(ex)(cancel_task());
@@ -906,8 +913,9 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        BOOST_TEST(acc.bind(endpoint(ipv4_address::loopback(), 0))
-                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            acc.bind(endpoint(ipv4_address::loopback(), 0)) ==
+            std::errc::bad_file_descriptor);
     }
 
     void testBindAddressInUse()
@@ -1103,7 +1111,8 @@ struct tcp_acceptor_test
             accept_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1139,7 +1148,8 @@ struct tcp_acceptor_test
             accept_done      = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1181,8 +1191,8 @@ struct tcp_acceptor_test
         sa.sin_family      = AF_INET;
         sa.sin_port        = htons(port);
         sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        int crc = ::connect(
-            cfd, reinterpret_cast<sockaddr const*>(&sa), sizeof(sa));
+        int crc =
+            ::connect(cfd, reinterpret_cast<sockaddr const*>(&sa), sizeof(sa));
         BOOST_TEST_EQ(crc, 0);
 
         tcp_socket peer(ioc);
@@ -1234,7 +1244,8 @@ struct tcp_acceptor_test
         // failing it, retract it so the test reports the miss
         // instead of hanging the suite.
         auto watchdog = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(250));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(250));
             if (!accept_done)
                 acc.cancel();
         };
@@ -1334,7 +1345,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
 
         std::uint16_t port = 0;
-        auto lfd = make_native_listener(false, port);
+        auto lfd           = make_native_listener(false, port);
         BOOST_TEST(lfd != invalid_native_socket);
         BOOST_TEST(port != 0);
 
@@ -1381,8 +1392,8 @@ struct tcp_acceptor_test
         // here once the wait completes on its own.
         auto waiter = [&]() -> capy::task<> {
             auto [wec] = co_await acc.wait(wait_type::read);
-            wait_ec   = wec;
-            wait_done = true;
+            wait_ec    = wec;
+            wait_done  = true;
         };
         capy::run_async(ex)(waiter());
         ioc.run();
@@ -1393,7 +1404,7 @@ struct tcp_acceptor_test
 
         // The signalled connection is genuinely acceptable.
         bool accepted = false;
-        auto server = [&]() -> capy::task<> {
+        auto server   = [&]() -> capy::task<> {
             auto [aec, peer] = co_await acc.accept();
             BOOST_TEST(!aec);
             accepted = !aec;
@@ -1413,7 +1424,7 @@ struct tcp_acceptor_test
         auto ex = ioc.get_executor();
 
         std::uint16_t port = 0;
-        auto lfd = make_native_listener(false, port);
+        auto lfd           = make_native_listener(false, port);
         BOOST_TEST(lfd != invalid_native_socket);
 
         auto client = make_native_socket(AF_INET, SOCK_STREAM);
@@ -1437,8 +1448,8 @@ struct tcp_acceptor_test
         // only returns here once the wait completes on its own.
         auto waiter = [&]() -> capy::task<> {
             auto [wec] = co_await acc.wait(wait_type::read);
-            wait_ec   = wec;
-            wait_done = true;
+            wait_ec    = wec;
+            wait_done  = true;
         };
         capy::run_async(ex)(waiter());
         ioc.run();
@@ -1448,7 +1459,7 @@ struct tcp_acceptor_test
         BOOST_TEST(!wait_ec);
 
         bool accepted = false;
-        auto server = [&]() -> capy::task<> {
+        auto server   = [&]() -> capy::task<> {
             auto [aec, peer] = co_await acc.accept();
             BOOST_TEST(!aec);
             accepted = !aec;
@@ -1484,8 +1495,8 @@ struct tcp_acceptor_test
         // forever, surfacing as a harness timeout.
         auto waiter = [&]() -> capy::task<> {
             auto [wec] = co_await acc.wait(wait_type::write);
-            wait_ec   = wec;
-            wait_done = true;
+            wait_ec    = wec;
+            wait_done  = true;
         };
         capy::run_async(ex)(waiter());
         ioc.run();
@@ -1516,7 +1527,7 @@ struct tcp_acceptor_test
         ioc.restart();
 
         std::uint16_t port = 0;
-        auto lfd = make_native_listener(false, port);
+        auto lfd           = make_native_listener(false, port);
         BOOST_TEST(lfd != invalid_native_socket);
         BOOST_TEST(port != old_port);
 
@@ -1549,7 +1560,7 @@ struct tcp_acceptor_test
         close_native_socket(released);
 
         std::uint16_t port = 0;
-        auto lfd = make_native_listener(false, port);
+        auto lfd           = make_native_listener(false, port);
         BOOST_TEST(lfd != invalid_native_socket);
 
         BOOST_TEST(!acc.assign(lfd));
@@ -1635,8 +1646,8 @@ struct tcp_acceptor_test
         // here once the accept completes on its own.
         auto server = [&]() -> capy::task<> {
             auto [aec, peer] = co_await acc.accept();
-            accept_ec   = aec;
-            accept_done = true;
+            accept_ec        = aec;
+            accept_done      = true;
         };
         capy::run_async(ex)(server());
         ioc.run();
@@ -1707,8 +1718,8 @@ struct tcp_acceptor_test
         // delivers parks it forever, surfacing as a harness timeout.
         auto server = [&]() -> capy::task<> {
             auto [aec, peer] = co_await acc.accept();
-            accept_ec   = aec;
-            accept_done = true;
+            accept_ec        = aec;
+            accept_done      = true;
             if (!aec)
                 accepted_port = peer.local_endpoint().port();
         };
@@ -1809,7 +1820,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
 
         std::uint16_t port = 0;
-        auto lfd = make_native_listener(true, port);
+        auto lfd           = make_native_listener(true, port);
         if (lfd == invalid_native_socket)
             return; // no IPv6 loopback on this host
 

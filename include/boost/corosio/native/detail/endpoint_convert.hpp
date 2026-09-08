@@ -246,7 +246,11 @@ socket_family(
 #if BOOST_COROSIO_POSIX
 using un_sa_t = sockaddr_un;
 #else
-struct un_sa_t { u_short sun_family; char sun_path[108]; };
+struct un_sa_t
+{
+    u_short sun_family;
+    char sun_path[108];
+};
 #endif
 
 /** Convert a local_endpoint to sockaddr_storage.
@@ -268,8 +272,7 @@ to_sockaddr(local_endpoint const& ep, sockaddr_storage& storage) noexcept
     std::memcpy(&storage, &sa, sizeof(sa));
 
     if (ep.is_abstract())
-        return static_cast<socklen_t>(
-            offsetof(un_sa_t, sun_path) + copy_len);
+        return static_cast<socklen_t>(offsetof(un_sa_t, sun_path) + copy_len);
     return static_cast<socklen_t>(sizeof(sa));
 }
 
@@ -300,16 +303,14 @@ to_sockaddr(
         sockaddr_un, or an empty endpoint if the family is not AF_UNIX.
 */
 inline local_endpoint
-from_sockaddr_local(
-    sockaddr_storage const& storage, socklen_t len) noexcept
+from_sockaddr_local(sockaddr_storage const& storage, socklen_t len) noexcept
 {
     if (storage.ss_family != AF_UNIX)
         return local_endpoint{};
 
     un_sa_t sa{};
     std::memcpy(
-        &sa, &storage,
-        (std::min)(static_cast<std::size_t>(len), sizeof(sa)));
+        &sa, &storage, (std::min)(static_cast<std::size_t>(len), sizeof(sa)));
 
     auto path_offset = offsetof(un_sa_t, sun_path);
     if (static_cast<std::size_t>(len) <= path_offset)
@@ -317,14 +318,14 @@ from_sockaddr_local(
 
     // Clamp to the buffer: a foreign len may overstate the payload,
     // and sun_path is the struct's last member.
-    auto path_len = (std::min)(
-        static_cast<std::size_t>(len) - path_offset, sizeof(sa.sun_path));
+    auto path_len = (std::min)(static_cast<std::size_t>(len) - path_offset,
+                               sizeof(sa.sun_path));
 
     // Non-abstract paths may be null-terminated by the kernel
     if (path_len > 0 && sa.sun_path[0] != '\0')
     {
-        auto* end = static_cast<char const*>(
-            std::memchr(sa.sun_path, '\0', path_len));
+        auto* end =
+            static_cast<char const*>(std::memchr(sa.sun_path, '\0', path_len));
         if (end)
             path_len = static_cast<std::size_t>(end - sa.sun_path);
     }
@@ -350,7 +351,9 @@ from_sockaddr_local(
 */
 inline endpoint
 from_sockaddr_as(
-    sockaddr_storage const& storage, socklen_t /*len*/, endpoint const&) noexcept
+    sockaddr_storage const& storage,
+    socklen_t /*len*/,
+    endpoint const&) noexcept
 {
     return from_sockaddr(storage);
 }

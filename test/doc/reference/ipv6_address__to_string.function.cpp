@@ -23,11 +23,11 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::to_string[]
-void print_as_colon_hex()
+void
+print_as_colon_hex()
 {
-    corosio::ipv6_address::bytes_type b = {{
-            0, 1, 0, 2, 0, 3, 0, 4,
-            0, 5, 0, 6, 0, 7, 0, 8 }};
+    corosio::ipv6_address::bytes_type b = {
+        {0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8}};
     corosio::ipv6_address a(b);
     assert(a.to_string() == "1:2:3:4:5:6:7:8");
 }

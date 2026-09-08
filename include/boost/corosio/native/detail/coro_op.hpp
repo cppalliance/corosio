@@ -70,27 +70,30 @@ struct coro_op : scheduler_op
     struct canceller
     {
         coro_op* op;
-        void operator()() const noexcept { op->on_cancel(); }
+        void operator()() const noexcept
+        {
+            op->on_cancel();
+        }
     };
 
-    std::coroutine_handle<>  h;
-    capy::continuation       cont;
-    capy::executor_ref       ex;
-    std::error_code*         ec_out    = nullptr;
-    std::size_t*             bytes_out = nullptr;
+    std::coroutine_handle<> h;
+    capy::continuation cont;
+    capy::executor_ref ex;
+    std::error_code* ec_out = nullptr;
+    std::size_t* bytes_out  = nullptr;
 
     /// True for receive/read ops (drives the zero-byte == EOF decision).
-    bool                     is_read      = false;
+    bool is_read = false;
     /// True when the submitted buffer was zero-length (suppresses EOF).
-    bool                     empty_buffer = false;
+    bool empty_buffer = false;
 
-    std::atomic<bool>                            cancelled{false};
+    std::atomic<bool> cancelled{false};
     std::optional<std::stop_callback<canceller>> stop_cb;
 
     /// Keeps the owning impl alive while the op is in flight (the kernel
     /// owns user buffers until completion). Dropped in the handler's resume
     /// tail (see coro_op_complete.hpp).
-    std::shared_ptr<void>    impl_ptr;
+    std::shared_ptr<void> impl_ptr;
 
     /// Default-construct for virtual-dispatch backends (the reactors, which
     /// override operator()/destroy() and leave func_ null).
@@ -126,7 +129,10 @@ struct coro_op : scheduler_op
         drive the kernel: io_uring submits an ASYNC_CANCEL SQE; IOCP calls
         its stored cancel_func_ (CancelIoEx / wait-reactor deregister).
     */
-    virtual void on_cancel() noexcept { request_cancel(); }
+    virtual void on_cancel() noexcept
+    {
+        request_cancel();
+    }
 };
 
 } // namespace boost::corosio::detail

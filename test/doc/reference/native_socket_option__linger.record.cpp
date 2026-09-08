@@ -23,7 +23,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::linger[]
-void control_what_close_does_with_queued_data(corosio::tcp_socket& sock)
+void
+control_what_close_does_with_queued_data(corosio::tcp_socket& sock)
 {
     // A non-zero timeout can make close() block the calling thread for up
     // to that many seconds. close() also runs from the destructor and from
@@ -37,8 +38,8 @@ void control_what_close_does_with_queued_data(corosio::tcp_socket& sock)
     // storage -- an implementation detail invisible at this call site.
     sock.set_option(corosio::native_socket_option::linger(true, 5));
 
-    auto opt = sock.get_option<corosio::native_socket_option::linger>();
-    bool waits = opt.enabled();
+    auto opt    = sock.get_option<corosio::native_socket_option::linger>();
+    bool waits  = opt.enabled();
     int seconds = opt.timeout();
 }
 // end::linger[]

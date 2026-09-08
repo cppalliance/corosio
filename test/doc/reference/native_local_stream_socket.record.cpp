@@ -32,13 +32,14 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 #if BOOST_COROSIO_HAS_EPOLL
 // tag::connect[]
-capy::task<> connect_native()
+capy::task<>
+connect_native()
 {
     corosio::native_io_context<corosio::epoll> ctx;
     corosio::native_local_stream_socket<corosio::epoll> s(ctx);

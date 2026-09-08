@@ -50,9 +50,8 @@ host_name()
     // Size query: returns ERROR_MORE_DATA and writes the required
     // wide-char count (including the trailing NUL) into `size`.
     DWORD size = 0;
-    BOOL ok = ::GetComputerNameExW(
-        ComputerNameDnsHostname, nullptr, &size);
-    DWORD err = ::GetLastError();
+    BOOL ok    = ::GetComputerNameExW(ComputerNameDnsHostname, nullptr, &size);
+    DWORD err  = ::GetLastError();
     if (ok)
     {
         // Can't-happen guard: a zero-length size query succeeding
@@ -60,39 +59,30 @@ host_name()
         return {make_error_code(std::errc::protocol_error), {}};
     }
     if (err != ERROR_MORE_DATA)
-        return {
-            detail::make_err(static_cast<unsigned long>(err)),
-            {}};
+        return {detail::make_err(static_cast<unsigned long>(err)), {}};
 
     // On success, GetComputerNameExW rewrites `size` to the count
     // without the NUL, so resize(size) below trims to the hostname.
     std::wstring wide(size, L'\0');
-    if (!::GetComputerNameExW(
-            ComputerNameDnsHostname, wide.data(), &size))
+    if (!::GetComputerNameExW(ComputerNameDnsHostname, wide.data(), &size))
         return {
-            detail::make_err(
-                static_cast<unsigned long>(::GetLastError())),
-            {}};
+            detail::make_err(static_cast<unsigned long>(::GetLastError())), {}};
     wide.resize(size);
 
     int needed = ::WideCharToMultiByte(
-        CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
-        nullptr, 0, nullptr, nullptr);
+        CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), nullptr, 0,
+        nullptr, nullptr);
     if (needed <= 0)
         return {
-            detail::make_err(
-                static_cast<unsigned long>(::GetLastError())),
-            {}};
+            detail::make_err(static_cast<unsigned long>(::GetLastError())), {}};
 
     std::string out(static_cast<std::size_t>(needed), '\0');
     int written = ::WideCharToMultiByte(
-        CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
-        out.data(), needed, nullptr, nullptr);
+        CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), out.data(),
+        needed, nullptr, nullptr);
     if (written != needed)
         return {
-            detail::make_err(
-                static_cast<unsigned long>(::GetLastError())),
-            {}};
+            detail::make_err(static_cast<unsigned long>(::GetLastError())), {}};
     return {std::error_code{}, std::move(out)};
 }
 

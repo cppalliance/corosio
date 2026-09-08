@@ -29,12 +29,13 @@
 #include <iostream>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::duration[]
-capy::task<> wait_briefly()
+capy::task<>
+wait_briefly()
 {
     auto [ec] = co_await corosio::delay(std::chrono::milliseconds(100));
     if (ec == capy::cond::canceled)
@@ -46,7 +47,8 @@ capy::task<> wait_briefly()
 
 // Waits a real wall-clock hour if ever launched; compiled, never run.
 // tag::system_clock_deadline[]
-capy::task<> wait_one_hour_wall_clock()
+capy::task<>
+wait_one_hour_wall_clock()
 {
     auto [ec] = co_await corosio::delay(
         std::chrono::system_clock::now() + std::chrono::hours(1));

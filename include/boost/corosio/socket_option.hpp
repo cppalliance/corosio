@@ -261,7 +261,8 @@ public:
     */
     explicit byte_integer_option(int v) noexcept
         : value_(static_cast<unsigned char>(v))
-    {}
+    {
+    }
 
     /// Assign a new value; truncated to one byte.
     byte_integer_option& operator=(int v) noexcept

@@ -107,8 +107,7 @@ class native_local_stream_acceptor : public local_stream_acceptor
             -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return acc_.get_impl().wait(
-                h, env->executor, w_, token_, &ec_);
+            return acc_.get_impl().wait(h, env->executor, w_, token_, &ec_);
         }
     };
 
@@ -182,8 +181,7 @@ class native_local_stream_acceptor : public local_stream_acceptor
                     native_local_stream_socket<Backend>(acc_.context())};
             if (ec_ || !peer_impl_)
                 return {
-                    ec_,
-                    native_local_stream_socket<Backend>(acc_.context())};
+                    ec_, native_local_stream_socket<Backend>(acc_.context())};
 
             native_local_stream_socket<Backend> peer(acc_.context());
             acc_.reset_peer_impl(peer, peer_impl_);
@@ -215,8 +213,8 @@ public:
     */
     template<class Ex>
         requires(!std::same_as<
-                 std::remove_cvref_t<Ex>,
-                 native_local_stream_acceptor>) &&
+                    std::remove_cvref_t<Ex>,
+                    native_local_stream_acceptor>) &&
         capy::Executor<Ex>
     explicit native_local_stream_acceptor(Ex const& ex)
         : native_local_stream_acceptor(ex.context())

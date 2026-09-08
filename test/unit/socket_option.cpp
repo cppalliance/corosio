@@ -66,8 +66,7 @@ struct socket_option_test
             16384);
         sock.set_option(socket_option::send_buffer_size(16384));
         BOOST_TEST_GE(
-            sock.get_option<socket_option::send_buffer_size>().value(),
-            16384);
+            sock.get_option<socket_option::send_buffer_size>().value(), 16384);
 
         sock.set_option(socket_option::linger(true, 5));
         auto lg = sock.get_option<socket_option::linger>();
@@ -127,8 +126,7 @@ struct socket_option_test
         BOOST_TEST(
             !sock.get_option<socket_option::multicast_loop_v4>().value());
         sock.set_option(socket_option::multicast_loop_v4(true));
-        BOOST_TEST(
-            sock.get_option<socket_option::multicast_loop_v4>().value());
+        BOOST_TEST(sock.get_option<socket_option::multicast_loop_v4>().value());
 
         sock.set_option(socket_option::multicast_hops_v4(5));
         BOOST_TEST_EQ(
@@ -143,9 +141,11 @@ struct socket_option_test
     {
         socket_option::leave_group_v6 leave(ipv6_address("ff02::1"), 0);
         socket_option::join_group_v6 join(ipv6_address("ff02::1"));
-        BOOST_TEST_EQ(socket_option::leave_group_v6::level(),
+        BOOST_TEST_EQ(
+            socket_option::leave_group_v6::level(),
             socket_option::join_group_v6::level());
-        BOOST_TEST(socket_option::leave_group_v6::name() !=
+        BOOST_TEST(
+            socket_option::leave_group_v6::name() !=
             socket_option::join_group_v6::name());
         BOOST_TEST_EQ(leave.size(), join.size());
         BOOST_TEST(leave.data() != nullptr);
@@ -226,13 +226,11 @@ struct socket_option_test
 
         s1.set_option(socket_option::receive_buffer_size(16384));
         BOOST_TEST_GE(
-            s1.get_option<socket_option::receive_buffer_size>().value(),
-            16384);
+            s1.get_option<socket_option::receive_buffer_size>().value(), 16384);
 
         s1.set_option(socket_option::send_buffer_size(16384));
         BOOST_TEST_GE(
-            s1.get_option<socket_option::send_buffer_size>().value(),
-            16384);
+            s1.get_option<socket_option::send_buffer_size>().value(), 16384);
     }
 
     void testLocalDatagramOptions()
@@ -244,13 +242,11 @@ struct socket_option_test
 
         s1.set_option(socket_option::receive_buffer_size(16384));
         BOOST_TEST_GE(
-            s1.get_option<socket_option::receive_buffer_size>().value(),
-            16384);
+            s1.get_option<socket_option::receive_buffer_size>().value(), 16384);
 
         s1.set_option(socket_option::send_buffer_size(16384));
         BOOST_TEST_GE(
-            s1.get_option<socket_option::send_buffer_size>().value(),
-            16384);
+            s1.get_option<socket_option::send_buffer_size>().value(), 16384);
     }
 
 #endif // BOOST_COROSIO_POSIX

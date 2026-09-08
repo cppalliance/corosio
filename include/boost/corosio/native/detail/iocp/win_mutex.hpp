@@ -50,8 +50,14 @@ public:
     win_mutex(win_mutex const&)            = delete;
     win_mutex& operator=(win_mutex const&) = delete;
 
-    void set_enabled(bool v) noexcept { enabled_ = v; }
-    bool enabled() const noexcept { return enabled_; }
+    void set_enabled(bool v) noexcept
+    {
+        enabled_ = v;
+    }
+    bool enabled() const noexcept
+    {
+        return enabled_;
+    }
 
     void lock() noexcept
     {

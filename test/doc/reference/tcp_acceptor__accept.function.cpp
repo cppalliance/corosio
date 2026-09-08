@@ -29,7 +29,7 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
@@ -37,7 +37,8 @@ namespace {
 // Precondition: acc is open, bound, and listening. peer must share acc's
 // execution context; constructing it from acc.context() ties the two
 // structurally instead of leaving the pairing to be asserted in prose.
-capy::task<> accept_into_a_reused_socket(corosio::tcp_acceptor& acc)
+capy::task<>
+accept_into_a_reused_socket(corosio::tcp_acceptor& acc)
 {
     // The caller owns peer and can accept into it repeatedly -- its
     // lifetime outlives any single connection, unlike the value-returning
@@ -52,20 +53,20 @@ capy::task<> accept_into_a_reused_socket(corosio::tcp_acceptor& acc)
         if (ec)
             co_return;
 
-        char msg[] = "ping";
-        auto [wec, n] = co_await peer.write_some(
-            capy::const_buffer(msg, 4));
+        char msg[]    = "ping";
+        auto [wec, n] = co_await peer.write_some(capy::const_buffer(msg, 4));
         if (wec)
             co_return;
 
-        peer.close();  // ready to accept the next connection into peer
+        peer.close(); // ready to accept the next connection into peer
     }
 }
 // end::accept_into_a_reused_socket[]
 
 // tag::accept_returning_a_new_socket[]
 // Precondition: acc is open, bound, and listening.
-capy::task<> accept_returning_a_new_socket(corosio::tcp_acceptor& acc)
+capy::task<>
+accept_returning_a_new_socket(corosio::tcp_acceptor& acc)
 {
     // Each call returns a fresh socket sharing acc's execution context --
     // there is no caller-owned socket to reuse, unlike accept(tcp_socket&).
@@ -73,9 +74,8 @@ capy::task<> accept_returning_a_new_socket(corosio::tcp_acceptor& acc)
     if (ec)
         co_return;
 
-    char msg[] = "ping";
-    auto [wec, n] = co_await peer.write_some(
-        capy::const_buffer(msg, 4));
+    char msg[]    = "ping";
+    auto [wec, n] = co_await peer.write_some(capy::const_buffer(msg, 4));
     if (wec)
         co_return;
 }

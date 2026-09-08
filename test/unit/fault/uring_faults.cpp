@@ -54,7 +54,8 @@ namespace boost::corosio::test::fault {
 
 namespace {
 
-endpoint uring_loopback()
+endpoint
+uring_loopback()
 {
     return endpoint(ipv4_address::loopback(), 0);
 }
@@ -69,20 +70,19 @@ struct uring_faults
     // way in is released as the constructor unwinds.
     void testRingInitFails()
     {
-        auto expect = [](sys s, int err, std::errc code)
-        {
+        auto expect = [](sys s, int err, std::errc code) {
             int const before = open_fds();
             fault_scope f(s, err);
-            expect_system_error([&]{ io_context ioc(uring); }, code);
+            expect_system_error([&] { io_context ioc(uring); }, code);
             BOOST_TEST(f.fired());
             BOOST_TEST_EQ(open_fds(), before);
         };
-        expect(sys::io_uring_queue_init_params, ENOMEM,
+        expect(
+            sys::io_uring_queue_init_params, ENOMEM,
             std::errc::not_enough_memory);
         expect(sys::eventfd, EMFILE, std::errc::too_many_files_open);
         // The wakeup poll's submit is the only one ring creation issues.
-        expect(sys::io_uring_submit, EBADF,
-            std::errc::bad_file_descriptor);
+        expect(sys::io_uring_submit, EBADF, std::errc::bad_file_descriptor);
     }
 
     /* Every io_uring object type creates and configures its descriptor
@@ -93,8 +93,7 @@ struct uring_faults
     void testObjectSurfaceErrors()
     {
         io_context ioc(uring);
-        auto expect_open = [&](auto&& obj, auto&& open_it)
-        {
+        auto expect_open = [&](auto&& obj, auto&& open_it) {
             int const before = open_fds();
             fault_scope f(sys::socket, EMFILE);
             BOOST_TEST(open_it() == std::errc::too_many_files_open);
@@ -104,7 +103,7 @@ struct uring_faults
         };
         {
             tcp_acceptor acc(ioc);
-            expect_open(acc, [&]{ return acc.open(); });
+            expect_open(acc, [&] { return acc.open(); });
             BOOST_TEST(!acc.open());
             BOOST_TEST(!acc.bind(uring_loopback()));
             fault_scope f(sys::listen, EADDRINUSE);
@@ -113,21 +112,21 @@ struct uring_faults
         }
         {
             udp_socket u(ioc);
-            expect_open(u, [&]{ return u.open(udp::v4()); });
+            expect_open(u, [&] { return u.open(udp::v4()); });
         }
         {
             local_stream_socket ls(ioc);
-            expect_open(ls, [&]{ return ls.open(); });
+            expect_open(ls, [&] { return ls.open(); });
         }
         {
             local_datagram_socket ld(ioc);
-            expect_open(ld, [&]{ return ld.open(); });
+            expect_open(ld, [&] { return ld.open(); });
         }
         auto path = temp_path("ura");
         ::unlink(path.c_str());
         {
             local_stream_acceptor acc(ioc);
-            expect_open(acc, [&]{ return acc.open(); });
+            expect_open(acc, [&] { return acc.open(); });
             BOOST_TEST(!acc.open());
             BOOST_TEST(!acc.bind(corosio::local_endpoint(path)));
             fault_scope f(sys::listen, EADDRINUSE);
@@ -139,7 +138,8 @@ struct uring_faults
             local_datagram_socket ld(ioc);
             BOOST_TEST(!ld.open());
             fault_scope f(sys::bind, EACCES);
-            BOOST_TEST(ld.bind(corosio::local_endpoint(path)) ==
+            BOOST_TEST(
+                ld.bind(corosio::local_endpoint(path)) ==
                 std::errc::permission_denied);
             BOOST_TEST(f.fired());
             BOOST_TEST(ld.is_open());
@@ -181,10 +181,13 @@ struct uring_faults
         BOOST_TEST(static_cast<int>(h) >= 0);
         make_native_adoptable(h);
         sockaddr_in sa{};
-        sa.sin_family = AF_INET;
+        sa.sin_family      = AF_INET;
         sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        BOOST_TEST_EQ(::bind(static_cast<int>(h),
-            reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+        BOOST_TEST_EQ(
+            ::bind(
+                static_cast<int>(h), reinterpret_cast<sockaddr*>(&sa),
+                sizeof(sa)),
+            0);
         BOOST_TEST_EQ(::listen(static_cast<int>(h), 1), 0);
         tcp_acceptor acc(ioc);
         {
@@ -248,10 +251,9 @@ struct uring_faults
             io_context ioc(uring);
             fault_scope f(sys::io_uring_wait_cqe_timeout, EINTR);
             bool done = false;
-            auto body = [&]() -> capy::task<>
-            {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+            auto body = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
                 done = true;
             };
             capy::run_async(ioc.get_executor())(body());
@@ -262,14 +264,13 @@ struct uring_faults
         {
             io_context ioc(uring);
             fault_scope f(sys::io_uring_wait_cqe_timeout, EBADF);
-            auto body = [&]() -> capy::task<>
-            {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+            auto body = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
             };
             capy::run_async(ioc.get_executor())(body());
-            expect_system_error([&]{ ioc.run(); },
-                std::errc::bad_file_descriptor);
+            expect_system_error(
+                [&] { ioc.run(); }, std::errc::bad_file_descriptor);
             BOOST_TEST(f.fired());
         }
     }
@@ -285,10 +286,9 @@ struct uring_faults
             tcp_acceptor acc(ioc, uring_loopback());
             tcp_socket s(ioc);
             std::error_code aec;
-            auto accept_body = [&]() -> capy::task<>
-            {
+            auto accept_body = [&]() -> capy::task<> {
                 auto [ec] = co_await acc.accept(s);
-                aec = ec;
+                aec       = ec;
             };
             capy::run_async(ioc.get_executor())(accept_body());
             ioc.poll();
@@ -311,7 +311,7 @@ struct uring_faults
         // A read that never reached the kernel is not an end of file.
         {
             int sv[2];
-            if(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+            if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
             {
                 BOOST_TEST(false);
                 return;
@@ -325,23 +325,22 @@ struct uring_faults
             char buf[8];
             std::error_code rec, rec2;
             std::size_t n1 = 1, n2 = 0;
-            auto read_body = [&]() -> capy::task<>
-            {
+            auto read_body = [&]() -> capy::task<> {
                 {
-                    auto [ec, n] = co_await b.read_some(
-                        capy::mutable_buffer(buf, 8));
+                    auto [ec, n] =
+                        co_await b.read_some(capy::mutable_buffer(buf, 8));
                     rec = ec;
-                    n1 = n;
+                    n1  = n;
                 }
                 // Nothing was consumed, so the peer's next bytes still
                 // arrive: the follow-up read needs no SQE because the
                 // speculative readv answers it.
                 BOOST_TEST_EQ(::write(sv[0], "abcd", 4), 4);
                 {
-                    auto [ec, n] = co_await b.read_some(
-                        capy::mutable_buffer(buf, 8));
+                    auto [ec, n] =
+                        co_await b.read_some(capy::mutable_buffer(buf, 8));
                     rec2 = ec;
-                    n2 = n;
+                    n2   = n;
                 }
             };
             capy::run_async(ioc.get_executor())(read_body());
@@ -360,7 +359,7 @@ struct uring_faults
         // reporting success with a zero count would lose the payload.
         {
             int sv[2];
-            if(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+            if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
             {
                 BOOST_TEST(false);
                 return;
@@ -372,16 +371,15 @@ struct uring_faults
             local_stream_socket b(ioc);
             BOOST_TEST(!b.assign(sv[1]));
             std::error_code wec;
-            std::size_t wn = 1;
-            auto write_body = [&]() -> capy::task<>
-            {
+            std::size_t wn  = 1;
+            auto write_body = [&]() -> capy::task<> {
                 // The socket is writable, so the speculative sendmsg
                 // would answer the write without ever needing an SQE.
                 fault_scope s(sys::sendmsg, EAGAIN);
-                auto [ec, n] = co_await b.write_some(
-                    capy::const_buffer("abcd", 4));
+                auto [ec, n] =
+                    co_await b.write_some(capy::const_buffer("abcd", 4));
                 wec = ec;
-                wn = n;
+                wn  = n;
                 BOOST_TEST(s.fired());
             };
             capy::run_async(ioc.get_executor())(write_body());
@@ -398,7 +396,7 @@ struct uring_faults
         // read a socket nothing said was readable.
         {
             int sv[2];
-            if(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+            if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
             {
                 BOOST_TEST(false);
                 return;
@@ -410,10 +408,9 @@ struct uring_faults
             local_stream_socket b(ioc);
             BOOST_TEST(!b.assign(sv[1]));
             std::error_code pec;
-            auto wait_body = [&]() -> capy::task<>
-            {
+            auto wait_body = [&]() -> capy::task<> {
                 auto [ec] = co_await b.wait(wait_type::read);
-                pec = ec;
+                pec       = ec;
             };
             capy::run_async(ioc.get_executor())(wait_body());
             ioc.run();
@@ -436,10 +433,9 @@ struct uring_faults
         {
             cqe_fault_scope q(
                 c.native_handle(), IORING_OP_CONNECT, -ECONNREFUSED);
-            auto connect_body = [&]() -> capy::task<>
-            {
+            auto connect_body = [&]() -> capy::task<> {
                 auto [ec] = co_await c.connect(acc.local_endpoint());
-                cec = ec;
+                cec       = ec;
             };
             capy::run_async(ioc.get_executor())(connect_body());
             ioc.run();
@@ -465,17 +461,14 @@ struct uring_faults
         std::error_code aec;
         bool fired = false;
         {
-            cqe_fault_scope q(
-                acc.native_handle(), IORING_OP_ACCEPT, -EMFILE);
+            cqe_fault_scope q(acc.native_handle(), IORING_OP_ACCEPT, -EMFILE);
             BOOST_TEST(!acc.listen());
-            auto accept_body = [&]() -> capy::task<>
-            {
+            auto accept_body = [&]() -> capy::task<> {
                 auto [ec] = co_await acc.accept(s);
-                aec = ec;
+                aec       = ec;
             };
             capy::run_async(ioc.get_executor())(accept_body());
-            auto connect_body = [&]() -> capy::task<>
-            {
+            auto connect_body = [&]() -> capy::task<> {
                 std::ignore = co_await c.connect(acc.local_endpoint());
             };
             capy::run_async(ioc.get_executor())(connect_body());
@@ -499,16 +492,14 @@ struct uring_faults
         std::error_code sec, rec, pec, smec, rvec;
         bool sfired = false, rfired = false, pfired = false;
         bool smfired = false, rvfired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             {
                 fault_scope f(sys::sendmsg, EAGAIN);
-                cqe_fault_scope q(
-                    a.native_handle(), IORING_OP_SEND, -EPIPE);
-                auto [ec, n] = co_await a.write_some(
-                    capy::const_buffer(buf, 7));
+                cqe_fault_scope q(a.native_handle(), IORING_OP_SEND, -EPIPE);
+                auto [ec, n] =
+                    co_await a.write_some(capy::const_buffer(buf, 7));
                 std::ignore = n;
-                sec = ec;
+                sec         = ec;
                 BOOST_TEST(f.fired());
                 sfired = q.fired();
             }
@@ -516,10 +507,10 @@ struct uring_faults
                 fault_scope f(sys::readv, EAGAIN);
                 cqe_fault_scope q(
                     b.native_handle(), IORING_OP_RECV, -ECONNRESET);
-                auto [ec, n] = co_await b.read_some(
-                    capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await b.read_some(capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                rec = ec;
+                rec         = ec;
                 BOOST_TEST(f.fired());
                 rfired = q.fired();
             }
@@ -530,31 +521,28 @@ struct uring_faults
                 cqe_fault_scope q(
                     a.native_handle(), IORING_OP_SENDMSG, -ENOBUFS);
                 std::array<capy::const_buffer, 2> cb{
-                    capy::const_buffer(buf, 4),
-                    capy::const_buffer(buf + 4, 3)};
+                    capy::const_buffer(buf, 4), capy::const_buffer(buf + 4, 3)};
                 auto [ec, n] = co_await a.write_some(cb);
-                std::ignore = n;
-                smec = ec;
-                smfired = q.fired();
+                std::ignore  = n;
+                smec         = ec;
+                smfired      = q.fired();
             }
             {
                 char x[4] = {}, y[4] = {};
-                cqe_fault_scope q(
-                    b.native_handle(), IORING_OP_READV, -EIO);
+                cqe_fault_scope q(b.native_handle(), IORING_OP_READV, -EIO);
                 std::array<capy::mutable_buffer, 2> mb{
-                    capy::mutable_buffer(x, 4),
-                    capy::mutable_buffer(y, 3)};
+                    capy::mutable_buffer(x, 4), capy::mutable_buffer(y, 3)};
                 auto [ec, n] = co_await b.read_some(mb);
-                std::ignore = n;
-                rvec = ec;
-                rvfired = q.fired();
+                std::ignore  = n;
+                rvec         = ec;
+                rvfired      = q.fired();
             }
             {
                 // The rewritten RECV really ran, so b's buffer is empty
                 // again; the poll needs data on the other side or it
                 // would park forever instead of delivering a CQE.
-                auto [ec, n] = co_await b.write_some(
-                    capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await b.write_some(capy::const_buffer(buf, 7));
                 std::ignore = n;
                 BOOST_TEST(!ec);
             }
@@ -562,8 +550,8 @@ struct uring_faults
                 cqe_fault_scope q(
                     a.native_handle(), IORING_OP_POLL_ADD, -EBADF);
                 auto [ec] = co_await a.wait(wait_type::read);
-                pec = ec;
-                pfired = q.fired();
+                pec       = ec;
+                pfired    = q.fired();
             }
         };
         capy::run_async(ioc.get_executor())(body());
@@ -591,28 +579,25 @@ struct uring_faults
         char buf[8] = "1234567";
         std::error_code sec, rec;
         bool sfired = false, rfired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             {
                 fault_scope f(sys::sendmsg, EAGAIN);
-                cqe_fault_scope q(
-                    a.native_handle(), IORING_OP_SENDMSG, -EIO);
+                cqe_fault_scope q(a.native_handle(), IORING_OP_SENDMSG, -EIO);
                 auto [ec, n] = co_await a.send_to(
                     capy::const_buffer(buf, 7), b.local_endpoint());
                 std::ignore = n;
-                sec = ec;
+                sec         = ec;
                 BOOST_TEST(f.fired());
                 sfired = q.fired();
             }
             {
                 fault_scope f(sys::recvmsg, EAGAIN);
-                cqe_fault_scope q(
-                    b.native_handle(), IORING_OP_RECVMSG, -EIO);
+                cqe_fault_scope q(b.native_handle(), IORING_OP_RECVMSG, -EIO);
                 endpoint from;
-                auto [ec, n] = co_await b.recv_from(
-                    capy::mutable_buffer(buf, 7), from);
+                auto [ec, n] =
+                    co_await b.recv_from(capy::mutable_buffer(buf, 7), from);
                 std::ignore = n;
-                rec = ec;
+                rec         = ec;
                 BOOST_TEST(f.fired());
                 rfired = q.fired();
             }
@@ -635,73 +620,68 @@ struct uring_faults
         auto rf_path = temp_path("uring_raf");
         stream_file sf(ioc);
         random_access_file rf(ioc);
-        BOOST_TEST(!sf.open(sf_path,
-            file_base::read_write | file_base::create));
-        BOOST_TEST(!rf.open(rf_path,
-            file_base::read_write | file_base::create));
+        BOOST_TEST(
+            !sf.open(sf_path, file_base::read_write | file_base::create));
+        BOOST_TEST(
+            !rf.open(rf_path, file_base::read_write | file_base::create));
         char buf[8] = "1234567";
         std::error_code swec, srec, rwec, rrec;
         bool swf = false, srf = false, rwf = false, rrf = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             {
-                cqe_fault_scope q(
-                    sf.native_handle(), IORING_OP_WRITEV, -EIO);
-                auto [ec, n] = co_await sf.write_some(
-                    capy::const_buffer(buf, 7));
+                cqe_fault_scope q(sf.native_handle(), IORING_OP_WRITEV, -EIO);
+                auto [ec, n] =
+                    co_await sf.write_some(capy::const_buffer(buf, 7));
                 std::ignore = n;
-                swec = ec;
-                swf = q.fired();
+                swec        = ec;
+                swf         = q.fired();
             }
             {
                 // A faulted completion is not sticky: the file still
                 // takes writes, and this one gives the read below
                 // something to find.
-                auto [ec, n] = co_await sf.write_some(
-                    capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await sf.write_some(capy::const_buffer(buf, 7));
                 std::ignore = n;
                 BOOST_TEST(!ec);
             }
             {
                 auto [ec, pos] = sf.seek(0, file_base::seek_set);
-                std::ignore = pos;
+                std::ignore    = pos;
                 BOOST_TEST(!ec);
             }
             {
-                cqe_fault_scope q(
-                    sf.native_handle(), IORING_OP_READV, -EIO);
-                auto [ec, n] = co_await sf.read_some(
-                    capy::mutable_buffer(buf, 7));
+                cqe_fault_scope q(sf.native_handle(), IORING_OP_READV, -EIO);
+                auto [ec, n] =
+                    co_await sf.read_some(capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                srec = ec;
-                srf = q.fired();
+                srec        = ec;
+                srf         = q.fired();
             }
             {
-                cqe_fault_scope q(
-                    rf.native_handle(), IORING_OP_WRITEV, -EIO);
-                auto [ec, n] = co_await rf.write_some_at(
-                    0, capy::const_buffer(buf, 7));
+                cqe_fault_scope q(rf.native_handle(), IORING_OP_WRITEV, -EIO);
+                auto [ec, n] =
+                    co_await rf.write_some_at(0, capy::const_buffer(buf, 7));
                 std::ignore = n;
-                rwec = ec;
-                rwf = q.fired();
+                rwec        = ec;
+                rwf         = q.fired();
             }
             {
                 // Same for the random-access file: the faulted
                 // completion leaves it usable, and this write seeds the
                 // read below.
-                auto [ec, n] = co_await rf.write_some_at(
-                    0, capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await rf.write_some_at(0, capy::const_buffer(buf, 7));
                 std::ignore = n;
                 BOOST_TEST(!ec);
             }
             {
-                cqe_fault_scope q(
-                    rf.native_handle(), IORING_OP_READV, -EIO);
-                auto [ec, n] = co_await rf.read_some_at(
-                    0, capy::mutable_buffer(buf, 7));
+                cqe_fault_scope q(rf.native_handle(), IORING_OP_READV, -EIO);
+                auto [ec, n] =
+                    co_await rf.read_some_at(0, capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                rrec = ec;
-                rrf = q.fired();
+                rrec        = ec;
+                rrf         = q.fired();
             }
         };
         capy::run_async(ioc.get_executor())(body());
@@ -744,17 +724,16 @@ struct uring_faults
         tcp_acceptor acc(ioc, uring_loopback());
         tcp_socket s(ioc);
         std::error_code aec, wec;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             {
                 auto [ec] = co_await acc.accept(s);
-                aec = ec;
+                aec       = ec;
             }
             {
                 // Readiness on this backend means a future delivery,
                 // which the failed arm has ruled out just as squarely.
                 auto [ec] = co_await acc.wait(wait_type::read);
-                wec = ec;
+                wec       = ec;
             }
         };
         capy::run_async(ioc.get_executor())(body());
@@ -785,15 +764,13 @@ struct uring_faults
         // the failed arm still counted as one in place, listen() would
         // not have replaced it and this accept would report EAGAIN
         // instead of parking.
-        auto accept_body = [&]() -> capy::task<>
-        {
+        auto accept_body = [&]() -> capy::task<> {
             auto [ec] = co_await acc.accept(s2);
-            aec2 = ec;
+            aec2      = ec;
         };
-        auto client_body = [&]() -> capy::task<>
-        {
+        auto client_body = [&]() -> capy::task<> {
             auto [ec] = co_await c.connect(acc.local_endpoint());
-            cec = ec;
+            cec       = ec;
         };
         capy::run_async(ioc.get_executor())(accept_body());
         capy::run_async(ioc.get_executor())(client_body());
@@ -808,8 +785,7 @@ struct uring_faults
     void testRingInitSqExhaustion()
     {
         fault_scope f(sys::uring_sq_fill, 0);
-        BOOST_TEST_THROWS(
-            ([] { io_context tmp(uring); }()), std::system_error);
+        BOOST_TEST_THROWS(([] { io_context tmp(uring); }()), std::system_error);
         BOOST_TEST(f.fired());
     }
 
@@ -819,7 +795,7 @@ struct uring_faults
     void testCancelSqFullBestEffort()
     {
         io_context ioc(uring);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -842,8 +818,7 @@ struct uring_faults
             fault_scope f(sys::uring_sq_fill, 0);
             // A real suspension: a zero delay can complete inline
             // without the run-loop flush that applies the fill.
-            std::ignore =
-                co_await corosio::delay(std::chrono::milliseconds(1));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
             ss.request_stop();
             BOOST_TEST(f.fired());
         };
@@ -874,12 +849,11 @@ struct uring_faults
 
         tcp_socket peer(ioc);
         std::error_code aec;
-        bool done     = false;
-        bool fired    = false;
-        auto arming   = [&]() -> capy::task<> {
+        bool done   = false;
+        bool fired  = false;
+        auto arming = [&]() -> capy::task<> {
             fault_scope f(sys::uring_sq_fill, 0);
-            std::ignore =
-                co_await corosio::delay(std::chrono::milliseconds(0));
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(0));
             // The fill is applied; initiate the accept while the
             // submission queue reads full so the multishot arming
             // takes the failure path with the waiter parked.
@@ -935,16 +909,15 @@ struct uring_faults
             // Keep the queue full across the re-arm the rewritten CQE
             // provokes; the raw connect generates that CQE.
             fault_scope f(sys::uring_sq_fill, 0);
-            std::ignore =
-                co_await corosio::delay(std::chrono::milliseconds(1));
-            int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
+            int fd      = ::socket(AF_INET, SOCK_STREAM, 0);
             BOOST_TEST_GE(fd, 0);
             sockaddr_in sa{};
             sa.sin_family      = AF_INET;
             sa.sin_port        = htons(acc.local_endpoint().port());
             sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-            BOOST_TEST_EQ(::connect(
-                fd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+            BOOST_TEST_EQ(
+                ::connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
             // The rewritten CQE and the failed re-arm happen while the
             // fill is held; the hop gives the run loop a chance to
             // reach both.
@@ -966,7 +939,6 @@ struct uring_faults
         BOOST_TEST(q.fired());
         BOOST_TEST(!!aec);
     }
-
 
     // The kernel may clear IORING_CQE_F_MORE on the wakeup eventfd's
     // multishot poll; the scheduler must re-arm it or every later
@@ -1060,7 +1032,7 @@ struct uring_faults
         testMultishotRearmFailureWithWaiter();
         testWakeupPollRearm();
         testSignalPipePollRearm();
-        if(skip_under_valgrind())
+        if (skip_under_valgrind())
             return;
         testRingInitFails();
         testObjectSurfaceErrors();
@@ -1080,6 +1052,6 @@ struct uring_faults
 
 TEST_SUITE(uring_faults, "boost.corosio.fault.uring");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

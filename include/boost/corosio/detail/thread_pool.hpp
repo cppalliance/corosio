@@ -123,8 +123,7 @@ public:
         @throws std::logic_error If `num_threads` is 0.
     */
     explicit thread_pool(
-        [[maybe_unused]] capy::execution_context& ctx,
-        unsigned num_threads = 1)
+        [[maybe_unused]] capy::execution_context& ctx, unsigned num_threads = 1)
         : num_threads_(num_threads)
     {
         if (!num_threads)
@@ -335,8 +334,7 @@ public:
 
         @param ctx The context whose pool is used.
     */
-    explicit thread_pool_ref(capy::execution_context& ctx) noexcept
-        : ctx_(ctx)
+    explicit thread_pool_ref(capy::execution_context& ctx) noexcept : ctx_(ctx)
     {
     }
 

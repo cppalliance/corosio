@@ -31,26 +31,26 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 #if BOOST_COROSIO_HAS_EPOLL
 // tag::native_udp_socket[]
-capy::task<> open_bind_recv()
+capy::task<>
+open_bind_recv()
 {
     corosio::native_io_context<corosio::epoll> ctx;
     corosio::native_udp_socket<corosio::epoll> s(ctx);
     if (auto ec = s.open())
         co_return;
-    if (auto ec = s.bind(
-            corosio::endpoint(corosio::ipv4_address::any(), 9000)))
+    if (auto ec = s.bind(corosio::endpoint(corosio::ipv4_address::any(), 9000)))
         co_return;
 
     char buf[1024];
     corosio::endpoint sender;
-    auto [ec, n] = co_await s.recv_from(
-        capy::mutable_buffer(buf, sizeof(buf)), sender);
+    auto [ec, n] =
+        co_await s.recv_from(capy::mutable_buffer(buf, sizeof(buf)), sender);
     if (ec)
         co_return;
 }

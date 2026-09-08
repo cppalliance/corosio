@@ -10,7 +10,6 @@
 // Test that header file is self-contained.
 #include <boost/corosio/detail/buffer_param.hpp>
 
-
 #include <span>
 #include <array>
 

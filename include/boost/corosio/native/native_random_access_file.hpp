@@ -69,8 +69,7 @@ class native_random_access_file : public random_access_file
 {
     using backend_type = decltype(Backend);
     using impl_type    = typename backend_type::random_access_file_type;
-    using service_type =
-        typename backend_type::random_access_file_service_type;
+    using service_type = typename backend_type::random_access_file_service_type;
 
     impl_type& get_impl() noexcept
     {
@@ -116,8 +115,8 @@ class native_random_access_file : public random_access_file
         {
             token_ = env->stop_token;
             return self_.get_impl().read_some_at(
-                offset_, h, env->executor, buffers_,
-                token_, &ec_, &bytes_transferred_);
+                offset_, h, env->executor, buffers_, token_, &ec_,
+                &bytes_transferred_);
         }
     };
 
@@ -160,8 +159,8 @@ class native_random_access_file : public random_access_file
         {
             token_ = env->stop_token;
             return self_.get_impl().write_some_at(
-                offset_, h, env->executor, buffers_,
-                token_, &ec_, &bytes_transferred_);
+                offset_, h, env->executor, buffers_, token_, &ec_,
+                &bytes_transferred_);
         }
     };
 
@@ -181,8 +180,8 @@ public:
     */
     template<class Ex>
         requires(!std::same_as<
-                 std::remove_cvref_t<Ex>,
-                 native_random_access_file>) &&
+                    std::remove_cvref_t<Ex>,
+                    native_random_access_file>) &&
         capy::Executor<Ex>
     explicit native_random_access_file(Ex const& ex)
         : native_random_access_file(ex.context())

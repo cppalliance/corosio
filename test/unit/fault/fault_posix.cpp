@@ -63,20 +63,22 @@ thread_local cqe_slot tls_cqe;
 
 // The arm machinery lives in fault_arm.cpp; this is the one piece of
 // it that has to know what platform it is on.
-void publish_error(int err) noexcept
+void
+publish_error(int err) noexcept
 {
     errno = err;
 }
 
-void* real_symbol(char const* name) noexcept
+void*
+real_symbol(char const* name) noexcept
 {
     void* p = ::dlsym(RTLD_NEXT, name);
-    if(!p)
+    if (!p)
     {
         char msg[160];
-        std::snprintf(msg, sizeof(msg),
-            "fault harness: %s has no implementation behind the shadow",
-            name);
+        std::snprintf(
+            msg, sizeof(msg),
+            "fault harness: %s has no implementation behind the shadow", name);
         die(msg);
     }
     return p;
@@ -87,15 +89,16 @@ namespace {
 // Copy the prefix of `in` holding at most `count` bytes into `out`.
 // Returns the new iovec count. Corosio never passes more than a
 // handful of buffers; 64 is a hard ceiling checked at runtime.
-int truncate_iov(iovec const* in, int n, std::size_t count, iovec* out) noexcept
+int
+truncate_iov(iovec const* in, int n, std::size_t count, iovec* out) noexcept
 {
-    if(n > 64)
+    if (n > 64)
         die("fault harness: iovec count exceeds 64");
     int m = 0;
-    for(; m < n && count > 0; ++m)
+    for (; m < n && count > 0; ++m)
     {
         out[m] = in[m];
-        if(out[m].iov_len > count)
+        if (out[m].iov_len > count)
             out[m].iov_len = count;
         count -= out[m].iov_len;
     }
@@ -109,14 +112,15 @@ cqe_fault_scope::cqe_fault_scope(int fd, int opcode, int res)
 {
 }
 
-cqe_fault_scope::cqe_fault_scope(int fd, int opcode, int res,
-    unsigned flags_to_clear)
+cqe_fault_scope::cqe_fault_scope(
+    int fd, int opcode, int res, unsigned flags_to_clear)
 {
-    claim_completion_slot(tls_cqe,
+    claim_completion_slot(
+        tls_cqe,
         "cqe_fault_scope: a completion fault is already armed on this thread");
-    tls_cqe.fd = fd;
-    tls_cqe.opcode = opcode;
-    tls_cqe.res = res;
+    tls_cqe.fd          = fd;
+    tls_cqe.opcode      = opcode;
+    tls_cqe.res         = res;
     tls_cqe.flags_clear = flags_to_clear;
 }
 
@@ -125,12 +129,13 @@ cqe_fault_scope::~cqe_fault_scope()
     release_completion_slot(tls_cqe);
 }
 
-bool cqe_fault_scope::fired() const noexcept
+bool
+cqe_fault_scope::fired() const noexcept
 {
     return tls_cqe.fired;
 }
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 using namespace boost::corosio::test::fault;
 
@@ -148,10 +153,11 @@ using namespace boost::corosio::test::fault;
 #define COROSIO_FAULT_NOTHROW
 #endif
 
-extern "C" int socket(int domain, int type, int protocol) COROSIO_FAULT_NOTHROW
+extern "C" int
+socket(int domain, int type, int protocol) COROSIO_FAULT_NOTHROW
 {
-    COROSIO_FAULT_REAL(socket, int(*)(int, int, int));
-    if(should_fail(sys::socket))
+    COROSIO_FAULT_REAL(socket, int (*)(int, int, int));
+    if (should_fail(sys::socket))
         return -1;
     return real(domain, type, protocol);
 }
@@ -161,43 +167,65 @@ extern "C" int socket(int domain, int type, int protocol) COROSIO_FAULT_NOTHROW
 // the redeclaration, so there are two macros rather than one. On
 // Darwin COROSIO_FAULT_NOTHROW is empty and the two coincide, since no
 // entry point there carries a specification to match.
-#define COROSIO_FAULT_HOOK(name, ret, failval, params, args)            \
-    extern "C" ret name params                                         \
-    {                                                                   \
-        COROSIO_FAULT_REAL(name, ret(*)params);                         \
-        if(should_fail(sys::name))                                      \
-            return failval;                                             \
-        return real args;                                               \
+#define COROSIO_FAULT_HOOK(name, ret, failval, params, args) \
+    extern "C" ret name params                               \
+    {                                                        \
+        COROSIO_FAULT_REAL(name, ret(*) params);             \
+        if (should_fail(sys::name))                          \
+            return failval;                                  \
+        return real args;                                    \
     }
 
-#define COROSIO_FAULT_HOOK_NX(name, ret, failval, params, args)         \
-    extern "C" ret name params COROSIO_FAULT_NOTHROW                    \
-    {                                                                   \
-        COROSIO_FAULT_REAL(name, ret(*)params);                         \
-        if(should_fail(sys::name))                                      \
-            return failval;                                             \
-        return real args;                                               \
+#define COROSIO_FAULT_HOOK_NX(name, ret, failval, params, args) \
+    extern "C" ret name params COROSIO_FAULT_NOTHROW            \
+    {                                                           \
+        COROSIO_FAULT_REAL(name, ret(*) params);                \
+        if (should_fail(sys::name))                             \
+            return failval;                                     \
+        return real args;                                       \
     }
 
-COROSIO_FAULT_HOOK_NX(socketpair, int, -1, (int d, int t, int p, int* sv), (d, t, p, sv))
-COROSIO_FAULT_HOOK_NX(bind, int, -1, (int fd, sockaddr const* a, socklen_t l), (fd, a, l))
+COROSIO_FAULT_HOOK_NX(
+    socketpair, int, -1, (int d, int t, int p, int* sv), (d, t, p, sv))
+COROSIO_FAULT_HOOK_NX(
+    bind, int, -1, (int fd, sockaddr const* a, socklen_t l), (fd, a, l))
 COROSIO_FAULT_HOOK_NX(listen, int, -1, (int fd, int n), (fd, n))
-COROSIO_FAULT_HOOK(accept, int, -1, (int fd, sockaddr* a, socklen_t* l), (fd, a, l))
-COROSIO_FAULT_HOOK(connect, int, -1, (int fd, sockaddr const* a, socklen_t l), (fd, a, l))
-COROSIO_FAULT_HOOK_NX(getsockname, int, -1, (int fd, sockaddr* a, socklen_t* l), (fd, a, l))
-COROSIO_FAULT_HOOK_NX(getpeername, int, -1, (int fd, sockaddr* a, socklen_t* l), (fd, a, l))
-COROSIO_FAULT_HOOK_NX(getsockopt, int, -1, (int fd, int lv, int on, void* v, socklen_t* l), (fd, lv, on, v, l))
-COROSIO_FAULT_HOOK_NX(setsockopt, int, -1, (int fd, int lv, int on, void const* v, socklen_t l), (fd, lv, on, v, l))
+COROSIO_FAULT_HOOK(
+    accept, int, -1, (int fd, sockaddr* a, socklen_t* l), (fd, a, l))
+COROSIO_FAULT_HOOK(
+    connect, int, -1, (int fd, sockaddr const* a, socklen_t l), (fd, a, l))
+COROSIO_FAULT_HOOK_NX(
+    getsockname, int, -1, (int fd, sockaddr* a, socklen_t* l), (fd, a, l))
+COROSIO_FAULT_HOOK_NX(
+    getpeername, int, -1, (int fd, sockaddr* a, socklen_t* l), (fd, a, l))
+COROSIO_FAULT_HOOK_NX(
+    getsockopt,
+    int,
+    -1,
+    (int fd, int lv, int on, void* v, socklen_t* l),
+    (fd, lv, on, v, l))
+COROSIO_FAULT_HOOK_NX(
+    setsockopt,
+    int,
+    -1,
+    (int fd, int lv, int on, void const* v, socklen_t l),
+    (fd, lv, on, v, l))
 COROSIO_FAULT_HOOK_NX(shutdown, int, -1, (int fd, int how), (fd, how))
 COROSIO_FAULT_HOOK(close, int, -1, (int fd), (fd))
-COROSIO_FAULT_HOOK(poll, int, -1, (pollfd* p, nfds_t n, int t), (p, n, t))
+COROSIO_FAULT_HOOK(poll, int, -1, (pollfd * p, nfds_t n, int t), (p, n, t))
 COROSIO_FAULT_HOOK_NX(pipe, int, -1, (int* p), (p))
 COROSIO_FAULT_HOOK_NX(fstat, int, -1, (int fd, struct stat* st), (fd, st))
-COROSIO_FAULT_HOOK_NX(lseek, off_t, -1, (int fd, off_t off, int wh), (fd, off, wh))
+COROSIO_FAULT_HOOK_NX(
+    lseek, off_t, -1, (int fd, off_t off, int wh), (fd, off, wh))
 COROSIO_FAULT_HOOK_NX(ftruncate, int, -1, (int fd, off_t len), (fd, len))
 COROSIO_FAULT_HOOK(fsync, int, -1, (int fd), (fd))
 COROSIO_FAULT_HOOK_NX(unlink, int, -1, (char const* p), (p))
-COROSIO_FAULT_HOOK_NX(sigaction, int, -1, (int sig, struct sigaction const* a, struct sigaction* o), (sig, a, o))
+COROSIO_FAULT_HOOK_NX(
+    sigaction,
+    int,
+    -1,
+    (int sig, struct sigaction const* a, struct sigaction* o),
+    (sig, a, o))
 
 // The OpenSSL shadows use opaque pointer signatures: the symbols have
 // C linkage, so no OpenSSL headers are needed. They rely on ELF
@@ -208,103 +236,112 @@ COROSIO_FAULT_HOOK_NX(sigaction, int, -1, (int sig, struct sigaction const* a, s
 // coverage badge is measured; elsewhere hook_is_live reports them not
 // live and the TLS fault suite skips.
 #if defined(__linux__) || defined(__APPLE__)
-extern "C" void* BIO_new_mem_buf(void const* buf, int len)
+extern "C" void*
+BIO_new_mem_buf(void const* buf, int len)
 {
-    COROSIO_FAULT_REAL(BIO_new_mem_buf, void*(*)(void const*, int));
-    if(should_fail(sys::BIO_new_mem_buf))
+    COROSIO_FAULT_REAL(BIO_new_mem_buf, void* (*)(void const*, int));
+    if (should_fail(sys::BIO_new_mem_buf))
         return nullptr;
     return real(buf, len);
 }
 
-extern "C" int BIO_new_bio_pair(void** b1, std::size_t w1, void** b2,
-    std::size_t w2)
+extern "C" int
+BIO_new_bio_pair(void** b1, std::size_t w1, void** b2, std::size_t w2)
 {
-    COROSIO_FAULT_REAL(BIO_new_bio_pair,
-        int(*)(void**, std::size_t, void**, std::size_t));
-    if(should_fail(sys::BIO_new_bio_pair))
+    COROSIO_FAULT_REAL(
+        BIO_new_bio_pair, int (*)(void**, std::size_t, void**, std::size_t));
+    if (should_fail(sys::BIO_new_bio_pair))
         return 0;
     return real(b1, w1, b2, w2);
 }
 
-extern "C" void* SSL_CTX_new(void const* method)
+extern "C" void*
+SSL_CTX_new(void const* method)
 {
-    COROSIO_FAULT_REAL(SSL_CTX_new, void*(*)(void const*));
-    if(should_fail(sys::SSL_CTX_new))
+    COROSIO_FAULT_REAL(SSL_CTX_new, void* (*)(void const*));
+    if (should_fail(sys::SSL_CTX_new))
         return nullptr;
     return real(method);
 }
 
-extern "C" void* SSL_new(void* ctx)
+extern "C" void*
+SSL_new(void* ctx)
 {
-    COROSIO_FAULT_REAL(SSL_new, void*(*)(void*));
-    if(should_fail(sys::SSL_new))
+    COROSIO_FAULT_REAL(SSL_new, void* (*)(void*));
+    if (should_fail(sys::SSL_new))
         return nullptr;
     return real(ctx);
 }
 
-extern "C" int SSL_clear(void* ssl)
+extern "C" int
+SSL_clear(void* ssl)
 {
-    COROSIO_FAULT_REAL(SSL_clear, int(*)(void*));
-    if(should_fail(sys::SSL_clear))
+    COROSIO_FAULT_REAL(SSL_clear, int (*)(void*));
+    if (should_fail(sys::SSL_clear))
         return 0;
     return real(ssl);
 }
 
-extern "C" int SSL_set_session(void* ssl, void* session)
+extern "C" int
+SSL_set_session(void* ssl, void* session)
 {
-    COROSIO_FAULT_REAL(SSL_set_session, int(*)(void*, void*));
-    if(should_fail(sys::SSL_set_session))
+    COROSIO_FAULT_REAL(SSL_set_session, int (*)(void*, void*));
+    if (should_fail(sys::SSL_set_session))
         return 0;
     return real(ssl, session);
 }
 
-extern "C" int X509_STORE_add_cert(void* store, void* x)
+extern "C" int
+X509_STORE_add_cert(void* store, void* x)
 {
-    COROSIO_FAULT_REAL(X509_STORE_add_cert, int(*)(void*, void*));
-    if(should_fail(sys::X509_STORE_add_cert))
+    COROSIO_FAULT_REAL(X509_STORE_add_cert, int (*)(void*, void*));
+    if (should_fail(sys::X509_STORE_add_cert))
         return 0;
     return real(store, x);
 }
 
-extern "C" void* X509_dup(void* x)
+extern "C" void*
+X509_dup(void* x)
 {
-    COROSIO_FAULT_REAL(X509_dup, void*(*)(void*));
-    if(should_fail(sys::X509_dup))
+    COROSIO_FAULT_REAL(X509_dup, void* (*)(void*));
+    if (should_fail(sys::X509_dup))
         return nullptr;
     return real(x);
 }
 
-extern "C" int BIO_read(void* bio, void* buf, int len)
+extern "C" int
+BIO_read(void* bio, void* buf, int len)
 {
-    COROSIO_FAULT_REAL(BIO_read, int(*)(void*, void*, int));
-    if(should_fail(sys::BIO_read))
+    COROSIO_FAULT_REAL(BIO_read, int (*)(void*, void*, int));
+    if (should_fail(sys::BIO_read))
         return -1;
     return real(bio, buf, len);
 }
 
-extern "C" int BIO_nwrite0(void* bio, char** buf)
+extern "C" int
+BIO_nwrite0(void* bio, char** buf)
 {
-    COROSIO_FAULT_REAL(BIO_nwrite0, int(*)(void*, char**));
-    if(should_fail(sys::BIO_nwrite0))
+    COROSIO_FAULT_REAL(BIO_nwrite0, int (*)(void*, char**));
+    if (should_fail(sys::BIO_nwrite0))
         return -1;
     return real(bio, buf);
 }
 
-
-extern "C" void* SSL_get0_param(void* ssl)
+extern "C" void*
+SSL_get0_param(void* ssl)
 {
-    COROSIO_FAULT_REAL(SSL_get0_param, void*(*)(void*));
-    if(should_fail(sys::SSL_get0_param))
+    COROSIO_FAULT_REAL(SSL_get0_param, void* (*)(void*));
+    if (should_fail(sys::SSL_get0_param))
         return nullptr;
     return real(ssl);
 }
 
-extern "C" int X509_VERIFY_PARAM_set1_host(void* p, char const* name,
-    std::size_t namelen)
+extern "C" int
+X509_VERIFY_PARAM_set1_host(void* p, char const* name, std::size_t namelen)
 {
-    COROSIO_FAULT_REAL(X509_VERIFY_PARAM_set1_host,
-        int(*)(void*, char const*, std::size_t));
-    if(should_fail(sys::X509_VERIFY_PARAM_set1_host))
+    COROSIO_FAULT_REAL(
+        X509_VERIFY_PARAM_set1_host, int (*)(void*, char const*, std::size_t));
+    if (should_fail(sys::X509_VERIFY_PARAM_set1_host))
         return 0;
     return real(p, name, namelen);
 }
@@ -313,25 +350,29 @@ extern "C" int X509_VERIFY_PARAM_set1_host(void* p, char const* name,
 // pthread_create reports through its return value, not errno; the
 // armed error published to errno is handed back directly, which is
 // what turns std::thread's construction into a std::system_error.
-extern "C" int pthread_create(pthread_t* t, pthread_attr_t const* a,
-    void* (*fn)(void*), void* arg) COROSIO_FAULT_NOTHROW
+extern "C" int
+pthread_create(
+    pthread_t* t, pthread_attr_t const* a, void* (*fn)(void*), void* arg)
+    COROSIO_FAULT_NOTHROW
 {
-    COROSIO_FAULT_REAL(pthread_create,
-        int(*)(pthread_t*, pthread_attr_t const*, void* (*)(void*), void*));
-    if(should_fail(sys::pthread_create))
+    COROSIO_FAULT_REAL(
+        pthread_create,
+        int (*)(pthread_t*, pthread_attr_t const*, void* (*)(void*), void*));
+    if (should_fail(sys::pthread_create))
         return errno ? errno : EAGAIN;
     return real(t, a, fn, arg);
 }
 // gethostname arms two ways: fail with the armed errno, or -- via a
 // shorten arm -- succeed with a name that fills the buffer without a
 // NUL, the truncated form POSIX permits and host_name() must reject.
-extern "C" int gethostname(char* n, size_t l)
+extern "C" int
+gethostname(char* n, size_t l)
 {
-    COROSIO_FAULT_REAL(gethostname, int(*)(char*, size_t));
-    if(should_fail(sys::gethostname))
+    COROSIO_FAULT_REAL(gethostname, int (*)(char*, size_t));
+    if (should_fail(sys::gethostname))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::gethostname, c))
+    if (should_shorten(sys::gethostname, c))
     {
         std::memset(n, 'x', c < l ? c : l);
         return 0;
@@ -346,24 +387,40 @@ COROSIO_FAULT_HOOK(fdatasync, int, -1, (int fd), (fd))
 
 // Return the armed errno directly: this reports failure through the
 // return value, not through -1 + errno.
-extern "C" int posix_fadvise(int fd, off_t off, off_t len, int advice)
-    COROSIO_FAULT_NOTHROW
+extern "C" int
+posix_fadvise(int fd, off_t off, off_t len, int advice) COROSIO_FAULT_NOTHROW
 {
-    COROSIO_FAULT_REAL(posix_fadvise, int(*)(int, off_t, off_t, int));
-    if(should_fail(sys::posix_fadvise))
+    COROSIO_FAULT_REAL(posix_fadvise, int (*)(int, off_t, off_t, int));
+    if (should_fail(sys::posix_fadvise))
         return errno;
     return real(fd, off, len, advice);
 }
 #endif
 
 #if defined(__linux__)
-COROSIO_FAULT_HOOK(accept4, int, -1, (int fd, sockaddr* a, socklen_t* l, int f), (fd, a, l, f))
+COROSIO_FAULT_HOOK(
+    accept4, int, -1, (int fd, sockaddr* a, socklen_t* l, int f), (fd, a, l, f))
 COROSIO_FAULT_HOOK_NX(epoll_create1, int, -1, (int f), (f))
-COROSIO_FAULT_HOOK_NX(epoll_ctl, int, -1, (int ep, int op, int fd, epoll_event* ev), (ep, op, fd, ev))
-COROSIO_FAULT_HOOK(epoll_wait, int, -1, (int ep, epoll_event* ev, int n, int t), (ep, ev, n, t))
+COROSIO_FAULT_HOOK_NX(
+    epoll_ctl,
+    int,
+    -1,
+    (int ep, int op, int fd, epoll_event* ev),
+    (ep, op, fd, ev))
+COROSIO_FAULT_HOOK(
+    epoll_wait,
+    int,
+    -1,
+    (int ep, epoll_event* ev, int n, int t),
+    (ep, ev, n, t))
 COROSIO_FAULT_HOOK_NX(eventfd, int, -1, (unsigned v, int f), (v, f))
 COROSIO_FAULT_HOOK_NX(timerfd_create, int, -1, (int c, int f), (c, f))
-COROSIO_FAULT_HOOK_NX(timerfd_settime, int, -1, (int fd, int f, itimerspec const* n, itimerspec* o), (fd, f, n, o))
+COROSIO_FAULT_HOOK_NX(
+    timerfd_settime,
+    int,
+    -1,
+    (int fd, int f, itimerspec const* n, itimerspec* o),
+    (fd, f, n, o))
 #endif
 
 #if defined(__APPLE__) || defined(__FreeBSD__)
@@ -372,23 +429,31 @@ COROSIO_FAULT_HOOK(kqueue, int, -1, (), ())
 // wait are the same symbol, so the changelist is the only thing that
 // tells them apart. Both arms are consulted on every call so their
 // counters stay in step whichever one fires.
-extern "C" int kevent(
-    int kq, struct kevent const* ch, int nch, struct kevent* ev, int nev,
+extern "C" int
+kevent(
+    int kq,
+    struct kevent const* ch,
+    int nch,
+    struct kevent* ev,
+    int nev,
     timespec const* ts)
 {
-    COROSIO_FAULT_REAL(kevent, int(*)(int, struct kevent const*, int,
-        struct kevent*, int, timespec const*));
+    COROSIO_FAULT_REAL(
+        kevent,
+        int (*)(
+            int, struct kevent const*, int, struct kevent*, int,
+            timespec const*));
     bool adds = false;
-    for(int i = 0; i < nch; ++i)
+    for (int i = 0; i < nch; ++i)
     {
-        if(ch[i].flags & EV_ADD)
+        if (ch[i].flags & EV_ADD)
             adds = true;
     }
     // A call that satisfies both arms fails once: the plain kevent arm
     // publishes last, so its errno is the one the caller sees.
     bool const fail_add = adds && should_fail(sys::kevent_register);
     bool const fail_any = should_fail(sys::kevent);
-    if(fail_add || fail_any)
+    if (fail_add || fail_any)
         return -1;
     return real(kq, ch, nch, ev, nev, ts);
 }
@@ -403,56 +468,73 @@ extern "C" int kevent(
 // rename it to whichever single spelling this file happens to see.
 // The library references the plain spelling today, so the suffixed one
 // is a census alias rather than a symbol anything binds to.
-extern "C" {
-int corosio_fault_select(int, fd_set*, fd_set*, fd_set*, timeval*)
-    __asm__("_select");
-int corosio_fault_select_extsn(int, fd_set*, fd_set*, fd_set*, timeval*)
-    __asm__("_select$DARWIN_EXTSN");
+extern "C"
+{
+    int corosio_fault_select(int, fd_set*, fd_set*, fd_set*, timeval*) __asm__(
+        "_select");
+    int corosio_fault_select_extsn(
+        int,
+        fd_set*,
+        fd_set*,
+        fd_set*,
+        timeval*) __asm__("_select$DARWIN_EXTSN");
 }
 
 namespace {
 
-using select_fn = int(*)(int, fd_set*, fd_set*, fd_set*, timeval*);
+using select_fn = int (*)(int, fd_set*, fd_set*, fd_set*, timeval*);
 
 // libSystem exports both spellings, but only the plain one is
 // guaranteed; fall back so a missing alias cannot leave `real` null.
-select_fn real_select(char const* name) noexcept
+select_fn
+real_select(char const* name) noexcept
 {
     auto p = reinterpret_cast<select_fn>(::dlsym(RTLD_NEXT, name));
-    if(!p)
+    if (!p)
         p = reinterpret_cast<select_fn>(real_symbol("select"));
     return p;
 }
 
 } // namespace
 
-extern "C" int corosio_fault_select(int n, fd_set* r, fd_set* w, fd_set* e,
-    timeval* t)
+extern "C" int
+corosio_fault_select(int n, fd_set* r, fd_set* w, fd_set* e, timeval* t)
 {
     static auto const real = real_select("select");
-    if(should_fail(sys::select))
+    if (should_fail(sys::select))
         return -1;
     return real(n, r, w, e, t);
 }
 
-extern "C" int corosio_fault_select_extsn(int n, fd_set* r, fd_set* w,
-    fd_set* e, timeval* t)
+extern "C" int
+corosio_fault_select_extsn(int n, fd_set* r, fd_set* w, fd_set* e, timeval* t)
 {
     static auto const real = real_select("select$DARWIN_EXTSN");
-    if(should_fail(sys::select))
+    if (should_fail(sys::select))
         return -1;
     return real(n, r, w, e, t);
 }
 #else
-COROSIO_FAULT_HOOK(select, int, -1, (int n, fd_set* r, fd_set* w, fd_set* e, timeval* t), (n, r, w, e, t))
+COROSIO_FAULT_HOOK(
+    select,
+    int,
+    -1,
+    (int n, fd_set* r, fd_set* w, fd_set* e, timeval* t),
+    (n, r, w, e, t))
 #endif
 
 // Both report failure through the return value, not -1 + errno.
-extern "C" int getaddrinfo(char const* node, char const* service,
-    addrinfo const* hints, addrinfo** res)
+extern "C" int
+getaddrinfo(
+    char const* node,
+    char const* service,
+    addrinfo const* hints,
+    addrinfo** res)
 {
-    COROSIO_FAULT_REAL(getaddrinfo, int(*)(char const*, char const*, addrinfo const*, addrinfo**));
-    if(should_fail(sys::getaddrinfo))
+    COROSIO_FAULT_REAL(
+        getaddrinfo,
+        int (*)(char const*, char const*, addrinfo const*, addrinfo**));
+    if (should_fail(sys::getaddrinfo))
         return errno;
     return real(node, service, hints, res);
 }
@@ -460,9 +542,10 @@ extern "C" int getaddrinfo(char const* node, char const* service,
 // No failure mode of its own: swallowing the release would leak the
 // list the lookup allocated. The arm still counts the call, which is
 // what a census of the resolver's teardown path needs.
-extern "C" void freeaddrinfo(addrinfo* ai) COROSIO_FAULT_NOTHROW
+extern "C" void
+freeaddrinfo(addrinfo* ai) COROSIO_FAULT_NOTHROW
 {
-    COROSIO_FAULT_REAL(freeaddrinfo, void(*)(addrinfo*));
+    COROSIO_FAULT_REAL(freeaddrinfo, void (*)(addrinfo*));
     std::ignore = should_fail(sys::freeaddrinfo);
     real(ai);
 }
@@ -476,55 +559,67 @@ extern "C" void freeaddrinfo(addrinfo* ai) COROSIO_FAULT_NOTHROW
 #define COROSIO_FAULT_NI_LEN socklen_t
 #endif
 
-extern "C" int getnameinfo(sockaddr const* sa, socklen_t salen, char* host,
-    COROSIO_FAULT_NI_LEN hostlen, char* serv, COROSIO_FAULT_NI_LEN servlen,
+extern "C" int
+getnameinfo(
+    sockaddr const* sa,
+    socklen_t salen,
+    char* host,
+    COROSIO_FAULT_NI_LEN hostlen,
+    char* serv,
+    COROSIO_FAULT_NI_LEN servlen,
     int flags)
 {
-    COROSIO_FAULT_REAL(getnameinfo, int(*)(sockaddr const*, socklen_t, char*,
-        COROSIO_FAULT_NI_LEN, char*, COROSIO_FAULT_NI_LEN, int));
-    if(should_fail(sys::getnameinfo))
+    COROSIO_FAULT_REAL(
+        getnameinfo,
+        int (*)(
+            sockaddr const*, socklen_t, char*, COROSIO_FAULT_NI_LEN, char*,
+            COROSIO_FAULT_NI_LEN, int));
+    if (should_fail(sys::getnameinfo))
         return errno;
     return real(sa, salen, host, hostlen, serv, servlen, flags);
 }
 
-extern "C" int fcntl(int fd, int cmd, ...)
+extern "C" int
+fcntl(int fd, int cmd, ...)
 {
-    COROSIO_FAULT_REAL(fcntl, int(*)(int, int, ...));
+    COROSIO_FAULT_REAL(fcntl, int (*)(int, int, ...));
     va_list ap;
     va_start(ap, cmd);
     // Every corosio use passes an int or nothing; a long covers both on
     // the SysV and AAPCS64 ABIs.
     long arg = va_arg(ap, long);
     va_end(ap);
-    if(should_fail(sys::fcntl))
+    if (should_fail(sys::fcntl))
         return -1;
     return real(fd, cmd, arg);
 }
 
-extern "C" int ioctl(int fd, unsigned long req, ...) COROSIO_FAULT_NOTHROW
+extern "C" int
+ioctl(int fd, unsigned long req, ...) COROSIO_FAULT_NOTHROW
 {
-    COROSIO_FAULT_REAL(ioctl, int(*)(int, unsigned long, ...));
+    COROSIO_FAULT_REAL(ioctl, int (*)(int, unsigned long, ...));
     va_list ap;
     va_start(ap, req);
     void* arg = va_arg(ap, void*);
     va_end(ap);
-    if(should_fail(sys::ioctl))
+    if (should_fail(sys::ioctl))
         return -1;
     return real(fd, req, arg);
 }
 
-extern "C" int open(char const* path, int flags, ...)
+extern "C" int
+open(char const* path, int flags, ...)
 {
-    COROSIO_FAULT_REAL(open, int(*)(char const*, int, ...));
+    COROSIO_FAULT_REAL(open, int (*)(char const*, int, ...));
     unsigned mode = 0;
-    if(flags & (O_CREAT | O_TMPFILE))
+    if (flags & (O_CREAT | O_TMPFILE))
     {
         va_list ap;
         va_start(ap, flags);
         mode = va_arg(ap, unsigned);
         va_end(ap);
     }
-    if(should_fail(sys::open))
+    if (should_fail(sys::open))
         return -1;
     return real(path, flags, mode);
 }
@@ -532,39 +627,42 @@ extern "C" int open(char const* path, int flags, ...)
 // The byte-moving census entries additionally consult should_shorten:
 // a shortened call still reaches the real function, clamped to the
 // armed count, so bytes genuinely move instead of being dropped.
-extern "C" ssize_t read(int fd, void* b, size_t n)
+extern "C" ssize_t
+read(int fd, void* b, size_t n)
 {
-    COROSIO_FAULT_REAL(read, ssize_t(*)(int, void*, size_t));
-    if(should_fail(sys::read))
+    COROSIO_FAULT_REAL(read, ssize_t (*)(int, void*, size_t));
+    if (should_fail(sys::read))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::read, c))
+    if (should_shorten(sys::read, c))
         return c == 0 ? 0 : real(fd, b, c < n ? c : n);
     return real(fd, b, n);
 }
 
-extern "C" ssize_t write(int fd, void const* b, size_t n)
+extern "C" ssize_t
+write(int fd, void const* b, size_t n)
 {
-    COROSIO_FAULT_REAL(write, ssize_t(*)(int, void const*, size_t));
-    if(should_fail(sys::write))
+    COROSIO_FAULT_REAL(write, ssize_t (*)(int, void const*, size_t));
+    if (should_fail(sys::write))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::write, c))
+    if (should_shorten(sys::write, c))
         return c == 0 ? 0 : real(fd, b, c < n ? c : n);
     return real(fd, b, n);
 }
 
 // Defined everywhere though only the kqueue write policy calls it; a
 // shadow nothing references costs one forward on the rare libc caller.
-extern "C" ssize_t writev(int fd, iovec const* v, int n)
+extern "C" ssize_t
+writev(int fd, iovec const* v, int n)
 {
-    COROSIO_FAULT_REAL(writev, ssize_t(*)(int, iovec const*, int));
-    if(should_fail(sys::writev))
+    COROSIO_FAULT_REAL(writev, ssize_t (*)(int, iovec const*, int));
+    if (should_fail(sys::writev))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::writev, c))
+    if (should_shorten(sys::writev, c))
     {
-        if(c == 0)
+        if (c == 0)
             return 0;
         iovec t[64];
         return real(fd, t, truncate_iov(v, n, c, t));
@@ -572,37 +670,40 @@ extern "C" ssize_t writev(int fd, iovec const* v, int n)
     return real(fd, v, n);
 }
 
-extern "C" ssize_t recv(int fd, void* b, size_t n, int f)
+extern "C" ssize_t
+recv(int fd, void* b, size_t n, int f)
 {
-    COROSIO_FAULT_REAL(recv, ssize_t(*)(int, void*, size_t, int));
-    if(should_fail(sys::recv))
+    COROSIO_FAULT_REAL(recv, ssize_t (*)(int, void*, size_t, int));
+    if (should_fail(sys::recv))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::recv, c))
+    if (should_shorten(sys::recv, c))
         return c == 0 ? 0 : real(fd, b, c < n ? c : n, f);
     return real(fd, b, n, f);
 }
 
-extern "C" ssize_t send(int fd, void const* b, size_t n, int f)
+extern "C" ssize_t
+send(int fd, void const* b, size_t n, int f)
 {
-    COROSIO_FAULT_REAL(send, ssize_t(*)(int, void const*, size_t, int));
-    if(should_fail(sys::send))
+    COROSIO_FAULT_REAL(send, ssize_t (*)(int, void const*, size_t, int));
+    if (should_fail(sys::send))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::send, c))
+    if (should_shorten(sys::send, c))
         return c == 0 ? 0 : real(fd, b, c < n ? c : n, f);
     return real(fd, b, n, f);
 }
 
-extern "C" ssize_t readv(int fd, iovec const* v, int n)
+extern "C" ssize_t
+readv(int fd, iovec const* v, int n)
 {
-    COROSIO_FAULT_REAL(readv, ssize_t(*)(int, iovec const*, int));
-    if(should_fail(sys::readv))
+    COROSIO_FAULT_REAL(readv, ssize_t (*)(int, iovec const*, int));
+    if (should_fail(sys::readv))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::readv, c))
+    if (should_shorten(sys::readv, c))
     {
-        if(c == 0)
+        if (c == 0)
             return 0;
         iovec t[64];
         return real(fd, t, truncate_iov(v, n, c, t));
@@ -610,15 +711,16 @@ extern "C" ssize_t readv(int fd, iovec const* v, int n)
     return real(fd, v, n);
 }
 
-extern "C" ssize_t preadv(int fd, iovec const* v, int n, off_t o)
+extern "C" ssize_t
+preadv(int fd, iovec const* v, int n, off_t o)
 {
-    COROSIO_FAULT_REAL(preadv, ssize_t(*)(int, iovec const*, int, off_t));
-    if(should_fail(sys::preadv))
+    COROSIO_FAULT_REAL(preadv, ssize_t (*)(int, iovec const*, int, off_t));
+    if (should_fail(sys::preadv))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::preadv, c))
+    if (should_shorten(sys::preadv, c))
     {
-        if(c == 0)
+        if (c == 0)
             return 0;
         iovec t[64];
         return real(fd, t, truncate_iov(v, n, c, t), o);
@@ -626,15 +728,16 @@ extern "C" ssize_t preadv(int fd, iovec const* v, int n, off_t o)
     return real(fd, v, n, o);
 }
 
-extern "C" ssize_t pwritev(int fd, iovec const* v, int n, off_t o)
+extern "C" ssize_t
+pwritev(int fd, iovec const* v, int n, off_t o)
 {
-    COROSIO_FAULT_REAL(pwritev, ssize_t(*)(int, iovec const*, int, off_t));
-    if(should_fail(sys::pwritev))
+    COROSIO_FAULT_REAL(pwritev, ssize_t (*)(int, iovec const*, int, off_t));
+    if (should_fail(sys::pwritev))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::pwritev, c))
+    if (should_shorten(sys::pwritev, c))
     {
-        if(c == 0)
+        if (c == 0)
             return 0;
         iovec t[64];
         return real(fd, t, truncate_iov(v, n, c, t), o);
@@ -642,42 +745,44 @@ extern "C" ssize_t pwritev(int fd, iovec const* v, int n, off_t o)
     return real(fd, v, n, o);
 }
 
-extern "C" ssize_t recvmsg(int fd, msghdr* m, int f)
+extern "C" ssize_t
+recvmsg(int fd, msghdr* m, int f)
 {
-    COROSIO_FAULT_REAL(recvmsg, ssize_t(*)(int, msghdr*, int));
-    if(should_fail(sys::recvmsg))
+    COROSIO_FAULT_REAL(recvmsg, ssize_t (*)(int, msghdr*, int));
+    if (should_fail(sys::recvmsg))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::recvmsg, c))
+    if (should_shorten(sys::recvmsg, c))
     {
-        if(c == 0)
+        if (c == 0)
             return 0;
         iovec t[64];
-        msghdr mh = *m;
-        mh.msg_iov = t;
-        mh.msg_iovlen = truncate_iov(m->msg_iov, (int)m->msg_iovlen, c, t);
-        ssize_t r = real(fd, &mh, f);
-        m->msg_namelen = mh.msg_namelen;
-        m->msg_flags = mh.msg_flags;
+        msghdr mh         = *m;
+        mh.msg_iov        = t;
+        mh.msg_iovlen     = truncate_iov(m->msg_iov, (int)m->msg_iovlen, c, t);
+        ssize_t r         = real(fd, &mh, f);
+        m->msg_namelen    = mh.msg_namelen;
+        m->msg_flags      = mh.msg_flags;
         m->msg_controllen = mh.msg_controllen;
         return r;
     }
     return real(fd, m, f);
 }
 
-extern "C" ssize_t sendmsg(int fd, msghdr const* m, int f)
+extern "C" ssize_t
+sendmsg(int fd, msghdr const* m, int f)
 {
-    COROSIO_FAULT_REAL(sendmsg, ssize_t(*)(int, msghdr const*, int));
-    if(should_fail(sys::sendmsg))
+    COROSIO_FAULT_REAL(sendmsg, ssize_t (*)(int, msghdr const*, int));
+    if (should_fail(sys::sendmsg))
         return -1;
     std::size_t c;
-    if(should_shorten(sys::sendmsg, c))
+    if (should_shorten(sys::sendmsg, c))
     {
-        if(c == 0)
+        if (c == 0)
             return 0;
         iovec t[64];
-        msghdr mh = *m;
-        mh.msg_iov = t;
+        msghdr mh     = *m;
+        mh.msg_iov    = t;
         mh.msg_iovlen = truncate_iov(m->msg_iov, (int)m->msg_iovlen, c, t);
         return real(fd, &mh, f);
     }
@@ -687,34 +792,40 @@ extern "C" ssize_t sendmsg(int fd, msghdr const* m, int f)
 #if defined(__linux__)
 // _FORTIFY_SOURCE routes these through the *_chk entry points, which
 // would otherwise reach libc's read/recv/poll directly.
-extern "C" ssize_t __read_chk(int fd, void* b, size_t n, size_t)
+extern "C" ssize_t
+__read_chk(int fd, void* b, size_t n, size_t)
 {
     return ::read(fd, b, n);
 }
 
-extern "C" ssize_t __recv_chk(int fd, void* b, size_t n, size_t, int f)
+extern "C" ssize_t
+__recv_chk(int fd, void* b, size_t n, size_t, int f)
 {
     return ::recv(fd, b, n, f);
 }
 
-extern "C" ssize_t __recvfrom_chk(int fd, void* b, size_t n, size_t, int f,
-    sockaddr* a, socklen_t* l)
+extern "C" ssize_t
+__recvfrom_chk(
+    int fd, void* b, size_t n, size_t, int f, sockaddr* a, socklen_t* l)
 {
-    COROSIO_FAULT_REAL(recvfrom, ssize_t(*)(int, void*, size_t, int, sockaddr*, socklen_t*));
-    if(should_fail(sys::recv))
+    COROSIO_FAULT_REAL(
+        recvfrom, ssize_t (*)(int, void*, size_t, int, sockaddr*, socklen_t*));
+    if (should_fail(sys::recv))
         return -1;
     return real(fd, b, n, f, a, l);
 }
 
-extern "C" int __poll_chk(pollfd* p, nfds_t n, int t, size_t)
+extern "C" int
+__poll_chk(pollfd* p, nfds_t n, int t, size_t)
 {
     return ::poll(p, n, t);
 }
 
-extern "C" ssize_t __pread64_chk(int fd, void* b, size_t n, off64_t o, size_t)
+extern "C" ssize_t
+__pread64_chk(int fd, void* b, size_t n, off64_t o, size_t)
 {
-    COROSIO_FAULT_REAL(pread64, ssize_t(*)(int, void*, size_t, off64_t));
-    if(should_fail(sys::read))
+    COROSIO_FAULT_REAL(pread64, ssize_t (*)(int, void*, size_t, off64_t));
+    if (should_fail(sys::read))
         return -1;
     return real(fd, b, n, o);
 }
@@ -724,12 +835,14 @@ extern "C" ssize_t __pread64_chk(int fd, void* b, size_t n, off64_t o, size_t)
 // passing an explicit dummy 0 keeps that read well-defined instead of
 // pulling an unsupplied argument. glibc's own __open_2 aborts if
 // O_CREAT is set without a mode — no corosio call site does that.
-extern "C" int __open_2(char const* path, int flags)
+extern "C" int
+__open_2(char const* path, int flags)
 {
     return ::open(path, flags, 0);
 }
 
-extern "C" int __gethostname_chk(char* b, size_t n, size_t) noexcept
+extern "C" int
+__gethostname_chk(char* b, size_t n, size_t) noexcept
 {
     return ::gethostname(b, n);
 }
@@ -747,21 +860,22 @@ namespace {
 // directly instead. Index 0 is the executable, and only a leading
 // basename counts: a static build whose own path happens to contain
 // the library name must not read as shared.
-int corosio_image_index() noexcept
+int
+corosio_image_index() noexcept
 {
     // The main library only: the char after the prefix must be '.',
     // so the openssl/wolfssl satellite dylibs (which share the prefix
     // but import no libc socket family) are not mistaken for it.
     static constexpr char prefix[] = "libboost_corosio";
-    for(std::uint32_t i = 1, n = ::_dyld_image_count(); i < n; ++i)
+    for (std::uint32_t i = 1, n = ::_dyld_image_count(); i < n; ++i)
     {
         char const* path = ::_dyld_get_image_name(i);
-        if(!path)
+        if (!path)
             continue;
         char const* slash = std::strrchr(path, '/');
-        char const* base = slash ? slash + 1 : path;
-        if(std::strncmp(base, prefix, sizeof(prefix) - 1) == 0 &&
-           base[sizeof(prefix) - 1] == '.')
+        char const* base  = slash ? slash + 1 : path;
+        if (std::strncmp(base, prefix, sizeof(prefix) - 1) == 0 &&
+            base[sizeof(prefix) - 1] == '.')
             return static_cast<int>(i);
     }
     return -1;
@@ -769,18 +883,19 @@ int corosio_image_index() noexcept
 
 // dyld's index for the loaded OpenSSL satellite dylib, or -1 when the
 // engine is not linked into this process.
-int corosio_openssl_image_index() noexcept
+int
+corosio_openssl_image_index() noexcept
 {
     static constexpr char prefix[] = "libboost_corosio_openssl";
-    for(std::uint32_t i = 1, n = ::_dyld_image_count(); i < n; ++i)
+    for (std::uint32_t i = 1, n = ::_dyld_image_count(); i < n; ++i)
     {
         char const* path = ::_dyld_get_image_name(i);
-        if(!path)
+        if (!path)
             continue;
         char const* slash = std::strrchr(path, '/');
-        char const* base = slash ? slash + 1 : path;
-        if(std::strncmp(base, prefix, sizeof(prefix) - 1) == 0 &&
-           base[sizeof(prefix) - 1] == '.')
+        char const* base  = slash ? slash + 1 : path;
+        if (std::strncmp(base, prefix, sizeof(prefix) - 1) == 0 &&
+            base[sizeof(prefix) - 1] == '.')
             return static_cast<int>(i);
     }
     return -1;
@@ -789,7 +904,8 @@ int corosio_openssl_image_index() noexcept
 } // namespace
 #endif
 
-bool corosio_is_shared() noexcept
+bool
+corosio_is_shared() noexcept
 {
 #if defined(__APPLE__)
     return corosio_image_index() >= 0;
@@ -815,13 +931,13 @@ struct census_entry
 };
 
 #define COROSIO_FAULT_CENSUS(name) \
-    { #name, reinterpret_cast<void const*>(&::name), sys::name }
+    {#name, reinterpret_cast<void const*>(&::name), sys::name}
 
 // A second spelling (the glibc fortify wrappers, the Darwin `$`
 // suffixes) shares the arm of the name it wraps, so it carries no
 // enumerator of its own.
 #define COROSIO_FAULT_CENSUS_ALIAS(name) \
-    { #name, reinterpret_cast<void const*>(&::name), sys::count_ }
+    {#name, reinterpret_cast<void const*>(&::name), sys::count_}
 
 } // namespace
 
@@ -831,7 +947,8 @@ struct census_entry
 // above are the only declaration these need.
 extern "C" ssize_t __read_chk(int, void*, size_t, size_t);
 extern "C" ssize_t __recv_chk(int, void*, size_t, size_t, int);
-extern "C" ssize_t __recvfrom_chk(int, void*, size_t, size_t, int, sockaddr*, socklen_t*);
+extern "C" ssize_t
+__recvfrom_chk(int, void*, size_t, size_t, int, sockaddr*, socklen_t*);
 extern "C" int __poll_chk(pollfd*, nfds_t, int, size_t);
 extern "C" ssize_t __pread64_chk(int, void*, size_t, off64_t, size_t);
 extern "C" int __open_2(char const*, int);
@@ -847,63 +964,92 @@ namespace {
 // seeks with lseek, and the epoll/timerfd/eventfd family and the glibc
 // fortify aliases have no Darwin counterpart at all.
 [[maybe_unused]] census_entry const census[] = {
-    COROSIO_FAULT_CENSUS(socket), COROSIO_FAULT_CENSUS(socketpair),
-    COROSIO_FAULT_CENSUS(bind), COROSIO_FAULT_CENSUS(listen),
+    COROSIO_FAULT_CENSUS(socket),
+    COROSIO_FAULT_CENSUS(socketpair),
+    COROSIO_FAULT_CENSUS(bind),
+    COROSIO_FAULT_CENSUS(listen),
     COROSIO_FAULT_CENSUS(accept),
-    COROSIO_FAULT_CENSUS(connect), COROSIO_FAULT_CENSUS(getsockname),
-    COROSIO_FAULT_CENSUS(getpeername), COROSIO_FAULT_CENSUS(getsockopt),
-    COROSIO_FAULT_CENSUS(setsockopt), COROSIO_FAULT_CENSUS(shutdown),
-    COROSIO_FAULT_CENSUS(close), COROSIO_FAULT_CENSUS(read),
-    COROSIO_FAULT_CENSUS(write), COROSIO_FAULT_CENSUS(readv),
-    COROSIO_FAULT_CENSUS(preadv), COROSIO_FAULT_CENSUS(pwritev),
-    COROSIO_FAULT_CENSUS(recv), COROSIO_FAULT_CENSUS(send),
-    COROSIO_FAULT_CENSUS(recvmsg), COROSIO_FAULT_CENSUS(sendmsg),
-    COROSIO_FAULT_CENSUS(poll), COROSIO_FAULT_CENSUS(pipe),
-    COROSIO_FAULT_CENSUS(fcntl), COROSIO_FAULT_CENSUS(ioctl),
-    COROSIO_FAULT_CENSUS(open), COROSIO_FAULT_CENSUS(fstat),
+    COROSIO_FAULT_CENSUS(connect),
+    COROSIO_FAULT_CENSUS(getsockname),
+    COROSIO_FAULT_CENSUS(getpeername),
+    COROSIO_FAULT_CENSUS(getsockopt),
+    COROSIO_FAULT_CENSUS(setsockopt),
+    COROSIO_FAULT_CENSUS(shutdown),
+    COROSIO_FAULT_CENSUS(close),
+    COROSIO_FAULT_CENSUS(read),
+    COROSIO_FAULT_CENSUS(write),
+    COROSIO_FAULT_CENSUS(readv),
+    COROSIO_FAULT_CENSUS(preadv),
+    COROSIO_FAULT_CENSUS(pwritev),
+    COROSIO_FAULT_CENSUS(recv),
+    COROSIO_FAULT_CENSUS(send),
+    COROSIO_FAULT_CENSUS(recvmsg),
+    COROSIO_FAULT_CENSUS(sendmsg),
+    COROSIO_FAULT_CENSUS(poll),
+    COROSIO_FAULT_CENSUS(pipe),
+    COROSIO_FAULT_CENSUS(fcntl),
+    COROSIO_FAULT_CENSUS(ioctl),
+    COROSIO_FAULT_CENSUS(open),
+    COROSIO_FAULT_CENSUS(fstat),
     COROSIO_FAULT_CENSUS(ftruncate),
-    COROSIO_FAULT_CENSUS(fsync), COROSIO_FAULT_CENSUS(unlink),
-    COROSIO_FAULT_CENSUS(sigaction), COROSIO_FAULT_CENSUS(pthread_create),
+    COROSIO_FAULT_CENSUS(fsync),
+    COROSIO_FAULT_CENSUS(unlink),
+    COROSIO_FAULT_CENSUS(sigaction),
+    COROSIO_FAULT_CENSUS(pthread_create),
 #if defined(__linux__) || defined(__APPLE__)
-    COROSIO_FAULT_CENSUS(BIO_new_mem_buf), COROSIO_FAULT_CENSUS(BIO_new_bio_pair),
-    COROSIO_FAULT_CENSUS(SSL_CTX_new), COROSIO_FAULT_CENSUS(SSL_new),
-    COROSIO_FAULT_CENSUS(SSL_clear), COROSIO_FAULT_CENSUS(SSL_set_session),
-    COROSIO_FAULT_CENSUS(X509_STORE_add_cert), COROSIO_FAULT_CENSUS(X509_dup),
-    COROSIO_FAULT_CENSUS(BIO_read), COROSIO_FAULT_CENSUS(BIO_nwrite0),
+    COROSIO_FAULT_CENSUS(BIO_new_mem_buf),
+    COROSIO_FAULT_CENSUS(BIO_new_bio_pair),
+    COROSIO_FAULT_CENSUS(SSL_CTX_new),
+    COROSIO_FAULT_CENSUS(SSL_new),
+    COROSIO_FAULT_CENSUS(SSL_clear),
+    COROSIO_FAULT_CENSUS(SSL_set_session),
+    COROSIO_FAULT_CENSUS(X509_STORE_add_cert),
+    COROSIO_FAULT_CENSUS(X509_dup),
+    COROSIO_FAULT_CENSUS(BIO_read),
+    COROSIO_FAULT_CENSUS(BIO_nwrite0),
     COROSIO_FAULT_CENSUS(SSL_get0_param),
     COROSIO_FAULT_CENSUS(X509_VERIFY_PARAM_set1_host),
 #endif // __linux__ || __APPLE__
     COROSIO_FAULT_CENSUS(getaddrinfo),
     COROSIO_FAULT_CENSUS(freeaddrinfo),
-    COROSIO_FAULT_CENSUS(getnameinfo), COROSIO_FAULT_CENSUS(gethostname),
+    COROSIO_FAULT_CENSUS(getnameinfo),
+    COROSIO_FAULT_CENSUS(gethostname),
 #if defined(__linux__) || defined(__FreeBSD__)
-    COROSIO_FAULT_CENSUS(fdatasync), COROSIO_FAULT_CENSUS(posix_fadvise),
+    COROSIO_FAULT_CENSUS(fdatasync),
+    COROSIO_FAULT_CENSUS(posix_fadvise),
 #endif
-    // Darwin spells select with an asm label and gets its two aliases
-    // below instead of the plain name.
+// Darwin spells select with an asm label and gets its two aliases
+// below instead of the plain name.
 #if !defined(__APPLE__)
     COROSIO_FAULT_CENSUS(select),
 #endif
 #if defined(__linux__)
-    COROSIO_FAULT_CENSUS(accept4), COROSIO_FAULT_CENSUS(lseek),
-    COROSIO_FAULT_CENSUS(epoll_create1), COROSIO_FAULT_CENSUS(epoll_ctl),
-    COROSIO_FAULT_CENSUS(epoll_wait), COROSIO_FAULT_CENSUS(eventfd),
-    COROSIO_FAULT_CENSUS(timerfd_create), COROSIO_FAULT_CENSUS(timerfd_settime),
-    COROSIO_FAULT_CENSUS_ALIAS(__read_chk), COROSIO_FAULT_CENSUS_ALIAS(__recv_chk),
-    COROSIO_FAULT_CENSUS_ALIAS(__recvfrom_chk), COROSIO_FAULT_CENSUS_ALIAS(__poll_chk),
+    COROSIO_FAULT_CENSUS(accept4),
+    COROSIO_FAULT_CENSUS(lseek),
+    COROSIO_FAULT_CENSUS(epoll_create1),
+    COROSIO_FAULT_CENSUS(epoll_ctl),
+    COROSIO_FAULT_CENSUS(epoll_wait),
+    COROSIO_FAULT_CENSUS(eventfd),
+    COROSIO_FAULT_CENSUS(timerfd_create),
+    COROSIO_FAULT_CENSUS(timerfd_settime),
+    COROSIO_FAULT_CENSUS_ALIAS(__read_chk),
+    COROSIO_FAULT_CENSUS_ALIAS(__recv_chk),
+    COROSIO_FAULT_CENSUS_ALIAS(__recvfrom_chk),
+    COROSIO_FAULT_CENSUS_ALIAS(__poll_chk),
     COROSIO_FAULT_CENSUS_ALIAS(__pread64_chk),
-    COROSIO_FAULT_CENSUS_ALIAS(__open_2), COROSIO_FAULT_CENSUS_ALIAS(__gethostname_chk),
+    COROSIO_FAULT_CENSUS_ALIAS(__open_2),
+    COROSIO_FAULT_CENSUS_ALIAS(__gethostname_chk),
 #endif
 #if defined(__APPLE__) || defined(__FreeBSD__)
-    COROSIO_FAULT_CENSUS(writev), COROSIO_FAULT_CENSUS(kqueue),
+    COROSIO_FAULT_CENSUS(writev),
+    COROSIO_FAULT_CENSUS(kqueue),
     COROSIO_FAULT_CENSUS(kevent),
 #endif
 #if defined(__APPLE__)
-    { "select", reinterpret_cast<void const*>(&::corosio_fault_select),
-        sys::select },
-    { "select$DARWIN_EXTSN",
-        reinterpret_cast<void const*>(&::corosio_fault_select_extsn),
-        sys::count_ },
+    {"select", reinterpret_cast<void const*>(&::corosio_fault_select),
+     sys::select},
+    {"select$DARWIN_EXTSN",
+     reinterpret_cast<void const*>(&::corosio_fault_select_extsn), sys::count_},
 #endif
 #if BOOST_COROSIO_HAVE_LIBURING
     COROSIO_FAULT_CENSUS(io_uring_queue_init_params),
@@ -925,7 +1071,8 @@ bool census_live[census_count];
 // Alias entries name a second spelling of a symbol the library may or
 // may not have been built to call: the glibc fortify wrappers and the
 // Darwin `$` suffixes.
-[[maybe_unused]] bool is_alias_entry(char const* name) noexcept
+[[maybe_unused]] bool
+is_alias_entry(char const* name) noexcept
 {
     return std::strncmp(name, "__", 2) == 0 || std::strchr(name, '$');
 }
@@ -933,7 +1080,8 @@ bool census_live[census_count];
 // The OpenSSL entry points, distinguished by their library prefix (no
 // libc symbol begins with any of these). They live in the
 // libboost_corosio_openssl satellite, not the main library.
-[[maybe_unused]] bool is_openssl_entry(char const* name) noexcept
+[[maybe_unused]] bool
+is_openssl_entry(char const* name) noexcept
 {
     return std::strncmp(name, "BIO_", 4) == 0 ||
         std::strncmp(name, "SSL_", 4) == 0 ||
@@ -963,30 +1111,33 @@ struct rebind_target
 // the classic lazy and non-lazy pointer sections, plus the `__got`
 // family a chained-fixups image uses in their place.
 template<class F>
-void for_each_import_section(mach_header_64 const* hdr, std::intptr_t slide,
-    F&& f) noexcept
+void
+for_each_import_section(
+    mach_header_64 const* hdr, std::intptr_t slide, F&& f) noexcept
 {
     auto const* cmd = reinterpret_cast<load_command const*>(hdr + 1);
-    for(std::uint32_t i = 0; i < hdr->ncmds; ++i)
+    for (std::uint32_t i = 0; i < hdr->ncmds; ++i)
     {
-        if(cmd->cmd == LC_SEGMENT_64)
+        if (cmd->cmd == LC_SEGMENT_64)
         {
             auto const* seg = reinterpret_cast<segment_command_64 const*>(cmd);
             auto const* sec = reinterpret_cast<section_64 const*>(seg + 1);
-            for(std::uint32_t j = 0; j < seg->nsects; ++j, ++sec)
+            for (std::uint32_t j = 0; j < seg->nsects; ++j, ++sec)
             {
                 std::uint32_t const type = sec->flags & SECTION_TYPE;
-                if(type != S_NON_LAZY_SYMBOL_POINTERS &&
+                if (type != S_NON_LAZY_SYMBOL_POINTERS &&
                     type != S_LAZY_SYMBOL_POINTERS &&
                     std::strncmp(sec->sectname, "__got", 16) != 0 &&
                     std::strncmp(sec->sectname, "__auth_got", 16) != 0)
                     continue;
                 std::size_t const count =
                     static_cast<std::size_t>(sec->size) / sizeof(void*);
-                if(count == 0)
+                if (count == 0)
                     continue;
-                f(seg, sec, reinterpret_cast<void**>(
-                    static_cast<std::uintptr_t>(sec->addr) + slide), count);
+                f(seg, sec,
+                  reinterpret_cast<void**>(
+                      static_cast<std::uintptr_t>(sec->addr) + slide),
+                  count);
             }
         }
         cmd = reinterpret_cast<load_command const*>(
@@ -997,22 +1148,24 @@ void for_each_import_section(mach_header_64 const* hdr, std::intptr_t slide,
 // Ask the kernel for `prot` over the pages covering the byte range.
 // VM_PROT_COPY asks for a private copy of a file-backed mapping, which
 // is what a plain write request is refused on.
-bool protect_pages(void* addr, std::size_t bytes, vm_prot_t prot) noexcept
+bool
+protect_pages(void* addr, std::size_t bytes, vm_prot_t prot) noexcept
 {
-    auto const page = static_cast<vm_address_t>(::getpagesize());
-    auto const start = reinterpret_cast<vm_address_t>(addr);
+    auto const page          = static_cast<vm_address_t>(::getpagesize());
+    auto const start         = reinterpret_cast<vm_address_t>(addr);
     vm_address_t const begin = start & ~(page - 1);
     vm_size_t const len = ((start + bytes + page - 1) & ~(page - 1)) - begin;
-    if(::vm_protect(mach_task_self(), begin, len, FALSE, prot)
-        == KERN_SUCCESS)
+    if (::vm_protect(mach_task_self(), begin, len, FALSE, prot) == KERN_SUCCESS)
         return true;
-    return ::vm_protect(mach_task_self(), begin, len, FALSE,
-        prot | VM_PROT_COPY) == KERN_SUCCESS;
+    return ::vm_protect(
+               mach_task_self(), begin, len, FALSE, prot | VM_PROT_COPY) ==
+        KERN_SUCCESS;
 }
 
 // True for a segment dyld maps read-only again once it has applied its
 // fixups, which is the one that has to be reprotected after the write.
-bool is_const_segment(segment_command_64 const* seg) noexcept
+bool
+is_const_segment(segment_command_64 const* seg) noexcept
 {
     char name[17] = {};
     std::memcpy(name, seg->segname, 16);
@@ -1023,46 +1176,52 @@ bool is_const_segment(segment_command_64 const* seg) noexcept
 // `ok`, and leaves the counting to the verification pass so that what
 // is checked is the memory as it stands afterwards, not what this
 // pass believes it wrote.
-void rebind_imports(mach_header_64 const* hdr, std::intptr_t slide,
-    rebind_target const* targets, std::size_t n, bool& ok) noexcept
+void
+rebind_imports(
+    mach_header_64 const* hdr,
+    std::intptr_t slide,
+    rebind_target const* targets,
+    std::size_t n,
+    bool& ok) noexcept
 {
-    for_each_import_section(hdr, slide,
-        [&](segment_command_64 const* seg, section_64 const* sec,
-            void** slots, std::size_t count)
-        {
+    for_each_import_section(
+        hdr, slide,
+        [&](segment_command_64 const* seg, section_64 const* sec, void** slots,
+            std::size_t count) {
             std::size_t hits = 0;
-            for(std::size_t i = 0; i < count; ++i)
+            for (std::size_t i = 0; i < count; ++i)
             {
-                for(std::size_t k = 0; k < n; ++k)
+                for (std::size_t k = 0; k < n; ++k)
                 {
-                    if(slots[i] == targets[k].real)
+                    if (slots[i] == targets[k].real)
                         ++hits;
                 }
             }
-            if(hits == 0)
+            if (hits == 0)
                 return;
-            if(!protect_pages(slots, count * sizeof(void*),
-                VM_PROT_READ | VM_PROT_WRITE))
+            if (!protect_pages(
+                    slots, count * sizeof(void*), VM_PROT_READ | VM_PROT_WRITE))
             {
-                std::fprintf(stderr,
+                std::fprintf(
+                    stderr,
                     "fault harness: %.16s,%.16s refused to become writable\n",
                     seg->segname, sec->sectname);
                 ok = false;
                 return;
             }
-            for(std::size_t i = 0; i < count; ++i)
+            for (std::size_t i = 0; i < count; ++i)
             {
-                for(std::size_t k = 0; k < n; ++k)
+                for (std::size_t k = 0; k < n; ++k)
                 {
-                    if(slots[i] != targets[k].real)
+                    if (slots[i] != targets[k].real)
                         continue;
                     slots[i] = const_cast<void*>(targets[k].hook);
                     break;
                 }
             }
-            if(is_const_segment(seg))
-                std::ignore = protect_pages(slots, count * sizeof(void*),
-                    VM_PROT_READ);
+            if (is_const_segment(seg))
+                std::ignore =
+                    protect_pages(slots, count * sizeof(void*), VM_PROT_READ);
         });
 }
 
@@ -1070,23 +1229,28 @@ void rebind_imports(mach_header_64 const* hdr, std::intptr_t slide,
 // that still hold libSystem's entry point. `scanned` carries the size
 // of the search, which is what separates a rewrite that missed a
 // symbol from a Mach-O layout this walk does not recognise at all.
-void tally_imports(mach_header_64 const* hdr, std::intptr_t slide,
-    rebind_target* targets, std::size_t n, std::size_t& sections,
+void
+tally_imports(
+    mach_header_64 const* hdr,
+    std::intptr_t slide,
+    rebind_target* targets,
+    std::size_t n,
+    std::size_t& sections,
     std::size_t& scanned) noexcept
 {
-    for_each_import_section(hdr, slide,
+    for_each_import_section(
+        hdr, slide,
         [&](segment_command_64 const*, section_64 const*, void** slots,
-            std::size_t count)
-        {
+            std::size_t count) {
             ++sections;
             scanned += count;
-            for(std::size_t i = 0; i < count; ++i)
+            for (std::size_t i = 0; i < count; ++i)
             {
-                for(std::size_t k = 0; k < n; ++k)
+                for (std::size_t k = 0; k < n; ++k)
                 {
-                    if(slots[i] == targets[k].hook)
+                    if (slots[i] == targets[k].hook)
                         ++targets[k].rebound;
-                    else if(slots[i] == targets[k].real)
+                    else if (slots[i] == targets[k].real)
                         ++targets[k].unbound;
                 }
             }
@@ -1098,7 +1262,8 @@ void tally_imports(mach_header_64 const* hdr, std::intptr_t slide,
 // dylibs, never from the main executable, and the two-level namespace
 // leaves an executable-defined shadow out of the search entirely, so
 // this is the only interposition available to a test binary.
-void interpose_corosio_dylib() noexcept
+void
+interpose_corosio_dylib() noexcept
 {
 #if defined(__has_feature)
 #if __has_feature(ptrauth_calls)
@@ -1109,40 +1274,42 @@ void interpose_corosio_dylib() noexcept
 #endif
 #endif
     int const image = corosio_image_index();
-    if(image < 0)
+    if (image < 0)
         die("fault harness: the corosio dylib left dyld's image list");
     auto const* hdr = reinterpret_cast<mach_header_64 const*>(
         ::_dyld_get_image_header(static_cast<std::uint32_t>(image)));
-    if(!hdr || hdr->magic != MH_MAGIC_64)
+    if (!hdr || hdr->magic != MH_MAGIC_64)
         die("fault harness: the corosio dylib is not a 64-bit Mach-O image");
     auto const slide =
         ::_dyld_get_image_vmaddr_slide(static_cast<std::uint32_t>(image));
 
     rebind_target targets[sizeof(census) / sizeof(census[0])] = {};
-    std::size_t n = 0;
-    for(auto const& e : census)
+    std::size_t n                                             = 0;
+    for (auto const& e : census)
     {
         // An alias is a second spelling the library is not known to
         // bind; libSystem may even give both spellings one entry
         // point, which a value match cannot tell apart. OpenSSL names
         // belong to the satellite dylib, handled by its own pass.
-        if(is_alias_entry(e.name) || is_openssl_entry(e.name))
+        if (is_alias_entry(e.name) || is_openssl_entry(e.name))
             continue;
         void* real = ::dlsym(RTLD_NEXT, e.name);
-        if(!real)
+        if (!real)
         {
             char msg[160];
-            std::snprintf(msg, sizeof(msg),
+            std::snprintf(
+                msg, sizeof(msg),
                 "fault harness: %s has no implementation behind the shadow",
                 e.name);
             die(msg);
         }
-        for(std::size_t k = 0; k < n; ++k)
+        for (std::size_t k = 0; k < n; ++k)
         {
-            if(targets[k].real != real)
+            if (targets[k].real != real)
                 continue;
             char msg[192];
-            std::snprintf(msg, sizeof(msg),
+            std::snprintf(
+                msg, sizeof(msg),
                 "fault harness: %s and %s share one libSystem entry point",
                 targets[k].name, e.name);
             die(msg);
@@ -1157,29 +1324,35 @@ void interpose_corosio_dylib() noexcept
     rebind_imports(hdr, slide, targets, n, ok);
     std::size_t sections = 0, scanned = 0;
     tally_imports(hdr, slide, targets, n, sections, scanned);
-    for(std::size_t k = 0; k < n; ++k)
+    for (std::size_t k = 0; k < n; ++k)
     {
         auto const& t = targets[k];
-        if(t.unbound != 0)
+        if (t.unbound != 0)
         {
-            std::fprintf(stderr, "fault harness: %s still reaches libSystem "
-                "through %u of the dylib's import slots\n", t.name, t.unbound);
+            std::fprintf(
+                stderr,
+                "fault harness: %s still reaches libSystem "
+                "through %u of the dylib's import slots\n",
+                t.name, t.unbound);
             ok = false;
         }
         // A census name with no slot at all is as much a defect as one
         // that refused to move: every arm on it would sit dead.
-        if(t.rebound == 0)
+        if (t.rebound == 0)
         {
-            std::fprintf(stderr,
-                "fault harness: %s is not among the dylib's imports\n",
+            std::fprintf(
+                stderr, "fault harness: %s is not among the dylib's imports\n",
                 t.name);
             ok = false;
         }
     }
-    if(!ok)
+    if (!ok)
     {
-        std::fprintf(stderr, "fault harness: %zu import sections, %zu slots "
-            "scanned in %s\n", sections, scanned,
+        std::fprintf(
+            stderr,
+            "fault harness: %zu import sections, %zu slots "
+            "scanned in %s\n",
+            sections, scanned,
             ::_dyld_get_image_name(static_cast<std::uint32_t>(image)));
         die("fault harness: the corosio dylib's imports were not rebound");
     }
@@ -1192,52 +1365,54 @@ void interpose_corosio_dylib() noexcept
 // linker layout the rebinder cannot reach, from breaking every other
 // fault suite in the binary. `census_live` for the OpenSSL entries is
 // set here.
-void interpose_openssl_dylib() noexcept
+void
+interpose_openssl_dylib() noexcept
 {
     int const image = corosio_openssl_image_index();
-    if(image < 0)
+    if (image < 0)
         return;
     auto const* hdr = reinterpret_cast<mach_header_64 const*>(
         ::_dyld_get_image_header(static_cast<std::uint32_t>(image)));
-    if(!hdr || hdr->magic != MH_MAGIC_64)
+    if (!hdr || hdr->magic != MH_MAGIC_64)
         return;
     auto const slide =
         ::_dyld_get_image_vmaddr_slide(static_cast<std::uint32_t>(image));
 
     rebind_target targets[sizeof(census) / sizeof(census[0])] = {};
     std::size_t census_of[sizeof(census) / sizeof(census[0])] = {};
-    std::size_t n = 0;
-    for(std::size_t i = 0; i < census_count; ++i)
+    std::size_t n                                             = 0;
+    for (std::size_t i = 0; i < census_count; ++i)
     {
         auto const& e = census[i];
-        if(!is_openssl_entry(e.name))
+        if (!is_openssl_entry(e.name))
             continue;
         // Resolve the real function the same way the shadow will; if it
         // cannot be found here it would only die when first called, so
         // skip it and leave the entry not live.
         void* real = ::dlsym(RTLD_NEXT, e.name);
-        if(!real)
+        if (!real)
             continue;
         targets[n].name = e.name;
         targets[n].hook = e.hook;
         targets[n].real = real;
-        census_of[n] = i;
+        census_of[n]    = i;
         ++n;
     }
-    if(n == 0)
+    if (n == 0)
         return;
 
     bool ok = true;
     rebind_imports(hdr, slide, targets, n, ok);
     std::size_t sections = 0, scanned = 0;
     tally_imports(hdr, slide, targets, n, sections, scanned);
-    for(std::size_t k = 0; k < n; ++k)
+    for (std::size_t k = 0; k < n; ++k)
     {
         // Live only if every slot for the symbol moved to the hook.
         bool const bound = targets[k].rebound != 0 && targets[k].unbound == 0;
         census_live[census_of[k]] = bound;
-        if(!bound)
-            std::fprintf(stderr,
+        if (!bound)
+            std::fprintf(
+                stderr,
                 "fault harness: OpenSSL %s not interposed in the satellite "
                 "dylib (rebound %u, still real %u)\n",
                 targets[k].name, targets[k].rebound, targets[k].unbound);
@@ -1251,32 +1426,31 @@ void interpose_openssl_dylib() noexcept
 // on ELF the library binds through the executable's dynamic symbol
 // table, which -Bsymbolic or -fno-plt would bypass; on Mach-O the
 // binding has to be installed here first.
-int const readback = []
-{
+int const readback = [] {
     // A static build resolved the calls at link time, so every shadow
     // this platform has is reached by construction.
-    for(auto& live : census_live)
+    for (auto& live : census_live)
         live = true;
-    if(!corosio_is_shared())
+    if (!corosio_is_shared())
         return 0;
 #if defined(__APPLE__)
     interpose_corosio_dylib();
     // It dies unless every non-alias, non-OpenSSL name was rebound, so
     // surviving it settles those; the aliases it skipped bind nothing.
-    for(std::size_t i = 0; i < census_count; ++i)
+    for (std::size_t i = 0; i < census_count; ++i)
         census_live[i] = !is_alias_entry(census[i].name) &&
-                         !is_openssl_entry(census[i].name);
+            !is_openssl_entry(census[i].name);
     // The OpenSSL satellite is optional and its rebinding is best-effort;
     // this sets census_live for the entries it interposes.
     interpose_openssl_dylib();
 #else
     bool ok = true;
-    for(std::size_t i = 0; i < census_count; ++i)
+    for (std::size_t i = 0; i < census_count; ++i)
     {
-        auto const& e = census[i];
-        void* bound = ::dlsym(RTLD_DEFAULT, e.name);
+        auto const& e  = census[i];
+        void* bound    = ::dlsym(RTLD_DEFAULT, e.name);
         census_live[i] = (bound == e.hook);
-        if(bound == e.hook)
+        if (bound == e.hook)
             continue;
         // A null binding means this libc does not expose the name as a
         // dynamic symbol at all: an old-glibc inline like `fstat` that
@@ -1284,16 +1458,17 @@ int const readback = []
         // through a PLT slot and the shadow is simply inapplicable. An
         // alias is likewise a name the library was not built to call.
         // Neither is a broken interposition, so leave the entry not live.
-        if(bound == nullptr || is_alias_entry(e.name))
+        if (bound == nullptr || is_alias_entry(e.name))
             continue;
         // A non-null binding to something other than our hook is the real
         // failure: the call resolved to the actual libc function,
         // bypassing the shadow (-Bsymbolic, -fno-plt).
-        std::fprintf(stderr, "fault harness: %s is bound to %p, hook is %p\n",
-            e.name, bound, e.hook);
+        std::fprintf(
+            stderr, "fault harness: %s is bound to %p, hook is %p\n", e.name,
+            bound, e.hook);
         ok = false;
     }
-    if(!ok)
+    if (!ok)
         die("fault harness: shadows are not interposing libboost_corosio.so");
 #endif
     return 0;
@@ -1301,24 +1476,25 @@ int const readback = []
 
 } // namespace
 
-bool hook_is_live(sys which) noexcept
+bool
+hook_is_live(sys which) noexcept
 {
     // Not a symbol: the replacement allocation functions always link.
-    if(which == sys::cpp_new)
+    if (which == sys::cpp_new)
         return true;
     // Not a symbol: it works by clamping the ring liburing's own
     // shadows drive, so it lives exactly when they do.
-    if(which == sys::uring_sqe_full || which == sys::uring_sq_fill)
+    if (which == sys::uring_sqe_full || which == sys::uring_sq_fill)
         which = sys::io_uring_submit;
     // Not a symbol either: it is a slice of the kevent shadow.
-    if(which == sys::kevent_register)
+    if (which == sys::kevent_register)
         which = sys::kevent;
-    for(std::size_t i = 0; i < census_count; ++i)
+    for (std::size_t i = 0; i < census_count; ++i)
     {
-        if(census[i].id == which && census_live[i])
+        if (census[i].id == which && census_live[i])
             return true;
     }
     return false;
 }
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault

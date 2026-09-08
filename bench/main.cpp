@@ -42,8 +42,7 @@ print_usage(char const* program_name)
                  "(default: 3.0)\n";
     std::cout << "  --warmup <secs>     Self-warmup duration per benchmark "
                  "(default: 0,\n";
-    std::cout
-        << "                      disabled; try 0.5 for rigor)\n";
+    std::cout << "                      disabled; try 0.5 for rigor)\n";
     std::cout << "  --output <file>     Write JSON results to file\n";
     std::cout << "  --enable-microbenchmarks\n";
     std::cout
@@ -73,15 +72,25 @@ template<class BackendTag>
 void
 add_corosio_suites(bench::benchmark_runner& runner, BackendTag)
 {
-    runner.add_suite("corosio", corosio_bench::make_io_context_suite<BackendTag{}>());
-    runner.add_suite("corosio", corosio_bench::make_socket_throughput_suite<BackendTag{}>());
-    runner.add_suite("corosio", corosio_bench::make_socket_latency_suite<BackendTag{}>());
-    runner.add_suite("corosio", corosio_bench::make_http_server_suite<BackendTag{}>());
-    runner.add_suite("corosio", corosio_bench::make_accept_churn_suite<BackendTag{}>());
-    runner.add_suite("corosio", corosio_bench::make_fan_out_suite<BackendTag{}>());
+    runner.add_suite(
+        "corosio", corosio_bench::make_io_context_suite<BackendTag{}>());
+    runner.add_suite(
+        "corosio", corosio_bench::make_socket_throughput_suite<BackendTag{}>());
+    runner.add_suite(
+        "corosio", corosio_bench::make_socket_latency_suite<BackendTag{}>());
+    runner.add_suite(
+        "corosio", corosio_bench::make_http_server_suite<BackendTag{}>());
+    runner.add_suite(
+        "corosio", corosio_bench::make_accept_churn_suite<BackendTag{}>());
+    runner.add_suite(
+        "corosio", corosio_bench::make_fan_out_suite<BackendTag{}>());
 #if BOOST_COROSIO_POSIX
-    runner.add_suite("corosio", corosio_bench::make_local_socket_throughput_suite<BackendTag{}>());
-    runner.add_suite("corosio", corosio_bench::make_local_socket_latency_suite<BackendTag{}>());
+    runner.add_suite(
+        "corosio",
+        corosio_bench::make_local_socket_throughput_suite<BackendTag{}>());
+    runner.add_suite(
+        "corosio",
+        corosio_bench::make_local_socket_latency_suite<BackendTag{}>());
 #endif
 }
 
@@ -102,14 +111,24 @@ add_asio_suites(bench::benchmark_runner& runner)
 void
 add_asio_callback_suites(bench::benchmark_runner& runner)
 {
-    runner.add_suite("asio_callback", asio_callback_bench::make_io_context_suite());
-    runner.add_suite("asio_callback", asio_callback_bench::make_socket_throughput_suite());
-    runner.add_suite("asio_callback", asio_callback_bench::make_socket_latency_suite());
-    runner.add_suite("asio_callback", asio_callback_bench::make_http_server_suite());
-    runner.add_suite("asio_callback", asio_callback_bench::make_accept_churn_suite());
-    runner.add_suite("asio_callback", asio_callback_bench::make_fan_out_suite());
-    runner.add_suite("asio_callback", asio_callback_bench::make_local_socket_throughput_suite());
-    runner.add_suite("asio_callback", asio_callback_bench::make_local_socket_latency_suite());
+    runner.add_suite(
+        "asio_callback", asio_callback_bench::make_io_context_suite());
+    runner.add_suite(
+        "asio_callback", asio_callback_bench::make_socket_throughput_suite());
+    runner.add_suite(
+        "asio_callback", asio_callback_bench::make_socket_latency_suite());
+    runner.add_suite(
+        "asio_callback", asio_callback_bench::make_http_server_suite());
+    runner.add_suite(
+        "asio_callback", asio_callback_bench::make_accept_churn_suite());
+    runner.add_suite(
+        "asio_callback", asio_callback_bench::make_fan_out_suite());
+    runner.add_suite(
+        "asio_callback",
+        asio_callback_bench::make_local_socket_throughput_suite());
+    runner.add_suite(
+        "asio_callback",
+        asio_callback_bench::make_local_socket_latency_suite());
 }
 #endif
 
@@ -301,8 +320,7 @@ main(int argc, char* argv[])
                 std::cout << "Boost.Corosio Benchmarks\n";
                 std::cout << "========================\n";
                 std::cout << "Backend: " << name << "\n";
-                std::cout << "Duration: " << duration_s
-                          << "s per benchmark\n";
+                std::cout << "Duration: " << duration_s << "s per benchmark\n";
                 std::cout << "Warmup: " << warmup_duration_s
                           << "s per benchmark"
                           << (warmup_duration_s <= 0.0 ? " (disabled)" : "")

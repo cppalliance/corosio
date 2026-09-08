@@ -148,7 +148,7 @@ public:
     /// Assign the fd and initialize descriptor state for the acceptor.
     void init_acceptor_fd(int fd) noexcept
     {
-        fd_ = fd;
+        fd_            = fd;
         desc_state_.fd = fd;
         {
             std::lock_guard lock(desc_state_.mutex);
@@ -191,10 +191,16 @@ public:
         return svc_;
     }
 
-    void cancel() noexcept override { do_cancel(); }
+    void cancel() noexcept override
+    {
+        do_cancel();
+    }
 
     /// Close the acceptor (non-virtual, called by the service).
-    void close_socket() noexcept { do_close_socket(); }
+    void close_socket() noexcept
+    {
+        do_close_socket();
+    }
 
     std::coroutine_handle<> wait(
         std::coroutine_handle<> h,
@@ -279,8 +285,15 @@ template<
     class ImplBase,
     class Endpoint>
 void
-reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, Endpoint>::
-    cancel_single_op(Op& op) noexcept
+reactor_acceptor<
+    Derived,
+    Service,
+    Op,
+    AcceptOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::cancel_single_op(Op& op) noexcept
 {
     auto self = this->weak_from_this().lock();
     if (!self)
@@ -318,8 +331,15 @@ template<
     class ImplBase,
     class Endpoint>
 void
-reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, Endpoint>::
-    do_cancel() noexcept
+reactor_acceptor<
+    Derived,
+    Service,
+    Op,
+    AcceptOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::do_cancel() noexcept
 {
     cancel_single_op(acc_);
     cancel_single_op(wait_rd_);
@@ -337,8 +357,15 @@ template<
     class ImplBase,
     class Endpoint>
 void
-reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, Endpoint>::
-    do_close_socket() noexcept
+reactor_acceptor<
+    Derived,
+    Service,
+    Op,
+    AcceptOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::do_close_socket() noexcept
 {
     auto self = this->weak_from_this().lock();
     if (self)
@@ -403,8 +430,15 @@ template<
     class ImplBase,
     class Endpoint>
 native_handle_type
-reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, Endpoint>::
-    do_release_socket() noexcept
+reactor_acceptor<
+    Derived,
+    Service,
+    Op,
+    AcceptOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::do_release_socket() noexcept
 {
     auto self = this->weak_from_this().lock();
     if (self)
@@ -472,8 +506,15 @@ template<
     class ImplBase,
     class Endpoint>
 std::error_code
-reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, Endpoint>::
-    do_bind(Endpoint const& ep)
+reactor_acceptor<
+    Derived,
+    Service,
+    Op,
+    AcceptOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::do_bind(Endpoint const& ep)
 {
     sockaddr_storage storage{};
     socklen_t addrlen = to_sockaddr(ep, storage);
@@ -500,8 +541,15 @@ template<
     class ImplBase,
     class Endpoint>
 std::error_code
-reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, Endpoint>::
-    do_listen(int backlog)
+reactor_acceptor<
+    Derived,
+    Service,
+    Op,
+    AcceptOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::do_listen(int backlog)
 {
     if (::listen(fd_, backlog) < 0)
         return make_err(errno);
@@ -524,7 +572,15 @@ template<
     class ImplBase,
     class Endpoint>
 std::coroutine_handle<>
-reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, Endpoint>::
+reactor_acceptor<
+    Derived,
+    Service,
+    Op,
+    AcceptOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::
     do_wait(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -545,7 +601,7 @@ reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, En
         op.ec_out     = ec;
         op.fd         = this->fd_;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr   = this->shared_from_this();
+        op.impl_ptr = this->shared_from_this();
         op.complete(ENOTSUP, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -568,7 +624,7 @@ reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, En
         event         = reactor_event_error;
     }
 
-    auto& op      = *op_ptr;
+    auto& op = *op_ptr;
     op.reset();
     op.wait_event = event;
     op.h          = h;
@@ -576,7 +632,7 @@ reactor_acceptor<Derived, Service, Op, AcceptOp, WaitOp, DescState, ImplBase, En
     op.ec_out     = ec;
     op.fd         = this->fd_;
     op.start(token, static_cast<Derived*>(this));
-    op.impl_ptr   = this->shared_from_this();
+    op.impl_ptr = this->shared_from_this();
 
     // A listener's readiness can predate the wait: an adopted or
     // shared descriptor has history the reactor never saw, and an

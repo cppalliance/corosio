@@ -21,11 +21,11 @@ namespace boost::corosio {
 enum class message_flags : int
 {
     /// No flags set.
-    none         = 0,
+    none = 0,
     /// Peek at incoming data without consuming it (MSG_PEEK).
-    peek         = 1,
+    peek = 1,
     /// Send or receive out-of-band data (MSG_OOB).
-    out_of_band  = 2,
+    out_of_band = 2,
     /// Bypass routing tables (MSG_DONTROUTE).
     do_not_route = 4
 };
@@ -50,8 +50,7 @@ operator&(message_flags a, message_flags b) noexcept
 inline constexpr message_flags
 operator~(message_flags a) noexcept
 {
-    constexpr int mask =
-        static_cast<int>(message_flags::peek) |
+    constexpr int mask = static_cast<int>(message_flags::peek) |
         static_cast<int>(message_flags::out_of_band) |
         static_cast<int>(message_flags::do_not_route);
     return static_cast<message_flags>(~static_cast<int>(a) & mask);

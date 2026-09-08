@@ -69,7 +69,7 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto  ptr  = std::make_shared<File>(*sched_);
+        auto ptr   = std::make_shared<File>(*sched_);
         auto* impl = ptr.get();
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -107,18 +107,20 @@ public:
     }
 
     /// Return the scheduler used by files created by this service.
-    uring_scheduler& scheduler() noexcept { return *sched_; }
+    uring_scheduler& scheduler() noexcept
+    {
+        return *sched_;
+    }
 
 protected:
-    uring_scheduler*  sched_;
-    std::mutex           mutex_;
+    uring_scheduler* sched_;
+    std::mutex mutex_;
     intrusive_list<File> file_list_;
     std::unordered_map<File*, std::shared_ptr<File>> file_ptrs_;
 
 private:
-    uring_file_service_base(uring_file_service_base const&) = delete;
-    uring_file_service_base&
-    operator=(uring_file_service_base const&) = delete;
+    uring_file_service_base(uring_file_service_base const&)            = delete;
+    uring_file_service_base& operator=(uring_file_service_base const&) = delete;
 };
 
 } // namespace boost::corosio::detail

@@ -24,11 +24,12 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::broadcast[]
-void allow_sending_to_a_broadcast_address(corosio::io_context& ioc)
+void
+allow_sending_to_a_broadcast_address(corosio::io_context& ioc)
 {
     corosio::udp_socket sock(ioc);
     if (auto ec = sock.open(corosio::udp::v4()))
-        return;  // report the error
+        return; // report the error
 
     // Without this the kernel refuses a send_to a broadcast address; the
     // permission is opt-in so a stray destination cannot flood a segment.

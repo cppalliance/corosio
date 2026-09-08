@@ -119,7 +119,8 @@ public:
 protected:
     // Override in derived to add pre-close logic. No backend currently needs
     // it; the hooks exist so a trait can run fd-level teardown before close.
-    void pre_shutdown(Impl*) noexcept {} // LCOV_EXCL_LINE optional CRTP hook; no backend overrides it today
+    void pre_shutdown(Impl*) noexcept {
+    } // LCOV_EXCL_LINE optional CRTP hook; no backend overrides it today
     void pre_destroy(Impl*) noexcept {}
 
     std::unique_ptr<state_type> state_;

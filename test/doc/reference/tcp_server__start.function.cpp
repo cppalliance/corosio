@@ -26,15 +26,16 @@ namespace {
 // tag::start[]
 // Precondition: srv is bound and has workers, and is Stopped -- either
 // fresh, or after a complete prior stop()/run()/join() cycle.
-void restart_after_full_drain(corosio::io_context& ioc, corosio::tcp_server& srv)
+void
+restart_after_full_drain(corosio::io_context& ioc, corosio::tcp_server& srv)
 {
     using namespace std::chrono_literals;
 
     srv.start();
-    ioc.run_for( 1s );
-    srv.stop();       // 1. Signal shutdown
-    ioc.run();        // 2. Drain remaining completions
-    srv.join();       // 3. Wait for accept loops
+    ioc.run_for(1s);
+    srv.stop(); // 1. Signal shutdown
+    ioc.run();  // 2. Drain remaining completions
+    srv.join(); // 3. Wait for accept loops
 
     // 4. Restart the io_context itself: draining above ran its outstanding
     //    work to zero, which stops it, so io_context::run() below would

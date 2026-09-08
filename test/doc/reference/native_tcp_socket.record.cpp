@@ -31,13 +31,14 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 #if BOOST_COROSIO_HAS_EPOLL
 // tag::native_tcp_socket[]
-capy::task<> connect_and_read()
+capy::task<>
+connect_and_read()
 {
     corosio::native_io_context<corosio::epoll> ctx;
     corosio::native_tcp_socket<corosio::epoll> s(ctx);
@@ -47,8 +48,8 @@ capy::task<> connect_and_read()
         co_return;
 
     char buf[1024];
-    auto [ec2, n] = co_await s.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec2, n] =
+        co_await s.read_some(capy::mutable_buffer(buf, sizeof(buf)));
     if (ec2)
         co_return;
 }

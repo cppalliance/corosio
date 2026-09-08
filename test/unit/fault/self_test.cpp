@@ -54,12 +54,13 @@ extern "C" int corosio_fault_select_extsn(
 #if defined(__linux__)
 // Not in any public header the harness pulls in; only reachable via
 // _FORTIFY_SOURCE, which self_test.cpp does not build with.
-extern "C" {
-ssize_t __read_chk(int, void*, size_t, size_t);
-ssize_t __recv_chk(int, void*, size_t, size_t, int);
-int __poll_chk(pollfd*, nfds_t, int, size_t);
-int __open_2(char const*, int);
-int __gethostname_chk(char*, size_t, size_t) noexcept;
+extern "C"
+{
+    ssize_t __read_chk(int, void*, size_t, size_t);
+    ssize_t __recv_chk(int, void*, size_t, size_t, int);
+    int __poll_chk(pollfd*, nfds_t, int, size_t);
+    int __open_2(char const*, int);
+    int __gethostname_chk(char*, size_t, size_t) noexcept;
 }
 #endif
 
@@ -138,7 +139,7 @@ struct self_test
     {
         fault_scope f(sys::socket, EMFILE);
         int other = -2;
-        std::thread t([&]{ other = ::socket(AF_INET, SOCK_STREAM, 0); });
+        std::thread t([&] { other = ::socket(AF_INET, SOCK_STREAM, 0); });
         t.join();
         BOOST_TEST(other >= 0);
         BOOST_TEST(!f.fired());
@@ -153,11 +154,10 @@ struct self_test
     void testAnyThreadFires()
     {
         fault_scope f(sys::socket, EMFILE, 1, any_thread);
-        int other = -2;
+        int other       = -2;
         int other_errno = 0;
-        std::thread t([&]
-        {
-            other = ::socket(AF_INET, SOCK_STREAM, 0);
+        std::thread t([&] {
+            other       = ::socket(AF_INET, SOCK_STREAM, 0);
             other_errno = errno;
         });
         t.join();
@@ -191,7 +191,7 @@ struct self_test
             fault_scope f(sys::socket, EMFILE, 1, any_thread);
         }
         int other = -2;
-        std::thread t([&]{ other = ::socket(AF_INET, SOCK_STREAM, 0); });
+        std::thread t([&] { other = ::socket(AF_INET, SOCK_STREAM, 0); });
         t.join();
         BOOST_TEST(other >= 0);
         ::close(other);
@@ -205,8 +205,7 @@ struct self_test
         ssize_t n = -2;
         {
             auto f = fault_scope::returning_any_thread(sys::read, 3);
-            std::thread t([&]
-            {
+            std::thread t([&] {
                 char buf[16];
                 n = ::read(sv[1], buf, sizeof(buf));
             });
@@ -295,8 +294,7 @@ struct self_test
         // One representative call per shadow, each expected to fail.
         int fd = ::socket(AF_INET, SOCK_STREAM, 0);
         BOOST_TEST(fd >= 0);
-        auto expect = [&](sys s, auto&& call)
-        {
+        auto expect = [&](sys s, auto&& call) {
             fault_scope f(s, EPERM);
             auto r = call();
             BOOST_TEST(f.fired());
@@ -306,11 +304,11 @@ struct self_test
         sockaddr_in sa{};
         sa.sin_family = AF_INET;
         socklen_t len = sizeof(sa);
-        int one = 1;
+        int one       = 1;
         char buf[4];
         iovec iov{buf, sizeof(buf)};
         msghdr mh{};
-        mh.msg_iov = &iov;
+        mh.msg_iov    = &iov;
         mh.msg_iovlen = 1;
         pollfd pfd{fd, POLLIN, 0};
         int pf[2];
@@ -323,68 +321,99 @@ struct self_test
         FD_ZERO(&fds);
         int sv[2];
 
-        expect(sys::socketpair, [&]{ return ::socketpair(AF_UNIX, SOCK_STREAM, 0, sv); });
-        expect(sys::bind, [&]{ return ::bind(fd, (sockaddr*)&sa, sizeof(sa)); });
-        expect(sys::listen, [&]{ return ::listen(fd, 1); });
-        expect(sys::accept, [&]{ return ::accept(fd, nullptr, nullptr); });
-        expect(sys::connect, [&]{ return ::connect(fd, (sockaddr*)&sa, sizeof(sa)); });
-        expect(sys::getsockname, [&]{ return ::getsockname(fd, (sockaddr*)&sa, &len); });
-        expect(sys::getpeername, [&]{ return ::getpeername(fd, (sockaddr*)&sa, &len); });
-        expect(sys::getsockopt, [&]{ len = sizeof(one); return ::getsockopt(fd, SOL_SOCKET, SO_TYPE, &one, &len); });
-        expect(sys::setsockopt, [&]{ return ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)); });
-        expect(sys::shutdown, [&]{ return ::shutdown(fd, SHUT_RD); });
-        expect(sys::read, [&]{ return ::read(fd, buf, sizeof(buf)); });
-        expect(sys::write, [&]{ return ::write(fd, buf, sizeof(buf)); });
-        expect(sys::writev, [&]{ return ::writev(fd, &iov, 1); });
-        expect(sys::readv, [&]{ return ::readv(fd, &iov, 1); });
-        expect(sys::preadv, [&]{ return ::preadv(fd, &iov, 1, 0); });
-        expect(sys::pwritev, [&]{ return ::pwritev(fd, &iov, 1, 0); });
-        expect(sys::recv, [&]{ return ::recv(fd, buf, sizeof(buf), 0); });
-        expect(sys::send, [&]{ return ::send(fd, buf, sizeof(buf), 0); });
-        expect(sys::recvmsg, [&]{ return ::recvmsg(fd, &mh, 0); });
-        expect(sys::sendmsg, [&]{ return ::sendmsg(fd, &mh, 0); });
-        expect(sys::poll, [&]{ return ::poll(&pfd, 1, 0); });
-        expect(sys::pipe, [&]{ return ::pipe(pf); });
-        expect(sys::fcntl, [&]{ return ::fcntl(fd, F_GETFL); });
-        expect(sys::ioctl, [&]{ return ::ioctl(fd, FIONREAD, &one); });
-        expect(sys::open, [&]{ return ::open("/dev/null", O_RDONLY); });
+        expect(sys::socketpair, [&] {
+            return ::socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+        });
+        expect(
+            sys::bind, [&] { return ::bind(fd, (sockaddr*)&sa, sizeof(sa)); });
+        expect(sys::listen, [&] { return ::listen(fd, 1); });
+        expect(sys::accept, [&] { return ::accept(fd, nullptr, nullptr); });
+        expect(sys::connect, [&] {
+            return ::connect(fd, (sockaddr*)&sa, sizeof(sa));
+        });
+        expect(sys::getsockname, [&] {
+            return ::getsockname(fd, (sockaddr*)&sa, &len);
+        });
+        expect(sys::getpeername, [&] {
+            return ::getpeername(fd, (sockaddr*)&sa, &len);
+        });
+        expect(sys::getsockopt, [&] {
+            len = sizeof(one);
+            return ::getsockopt(fd, SOL_SOCKET, SO_TYPE, &one, &len);
+        });
+        expect(sys::setsockopt, [&] {
+            return ::setsockopt(
+                fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+        });
+        expect(sys::shutdown, [&] { return ::shutdown(fd, SHUT_RD); });
+        expect(sys::read, [&] { return ::read(fd, buf, sizeof(buf)); });
+        expect(sys::write, [&] { return ::write(fd, buf, sizeof(buf)); });
+        expect(sys::writev, [&] { return ::writev(fd, &iov, 1); });
+        expect(sys::readv, [&] { return ::readv(fd, &iov, 1); });
+        expect(sys::preadv, [&] { return ::preadv(fd, &iov, 1, 0); });
+        expect(sys::pwritev, [&] { return ::pwritev(fd, &iov, 1, 0); });
+        expect(sys::recv, [&] { return ::recv(fd, buf, sizeof(buf), 0); });
+        expect(sys::send, [&] { return ::send(fd, buf, sizeof(buf), 0); });
+        expect(sys::recvmsg, [&] { return ::recvmsg(fd, &mh, 0); });
+        expect(sys::sendmsg, [&] { return ::sendmsg(fd, &mh, 0); });
+        expect(sys::poll, [&] { return ::poll(&pfd, 1, 0); });
+        expect(sys::pipe, [&] { return ::pipe(pf); });
+        expect(sys::fcntl, [&] { return ::fcntl(fd, F_GETFL); });
+        expect(sys::ioctl, [&] { return ::ioctl(fd, FIONREAD, &one); });
+        expect(sys::open, [&] { return ::open("/dev/null", O_RDONLY); });
         // fstat is an inline redirect to __fxstat on pre-2.33 glibc, so the
         // "fstat" symbol has no shadow to arm there: the readback marks it
         // not live and the call goes straight to libc. Expect not-live
         // rather than asserting a fire that cannot happen.
-        if(hook_is_live(sys::fstat))
-            expect(sys::fstat, [&]{ return ::fstat(fd, &st); });
+        if (hook_is_live(sys::fstat))
+            expect(sys::fstat, [&] { return ::fstat(fd, &st); });
         else
             skip_dead_hook("fstat");
-        expect(sys::lseek, [&]{ return (long)::lseek(fd, 0, SEEK_SET); });
-        expect(sys::ftruncate, [&]{ return ::ftruncate(fd, 0); });
-        expect(sys::fsync, [&]{ return ::fsync(fd); });
-        expect(sys::unlink, [&]{ return ::unlink("/nonexistent/x"); });
-        expect(sys::sigaction, [&]{ return ::sigaction(SIGUSR1, nullptr, &sa_old); });
-        expect(sys::gethostname, [&]{ return ::gethostname(host, sizeof(host)); });
-        expect(sys::select, [&]{ return ::select(1, &fds, nullptr, nullptr, &tv); });
+        expect(sys::lseek, [&] { return (long)::lseek(fd, 0, SEEK_SET); });
+        expect(sys::ftruncate, [&] { return ::ftruncate(fd, 0); });
+        expect(sys::fsync, [&] { return ::fsync(fd); });
+        expect(sys::unlink, [&] { return ::unlink("/nonexistent/x"); });
+        expect(sys::sigaction, [&] {
+            return ::sigaction(SIGUSR1, nullptr, &sa_old);
+        });
+        expect(sys::gethostname, [&] {
+            return ::gethostname(host, sizeof(host));
+        });
+        expect(sys::select, [&] {
+            return ::select(1, &fds, nullptr, nullptr, &tv);
+        });
 #if defined(__linux__) || defined(__FreeBSD__)
-        expect(sys::fdatasync, [&]{ return ::fdatasync(fd); });
+        expect(sys::fdatasync, [&] { return ::fdatasync(fd); });
 #endif
 #if defined(__linux__)
-        expect(sys::accept4, [&]{ return ::accept4(fd, nullptr, nullptr, 0); });
-        expect(sys::epoll_create1, [&]{ return ::epoll_create1(0); });
-        expect(sys::epoll_ctl, [&]{ return ::epoll_ctl(fd, EPOLL_CTL_DEL, fd, nullptr); });
-        expect(sys::epoll_wait, [&]{ epoll_event ev; return ::epoll_wait(fd, &ev, 1, 0); });
-        expect(sys::eventfd, [&]{ return ::eventfd(0, 0); });
-        expect(sys::timerfd_create, [&]{ return ::timerfd_create(CLOCK_MONOTONIC, 0); });
-        expect(sys::timerfd_settime, [&]{ itimerspec its{}; return ::timerfd_settime(fd, 0, &its, nullptr); });
+        expect(
+            sys::accept4, [&] { return ::accept4(fd, nullptr, nullptr, 0); });
+        expect(sys::epoll_create1, [&] { return ::epoll_create1(0); });
+        expect(sys::epoll_ctl, [&] {
+            return ::epoll_ctl(fd, EPOLL_CTL_DEL, fd, nullptr);
+        });
+        expect(sys::epoll_wait, [&] {
+            epoll_event ev;
+            return ::epoll_wait(fd, &ev, 1, 0);
+        });
+        expect(sys::eventfd, [&] { return ::eventfd(0, 0); });
+        expect(sys::timerfd_create, [&] {
+            return ::timerfd_create(CLOCK_MONOTONIC, 0);
+        });
+        expect(sys::timerfd_settime, [&] {
+            itimerspec its{};
+            return ::timerfd_settime(fd, 0, &its, nullptr);
+        });
 #endif
 #if defined(__APPLE__) || defined(__FreeBSD__)
-        expect(sys::kqueue, [&]{ return ::kqueue(); });
+        expect(sys::kqueue, [&] { return ::kqueue(); });
         // An invalid kq would fail anyway; the arm must be what fails it.
-        expect(sys::kevent, [&]
-        {
+        expect(sys::kevent, [&] {
             struct kevent ch{};
             return ::kevent(-1, &ch, 1, nullptr, 0, nullptr);
         });
 #endif
-        expect(sys::close, [&]{ return ::close(fd); });
+        expect(sys::close, [&] { return ::close(fd); });
         // getaddrinfo / getnameinfo return the error, not -1
 #if defined(__linux__) || defined(__FreeBSD__)
         {
@@ -395,19 +424,24 @@ struct self_test
 #endif
         {
             fault_scope f(sys::getaddrinfo, EAI_FAIL);
-            BOOST_TEST_EQ(::getaddrinfo("localhost", nullptr, nullptr, &ai), EAI_FAIL);
+            BOOST_TEST_EQ(
+                ::getaddrinfo("localhost", nullptr, nullptr, &ai), EAI_FAIL);
             BOOST_TEST(f.fired());
         }
         {
             fault_scope f(sys::getnameinfo, EAI_FAIL);
-            BOOST_TEST_EQ(::getnameinfo((sockaddr*)&sa, sizeof(sa), host, sizeof(host), nullptr, 0, 0), EAI_FAIL);
+            BOOST_TEST_EQ(
+                ::getnameinfo(
+                    (sockaddr*)&sa, sizeof(sa), host, sizeof(host), nullptr, 0,
+                    0),
+                EAI_FAIL);
             BOOST_TEST(f.fired());
         }
         // freeaddrinfo has no failure to inject; the arm only proves
         // the shadow saw the release, and the list is still freed.
         {
             ai = nullptr;
-            if(::getaddrinfo("localhost", nullptr, nullptr, &ai) == 0 && ai)
+            if (::getaddrinfo("localhost", nullptr, nullptr, &ai) == 0 && ai)
             {
                 fault_scope f(sys::freeaddrinfo, EPERM);
                 ::freeaddrinfo(ai);
@@ -504,12 +538,14 @@ struct self_test
         char buf[8];
         {
             fault_scope f(sys::read, EIO);
-            BOOST_TEST_EQ(::__read_chk(sv[1], buf, sizeof(buf), sizeof(buf)), -1);
+            BOOST_TEST_EQ(
+                ::__read_chk(sv[1], buf, sizeof(buf), sizeof(buf)), -1);
             BOOST_TEST(f.fired());
         }
         {
             fault_scope f(sys::recv, EIO);
-            BOOST_TEST_EQ(::__recv_chk(sv[1], buf, sizeof(buf), sizeof(buf), 0), -1);
+            BOOST_TEST_EQ(
+                ::__recv_chk(sv[1], buf, sizeof(buf), sizeof(buf), 0), -1);
             BOOST_TEST(f.fired());
         }
         {
@@ -526,7 +562,8 @@ struct self_test
         {
             fault_scope f(sys::gethostname, EIO);
             char host[64];
-            BOOST_TEST_EQ(::__gethostname_chk(host, sizeof(host), sizeof(host)), -1);
+            BOOST_TEST_EQ(
+                ::__gethostname_chk(host, sizeof(host), sizeof(host)), -1);
             BOOST_TEST(f.fired());
         }
         ::close(sv[0]);
@@ -592,7 +629,7 @@ struct self_test
         int const fd = ::socket(AF_INET, SOCK_STREAM, 0);
         BOOST_TEST(fd >= 0);
         int const hi = dup_above_fd_setsize(fd);
-        if(hi < 0)
+        if (hi < 0)
         {
             skip_no_high_fd("the high-descriptor helper self-test");
             ::close(fd);
@@ -605,7 +642,7 @@ struct self_test
 
         {
             fd_wall wall;
-            if(!wall.ok())
+            if (!wall.ok())
             {
                 skip_no_high_fd("the descriptor-wall self-test");
                 return;
@@ -691,16 +728,15 @@ struct self_test
         {
             // fd -1: match on the opcode alone, the way a test reaches
             // a poll armed on a descriptor the library never handed out.
-            cqe_fault_scope c(-1, IORING_OP_POLL_ADD, POLLIN,
-                IORING_CQE_F_MORE);
+            cqe_fault_scope c(
+                -1, IORING_OP_POLL_ADD, POLLIN, IORING_CQE_F_MORE);
             auto* sqe = io_uring_get_sqe(&ring);
             io_uring_prep_poll_multishot(sqe, sv[1], POLLIN);
             io_uring_sqe_set_data64(sqe, 7);
             BOOST_TEST_EQ(io_uring_submit(&ring), 1);
             BOOST_TEST_EQ(::write(sv[0], "x", 1), 1);
             io_uring_cqe* cqe = nullptr;
-            BOOST_TEST_EQ(
-                io_uring_wait_cqe_timeout(&ring, &cqe, nullptr), 0);
+            BOOST_TEST_EQ(io_uring_wait_cqe_timeout(&ring, &cqe, nullptr), 0);
             BOOST_TEST(c.fired());
             BOOST_TEST_EQ(cqe->user_data, 7u);
             BOOST_TEST_EQ(cqe->flags & IORING_CQE_F_MORE, 0u);
@@ -714,7 +750,7 @@ struct self_test
 
     void run()
     {
-        if(skip_under_valgrind())
+        if (skip_under_valgrind())
             return;
         testFiresOnNth();
         testDisarmsOnScopeExit();
@@ -752,7 +788,7 @@ struct self_test
 
 TEST_SUITE(self_test, "boost.corosio.fault.self");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #else
 
@@ -786,7 +822,8 @@ int constexpr test_err = ERROR_NOT_SUPPORTED;
 
 // Winsock and the kernel share the per-thread error slot, so one read
 // covers both families.
-bool err_is(int expected) noexcept
+bool
+err_is(int expected) noexcept
 {
     return ::GetLastError() == static_cast<DWORD>(expected);
 }
@@ -795,29 +832,31 @@ bool err_is(int expected) noexcept
 // so the bytes have to move through a real socket; Windows has no
 // socketpair and nothing here builds an io_context to borrow
 // connect_pair from.
-bool make_loopback_pair(SOCKET& a, SOCKET& b)
+bool
+make_loopback_pair(SOCKET& a, SOCKET& b)
 {
-    a = b = INVALID_SOCKET;
+    a = b      = INVALID_SOCKET;
     SOCKET acc = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if(acc == INVALID_SOCKET)
+    if (acc == INVALID_SOCKET)
         return false;
     sockaddr_in sa{};
-    sa.sin_family = AF_INET;
+    sa.sin_family      = AF_INET;
     sa.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
-    int len = static_cast<int>(sizeof(sa));
+    int len            = static_cast<int>(sizeof(sa));
     bool ok = ::bind(acc, reinterpret_cast<sockaddr*>(&sa), len) == 0 &&
         ::listen(acc, 1) == 0 &&
         ::getsockname(acc, reinterpret_cast<sockaddr*>(&sa), &len) == 0;
-    if(ok)
+    if (ok)
     {
-        a = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        a  = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         ok = a != INVALID_SOCKET &&
-            ::connect(a, reinterpret_cast<sockaddr*>(&sa),
+            ::connect(
+                a, reinterpret_cast<sockaddr*>(&sa),
                 static_cast<int>(sizeof(sa))) == 0;
     }
-    if(ok)
+    if (ok)
     {
-        b = ::accept(acc, nullptr, nullptr);
+        b  = ::accept(acc, nullptr, nullptr);
         ok = b != INVALID_SOCKET;
     }
     std::ignore = ::closesocket(acc);
@@ -827,13 +866,14 @@ bool make_loopback_pair(SOCKET& a, SOCKET& b)
 // A stream may deliver a send in pieces. The assertions below are
 // about what the hook did to the call it clamped, so the other side
 // drains a count it already knows.
-int recv_exactly(SOCKET s, char* p, int n)
+int
+recv_exactly(SOCKET s, char* p, int n)
 {
     int got = 0;
-    while(got < n)
+    while (got < n)
     {
         int const r = ::recv(s, p + got, n - got, 0);
-        if(r <= 0)
+        if (r <= 0)
             return got;
         got += r;
     }
@@ -844,9 +884,10 @@ int recv_exactly(SOCKET s, char* p, int n)
 // translation unit, so the program imports all of them: a name with no
 // thunk to patch here is census drift rather than a toolchain
 // difference, and fails rather than skips.
-bool require_hook(sys s, char const* name)
+bool
+require_hook(sys s, char const* name)
 {
-    if(hook_is_live(s))
+    if (hook_is_live(s))
         return true;
     std::fprintf(stderr, "fault harness: %s is not hooked here\n", name);
     BOOST_TEST(false);
@@ -866,7 +907,10 @@ struct self_test
             WSADATA data;
             BOOST_TEST_EQ(::WSAStartup(MAKEWORD(2, 2), &data), 0);
         }
-        ~winsock_guard() { std::ignore = ::WSACleanup(); }
+        ~winsock_guard()
+        {
+            std::ignore = ::WSACleanup();
+        }
     };
 
     void testFiresOnNth()
@@ -908,8 +952,8 @@ struct self_test
         SOCKET b = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         BOOST_TEST_EQ(f.count(), 2u);
         BOOST_TEST(!f.fired());
-        BOOST_TEST(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) ==
-            INVALID_SOCKET);
+        BOOST_TEST(
+            ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) == INVALID_SOCKET);
         BOOST_TEST_EQ(f.count(), 3u);
         BOOST_TEST(f.fired());
         // A spent arm stops counting: it no longer claims calls.
@@ -923,8 +967,8 @@ struct self_test
     void testFiredScopeStaysFired()
     {
         fault_scope f(sys::socket, WSAEMFILE);
-        BOOST_TEST(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) ==
-            INVALID_SOCKET);
+        BOOST_TEST(
+            ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) == INVALID_SOCKET);
         BOOST_TEST(f.fired());
         SOCKET b = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         BOOST_TEST(b != INVALID_SOCKET);
@@ -942,10 +986,13 @@ struct self_test
         SOCKET s = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         BOOST_TEST(s != INVALID_SOCKET);
         sockaddr_in sa{};
-        sa.sin_family = AF_INET;
+        sa.sin_family      = AF_INET;
         sa.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
-        BOOST_TEST_EQ(::bind(s, reinterpret_cast<sockaddr*>(&sa),
-            static_cast<int>(sizeof(sa))), 0);
+        BOOST_TEST_EQ(
+            ::bind(
+                s, reinterpret_cast<sockaddr*>(&sa),
+                static_cast<int>(sizeof(sa))),
+            0);
         BOOST_TEST_EQ(::listen(s, 1), 0);
         std::ignore = ::closesocket(s);
     }
@@ -954,16 +1001,14 @@ struct self_test
     {
         fault_scope f(sys::socket, WSAEMFILE);
         SOCKET other = INVALID_SOCKET;
-        std::thread t([&]
-        {
-            other = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        });
+        std::thread t(
+            [&] { other = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP); });
         t.join();
         BOOST_TEST(other != INVALID_SOCKET);
         BOOST_TEST(!f.fired());
         std::ignore = ::closesocket(other);
-        BOOST_TEST(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) ==
-            INVALID_SOCKET);
+        BOOST_TEST(
+            ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) == INVALID_SOCKET);
         BOOST_TEST(f.fired());
     }
 
@@ -972,11 +1017,10 @@ struct self_test
     void testAnyThreadFires()
     {
         fault_scope f(sys::socket, WSAEMFILE, 1, any_thread);
-        SOCKET other = INVALID_SOCKET;
+        SOCKET other    = INVALID_SOCKET;
         DWORD other_err = 0;
-        std::thread t([&]
-        {
-            other = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        std::thread t([&] {
+            other     = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
             other_err = ::GetLastError();
         });
         t.join();
@@ -989,8 +1033,8 @@ struct self_test
     {
         fault_scope g(sys::listen, WSAEOPNOTSUPP, 1, any_thread);
         fault_scope f(sys::socket, WSAEMFILE);
-        BOOST_TEST(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) ==
-            INVALID_SOCKET);
+        BOOST_TEST(
+            ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) == INVALID_SOCKET);
         BOOST_TEST(f.fired());
         BOOST_TEST(!g.fired());
         SOCKET b = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -1005,8 +1049,8 @@ struct self_test
     {
         fault_scope f1(sys::socket, WSAEMFILE);
         fault_scope f2(sys::listen, WSAEOPNOTSUPP);
-        BOOST_TEST(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) ==
-            INVALID_SOCKET);
+        BOOST_TEST(
+            ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) == INVALID_SOCKET);
         BOOST_TEST(f1.fired());
         BOOST_TEST(!f2.fired());
         SOCKET b = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -1023,212 +1067,289 @@ struct self_test
     {
         SOCKET fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         BOOST_TEST(fd != INVALID_SOCKET);
-        HANDLE port = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr,
-            0, 1);
+        HANDLE port =
+            ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 1);
         BOOST_TEST(port != nullptr);
 
         // This translation unit references every hooked entry point, so
         // the program imports every one of them: a hook with no thunk
         // to patch here is census drift, not a toolchain difference.
-        auto expect = [&](sys s, char const* name, auto&& call)
-        {
-            if(!require_hook(s, name))
+        auto expect = [&](sys s, char const* name, auto&& call) {
+            if (!require_hook(s, name))
                 return;
             fault_scope f(s, test_err);
             bool const failed = call();
             // Name the symbol: fifty anonymous BOOST_TEST lines say
             // nothing about which hook came apart.
-            if(!failed || !f.fired())
-                std::fprintf(stderr,
-                    "fault harness: census failed for %s\n", name);
+            if (!failed || !f.fired())
+                std::fprintf(
+                    stderr, "fault harness: census failed for %s\n", name);
             BOOST_TEST(failed);
             BOOST_TEST(f.fired());
         };
 
         sockaddr_in sa{};
-        sa.sin_family = AF_INET;
+        sa.sin_family      = AF_INET;
         sa.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
-        int const salen = static_cast<int>(sizeof(sa));
-        int len = salen;
-        int one = 1;
-        char buf[8] = {};
+        int const salen    = static_cast<int>(sizeof(sa));
+        int len            = salen;
+        int one            = 1;
+        char buf[8]        = {};
         WSABUF wbuf{};
-        wbuf.len = static_cast<ULONG>(sizeof(buf));
-        wbuf.buf = buf;
+        wbuf.len    = static_cast<ULONG>(sizeof(buf));
+        wbuf.buf    = buf;
         DWORD bytes = 0;
         DWORD flags = 0;
         u_long mode = 1;
         WSAPOLLFD pfd{};
-        pfd.fd = fd;
+        pfd.fd     = fd;
         pfd.events = static_cast<SHORT>(POLLRDNORM);
         LARGE_INTEGER big{};
         wchar_t wide[64] = {};
-        char narrow[64] = {};
-        DWORD widelen = 64;
-        ULONG_PTR key = 0;
+        char narrow[64]  = {};
+        DWORD widelen    = 64;
+        ULONG_PTR key    = 0;
         LPOVERLAPPED got = nullptr;
         OVERLAPPED ov{};
         HANDLE cancel = nullptr;
 
-        expect(sys::socket, "socket", [&]
-            { return ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) ==
-                INVALID_SOCKET && err_is(test_err); });
-        expect(sys::WSASocketW, "WSASocketW", [&]
-            { return ::WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr,
-                0, WSA_FLAG_OVERLAPPED) == INVALID_SOCKET &&
-                err_is(test_err); });
-        expect(sys::bind, "bind", [&]
-            { return ::bind(fd, reinterpret_cast<sockaddr*>(&sa), salen)
-                == SOCKET_ERROR && err_is(test_err); });
-        expect(sys::listen, "listen", [&]
-            { return ::listen(fd, 1) == SOCKET_ERROR && err_is(test_err); });
-        expect(sys::accept, "accept", [&]
-            { return ::accept(fd, nullptr, nullptr) == INVALID_SOCKET &&
-                err_is(test_err); });
-        expect(sys::connect, "connect", [&]
-            { return ::connect(fd, reinterpret_cast<sockaddr*>(&sa),
-                salen) == SOCKET_ERROR && err_is(test_err); });
-        expect(sys::shutdown, "shutdown", [&]
-            { return ::shutdown(fd, SD_RECEIVE) == SOCKET_ERROR &&
-                err_is(test_err); });
-        expect(sys::ioctlsocket, "ioctlsocket", [&]
-            { return ::ioctlsocket(fd, FIONBIO, &mode) == SOCKET_ERROR &&
-                err_is(test_err); });
-        expect(sys::getsockname, "getsockname", [&]
-            { return ::getsockname(fd, reinterpret_cast<sockaddr*>(&sa), &len)
-                == SOCKET_ERROR && err_is(test_err); });
-        expect(sys::getpeername, "getpeername", [&]
-            { return ::getpeername(fd, reinterpret_cast<sockaddr*>(&sa), &len)
-                == SOCKET_ERROR && err_is(test_err); });
-        expect(sys::getsockopt, "getsockopt", [&]
-            { int optlen = sizeof(one);
-              return ::getsockopt(fd, SOL_SOCKET, SO_TYPE,
-                reinterpret_cast<char*>(&one), &optlen) == SOCKET_ERROR &&
-                err_is(test_err); });
-        expect(sys::setsockopt, "setsockopt", [&]
-            { return ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-                reinterpret_cast<char const*>(&one), sizeof(one)) ==
-                SOCKET_ERROR && err_is(test_err); });
-        expect(sys::send, "send", [&]
-            { return ::send(fd, buf, sizeof(buf), 0) == SOCKET_ERROR &&
-                err_is(test_err); });
-        expect(sys::recv, "recv", [&]
-            { return ::recv(fd, buf, sizeof(buf), 0) == SOCKET_ERROR &&
-                err_is(test_err); });
-        expect(sys::WSAConnect, "WSAConnect", [&]
-            { return ::WSAConnect(fd, reinterpret_cast<sockaddr*>(&sa),
-                salen, nullptr, nullptr, nullptr, nullptr) ==
-                SOCKET_ERROR && err_is(test_err); });
-        expect(sys::WSARecv, "WSARecv", [&]
-            { return ::WSARecv(fd, &wbuf, 1, &bytes, &flags, nullptr,
-                nullptr) == SOCKET_ERROR && err_is(test_err); });
-        expect(sys::WSASend, "WSASend", [&]
-            { return ::WSASend(fd, &wbuf, 1, &bytes, 0, nullptr, nullptr) ==
-                SOCKET_ERROR && err_is(test_err); });
-        expect(sys::WSARecvFrom, "WSARecvFrom", [&]
-            { return ::WSARecvFrom(fd, &wbuf, 1, &bytes, &flags, nullptr,
-                nullptr, nullptr, nullptr) == SOCKET_ERROR &&
-                err_is(test_err); });
-        expect(sys::WSASendTo, "WSASendTo", [&]
-            { return ::WSASendTo(fd, &wbuf, 1, &bytes, 0,
-                reinterpret_cast<sockaddr*>(&sa), salen, nullptr,
-                nullptr) == SOCKET_ERROR && err_is(test_err); });
-        expect(sys::WSAPoll, "WSAPoll", [&]
-            { return ::WSAPoll(&pfd, 1, 0) == SOCKET_ERROR &&
-                err_is(test_err); });
-        expect(sys::WSAIoctl, "WSAIoctl", [&]
-            { GUID g = WSAID_ACCEPTEX; void* p = nullptr;
-              return ::WSAIoctl(fd, SIO_GET_EXTENSION_FUNCTION_POINTER, &g,
-                sizeof(g), &p, sizeof(p), &bytes, nullptr, nullptr) ==
-                SOCKET_ERROR && err_is(test_err); });
-        expect(sys::closesocket, "closesocket", [&]
-            { return ::closesocket(fd) == SOCKET_ERROR && err_is(test_err); });
-        expect(sys::WSAStartup, "WSAStartup", [&]
-            { WSADATA d; return ::WSAStartup(MAKEWORD(2, 2), &d) ==
-                test_err; });
-        expect(sys::WSACleanup, "WSACleanup", [&]
-            { return ::WSACleanup() == SOCKET_ERROR && err_is(test_err); });
-        expect(sys::GetAddrInfoExW, "GetAddrInfoExW", [&]
-            { PADDRINFOEXW res = nullptr;
-              return ::GetAddrInfoExW(L"localhost", nullptr, NS_DNS, nullptr,
-                nullptr, &res, nullptr, nullptr, nullptr, nullptr) ==
-                test_err; });
-        expect(sys::GetAddrInfoExCancel, "GetAddrInfoExCancel", [&]
-            { return ::GetAddrInfoExCancel(&cancel) == test_err; });
-        expect(sys::GetNameInfoW, "GetNameInfoW", [&]
-            { return ::GetNameInfoW(reinterpret_cast<sockaddr*>(&sa),
-                salen, wide, 64, nullptr, 0, 0) == test_err; });
-        expect(sys::CreateIoCompletionPort, "CreateIoCompletionPort", [&]
-            { return ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr,
-                0, 1) == nullptr && err_is(test_err); });
-        expect(sys::PostQueuedCompletionStatus, "PostQueuedCompletionStatus",
-            [&] { return ::PostQueuedCompletionStatus(port, 0, 0, &ov) ==
-                FALSE && err_is(test_err); });
-        expect(sys::GetQueuedCompletionStatus, "GetQueuedCompletionStatus",
-            [&]
-            { got = &ov;
-              return ::GetQueuedCompletionStatus(port, &bytes, &key, &got, 0)
-                == FALSE && got == nullptr && err_is(test_err); });
-        expect(sys::CancelIoEx, "CancelIoEx", [&]
-            { return ::CancelIoEx(port, nullptr) == FALSE &&
-                err_is(test_err); });
-        expect(sys::CreateFileW, "CreateFileW", [&]
-            { return ::CreateFileW(L"nul", GENERIC_READ, 0, nullptr,
-                OPEN_EXISTING, 0, nullptr) == INVALID_HANDLE_VALUE &&
-                err_is(test_err); });
-        expect(sys::ReadFile, "ReadFile", [&]
-            { return ::ReadFile(port, buf, sizeof(buf), &bytes, nullptr) ==
-                FALSE && err_is(test_err); });
-        expect(sys::WriteFile, "WriteFile", [&]
-            { return ::WriteFile(port, buf, sizeof(buf), &bytes, nullptr) ==
-                FALSE && err_is(test_err); });
-        expect(sys::SetFilePointerEx, "SetFilePointerEx", [&]
-            { return ::SetFilePointerEx(port, big, nullptr, FILE_BEGIN) ==
-                FALSE && err_is(test_err); });
-        expect(sys::GetFileSizeEx, "GetFileSizeEx", [&]
-            { return ::GetFileSizeEx(port, &big) == FALSE &&
-                err_is(test_err); });
-        expect(sys::SetEndOfFile, "SetEndOfFile", [&]
-            { return ::SetEndOfFile(port) == FALSE && err_is(test_err); });
-        expect(sys::FlushFileBuffers, "FlushFileBuffers", [&]
-            { return ::FlushFileBuffers(port) == FALSE && err_is(test_err); });
-        expect(sys::DeleteFileA, "DeleteFileA", [&]
-            { return ::DeleteFileA("nonexistent-corosio-fault") == FALSE &&
-                err_is(test_err); });
-        expect(sys::CreateWaitableTimerW, "CreateWaitableTimerW", [&]
-            { return ::CreateWaitableTimerW(nullptr, TRUE, nullptr) ==
-                nullptr && err_is(test_err); });
-        expect(sys::SetWaitableTimer, "SetWaitableTimer", [&]
-            { return ::SetWaitableTimer(port, &big, 0, nullptr, nullptr,
-                FALSE) == FALSE && err_is(test_err); });
-        expect(sys::WaitForSingleObject, "WaitForSingleObject", [&]
-            { return ::WaitForSingleObject(port, 0) == WAIT_FAILED &&
-                err_is(test_err); });
-        expect(sys::GetComputerNameExW, "GetComputerNameExW", [&]
-            { return ::GetComputerNameExW(ComputerNameDnsHostname, wide,
-                &widelen) == FALSE && err_is(test_err); });
-        expect(sys::GetModuleHandleA, "GetModuleHandleA", [&]
-            { return ::GetModuleHandleA("kernel32") == nullptr &&
-                err_is(test_err); });
-        expect(sys::GetModuleHandleW, "GetModuleHandleW", [&]
-            { return ::GetModuleHandleW(L"kernel32") == nullptr &&
-                err_is(test_err); });
-        expect(sys::GetProcAddress, "GetProcAddress", [&]
-            { return ::GetProcAddress(::GetModuleHandleW(L"kernel32"),
-                "CloseHandle") == nullptr && err_is(test_err); });
-        expect(sys::MultiByteToWideChar, "MultiByteToWideChar", [&]
-            { return ::MultiByteToWideChar(CP_UTF8, 0, "x", 1, wide, 64) == 0
-                && err_is(test_err); });
-        expect(sys::WideCharToMultiByte, "WideCharToMultiByte", [&]
-            { return ::WideCharToMultiByte(CP_UTF8, 0, L"x", 1, narrow, 64,
-                nullptr, nullptr) == 0 && err_is(test_err); });
-        expect(sys::signal, "signal", [&]
-            { return ::signal(SIGINT, SIG_DFL) == SIG_ERR &&
-                err_is(test_err); });
+        expect(sys::socket, "socket", [&] {
+            return ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) ==
+                INVALID_SOCKET &&
+                err_is(test_err);
+        });
+        expect(sys::WSASocketW, "WSASocketW", [&] {
+            return ::WSASocketW(
+                       AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0,
+                       WSA_FLAG_OVERLAPPED) == INVALID_SOCKET &&
+                err_is(test_err);
+        });
+        expect(sys::bind, "bind", [&] {
+            return ::bind(fd, reinterpret_cast<sockaddr*>(&sa), salen) ==
+                SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::listen, "listen", [&] {
+            return ::listen(fd, 1) == SOCKET_ERROR && err_is(test_err);
+        });
+        expect(sys::accept, "accept", [&] {
+            return ::accept(fd, nullptr, nullptr) == INVALID_SOCKET &&
+                err_is(test_err);
+        });
+        expect(sys::connect, "connect", [&] {
+            return ::connect(fd, reinterpret_cast<sockaddr*>(&sa), salen) ==
+                SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::shutdown, "shutdown", [&] {
+            return ::shutdown(fd, SD_RECEIVE) == SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::ioctlsocket, "ioctlsocket", [&] {
+            return ::ioctlsocket(fd, FIONBIO, &mode) == SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::getsockname, "getsockname", [&] {
+            return ::getsockname(fd, reinterpret_cast<sockaddr*>(&sa), &len) ==
+                SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::getpeername, "getpeername", [&] {
+            return ::getpeername(fd, reinterpret_cast<sockaddr*>(&sa), &len) ==
+                SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::getsockopt, "getsockopt", [&] {
+            int optlen = sizeof(one);
+            return ::getsockopt(
+                       fd, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&one),
+                       &optlen) == SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::setsockopt, "setsockopt", [&] {
+            return ::setsockopt(
+                       fd, SOL_SOCKET, SO_REUSEADDR,
+                       reinterpret_cast<char const*>(&one),
+                       sizeof(one)) == SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::send, "send", [&] {
+            return ::send(fd, buf, sizeof(buf), 0) == SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::recv, "recv", [&] {
+            return ::recv(fd, buf, sizeof(buf), 0) == SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::WSAConnect, "WSAConnect", [&] {
+            return ::WSAConnect(
+                       fd, reinterpret_cast<sockaddr*>(&sa), salen, nullptr,
+                       nullptr, nullptr, nullptr) == SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::WSARecv, "WSARecv", [&] {
+            return ::WSARecv(fd, &wbuf, 1, &bytes, &flags, nullptr, nullptr) ==
+                SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::WSASend, "WSASend", [&] {
+            return ::WSASend(fd, &wbuf, 1, &bytes, 0, nullptr, nullptr) ==
+                SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::WSARecvFrom, "WSARecvFrom", [&] {
+            return ::WSARecvFrom(
+                       fd, &wbuf, 1, &bytes, &flags, nullptr, nullptr, nullptr,
+                       nullptr) == SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::WSASendTo, "WSASendTo", [&] {
+            return ::WSASendTo(
+                       fd, &wbuf, 1, &bytes, 0,
+                       reinterpret_cast<sockaddr*>(&sa), salen, nullptr,
+                       nullptr) == SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::WSAPoll, "WSAPoll", [&] {
+            return ::WSAPoll(&pfd, 1, 0) == SOCKET_ERROR && err_is(test_err);
+        });
+        expect(sys::WSAIoctl, "WSAIoctl", [&] {
+            GUID g  = WSAID_ACCEPTEX;
+            void* p = nullptr;
+            return ::WSAIoctl(
+                       fd, SIO_GET_EXTENSION_FUNCTION_POINTER, &g, sizeof(g),
+                       &p, sizeof(p), &bytes, nullptr,
+                       nullptr) == SOCKET_ERROR &&
+                err_is(test_err);
+        });
+        expect(sys::closesocket, "closesocket", [&] {
+            return ::closesocket(fd) == SOCKET_ERROR && err_is(test_err);
+        });
+        expect(sys::WSAStartup, "WSAStartup", [&] {
+            WSADATA d;
+            return ::WSAStartup(MAKEWORD(2, 2), &d) == test_err;
+        });
+        expect(sys::WSACleanup, "WSACleanup", [&] {
+            return ::WSACleanup() == SOCKET_ERROR && err_is(test_err);
+        });
+        expect(sys::GetAddrInfoExW, "GetAddrInfoExW", [&] {
+            PADDRINFOEXW res = nullptr;
+            return ::GetAddrInfoExW(
+                       L"localhost", nullptr, NS_DNS, nullptr, nullptr, &res,
+                       nullptr, nullptr, nullptr, nullptr) == test_err;
+        });
+        expect(sys::GetAddrInfoExCancel, "GetAddrInfoExCancel", [&] {
+            return ::GetAddrInfoExCancel(&cancel) == test_err;
+        });
+        expect(sys::GetNameInfoW, "GetNameInfoW", [&] {
+            return ::GetNameInfoW(
+                       reinterpret_cast<sockaddr*>(&sa), salen, wide, 64,
+                       nullptr, 0, 0) == test_err;
+        });
+        expect(sys::CreateIoCompletionPort, "CreateIoCompletionPort", [&] {
+            return ::CreateIoCompletionPort(
+                       INVALID_HANDLE_VALUE, nullptr, 0, 1) == nullptr &&
+                err_is(test_err);
+        });
+        expect(
+            sys::PostQueuedCompletionStatus, "PostQueuedCompletionStatus", [&] {
+                return ::PostQueuedCompletionStatus(port, 0, 0, &ov) == FALSE &&
+                    err_is(test_err);
+            });
+        expect(
+            sys::GetQueuedCompletionStatus, "GetQueuedCompletionStatus", [&] {
+                got = &ov;
+                return ::GetQueuedCompletionStatus(
+                           port, &bytes, &key, &got, 0) == FALSE &&
+                    got == nullptr && err_is(test_err);
+            });
+        expect(sys::CancelIoEx, "CancelIoEx", [&] {
+            return ::CancelIoEx(port, nullptr) == FALSE && err_is(test_err);
+        });
+        expect(sys::CreateFileW, "CreateFileW", [&] {
+            return ::CreateFileW(
+                       L"nul", GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0,
+                       nullptr) == INVALID_HANDLE_VALUE &&
+                err_is(test_err);
+        });
+        expect(sys::ReadFile, "ReadFile", [&] {
+            return ::ReadFile(port, buf, sizeof(buf), &bytes, nullptr) ==
+                FALSE &&
+                err_is(test_err);
+        });
+        expect(sys::WriteFile, "WriteFile", [&] {
+            return ::WriteFile(port, buf, sizeof(buf), &bytes, nullptr) ==
+                FALSE &&
+                err_is(test_err);
+        });
+        expect(sys::SetFilePointerEx, "SetFilePointerEx", [&] {
+            return ::SetFilePointerEx(port, big, nullptr, FILE_BEGIN) ==
+                FALSE &&
+                err_is(test_err);
+        });
+        expect(sys::GetFileSizeEx, "GetFileSizeEx", [&] {
+            return ::GetFileSizeEx(port, &big) == FALSE && err_is(test_err);
+        });
+        expect(sys::SetEndOfFile, "SetEndOfFile", [&] {
+            return ::SetEndOfFile(port) == FALSE && err_is(test_err);
+        });
+        expect(sys::FlushFileBuffers, "FlushFileBuffers", [&] {
+            return ::FlushFileBuffers(port) == FALSE && err_is(test_err);
+        });
+        expect(sys::DeleteFileA, "DeleteFileA", [&] {
+            return ::DeleteFileA("nonexistent-corosio-fault") == FALSE &&
+                err_is(test_err);
+        });
+        expect(sys::CreateWaitableTimerW, "CreateWaitableTimerW", [&] {
+            return ::CreateWaitableTimerW(nullptr, TRUE, nullptr) == nullptr &&
+                err_is(test_err);
+        });
+        expect(sys::SetWaitableTimer, "SetWaitableTimer", [&] {
+            return ::SetWaitableTimer(port, &big, 0, nullptr, nullptr, FALSE) ==
+                FALSE &&
+                err_is(test_err);
+        });
+        expect(sys::WaitForSingleObject, "WaitForSingleObject", [&] {
+            return ::WaitForSingleObject(port, 0) == WAIT_FAILED &&
+                err_is(test_err);
+        });
+        expect(sys::GetComputerNameExW, "GetComputerNameExW", [&] {
+            return ::GetComputerNameExW(
+                       ComputerNameDnsHostname, wide, &widelen) == FALSE &&
+                err_is(test_err);
+        });
+        expect(sys::GetModuleHandleA, "GetModuleHandleA", [&] {
+            return ::GetModuleHandleA("kernel32") == nullptr &&
+                err_is(test_err);
+        });
+        expect(sys::GetModuleHandleW, "GetModuleHandleW", [&] {
+            return ::GetModuleHandleW(L"kernel32") == nullptr &&
+                err_is(test_err);
+        });
+        expect(sys::GetProcAddress, "GetProcAddress", [&] {
+            return ::GetProcAddress(
+                       ::GetModuleHandleW(L"kernel32"), "CloseHandle") ==
+                nullptr &&
+                err_is(test_err);
+        });
+        expect(sys::MultiByteToWideChar, "MultiByteToWideChar", [&] {
+            return ::MultiByteToWideChar(CP_UTF8, 0, "x", 1, wide, 64) == 0 &&
+                err_is(test_err);
+        });
+        expect(sys::WideCharToMultiByte, "WideCharToMultiByte", [&] {
+            return ::WideCharToMultiByte(
+                       CP_UTF8, 0, L"x", 1, narrow, 64, nullptr, nullptr) ==
+                0 &&
+                err_is(test_err);
+        });
+        expect(sys::signal, "signal", [&] {
+            return ::signal(SIGINT, SIG_DFL) == SIG_ERR && err_is(test_err);
+        });
         // Last, since an armed CloseHandle leaves the port open and the
         // real close has to follow.
-        expect(sys::CloseHandle, "CloseHandle", [&]
-            { return ::CloseHandle(port) == FALSE && err_is(test_err); });
+        expect(sys::CloseHandle, "CloseHandle", [&] {
+            return ::CloseHandle(port) == FALSE && err_is(test_err);
+        });
 
         std::ignore = ::CloseHandle(port);
         std::ignore = ::closesocket(fd);
@@ -1240,13 +1361,13 @@ struct self_test
     void testReturningTruncatesAndForwards()
     {
         SOCKET a = INVALID_SOCKET, b = INVALID_SOCKET;
-        if(!make_loopback_pair(a, b))
+        if (!make_loopback_pair(a, b))
         {
             BOOST_TEST(false);
             return;
         }
         char const msg[] = "0123456789";
-        char buf[16] = {};
+        char buf[16]     = {};
         {
             auto f = fault_scope::returning(sys::send, 4);
             BOOST_TEST_EQ(::send(a, msg, 10, 0), 4);
@@ -1265,11 +1386,11 @@ struct self_test
         wb[1].buf = p2;
         wb[1].len = 4;
         {
-            auto f = fault_scope::returning(sys::WSARecv, 6);
+            auto f      = fault_scope::returning(sys::WSARecv, 6);
             DWORD bytes = 0;
             DWORD flags = 0;
-            BOOST_TEST_EQ(::WSARecv(b, wb, 2, &bytes, &flags, nullptr,
-                nullptr), 0);
+            BOOST_TEST_EQ(
+                ::WSARecv(b, wb, 2, &bytes, &flags, nullptr, nullptr), 0);
             BOOST_TEST(f.fired());
             BOOST_TEST_EQ(bytes, static_cast<DWORD>(6));
             BOOST_TEST_EQ(std::string_view(p1, 4), "0123");
@@ -1294,11 +1415,13 @@ struct self_test
     // way, since swallowing the call would leak the list.
     void testFreeAddrInfoRunsUnderArm()
     {
-        if(!require_hook(sys::FreeAddrInfoExW, "FreeAddrInfoExW"))
+        if (!require_hook(sys::FreeAddrInfoExW, "FreeAddrInfoExW"))
             return;
         PADDRINFOEXW res = nullptr;
-        if(::GetAddrInfoExW(L"localhost", nullptr, NS_DNS, nullptr, nullptr,
-            &res, nullptr, nullptr, nullptr, nullptr) != 0 || !res)
+        if (::GetAddrInfoExW(
+                L"localhost", nullptr, NS_DNS, nullptr, nullptr, &res, nullptr,
+                nullptr, nullptr, nullptr) != 0 ||
+            !res)
             return;
         fault_scope f(sys::FreeAddrInfoExW, test_err);
         ::FreeAddrInfoExW(res);
@@ -1309,22 +1432,22 @@ struct self_test
     // an operation the kernel completed, reported as failed.
     void testCompletionFaultRewrites()
     {
-        if(!require_hook(sys::GetQueuedCompletionStatus,
-            "GetQueuedCompletionStatus"))
+        if (!require_hook(
+                sys::GetQueuedCompletionStatus, "GetQueuedCompletionStatus"))
             return;
-        HANDLE port = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr,
-            0, 1);
+        HANDLE port =
+            ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 1);
         BOOST_TEST(port != nullptr);
         OVERLAPPED ov{};
         BOOST_TEST(::PostQueuedCompletionStatus(port, 7, 99, &ov) != FALSE);
         {
             completion_fault_scope c(ERROR_NETNAME_DELETED);
-            DWORD bytes = 0;
-            ULONG_PTR key = 0;
+            DWORD bytes      = 0;
+            ULONG_PTR key    = 0;
             LPOVERLAPPED got = nullptr;
             ::SetLastError(0);
-            BOOL const r = ::GetQueuedCompletionStatus(port, &bytes, &key,
-                &got, 1000);
+            BOOL const r =
+                ::GetQueuedCompletionStatus(port, &bytes, &key, &got, 1000);
             DWORD const err = ::GetLastError();
             BOOST_TEST(r == FALSE);
             BOOST_TEST_EQ(err, static_cast<DWORD>(ERROR_NETNAME_DELETED));
@@ -1339,22 +1462,23 @@ struct self_test
 
     void testCompletionFaultDisarmsOnScopeExit()
     {
-        if(!require_hook(sys::GetQueuedCompletionStatus,
-            "GetQueuedCompletionStatus"))
+        if (!require_hook(
+                sys::GetQueuedCompletionStatus, "GetQueuedCompletionStatus"))
             return;
-        HANDLE port = ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr,
-            0, 1);
+        HANDLE port =
+            ::CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 1);
         BOOST_TEST(port != nullptr);
         OVERLAPPED ov{};
         BOOST_TEST(::PostQueuedCompletionStatus(port, 7, 99, &ov) != FALSE);
         {
             completion_fault_scope c(ERROR_NETNAME_DELETED, 2);
         }
-        DWORD bytes = 0;
-        ULONG_PTR key = 0;
+        DWORD bytes      = 0;
+        ULONG_PTR key    = 0;
         LPOVERLAPPED got = nullptr;
-        BOOST_TEST(::GetQueuedCompletionStatus(port, &bytes, &key, &got, 1000)
-            != FALSE);
+        BOOST_TEST(
+            ::GetQueuedCompletionStatus(port, &bytes, &key, &got, 1000) !=
+            FALSE);
         BOOST_TEST(got == &ov);
         std::ignore = ::CloseHandle(port);
     }
@@ -1364,48 +1488,57 @@ struct self_test
     // or those two are unreachable.
     void testExtensionPointersAreWrapped()
     {
-        if(!require_hook(sys::WSAIoctl, "WSAIoctl"))
+        if (!require_hook(sys::WSAIoctl, "WSAIoctl"))
             return;
         SOCKET s = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         BOOST_TEST(s != INVALID_SOCKET);
-        DWORD bytes = 0;
-        GUID accept_guid = WSAID_ACCEPTEX;
+        DWORD bytes             = 0;
+        GUID accept_guid        = WSAID_ACCEPTEX;
         LPFN_ACCEPTEX accept_ex = nullptr;
-        BOOST_TEST_EQ(::WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER,
-            &accept_guid, sizeof(accept_guid), &accept_ex, sizeof(accept_ex),
-            &bytes, nullptr, nullptr), 0);
+        BOOST_TEST_EQ(
+            ::WSAIoctl(
+                s, SIO_GET_EXTENSION_FUNCTION_POINTER, &accept_guid,
+                sizeof(accept_guid), &accept_ex, sizeof(accept_ex), &bytes,
+                nullptr, nullptr),
+            0);
         BOOST_TEST(accept_ex != nullptr);
 
-        HMODULE owner = nullptr;
+        HMODULE owner    = nullptr;
         auto const* addr = reinterpret_cast<void const*>(accept_ex);
-        BOOST_TEST(::GetModuleHandleExW(
-            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            static_cast<LPCWSTR>(addr), &owner) != FALSE);
+        BOOST_TEST(
+            ::GetModuleHandleExW(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                static_cast<LPCWSTR>(addr), &owner) != FALSE);
         BOOST_TEST(owner == ::GetModuleHandleW(nullptr));
 
         {
             fault_scope f(sys::AcceptEx, test_err);
-            BOOST_TEST(accept_ex(s, s, nullptr, 0, 0, 0, &bytes, nullptr) ==
-                FALSE);
+            BOOST_TEST(
+                accept_ex(s, s, nullptr, 0, 0, 0, &bytes, nullptr) == FALSE);
             BOOST_TEST(err_is(test_err));
             BOOST_TEST(f.fired());
         }
 
-        GUID connect_guid = WSAID_CONNECTEX;
+        GUID connect_guid         = WSAID_CONNECTEX;
         LPFN_CONNECTEX connect_ex = nullptr;
-        BOOST_TEST_EQ(::WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER,
-            &connect_guid, sizeof(connect_guid), &connect_ex,
-            sizeof(connect_ex), &bytes, nullptr, nullptr), 0);
+        BOOST_TEST_EQ(
+            ::WSAIoctl(
+                s, SIO_GET_EXTENSION_FUNCTION_POINTER, &connect_guid,
+                sizeof(connect_guid), &connect_ex, sizeof(connect_ex), &bytes,
+                nullptr, nullptr),
+            0);
         BOOST_TEST(connect_ex != nullptr);
         {
             fault_scope f(sys::ConnectEx, test_err);
             sockaddr_in sa{};
-            sa.sin_family = AF_INET;
+            sa.sin_family      = AF_INET;
             sa.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
-            BOOST_TEST(connect_ex(s, reinterpret_cast<sockaddr*>(&sa),
-                static_cast<int>(sizeof(sa)), nullptr, 0, &bytes, nullptr) ==
-                FALSE);
+            BOOST_TEST(
+                connect_ex(
+                    s, reinterpret_cast<sockaddr*>(&sa),
+                    static_cast<int>(sizeof(sa)), nullptr, 0, &bytes,
+                    nullptr) == FALSE);
             BOOST_TEST(err_is(test_err));
             BOOST_TEST(f.fired());
         }
@@ -1417,55 +1550,55 @@ struct self_test
     // lookup the library performs.
     void testNtPointersAreWrapped()
     {
-        if(!require_hook(sys::GetProcAddress, "GetProcAddress"))
+        if (!require_hook(sys::GetProcAddress, "GetProcAddress"))
             return;
         HMODULE ntdll = ::GetModuleHandleW(L"ntdll.dll");
         BOOST_TEST(ntdll != nullptr);
-        using nt_set_fn = LONG(NTAPI*)(HANDLE, ULONG_PTR*, void*, ULONG,
-            ULONG);
-        auto const fn = reinterpret_cast<nt_set_fn>(
-            reinterpret_cast<void (*)()>(
+        using nt_set_fn = LONG(NTAPI*)(HANDLE, ULONG_PTR*, void*, ULONG, ULONG);
+        auto const fn =
+            reinterpret_cast<nt_set_fn>(reinterpret_cast<void (*)()>(
                 ::GetProcAddress(ntdll, "NtSetInformationFile")));
         BOOST_TEST(fn != nullptr);
-        HMODULE owner = nullptr;
+        HMODULE owner    = nullptr;
         auto const* addr = reinterpret_cast<void const*>(fn);
-        BOOST_TEST(::GetModuleHandleExW(
-            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            static_cast<LPCWSTR>(addr), &owner) != FALSE);
+        BOOST_TEST(
+            ::GetModuleHandleExW(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                static_cast<LPCWSTR>(addr), &owner) != FALSE);
         BOOST_TEST(owner == ::GetModuleHandleW(nullptr));
         {
             fault_scope f(sys::NtSetInformationFile, test_err);
             ULONG_PTR iosb[2] = {0, 0};
-            void* info[2] = {nullptr, nullptr};
-            BOOST_TEST(fn(INVALID_HANDLE_VALUE, iosb, &info,
-                static_cast<ULONG>(sizeof(info)), 61) != 0);
+            void* info[2]     = {nullptr, nullptr};
+            BOOST_TEST(
+                fn(INVALID_HANDLE_VALUE, iosb, &info,
+                   static_cast<ULONG>(sizeof(info)), 61) != 0);
             BOOST_TEST(f.fired());
         }
 
         // The file services resolve this one through the ANSI spelling
         // of the module name, so the substitution has to survive that
         // lookup too.
-        using nt_flush_fn = LONG(NTAPI*)(HANDLE, ULONG, void*, ULONG,
-            void*);
-        auto const flush = reinterpret_cast<nt_flush_fn>(
+        using nt_flush_fn = LONG(NTAPI*)(HANDLE, ULONG, void*, ULONG, void*);
+        auto const flush  = reinterpret_cast<nt_flush_fn>(
             reinterpret_cast<void (*)()>(::GetProcAddress(
                 ::GetModuleHandleA("NTDLL"), "NtFlushBuffersFileEx")));
         // Absent before Windows 8; there is nothing to substitute then.
-        if(!flush)
+        if (!flush)
             return;
-        HMODULE flush_owner = nullptr;
+        HMODULE flush_owner    = nullptr;
         auto const* flush_addr = reinterpret_cast<void const*>(flush);
-        BOOST_TEST(::GetModuleHandleExW(
-            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            static_cast<LPCWSTR>(flush_addr), &flush_owner) != FALSE);
+        BOOST_TEST(
+            ::GetModuleHandleExW(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                static_cast<LPCWSTR>(flush_addr), &flush_owner) != FALSE);
         BOOST_TEST(flush_owner == ::GetModuleHandleW(nullptr));
         {
             fault_scope f(sys::NtFlushBuffersFileEx, test_err);
             ULONG_PTR iosb[2] = {0, 0};
-            BOOST_TEST(flush(INVALID_HANDLE_VALUE, 1, nullptr, 0, iosb)
-                != 0);
+            BOOST_TEST(flush(INVALID_HANDLE_VALUE, 1, nullptr, 0, iosb) != 0);
             BOOST_TEST(f.fired());
         }
     }
@@ -1495,6 +1628,6 @@ struct self_test
 
 TEST_SUITE(self_test, "boost.corosio.fault.self");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

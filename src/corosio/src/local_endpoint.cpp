@@ -34,8 +34,7 @@ operator<<(std::ostream& os, local_endpoint const& ep)
     if (ep.is_abstract())
     {
         // Skip the leading null byte; print the rest as the name
-        os << "[abstract:"
-           << std::string_view(ep.path_ + 1, ep.len_ - 1)
+        os << "[abstract:" << std::string_view(ep.path_ + 1, ep.len_ - 1)
            << ']';
     }
     else

@@ -267,8 +267,7 @@ public:
         Captures the destination endpoint and buffer, then dispatches
         to the backend implementation on suspension.
     */
-    struct send_to_awaitable
-        : detail::bytes_op_base<send_to_awaitable>
+    struct send_to_awaitable : detail::bytes_op_base<send_to_awaitable>
     {
         udp_socket& s_;
         buffer_param buf_;
@@ -276,12 +275,19 @@ public:
         int flags_;
 
         send_to_awaitable(
-            udp_socket& s, buffer_param buf,
-            endpoint dest, int flags = 0) noexcept
-            : s_(s), buf_(buf), dest_(dest), flags_(flags) {}
+            udp_socket& s,
+            buffer_param buf,
+            endpoint dest,
+            int flags = 0) noexcept
+            : s_(s)
+            , buf_(buf)
+            , dest_(dest)
+            , flags_(flags)
+        {
+        }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return s_.get().send_to(
                 h, ex, buf_, dest_, flags_, token_, &ec_, &bytes_);
@@ -293,8 +299,7 @@ public:
         Captures the source endpoint reference and buffer, then
         dispatches to the backend implementation on suspension.
     */
-    struct recv_from_awaitable
-        : detail::bytes_op_base<recv_from_awaitable>
+    struct recv_from_awaitable : detail::bytes_op_base<recv_from_awaitable>
     {
         udp_socket& s_;
         buffer_param buf_;
@@ -302,12 +307,19 @@ public:
         int flags_;
 
         recv_from_awaitable(
-            udp_socket& s, buffer_param buf,
-            endpoint& source, int flags = 0) noexcept
-            : s_(s), buf_(buf), source_(source), flags_(flags) {}
+            udp_socket& s,
+            buffer_param buf,
+            endpoint& source,
+            int flags = 0) noexcept
+            : s_(s)
+            , buf_(buf)
+            , source_(source)
+            , flags_(flags)
+        {
+        }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return s_.get().recv_from(
                 h, ex, buf_, &source_, flags_, token_, &ec_, &bytes_);
@@ -315,78 +327,78 @@ public:
     };
 
     /// Represent the awaitable returned by @ref connect.
-    struct connect_awaitable
-        : detail::void_op_base<connect_awaitable>
+    struct connect_awaitable : detail::void_op_base<connect_awaitable>
     {
         udp_socket& s_;
         endpoint endpoint_;
 
         connect_awaitable(udp_socket& s, endpoint ep) noexcept
-            : s_(s), endpoint_(ep) {}
+            : s_(s)
+            , endpoint_(ep)
+        {
+        }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return s_.get().connect(h, ex, endpoint_, token_, &ec_);
         }
     };
 
     /// Represent the awaitable returned by @ref wait.
-    struct wait_awaitable
-        : detail::void_op_base<wait_awaitable>
+    struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
         udp_socket& s_;
         wait_type w_;
 
-        wait_awaitable(udp_socket& s, wait_type w) noexcept
-            : s_(s), w_(w) {}
+        wait_awaitable(udp_socket& s, wait_type w) noexcept : s_(s), w_(w) {}
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return s_.get().wait(h, ex, w_, token_, &ec_);
         }
     };
 
     /// Represent the awaitable returned by @ref send.
-    struct send_awaitable
-        : detail::bytes_op_base<send_awaitable>
+    struct send_awaitable : detail::bytes_op_base<send_awaitable>
     {
         udp_socket& s_;
         buffer_param buf_;
         int flags_;
 
-        send_awaitable(
-            udp_socket& s, buffer_param buf,
-            int flags = 0) noexcept
-            : s_(s), buf_(buf), flags_(flags) {}
-
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        send_awaitable(udp_socket& s, buffer_param buf, int flags = 0) noexcept
+            : s_(s)
+            , buf_(buf)
+            , flags_(flags)
         {
-            return s_.get().send(
-                h, ex, buf_, flags_, token_, &ec_, &bytes_);
+        }
+
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        {
+            return s_.get().send(h, ex, buf_, flags_, token_, &ec_, &bytes_);
         }
     };
 
     /// Represent the awaitable returned by @ref recv.
-    struct recv_awaitable
-        : detail::bytes_op_base<recv_awaitable>
+    struct recv_awaitable : detail::bytes_op_base<recv_awaitable>
     {
         udp_socket& s_;
         buffer_param buf_;
         int flags_;
 
-        recv_awaitable(
-            udp_socket& s, buffer_param buf,
-            int flags = 0) noexcept
-            : s_(s), buf_(buf), flags_(flags) {}
-
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        recv_awaitable(udp_socket& s, buffer_param buf, int flags = 0) noexcept
+            : s_(s)
+            , buf_(buf)
+            , flags_(flags)
         {
-            return s_.get().recv(
-                h, ex, buf_, flags_, token_, &ec_, &bytes_);
+        }
+
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        {
+            return s_.get().recv(h, ex, buf_, flags_, token_, &ec_, &bytes_);
         }
     };
 
@@ -628,10 +640,8 @@ public:
         A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::ConstBufferSequence Buffers>
-    [[nodiscard]] auto send_to(
-        Buffers const& buf,
-        endpoint dest,
-        corosio::message_flags flags)
+    [[nodiscard]] auto
+    send_to(Buffers const& buf, endpoint dest, corosio::message_flags flags)
     {
         send_to_awaitable aw(*this, buf, dest, static_cast<int>(flags));
         if (!is_open())
@@ -660,9 +670,7 @@ public:
     */
     template<capy::MutableBufferSequence Buffers>
     [[nodiscard]] auto recv_from(
-        Buffers const& buf,
-        endpoint& source,
-        corosio::message_flags flags)
+        Buffers const& buf, endpoint& source, corosio::message_flags flags)
     {
         recv_from_awaitable aw(*this, buf, source, static_cast<int>(flags));
         if (!is_open())

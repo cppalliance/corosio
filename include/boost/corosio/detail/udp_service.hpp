@@ -63,9 +63,8 @@ public:
         @param fd The native socket handle to adopt.
         @return Error code on failure, empty on success.
     */
-    virtual std::error_code assign_socket(
-        udp_socket::implementation& impl,
-        native_handle_type fd) = 0;
+    virtual std::error_code
+    assign_socket(udp_socket::implementation& impl, native_handle_type fd) = 0;
 
     /** Bind a datagram socket to a local endpoint.
 

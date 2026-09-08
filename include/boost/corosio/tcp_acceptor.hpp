@@ -63,17 +63,19 @@ namespace boost::corosio {
 */
 class BOOST_COROSIO_DECL tcp_acceptor : public io_object
 {
-    struct wait_awaitable
-        : detail::void_op_base<wait_awaitable>
+    struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
         tcp_acceptor& acc_;
         wait_type w_;
 
         wait_awaitable(tcp_acceptor& acc, wait_type w) noexcept
-            : acc_(acc), w_(w) {}
+            : acc_(acc)
+            , w_(w)
+        {
+        }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return acc_.get().wait(h, ex, w_, token_, &ec_);
         }
@@ -126,8 +128,7 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
         mutable std::error_code ec_;
         mutable io_object::implementation* peer_impl_ = nullptr;
 
-        explicit accept_value_awaitable(tcp_acceptor& acc) noexcept
-            : acc_(acc)
+        explicit accept_value_awaitable(tcp_acceptor& acc) noexcept : acc_(acc)
         {
         }
 
@@ -143,8 +144,9 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
             // The peer is built only on success: error paths must not
             // touch acc_.context(), which a moved-from acceptor lacks.
             if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled),
-                        tcp_socket()};
+                return {
+                    make_error_code(std::errc::operation_canceled),
+                    tcp_socket()};
 
             if (ec_ || !peer_impl_)
                 return {ec_, tcp_socket()};

@@ -23,19 +23,20 @@ namespace {
 // tag::use_certificate_chain_file[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void load_a_certificate_chain(corosio::tls_context& ctx)
+void
+load_a_certificate_chain(corosio::tls_context& ctx)
 {
     // Concatenated PEM, leaf first, then intermediates, root omitted --
     // what an ACME client writes as fullchain.pem. Serving the leaf alone
     // leaves peers that do not already hold the intermediate unable to
     // build a chain to a trusted root.
     if (auto ec = ctx.use_certificate_chain_file("fullchain.pem"))
-        return;  // report the error
+        return; // report the error
 
     // The key the leaf certificate was issued for.
     if (auto ec = ctx.use_private_key_file(
             "privkey.pem", corosio::tls_file_format::pem))
-        return;  // report the error
+        return; // report the error
 }
 // end::use_certificate_chain_file[]
 

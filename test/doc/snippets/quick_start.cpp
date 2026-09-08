@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 #include <boost/corosio/io_context.hpp>
@@ -44,7 +44,7 @@
 #include "test_suite.hpp"
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
@@ -67,14 +67,14 @@ exception_style(corosio::tcp_socket& sock, capy::mutable_buffer buf)
 {
     // tag::error_exceptions[]
     auto [ec, n] = co_await sock.read_some(buf);
-    if (ec) throw std::system_error(ec);  // Throws if read fails
+    if (ec)
+        throw std::system_error(ec); // Throws if read fails
     // end::error_exceptions[]
 }
 
 struct quick_start_test
 {
-    void
-    run()
+    void run()
     {
         // The fragments above are compile-only; instantiating the
         // enclosing coroutines is the test.

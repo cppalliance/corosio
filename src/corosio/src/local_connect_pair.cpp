@@ -106,8 +106,7 @@ pick_pair_path(std::filesystem::path& dir_out)
     for (int attempt = 0; attempt < 16; ++attempt)
     {
         auto candidate =
-            fs::temp_directory_path() /
-            ("co_pair_" + std::to_string(gen()));
+            fs::temp_directory_path() / ("co_pair_" + std::to_string(gen()));
         std::error_code ec;
         if (fs::create_directory(candidate, ec))
         {
@@ -139,13 +138,13 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
     a_sock = INVALID_SOCKET;
     b_sock = INVALID_SOCKET;
 
-    fs::path    dir;
+    fs::path dir;
     std::string path = pick_pair_path(dir);
     if (path.empty())
         return detail::make_err(ERROR_PATH_NOT_FOUND);
 
-    SOCKET listen_sock = ::WSASocketW(
-        AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
+    SOCKET listen_sock =
+        ::WSASocketW(AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
     if (listen_sock == INVALID_SOCKET)
     {
         auto ec = detail::make_err(::WSAGetLastError());
@@ -158,12 +157,11 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
     std::memcpy(
         addr.sun_path, path.c_str(),
         (std::min)(path.size(), sizeof(addr.sun_path) - 1));
-    int addr_len = static_cast<int>(
-        offsetof(detail::un_sa_t, sun_path) + path.size() + 1);
+    int addr_len =
+        static_cast<int>(offsetof(detail::un_sa_t, sun_path) + path.size() + 1);
 
-    if (::bind(
-            listen_sock, reinterpret_cast<sockaddr*>(&addr), addr_len)
-        == SOCKET_ERROR)
+    if (::bind(listen_sock, reinterpret_cast<sockaddr*>(&addr), addr_len) ==
+        SOCKET_ERROR)
     {
         auto ec = detail::make_err(::WSAGetLastError());
         ::closesocket(listen_sock);
@@ -191,8 +189,8 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
         return ec;
     }
 
-    SOCKET            worker_sock = INVALID_SOCKET;
-    std::error_code   worker_ec;
+    SOCKET worker_sock = INVALID_SOCKET;
+    std::error_code worker_ec;
     std::atomic<bool> worker_done{false};
 
     // One exit, so worker_done is published on every path: the accept
@@ -215,9 +213,8 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
                 offsetof(detail::un_sa_t, sun_path) + path.size() + 1);
 
             if (::connect(
-                    worker_sock,
-                    reinterpret_cast<sockaddr*>(&caddr), caddr_len)
-                == SOCKET_ERROR)
+                    worker_sock, reinterpret_cast<sockaddr*>(&caddr),
+                    caddr_len) == SOCKET_ERROR)
             {
                 worker_ec = detail::make_err(::WSAGetLastError());
                 ::closesocket(worker_sock);
@@ -228,7 +225,7 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
         worker_done.store(true, std::memory_order_release);
     });
 
-    SOCKET          accept_sock = INVALID_SOCKET;
+    SOCKET accept_sock = INVALID_SOCKET;
     std::error_code accept_ec;
     for (;;)
     {
@@ -253,8 +250,7 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
         // corosio's own and has to compare equal on every toolchain.
         if ((pfd.revents & POLLRDNORM) == 0)
         {
-            accept_ec =
-                std::make_error_code(std::errc::connection_aborted);
+            accept_ec = std::make_error_code(std::errc::connection_aborted);
             break;
         }
 

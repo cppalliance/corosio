@@ -51,8 +51,7 @@ complete_io_op(Op& op)
     // here and the shared EOF test reduces to the reactor's original
     // `is_read && bytes == 0`.
     decode_io_result(
-        op.ec_out,
-        op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         op.is_read_operation(), op.bytes_transferred, /*empty_buffer=*/false);
 
@@ -90,8 +89,7 @@ complete_wait_op(Op& op)
 
     // Wait reports only success/cancel/error — no bytes, no EOF.
     decode_io_result(
-        op.ec_out,
-        op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
@@ -126,14 +124,12 @@ complete_connect_op(Op& op)
         if (::getsockname(
                 op.fd, reinterpret_cast<sockaddr*>(&local_storage),
                 &local_len) == 0)
-            local_ep =
-                from_sockaddr_as(local_storage, local_len, ep_type{});
+            local_ep = from_sockaddr_as(local_storage, local_len, ep_type{});
         op.socket_impl_->set_endpoints(local_ep, op.target_endpoint);
     }
 
     decode_io_result(
-        op.ec_out,
-        op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
@@ -197,10 +193,7 @@ setup_accepted_socket(
     using ep_type = decltype(acceptor_impl->local_endpoint());
     impl.set_endpoints(
         acceptor_impl->local_endpoint(),
-        from_sockaddr_as(
-            peer_storage,
-            peer_addrlen,
-            ep_type{}));
+        from_sockaddr_as(peer_storage, peer_addrlen, ep_type{}));
 
     if (impl_out)
         *impl_out = &impl;
@@ -229,8 +222,7 @@ complete_accept_op(Op& op)
         (op.errn == 0 && !op.cancelled.load(std::memory_order_acquire));
 
     decode_io_result(
-        op.ec_out,
-        op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
@@ -274,8 +266,7 @@ complete_datagram_op(Op& op)
 
     // No EOF: a zero-length datagram is valid (success with 0 bytes).
     decode_io_result(
-        op.ec_out,
-        op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
@@ -304,8 +295,7 @@ complete_datagram_op(Op& op, Endpoint* source_out)
 
     // No EOF: a zero-length datagram is valid (success with 0 bytes).
     decode_io_result(
-        op.ec_out,
-        op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
@@ -313,10 +303,8 @@ complete_datagram_op(Op& op, Endpoint* source_out)
 
     if (source_out && !op.cancelled.load(std::memory_order_acquire) &&
         op.errn == 0)
-        *source_out = from_sockaddr_as(
-            op.source_storage,
-            op.source_addrlen,
-            Endpoint{});
+        *source_out =
+            from_sockaddr_as(op.source_storage, op.source_addrlen, Endpoint{});
 
     coro_resume(&op);
 }

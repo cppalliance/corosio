@@ -189,8 +189,7 @@ class native_local_stream_socket : public local_stream_socket
             -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return self_.get_impl().wait(
-                h, env->executor, w_, token_, &ec_);
+            return self_.get_impl().wait(h, env->executor, w_, token_, &ec_);
         }
     };
 
@@ -248,8 +247,8 @@ public:
     */
     template<class Ex>
         requires(!std::same_as<
-                 std::remove_cvref_t<Ex>,
-                 native_local_stream_socket>) &&
+                    std::remove_cvref_t<Ex>,
+                    native_local_stream_socket>) &&
         capy::Executor<Ex>
     explicit native_local_stream_socket(Ex const& ex)
         : native_local_stream_socket(ex.context())

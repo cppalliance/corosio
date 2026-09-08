@@ -35,7 +35,8 @@ namespace boost::corosio::test::fault {
 
 namespace {
 
-endpoint loopback()
+endpoint
+loopback()
 {
     return endpoint(ipv4_address::loopback(), 0);
 }
@@ -49,19 +50,19 @@ struct select_faults
         {
             int before = open_fds();
             fault_scope f(sys::pipe, EMFILE);
-            expect_system_error([]{ io_context ioc(select); },
-                std::errc::too_many_files_open);
+            expect_system_error(
+                [] { io_context ioc(select); }, std::errc::too_many_files_open);
             BOOST_TEST(f.fired());
             BOOST_TEST_EQ(open_fds(), before);
         }
         // Three fcntl calls configure each end of the interrupt pipe,
         // read end first: 1-3 fail the read end, 4-6 the write end.
-        for(unsigned nth : {1u, 2u, 3u, 4u, 5u, 6u})
+        for (unsigned nth : {1u, 2u, 3u, 4u, 5u, 6u})
         {
             int before = open_fds();
             fault_scope f(sys::fcntl, EINVAL, nth);
-            expect_system_error([]{ io_context ioc(select); },
-                std::errc::invalid_argument);
+            expect_system_error(
+                [] { io_context ioc(select); }, std::errc::invalid_argument);
             BOOST_TEST(f.fired());
             BOOST_TEST_EQ(open_fds(), before);
         }
@@ -70,7 +71,7 @@ struct select_faults
     void testOpenFcntlFails()
     {
         io_context ioc(select);
-        for(unsigned nth : {1u, 2u, 3u})
+        for (unsigned nth : {1u, 2u, 3u})
         {
             int before = open_fds();
             tcp_socket s(ioc);
@@ -81,7 +82,7 @@ struct select_faults
             BOOST_TEST(!s.is_open());
             BOOST_TEST_EQ(open_fds(), before);
         }
-        for(unsigned nth : {1u, 2u, 3u})
+        for (unsigned nth : {1u, 2u, 3u})
         {
             int before = open_fds();
             tcp_acceptor acc(ioc);
@@ -100,8 +101,7 @@ struct select_faults
         tcp_acceptor acc(ioc, loopback());
         std::error_code aec;
         int leaked = 0;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body  = [&]() -> capy::task<> {
             tcp_socket client(ioc), server(ioc);
             {
                 auto [ec] = co_await client.connect(acc.local_endpoint());
@@ -126,8 +126,8 @@ struct select_faults
                 int before = open_fds();
                 fault_scope f(sys::accept, ECONNABORTED);
                 auto [ec] = co_await acc.accept(server);
-                aec = ec;
-                leaked = open_fds() - before;
+                aec       = ec;
+                leaked    = open_fds() - before;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!server.is_open());
             }
@@ -152,9 +152,8 @@ struct select_faults
         tcp_acceptor acc(ioc, loopback());
         std::error_code ecs[3];
         int leaked[3] = {};
-        auto body = [&]() -> capy::task<>
-        {
-            for(unsigned nth = 1; nth <= 3; ++nth)
+        auto body     = [&]() -> capy::task<> {
+            for (unsigned nth = 1; nth <= 3; ++nth)
             {
                 tcp_socket c(ioc), s(ioc);
                 {
@@ -166,8 +165,8 @@ struct select_faults
                 // three fcntl calls accept_policy makes on the
                 // accepted descriptor.
                 fault_scope f(sys::fcntl, EINVAL, nth);
-                auto [ec] = co_await acc.accept(s);
-                ecs[nth - 1] = ec;
+                auto [ec]       = co_await acc.accept(s);
+                ecs[nth - 1]    = ec;
                 leaked[nth - 1] = open_fds() - before;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!s.is_open());
@@ -176,7 +175,7 @@ struct select_faults
         };
         capy::run_async(ioc.get_executor())(body());
         ioc.run();
-        for(unsigned i = 0; i < 3; ++i)
+        for (unsigned i = 0; i < 3; ++i)
         {
             BOOST_TEST(ecs[i] == std::errc::invalid_argument);
             BOOST_TEST_EQ(leaked[i], 0);
@@ -188,15 +187,14 @@ struct select_faults
         // EINTR and EBADF are the two codes select() retries: the poll
         // is abandoned for this round and the run loop keeps going, so
         // the delay armed before it still fires.
-        for(int err : {EINTR, EBADF})
+        for (int err : {EINTR, EBADF})
         {
             io_context ioc(select);
             fault_scope f(sys::select, err);
             bool done = false;
-            auto body = [&]() -> capy::task<>
-            {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+            auto body = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
                 done = true;
             };
             capy::run_async(ioc.get_executor())(body());
@@ -208,14 +206,13 @@ struct select_faults
         {
             io_context ioc(select);
             fault_scope f(sys::select, EINVAL);
-            auto body = [&]() -> capy::task<>
-            {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+            auto body = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
             };
             capy::run_async(ioc.get_executor())(body());
-            expect_system_error([&]{ ioc.run(); },
-                std::errc::invalid_argument);
+            expect_system_error(
+                [&] { ioc.run(); }, std::errc::invalid_argument);
             BOOST_TEST(f.fired());
         }
     }
@@ -245,11 +242,9 @@ struct select_faults
         }
         ioc.restart();
         bool done = false;
-        auto body = [&]() -> capy::task<>
-        {
-            std::ignore = co_await corosio::delay(
-                std::chrono::milliseconds(1));
-            done = true;
+        auto body = [&]() -> capy::task<> {
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
+            done        = true;
             ioc.stop();
         };
         capy::run_async(ioc.get_executor())(body());
@@ -270,11 +265,11 @@ struct select_faults
     {
         io_context ioc(select);
         int const before = open_fds();
-        auto h = make_native_socket(AF_INET, SOCK_STREAM);
+        auto h           = make_native_socket(AF_INET, SOCK_STREAM);
         BOOST_TEST(static_cast<int>(h) >= 0);
         make_native_adoptable(h);
         int const high = dup_above_fd_setsize(static_cast<int>(h));
-        if(high < 0)
+        if (high < 0)
         {
             skip_no_high_fd("testAssignAboveFdSetsize");
             close_native_socket(h);
@@ -293,8 +288,7 @@ struct select_faults
             BOOST_TEST(!acc.is_open());
         }
         // The rejection is non-mutating: the caller still owns both.
-        BOOST_TEST(native_socket_valid(
-            static_cast<native_handle_type>(high)));
+        BOOST_TEST(native_socket_valid(static_cast<native_handle_type>(high)));
         BOOST_TEST(native_socket_valid(h));
         ::close(high);
         close_native_socket(h);
@@ -307,7 +301,7 @@ struct select_faults
         // representable, and the wall would deny it a number.
         io_context ioc(select);
         fd_wall wall;
-        if(!wall.ok())
+        if (!wall.ok())
         {
             skip_no_high_fd("testOpenAboveFdSetsize");
             return;
@@ -332,30 +326,29 @@ struct select_faults
         tcp_socket client(ioc), server(ioc);
         std::error_code aec;
         bool skipped = false;
-        int leaked = 0;
-        auto body = [&]() -> capy::task<>
-        {
+        int leaked   = 0;
+        auto body    = [&]() -> capy::task<> {
             {
                 auto [ec] = co_await client.connect(acc.local_endpoint());
                 BOOST_TEST(!ec);
             }
             fd_wall wall;
-            if(!wall.ok())
+            if (!wall.ok())
             {
                 skipped = true;
                 co_return;
             }
             int const before = open_fds();
-            auto [ec] = co_await acc.accept(server);
+            auto [ec]        = co_await acc.accept(server);
             // accept_policy closes the descriptor it cannot represent
             // before reporting, so the pending connection is consumed
             // and nothing is left behind.
             leaked = open_fds() - before;
-            aec = ec;
+            aec    = ec;
         };
         capy::run_async(ioc.get_executor())(body());
         ioc.run();
-        if(skipped)
+        if (skipped)
         {
             skip_no_high_fd("testAcceptAboveFdSetsize");
             return;
@@ -413,10 +406,9 @@ struct select_faults
         io_context ioc(select);
         tcp_acceptor acc(ioc, loopback());
         std::error_code aec;
-        int leaked = 0;
+        int leaked     = 0;
         unsigned calls = 0;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body      = [&]() -> capy::task<> {
             tcp_socket c(ioc), s(ioc);
             {
                 auto [ec] = co_await c.connect(acc.local_endpoint());
@@ -428,9 +420,9 @@ struct select_faults
             // (accept_policy::do_accept).
             fault_scope f(sys::setsockopt, ENOPROTOOPT);
             auto [ec] = co_await acc.accept(s);
-            aec = ec;
-            calls = f.count();
-            leaked = open_fds() - before;
+            aec       = ec;
+            calls     = f.count();
+            leaked    = open_fds() - before;
             BOOST_TEST(f.fired());
             BOOST_TEST(!s.is_open());
             c.close();
@@ -447,7 +439,7 @@ struct select_faults
 
     void run()
     {
-        if(skip_under_valgrind())
+        if (skip_under_valgrind())
             return;
         testConstructorFails();
         testOpenFcntlFails();
@@ -467,6 +459,6 @@ struct select_faults
 
 TEST_SUITE(select_faults, "boost.corosio.fault.select");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

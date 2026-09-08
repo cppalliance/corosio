@@ -67,7 +67,7 @@ struct host_name_test
         for (unsigned char c : h)
         {
             bool printable_ascii = (c >= 0x20 && c <= 0x7E);
-            bool high_bit = (c >= 0x80);
+            bool high_bit        = (c >= 0x80);
             BOOST_TEST(printable_ascii || high_bit);
         }
     }

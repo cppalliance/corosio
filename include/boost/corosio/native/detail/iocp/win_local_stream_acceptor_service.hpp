@@ -54,19 +54,19 @@ public:
 
     std::error_code open_acceptor_socket(
         local_stream_acceptor::implementation& impl,
-        int family, int type, int protocol) override;
+        int family,
+        int type,
+        int protocol) override;
 
     std::error_code assign_socket(
         local_stream_acceptor::implementation& impl,
         native_handle_type fd) override;
 
-    std::error_code
-    bind_acceptor(
+    std::error_code bind_acceptor(
         local_stream_acceptor::implementation& impl,
         corosio::local_endpoint ep) override;
 
-    std::error_code
-    listen_acceptor(
+    std::error_code listen_acceptor(
         local_stream_acceptor::implementation& impl, int backlog) override;
 
     void shutdown() override;
@@ -112,8 +112,7 @@ local_stream_acceptor_wait_op::do_cancel_impl(overlapped_op* base) noexcept
     }
     if (op->acceptor_ptr)
     {
-        op->acceptor_ptr->socket_service().scheduler()
-            .cancel_wait(op);
+        op->acceptor_ptr->socket_service().scheduler().cancel_wait(op);
     }
 }
 
@@ -386,8 +385,8 @@ win_local_stream_acceptor_internal::accept(
     auto& peer_wrapper = static_cast<win_local_stream_socket&>(*peer_ptr);
 
     // Always AF_UNIX for local sockets
-    SOCKET accepted = ::WSASocketW(
-        AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
+    SOCKET accepted =
+        ::WSASocketW(AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
     if (accepted == INVALID_SOCKET)
     {
@@ -424,8 +423,7 @@ win_local_stream_acceptor_internal::accept(
     }
 
     // AcceptEx address buffer sized for sockaddr_un
-    DWORD addr_size =
-        static_cast<DWORD>(sizeof(un_sa_t) + 16);
+    DWORD addr_size      = static_cast<DWORD>(sizeof(un_sa_t) + 16);
     DWORD bytes_received = 0;
 
     BOOL ok = accept_ex(
@@ -534,7 +532,7 @@ win_local_stream_acceptor::release_socket() noexcept
     {
         internal_->cancel();
         dissociate_from_iocp(s);
-        internal_->socket_ = INVALID_SOCKET;
+        internal_->socket_         = INVALID_SOCKET;
         internal_->local_endpoint_ = corosio::local_endpoint{};
     }
     return static_cast<native_handle_type>(s);
@@ -587,12 +585,11 @@ inline win_local_stream_acceptor_service::win_local_stream_acceptor_service(
 inline io_object::implementation*
 win_local_stream_acceptor_service::construct()
 {
-    auto internal =
-        std::make_shared<win_local_stream_acceptor_internal>(svc_);
+    auto internal = std::make_shared<win_local_stream_acceptor_internal>(svc_);
 
     // Allocate wrapper before mutating lists so a throw from
     // new doesn't leave a dangling pointer in acceptor_list_.
-    auto* raw = internal.get();
+    auto* raw     = internal.get();
     auto* wrapper = new win_local_stream_acceptor(std::move(internal));
 
     {
@@ -625,7 +622,9 @@ win_local_stream_acceptor_service::close(io_object::handle& h)
 inline std::error_code
 win_local_stream_acceptor_service::open_acceptor_socket(
     local_stream_acceptor::implementation& impl,
-    int family, int type, int protocol)
+    int family,
+    int type,
+    int protocol)
 {
     auto* internal =
         static_cast<win_local_stream_acceptor&>(impl).get_internal();
@@ -643,8 +642,7 @@ win_local_stream_acceptor_service::assign_socket(
 
 inline std::error_code
 win_local_stream_acceptor_service::bind_acceptor(
-    local_stream_acceptor::implementation& impl,
-    corosio::local_endpoint ep)
+    local_stream_acceptor::implementation& impl, corosio::local_endpoint ep)
 {
     auto* internal =
         static_cast<win_local_stream_acceptor&>(impl).get_internal();

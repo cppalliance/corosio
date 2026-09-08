@@ -60,9 +60,10 @@ protected:
     // (reactor_stream_socket -> reactor_basic_socket) that are not `Derived`,
     // so a private ctor would stop those intermediates from constructing it.
     // Protected is the correct access; suppress the private-only suggestion.
-    native_socket_base() = default;  // NOLINT(bugprone-crtp-constructor-accessibility)
+    // NOLINTNEXTLINE(bugprone-crtp-constructor-accessibility)
+    native_socket_base() = default;
 
-    int      fd_ = -1;
+    int fd_ = -1;
     // mutable so a derived const local_endpoint() override can lazily fill
     // it via getsockname() on first read (io_uring's lazy_pending state).
     mutable Endpoint local_endpoint_;
@@ -90,8 +91,10 @@ public:
 
     /// Set a socket option.
     std::error_code set_option(
-        int level, int optname, void const* data, std::size_t size)
-        noexcept override
+        int level,
+        int optname,
+        void const* data,
+        std::size_t size) noexcept override
     {
         if (::setsockopt(
                 fd_, level, optname, data, static_cast<socklen_t>(size)) != 0)
@@ -100,8 +103,8 @@ public:
     }
 
     /// Get a socket option.
-    std::error_code get_option(
-        int level, int optname, void* data, std::size_t* size)
+    std::error_code
+    get_option(int level, int optname, void* data, std::size_t* size)
         const noexcept override
     {
         socklen_t len = static_cast<socklen_t>(*size);
@@ -139,10 +142,10 @@ public:
             return make_err(errno);
 
         sockaddr_storage local_storage{};
-        socklen_t        local_len = sizeof(local_storage);
+        socklen_t local_len = sizeof(local_storage);
         if (::getsockname(
-                fd_, reinterpret_cast<sockaddr*>(&local_storage), &local_len)
-            == 0)
+                fd_, reinterpret_cast<sockaddr*>(&local_storage), &local_len) ==
+            0)
             local_endpoint_ =
                 from_sockaddr_as(local_storage, local_len, Endpoint{});
 

@@ -144,7 +144,8 @@ struct error_conditions_test
             b.close(); // peer dies (RST)
 
             // Let the RST propagate before writing.
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             // Keep writing until the failure surfaces. The budget (256 x 64 KiB
             // = 16 MiB) is far beyond any platform's send buffer + in-flight

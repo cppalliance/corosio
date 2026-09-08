@@ -23,13 +23,14 @@ namespace {
 // tag::set_alpn[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void offer_http_protocols(corosio::tls_context& ctx)
+void
+offer_http_protocols(corosio::tls_context& ctx)
 {
     // Preference order, highest first: HTTP/2, falling back to HTTP/1.1.
     // Read what the peer actually chose with tls_stream::alpn_protocol
     // after the handshake rather than assuming the first entry won.
     if (auto ec = ctx.set_alpn({"h2", "http/1.1"}))
-        return;  // report the error
+        return; // report the error
 }
 // end::set_alpn[]
 

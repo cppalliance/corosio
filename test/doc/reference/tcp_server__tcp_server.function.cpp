@@ -28,15 +28,16 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::tcp_server[]
-void construct_and_start(
+void
+construct_and_start(
     corosio::io_context& ctx,
     std::vector<std::unique_ptr<corosio::tcp_server::worker_base>> workers)
 {
     corosio::tcp_server srv(ctx, ctx.get_executor());
     srv.set_workers(std::move(workers));
-    if (auto ec = srv.bind(
-            corosio::endpoint{corosio::ipv4_address::any(), 8080}))
-        return;  // report the error
+    if (auto ec =
+            srv.bind(corosio::endpoint{corosio::ipv4_address::any(), 8080}))
+        return; // report the error
     srv.start();
 }
 // end::tcp_server[]

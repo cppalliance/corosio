@@ -47,30 +47,27 @@ clamp_to_ns(std::chrono::duration<Rep, Period> dur) noexcept
         if (dur != dur)
             return nanoseconds::zero();
     }
-    return dsec(dur) >= dsec((nanoseconds::max)())
-        ? (nanoseconds::max)()
+    return dsec(dur) >= dsec((nanoseconds::max)()) ? (nanoseconds::max)()
         : dsec(dur) <= dsec((nanoseconds::min)())
-            ? (nanoseconds::min)()
-            : duration_cast<nanoseconds>(dur);
+        ? (nanoseconds::min)()
+        : duration_cast<nanoseconds>(dur);
 }
 
 // A non-io_context executor cannot supply a timer service, and
 // await_suspend is driven through a noexcept wrapper, so translate
 // the service-lookup failure into a clear terminate.
 inline void
-emplace_delay_timer(
-    std::optional<timer>& t, capy::execution_context& ctx)
+emplace_delay_timer(std::optional<timer>& t, capy::execution_context& ctx)
 {
     try
     {
         t.emplace(ctx);
     }
-    catch(std::logic_error const&)
+    catch (std::logic_error const&)
     {
-        throw_logic_error(
-            "delay requires an io_context-backed executor");
+        throw_logic_error("delay requires an io_context-backed executor");
     }
-    catch(std::exception const& e)
+    catch (std::exception const& e)
     {
         throw_logic_error(e.what());
     }
@@ -119,20 +116,18 @@ class delay_awaitable
     std::chrono::steady_clock::time_point deadline_{};
     std::chrono::nanoseconds dur_{};
     bool has_deadline_ = false;
-    bool canceled_ = false;
+    bool canceled_     = false;
     std::optional<detail::timer> timer_;
     std::optional<wait_type> wait_;
 
 public:
     /// Construct an awaitable that waits for `dur` nanoseconds.
-    explicit delay_awaitable(std::chrono::nanoseconds dur) noexcept
-        : dur_(dur)
+    explicit delay_awaitable(std::chrono::nanoseconds dur) noexcept : dur_(dur)
     {
     }
 
     /// Construct an awaitable that waits until `tp`.
-    explicit delay_awaitable(
-        std::chrono::steady_clock::time_point tp) noexcept
+    explicit delay_awaitable(std::chrono::steady_clock::time_point tp) noexcept
         : deadline_(tp)
         , has_deadline_(true)
     {
@@ -142,9 +137,9 @@ public:
     // Only moved before await_suspend; wait_ is engaged after.
     delay_awaitable(delay_awaitable&&) = default;
 
-    delay_awaitable(delay_awaitable const&) = delete;
+    delay_awaitable(delay_awaitable const&)            = delete;
     delay_awaitable& operator=(delay_awaitable const&) = delete;
-    delay_awaitable& operator=(delay_awaitable&&) = delete;
+    delay_awaitable& operator=(delay_awaitable&&)      = delete;
 
     /// Return false unconditionally; see await_suspend.
     // The elapsed-deadline fast path must run after the stop-token
@@ -158,7 +153,7 @@ public:
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
     {
-        if(env->stop_token.stop_requested())
+        if (env->stop_token.stop_requested())
         {
             canceled_ = true;
             return h;
@@ -166,14 +161,13 @@ public:
 
         // Elapsed deadlines complete synchronously, but only once a
         // pending stop request has already been ruled out above.
-        if(has_deadline_ ?
-            deadline_ <= std::chrono::steady_clock::now() :
-            dur_.count() <= 0)
+        if (has_deadline_ ? deadline_ <= std::chrono::steady_clock::now()
+                          : dur_.count() <= 0)
             return h;
 
         detail::emplace_delay_timer(timer_, env->executor.context());
 
-        if(has_deadline_)
+        if (has_deadline_)
             timer_->expires_at(deadline_);
         else
             timer_->expires_after(dur_);
@@ -185,9 +179,9 @@ public:
     /// Return empty on expiry, `error::canceled` if stop won.
     [[nodiscard]] capy::io_result<> await_resume() noexcept
     {
-        if(canceled_)
+        if (canceled_)
             return {capy::error::canceled};
-        if(wait_)
+        if (wait_)
             return wait_->await_resume();
         return {};
     }
@@ -230,8 +224,7 @@ class clock_delay_awaitable
     std::chrono::nanoseconds
     next_wait(typename Clock::time_point now) const noexcept
     {
-        return detail::clamp_to_ns(
-            Traits::to_wait_duration(deadline_ - now));
+        return detail::clamp_to_ns(Traits::to_wait_duration(deadline_ - now));
     }
 
     // Runs on the scheduler thread executing the completion op,
@@ -241,14 +234,14 @@ class clock_delay_awaitable
     {
         auto* self = static_cast<clock_delay_awaitable*>(ctx);
         // Canceled: resume and surface the error
-        if(self->w_.ec_)
+        if (self->w_.ec_)
             return false;
         auto now = Clock::now();
-        if(now >= self->deadline_)
+        if (now >= self->deadline_)
             return false;
         // Re-publish and return without touching the node again:
         // the wait may complete on another thread immediately after.
-        if(self->timer_->rearm_wait(self->w_, self->next_wait(now)))
+        if (self->timer_->rearm_wait(self->w_, self->next_wait(now)))
             return true;
         // Heap growth failed; finish the wait with an error rather
         // than strand the frame with an unbalanced work count.
@@ -258,8 +251,7 @@ class clock_delay_awaitable
 
 public:
     /// Construct an awaitable that waits until `tp` on `Clock`.
-    explicit clock_delay_awaitable(
-        typename Clock::time_point tp) noexcept
+    explicit clock_delay_awaitable(typename Clock::time_point tp) noexcept
         : deadline_(tp)
     {
     }
@@ -271,11 +263,9 @@ public:
     {
     }
 
-    clock_delay_awaitable(clock_delay_awaitable const&) = delete;
-    clock_delay_awaitable&
-    operator=(clock_delay_awaitable const&) = delete;
-    clock_delay_awaitable&
-    operator=(clock_delay_awaitable&&) = delete;
+    clock_delay_awaitable(clock_delay_awaitable const&)            = delete;
+    clock_delay_awaitable& operator=(clock_delay_awaitable const&) = delete;
+    clock_delay_awaitable& operator=(clock_delay_awaitable&&)      = delete;
 
     /// Return false unconditionally; see await_suspend.
     // The elapsed-deadline fast path must run after the stop-token
@@ -289,14 +279,14 @@ public:
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
     {
-        if(env->stop_token.stop_requested())
+        if (env->stop_token.stop_requested())
         {
             canceled_ = true;
             return h;
         }
 
         auto now = Clock::now();
-        if(now >= deadline_)
+        if (now >= deadline_)
             return h;
 
         detail::emplace_delay_timer(timer_, env->executor.context());
@@ -315,9 +305,9 @@ public:
     /// Return empty on deadline, `error::canceled` if stop won.
     [[nodiscard]] capy::io_result<> await_resume() noexcept
     {
-        if(canceled_)
+        if (canceled_)
             return {capy::error::canceled};
-        if(timer_)
+        if (timer_)
             return {w_.ec_};
         return {};
     }
@@ -386,13 +376,13 @@ delay(std::chrono::steady_clock::time_point tp) noexcept
     @return A @ref clock_delay_awaitable yielding `io_result<>`.
 */
 template<class Traits = void, class Clock, class Duration>
-    requires (!std::same_as<Clock, std::chrono::steady_clock>) &&
-        (std::is_void_v<Traits> || WaitTraits<Traits, Clock>)
+    requires(!std::same_as<Clock, std::chrono::steady_clock>) &&
+    (std::is_void_v<Traits> || WaitTraits<Traits, Clock>)
 [[nodiscard]] auto
 delay(std::chrono::time_point<Clock, Duration> tp) noexcept
 {
-    using traits_type = std::conditional_t<
-        std::is_void_v<Traits>, wait_traits<Clock>, Traits>;
+    using traits_type =
+        std::conditional_t<std::is_void_v<Traits>, wait_traits<Clock>, Traits>;
     // ceil preserves completes-at-or-after when Duration is coarser
     // than the clock's native duration
     return clock_delay_awaitable<Clock, traits_type>(

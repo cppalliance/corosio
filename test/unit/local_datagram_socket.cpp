@@ -97,8 +97,8 @@ struct local_datagram_socket_test
         bool done = false;
         auto task = [&]() -> capy::task<> {
             auto [ec] = co_await sender.connect(local_endpoint(path));
-            cec  = ec;
-            done = true;
+            cec       = ec;
+            done      = true;
         };
         capy::run_async(ex)(task());
         ioc.run();
@@ -127,22 +127,20 @@ struct local_datagram_socket_test
             [](local_datagram_socket& s, char const* data, std::size_t len,
                std::error_code& ec_out, std::size_t& n_out,
                bool& done) -> capy::task<> {
-                auto [ec, n] =
-                    co_await s.send(capy::const_buffer(data, len));
-                ec_out = ec;
-                n_out  = n;
-                done   = true;
+                auto [ec, n] = co_await s.send(capy::const_buffer(data, len));
+                ec_out       = ec;
+                n_out        = n;
+                done         = true;
             }(s1, msg, std::strlen(msg), send_ec, sent, send_done));
 
         capy::run_async(ex)(
             [](local_datagram_socket& s, char* data, std::size_t len,
                std::error_code& ec_out, std::size_t& n_out,
                bool& done) -> capy::task<> {
-                auto [ec, n] =
-                    co_await s.recv(capy::mutable_buffer(data, len));
-                ec_out = ec;
-                n_out  = n;
-                done   = true;
+                auto [ec, n] = co_await s.recv(capy::mutable_buffer(data, len));
+                ec_out       = ec;
+                n_out        = n;
+                done         = true;
             }(s2, buf, sizeof(buf), recv_ec, recvd, recv_done));
 
         ioc.run();
@@ -198,22 +196,20 @@ struct local_datagram_socket_test
 
         capy::run_async(ex)(
             [](local_datagram_socket& s, char const* data, std::size_t len,
-               local_endpoint dest,
-               std::error_code& ec_out, std::size_t& n_out,
+               local_endpoint dest, std::error_code& ec_out, std::size_t& n_out,
                bool& done) -> capy::task<> {
-                auto [ec, n] = co_await s.send_to(
-                    capy::const_buffer(data, len), dest);
+                auto [ec, n] =
+                    co_await s.send_to(capy::const_buffer(data, len), dest);
                 ec_out = ec;
                 n_out  = n;
                 done   = true;
-            }(s1, msg, std::strlen(msg), local_endpoint(path2),
-              send_ec, sent, send_done));
+            }(s1, msg, std::strlen(msg), local_endpoint(path2), send_ec, sent,
+                           send_done));
 
         capy::run_async(ex)(
             [](local_datagram_socket& s, char* data, std::size_t len,
-               local_endpoint& source_out,
-               std::error_code& ec_out, std::size_t& n_out,
-               bool& done) -> capy::task<> {
+               local_endpoint& source_out, std::error_code& ec_out,
+               std::size_t& n_out, bool& done) -> capy::task<> {
                 auto [ec, n] = co_await s.recv_from(
                     capy::mutable_buffer(data, len), source_out);
                 ec_out = ec;
@@ -243,7 +239,8 @@ struct local_datagram_socket_test
         BOOST_TEST(!sock.open());
 
         // Bind to a path under a nonexistent directory
-        auto ec = sock.bind(local_endpoint("/tmp/nonexistent_dir_corosio/sock"));
+        auto ec =
+            sock.bind(local_endpoint("/tmp/nonexistent_dir_corosio/sock"));
         BOOST_TEST_EQ(!!ec, true);
     }
 
@@ -261,52 +258,51 @@ struct local_datagram_socket_test
         // same-type operations (documented as unsafe).
         char const msg1[] = "short";
         char const msg2[] = "a longer message";
-        char buf1[64] = {};
-        char buf2[64] = {};
+        char buf1[64]     = {};
+        char buf2[64]     = {};
         std::error_code send_ec1, send_ec2, recv_ec1, recv_ec2;
         std::size_t sent1 = 0, sent2 = 0, recvd1 = 0, recvd2 = 0;
         bool done = false;
 
         capy::run_async(ex)(
-            [](local_datagram_socket& sender,
-               local_datagram_socket& receiver,
-               char const* m1, std::size_t m1_len,
-               char const* m2, std::size_t m2_len,
-               char* b1, std::size_t b1_len,
-               char* b2, std::size_t b2_len,
-               std::error_code& se1, std::size_t& sn1,
-               std::error_code& se2, std::size_t& sn2,
-               std::error_code& re1, std::size_t& rn1,
-               std::error_code& re2, std::size_t& rn2,
+            [](local_datagram_socket& sender, local_datagram_socket& receiver,
+               char const* m1, std::size_t m1_len, char const* m2,
+               std::size_t m2_len, char* b1, std::size_t b1_len, char* b2,
+               std::size_t b2_len, std::error_code& se1, std::size_t& sn1,
+               std::error_code& se2, std::size_t& sn2, std::error_code& re1,
+               std::size_t& rn1, std::error_code& re2, std::size_t& rn2,
                bool& d) -> capy::task<> {
                 // Send both messages sequentially
                 {
-                    auto [ec, n] = co_await sender.send(
-                        capy::const_buffer(m1, m1_len));
-                    se1 = ec; sn1 = n;
+                    auto [ec, n] =
+                        co_await sender.send(capy::const_buffer(m1, m1_len));
+                    se1 = ec;
+                    sn1 = n;
                 }
                 {
-                    auto [ec, n] = co_await sender.send(
-                        capy::const_buffer(m2, m2_len));
-                    se2 = ec; sn2 = n;
+                    auto [ec, n] =
+                        co_await sender.send(capy::const_buffer(m2, m2_len));
+                    se2 = ec;
+                    sn2 = n;
                 }
                 // Receive both messages sequentially
                 {
                     auto [ec, n] = co_await receiver.recv(
                         capy::mutable_buffer(b1, b1_len));
-                    re1 = ec; rn1 = n;
+                    re1 = ec;
+                    rn1 = n;
                 }
                 {
                     auto [ec, n] = co_await receiver.recv(
                         capy::mutable_buffer(b2, b2_len));
-                    re2 = ec; rn2 = n;
+                    re2 = ec;
+                    rn2 = n;
                 }
                 d = true;
-            }(s1, s2,
-              msg1, std::strlen(msg1), msg2, std::strlen(msg2),
-              buf1, sizeof(buf1), buf2, sizeof(buf2),
-              send_ec1, sent1, send_ec2, sent2,
-              recv_ec1, recvd1, recv_ec2, recvd2, done));
+            }(s1, s2, msg1, std::strlen(msg1), msg2, std::strlen(msg2), buf1,
+                        sizeof(buf1), buf2, sizeof(buf2), send_ec1, sent1,
+                        send_ec2, sent2, recv_ec1, recvd1, recv_ec2, recvd2,
+                        done));
 
         ioc.run();
         ioc.restart();
@@ -363,22 +359,20 @@ struct local_datagram_socket_test
 
         capy::run_async(ex)(
             [](local_datagram_socket& s, char const* data, std::size_t len,
-               local_endpoint dest,
-               std::error_code& ec_out, std::size_t& n_out,
+               local_endpoint dest, std::error_code& ec_out, std::size_t& n_out,
                bool& done) -> capy::task<> {
-                auto [ec, n] = co_await s.send_to(
-                    capy::const_buffer(data, len), dest);
+                auto [ec, n] =
+                    co_await s.send_to(capy::const_buffer(data, len), dest);
                 ec_out = ec;
                 n_out  = n;
                 done   = true;
-            }(s1, msg, std::strlen(msg), local_endpoint(abs_path2),
-              send_ec, sent, send_done));
+            }(s1, msg, std::strlen(msg), local_endpoint(abs_path2), send_ec,
+                           sent, send_done));
 
         capy::run_async(ex)(
             [](local_datagram_socket& s, char* data, std::size_t len,
-               local_endpoint& source_out,
-               std::error_code& ec_out, std::size_t& n_out,
-               bool& done) -> capy::task<> {
+               local_endpoint& source_out, std::error_code& ec_out,
+               std::size_t& n_out, bool& done) -> capy::task<> {
                 auto [ec, n] = co_await s.recv_from(
                     capy::mutable_buffer(data, len), source_out);
                 ec_out = ec;
@@ -413,44 +407,43 @@ struct local_datagram_socket_test
         // Send a message, peek at it, then consume it.
         // Peek should not remove the message from the queue.
         char const msg[] = "peek test";
-        char buf1[64] = {};
-        char buf2[64] = {};
+        char buf1[64]    = {};
+        char buf2[64]    = {};
         std::error_code se, re1, re2;
         std::size_t sn = 0, rn1 = 0, rn2 = 0;
         bool done = false;
 
         capy::run_async(ex)(
-            [](local_datagram_socket& sender,
-               local_datagram_socket& receiver,
-               char const* data, std::size_t len,
-               char* b1, std::size_t b1_len,
-               char* b2, std::size_t b2_len,
-               std::error_code& se_out, std::size_t& sn_out,
-               std::error_code& re1_out, std::size_t& rn1_out,
-               std::error_code& re2_out, std::size_t& rn2_out,
-               bool& d) -> capy::task<> {
+            [](local_datagram_socket& sender, local_datagram_socket& receiver,
+               char const* data, std::size_t len, char* b1, std::size_t b1_len,
+               char* b2, std::size_t b2_len, std::error_code& se_out,
+               std::size_t& sn_out, std::error_code& re1_out,
+               std::size_t& rn1_out, std::error_code& re2_out,
+               std::size_t& rn2_out, bool& d) -> capy::task<> {
                 {
-                    auto [ec, n] = co_await sender.send(
-                        capy::const_buffer(data, len));
-                    se_out = ec; sn_out = n;
+                    auto [ec, n] =
+                        co_await sender.send(capy::const_buffer(data, len));
+                    se_out = ec;
+                    sn_out = n;
                 }
                 // Peek -- should not consume
                 {
                     auto [ec, n] = co_await receiver.recv(
-                        capy::mutable_buffer(b1, b1_len),
-                        message_flags::peek);
-                    re1_out = ec; rn1_out = n;
+                        capy::mutable_buffer(b1, b1_len), message_flags::peek);
+                    re1_out = ec;
+                    rn1_out = n;
                 }
                 // Normal recv -- should get same data
                 {
                     auto [ec, n] = co_await receiver.recv(
                         capy::mutable_buffer(b2, b2_len));
-                    re2_out = ec; rn2_out = n;
+                    re2_out = ec;
+                    rn2_out = n;
                 }
                 d = true;
-            }(s1, s2, msg, std::strlen(msg),
-              buf1, sizeof(buf1), buf2, sizeof(buf2),
-              se, sn, re1, rn1, re2, rn2, done));
+            }(s1, s2, msg, std::strlen(msg), buf1, sizeof(buf1), buf2,
+                                              sizeof(buf2), se, sn, re1, rn1,
+                                              re2, rn2, done));
 
         ioc.run();
         ioc.restart();
@@ -491,50 +484,47 @@ struct local_datagram_socket_test
         // consume with recv_from. Exercises the connectionless
         // recv_from path with message_flags::peek.
         char const msg[] = "recv_from peek";
-        char buf1[64] = {};
-        char buf2[64] = {};
+        char buf1[64]    = {};
+        char buf2[64]    = {};
         std::error_code se, re1, re2;
         std::size_t sn = 0, rn1 = 0, rn2 = 0;
         local_endpoint src1, src2;
         bool done = false;
 
         capy::run_async(ex)(
-            [](local_datagram_socket& sender,
-               local_datagram_socket& receiver,
-               char const* data, std::size_t len,
-               local_endpoint dest,
-               char* b1, std::size_t b1_len,
-               char* b2, std::size_t b2_len,
+            [](local_datagram_socket& sender, local_datagram_socket& receiver,
+               char const* data, std::size_t len, local_endpoint dest, char* b1,
+               std::size_t b1_len, char* b2, std::size_t b2_len,
                std::error_code& se_out, std::size_t& sn_out,
                std::error_code& re1_out, std::size_t& rn1_out,
-               local_endpoint& src1_out,
-               std::error_code& re2_out, std::size_t& rn2_out,
-               local_endpoint& src2_out,
+               local_endpoint& src1_out, std::error_code& re2_out,
+               std::size_t& rn2_out, local_endpoint& src2_out,
                bool& d) -> capy::task<> {
                 {
                     auto [ec, n] = co_await sender.send_to(
                         capy::const_buffer(data, len), dest);
-                    se_out = ec; sn_out = n;
+                    se_out = ec;
+                    sn_out = n;
                 }
                 // Peek via recv_from -- should not consume
                 {
                     auto [ec, n] = co_await receiver.recv_from(
-                        capy::mutable_buffer(b1, b1_len),
-                        src1_out,
+                        capy::mutable_buffer(b1, b1_len), src1_out,
                         message_flags::peek);
-                    re1_out = ec; rn1_out = n;
+                    re1_out = ec;
+                    rn1_out = n;
                 }
                 // Normal recv_from -- should get same data
                 {
                     auto [ec, n] = co_await receiver.recv_from(
-                        capy::mutable_buffer(b2, b2_len),
-                        src2_out);
-                    re2_out = ec; rn2_out = n;
+                        capy::mutable_buffer(b2, b2_len), src2_out);
+                    re2_out = ec;
+                    rn2_out = n;
                 }
                 d = true;
-            }(s1, s2, msg, std::strlen(msg), local_endpoint(path2),
-              buf1, sizeof(buf1), buf2, sizeof(buf2),
-              se, sn, re1, rn1, src1, re2, rn2, src2, done));
+            }(s1, s2, msg, std::strlen(msg), local_endpoint(path2), buf1,
+                        sizeof(buf1), buf2, sizeof(buf2), se, sn, re1, rn1,
+                        src1, re2, rn2, src2, done));
 
         ioc.run();
         ioc.restart();
@@ -625,8 +615,8 @@ struct local_datagram_socket_test
 
         // Closed socket reports bad_file_descriptor
         local_datagram_socket closed(ioc);
-        BOOST_TEST(closed.shutdown(shutdown_send)
-                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            closed.shutdown(shutdown_send) == std::errc::bad_file_descriptor);
     }
 
     void testBindClosed()
@@ -634,8 +624,9 @@ struct local_datagram_socket_test
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
 
-        BOOST_TEST(sock.bind(local_endpoint("/tmp/never"))
-                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.bind(local_endpoint("/tmp/never")) ==
+            std::errc::bad_file_descriptor);
     }
 
     void testReleaseClosedThrows()
@@ -680,14 +671,14 @@ struct local_datagram_socket_test
             throw std::system_error(ec, "connect_pair");
 
         // Send a datagram, then check available on the receive side
-        auto ex = ioc.get_executor();
+        auto ex          = ioc.get_executor();
         char const msg[] = "hello";
-        bool done = false;
+        bool done        = false;
         capy::run_async(ex)(
             [](local_datagram_socket& s, char const* m, std::size_t n,
                bool& d) -> capy::task<> {
                 std::ignore = co_await s.send(capy::const_buffer(m, n));
-                d = true;
+                d           = true;
             }(s1, msg, std::strlen(msg), done));
 
         ioc.run();
@@ -715,8 +706,8 @@ struct local_datagram_socket_test
         std::error_code recv_ec;
         auto reader = [&]() -> capy::task<> {
             char buf[8];
-            [[maybe_unused]] auto [ec, n] = co_await d1.recv(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            [[maybe_unused]] auto [ec, n] =
+                co_await d1.recv(capy::mutable_buffer(buf, sizeof(buf)));
             recv_ec   = ec;
             recv_done = true;
         };
@@ -737,11 +728,11 @@ struct local_datagram_socket_test
 
         // The adopted descriptor reaches its new peer.
         BOOST_TEST(::send(fds[1], "go", 2, 0) == 2);
-        bool got = false;
+        bool got    = false;
         auto reread = [&]() -> capy::task<> {
             char buf[8];
-            auto [ec, n] = co_await d1.recv(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [ec, n] =
+                co_await d1.recv(capy::mutable_buffer(buf, sizeof(buf)));
             got = !ec && n == 2;
         };
         capy::run_async(ex)(reread());
@@ -757,8 +748,9 @@ struct local_datagram_socket_test
     {
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
-        BOOST_TEST(sock.assign((native_handle_type)-1)
-                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.assign((native_handle_type)-1) ==
+            std::errc::bad_file_descriptor);
         BOOST_TEST(!sock.is_open());
     }
 
@@ -770,8 +762,9 @@ struct local_datagram_socket_test
         local_datagram_socket sock(ioc);
         int fds[2];
         BOOST_TEST(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
-        BOOST_TEST(sock.assign((native_handle_type)fds[0])
-                   == std::errc::wrong_protocol_type);
+        BOOST_TEST(
+            sock.assign((native_handle_type)fds[0]) ==
+            std::errc::wrong_protocol_type);
         BOOST_TEST(::fcntl(fds[0], F_GETFD) >= 0);
         BOOST_TEST(!sock.is_open());
         ::close(fds[0]);
@@ -869,8 +862,8 @@ struct local_datagram_socket_test
             auto [e3, n3] = co_await sock.recv(capy::mutable_buffer(buf, 1));
             BOOST_TEST(e3 == std::errc::bad_file_descriptor);
 
-            auto [e4, n4] = co_await sock.recv_from(
-                capy::mutable_buffer(buf, 1), src);
+            auto [e4, n4] =
+                co_await sock.recv_from(capy::mutable_buffer(buf, 1), src);
             BOOST_TEST(e4 == std::errc::bad_file_descriptor);
             done = true;
         };
@@ -891,17 +884,18 @@ struct local_datagram_socket_test
         bool recv_done = false;
 
         capy::run_async(ex)(
-            [](local_datagram_socket& s,
-               std::error_code& ec_out, bool& done) -> capy::task<> {
+            [](local_datagram_socket& s, std::error_code& ec_out,
+               bool& done) -> capy::task<> {
                 char buf[8];
-                [[maybe_unused]] auto [ec, n] = co_await s.recv(
-                    capy::mutable_buffer(buf, sizeof(buf)));
+                [[maybe_unused]] auto [ec, n] =
+                    co_await s.recv(capy::mutable_buffer(buf, sizeof(buf)));
                 ec_out = ec;
                 done   = true;
             }(s2, recv_ec, recv_done));
 
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             s2.cancel();
         };
         capy::run_async(ex)(canceller());
@@ -933,8 +927,8 @@ struct local_datagram_socket_test
             local_endpoint from1, from2;
             auto reader = [&](local_datagram_socket& s, char* p,
                               local_endpoint& from) -> capy::task<> {
-                std::ignore = co_await s.recv_from(
-                    capy::mutable_buffer(p, 8), from);
+                std::ignore =
+                    co_await s.recv_from(capy::mutable_buffer(p, 8), from);
                 ++resumed;
             };
             capy::run_async(ex)(reader(a1, buf1, from1));
@@ -945,7 +939,7 @@ struct local_datagram_socket_test
             BOOST_TEST(::send(b1.native_handle(), "x", 1, 0) == 1);
             BOOST_TEST(::send(b2.native_handle(), "x", 1, 0) == 1);
 
-            std::ignore = ioc.run_one();
+            std::ignore    = ioc.run_one();
             before_destroy = resumed;
         }
         BOOST_TEST(before_destroy < 2);
@@ -973,7 +967,6 @@ struct local_datagram_socket_test
         BOOST_TEST(!!sec);
     }
 
-
     void testWaitWriteReady()
     {
         io_context ioc(Backend);
@@ -982,7 +975,7 @@ struct local_datagram_socket_test
         BOOST_TEST(!connect_pair(d1, d2));
 
         std::error_code wec = std::make_error_code(std::errc::io_error);
-        auto task = [&]() -> capy::task<> {
+        auto task           = [&]() -> capy::task<> {
             auto [ec] = co_await d1.wait(wait_type::write);
             wec       = ec;
         };
@@ -1001,7 +994,6 @@ struct local_datagram_socket_test
             std::make_error_code(std::errc::invalid_argument));
         BOOST_TEST(d.is_open());
     }
-
 
     void run()
     {

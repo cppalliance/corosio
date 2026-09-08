@@ -29,12 +29,10 @@ namespace boost::corosio::detail {
     Owns all posix_stream_file instances. Thread lifecycle is
     managed by the thread_pool service (shared with resolver).
 */
-class BOOST_COROSIO_DECL posix_stream_file_service final
-    : public file_service
+class BOOST_COROSIO_DECL posix_stream_file_service final : public file_service
 {
 public:
-    posix_stream_file_service(
-        capy::execution_context& ctx, scheduler& sched)
+    posix_stream_file_service(capy::execution_context& ctx, scheduler& sched)
         : sched_(&sched)
         , pool_(ctx)
     {
@@ -42,8 +40,9 @@ public:
 
     ~posix_stream_file_service() override = default;
 
-    posix_stream_file_service(posix_stream_file_service const&)            = delete;
-    posix_stream_file_service& operator=(posix_stream_file_service const&) = delete;
+    posix_stream_file_service(posix_stream_file_service const&) = delete;
+    posix_stream_file_service&
+    operator=(posix_stream_file_service const&) = delete;
 
     io_object::implementation* construct() override
     {
@@ -179,7 +178,7 @@ posix_stream_file::read_some(
     {
         *ec        = make_error_code(std::errc::bad_file_descriptor);
         *bytes_out = 0;
-        op.cont.h = h;
+        op.cont.h  = h;
         return dispatch_coro(ex, op.cont);
     }
 
@@ -190,7 +189,7 @@ posix_stream_file::read_some(
     {
         *ec        = {};
         *bytes_out = 0;
-        op.cont.h = h;
+        op.cont.h  = h;
         return dispatch_coro(ex, op.cont);
     }
 
@@ -240,8 +239,9 @@ posix_stream_file::do_read_work(pool_work_item* w) noexcept
         ssize_t n;
         do
         {
-            n = ::preadv(self->fd_, op.iovecs, op.iovec_count,
-                         static_cast<off_t>(self->offset_));
+            n = ::preadv(
+                self->fd_, op.iovecs, op.iovec_count,
+                static_cast<off_t>(self->offset_));
         }
         while (n < 0 && errno == EINTR);
 
@@ -280,7 +280,7 @@ posix_stream_file::write_some(
     {
         *ec        = make_error_code(std::errc::bad_file_descriptor);
         *bytes_out = 0;
-        op.cont.h = h;
+        op.cont.h  = h;
         return dispatch_coro(ex, op.cont);
     }
 
@@ -291,7 +291,7 @@ posix_stream_file::write_some(
     {
         *ec        = {};
         *bytes_out = 0;
-        op.cont.h = h;
+        op.cont.h  = h;
         return dispatch_coro(ex, op.cont);
     }
 
@@ -341,8 +341,9 @@ posix_stream_file::do_write_work(pool_work_item* w) noexcept
         ssize_t n;
         do
         {
-            n = ::pwritev(self->fd_, op.iovecs, op.iovec_count,
-                          static_cast<off_t>(self->offset_));
+            n = ::pwritev(
+                self->fd_, op.iovecs, op.iovec_count,
+                static_cast<off_t>(self->offset_));
         }
         while (n < 0 && errno == EINTR);
 

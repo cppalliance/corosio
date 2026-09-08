@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 #include <boost/corosio/delay.hpp>
@@ -58,32 +58,40 @@
 #include "test_suite.hpp"
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 using namespace std::chrono_literals;
 
-void use_resource() {}
+void
+use_resource()
+{
+}
 
 // tag::mutex_protection[]
 std::mutex m;
 int counter = 0;
 
-void increment()
+void
+increment()
 {
     std::lock_guard lock(m);
     ++counter; // Safe: only one thread at a time
 }
 // end::mutex_protection[]
 
-bool stopped = false;
+bool stopped       = false;
 int events_handled = 0;
 
 // Each simulated event arms the next until the source runs dry.
-void wait_for_event() {}
+void
+wait_for_event()
+{
+}
 
-void handle_event()
+void
+handle_event()
 {
     if (++events_handled == 3)
         stopped = true;
@@ -95,36 +103,42 @@ run_event_loop()
     // tag::event_loop[]
     while (!stopped)
     {
-        wait_for_event();     // Blocks until I/O completes
-        handle_event();       // Run the handler
+        wait_for_event(); // Blocks until I/O completes
+        handle_event();   // Run the handler
     }
     // end::event_loop[]
 }
 
 // tag::suspension_points[]
-capy::task<void> handle_client(corosio::tcp_socket sock)
+capy::task<void>
+handle_client(corosio::tcp_socket sock)
 {
     char buf[1024];
 
-    auto [ec, n] = co_await sock.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec, n] =
+        co_await sock.read_some(capy::mutable_buffer(buf, sizeof(buf)));
     // Suspends here until data arrives
 
     if (ec)
-        co_return;  // Exit on error
+        co_return; // Exit on error
 
     // Process data...
 }
 // end::suspension_points[]
 
-capy::task<void> my_coroutine() { co_return; }
+capy::task<void>
+my_coroutine()
+{
+    co_return;
+}
 
 char session_storage[64];
 capy::mutable_buffer buf(session_storage, sizeof(session_storage));
 capy::const_buffer response("OK", 2);
 
 // tag::strand_session[]
-capy::task<void> session(corosio::tcp_socket sock)
+capy::task<void>
+session(corosio::tcp_socket sock)
 {
     // All code in this coroutine runs sequentially
     auto [ec, n] = co_await sock.read_some(buf);
@@ -136,26 +150,25 @@ capy::task<void> session(corosio::tcp_socket sock)
 // end::strand_session[]
 
 // tag::accept_loop[]
-capy::task<void> accept_loop(
-    corosio::io_context& ioc,
-    corosio::tcp_acceptor& acc)
+capy::task<void>
+accept_loop(corosio::io_context& ioc, corosio::tcp_acceptor& acc)
 {
     for (;;)
     {
         corosio::tcp_socket peer(ioc);
         auto [ec] = co_await acc.accept(peer);
-        if (ec) break;
+        if (ec)
+            break;
 
         // Spawn independent coroutine for this client
-        capy::run_async(ioc.get_executor())(
-            handle_client(std::move(peer)));
+        capy::run_async(ioc.get_executor())(handle_client(std::move(peer)));
     }
 }
 // end::accept_loop[]
 
 // Accepting needs a live listening socket; the loop compiles but
 // never runs.
-[[maybe_unused]] capy::task<void> (* const accept_loop_demo)(
+[[maybe_unused]] capy::task<void> (*const accept_loop_demo)(
     corosio::io_context&, corosio::tcp_acceptor&) = &accept_loop;
 
 // tag::worker_pool[]
@@ -184,40 +197,46 @@ make_worker_pool(corosio::io_context& ioc, int max_workers)
     return workers.size();
 }
 
-capy::task<std::string> read_message(corosio::tcp_socket&)
+capy::task<std::string>
+read_message(corosio::tcp_socket&)
 {
     co_return "request";
 }
 
-capy::task<std::string> process(std::string const&)
+capy::task<std::string>
+process(std::string const&)
 {
     co_return "response";
 }
 
-capy::task<void> write_response(corosio::tcp_socket&, std::string const&)
+capy::task<void>
+write_response(corosio::tcp_socket&, std::string const&)
 {
     co_return;
 }
 
 // tag::pipeline[]
-capy::task<void> pipeline(corosio::tcp_socket sock)
+capy::task<void>
+pipeline(corosio::tcp_socket sock)
 {
     auto message = co_await read_message(sock);
-    auto result = co_await process(message);
+    auto result  = co_await process(message);
     co_await write_response(sock, result);
 }
 // end::pipeline[]
 
 // tag::blocking[]
 // WRONG: blocks the entire io_context
-capy::task<void> bad()
+capy::task<void>
+bad()
 {
-    std::this_thread::sleep_for(1s);  // Don't do this!
+    std::this_thread::sleep_for(1s); // Don't do this!
     co_return;
 }
 
 // RIGHT: suspend with an async delay
-capy::task<void> good()
+capy::task<void>
+good()
 {
     std::ignore = co_await corosio::delay(1s);
 }
@@ -225,15 +244,20 @@ capy::task<void> good()
 
 // Running either coroutine costs a full second of wall clock; the
 // bodies are the demonstration, so nothing awaits them.
-[[maybe_unused]] capy::task<void> (* const bad_demo)() = &bad;
-[[maybe_unused]] capy::task<void> (* const good_demo)() = &good;
+[[maybe_unused]] capy::task<void> (*const bad_demo)()  = &bad;
+[[maybe_unused]] capy::task<void> (*const good_demo)() = &good;
 
-capy::task<> use_socket(corosio::tcp_socket&) { co_return; }
+capy::task<>
+use_socket(corosio::tcp_socket&)
+{
+    co_return;
+}
 
 // The rvalue overload moves the socket into the frame so the RIGHT
 // variant genuinely owns it; a by-value overload would make the
 // lvalue call above ambiguous.
-capy::task<> use_socket(corosio::tcp_socket&& s)
+capy::task<>
+use_socket(corosio::tcp_socket&& s)
 {
     auto owned = std::move(s);
     co_return;
@@ -248,14 +272,14 @@ dangling_reference(corosio::io_context& ioc, capy::executor_ref ex)
     // WRONG: socket destroyed while coroutine runs
     {
         corosio::tcp_socket sock(ioc);
-        capy::run_async(ex)(use_socket(sock));  // Takes reference!
-    }  // sock destroyed here, coroutine still running
+        capy::run_async(ex)(use_socket(sock)); // Takes reference!
+    } // sock destroyed here, coroutine still running
 
     // RIGHT: move socket into coroutine
     {
         corosio::tcp_socket sock(ioc);
         capy::run_async(ex)(use_socket(std::move(sock)));
-    }  // OK, coroutine owns the socket
+    } // OK, coroutine owns the socket
     // end::dangling_reference[]
 }
 
@@ -269,7 +293,7 @@ cross_executor(
     // Dangerous: socket created on ctx1, used from ex2
     corosio::tcp_socket sock(ctx1);
     capy::run_async(ex2)([&sock, ep]() -> capy::task<void> {
-        std::ignore = co_await sock.connect(ep);  // Wrong executor!
+        std::ignore = co_await sock.connect(ep); // Wrong executor!
     }());
     // end::cross_executor[]
 }
@@ -283,14 +307,14 @@ feed(corosio::tcp_socket& s)
 
 struct concurrent_programming_test
 {
-    void
-    testRaceCondition()
+    void testRaceCondition()
     {
         // tag::race_condition[]
         int counter = 0;
 
         // Task 1                  // Task 2
-        ++counter;                 ++counter;
+        ++counter;
+        ++counter;
         // Both read 0, both write 1
         // Expected: 2, Actual: 1 (data race)
         // end::race_condition[]
@@ -300,12 +324,11 @@ struct concurrent_programming_test
         BOOST_TEST(counter == 2);
     }
 
-    void
-    testReadModifyWrite()
+    void testReadModifyWrite()
     {
         bool resource_available = true;
         // tag::read_modify_write[]
-        if (resource_available)      // Read
+        if (resource_available) // Read
         {
             resource_available = false; // Write
             use_resource();
@@ -314,31 +337,27 @@ struct concurrent_programming_test
         BOOST_TEST(!resource_available);
     }
 
-    void
-    testMutexProtection()
+    void testMutexProtection()
     {
         increment();
         BOOST_TEST(counter == 1);
     }
 
-    void
-    testEventLoop()
+    void testEventLoop()
     {
         run_event_loop();
         BOOST_TEST(events_handled == 3);
     }
 
-    void
-    testHandleClient()
+    void testHandleClient()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
-        auto ex = ioc.get_executor();
-        bool done = false;
+        auto ex       = ioc.get_executor();
+        bool done     = false;
         capy::run_async(ex)(feed(s2));
         capy::run_async(ex)(
-            [](corosio::tcp_socket s, bool& out) -> capy::task<>
-            {
+            [](corosio::tcp_socket s, bool& out) -> capy::task<> {
                 co_await handle_client(std::move(s));
                 out = true;
             }(std::move(s1), done));
@@ -346,8 +365,7 @@ struct concurrent_programming_test
         BOOST_TEST(done);
     }
 
-    void
-    testExecutorAffinity()
+    void testExecutorAffinity()
     {
         corosio::io_context ioc;
         // tag::executor_affinity[]
@@ -357,17 +375,15 @@ struct concurrent_programming_test
         BOOST_TEST(ioc.run() > 0u);
     }
 
-    void
-    testSession()
+    void testSession()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
-        auto ex = ioc.get_executor();
-        bool done = false;
+        auto ex       = ioc.get_executor();
+        bool done     = false;
         capy::run_async(ex)(feed(s2));
         capy::run_async(ex)(
-            [](corosio::tcp_socket s, bool& out) -> capy::task<>
-            {
+            [](corosio::tcp_socket s, bool& out) -> capy::task<> {
                 co_await session(std::move(s));
                 out = true;
             }(std::move(s1), done));
@@ -375,11 +391,10 @@ struct concurrent_programming_test
         BOOST_TEST(done);
     }
 
-    void
-    testMultiThreadedRun()
+    void testMultiThreadedRun()
     {
         // tag::multi_threaded_run[]
-        corosio::io_context ioc(4);  // Hint: 4 threads
+        corosio::io_context ioc(4); // Hint: 4 threads
 
         std::vector<std::thread> threads;
         for (int i = 0; i < 4; ++i)
@@ -391,22 +406,19 @@ struct concurrent_programming_test
         BOOST_TEST(threads.size() == 4u);
     }
 
-    void
-    testWorkerPool()
+    void testWorkerPool()
     {
         corosio::io_context ioc;
         BOOST_TEST(make_worker_pool(ioc, 4) == 4u);
     }
 
-    void
-    testPipeline()
+    void testPipeline()
     {
         corosio::io_context ioc;
         corosio::tcp_socket sock(ioc);
         bool done = false;
         capy::run_async(ioc.get_executor())(
-            [](corosio::tcp_socket s, bool& out) -> capy::task<>
-            {
+            [](corosio::tcp_socket s, bool& out) -> capy::task<> {
                 co_await pipeline(std::move(s));
                 out = true;
             }(std::move(sock), done));
@@ -414,8 +426,7 @@ struct concurrent_programming_test
         BOOST_TEST(done);
     }
 
-    void
-    run()
+    void run()
     {
         testRaceCondition();
         testReadModifyWrite();
@@ -433,5 +444,4 @@ struct concurrent_programming_test
 } // namespace
 
 TEST_SUITE(
-    concurrent_programming_test,
-    "boost.corosio.doc.4b_concurrent_programming");
+    concurrent_programming_test, "boost.corosio.doc.4b_concurrent_programming");

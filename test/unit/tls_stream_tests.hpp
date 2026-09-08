@@ -235,7 +235,7 @@ testShutdownFuse(StreamFactory make_stream)
             };
 
             auto client_task = [&]() -> capy::task<> {
-                auto [ec] = co_await client.handshake(tls_role::client);
+                auto [ec]    = co_await client.handshake(tls_role::client);
                 client_hs_ec = ec;
                 if (!ec)
                     std::ignore = co_await client.shutdown();
@@ -243,7 +243,7 @@ testShutdownFuse(StreamFactory make_stream)
             };
 
             auto server_task = [&]() -> capy::task<> {
-                auto [ec] = co_await server.handshake(tls_role::server);
+                auto [ec]    = co_await server.handshake(tls_role::server);
                 server_hs_ec = ec;
                 if (!ec)
                 {
@@ -306,7 +306,7 @@ testFailureCases(StreamFactory make_stream)
     {
         auto client_ctx = make_client_context();
         auto server_ctx = make_anon_context();
-        std::ignore = server_ctx.set_ciphersuites("");
+        std::ignore     = server_ctx.set_ciphersuites("");
         run_tls_test_fail(
             ioc, client_ctx, server_ctx, make_stream, make_stream);
         ioc.restart();
@@ -395,8 +395,9 @@ template<typename StreamFactory>
 void
 testShutdownCancel(StreamFactory make_stream)
 {
-    for (auto mode : {shutdown_cancel_mode::socket_cancel,
-                      shutdown_cancel_mode::stop_token})
+    for (auto mode :
+         {shutdown_cancel_mode::socket_cancel,
+          shutdown_cancel_mode::stop_token})
     {
         io_context ioc;
         auto [client_ctx, server_ctx] =
@@ -449,13 +450,12 @@ testIoBeforeHandshake(StreamFactory make_stream)
     bool done = false;
     auto task = [&]() -> capy::task<> {
         char buf[16];
-        auto [rec, rn] = co_await stream.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        auto [rec, rn] =
+            co_await stream.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         BOOST_TEST(bool(rec));
         BOOST_TEST_EQ(rn, 0u);
 
-        auto [wec, wn] = co_await stream.write_some(
-            capy::const_buffer("x", 1));
+        auto [wec, wn] = co_await stream.write_some(capy::const_buffer("x", 1));
         BOOST_TEST(bool(wec));
         BOOST_TEST_EQ(wn, 0u);
 
@@ -509,8 +509,7 @@ testSni(StreamFactory make_stream)
             tls.set_hostname("www.example.com");
             return tls;
         };
-        run_tls_test(
-            ioc, client_ctx, server_ctx, with_hostname, make_stream);
+        run_tls_test(ioc, client_ctx, server_ctx, with_hostname, make_stream);
     }
 
     // Wrong hostname fails
@@ -549,8 +548,7 @@ testSniCallback(StreamFactory make_stream)
                 return hostname == "www.example.com";
             });
 
-        run_tls_test(
-            ioc, client_ctx, server_ctx, with_hostname, make_stream);
+        run_tls_test(ioc, client_ctx, server_ctx, with_hostname, make_stream);
     }
 
     // SNI callback rejects hostname
@@ -688,12 +686,10 @@ testHostnamePersistence(StreamFactory make_stream)
 
     client.set_hostname("www.example.com");
 
-    hostname_test_detail::run_hostname_round(
-        ioc, client, server, m1, m2, true);
+    hostname_test_detail::run_hostname_round(ioc, client, server, m1, m2, true);
     client.reset();
     server.reset();
-    hostname_test_detail::run_hostname_round(
-        ioc, client, server, m1, m2, true);
+    hostname_test_detail::run_hostname_round(ioc, client, server, m1, m2, true);
 
     BOOST_TEST_EQ(sni_count, 2u);
 
@@ -726,8 +722,7 @@ testHostnameRedirect(StreamFactory make_stream)
 
     // Round 1: name matches the certificate
     client.set_hostname("www.example.com");
-    hostname_test_detail::run_hostname_round(
-        ioc, client, server, m1, m2, true);
+    hostname_test_detail::run_hostname_round(ioc, client, server, m1, m2, true);
 
     client.reset();
     server.reset();
@@ -765,25 +760,22 @@ testHostnameClear(StreamFactory make_stream)
     auto server_ctx = make_server_context();
 
     std::size_t sni_count = 0;
-    server_ctx.set_servername_callback(
-        [&sni_count](std::string_view) -> bool {
-            ++sni_count;
-            return true;
-        });
+    server_ctx.set_servername_callback([&sni_count](std::string_view) -> bool {
+        ++sni_count;
+        return true;
+    });
 
     auto client = make_stream(m1, client_ctx);
     auto server = make_stream(m2, server_ctx);
 
     client.set_hostname("www.example.com");
-    hostname_test_detail::run_hostname_round(
-        ioc, client, server, m1, m2, true);
+    hostname_test_detail::run_hostname_round(ioc, client, server, m1, m2, true);
 
     client.reset();
     server.reset();
 
     client.set_hostname("");
-    hostname_test_detail::run_hostname_round(
-        ioc, client, server, m1, m2, true);
+    hostname_test_detail::run_hostname_round(ioc, client, server, m1, m2, true);
 
     // Only round 1 sent SNI
     BOOST_TEST_EQ(sni_count, 1u);
@@ -824,7 +816,7 @@ testHostnameRetryAfterFailure(StreamFactory make_stream)
     std::error_code hs_ec;
     auto hs = [&]() -> capy::task<> {
         auto [ec] = co_await client.handshake(tls_role::client);
-        hs_ec = ec;
+        hs_ec     = ec;
     };
     capy::run_async(ioc.get_executor())(hs());
     ioc.run();
@@ -838,8 +830,8 @@ testHostnameRetryAfterFailure(StreamFactory make_stream)
         std::size_t got = 0;
         while (got < sizeof(hdr))
         {
-            auto [ec, n] = co_await m2.read_some(capy::mutable_buffer(
-                hdr + got, sizeof(hdr) - got));
+            auto [ec, n] = co_await m2.read_some(
+                capy::mutable_buffer(hdr + got, sizeof(hdr) - got));
             if (ec)
                 co_return;
             got += n;
@@ -849,8 +841,8 @@ testHostnameRetryAfterFailure(StreamFactory make_stream)
         got = 0;
         while (got < body.size())
         {
-            auto [ec, n] = co_await m2.read_some(capy::mutable_buffer(
-                body.data() + got, body.size() - got));
+            auto [ec, n] = co_await m2.read_some(
+                capy::mutable_buffer(body.data() + got, body.size() - got));
             if (ec)
                 co_return;
             got += n;
@@ -862,8 +854,7 @@ testHostnameRetryAfterFailure(StreamFactory make_stream)
 
     // Round 2: the new name must take effect without reset()
     client.set_hostname("www.example.com");
-    hostname_test_detail::run_hostname_round(
-        ioc, client, server, m1, m2, true);
+    hostname_test_detail::run_hostname_round(ioc, client, server, m1, m2, true);
 
     // The server only ever saw the retry's SNI; the stale hello was
     // consumed above, before the server stream touched the transport.
@@ -900,11 +891,10 @@ testHostnameIpLiteral(StreamFactory make_stream, bool ip_supported)
     // NOLINTEND(bugprone-unused-return-value)
 
     std::size_t sni_count = 0;
-    server_ctx.set_servername_callback(
-        [&sni_count](std::string_view) -> bool {
-            ++sni_count;
-            return true;
-        });
+    server_ctx.set_servername_callback([&sni_count](std::string_view) -> bool {
+        ++sni_count;
+        return true;
+    });
 
     auto client = make_stream(m1, client_ctx);
     auto server = make_stream(m2, server_ctx);
@@ -936,8 +926,7 @@ testHostnameIpLiteral(StreamFactory make_stream, bool ip_supported)
 
     // Round 1: the literal matches the certificate's iPAddress entry.
     // The CN is not an IP, so success proves the IP-SAN path.
-    hostname_test_detail::run_hostname_round(
-        ioc, client, server, m1, m2, true);
+    hostname_test_detail::run_hostname_round(ioc, client, server, m1, m2, true);
 
     // RFC 6066 excludes literals from SNI
     BOOST_TEST_EQ(sni_count, 0u);
@@ -994,8 +983,10 @@ testCrlRevocation(StreamFactory make_stream, bool crl_supported)
 {
     auto revoked_server = []() {
         tls_context ctx;
-        require_ok(ctx.use_certificate(revoked_leaf_cert_pem, tls_file_format::pem));
-        require_ok(ctx.use_private_key(revoked_leaf_key_pem, tls_file_format::pem));
+        require_ok(
+            ctx.use_certificate(revoked_leaf_cert_pem, tls_file_format::pem));
+        require_ok(
+            ctx.use_private_key(revoked_leaf_key_pem, tls_file_format::pem));
         require_ok(ctx.set_verify_mode(tls_verify_mode::none));
         return ctx;
     };
@@ -1026,8 +1017,7 @@ testCrlRevocation(StreamFactory make_stream, bool crl_supported)
             auto client_ctx =
                 revoking_client(tls_revocation_policy::soft_fail, false);
             auto server_ctx = revoked_server();
-            run_tls_test(
-                ioc, client_ctx, server_ctx, make_stream, make_stream);
+            run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
         }
     }
     else
@@ -1065,7 +1055,8 @@ testCrlRevocation(StreamFactory make_stream, bool crl_supported)
     {
         io_context ioc;
         auto client_ctx = make_client_context();
-        std::ignore = client_ctx.add_crl(revoked_crl_pem); // policy left disabled
+        std::ignore =
+            client_ctx.add_crl(revoked_crl_pem); // policy left disabled
         auto server_ctx = make_server_context();
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
@@ -1122,8 +1113,10 @@ testPkcs12(StreamFactory make_stream)
         auto client_ctx = make_client_context();
         tls_context server_ctx;
         require_ok(server_ctx.use_pkcs12(p12, p12_password));
-        require_ok(server_ctx.use_certificate(expired_cert_pem, tls_file_format::pem));
-        require_ok(server_ctx.use_private_key(expired_key_pem, tls_file_format::pem));
+        require_ok(
+            server_ctx.use_certificate(expired_cert_pem, tls_file_format::pem));
+        require_ok(
+            server_ctx.use_private_key(expired_key_pem, tls_file_format::pem));
         require_ok(server_ctx.set_verify_mode(tls_verify_mode::none));
         run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
     }
@@ -1464,7 +1457,8 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
         // non-null (which would let the retry bypass the check).
         {
             io_context ioc;
-            [[maybe_unused]] auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+            [[maybe_unused]] auto [m1, m2] =
+                corosio::test::make_mocket_pair(ioc);
             auto client_ctx = make_client_context();
             client_ctx.set_verify_callback(
                 [](bool preverified, verify_context&) -> bool {
@@ -1476,7 +1470,7 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
             std::error_code ec2;
             auto attempt = [&](std::error_code& out) -> capy::task<> {
                 auto [ec] = co_await client.handshake(tls_role::client);
-                out = ec;
+                out       = ec;
             };
             capy::run_async(ioc.get_executor())(attempt(ec1));
             ioc.run();
@@ -1645,16 +1639,16 @@ testMoveSemantics(StreamFactory make_stream)
 
     bool write_done = false, read_done = false;
     auto writer = [&]() -> capy::task<> {
-        auto [ec, n] = co_await client.write_some(
-            capy::const_buffer("moved", 5));
+        auto [ec, n] =
+            co_await client.write_some(capy::const_buffer("moved", 5));
         BOOST_TEST(!ec);
         BOOST_TEST_EQ(n, 5u);
         write_done = true;
     };
     auto reader = [&]() -> capy::task<> {
         char buf[16];
-        auto [ec, n] = co_await server.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        auto [ec, n] =
+            co_await server.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         BOOST_TEST(!ec);
         BOOST_TEST_EQ(n, 5u);
         read_done = true;
@@ -1706,8 +1700,8 @@ testAbruptClose(StreamFactory make_stream)
     std::error_code read_ec;
     auto reader = [&]() -> capy::task<> {
         char buf[16];
-        [[maybe_unused]] auto [ec, n] = co_await client.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        [[maybe_unused]] auto [ec, n] =
+            co_await client.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         read_ec   = ec;
         read_done = true;
     };
@@ -1721,8 +1715,8 @@ testAbruptClose(StreamFactory make_stream)
     // Shutdown must complete; the missing close_notify reply is
     // normalized, not reported as a transport error.
     bool shutdown_done = false;
-    auto closer = [&]() -> capy::task<> {
-        std::ignore = co_await client.shutdown();
+    auto closer        = [&]() -> capy::task<> {
+        std::ignore   = co_await client.shutdown();
         shutdown_done = true;
     };
     capy::run_async(ioc.get_executor())(closer());
@@ -1751,7 +1745,7 @@ testEncryptedKey(StreamFactory make_stream, bool expect_success = true)
 
     auto client_ctx       = make_client_context();
     bool callback_invoked = false;
-    auto server_ctx = make_encrypted_key_server_context(callback_invoked);
+    auto server_ctx       = make_encrypted_key_server_context(callback_invoked);
 
     auto client = make_stream(m1, client_ctx);
     auto server = make_stream(m2, server_ctx);
@@ -1790,8 +1784,8 @@ testEncryptedKey(StreamFactory make_stream, bool expect_success = true)
     };
     capy::run_async(ioc.get_executor())(client_hs());
     capy::run_async(ioc.get_executor())(server_hs());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(client_done);
@@ -1820,7 +1814,8 @@ testInvalidContextHandshake(StreamFactory make_stream)
     tls_context server_ctx;
     // The setters may reject the garbage eagerly or defer to the
     // handshake; the handshake failure below is what is asserted.
-    std::ignore = server_ctx.use_certificate("not a certificate", tls_file_format::pem);
+    std::ignore =
+        server_ctx.use_certificate("not a certificate", tls_file_format::pem);
     std::ignore = server_ctx.use_private_key("not a key", tls_file_format::pem);
     require_ok(server_ctx.set_verify_mode(tls_verify_mode::none));
 
@@ -2267,14 +2262,12 @@ testFullDuplex(StreamFactory make_stream)
         // the reader parks with nothing left in flight; the failure
         // mode then reproduces regardless of completion ordering.
         char req[4096];
-        auto [rec, rn] = co_await server.read_some(
-            capy::mutable_buffer(req, sizeof(req)));
+        auto [rec, rn] =
+            co_await server.read_some(capy::mutable_buffer(req, sizeof(req)));
         BOOST_TEST(!rec);
-        BOOST_TEST_EQ(
-            std::string_view(req, rn), std::string_view(request));
+        BOOST_TEST_EQ(std::string_view(req, rn), std::string_view(request));
 
-        std::ignore =
-            co_await capy::when_all(server_reader(), server_writer());
+        std::ignore = co_await capy::when_all(server_reader(), server_writer());
         server_done = true;
         failsafe_stop.request_stop();
     };
@@ -2316,8 +2309,8 @@ testFullDuplex(StreamFactory make_stream)
 
     capy::run_async(ioc.get_executor())(server_task());
     capy::run_async(ioc.get_executor())(client_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit);
@@ -2367,8 +2360,7 @@ testFullDuplexBulk(StreamFactory make_stream)
     // Each side sends `total` bytes of a distinct pattern while reading
     // the peer's stream to completion.
     auto pump = [](auto& stream, char send_fill, char expect_fill,
-                   bool& ok) -> capy::task<>
-    {
+                   bool& ok) -> capy::task<> {
         std::string const chunk(chunk_size, send_fill);
         std::size_t sent = 0, received = 0;
         bool order_ok = true;
@@ -2377,8 +2369,7 @@ testFullDuplexBulk(StreamFactory make_stream)
             while (sent < total)
             {
                 auto [ec, n] = co_await capy::write(
-                    stream,
-                    capy::const_buffer(chunk.data(), chunk.size()));
+                    stream, capy::const_buffer(chunk.data(), chunk.size()));
                 if (ec)
                     co_return {ec};
                 sent += n;
@@ -2402,7 +2393,7 @@ testFullDuplexBulk(StreamFactory make_stream)
         };
 
         std::ignore = co_await capy::when_all(sender(), receiver());
-        ok = order_ok && sent == total && received == total;
+        ok          = order_ok && sent == total && received == total;
     };
 
     bool client_ok = false, server_ok = false, failsafe_hit = false;
@@ -2430,8 +2421,8 @@ testFullDuplexBulk(StreamFactory make_stream)
 
     capy::run_async(ioc.get_executor())(client_task());
     capy::run_async(ioc.get_executor())(server_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit);
@@ -2512,8 +2503,8 @@ testRecordBoundaryTransfer(StreamFactory make_stream)
         BOOST_TEST(got == payload);
     };
 
-    bool done          = false;
-    bool failsafe_hit  = false;
+    bool done         = false;
+    bool failsafe_hit = false;
     std::stop_source failsafe_stop;
 
     auto run_all = [&]() -> capy::task<> {
@@ -2539,8 +2530,8 @@ testRecordBoundaryTransfer(StreamFactory make_stream)
     };
 
     capy::run_async(ioc.get_executor())(run_all());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit);
@@ -2582,23 +2573,23 @@ testShutdownOverRead(StreamFactory make_stream)
         ioc.restart();
     }
 
-    bool reader_eof     = false;
-    bool local_sd_ok    = false;
-    bool peer_sd_ok     = false;
-    bool failsafe_hit   = false;
+    bool reader_eof   = false;
+    bool local_sd_ok  = false;
+    bool peer_sd_ok   = false;
+    bool failsafe_hit = false;
     std::stop_source failsafe_stop;
 
     // The server parks a read, then shuts down while it is parked. The
     // reader must complete with eof (peer close_notify), not hang.
     auto server_reader = [&]() -> capy::io_task<> {
         char buf[256];
-        auto [ec, n] = co_await server.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        auto [ec, n] =
+            co_await server.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         reader_eof = (ec == capy::cond::eof);
         co_return {ec};
     };
     auto server_shutdown = [&]() -> capy::io_task<> {
-        auto [ec] = co_await server.shutdown();
+        auto [ec]   = co_await server.shutdown();
         local_sd_ok = !ec;
         co_return {ec};
     };
@@ -2611,10 +2602,10 @@ testShutdownOverRead(StreamFactory make_stream)
     // Client answers the close_notify with its own shutdown.
     auto client_task = [&]() -> capy::task<> {
         char buf[256];
-        auto [rec, rn] = co_await client.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        auto [rec, rn] =
+            co_await client.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         BOOST_TEST(rec == capy::cond::eof);
-        auto [ec] = co_await client.shutdown();
+        auto [ec]  = co_await client.shutdown();
         peer_sd_ok = !ec;
     };
 
@@ -2633,8 +2624,8 @@ testShutdownOverRead(StreamFactory make_stream)
 
     capy::run_async(ioc.get_executor())(server_task());
     capy::run_async(ioc.get_executor())(client_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit);
@@ -2669,8 +2660,7 @@ struct gated_stream
     capy::async_event* write_gate_ = nullptr;
 
     template<class MutableBufferSequence>
-    capy::io_task<std::size_t>
-    read_some(MutableBufferSequence buffers)
+    capy::io_task<std::size_t> read_some(MutableBufferSequence buffers)
     {
         auto [ec, n] = co_await m_->read_some(buffers);
         // Withheld regardless of outcome: an errored completion must
@@ -2682,8 +2672,7 @@ struct gated_stream
     }
 
     template<class ConstBufferSequence>
-    capy::io_task<std::size_t>
-    write_some(ConstBufferSequence buffers)
+    capy::io_task<std::size_t> write_some(ConstBufferSequence buffers)
     {
         if (write_gate_)
         {
@@ -2748,8 +2737,8 @@ testShutdownSimultaneousClose(StreamFactory make_stream)
 
     auto client_reader = [&]() -> capy::io_task<> {
         char buf[256];
-        auto [ec, n] = co_await client.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        auto [ec, n] =
+            co_await client.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         reader_eof = (ec == capy::cond::eof);
         write_gate.set();
         // eof is this test's expected outcome; returning it would make
@@ -2757,7 +2746,7 @@ testShutdownSimultaneousClose(StreamFactory make_stream)
         co_return {};
     };
     auto client_shutdown = [&]() -> capy::io_task<> {
-        auto [ec] = co_await client.shutdown();
+        auto [ec]   = co_await client.shutdown();
         local_sd_ok = !ec;
         co_return {ec};
     };
@@ -2771,7 +2760,7 @@ testShutdownSimultaneousClose(StreamFactory make_stream)
     // connection open: a peer that has sent close_notify is not
     // required to close the transport.
     auto server_task = [&]() -> capy::task<> {
-        auto [ec] = co_await server.shutdown();
+        auto [ec]  = co_await server.shutdown();
         peer_sd_ok = !ec;
     };
 
@@ -2795,8 +2784,8 @@ testShutdownSimultaneousClose(StreamFactory make_stream)
 
     capy::run_async(ioc.get_executor())(client_task());
     capy::run_async(ioc.get_executor())(server_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit);
@@ -2828,8 +2817,7 @@ struct partial_error_stream
     std::error_code inject_ec_{};
 
     template<class MutableBufferSequence>
-    capy::io_task<std::size_t>
-    read_some(MutableBufferSequence buffers)
+    capy::io_task<std::size_t> read_some(MutableBufferSequence buffers)
     {
         auto [ec, n] = co_await m_->read_some(buffers);
         // Only override a clean result: this stream exists to prove
@@ -2840,8 +2828,7 @@ struct partial_error_stream
     }
 
     template<class ConstBufferSequence>
-    capy::io_task<std::size_t>
-    write_some(ConstBufferSequence buffers)
+    capy::io_task<std::size_t> write_some(ConstBufferSequence buffers)
     {
         co_return co_await m_->write_some(buffers);
     }
@@ -2905,18 +2892,18 @@ testPartialReadWithError(StreamFactory make_stream)
     // handler (only eof is), so it survives to the caller unchanged
     // and makes a clean probe for "was the error swallowed."
     auto client_task = [&]() -> capy::task<> {
-        std::ignore = co_await write_done.wait();
+        std::ignore    = co_await write_done.wait();
         pes.armed_     = true;
         pes.inject_ec_ = std::make_error_code(std::errc::connection_reset);
 
         char buf[512];
-        [[maybe_unused]] auto [ec1, n1] = co_await client.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        [[maybe_unused]] auto [ec1, n1] =
+            co_await client.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         first_read_errored = (ec1 == std::errc::connection_reset);
 
         pes.armed_ = false;
-        auto [ec2, n2] = co_await client.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        auto [ec2, n2] =
+            co_await client.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         second_read_ok = !ec2 && n2 == plaintext.size() &&
             std::string_view(buf, n2) == plaintext;
 
@@ -2938,8 +2925,8 @@ testPartialReadWithError(StreamFactory make_stream)
 
     capy::run_async(ioc.get_executor())(server_task());
     capy::run_async(ioc.get_executor())(client_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit);
@@ -2990,11 +2977,11 @@ testCancelParkedReader(StreamFactory make_stream)
     std::string const reply(1024, 'r');
     char const probe[]           = "poke";
     std::size_t const probe_size = sizeof(probe) - 1;
-    bool reader_canceled = false;
-    bool writer_ok       = false;
-    bool client_got_all  = false;
-    bool second_read_ok  = false;
-    bool failsafe_hit    = false;
+    bool reader_canceled         = false;
+    bool writer_ok               = false;
+    bool client_got_all          = false;
+    bool second_read_ok          = false;
+    bool failsafe_hit            = false;
     std::stop_source reader_stop;
     std::stop_source failsafe_stop;
     std::stop_source second_read_stop;
@@ -3002,8 +2989,8 @@ testCancelParkedReader(StreamFactory make_stream)
 
     auto server_reader = [&]() -> capy::task<> {
         char buf[256];
-        auto [ec, n] = co_await server.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        auto [ec, n] =
+            co_await server.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         reader_canceled = (ec == capy::cond::canceled);
         reader_done.set();
     };
@@ -3019,8 +3006,8 @@ testCancelParkedReader(StreamFactory make_stream)
     auto server_second_reader = [&]() -> capy::task<> {
         std::ignore = co_await reader_done.wait();
         char buf[64];
-        auto [ec, n] = co_await server.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        auto [ec, n] =
+            co_await server.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         second_read_ok = !ec && n == probe_size &&
             std::string_view(buf, n) == std::string_view(probe, probe_size);
         failsafe_stop.request_stop();
@@ -3040,8 +3027,8 @@ testCancelParkedReader(StreamFactory make_stream)
         client_got_all = (got == reply);
         // Reply received; now cancel the parked server reader.
         reader_stop.request_stop();
-        [[maybe_unused]] auto [ec, n] = co_await capy::write(
-            client, capy::const_buffer(probe, probe_size));
+        [[maybe_unused]] auto [ec, n] =
+            co_await capy::write(client, capy::const_buffer(probe, probe_size));
     };
 
     auto failsafe_task = [&]() -> capy::task<> {
@@ -3062,14 +3049,14 @@ testCancelParkedReader(StreamFactory make_stream)
         }
     };
 
-    capy::run_async(ioc.get_executor(), reader_stop.get_token())(
-        server_reader());
+    capy::run_async(
+        ioc.get_executor(), reader_stop.get_token())(server_reader());
     capy::run_async(ioc.get_executor())(server_writer());
     capy::run_async(ioc.get_executor(), second_read_stop.get_token())(
         server_second_reader());
     capy::run_async(ioc.get_executor())(client_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit);
@@ -3145,8 +3132,7 @@ testFullDuplexMtStrand(StreamFactory make_stream)
             failsafe_stop.request_stop();
             co_return;
         }
-        std::ignore =
-            co_await capy::when_all(server_reader(), server_writer());
+        std::ignore = co_await capy::when_all(server_reader(), server_writer());
         server_done = true;
         failsafe_stop.request_stop();
     };
@@ -3205,8 +3191,8 @@ testFullDuplexMtStrand(StreamFactory make_stream)
 
     capy::run_async(server_strand)(server_task());
     capy::run_async(client_strand)(client_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
 
     std::thread t([&ioc] { ioc.run(); });
     ioc.run();
@@ -3241,7 +3227,7 @@ template<typename StreamFactory>
 void
 testDeferredFlushError(StreamFactory make_stream)
 {
-    char const data[] = "test";
+    char const data[]      = "test";
     std::size_t const size = sizeof(data) - 1;
 
     // Write side: the flush error is deferred off a full transfer,
@@ -3276,9 +3262,9 @@ testDeferredFlushError(StreamFactory make_stream)
 
         std::error_code ec1;
         std::size_t n1 = 0;
-        auto write1 = [&]() -> capy::task<> {
-            auto [ec, n] = co_await client.write_some(
-                capy::const_buffer(data, size));
+        auto write1    = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await client.write_some(capy::const_buffer(data, size));
             ec1 = ec;
             n1  = n;
         };
@@ -3290,12 +3276,12 @@ testDeferredFlushError(StreamFactory make_stream)
         BOOST_TEST_EQ(n1, size);
 
         std::error_code ec2;
-        std::size_t n2      = 1;
-        bool failsafe_hit   = false;
+        std::size_t n2    = 1;
+        bool failsafe_hit = false;
         std::stop_source failsafe_stop;
         auto write2 = [&]() -> capy::task<> {
-            auto [ec, n] = co_await client.write_some(
-                capy::const_buffer(data, size));
+            auto [ec, n] =
+                co_await client.write_some(capy::const_buffer(data, size));
             ec2 = ec;
             n2  = n;
             failsafe_stop.request_stop();
@@ -3313,8 +3299,8 @@ testDeferredFlushError(StreamFactory make_stream)
             }
         };
         capy::run_async(ioc.get_executor())(write2());
-        capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-            failsafe_task());
+        capy::run_async(
+            ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
         ioc.run();
 
         BOOST_TEST(!failsafe_hit);
@@ -3358,9 +3344,9 @@ testDeferredFlushError(StreamFactory make_stream)
 
         std::error_code ec1;
         std::size_t n1 = 0;
-        auto write1 = [&]() -> capy::task<> {
-            auto [ec, n] = co_await client.write_some(
-                capy::const_buffer(data, size));
+        auto write1    = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await client.write_some(capy::const_buffer(data, size));
             ec1 = ec;
             n1  = n;
         };
@@ -3374,8 +3360,8 @@ testDeferredFlushError(StreamFactory make_stream)
         BOOST_TEST_EQ(n1, size);
 
         std::error_code ec2;
-        std::size_t n2      = 1;
-        bool failsafe_hit   = false;
+        std::size_t n2    = 1;
+        bool failsafe_hit = false;
         std::stop_source failsafe_stop;
         auto read1 = [&]() -> capy::task<> {
             char buf[64];
@@ -3398,8 +3384,8 @@ testDeferredFlushError(StreamFactory make_stream)
             }
         };
         capy::run_async(ioc.get_executor())(read1());
-        capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-            failsafe_task());
+        capy::run_async(
+            ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
         ioc.run();
         ioc.restart();
 
@@ -3411,8 +3397,8 @@ testDeferredFlushError(StreamFactory make_stream)
         BOOST_TEST_EQ(n2, 0u);
 
         std::error_code ec3;
-        std::size_t n3       = 1;
-        bool failsafe_hit2   = false;
+        std::size_t n3     = 1;
+        bool failsafe_hit2 = false;
         std::stop_source failsafe_stop2;
         auto read2 = [&]() -> capy::task<> {
             char buf[64];
@@ -3435,8 +3421,8 @@ testDeferredFlushError(StreamFactory make_stream)
             }
         };
         capy::run_async(ioc.get_executor())(read2());
-        capy::run_async(ioc.get_executor(), failsafe_stop2.get_token())(
-            failsafe_task2());
+        capy::run_async(
+            ioc.get_executor(), failsafe_stop2.get_token())(failsafe_task2());
         ioc.run();
 
         // The stash is consumed exactly once: this read takes the
@@ -3481,9 +3467,9 @@ testDeferredFlushError(StreamFactory make_stream)
 
         std::error_code ec1;
         std::size_t n1 = 0;
-        auto write1 = [&]() -> capy::task<> {
-            auto [ec, n] = co_await client.write_some(
-                capy::const_buffer(data, size));
+        auto write1    = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await client.write_some(capy::const_buffer(data, size));
             ec1 = ec;
             n1  = n;
         };
@@ -3503,7 +3489,7 @@ testDeferredFlushError(StreamFactory make_stream)
         std::stop_source failsafe_stop;
         auto shutdown_task = [&]() -> capy::task<> {
             auto [ec] = co_await client.shutdown();
-            sec = ec;
+            sec       = ec;
             failsafe_stop.request_stop();
         };
         auto failsafe_task = [&]() -> capy::task<> {
@@ -3519,8 +3505,8 @@ testDeferredFlushError(StreamFactory make_stream)
             }
         };
         capy::run_async(ioc.get_executor())(shutdown_task());
-        capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-            failsafe_task());
+        capy::run_async(
+            ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
         ioc.run();
 
         BOOST_TEST(!failsafe_hit);
@@ -3590,11 +3576,11 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         std::error_code c_sd1, s_sd1;
         auto client_sd = [&]() -> capy::task<> {
             auto [ec] = co_await client.shutdown();
-            c_sd1 = ec;
+            c_sd1     = ec;
         };
         auto server_sd = [&]() -> capy::task<> {
             auto [ec] = co_await server.shutdown();
-            s_sd1 = ec;
+            s_sd1     = ec;
         };
         capy::run_async(ioc.get_executor())(client_sd());
         capy::run_async(ioc.get_executor())(server_sd());
@@ -3606,7 +3592,7 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         std::error_code c_sd2;
         auto client_sd2 = [&]() -> capy::task<> {
             auto [ec] = co_await client.shutdown();
-            c_sd2 = ec;
+            c_sd2     = ec;
         };
         capy::run_async(ioc.get_executor())(client_sd2());
         ioc.run();
@@ -3661,7 +3647,7 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         // the transport for bytes that will never come.
         std::error_code rd_ec;
         std::size_t rd_n = 1;
-        auto read_op    = [&]() -> capy::task<> {
+        auto read_op     = [&]() -> capy::task<> {
             char buf[64];
             auto [ec, n] = co_await client.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
@@ -3722,8 +3708,8 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         bool wfailsafe_hit = false;
         std::stop_source wfailsafe_stop;
         auto write_op = [&]() -> capy::task<> {
-            auto [ec, n] = co_await client.write_some(
-                capy::const_buffer(&one, 1));
+            auto [ec, n] =
+                co_await client.write_some(capy::const_buffer(&one, 1));
             wr_ec = ec;
             wr_n  = n;
             wfailsafe_stop.request_stop();
@@ -3741,8 +3727,8 @@ testTlsLifecycleEdges(StreamFactory make_stream)
             }
         };
         capy::run_async(ioc.get_executor())(write_op());
-        capy::run_async(ioc.get_executor(), wfailsafe_stop.get_token())(
-            wfailsafe_task());
+        capy::run_async(
+            ioc.get_executor(), wfailsafe_stop.get_token())(wfailsafe_task());
         ioc.run();
 
         BOOST_TEST(!wfailsafe_hit);
@@ -3793,12 +3779,12 @@ testTlsLifecycleEdges(StreamFactory make_stream)
         std::error_code wec, rec;
         std::size_t wn = 1, rn = 1;
         auto zero_ops = [&]() -> capy::task<> {
-            auto [ec1, n1] = co_await client.write_some(
-                capy::const_buffer(nullptr, 0));
+            auto [ec1, n1] =
+                co_await client.write_some(capy::const_buffer(nullptr, 0));
             wec = ec1;
             wn  = n1;
-            auto [ec2, n2] = co_await client.read_some(
-                capy::mutable_buffer(nullptr, 0));
+            auto [ec2, n2] =
+                co_await client.read_some(capy::mutable_buffer(nullptr, 0));
             rec = ec2;
             rn  = n2;
         };
@@ -3883,8 +3869,8 @@ testShutdownTruncation(StreamFactory make_stream)
     };
 
     capy::run_async(ioc.get_executor())(server_shutdown());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit);

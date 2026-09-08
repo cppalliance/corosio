@@ -42,8 +42,8 @@ struct raf_concurrent_op
     : overlapped_op
     , intrusive_list<raf_concurrent_op>::node
 {
-    void* buf      = nullptr;
-    DWORD buf_len  = 0;
+    void* buf                              = nullptr;
+    DWORD buf_len                          = 0;
     win_random_access_file_internal* file_ = nullptr;
     std::shared_ptr<win_random_access_file_internal> file_ref;
 
@@ -54,8 +54,7 @@ struct raf_concurrent_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    explicit raf_concurrent_op(
-        win_random_access_file_internal& f) noexcept;
+    explicit raf_concurrent_op(win_random_access_file_internal& f) noexcept;
 };
 
 /** Internal random-access file state for IOCP-based I/O.

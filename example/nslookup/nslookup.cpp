@@ -19,16 +19,14 @@
 
 // tag::assume[]
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 // Coroutine that performs the DNS lookup
 // tag::lookup[]
 capy::task<void>
 do_lookup(
-    corosio::io_context& ioc,
-    std::string_view host,
-    std::string_view service)
+    corosio::io_context& ioc, std::string_view host, std::string_view service)
 {
     corosio::resolver r(ioc);
 
@@ -49,13 +47,13 @@ do_lookup(
         auto ep = entry.get_endpoint();
         if (ep.is_v4())
         {
-            std::cout << "  IPv4: " << ep.v4_address().to_string()
-                      << ":" << ep.port() << "\n";
+            std::cout << "  IPv4: " << ep.v4_address().to_string() << ":"
+                      << ep.port() << "\n";
         }
         else
         {
-            std::cout << "  IPv6: " << ep.v6_address().to_string()
-                      << ":" << ep.port() << "\n";
+            std::cout << "  IPv6: " << ep.v6_address().to_string() << ":"
+                      << ep.port() << "\n";
         }
     }
 
@@ -69,21 +67,19 @@ main(int argc, char* argv[])
 {
     if (argc < 2 || argc > 3)
     {
-        std::cerr <<
-            "Usage: nslookup <hostname> [service]\n"
-            "Examples:\n"
-            "    nslookup www.google.com\n"
-            "    nslookup www.google.com https\n"
-            "    nslookup localhost 8080\n";
+        std::cerr << "Usage: nslookup <hostname> [service]\n"
+                     "Examples:\n"
+                     "    nslookup www.google.com\n"
+                     "    nslookup www.google.com https\n"
+                     "    nslookup localhost 8080\n";
         return EXIT_FAILURE;
     }
 
-    std::string_view host = argv[1];
+    std::string_view host    = argv[1];
     std::string_view service = (argc == 3) ? argv[2] : "";
 
     corosio::io_context ioc;
-    capy::run_async(ioc.get_executor())(
-        do_lookup(ioc, host, service));
+    capy::run_async(ioc.get_executor())(do_lookup(ioc, host, service));
     ioc.run();
 
     return EXIT_SUCCESS;

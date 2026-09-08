@@ -30,13 +30,14 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 #if BOOST_COROSIO_HAS_EPOLL
 // tag::native_stream_file[]
-capy::task<> open_and_read()
+capy::task<>
+open_and_read()
 {
     corosio::native_io_context<corosio::epoll> ctx;
     corosio::native_stream_file<corosio::epoll> f(ctx);
@@ -44,8 +45,7 @@ capy::task<> open_and_read()
         co_return;
 
     char buf[4096];
-    auto [ec, n] = co_await f.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec, n] = co_await f.read_some(capy::mutable_buffer(buf, sizeof(buf)));
     if (ec)
         co_return;
 }

@@ -23,7 +23,8 @@ namespace {
 // tag::set_ciphersuites_tls13[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void restrict_the_tls_1_3_cipher_suites(corosio::tls_context& ctx)
+void
+restrict_the_tls_1_3_cipher_suites(corosio::tls_context& ctx)
 {
     // TLS 1.3 defines a small fixed set of suites, all AEAD and all
     // forward secret, so this expresses a preference among safe choices
@@ -31,7 +32,7 @@ void restrict_the_tls_1_3_cipher_suites(corosio::tls_context& ctx)
     // set_ciphersuites, which covers TLS 1.2 and below.
     if (auto ec = ctx.set_ciphersuites_tls13(
             "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256"))
-        return;  // report the error
+        return; // report the error
 }
 // end::set_ciphersuites_tls13[]
 

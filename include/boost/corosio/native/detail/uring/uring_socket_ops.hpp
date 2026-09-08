@@ -65,8 +65,7 @@ inline constexpr std::size_t uring_max_iov = 16;
 */
 inline int
 copy_to_iovec(
-    buffer_param const& buffers,
-    iovec (&iovecs)[uring_max_iov]) noexcept
+    buffer_param const& buffers, iovec (&iovecs)[uring_max_iov]) noexcept
 {
     capy::mutable_buffer bufs[uring_max_iov];
     std::size_t const n = buffers.copy_to(bufs, uring_max_iov);
@@ -91,12 +90,9 @@ inline void
 uring_set_result(uring_op* self, bool is_read, bool empty_buf) noexcept
 {
     decode_io_result(
-        self->ec_out,
-        self->cancelled.load(std::memory_order_acquire),
-        self->res < 0 ? make_err(-self->res) : std::error_code{},
-        is_read,
-        self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u,
-        empty_buf);
+        self->ec_out, self->cancelled.load(std::memory_order_acquire),
+        self->res < 0 ? make_err(-self->res) : std::error_code{}, is_read,
+        self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u, empty_buf);
 }
 
 /** Scatter-gather read via `IORING_OP_READV`.
@@ -107,13 +103,12 @@ uring_set_result(uring_op* self, bool is_read, bool empty_buf) noexcept
 */
 struct uring_read_op : uring_op
 {
-    iovec  iovecs[uring_max_iov];
-    int    iovec_count = 0;
-    int    fd          = -1;
+    iovec iovecs[uring_max_iov];
+    int iovec_count                       = 0;
+    int fd                                = -1;
     detail::speculative_state* spec_state = nullptr;
 
-    uring_read_op() noexcept
-        : uring_op(&do_handler, &do_cqe, &do_prep)
+    uring_read_op() noexcept : uring_op(&do_handler, &do_cqe, &do_prep)
     {
         is_read = true;
     }
@@ -127,28 +122,28 @@ struct uring_read_op : uring_op
         @pre This slot has no in-flight op (its prior op completed).
     */
     void prepare(
-        std::coroutine_handle<>    handle,
-        capy::executor_ref         executor,
-        std::error_code*           ec,
-        std::size_t*               bytes,
-        int                        file_descriptor,
-        uring_scheduler*        scheduler,
-        std::shared_ptr<void>      impl,
+        std::coroutine_handle<> handle,
+        capy::executor_ref executor,
+        std::error_code* ec,
+        std::size_t* bytes,
+        int file_descriptor,
+        uring_scheduler* scheduler,
+        std::shared_ptr<void> impl,
         detail::speculative_state* spec,
-        buffer_param               buffers,
-        std::stop_token const&     token) noexcept
+        buffer_param buffers,
+        std::stop_token const& token) noexcept
     {
-        h          = handle;
-        ex         = executor;
-        ec_out     = ec;
-        bytes_out  = bytes;
-        fd         = file_descriptor;
-        sched_     = scheduler;
-        impl_ptr   = std::move(impl);
-        spec_state = spec;
-        res        = 0;
-        cqe_flags  = 0;
-        iovec_count = copy_to_iovec(buffers, iovecs);
+        h            = handle;
+        ex           = executor;
+        ec_out       = ec;
+        bytes_out    = bytes;
+        fd           = file_descriptor;
+        sched_       = scheduler;
+        impl_ptr     = std::move(impl);
+        spec_state   = spec;
+        res          = 0;
+        cqe_flags    = 0;
+        iovec_count  = copy_to_iovec(buffers, iovecs);
         empty_buffer = (iovec_count == 0);
         start(token);
     }
@@ -163,10 +158,8 @@ struct uring_read_op : uring_op
         if (self->iovec_count == 1)
         {
             ::io_uring_prep_recv(
-                sqe, self->fd,
-                self->iovecs[0].iov_base,
-                self->iovecs[0].iov_len,
-                0);
+                sqe, self->fd, self->iovecs[0].iov_base,
+                self->iovecs[0].iov_len, 0);
         }
         else
         {
@@ -175,9 +168,8 @@ struct uring_read_op : uring_op
         }
     }
 
-    static void do_cqe(
-        uring_op* base, int res, unsigned flags,
-        ready_queue& local) noexcept
+    static void
+    do_cqe(uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_read_op*>(base);
         self->res       = res;
@@ -186,8 +178,10 @@ struct uring_read_op : uring_op
     }
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_read_op*>(base);
         if (coro_drain_if_shutdown(owner, self))
@@ -220,44 +214,42 @@ struct uring_read_op : uring_op
 */
 struct uring_write_op : uring_op
 {
-    iovec  iovecs[uring_max_iov];
-    int    iovec_count = 0;
-    int    fd          = -1;
+    iovec iovecs[uring_max_iov];
+    int iovec_count = 0;
+    int fd          = -1;
     msghdr msg{};
     detail::speculative_state* spec_state = nullptr;
 
-    uring_write_op() noexcept
-        : uring_op(&do_handler, &do_cqe, &do_prep)
-    {}
+    uring_write_op() noexcept : uring_op(&do_handler, &do_cqe, &do_prep) {}
 
     /** Reset and initialize for a new submission. See uring_read_op::prepare. */
     void prepare(
-        std::coroutine_handle<>    handle,
-        capy::executor_ref         executor,
-        std::error_code*           ec,
-        std::size_t*               bytes,
-        int                        file_descriptor,
-        uring_scheduler*        scheduler,
-        std::shared_ptr<void>      impl,
+        std::coroutine_handle<> handle,
+        capy::executor_ref executor,
+        std::error_code* ec,
+        std::size_t* bytes,
+        int file_descriptor,
+        uring_scheduler* scheduler,
+        std::shared_ptr<void> impl,
         detail::speculative_state* spec,
-        buffer_param               buffers,
-        std::stop_token const&     token) noexcept
+        buffer_param buffers,
+        std::stop_token const& token) noexcept
     {
-        h          = handle;
-        ex         = executor;
-        ec_out     = ec;
-        bytes_out  = bytes;
-        fd         = file_descriptor;
-        sched_     = scheduler;
-        impl_ptr   = std::move(impl);
-        spec_state = spec;
-        res        = 0;
-        cqe_flags  = 0;
-        iovec_count = copy_to_iovec(buffers, iovecs);
+        h            = handle;
+        ex           = executor;
+        ec_out       = ec;
+        bytes_out    = bytes;
+        fd           = file_descriptor;
+        sched_       = scheduler;
+        impl_ptr     = std::move(impl);
+        spec_state   = spec;
+        res          = 0;
+        cqe_flags    = 0;
+        iovec_count  = copy_to_iovec(buffers, iovecs);
         empty_buffer = (iovec_count == 0);
         if (!empty_buffer)
         {
-            msg = {};
+            msg            = {};
             msg.msg_iov    = iovecs;
             msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(iovec_count);
         }
@@ -273,21 +265,17 @@ struct uring_write_op : uring_op
         if (self->iovec_count == 1)
         {
             ::io_uring_prep_send(
-                sqe, self->fd,
-                self->iovecs[0].iov_base,
-                self->iovecs[0].iov_len,
-                MSG_NOSIGNAL);
+                sqe, self->fd, self->iovecs[0].iov_base,
+                self->iovecs[0].iov_len, MSG_NOSIGNAL);
         }
         else
         {
-            ::io_uring_prep_sendmsg(
-                sqe, self->fd, &self->msg, MSG_NOSIGNAL);
+            ::io_uring_prep_sendmsg(sqe, self->fd, &self->msg, MSG_NOSIGNAL);
         }
     }
 
-    static void do_cqe(
-        uring_op* base, int res, unsigned flags,
-        ready_queue& local) noexcept
+    static void
+    do_cqe(uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_write_op*>(base);
         self->res       = res;
@@ -296,8 +284,10 @@ struct uring_write_op : uring_op
     }
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_write_op*>(base);
         if (coro_drain_if_shutdown(owner, self))
@@ -331,15 +321,13 @@ struct uring_write_op : uring_op
 struct uring_connect_op : uring_op
 {
     sockaddr_storage addr{};
-    socklen_t        addrlen            = 0;
-    int              fd                 = -1;
-    endpoint         target_endpoint{};
-    endpoint*        remote_endpoint_out = nullptr;
-    endpoint*        local_endpoint_out  = nullptr;
+    socklen_t addrlen = 0;
+    int fd            = -1;
+    endpoint target_endpoint{};
+    endpoint* remote_endpoint_out = nullptr;
+    endpoint* local_endpoint_out  = nullptr;
 
-    uring_connect_op() noexcept
-        : uring_op(&do_handler, &do_cqe, &do_prep)
-    {}
+    uring_connect_op() noexcept : uring_op(&do_handler, &do_cqe, &do_prep) {}
 
     /** Reset and initialize for a new submission.
 
@@ -350,26 +338,26 @@ struct uring_connect_op : uring_op
         caller, not the op.
     */
     void prepare(
-        std::coroutine_handle<>  handle,
-        capy::executor_ref       executor,
-        std::error_code*         ec,
-        int                      file_descriptor,
-        uring_scheduler*      scheduler,
-        std::shared_ptr<void>    impl,
-        endpoint                 target,
-        endpoint*                remote_out,
-        endpoint*                local_out,
-        std::stop_token const&   token) noexcept
+        std::coroutine_handle<> handle,
+        capy::executor_ref executor,
+        std::error_code* ec,
+        int file_descriptor,
+        uring_scheduler* scheduler,
+        std::shared_ptr<void> impl,
+        endpoint target,
+        endpoint* remote_out,
+        endpoint* local_out,
+        std::stop_token const& token) noexcept
     {
-        h         = handle;
-        ex        = executor;
-        ec_out    = ec;
-        bytes_out = nullptr;
-        fd        = file_descriptor;
-        sched_    = scheduler;
-        impl_ptr  = std::move(impl);
-        res       = 0;
-        cqe_flags = 0;
+        h                   = handle;
+        ex                  = executor;
+        ec_out              = ec;
+        bytes_out           = nullptr;
+        fd                  = file_descriptor;
+        sched_              = scheduler;
+        impl_ptr            = std::move(impl);
+        res                 = 0;
+        cqe_flags           = 0;
         target_endpoint     = target;
         remote_endpoint_out = remote_out;
         local_endpoint_out  = local_out;
@@ -381,14 +369,12 @@ struct uring_connect_op : uring_op
     {
         auto* self = static_cast<uring_connect_op*>(base);
         ::io_uring_prep_connect(
-            sqe, self->fd,
-            reinterpret_cast<sockaddr const*>(&self->addr),
+            sqe, self->fd, reinterpret_cast<sockaddr const*>(&self->addr),
             self->addrlen);
     }
 
-    static void do_cqe(
-        uring_op* base, int res, unsigned flags,
-        ready_queue& local) noexcept
+    static void
+    do_cqe(uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_connect_op*>(base);
         self->res       = res;
@@ -397,8 +383,10 @@ struct uring_connect_op : uring_op
     }
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_connect_op*>(base);
         if (coro_drain_if_shutdown(owner, self))
@@ -418,8 +406,9 @@ struct uring_connect_op : uring_op
             {
                 sockaddr_storage local{};
                 socklen_t len = sizeof(local);
-                if (::getsockname(self->fd,
-                        reinterpret_cast<sockaddr*>(&local), &len) == 0)
+                if (::getsockname(
+                        self->fd, reinterpret_cast<sockaddr*>(&local), &len) ==
+                    0)
                     *self->local_endpoint_out = sockaddr_to_endpoint(local);
             }
         }
@@ -448,8 +437,7 @@ struct uring_connect_op : uring_op
         caller to report; `true` otherwise.
 */
 inline bool
-uring_do_submit_op(
-    uring_scheduler& sched, uring_op* op, bool counted) noexcept
+uring_do_submit_op(uring_scheduler& sched, uring_op* op, bool counted) noexcept
 {
     sched.lazy_init_ring();
 
@@ -596,20 +584,18 @@ struct uring_wait_op : uring_op
     int fd         = -1;
     int poll_flags = 0;
 
-    uring_wait_op() noexcept
-        : uring_op(&do_handler, &do_cqe, &do_prep)
-    {}
+    uring_wait_op() noexcept : uring_op(&do_handler, &do_cqe, &do_prep) {}
 
     /** Reset and initialize for a new submission. */
     void prepare(
-        std::coroutine_handle<>  handle,
-        capy::executor_ref       executor,
-        std::error_code*         ec,
-        int                      file_descriptor,
-        uring_scheduler*      scheduler,
-        std::shared_ptr<void>    impl,
-        int                      flags,
-        std::stop_token const&   token) noexcept
+        std::coroutine_handle<> handle,
+        capy::executor_ref executor,
+        std::error_code* ec,
+        int file_descriptor,
+        uring_scheduler* scheduler,
+        std::shared_ptr<void> impl,
+        int flags,
+        std::stop_token const& token) noexcept
     {
         h          = handle;
         ex         = executor;
@@ -630,9 +616,8 @@ struct uring_wait_op : uring_op
         ::io_uring_prep_poll_add(sqe, self->fd, self->poll_flags);
     }
 
-    static void do_cqe(
-        uring_op* base, int res, unsigned flags,
-        ready_queue& local) noexcept
+    static void
+    do_cqe(uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_wait_op*>(base);
         self->res       = res;
@@ -641,8 +626,10 @@ struct uring_wait_op : uring_op
     }
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_wait_op*>(base);
         if (coro_drain_if_shutdown(owner, self))
@@ -663,7 +650,7 @@ struct uring_wait_op : uring_op
         }
         else if (self->res & (POLLERR | POLLHUP | POLLNVAL))
         {
-            int so_err = 0;
+            int so_err    = 0;
             socklen_t len = sizeof(so_err);
             if (::getsockopt(self->fd, SOL_SOCKET, SO_ERROR, &so_err, &len) < 0)
                 so_err = errno;
@@ -674,9 +661,7 @@ struct uring_wait_op : uring_op
 
         // Wait reports only success/cancel/error — no bytes, no EOF.
         decode_io_result(
-            self->ec_out,
-            self->cancelled.load(std::memory_order_acquire),
-            ec,
+            self->ec_out, self->cancelled.load(std::memory_order_acquire), ec,
             /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
         coro_resume(self);
@@ -691,42 +676,42 @@ struct uring_wait_op : uring_op
 */
 struct uring_local_connect_op : uring_op
 {
-    sockaddr_storage  addr{};
-    socklen_t         addrlen             = 0;
-    int               fd                  = -1;
-    corosio::local_endpoint    target_endpoint{};
-    corosio::local_endpoint*   remote_endpoint_out = nullptr;
-    corosio::local_endpoint*   local_endpoint_out  = nullptr;
+    sockaddr_storage addr{};
+    socklen_t addrlen = 0;
+    int fd            = -1;
+    corosio::local_endpoint target_endpoint{};
+    corosio::local_endpoint* remote_endpoint_out = nullptr;
+    corosio::local_endpoint* local_endpoint_out  = nullptr;
 
-    uring_local_connect_op() noexcept
-        : uring_op(&do_handler, &do_cqe, &do_prep)
-    {}
+    uring_local_connect_op() noexcept : uring_op(&do_handler, &do_cqe, &do_prep)
+    {
+    }
 
     /** Reset and initialize for a new submission.
 
         Caller pre-fills `addr` and `addrlen` (see uring_connect_op::prepare).
     */
     void prepare(
-        std::coroutine_handle<>          handle,
-        capy::executor_ref               executor,
-        std::error_code*                 ec,
-        int                              file_descriptor,
-        uring_scheduler*              scheduler,
-        std::shared_ptr<void>            impl,
-        corosio::local_endpoint          target,
-        corosio::local_endpoint*         remote_out,
-        corosio::local_endpoint*         local_out,
-        std::stop_token const&           token) noexcept
+        std::coroutine_handle<> handle,
+        capy::executor_ref executor,
+        std::error_code* ec,
+        int file_descriptor,
+        uring_scheduler* scheduler,
+        std::shared_ptr<void> impl,
+        corosio::local_endpoint target,
+        corosio::local_endpoint* remote_out,
+        corosio::local_endpoint* local_out,
+        std::stop_token const& token) noexcept
     {
-        h         = handle;
-        ex        = executor;
-        ec_out    = ec;
-        bytes_out = nullptr;
-        fd        = file_descriptor;
-        sched_    = scheduler;
-        impl_ptr  = std::move(impl);
-        res       = 0;
-        cqe_flags = 0;
+        h                   = handle;
+        ex                  = executor;
+        ec_out              = ec;
+        bytes_out           = nullptr;
+        fd                  = file_descriptor;
+        sched_              = scheduler;
+        impl_ptr            = std::move(impl);
+        res                 = 0;
+        cqe_flags           = 0;
         target_endpoint     = target;
         remote_endpoint_out = remote_out;
         local_endpoint_out  = local_out;
@@ -737,14 +722,12 @@ struct uring_local_connect_op : uring_op
     {
         auto* self = static_cast<uring_local_connect_op*>(base);
         ::io_uring_prep_connect(
-            sqe, self->fd,
-            reinterpret_cast<sockaddr const*>(&self->addr),
+            sqe, self->fd, reinterpret_cast<sockaddr const*>(&self->addr),
             self->addrlen);
     }
 
-    static void do_cqe(
-        uring_op* base, int res, unsigned flags,
-        ready_queue& local) noexcept
+    static void
+    do_cqe(uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_local_connect_op*>(base);
         self->res       = res;
@@ -753,8 +736,10 @@ struct uring_local_connect_op : uring_op
     }
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_local_connect_op*>(base);
         if (coro_drain_if_shutdown(owner, self))
@@ -774,8 +759,9 @@ struct uring_local_connect_op : uring_op
             {
                 sockaddr_storage local{};
                 socklen_t len = sizeof(local);
-                if (::getsockname(self->fd,
-                        reinterpret_cast<sockaddr*>(&local), &len) == 0)
+                if (::getsockname(
+                        self->fd, reinterpret_cast<sockaddr*>(&local), &len) ==
+                    0)
                     *self->local_endpoint_out =
                         sockaddr_to_local_endpoint(local, len);
             }

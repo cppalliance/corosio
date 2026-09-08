@@ -21,14 +21,14 @@ namespace boost::corosio::test::fault {
 // that could allocate or lock.
 struct slot
 {
-    sys which = sys::count_;
-    int err = 0;
+    sys which         = sys::count_;
+    int err           = 0;
     std::size_t count = 0;
-    unsigned nth = 1;
-    unsigned seen = 0;
-    bool short_mode = false;
-    bool fired = false;
-    bool armed = false;
+    unsigned nth      = 1;
+    unsigned seen     = 0;
+    bool short_mode   = false;
+    bool fired        = false;
+    bool armed        = false;
     // Tracks the owning fault_scope's lifetime, independent of `armed`:
     // should_fail/should_shorten clear `armed` the moment the fault
     // fires, but the scope object is still alive and keeps its arm
@@ -90,14 +90,14 @@ struct cqe_slot
 {
     // -1 matches any fd: the multishot polls the harness has to reach
     // are armed on descriptors the library never hands out.
-    int fd = -1;
-    int opcode = -1;
-    int res = 0;
-    unsigned flags_clear = 0;
+    int fd                       = -1;
+    int opcode                   = -1;
+    int res                      = 0;
+    unsigned flags_clear         = 0;
     unsigned long long user_data = 0;
-    bool have_user_data = false;
-    bool fired = false;
-    bool armed = false;
+    bool have_user_data          = false;
+    bool fired                   = false;
+    bool armed                   = false;
     // Tracks the owning scope's lifetime, independent of `armed`: the
     // rewrite clears `armed` the moment it fires, so nesting has to be
     // refused on this instead or a second scope would quietly take
@@ -114,10 +114,10 @@ extern thread_local cqe_slot tls_cqe;
 struct completion_slot
 {
     unsigned long err = 0;
-    unsigned nth = 1;
-    unsigned seen = 0;
-    bool fired = false;
-    bool armed = false;
+    unsigned nth      = 1;
+    unsigned seen     = 0;
+    bool fired        = false;
+    bool armed        = false;
     // See cqe_slot::owned; the rule is the same.
     bool owned = false;
 };
@@ -133,23 +133,25 @@ bool completion_should_fail(unsigned long& err) noexcept;
 // naming `who`. Shared by cqe_fault_scope and completion_fault_scope,
 // whose slots hold different things but reserve them by the same rule.
 template<class Slot>
-void claim_completion_slot(Slot& s, char const* who) noexcept
+void
+claim_completion_slot(Slot& s, char const* who) noexcept
 {
-    if(s.owned)
+    if (s.owned)
         die(who);
-    s = Slot{};
+    s       = Slot{};
     s.armed = true;
     s.owned = true;
 }
 
 // Release the slot claimed by claim_completion_slot.
 template<class Slot>
-void release_completion_slot(Slot& s) noexcept
+void
+release_completion_slot(Slot& s) noexcept
 {
     s.armed = false;
     s.owned = false;
 }
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

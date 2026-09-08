@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -44,7 +44,7 @@
 #include <system_error>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 using namespace std::chrono_literals;
 // end::assume[]
 
@@ -70,8 +70,8 @@ closed_endpoint(corosio::io_context& ioc)
     corosio::tcp_acceptor acc(ioc);
     BOOST_TEST(!acc.open());
     acc.set_option(corosio::socket_option::reuse_address(true));
-    if (auto ec = acc.bind(
-            corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
+    if (auto ec =
+            acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
         throw std::runtime_error("bind failed: " + ec.message());
     auto ep = acc.local_endpoint();
     acc.close();
@@ -89,7 +89,7 @@ refused_connect_ec(corosio::io_context& ioc)
         [](corosio::tcp_socket& s, corosio::endpoint ep,
            std::error_code& o) -> capy::task<> {
             auto [ec] = co_await s.connect(ep);
-            o = ec;
+            o         = ec;
         }(sock, closed_endpoint(ioc), out));
     ioc.run();
     ioc.restart();
@@ -98,9 +98,7 @@ refused_connect_ec(corosio::io_context& ioc)
 
 capy::task<>
 bindings_void_result(
-    corosio::tcp_socket& sock,
-    corosio::endpoint endpoint,
-    std::error_code& out)
+    corosio::tcp_socket& sock, corosio::endpoint endpoint, std::error_code& out)
 {
     // tag::structured_bindings[]
     // Void result
@@ -128,14 +126,12 @@ bindings_value_result(
         std::cout << "Read " << n << " bytes\n";
     // end::structured_bindings[]
     out_ec = ec;
-    out_n = n;
+    out_n  = n;
 }
 
 capy::task<>
 direct_members(
-    corosio::tcp_socket& sock,
-    corosio::endpoint endpoint,
-    std::error_code& out)
+    corosio::tcp_socket& sock, corosio::endpoint endpoint, std::error_code& out)
 {
     // tag::direct_members[]
     auto result = co_await sock.connect(endpoint);
@@ -149,9 +145,7 @@ direct_members(
 
 capy::task<>
 throw_explicit(
-    corosio::tcp_socket& sock,
-    capy::mutable_buffer buffer,
-    std::size_t& out_n)
+    corosio::tcp_socket& sock, capy::mutable_buffer buffer, std::size_t& out_n)
 {
     // tag::throw_explicit[]
     auto [ec, n] = co_await sock.read_some(buffer);
@@ -164,9 +158,7 @@ throw_explicit(
 
 capy::task<>
 inspect_eof(
-    corosio::tcp_socket& sock,
-    capy::mutable_buffer buf,
-    std::error_code& out)
+    corosio::tcp_socket& sock, capy::mutable_buffer buf, std::error_code& out)
 {
     // tag::inspect_eof[]
     auto [ec, n] = co_await sock.read_some(buf);
@@ -216,9 +208,7 @@ canceled_condition(std::error_code& out)
 
 capy::task<>
 timeout_vs_cancel(
-    corosio::tcp_socket& sock,
-    corosio::endpoint ep,
-    std::error_code& out)
+    corosio::tcp_socket& sock, corosio::endpoint ep, std::error_code& out)
 {
     // tag::timeout_vs_cancel[]
     auto [ec] = co_await corosio::timeout(sock.connect(ep), 3s);
@@ -250,7 +240,7 @@ eof_expected(
     }
     // end::eof_expected[]
     out_ec = ec;
-    out_n = n;
+    out_n  = n;
 }
 
 capy::task<>
@@ -359,10 +349,9 @@ struct exception_safety_fixture
 };
 
 // tag::robust_connect[]
-capy::task<void> connect_with_retry(
-    corosio::io_context& ioc,
-    corosio::endpoint ep,
-    int max_retries)
+capy::task<void>
+connect_with_retry(
+    corosio::io_context& ioc, corosio::endpoint ep, int max_retries)
 {
     corosio::tcp_socket sock(ioc);
 
@@ -372,17 +361,18 @@ capy::task<void> connect_with_retry(
         auto [ec] = co_await sock.connect(ep);
 
         if (!ec)
-            co_return;  // Success
+            co_return; // Success
 
-        std::cerr << "Attempt " << (attempt + 1)
-                  << " failed: " << ec.message() << "\n";
+        std::cerr << "Attempt " << (attempt + 1) << " failed: " << ec.message()
+                  << "\n";
 
         sock.close();
 
         // Wait before retry (exponential backoff)
-        auto [dec] = co_await corosio::delay(std::chrono::seconds(1 << attempt));
+        auto [dec] =
+            co_await corosio::delay(std::chrono::seconds(1 << attempt));
         if (dec == capy::cond::canceled)
-            co_return;  // Cancellation aborts the retry loop
+            co_return; // Cancellation aborts the retry loop
     }
 
     throw std::runtime_error("Failed to connect after retries");
@@ -391,28 +381,26 @@ capy::task<void> connect_with_retry(
 
 struct error_handling_test
 {
-    void
-    testResultShapes()
+    void testResultShapes()
     {
         using capy::io_result;
         using corosio::resolver_results;
         // tag::result_shapes[]
         // Void result (connect, handshake)
-        io_result<> r1;                  // Contains: ec
+        io_result<> r1; // Contains: ec
 
         // Single value (read_some, write_some)
-        io_result<std::size_t> r2;       // Contains: ec, n (bytes transferred)
+        io_result<std::size_t> r2; // Contains: ec, n (bytes transferred)
 
         // Typed result (resolve)
-        io_result<resolver_results> r3;  // Contains: ec, results
+        io_result<resolver_results> r3; // Contains: ec, results
         // end::result_shapes[]
         BOOST_TEST(!std::get<0>(r1));
         BOOST_TEST(!std::get<0>(r2));
         BOOST_TEST(!std::get<0>(r3));
     }
 
-    void
-    testStructuredBindings()
+    void testStructuredBindings()
     {
         corosio::io_context ioc;
         corosio::tcp_socket sock(ioc);
@@ -432,17 +420,14 @@ struct error_handling_test
             [](corosio::tcp_socket& peer) -> capy::task<> {
                 co_await peer.write_some(capy::const_buffer("hello", 5));
             }(b));
-        capy::run_async(ioc.get_executor())(
-            bindings_value_result(
-                a, capy::mutable_buffer(data, sizeof(data)),
-                read_ec, read_n));
+        capy::run_async(ioc.get_executor())(bindings_value_result(
+            a, capy::mutable_buffer(data, sizeof(data)), read_ec, read_n));
         ioc.run();
         BOOST_TEST(!read_ec);
         BOOST_TEST(read_n == 5);
     }
 
-    void
-    testDirectMembers()
+    void testDirectMembers()
     {
         corosio::io_context ioc;
         corosio::tcp_socket sock(ioc);
@@ -454,8 +439,7 @@ struct error_handling_test
         BOOST_TEST(out == std::errc::connection_refused);
     }
 
-    void
-    testThrowExplicit()
+    void testThrowExplicit()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
@@ -466,14 +450,12 @@ struct error_handling_test
                 co_await peer.write_some(capy::const_buffer("hello", 5));
             }(b));
         capy::run_async(ioc.get_executor())(
-            throw_explicit(
-                a, capy::mutable_buffer(data, sizeof(data)), n));
+            throw_explicit(a, capy::mutable_buffer(data, sizeof(data)), n));
         ioc.run();
         BOOST_TEST(n == 5);
     }
 
-    void
-    testInspectEof()
+    void testInspectEof()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
@@ -482,21 +464,19 @@ struct error_handling_test
         char data[64];
         std::error_code out;
         capy::run_async(ioc.get_executor())(
-            inspect_eof(
-                a, capy::mutable_buffer(data, sizeof(data)), out));
+            inspect_eof(a, capy::mutable_buffer(data, sizeof(data)), out));
         ioc.run();
         BOOST_TEST(out == capy::cond::eof);
     }
 
-    void
-    testThrowStyle()
+    void testThrowStyle()
     {
         corosio::io_context ioc;
         corosio::tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
         acc.set_option(corosio::socket_option::reuse_address(true));
-        BOOST_TEST(!acc.bind(
-            corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
+        BOOST_TEST(
+            !acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
         auto ep = acc.local_endpoint();
 
@@ -504,9 +484,9 @@ struct error_handling_test
         corosio::tcp_socket sock(ioc);
         BOOST_TEST(!sock.open());
         std::string request_text = "GET /\r\n";
-        char received[16] = {};
-        std::size_t got = 0;
-        bool peer_ok = false;
+        char received[16]        = {};
+        std::size_t got          = 0;
+        bool peer_ok             = false;
 
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_acceptor& a, corosio::tcp_socket& p,
@@ -526,34 +506,29 @@ struct error_handling_test
                     p, capy::const_buffer(resp, sizeof(resp)));
                 ok = !wec && wn == sizeof(resp);
             }(acc, psock, request_text.size(), peer_ok));
-        capy::run_async(ioc.get_executor())(
-            throw_style(
-                sock, ep,
-                capy::const_buffer(
-                    request_text.data(), request_text.size()),
-                capy::mutable_buffer(received, sizeof(received)),
-                got));
+        capy::run_async(ioc.get_executor())(throw_style(
+            sock, ep,
+            capy::const_buffer(request_text.data(), request_text.size()),
+            capy::mutable_buffer(received, sizeof(received)), got));
         ioc.run();
         acc.close();
         BOOST_TEST(peer_ok);
         BOOST_TEST(got == sizeof(received));
     }
 
-    void
-    testCanceledCondition()
+    void testCanceledCondition()
     {
         corosio::io_context ioc;
         std::stop_source source;
         source.request_stop();
         std::error_code out;
-        capy::run_async(ioc.get_executor(), source.get_token())(
-            canceled_condition(out));
+        capy::run_async(
+            ioc.get_executor(), source.get_token())(canceled_condition(out));
         ioc.run();
         BOOST_TEST(out == capy::cond::canceled);
     }
 
-    void
-    testTimeoutVsCancel()
+    void testTimeoutVsCancel()
     {
         // The coroutine's own stop token is already requested, so the
         // race reports cancellation rather than a timeout.
@@ -569,8 +544,7 @@ struct error_handling_test
         BOOST_TEST(out == capy::cond::canceled);
     }
 
-    void
-    testEofExpected()
+    void testEofExpected()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
@@ -582,17 +556,14 @@ struct error_handling_test
                 co_await peer.write_some(capy::const_buffer("hello", 5));
                 peer.shutdown(corosio::shutdown_send);
             }(b));
-        capy::run_async(ioc.get_executor())(
-            eof_expected(
-                a, capy::mutable_buffer(data, sizeof(data)),
-                out_ec, out_n));
+        capy::run_async(ioc.get_executor())(eof_expected(
+            a, capy::mutable_buffer(data, sizeof(data)), out_ec, out_n));
         ioc.run();
         BOOST_TEST(out_ec == capy::cond::eof);
         BOOST_TEST(out_n == 5);
     }
 
-    void
-    testEofFiltered()
+    void testEofFiltered()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
@@ -604,14 +575,12 @@ struct error_handling_test
                 peer.shutdown(corosio::shutdown_send);
             }(b));
         capy::run_async(ioc.get_executor())(
-            eof_filtered(
-                a, capy::mutable_buffer(data, sizeof(data)), out_n));
+            eof_filtered(a, capy::mutable_buffer(data, sizeof(data)), out_n));
         ioc.run();
         BOOST_TEST(out_n == 5);
     }
 
-    void
-    testPartialSuccess()
+    void testPartialSuccess()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
@@ -620,25 +589,23 @@ struct error_handling_test
         b.close();
         std::vector<char> big(4 << 20, 'x');
         std::error_code out;
-        capy::run_async(ioc.get_executor())(
-            partial_success(
-                a, capy::const_buffer(big.data(), big.size()), out));
+        capy::run_async(ioc.get_executor())(partial_success(
+            a, capy::const_buffer(big.data(), big.size()), out));
         ioc.run();
         BOOST_TEST(out);
     }
 
-    void
-    testCategories()
+    void testCategories()
     {
         corosio::io_context ioc;
         auto ec = refused_connect_ec(ioc);
         category_checks(ec);
-        BOOST_TEST(ec.category() == std::system_category() ||
+        BOOST_TEST(
+            ec.category() == std::system_category() ||
             ec.category() == std::generic_category());
     }
 
-    void
-    testCompareErrors()
+    void testCompareErrors()
     {
         corosio::io_context ioc;
         auto ec = refused_connect_ec(ioc);
@@ -648,8 +615,7 @@ struct error_handling_test
         BOOST_TEST(!(ec == capy::cond::eof));
     }
 
-    void
-    testExceptionSafety()
+    void testExceptionSafety()
     {
         corosio::io_context ioc;
         exception_safety_fixture fx(ioc, closed_endpoint(ioc));
@@ -663,26 +629,25 @@ struct error_handling_test
         BOOST_TEST(done);
     }
 
-    void
-    testRobustConnect()
+    void testRobustConnect()
     {
         corosio::io_context ioc;
         corosio::tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
         acc.set_option(corosio::socket_option::reuse_address(true));
-        BOOST_TEST(!acc.bind(
-            corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
+        BOOST_TEST(
+            !acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
         auto ep = acc.local_endpoint();
 
         corosio::tcp_socket psock(ioc);
         bool accepted = false;
-        bool done = false;
+        bool done     = false;
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_acceptor& a, corosio::tcp_socket& p,
                bool& ok) -> capy::task<> {
                 auto [ec] = co_await a.accept(p);
-                ok = !ec;
+                ok        = !ec;
             }(acc, psock, accepted));
         capy::run_async(ioc.get_executor())(
             [](corosio::io_context& ctx, corosio::endpoint e,
@@ -697,8 +662,7 @@ struct error_handling_test
         BOOST_TEST(done);
     }
 
-    void
-    run()
+    void run()
     {
         testResultShapes();
         testStructuredBindings();

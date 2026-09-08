@@ -41,7 +41,7 @@ class win_local_stream_acceptor_internal;
 */
 struct local_stream_accept_op : overlapped_op
 {
-    SOCKET accepted_socket   = INVALID_SOCKET;
+    SOCKET accepted_socket                = INVALID_SOCKET;
     win_local_stream_socket* peer_wrapper = nullptr;
     std::shared_ptr<win_local_stream_acceptor_internal> acceptor_ptr;
     SOCKET listen_socket                 = INVALID_SOCKET;

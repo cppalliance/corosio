@@ -204,7 +204,8 @@ class win_tcp_socket final
     std::shared_ptr<win_tcp_socket_internal> internal_;
 
 public:
-    explicit win_tcp_socket(std::shared_ptr<win_tcp_socket_internal> internal) noexcept;
+    explicit win_tcp_socket(
+        std::shared_ptr<win_tcp_socket_internal> internal) noexcept;
 
     void close_internal() noexcept;
 

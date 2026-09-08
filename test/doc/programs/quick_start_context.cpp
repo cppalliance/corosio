@@ -15,12 +15,13 @@
 namespace corosio = boost::corosio;
 
 // tag::full[]
-int main()
+int
+main()
 {
     corosio::io_context ioc;
 
     // ... create and start server ...
 
-    ioc.run();  // Process events until all work completes
+    ioc.run(); // Process events until all work completes
 }
 // end::full[]

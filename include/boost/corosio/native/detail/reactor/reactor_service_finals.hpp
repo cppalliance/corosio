@@ -48,7 +48,9 @@ template<class Traits, class SocketFinal>
 std::error_code
 do_open_socket(
     SocketFinal* socket_impl,
-    int family, int type, int protocol,
+    int family,
+    int type,
+    int protocol,
     bool is_ip) noexcept
 {
     socket_impl->close_socket();
@@ -57,9 +59,8 @@ do_open_socket(
     if (fd < 0)
         return make_err(errno);
 
-    std::error_code ec = is_ip
-        ? Traits::configure_ip_socket(fd, family)
-        : Traits::configure_local_socket(fd);
+    std::error_code ec = is_ip ? Traits::configure_ip_socket(fd, family)
+                               : Traits::configure_local_socket(fd);
 
     if (ec)
     {
@@ -78,10 +79,7 @@ do_open_socket(
 template<class Traits, class SocketFinal>
 std::error_code
 do_assign_fd(
-    SocketFinal* socket_impl,
-    int fd,
-    int expected_type,
-    bool is_ip) noexcept
+    SocketFinal* socket_impl, int fd, int expected_type, bool is_ip) noexcept
 {
     // fd >= 0 guard: an unset socket_impl reports native_handle() == -1,
     // and a caller-supplied -1 must fail as a bad fd, not a self-assign.
@@ -105,8 +103,8 @@ do_assign_fd(
         return ec;
 
     // Best-effort: refresh endpoint caches.
-    using endpoint_type = std::remove_cvref_t<
-        decltype(socket_impl->local_endpoint())>;
+    using endpoint_type =
+        std::remove_cvref_t<decltype(socket_impl->local_endpoint())>;
 
     endpoint_type local_ep{};
     sockaddr_storage local_storage{};
@@ -130,9 +128,7 @@ do_assign_fd(
 template<class Traits, class AccFinal>
 std::error_code
 do_open_acceptor(
-    AccFinal* acc_impl,
-    int family, int type, int protocol,
-    bool is_ip) noexcept
+    AccFinal* acc_impl, int family, int type, int protocol, bool is_ip) noexcept
 {
     acc_impl->close_socket();
 
@@ -140,9 +136,8 @@ do_open_acceptor(
     if (fd < 0)
         return make_err(errno);
 
-    std::error_code ec = is_ip
-        ? Traits::configure_ip_acceptor(fd, family)
-        : Traits::configure_local_socket(fd);
+    std::error_code ec = is_ip ? Traits::configure_ip_acceptor(fd, family)
+                               : Traits::configure_local_socket(fd);
 
     if (ec)
     {
@@ -176,8 +171,8 @@ do_assign_acceptor_fd(AccFinal* acc_impl, int fd, bool is_ip) noexcept
     if (auto ec = acc_impl->init_and_register(fd))
         return ec;
 
-    using endpoint_type = std::remove_cvref_t<
-        decltype(acc_impl->local_endpoint())>;
+    using endpoint_type =
+        std::remove_cvref_t<decltype(acc_impl->local_endpoint())>;
 
     endpoint_type local_ep{};
     sockaddr_storage local_storage{};
@@ -204,13 +199,17 @@ class reactor_tcp_service_impl
           SocketFinal>
 {
     using base_service = reactor_socket_service<
-        Derived, tcp_service,
-        typename Traits::scheduler_type, SocketFinal>;
+        Derived,
+        tcp_service,
+        typename Traits::scheduler_type,
+        SocketFinal>;
     friend Derived;
     friend base_service;
 
     explicit reactor_tcp_service_impl(capy::execution_context& ctx)
-        : base_service(ctx) {}
+        : base_service(ctx)
+    {
+    }
 
 public:
     static constexpr bool needs_write_notification =
@@ -218,11 +217,12 @@ public:
 
     std::error_code open_socket(
         tcp_socket::implementation& impl,
-        int family, int type, int protocol) override
+        int family,
+        int type,
+        int protocol) override
     {
         return do_open_socket<Traits>(
-            static_cast<SocketFinal*>(&impl),
-            family, type, protocol, true);
+            static_cast<SocketFinal*>(&impl), family, type, protocol, true);
     }
 
     std::error_code assign_socket(
@@ -232,8 +232,8 @@ public:
             static_cast<SocketFinal*>(&impl), fd, SOCK_STREAM, true);
     }
 
-    std::error_code bind_socket(
-        tcp_socket::implementation& impl, endpoint ep) override
+    std::error_code
+    bind_socket(tcp_socket::implementation& impl, endpoint ep) override
     {
         return static_cast<SocketFinal*>(&impl)->do_bind(ep);
     }
@@ -262,13 +262,17 @@ class reactor_local_stream_service_impl
           SocketFinal>
 {
     using base_service = reactor_socket_service<
-        Derived, local_stream_service,
-        typename Traits::scheduler_type, SocketFinal>;
+        Derived,
+        local_stream_service,
+        typename Traits::scheduler_type,
+        SocketFinal>;
     friend Derived;
     friend base_service;
 
     explicit reactor_local_stream_service_impl(capy::execution_context& ctx)
-        : base_service(ctx) {}
+        : base_service(ctx)
+    {
+    }
 
 public:
     static constexpr bool needs_write_notification =
@@ -276,11 +280,12 @@ public:
 
     std::error_code open_socket(
         local_stream_socket::implementation& impl,
-        int family, int type, int protocol) override
+        int family,
+        int type,
+        int protocol) override
     {
         return do_open_socket<Traits>(
-            static_cast<SocketFinal*>(&impl),
-            family, type, protocol, false);
+            static_cast<SocketFinal*>(&impl), family, type, protocol, false);
     }
 
     std::error_code assign_socket(
@@ -305,13 +310,17 @@ class reactor_udp_service_impl
           SocketFinal>
 {
     using base_service = reactor_socket_service<
-        Derived, udp_service,
-        typename Traits::scheduler_type, SocketFinal>;
+        Derived,
+        udp_service,
+        typename Traits::scheduler_type,
+        SocketFinal>;
     friend Derived;
     friend base_service;
 
     explicit reactor_udp_service_impl(capy::execution_context& ctx)
-        : base_service(ctx) {}
+        : base_service(ctx)
+    {
+    }
 
 public:
     static constexpr bool needs_write_notification =
@@ -319,11 +328,12 @@ public:
 
     std::error_code open_datagram_socket(
         udp_socket::implementation& impl,
-        int family, int type, int protocol) override
+        int family,
+        int type,
+        int protocol) override
     {
         return do_open_socket<Traits>(
-            static_cast<SocketFinal*>(&impl),
-            family, type, protocol, true);
+            static_cast<SocketFinal*>(&impl), family, type, protocol, true);
     }
 
     std::error_code assign_socket(
@@ -333,8 +343,8 @@ public:
             static_cast<SocketFinal*>(&impl), fd, SOCK_DGRAM, true);
     }
 
-    std::error_code bind_datagram(
-        udp_socket::implementation& impl, endpoint ep) override
+    std::error_code
+    bind_datagram(udp_socket::implementation& impl, endpoint ep) override
     {
         return static_cast<SocketFinal*>(&impl)->do_bind(ep);
     }
@@ -353,13 +363,17 @@ class reactor_local_dgram_service_impl
           SocketFinal>
 {
     using base_service = reactor_socket_service<
-        Derived, local_datagram_service,
-        typename Traits::scheduler_type, SocketFinal>;
+        Derived,
+        local_datagram_service,
+        typename Traits::scheduler_type,
+        SocketFinal>;
     friend Derived;
     friend base_service;
 
     explicit reactor_local_dgram_service_impl(capy::execution_context& ctx)
-        : base_service(ctx) {}
+        : base_service(ctx)
+    {
+    }
 
 public:
     static constexpr bool needs_write_notification =
@@ -367,11 +381,12 @@ public:
 
     std::error_code open_socket(
         local_datagram_socket::implementation& impl,
-        int family, int type, int protocol) override
+        int family,
+        int type,
+        int protocol) override
     {
         return do_open_socket<Traits>(
-            static_cast<SocketFinal*>(&impl),
-            family, type, protocol, false);
+            static_cast<SocketFinal*>(&impl), family, type, protocol, false);
     }
 
     std::error_code assign_socket(
@@ -394,8 +409,13 @@ public:
 // Acceptor service
 // ============================================================
 
-template<class Derived, class Traits, class ServiceBase, class AccFinal,
-         class StreamServiceFinal, class Endpoint>
+template<
+    class Derived,
+    class Traits,
+    class ServiceBase,
+    class AccFinal,
+    class StreamServiceFinal,
+    class Endpoint>
 class reactor_acceptor_service_impl
     : public reactor_acceptor_service<
           Derived,
@@ -424,33 +444,31 @@ class reactor_acceptor_service_impl
 public:
     std::error_code open_acceptor_socket(
         typename AccFinal::impl_base_type& impl,
-        int family, int type, int protocol) override
+        int family,
+        int type,
+        int protocol) override
     {
         return do_open_acceptor<Traits>(
-            static_cast<AccFinal*>(&impl),
-            family, type, protocol,
+            static_cast<AccFinal*>(&impl), family, type, protocol,
             std::is_same_v<Endpoint, endpoint>);
     }
 
     std::error_code assign_socket(
-        typename AccFinal::impl_base_type& impl,
-        native_handle_type fd) override
+        typename AccFinal::impl_base_type& impl, native_handle_type fd) override
     {
         return do_assign_acceptor_fd<Traits>(
             static_cast<AccFinal*>(&impl), fd,
             std::is_same_v<Endpoint, endpoint>);
     }
 
-    std::error_code bind_acceptor(
-        typename AccFinal::impl_base_type& impl,
-        Endpoint ep) override
+    std::error_code
+    bind_acceptor(typename AccFinal::impl_base_type& impl, Endpoint ep) override
     {
         return static_cast<AccFinal*>(&impl)->do_bind(ep);
     }
 
     std::error_code listen_acceptor(
-        typename AccFinal::impl_base_type& impl,
-        int backlog) override
+        typename AccFinal::impl_base_type& impl, int backlog) override
     {
         return static_cast<AccFinal*>(&impl)->do_listen(backlog);
     }

@@ -38,7 +38,7 @@ class win_tcp_acceptor_internal;
 /** Accept operation state. */
 struct accept_op : overlapped_op
 {
-    SOCKET accepted_socket   = INVALID_SOCKET;
+    SOCKET accepted_socket       = INVALID_SOCKET;
     win_tcp_socket* peer_wrapper = nullptr;
     std::shared_ptr<win_tcp_acceptor_internal> acceptor_ptr;
     SOCKET listen_socket                 = INVALID_SOCKET;

@@ -68,9 +68,9 @@
 #endif
 
 #if BOOST_COROSIO_HAS_URING
-#define COROSIO_TEST_URING_(impl, name)         \
-    struct impl##_uring : impl<uring>        \
-    {};                                            \
+#define COROSIO_TEST_URING_(impl, name) \
+    struct impl##_uring : impl<uring>   \
+    {};                                 \
     TEST_SUITE(impl##_uring, name ".uring");
 #else
 #define COROSIO_TEST_URING_(impl, name)

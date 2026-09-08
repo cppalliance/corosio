@@ -30,10 +30,11 @@ namespace {
 
 #if BOOST_COROSIO_HAS_EPOLL
 // tag::construct[]
-void construct_contexts()
+void
+construct_contexts()
 {
-    corosio::io_context ioc;                   // platform default (epoll on Linux)
-    corosio::io_context ioc2(corosio::epoll);  // explicit backend
+    corosio::io_context ioc; // platform default (epoll on Linux)
+    corosio::io_context ioc2(corosio::epoll); // explicit backend
 }
 // end::construct[]
 #endif // BOOST_COROSIO_HAS_EPOLL

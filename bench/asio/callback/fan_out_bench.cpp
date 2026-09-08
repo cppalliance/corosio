@@ -106,8 +106,7 @@ struct sub_request_op : std::enable_shared_from_this<sub_request_op>
         auto self = shared_from_this();
         asio::async_read(
             client, asio::buffer(recv_buf, 64),
-            [self]([[maybe_unused]] boost::system::error_code ec,
-                std::size_t) {
+            [self]([[maybe_unused]] boost::system::error_code ec, std::size_t) {
                 self->finish();
             });
     }
@@ -162,7 +161,7 @@ struct fork_join_op
 void
 bench_fork_join(bench::state& state)
 {
-    int fan_out = static_cast<int>(state.range(0));
+    int fan_out               = static_cast<int>(state.range(0));
     state.counters["fan_out"] = fan_out;
 
     asio::io_context ioc;
@@ -324,8 +323,8 @@ bench_nested(bench::state& state)
         echo->start();
     }
 
-    nested_op op{ioc,     clients, servers, groups, subs_per_group,
-                 state,   {},      {},      {}};
+    nested_op op{ioc,   clients, servers, groups, subs_per_group,
+                 state, {},      {},      {}};
 
     op.start();
 
@@ -449,8 +448,8 @@ bench_concurrent_parents(bench::state& state)
     {
         parent_ops.push_back(
             std::make_unique<parent_fork_join_op>(
-                ioc, clients, servers, p * fan_out, fan_out, num_parents,
-                state, parents_done));
+                ioc, clients, servers, p * fan_out, fan_out, num_parents, state,
+                parents_done));
         parent_ops.back()->start();
     }
 
@@ -470,7 +469,7 @@ bench_concurrent_parents(bench::state& state)
 void
 bench_fork_join_lockless(bench::state& state)
 {
-    int fan_out = static_cast<int>(state.range(0));
+    int fan_out               = static_cast<int>(state.range(0));
     state.counters["fan_out"] = fan_out;
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
@@ -540,8 +539,8 @@ bench_nested_lockless(bench::state& state)
         echo->start();
     }
 
-    nested_op op{ioc,     clients, servers, groups, subs_per_group,
-                 state,   {},      {},      {}};
+    nested_op op{ioc,   clients, servers, groups, subs_per_group,
+                 state, {},      {},      {}};
 
     op.start();
 
@@ -597,8 +596,8 @@ bench_concurrent_parents_lockless(bench::state& state)
     {
         parent_ops.push_back(
             std::make_unique<parent_fork_join_op>(
-                ioc, clients, servers, p * fan_out, fan_out, num_parents,
-                state, parents_done));
+                ioc, clients, servers, p * fan_out, fan_out, num_parents, state,
+                parents_done));
         parent_ops.back()->start();
     }
 
@@ -623,17 +622,17 @@ make_fan_out_suite()
     using F = bench::bench_flags;
     return bench::benchmark_suite("fan_out", F::needs_conntrack_drain)
         .add("fork_join", bench_fork_join)
-            .args({1, 4, 16, 64})
+        .args({1, 4, 16, 64})
         .add("fork_join_lockless", bench_fork_join_lockless)
-            .args({1, 4, 16, 64})
+        .args({1, 4, 16, 64})
         .add("nested", bench_nested)
-            .args({4, 16})
+        .args({4, 16})
         .add("nested_lockless", bench_nested_lockless)
-            .args({4, 16})
+        .args({4, 16})
         .add("concurrent_parents", bench_concurrent_parents)
-            .args({1, 4, 16})
+        .args({1, 4, 16})
         .add("concurrent_parents_lockless", bench_concurrent_parents_lockless)
-            .args({1, 4, 16});
+        .args({1, 4, 16});
 }
 
 } // namespace asio_callback_bench

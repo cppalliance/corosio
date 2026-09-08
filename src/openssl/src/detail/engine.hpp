@@ -87,7 +87,7 @@ public:
     /// Destroy the engine, releasing the session and BIO pair.
     ~engine();
 
-    engine() = default;
+    engine()                         = default;
     engine(engine const&)            = delete;
     engine& operator=(engine const&) = delete;
 
@@ -116,8 +116,7 @@ public:
     void reset();
 
     /// Check whether a prior `reset()` left the session unusable.
-    bool
-    clear_failed() const noexcept
+    bool clear_failed() const noexcept
     {
         return clear_failed_;
     }
@@ -164,8 +163,8 @@ public:
         @return An error when a requested setting could not be
         applied.
     */
-    std::error_code prepare(
-        tls_context const& ctx, tls_role role, std::string const& hostname);
+    std::error_code
+    prepare(tls_context const& ctx, tls_role role, std::string const& hostname);
 
     /** Apply SNI and hostname verification for the next handshake.
 
@@ -261,8 +260,7 @@ public:
     bool received_shutdown() const;
 
     /// Return the underlying session handle (tests only).
-    ssl_st*
-    native_handle() const noexcept
+    ssl_st* native_handle() const noexcept
     {
         return ssl_;
     }

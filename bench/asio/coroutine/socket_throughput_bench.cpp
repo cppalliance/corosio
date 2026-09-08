@@ -30,7 +30,7 @@ namespace {
 void
 bench_throughput(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc;
@@ -98,7 +98,7 @@ bench_throughput(bench::state& state)
 void
 bench_bidirectional_throughput(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc;
@@ -202,7 +202,7 @@ bench_bidirectional_throughput(bench::state& state)
 void
 bench_throughput_lockless(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
@@ -270,7 +270,7 @@ bench_throughput_lockless(bench::state& state)
 void
 bench_bidirectional_throughput_lockless(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
@@ -394,10 +394,7 @@ mt_write_coro(
 }
 
 asio::awaitable<void, executor_type>
-mt_read_coro(
-    tcp_socket& sock,
-    std::size_t chunk_size,
-    bench::state& state)
+mt_read_coro(tcp_socket& sock, std::size_t chunk_size, bench::state& state)
 {
     try
     {
@@ -461,14 +458,12 @@ bench_multithread_throughput(bench::state& state)
             ioc, mt_write_coro(sock1s[i], bufs[i].wbuf1, chunk_size, running),
             asio::detached);
         asio::co_spawn(
-            ioc, mt_read_coro(sock2s[i], chunk_size, state),
-            asio::detached);
+            ioc, mt_read_coro(sock2s[i], chunk_size, state), asio::detached);
         asio::co_spawn(
             ioc, mt_write_coro(sock2s[i], bufs[i].wbuf2, chunk_size, running),
             asio::detached);
         asio::co_spawn(
-            ioc, mt_read_coro(sock1s[i], chunk_size, state),
-            asio::detached);
+            ioc, mt_read_coro(sock1s[i], chunk_size, state), asio::detached);
     }
 
     perf::stopwatch sw;
@@ -506,15 +501,15 @@ make_socket_throughput_suite()
     using F = bench::bench_flags;
     return bench::benchmark_suite("socket_throughput", F::needs_conntrack_drain)
         .add("unidirectional", bench_throughput)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("unidirectional_lockless", bench_throughput_lockless)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("bidirectional", bench_bidirectional_throughput)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("bidirectional_lockless", bench_bidirectional_throughput_lockless)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("multithread", bench_multithread_throughput)
-            .args({2, 4, 8});
+        .args({2, 4, 8});
 }
 
 } // namespace asio_bench

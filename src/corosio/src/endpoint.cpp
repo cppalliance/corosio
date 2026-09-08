@@ -89,7 +89,9 @@ parse_endpoint_impl(std::string_view s, endpoint& ep) noexcept
         // Find the colon separating address and port
         auto colon_pos = s.rfind(':');
         if (colon_pos == std::string_view::npos)
-            return std::make_error_code(std::errc::invalid_argument); // LCOV_EXCL_LINE detect_endpoint_format reports ipv4_with_port only when a colon is present
+            return std::make_error_code(
+                std::errc::
+                    invalid_argument); // LCOV_EXCL_LINE detect_endpoint_format reports ipv4_with_port only when a colon is present
 
         auto addr_str = s.substr(0, colon_pos);
         auto port_str = s.substr(colon_pos + 1);

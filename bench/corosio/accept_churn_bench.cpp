@@ -214,7 +214,7 @@ bench_concurrent_churn(bench::state& state)
     using socket_type   = corosio::native_tcp_socket<Backend>;
     using acceptor_type = corosio::native_tcp_acceptor<Backend>;
 
-    int num_loops = static_cast<int>(state.range(0));
+    int num_loops               = static_cast<int>(state.range(0));
     state.counters["num_loops"] = num_loops;
 
     corosio::native_io_context<Backend> ioc;
@@ -224,7 +224,7 @@ bench_concurrent_churn(bench::state& state)
     for (int i = 0; i < num_loops; ++i)
     {
         acceptors.emplace_back(ioc);
-        auto& acc = acceptors.back();
+        auto& acc   = acceptors.back();
         std::ignore = acc.open();
         acc.set_option(corosio::native_socket_option::reuse_address(true));
         if (auto ec = acc.bind(
@@ -307,7 +307,7 @@ bench_burst_churn(bench::state& state)
     using socket_type   = corosio::native_tcp_socket<Backend>;
     using acceptor_type = corosio::native_tcp_acceptor<Backend>;
 
-    int burst_size = static_cast<int>(state.range(0));
+    int burst_size               = static_cast<int>(state.range(0));
     state.counters["burst_size"] = burst_size;
 
     corosio::native_io_context<Backend> ioc;
@@ -390,7 +390,7 @@ bench_burst_churn_lockless(bench::state& state)
     using socket_type   = corosio::native_tcp_socket<Backend>;
     using acceptor_type = corosio::native_tcp_acceptor<Backend>;
 
-    int burst_size = static_cast<int>(state.range(0));
+    int burst_size               = static_cast<int>(state.range(0));
     state.counters["burst_size"] = burst_size;
 
     corosio::io_context_options opts;
@@ -479,11 +479,11 @@ make_accept_churn_suite()
         .add("sequential", bench_sequential_churn<Backend>)
         .add("sequential_lockless", bench_sequential_churn_lockless<Backend>)
         .add("concurrent", bench_concurrent_churn<Backend>)
-            .args({1, 4, 16})
+        .args({1, 4, 16})
         .add("burst", bench_burst_churn<Backend>)
-            .args({10, 100})
+        .args({10, 100})
         .add("burst_lockless", bench_burst_churn_lockless<Backend>)
-            .args({10, 100});
+        .args({10, 100});
 }
 
 } // namespace corosio_bench

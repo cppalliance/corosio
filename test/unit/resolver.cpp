@@ -346,9 +346,10 @@ struct resolver_test
         bool completed = false;
         std::error_code result_ec;
 
-        auto task = [](resolver& r_ref,
-                       std::error_code& ec_out, bool& done) -> capy::task<> {
-            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve("localhost", "80");
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       bool& done) -> capy::task<> {
+            [[maybe_unused]] auto [ec, res] =
+                co_await r_ref.resolve("localhost", "80");
             ec_out = ec;
             done   = true;
         };
@@ -376,12 +377,12 @@ struct resolver_test
         bool completed = false;
         std::error_code result_ec;
 
-        auto task = [](resolver& r_ref,
-                       std::error_code& ec_out, bool& done) -> capy::task<> {
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       bool& done) -> capy::task<> {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
             [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve(ep);
-            ec_out = ec;
-            done   = true;
+            ec_out                          = ec;
+            done                            = true;
         };
         capy::run_async(ioc.get_executor())(task(r, result_ec, completed));
         ioc.run();
@@ -409,9 +410,10 @@ struct resolver_test
         bool completed = false;
         std::error_code result_ec;
 
-        auto task = [](resolver& r_ref,
-                       std::error_code& ec_out, bool& done) -> capy::task<> {
-            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve("localhost", "80");
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       bool& done) -> capy::task<> {
+            [[maybe_unused]] auto [ec, res] =
+                co_await r_ref.resolve("localhost", "80");
             ec_out = ec;
             done   = true;
         };
@@ -432,8 +434,8 @@ struct resolver_test
         bool completed = false;
         std::error_code result_ec;
 
-        auto task = [](resolver& r_ref,
-                       std::error_code& ec_out, bool& done) -> capy::task<> {
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       bool& done) -> capy::task<> {
             [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve(
                 "127.0.0.1", "not-a-real-service",
                 resolve_flags::numeric_host | resolve_flags::numeric_service);
@@ -457,9 +459,10 @@ struct resolver_test
 
         auto task = [](resolver& r_ref) -> capy::task<> {
             auto flags = resolve_flags::passive |
-                resolve_flags::address_configured |
-                resolve_flags::v4_mapped | resolve_flags::all_matching;
-            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve("127.0.0.1", "80", flags);
+                resolve_flags::address_configured | resolve_flags::v4_mapped |
+                resolve_flags::all_matching;
+            [[maybe_unused]] auto [ec, res] =
+                co_await r_ref.resolve("127.0.0.1", "80", flags);
         };
         capy::run_async(ioc.get_executor())(task(r));
         ioc.run();
@@ -480,8 +483,7 @@ struct resolver_test
             endpoint ep(ipv4_address({127, 0, 0, 1}), 53);
             auto [ec, res] = co_await r_ref.resolve(
                 ep,
-                reverse_flags::numeric_host |
-                    reverse_flags::numeric_service |
+                reverse_flags::numeric_host | reverse_flags::numeric_service |
                     reverse_flags::datagram_service);
             ec_out  = ec;
             res_out = std::move(res);
@@ -550,7 +552,8 @@ struct resolver_test
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
                        bool& done) -> capy::task<> {
-            [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve("localhost", "80");
+            [[maybe_unused]] auto [ec, res] =
+                co_await r_ref.resolve("localhost", "80");
             ec_out = ec;
             done   = true;
         };
@@ -581,8 +584,8 @@ struct resolver_test
                        bool& done) -> capy::task<> {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
             [[maybe_unused]] auto [ec, res] = co_await r_ref.resolve(ep);
-            ec_out = ec;
-            done   = true;
+            ec_out                          = ec;
+            done                            = true;
         };
         capy::run_async(ioc.get_executor(), stop_src.get_token())(
             task(r, result_ec, completed));
@@ -1097,12 +1100,11 @@ struct resolver_test
                 resolver r(ioc);
                 tcp_acceptor acc(ioc);
                 std::ignore = acc.open();
-                std::ignore = acc.bind(
-                    endpoint(ipv4_address::loopback(), 0));
+                std::ignore = acc.bind(endpoint(ipv4_address::loopback(), 0));
                 std::ignore = acc.listen();
                 tcp_socket peer(ioc);
                 std::ignore = co_await acc.accept(peer);
-                resumed = true;
+                resumed     = true;
             };
             capy::run_async(ioc.get_executor())(keeper());
             // One handler carries the coroutine to the parked accept.
@@ -1139,8 +1141,8 @@ struct resolver_test
                 // Numeric, so the queued work needs no name service.
                 std::ignore = co_await r.resolve(
                     "127.0.0.1", "80",
-                    resolve_flags::numeric_host
-                        | resolve_flags::numeric_service);
+                    resolve_flags::numeric_host |
+                        resolve_flags::numeric_service);
                 resumed = true;
             };
 
@@ -1171,8 +1173,8 @@ struct resolver_test
                 // Numeric, so the queued work needs no name service.
                 std::ignore = co_await r.resolve(
                     endpoint(ipv4_address::loopback(), 80),
-                    reverse_flags::numeric_host
-                        | reverse_flags::numeric_service);
+                    reverse_flags::numeric_host |
+                        reverse_flags::numeric_service);
                 resumed = true;
             };
 
@@ -1215,7 +1217,7 @@ struct resolver_test
             resolver r(ioc);
             auto query = [&]() -> capy::task<> {
                 std::ignore = co_await r.resolve("localhost", "80");
-                resumed = true;
+                resumed     = true;
             };
 
             ex.emplace(ioc.get_executor());
@@ -1262,7 +1264,6 @@ struct resolver_test
         BOOST_TEST(rec == capy::cond::canceled);
     }
 #endif
-
 
     void run()
     {

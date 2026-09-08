@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -42,7 +42,7 @@
 #include <boost/capy/ex/run_async.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 #include <boost/corosio/io_context.hpp>
@@ -106,7 +106,7 @@ bind_listen(corosio::io_context& ioc)
 {
     // tag::bind_listen[]
     corosio::tcp_acceptor acc(ioc);
-    if (auto ec = acc.open())                    // create an IPv4 TCP socket
+    if (auto ec = acc.open()) // create an IPv4 TCP socket
         return ec;
 
     if (auto ec = acc.bind(corosio::endpoint(8080)))
@@ -147,16 +147,14 @@ bind_loopback(corosio::io_context& ioc)
 {
     // tag::bind_loopback[]
     // Localhost only
-    corosio::tcp_acceptor acc(ioc, corosio::endpoint(
-        corosio::ipv4_address::loopback(), 8080));
+    corosio::tcp_acceptor acc(
+        ioc, corosio::endpoint(corosio::ipv4_address::loopback(), 8080));
     // end::bind_loopback[]
 }
 
 capy::task<>
 accept_one(
-    corosio::io_context& ioc,
-    corosio::tcp_acceptor& acc,
-    std::error_code& out)
+    corosio::io_context& ioc, corosio::tcp_acceptor& acc, std::error_code& out)
 {
     // tag::accept_into_peer[]
     corosio::tcp_socket peer(ioc);
@@ -184,9 +182,7 @@ cancel_pending(corosio::tcp_acceptor& acc)
 
 capy::task<>
 stop_token_accept(
-    corosio::tcp_acceptor& acc,
-    corosio::tcp_socket& peer,
-    bool& canceled)
+    corosio::tcp_acceptor& acc, corosio::tcp_socket& peer, bool& canceled)
 {
     // tag::accept_stop_token[]
     // Inside a cancellable task:
@@ -226,7 +222,7 @@ move_semantics(corosio::io_context& ioc)
 {
     // tag::move_only[]
     corosio::tcp_acceptor acc1(ioc);
-    corosio::tcp_acceptor acc2 = std::move(acc1);  // OK
+    corosio::tcp_acceptor acc2 = std::move(acc1); // OK
     // end::move_only[]
 #if 0
     // tag::move_only[]
@@ -236,7 +232,7 @@ move_semantics(corosio::io_context& ioc)
 #endif
 
     // tag::move_assign[]
-    acc1 = std::move(acc2);  // Closes acc1's socket if open, then moves acc2
+    acc1 = std::move(acc2); // Closes acc1's socket if open, then moves acc2
     // end::move_assign[]
 }
 
@@ -247,9 +243,8 @@ handle_connection(corosio::tcp_socket peer)
 }
 
 // tag::accept_loop[]
-capy::task<void> accept_loop(
-    corosio::io_context& ioc,
-    corosio::tcp_acceptor& acc)
+capy::task<void>
+accept_loop(corosio::io_context& ioc, corosio::tcp_acceptor& acc)
 {
     for (;;)
     {
@@ -259,22 +254,22 @@ capy::task<void> accept_loop(
         if (ec)
         {
             if (ec == capy::cond::canceled)
-                break;  // Shutdown requested
+                break; // Shutdown requested
 
             std::cerr << "Accept error: " << ec.message() << "\n";
-            continue;  // Try again
+            continue; // Try again
         }
 
         // Spawn a coroutine to handle this connection
-        capy::run_async(ioc.get_executor())(
-            handle_connection(std::move(peer)));
+        capy::run_async(ioc.get_executor())(handle_connection(std::move(peer)));
     }
 }
 // end::accept_loop[]
 
 // run_server waits on real process signals; compiling it is the test.
 // tag::graceful_shutdown[]
-capy::task<void> run_server(corosio::io_context& ioc)
+capy::task<void>
+run_server(corosio::io_context& ioc)
 {
     corosio::tcp_acceptor acc(ioc);
     if (auto ec = acc.open())
@@ -300,7 +295,7 @@ capy::task<void> run_server(corosio::io_context& ioc)
     if (!ec)
     {
         std::cout << "Received signal " << signum << ", shutting down\n";
-        acc.cancel();  // Stop accepting
+        acc.cancel(); // Stop accepting
         // Existing connections continue until complete
     }
 }
@@ -308,36 +303,32 @@ capy::task<void> run_server(corosio::io_context& ioc)
 
 capy::task<>
 connect_client(
-    corosio::io_context& ioc,
-    corosio::endpoint ep,
-    std::error_code& out)
+    corosio::io_context& ioc, corosio::endpoint ep, std::error_code& out)
 {
     corosio::tcp_socket s(ioc);
     BOOST_TEST(!s.open());
     auto [ec] = co_await s.connect(ep);
-    out = ec;
+    out       = ec;
 }
 
 struct tcp_acceptor_test
 {
-    void
-    testConstruction()
+    void testConstruction()
     {
         corosio::io_context ioc;
         construction(ioc);
         move_semantics(ioc);
     }
 
-    void
-    testAccept()
+    void testAccept()
     {
         corosio::io_context ioc;
         auto ex = ioc.get_executor();
 
         corosio::tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        BOOST_TEST(!acc.bind(corosio::endpoint(
-            corosio::ipv4_address::loopback(), 0)));
+        BOOST_TEST(
+            !acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
         BOOST_TEST(ready_to_accept(acc));
         auto ep = acc.local_endpoint();
@@ -363,58 +354,53 @@ struct tcp_acceptor_test
         BOOST_TEST(!ready_to_accept(acc));
     }
 
-    void
-    testCancel()
+    void testCancel()
     {
         corosio::io_context ioc;
         auto ex = ioc.get_executor();
 
         corosio::tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        BOOST_TEST(!acc.bind(corosio::endpoint(
-            corosio::ipv4_address::loopback(), 0)));
+        BOOST_TEST(
+            !acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 
         std::error_code accept_ec;
         capy::run_async(ex)(accept_one(ioc, acc, accept_ec));
         // FIFO posting: the accept is already pending when cancel runs
-        capy::run_async(ex)(
-            [](corosio::tcp_acceptor& a) -> capy::task<> {
-                cancel_pending(a);
-                co_return;
-            }(acc));
+        capy::run_async(ex)([](corosio::tcp_acceptor& a) -> capy::task<> {
+            cancel_pending(a);
+            co_return;
+        }(acc));
         ioc.run();
         BOOST_TEST(accept_ec == capy::cond::canceled);
     }
 
-    void
-    testStopToken()
+    void testStopToken()
     {
         corosio::io_context ioc;
         auto ex = ioc.get_executor();
 
         corosio::tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        BOOST_TEST(!acc.bind(corosio::endpoint(
-            corosio::ipv4_address::loopback(), 0)));
+        BOOST_TEST(
+            !acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 
         corosio::tcp_socket peer(ioc);
         std::stop_source source;
         bool canceled = false;
-        capy::run_async(ex, source.get_token())(
-            stop_token_accept(acc, peer, canceled));
-        capy::run_async(ex)(
-            [](std::stop_source& s) -> capy::task<> {
-                s.request_stop();
-                co_return;
-            }(source));
+        capy::run_async(
+            ex, source.get_token())(stop_token_accept(acc, peer, canceled));
+        capy::run_async(ex)([](std::stop_source& s) -> capy::task<> {
+            s.request_stop();
+            co_return;
+        }(source));
         ioc.run();
         BOOST_TEST(canceled);
     }
 
-    void
-    run()
+    void run()
     {
         testConstruction();
         testAccept();

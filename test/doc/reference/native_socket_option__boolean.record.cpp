@@ -29,7 +29,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::boolean[]
-void receive_urgent_data_inline(corosio::tcp_socket& sock)
+void
+receive_urgent_data_inline(corosio::tcp_socket& sock)
 {
     // corosio has no dedicated type for SO_OOBINLINE; naming the level and
     // option as template arguments is what this class is for -- reaching an

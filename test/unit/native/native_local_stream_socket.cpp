@@ -38,48 +38,55 @@ struct native_local_stream_socket_test
                          .read_some(std::declval<capy::mutable_buffer>())),
             decltype(std::declval<io_stream&>().read_some(
                 std::declval<capy::mutable_buffer>()))>,
-        "native_local_stream_socket::read_some must shadow io_stream::read_some");
+        "native_local_stream_socket::read_some must shadow "
+        "io_stream::read_some");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_stream_socket<Backend>&>()
                          .write_some(std::declval<capy::const_buffer>())),
             decltype(std::declval<io_stream&>().write_some(
                 std::declval<capy::const_buffer>()))>,
-        "native_local_stream_socket::write_some must shadow io_stream::write_some");
+        "native_local_stream_socket::write_some must shadow "
+        "io_stream::write_some");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_stream_socket<Backend>&>()
                          .connect(std::declval<local_endpoint>())),
             decltype(std::declval<local_stream_socket&>().connect(
                 std::declval<local_endpoint>()))>,
-        "native_local_stream_socket::connect must shadow local_stream_socket::connect");
+        "native_local_stream_socket::connect must shadow "
+        "local_stream_socket::connect");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_stream_acceptor<Backend>&>()
                          .accept(std::declval<local_stream_socket&>())),
             decltype(std::declval<local_stream_acceptor&>().accept(
                 std::declval<local_stream_socket&>()))>,
-        "native_local_stream_acceptor::accept(peer) must shadow local_stream_acceptor::accept(peer)");
+        "native_local_stream_acceptor::accept(peer) must shadow "
+        "local_stream_acceptor::accept(peer)");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_stream_acceptor<Backend>&>()
                          .accept()),
             decltype(std::declval<local_stream_acceptor&>().accept())>,
-        "native_local_stream_acceptor::accept() must shadow local_stream_acceptor::accept()");
+        "native_local_stream_acceptor::accept() must shadow "
+        "local_stream_acceptor::accept()");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_stream_socket<Backend>&>().wait(
                 wait_type::read)),
             decltype(std::declval<local_stream_socket&>().wait(
                 wait_type::read))>,
-        "native_local_stream_socket::wait must shadow local_stream_socket::wait");
+        "native_local_stream_socket::wait must shadow "
+        "local_stream_socket::wait");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_stream_acceptor<Backend>&>()
                          .wait(wait_type::read)),
             decltype(std::declval<local_stream_acceptor&>().wait(
                 wait_type::read))>,
-        "native_local_stream_acceptor::wait must shadow local_stream_acceptor::wait");
+        "native_local_stream_acceptor::wait must shadow "
+        "local_stream_acceptor::wait");
 
     void testConstruct()
     {
@@ -216,7 +223,7 @@ struct native_local_stream_socket_test
         native_local_stream_socket<Backend> server(ioc);
         native_local_stream_socket<Backend> client(ioc);
 
-        local_stream_acceptor& acc_ref = acc;
+        local_stream_acceptor& acc_ref  = acc;
         local_stream_socket& server_ref = server;
         local_stream_socket& client_ref = client;
 
@@ -238,8 +245,8 @@ struct native_local_stream_socket_test
             BOOST_TEST_EQ(ec, std::error_code{});
 
             char const msg[] = "virtual";
-            std::ignore = co_await c.write_some(
-                capy::const_buffer(msg, sizeof(msg) - 1));
+            std::ignore =
+                co_await c.write_some(capy::const_buffer(msg, sizeof(msg) - 1));
         };
 
         auto ex = ioc.get_executor();
@@ -254,9 +261,9 @@ struct native_local_stream_socket_test
     void testSocketWait()
     {
         native_io_context<Backend> ioc;
-        auto       ex   = ioc.get_executor();
+        auto ex = ioc.get_executor();
         test::temp_socket_dir tmp;
-        auto       path = tmp.path();
+        auto path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
@@ -269,13 +276,14 @@ struct native_local_stream_socket_test
         native_local_stream_socket<Backend> client(ioc);
 
         std::error_code wait_ec;
-        bool            wait_done = false;
+        bool wait_done = false;
 
         auto rendezvous = [&]() -> capy::task<> {
             [[maybe_unused]] auto [ec] = co_await acc.accept(server);
         };
         auto connect_task = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec] = co_await client.connect(local_endpoint(path));
+            [[maybe_unused]] auto [ec] =
+                co_await client.connect(local_endpoint(path));
         };
         capy::run_async(ex)(rendezvous());
         capy::run_async(ex)(connect_task());
@@ -299,9 +307,9 @@ struct native_local_stream_socket_test
     void testAcceptorWait()
     {
         native_io_context<Backend> ioc;
-        auto       ex   = ioc.get_executor();
+        auto ex = ioc.get_executor();
         test::temp_socket_dir tmp;
-        auto       path = tmp.path();
+        auto path = tmp.path();
 
         native_local_stream_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
@@ -313,7 +321,7 @@ struct native_local_stream_socket_test
         native_local_stream_socket<Backend> client(ioc);
 
         std::error_code wait_ec;
-        bool            wait_done = false;
+        bool wait_done = false;
 
         auto waiter = [&]() -> capy::task<> {
             auto [ec] = co_await acc.wait(wait_type::read);
@@ -321,7 +329,8 @@ struct native_local_stream_socket_test
             wait_done = true;
         };
         auto connect_task = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec] = co_await client.connect(local_endpoint(path));
+            [[maybe_unused]] auto [ec] =
+                co_await client.connect(local_endpoint(path));
         };
         capy::run_async(ex)(waiter());
         capy::run_async(ex)(connect_task());
@@ -374,7 +383,7 @@ struct native_local_stream_socket_test
     void testConnectAutoOpens()
     {
         native_io_context<Backend> ioc;
-        auto ex   = ioc.get_executor();
+        auto ex = ioc.get_executor();
         // temp dir exists, but the socket file inside it does not
         test::temp_socket_dir tmp;
         auto path = tmp.path();
@@ -386,12 +395,11 @@ struct native_local_stream_socket_test
         bool done = false;
 
         capy::run_async(ex)(
-            [](native_local_stream_socket<Backend>& sock,
-               local_endpoint ep,
+            [](native_local_stream_socket<Backend>& sock, local_endpoint ep,
                std::error_code& ec_out, bool& d) -> capy::task<> {
                 auto [ec] = co_await sock.connect(ep);
-                ec_out = ec;
-                d      = true;
+                ec_out    = ec;
+                d         = true;
             }(s, local_endpoint(path), result_ec, done));
 
         ioc.run();
@@ -412,13 +420,13 @@ struct native_local_stream_socket_test
         auto task = [&]() -> capy::task<> {
             char buf[8] = {};
 
-            auto [rec, rn] = co_await s.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [rec, rn] =
+                co_await s.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(rec == std::errc::bad_file_descriptor);
             BOOST_TEST_EQ(rn, 0u);
 
-            auto [wec, wn] = co_await s.write_some(
-                capy::const_buffer(buf, sizeof(buf)));
+            auto [wec, wn] =
+                co_await s.write_some(capy::const_buffer(buf, sizeof(buf)));
             BOOST_TEST(wec == std::errc::bad_file_descriptor);
             BOOST_TEST_EQ(wn, 0u);
 
@@ -437,7 +445,7 @@ struct native_local_stream_socket_test
         native_local_stream_acceptor<Backend> acc(ioc);
 
         std::error_code wait_ec;
-        bool            wait_done = false;
+        bool wait_done = false;
 
         auto waiter = [&]() -> capy::task<> {
             auto [ec] = co_await acc.wait(wait_type::read);

@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -40,15 +40,15 @@
 #include <boost/capy/buffers.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 // The header guard makes the copy shown inside the range-connect
 // fragment expand to nothing; indented to match the second region so
 // the page's indent=0 renders both flush.
-    // tag::connect_range[]
-    #include <boost/corosio/connect.hpp>
-    // end::connect_range[]
+// tag::connect_range[]
+#include <boost/corosio/connect.hpp>
+// end::connect_range[]
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/resolver.hpp>
@@ -90,8 +90,8 @@ overview_fragment(corosio::io_context& ioc)
         corosio::endpoint(corosio::ipv4_address::loopback(), 8080));
 
     char buf[1024];
-    auto [read_ec, n] = co_await s.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [read_ec, n] =
+        co_await s.read_some(capy::mutable_buffer(buf, sizeof(buf)));
     // end::overview[]
 }
 
@@ -115,7 +115,7 @@ open_fragment(corosio::tcp_socket& s)
     // Creates an IPv4 TCP socket and associates it with the platform
     // reactor (IOCP on Windows, epoll/kqueue/select on POSIX)
     if (auto ec = s.open())
-        return;  // report the error
+        return; // report the error
     // end::open[]
 }
 
@@ -123,7 +123,7 @@ void
 close_fragment(corosio::tcp_socket& s)
 {
     // tag::close[]
-    s.close();  // Cancels pending ops, closes socket
+    s.close(); // Cancels pending ops, closes socket
     // end::close[]
 }
 
@@ -151,7 +151,7 @@ connect_throw_fragment(corosio::tcp_socket& s, corosio::endpoint endpoint)
 {
     // tag::connect_throw[]
     if (auto [ec] = co_await s.connect(endpoint); ec)
-        throw std::system_error(ec);  // Throws on error
+        throw std::system_error(ec); // Throws on error
     // end::connect_throw[]
 }
 
@@ -190,10 +190,8 @@ connect_condition_fragment(
 {
     // tag::connect_condition[]
     auto [ec, ep] = co_await corosio::connect(
-        s,
-        results,
-        [](std::error_code const&, corosio::endpoint const& e) {
-            return e.is_v4();  // IPv4 only.
+        s, results, [](std::error_code const&, corosio::endpoint const& e) {
+            return e.is_v4(); // IPv4 only.
         });
     // end::connect_condition[]
 }
@@ -214,8 +212,7 @@ read_some_fragment(corosio::tcp_socket& s, std::size_t& bytes_read)
 {
     // tag::read_some[]
     char buf[1024];
-    auto [ec, n] = co_await s.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec, n] = co_await s.read_some(capy::mutable_buffer(buf, sizeof(buf)));
     // end::read_some[]
     if (!ec)
         bytes_read = n;
@@ -253,8 +250,8 @@ write_some_fragment(corosio::tcp_socket& s, std::size_t& bytes_written)
 {
     // tag::write_some[]
     std::string msg = "Hello";
-    auto [ec, n] = co_await s.write_some(
-        capy::const_buffer(msg.data(), msg.size()));
+    auto [ec, n] =
+        co_await s.write_some(capy::const_buffer(msg.data(), msg.size()));
     // end::write_some[]
     if (!ec)
         bytes_written = n;
@@ -296,7 +293,7 @@ void
 move_assign_fragment(corosio::tcp_socket& s1, corosio::tcp_socket& s2)
 {
     // tag::move_assign[]
-    s1 = std::move(s2);  // Closes s1's socket if open, then moves s2
+    s1 = std::move(s2); // Closes s1's socket if open, then moves s2
     // end::move_assign[]
 }
 
@@ -304,12 +301,13 @@ capy::const_buffer some_buffer("hi", 2);
 
 // Indented to match the second region inside the caller below, so the
 // page's indent=0 renders both flush.
-    // tag::io_stream_poly[]
-    capy::task<void> send_data(corosio::io_stream& stream)
-    {
-        std::ignore = co_await capy::write(stream, some_buffer);
-    }
-    // end::io_stream_poly[]
+// tag::io_stream_poly[]
+capy::task<void>
+send_data(corosio::io_stream& stream)
+{
+    std::ignore = co_await capy::write(stream, some_buffer);
+}
+// end::io_stream_poly[]
 
 // The shown caller writes on a socket that was never connected, so it
 // is compiled but never executed; the test runs send_data over a
@@ -343,33 +341,33 @@ buffer_sequences_fragment(corosio::tcp_socket& s)
     // Multiple buffers (scatter/gather I/O)
     std::array<capy::mutable_buffer, 2> bufs = {
         capy::mutable_buffer(header, header_size),
-        capy::mutable_buffer(body, body_size)
-    };
+        capy::mutable_buffer(body, body_size)};
     std::tie(ec, n) = co_await s.read_some(bufs);
     // end::buffer_sequences[]
 }
 
 // tag::echo_client[]
-capy::task<void> echo_client(corosio::io_context& ioc)
+capy::task<void>
+echo_client(corosio::io_context& ioc)
 {
     corosio::tcp_socket s(ioc);
 
     if (auto [ec] = co_await s.connect(
-            corosio::endpoint(corosio::ipv4_address::loopback(), 8080)); ec)
+            corosio::endpoint(corosio::ipv4_address::loopback(), 8080));
+        ec)
         throw std::system_error(ec);
 
     std::string msg = "Hello, server!";
-    if (auto [ec, n] = co_await capy::write(
-            s, capy::const_buffer(msg.data(), msg.size())); ec)
+    if (auto [ec, n] =
+            co_await capy::write(s, capy::const_buffer(msg.data(), msg.size()));
+        ec)
         throw std::system_error(ec);
 
     char buf[1024];
-    auto [ec, n] = co_await s.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec, n] = co_await s.read_some(capy::mutable_buffer(buf, sizeof(buf)));
 
     if (!ec)
-        std::cout << "Server replied: "
-                  << std::string_view(buf, n) << "\n";
+        std::cout << "Server replied: " << std::string_view(buf, n) << "\n";
 }
 // end::echo_client[]
 
@@ -382,21 +380,19 @@ peer_write(corosio::tcp_socket& s, std::string_view text)
 capy::task<>
 peer_close(corosio::tcp_socket& s)
 {
-    s.close();  // graceful FIN
+    s.close(); // graceful FIN
     co_return;
 }
 
 struct sockets_test
 {
-    void
-    testConstruct()
+    void testConstruct()
     {
         corosio::io_context ioc;
         construct_fragment(ioc);
     }
 
-    void
-    testOpenClose()
+    void testOpenClose()
     {
         corosio::io_context ioc;
         corosio::tcp_socket s(ioc);
@@ -407,12 +403,11 @@ struct sockets_test
         BOOST_TEST(!s.is_open());
     }
 
-    void
-    testReadSome()
+    void testReadSome()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
 
         std::size_t bytes_read = 0;
         capy::run_async(ex)(peer_write(b, "hello"));
@@ -424,8 +419,7 @@ struct sockets_test
         b.close();
     }
 
-    void
-    testReadEof()
+    void testReadEof()
     {
         corosio::io_context ioc;
         // Linger=false => graceful FIN on close.
@@ -444,12 +438,11 @@ struct sockets_test
         a.close();
     }
 
-    void
-    testReadAll()
+    void testReadAll()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
 
         char storage[5];
         std::size_t total = 0;
@@ -463,12 +456,11 @@ struct sockets_test
         b.close();
     }
 
-    void
-    testWriteSome()
+    void testWriteSome()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
 
         std::size_t bytes_written = 0;
         capy::run_async(ex)(write_some_fragment(a, bytes_written));
@@ -479,15 +471,14 @@ struct sockets_test
         b.close();
     }
 
-    void
-    testWriteAll()
+    void testWriteAll()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
 
         std::string_view payload = "payload";
-        std::size_t total = 0;
+        std::size_t total        = 0;
         capy::run_async(ex)(write_all_fragment(
             a, capy::const_buffer(payload.data(), payload.size()), total));
         ioc.run();
@@ -497,8 +488,7 @@ struct sockets_test
         b.close();
     }
 
-    void
-    testCancel()
+    void testCancel()
     {
         corosio::io_context ioc;
         corosio::tcp_socket s(ioc);
@@ -507,8 +497,7 @@ struct sockets_test
         s.close();
     }
 
-    void
-    testMoveAssign()
+    void testMoveAssign()
     {
         corosio::io_context ioc;
         corosio::tcp_socket s1(ioc);
@@ -519,12 +508,11 @@ struct sockets_test
         s1.close();
     }
 
-    void
-    testSendData()
+    void testSendData()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
 
         capy::run_async(ex)(send_data(a));
         ioc.run();
@@ -533,12 +521,11 @@ struct sockets_test
         b.close();
     }
 
-    void
-    testBufferSequences()
+    void testBufferSequences()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
 
         // 16 bytes cover both reads: the first takes at most 8, so
         // data remains for the scatter read regardless of the split.
@@ -550,8 +537,7 @@ struct sockets_test
         b.close();
     }
 
-    void
-    run()
+    void run()
     {
         testConstruct();
         testOpenClose();

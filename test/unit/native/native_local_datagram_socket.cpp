@@ -46,7 +46,8 @@ struct native_local_datagram_socket_test
             decltype(std::declval<local_datagram_socket&>().send_to(
                 std::declval<capy::const_buffer>(),
                 std::declval<local_endpoint>()))>,
-        "native_local_datagram_socket::send_to must shadow local_datagram_socket::send_to");
+        "native_local_datagram_socket::send_to must shadow "
+        "local_datagram_socket::send_to");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_datagram_socket<Backend>&>()
@@ -56,35 +57,40 @@ struct native_local_datagram_socket_test
             decltype(std::declval<local_datagram_socket&>().recv_from(
                 std::declval<capy::mutable_buffer>(),
                 std::declval<local_endpoint&>()))>,
-        "native_local_datagram_socket::recv_from must shadow local_datagram_socket::recv_from");
+        "native_local_datagram_socket::recv_from must shadow "
+        "local_datagram_socket::recv_from");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_datagram_socket<Backend>&>()
                          .connect(std::declval<local_endpoint>())),
             decltype(std::declval<local_datagram_socket&>().connect(
                 std::declval<local_endpoint>()))>,
-        "native_local_datagram_socket::connect must shadow local_datagram_socket::connect");
+        "native_local_datagram_socket::connect must shadow "
+        "local_datagram_socket::connect");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_datagram_socket<Backend>&>()
                          .send(std::declval<capy::const_buffer>())),
             decltype(std::declval<local_datagram_socket&>().send(
                 std::declval<capy::const_buffer>()))>,
-        "native_local_datagram_socket::send must shadow local_datagram_socket::send");
+        "native_local_datagram_socket::send must shadow "
+        "local_datagram_socket::send");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_datagram_socket<Backend>&>()
                          .recv(std::declval<capy::mutable_buffer>())),
             decltype(std::declval<local_datagram_socket&>().recv(
                 std::declval<capy::mutable_buffer>()))>,
-        "native_local_datagram_socket::recv must shadow local_datagram_socket::recv");
+        "native_local_datagram_socket::recv must shadow "
+        "local_datagram_socket::recv");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_local_datagram_socket<Backend>&>()
                          .wait(wait_type::read)),
             decltype(std::declval<local_datagram_socket&>().wait(
                 wait_type::read))>,
-        "native_local_datagram_socket::wait must shadow local_datagram_socket::wait");
+        "native_local_datagram_socket::wait must shadow "
+        "local_datagram_socket::wait");
 
     void testConstruct()
     {
@@ -130,10 +136,9 @@ struct native_local_datagram_socket_test
         BOOST_TEST_EQ(ec1, std::error_code{});
         BOOST_TEST_EQ(ec2, std::error_code{});
 
-        auto task =
-            [](native_local_datagram_socket<Backend>& s,
-               native_local_datagram_socket<Backend>& r,
-               local_endpoint dest) -> capy::task<> {
+        auto task = [](native_local_datagram_socket<Backend>& s,
+                       native_local_datagram_socket<Backend>& r,
+                       local_endpoint dest) -> capy::task<> {
             char const msg[] = "native dgram";
             auto [sec, sn] =
                 co_await s.send_to(capy::const_buffer(msg, sizeof(msg)), dest);
@@ -172,11 +177,10 @@ struct native_local_datagram_socket_test
         BOOST_TEST_EQ(eca, std::error_code{});
         BOOST_TEST_EQ(ecb, std::error_code{});
 
-        auto task =
-            [](native_local_datagram_socket<Backend>& a,
-               native_local_datagram_socket<Backend>& b,
-               local_endpoint a_to_b,
-               local_endpoint b_to_a) -> capy::task<> {
+        auto task = [](native_local_datagram_socket<Backend>& a,
+                       native_local_datagram_socket<Backend>& b,
+                       local_endpoint a_to_b,
+                       local_endpoint b_to_a) -> capy::task<> {
             auto [ec1] = co_await a.connect(a_to_b);
             BOOST_TEST_EQ(ec1, std::error_code{});
             auto [ec2] = co_await b.connect(b_to_a);
@@ -197,8 +201,8 @@ struct native_local_datagram_socket_test
         };
 
         auto ex = ioc.get_executor();
-        capy::run_async(ex)(task(
-            a, b, local_endpoint(path_b), local_endpoint(path_a)));
+        capy::run_async(ex)(
+            task(a, b, local_endpoint(path_b), local_endpoint(path_a)));
         ioc.run();
     }
 
@@ -248,9 +252,9 @@ struct native_local_datagram_socket_test
     void testWait()
     {
         native_io_context<Backend> ioc;
-        auto       ex      = ioc.get_executor();
+        auto ex = ioc.get_executor();
         test::temp_socket_dir rx_tmp;
-        auto       rx_path = rx_tmp.path();
+        auto rx_path = rx_tmp.path();
 
         native_local_datagram_socket<Backend> recv(ioc);
         BOOST_TEST(!recv.open());
@@ -261,7 +265,7 @@ struct native_local_datagram_socket_test
         BOOST_TEST(!send.open());
 
         std::error_code wait_ec;
-        bool            wait_done = false;
+        bool wait_done = false;
 
         auto waiter = [&]() -> capy::task<> {
             auto [ec] = co_await recv.wait(wait_type::read);
@@ -269,10 +273,9 @@ struct native_local_datagram_socket_test
             wait_done = true;
         };
         auto sender = [&]() -> capy::task<> {
-            char dg[1]   = {'X'};
+            char dg[1]                    = {'X'};
             [[maybe_unused]] auto [ec, n] = co_await send.send_to(
-                capy::const_buffer(dg, sizeof(dg)),
-                local_endpoint(rx_path));
+                capy::const_buffer(dg, sizeof(dg)), local_endpoint(rx_path));
         };
 
         capy::run_async(ex)(waiter());
@@ -306,8 +309,8 @@ struct native_local_datagram_socket_test
             auto [e3, n3] = co_await s.recv(capy::mutable_buffer(buf, 1));
             BOOST_TEST(e3 == std::errc::bad_file_descriptor);
 
-            auto [e4, n4] = co_await s.recv_from(
-                capy::mutable_buffer(buf, 1), src);
+            auto [e4, n4] =
+                co_await s.recv_from(capy::mutable_buffer(buf, 1), src);
             BOOST_TEST(e4 == std::errc::bad_file_descriptor);
             done = true;
         };
@@ -323,7 +326,7 @@ struct native_local_datagram_socket_test
         // connect itself yields an error, but the auto-open branch
         // is exercised.
         native_io_context<Backend> ioc;
-        auto ex   = ioc.get_executor();
+        auto ex = ioc.get_executor();
         // temp dir exists, but the socket file inside it does not
         test::temp_socket_dir tmp;
         auto path = tmp.path();
@@ -335,12 +338,11 @@ struct native_local_datagram_socket_test
         bool done = false;
 
         capy::run_async(ex)(
-            [](native_local_datagram_socket<Backend>& sock,
-               local_endpoint ep,
+            [](native_local_datagram_socket<Backend>& sock, local_endpoint ep,
                std::error_code& ec_out, bool& d) -> capy::task<> {
                 auto [ec] = co_await sock.connect(ep);
-                ec_out = ec;
-                d      = true;
+                ec_out    = ec;
+                d         = true;
             }(s, local_endpoint(path), result_ec, done));
 
         ioc.run();

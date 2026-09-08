@@ -23,7 +23,8 @@ namespace {
 // tag::set_ciphersuites[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void restrict_the_tls_1_2_cipher_suites(corosio::tls_context& ctx)
+void
+restrict_the_tls_1_2_cipher_suites(corosio::tls_context& ctx)
 {
     // OpenSSL cipher-list syntax. ECDHE gives forward secrecy and both
     // families named here are AEAD, so this narrows TLS 1.2 to suites
@@ -31,7 +32,7 @@ void restrict_the_tls_1_2_cipher_suites(corosio::tls_context& ctx)
     // unrecognised string is not rejected here -- it surfaces as a
     // handshake failure, so change this list with a test that connects.
     if (auto ec = ctx.set_ciphersuites("ECDHE+AESGCM:ECDHE+CHACHA20"))
-        return;  // report the error
+        return; // report the error
 }
 // end::set_ciphersuites[]
 

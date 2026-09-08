@@ -30,7 +30,7 @@ namespace {
 void
 bench_throughput(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc;
@@ -98,7 +98,7 @@ bench_throughput(bench::state& state)
 void
 bench_bidirectional_throughput(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc;
@@ -202,7 +202,7 @@ bench_bidirectional_throughput(bench::state& state)
 void
 bench_throughput_lockless(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
@@ -270,7 +270,7 @@ bench_throughput_lockless(bench::state& state)
 void
 bench_bidirectional_throughput_lockless(bench::state& state)
 {
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
@@ -378,13 +378,13 @@ make_local_socket_throughput_suite()
 {
     return bench::benchmark_suite("local_socket_throughput")
         .add("unidirectional", bench_throughput)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("unidirectional_lockless", bench_throughput_lockless)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("bidirectional", bench_bidirectional_throughput)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("bidirectional_lockless", bench_bidirectional_throughput_lockless)
-            .range(1024, 1048576, 4);
+        .range(1024, 1048576, 4);
 }
 
 } // namespace asio_bench

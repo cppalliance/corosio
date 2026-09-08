@@ -31,13 +31,14 @@
 #include <iostream>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // Resolving a public hostname needs the network; compiled, never run.
 // tag::forward_resolve[]
-capy::task<> forward_resolve(corosio::resolver& r)
+capy::task<>
+forward_resolve(corosio::resolver& r)
 {
     auto [ec, results] = co_await r.resolve("www.example.com", "https");
     if (ec)
@@ -46,7 +47,8 @@ capy::task<> forward_resolve(corosio::resolver& r)
 // end::forward_resolve[]
 
 // tag::reverse_resolve[]
-capy::task<> reverse_resolve(corosio::resolver& r)
+capy::task<>
+reverse_resolve(corosio::resolver& r)
 {
     corosio::endpoint ep(corosio::ipv4_address({127, 0, 0, 1}), 80);
     auto [ec, result] = co_await r.resolve(ep);

@@ -104,11 +104,10 @@ struct native_tcp_socket_test
     {
         native_io_context<Backend> ioc;
         auto [s1, s2] = test::make_socket_pair<
-            native_tcp_socket<Backend>,
-            native_tcp_acceptor<Backend>>(ioc);
+            native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc);
 
         std::error_code wait_ec;
-        bool            wait_done = false;
+        bool wait_done = false;
 
         auto waiter = [&]() -> capy::task<> {
             auto [ec] = co_await s1.wait(wait_type::write);
@@ -163,8 +162,8 @@ struct native_tcp_socket_test
 
         bool done = false;
         auto task = [&]() -> capy::task<> {
-            auto [ec] = co_await s.connect(
-                endpoint(ipv4_address::loopback(), 1));
+            auto [ec] =
+                co_await s.connect(endpoint(ipv4_address::loopback(), 1));
             BOOST_TEST(ec != std::errc::bad_file_descriptor);
             done = true;
         };
@@ -185,13 +184,13 @@ struct native_tcp_socket_test
         auto task = [&]() -> capy::task<> {
             char buf[8] = {};
 
-            auto [rec, rn] = co_await s.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [rec, rn] =
+                co_await s.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(rec == std::errc::bad_file_descriptor);
             BOOST_TEST_EQ(rn, 0u);
 
-            auto [wec, wn] = co_await s.write_some(
-                capy::const_buffer(buf, sizeof(buf)));
+            auto [wec, wn] =
+                co_await s.write_some(capy::const_buffer(buf, sizeof(buf)));
             BOOST_TEST(wec == std::errc::bad_file_descriptor);
             BOOST_TEST_EQ(wn, 0u);
 

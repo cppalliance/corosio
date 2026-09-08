@@ -15,7 +15,7 @@
 #include <boost/capy/ex/run_async.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::convention[]
 
 #include "test_suite.hpp"
@@ -24,8 +24,7 @@ namespace {
 
 struct index_page_test
 {
-    void
-    run()
+    void run()
     {
         // The convention block is includes and aliases; compiling this
         // TU is the test.

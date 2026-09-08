@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -40,7 +40,7 @@
 #include <boost/capy/cond.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 using namespace std::chrono_literals;
 // end::assume[]
 
@@ -60,7 +60,8 @@ using namespace std::chrono_literals;
 
 namespace {
 
-capy::task<> delay_duration_frag(std::error_code& out)
+capy::task<>
+delay_duration_frag(std::error_code& out)
 {
     // tag::delay_duration[]
     auto [ec] = co_await corosio::delay(500ms);
@@ -70,7 +71,8 @@ capy::task<> delay_duration_frag(std::error_code& out)
     out = ec;
 }
 
-capy::task<> delay_timepoint_frag()
+capy::task<>
+delay_timepoint_frag()
 {
     // tag::delay_timepoint[]
     auto next = std::chrono::steady_clock::now();
@@ -88,12 +90,12 @@ capy::task<> delay_timepoint_frag()
 // This fragment waits on a real 5-minute wall-clock deadline, so
 // (like the connect fragments below) it is compiled but never
 // launched.
-capy::task<> delay_wallclock_frag()
+capy::task<>
+delay_wallclock_frag()
 {
     // tag::delay_wallclock[]
-    auto deadline = std::chrono::system_clock::now() +
-        std::chrono::minutes(5);
-    auto [ec] = co_await corosio::delay(deadline);
+    auto deadline = std::chrono::system_clock::now() + std::chrono::minutes(5);
+    auto [ec]     = co_await corosio::delay(deadline);
     // end::delay_wallclock[]
 }
 
@@ -105,8 +107,7 @@ struct capped_traits
     static std::chrono::system_clock::duration
     to_wait_duration(std::chrono::system_clock::duration d)
     {
-        auto cap = std::chrono::system_clock::duration(
-            std::chrono::seconds(1));
+        auto cap = std::chrono::system_clock::duration(std::chrono::seconds(1));
         return d < cap ? d : cap;
     }
 };
@@ -114,16 +115,17 @@ struct capped_traits
 
 // Same real deadline as the wallclock fragment above: compiled but
 // never launched.
-capy::task<> delay_traits_frag()
+capy::task<>
+delay_traits_frag()
 {
     // tag::delay_traits_use[]
-    auto deadline = std::chrono::system_clock::now() +
-        std::chrono::minutes(5);
-    auto [ec] = co_await corosio::delay<capped_traits>(deadline);
+    auto deadline = std::chrono::system_clock::now() + std::chrono::minutes(5);
+    auto [ec]     = co_await corosio::delay<capped_traits>(deadline);
     // end::delay_traits_use[]
 }
 
-capy::task<> delay_cancel_frag(std::error_code& out)
+capy::task<>
+delay_cancel_frag(std::error_code& out)
 {
     // tag::delay_cancel[]
     auto [ec] = co_await corosio::delay(10s);
@@ -133,13 +135,14 @@ capy::task<> delay_cancel_frag(std::error_code& out)
     out = ec;
 }
 
-capy::task<> timeout_read_frag(
-    corosio::tcp_socket& sock, capy::mutable_buffer buffer,
+capy::task<>
+timeout_read_frag(
+    corosio::tcp_socket& sock,
+    capy::mutable_buffer buffer,
     std::error_code& out)
 {
     // tag::timeout_read[]
-    auto [ec, n] = co_await corosio::timeout(
-        sock.read_some(buffer), 200ms);
+    auto [ec, n] = co_await corosio::timeout(sock.read_some(buffer), 200ms);
 
     if (ec == capy::cond::timeout)
         std::cout << "No data within 200ms\n";
@@ -151,17 +154,17 @@ capy::task<> timeout_read_frag(
 
 // The connect fragments dial real endpoints, so the coroutines are
 // compiled but never launched.
-capy::task<> timeout_deadline_frag(
-    corosio::tcp_socket& sock, corosio::endpoint ep)
+capy::task<>
+timeout_deadline_frag(corosio::tcp_socket& sock, corosio::endpoint ep)
 {
     // tag::timeout_deadline[]
     auto deadline = std::chrono::steady_clock::now() + 5s;
-    auto [ec] = co_await corosio::timeout(sock.connect(ep), deadline);
+    auto [ec]     = co_await corosio::timeout(sock.connect(ep), deadline);
     // end::timeout_deadline[]
 }
 
-capy::task<> timeout_vs_cancel_frag(
-    corosio::tcp_socket& sock, corosio::endpoint ep)
+capy::task<>
+timeout_vs_cancel_frag(corosio::tcp_socket& sock, corosio::endpoint ep)
 {
     // tag::timeout_vs_cancel[]
     auto [ec] = co_await corosio::timeout(sock.connect(ep), 3s);
@@ -175,9 +178,7 @@ capy::task<> timeout_vs_cancel_frag(
 // tag::connect_retry[]
 capy::task<>
 connect_with_deadline(
-    corosio::tcp_socket& sock,
-    corosio::endpoint ep,
-    int max_attempts)
+    corosio::tcp_socket& sock, corosio::endpoint ep, int max_attempts)
 {
     for (int attempt = 0; attempt < max_attempts; ++attempt)
     {
@@ -198,8 +199,7 @@ connect_with_deadline(
 
 struct timers_test
 {
-    void
-    testDelayDuration()
+    void testDelayDuration()
     {
         corosio::io_context ioc;
         std::error_code ec = make_error_code(std::errc::io_error);
@@ -208,8 +208,7 @@ struct timers_test
         BOOST_TEST(!ec);
     }
 
-    void
-    testDelayTimePoint()
+    void testDelayTimePoint()
     {
         corosio::io_context ioc;
         auto start = std::chrono::steady_clock::now();
@@ -219,21 +218,19 @@ struct timers_test
         BOOST_TEST(elapsed >= 1s);
     }
 
-    void
-    testDelayCancel()
+    void testDelayCancel()
     {
         corosio::io_context ioc;
         std::error_code ec;
         std::stop_source source;
         source.request_stop();
-        capy::run_async(ioc.get_executor(), source.get_token())(
-            delay_cancel_frag(ec));
+        capy::run_async(
+            ioc.get_executor(), source.get_token())(delay_cancel_frag(ec));
         ioc.run();
         BOOST_TEST(ec == capy::cond::canceled);
     }
 
-    void
-    testTimeoutRead()
+    void testTimeoutRead()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
@@ -245,8 +242,7 @@ struct timers_test
         BOOST_TEST(ec == capy::cond::timeout);
     }
 
-    void
-    run()
+    void run()
     {
         testDelayDuration();
         testDelayTimePoint();

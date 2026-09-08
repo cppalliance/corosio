@@ -71,8 +71,7 @@ public:
     teardown, and the operation queued behind it therefore completes
     while the context is being destroyed rather than before.
 */
-class pool_release_gate final
-    : public capy::execution_context::service
+class pool_release_gate final : public capy::execution_context::service
 {
     pool_blocker* blocker_ = nullptr;
 

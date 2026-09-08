@@ -118,11 +118,10 @@ struct multishot_acceptor_test
 
         ioc.restart();
         bool accepted = false;
-        capy::run_async(ex)(
-            [](tcp_acceptor& a, bool& done) -> capy::task<> {
-                auto [ec, peer] = co_await a.accept();
-                done = !ec && peer.is_open();
-            }(acc, accepted));
+        capy::run_async(ex)([](tcp_acceptor& a, bool& done) -> capy::task<> {
+            auto [ec, peer] = co_await a.accept();
+            done            = !ec && peer.is_open();
+        }(acc, accepted));
         ioc.run(); // accept consumes the buffered fd
         BOOST_TEST(accepted);
 
@@ -146,21 +145,19 @@ struct multishot_acceptor_test
         endpoint local = acc.local_endpoint();
 
         bool accepted = false;
-        capy::run_async(ex)(
-            [](tcp_acceptor& a, bool& done) -> capy::task<> {
-                auto [ec, peer] = co_await a.accept();
-                done = !ec && peer.is_open();
-            }(acc, accepted));
+        capy::run_async(ex)([](tcp_acceptor& a, bool& done) -> capy::task<> {
+            auto [ec, peer] = co_await a.accept();
+            done            = !ec && peer.is_open();
+        }(acc, accepted));
         // Park the accept without a connection present.
         for (int i = 0; i < 16; ++i)
             ioc.poll();
         BOOST_TEST(!accepted);
 
         tcp_socket client(ioc);
-        capy::run_async(ex)(
-            [](tcp_socket& c, endpoint ep) -> capy::task<> {
-                std::ignore = co_await c.connect(ep);
-            }(client, local));
+        capy::run_async(ex)([](tcp_socket& c, endpoint ep) -> capy::task<> {
+            std::ignore = co_await c.connect(ep);
+        }(client, local));
         for (int i = 0; i < 10000 && !accepted; ++i) // delivery matches waiter
             ioc.poll();
         BOOST_TEST(accepted);
@@ -185,7 +182,7 @@ struct multishot_acceptor_test
             BOOST_TEST(!acc.listen());
             endpoint local = acc.local_endpoint();
 
-            int connected = 0;
+            int connected    = 0;
             auto run_connect = [&](tcp_socket& c) {
                 capy::run_async(ex)(
                     [](tcp_socket& s, endpoint ep, int& n) -> capy::task<> {
@@ -215,8 +212,7 @@ struct multishot_acceptor_test
 };
 
 TEST_SUITE(
-    multishot_acceptor_test,
-    "boost.corosio.native.uring.multishot_acceptor");
+    multishot_acceptor_test, "boost.corosio.native.uring.multishot_acceptor");
 
 } // namespace boost::corosio
 

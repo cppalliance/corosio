@@ -55,15 +55,15 @@ template<auto Backend>
 struct reactor_common_faults
 {
 #if BOOST_COROSIO_HAS_SELECT
-    static constexpr bool is_select = std::is_same_v<
-        std::remove_cvref_t<decltype(Backend)>, select_t>;
+    static constexpr bool is_select =
+        std::is_same_v<std::remove_cvref_t<decltype(Backend)>, select_t>;
 #else
     static constexpr bool is_select = false;
 #endif
 
 #if BOOST_COROSIO_HAS_KQUEUE
-    static constexpr bool is_kqueue = std::is_same_v<
-        std::remove_cvref_t<decltype(Backend)>, kqueue_t>;
+    static constexpr bool is_kqueue =
+        std::is_same_v<std::remove_cvref_t<decltype(Backend)>, kqueue_t>;
 #else
     static constexpr bool is_kqueue = false;
 #endif
@@ -79,8 +79,7 @@ struct reactor_common_faults
 #else
     static constexpr sys spec_write = sys::write;
 #endif
-    static constexpr sys vec_write =
-        is_kqueue ? sys::writev : sys::sendmsg;
+    static constexpr sys vec_write = is_kqueue ? sys::writev : sys::sendmsg;
 
     static endpoint loopback()
     {
@@ -126,15 +125,13 @@ struct reactor_common_faults
             64 * 1024);
 
         std::error_code aec, cec;
-        auto accept_task = [&]() -> capy::task<>
-        {
+        auto accept_task = [&]() -> capy::task<> {
             auto [ec] = co_await acc.accept(s1);
-            aec = ec;
+            aec       = ec;
         };
-        auto connect_task = [&]() -> capy::task<>
-        {
-            auto [ec] = co_await s2.connect(
-                endpoint(ipv4_address::loopback(), port));
+        auto connect_task = [&]() -> capy::task<> {
+            auto [ec] =
+                co_await s2.connect(endpoint(ipv4_address::loopback(), port));
             cec = ec;
         };
         capy::run_async(ex)(accept_task());
@@ -174,7 +171,7 @@ struct reactor_common_faults
             int before = open_fds();
             fault_scope f(sys::socket, EMFILE);
             expect_system_error(
-                [&]{ tcp_acceptor a2(ioc, loopback()); },
+                [&] { tcp_acceptor a2(ioc, loopback()); },
                 std::errc::too_many_files_open);
             BOOST_TEST(f.fired());
             BOOST_TEST_EQ(open_fds(), before);
@@ -201,13 +198,12 @@ struct reactor_common_faults
         auto [d1, peer1] = test::make_socket_pair(ioc);
         auto [d2, peer2] = test::make_socket_pair(ioc);
         std::error_code sync_ec, poll_ec, soerr_ec;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             {
                 tcp_socket s(ioc);
                 fault_scope f(sys::connect, ENETUNREACH);
                 auto [ec] = co_await s.connect(acc.local_endpoint());
-                sync_ec = ec;
+                sync_ec   = ec;
                 BOOST_TEST(f.fired());
             }
             {
@@ -217,7 +213,7 @@ struct reactor_common_faults
                 fault_scope f1(sys::connect, EINPROGRESS);
                 fault_scope f2(sys::poll, EIO);
                 auto [ec] = co_await d1.connect(acc.local_endpoint());
-                poll_ec = ec;
+                poll_ec   = ec;
                 BOOST_TEST(f1.fired());
                 BOOST_TEST(f2.fired());
             }
@@ -225,7 +221,7 @@ struct reactor_common_faults
                 fault_scope f1(sys::connect, EINPROGRESS);
                 fault_scope f2(sys::getsockopt, EBADF);
                 auto [ec] = co_await d2.connect(acc.local_endpoint());
-                soerr_ec = ec;
+                soerr_ec  = ec;
                 BOOST_TEST(f1.fired());
                 BOOST_TEST(f2.fired());
             }
@@ -249,36 +245,35 @@ struct reactor_common_faults
         auto [a, b] = test::make_socket_pair(ioc);
         char buf[8] = "1234567";
         std::error_code rec, wec, rec_multi, wec_multi, drec;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             {
                 fault_scope f(spec_write, EPIPE);
-                auto [ec, n] = co_await a.write_some(
-                    capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await a.write_some(capy::const_buffer(buf, 7));
                 std::ignore = n;
-                wec = ec;
+                wec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 fault_scope f(spec_write, EINTR);
-                auto [ec, n] = co_await a.write_some(
-                    capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await a.write_some(capy::const_buffer(buf, 7));
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!ec);
                 BOOST_TEST_EQ(n, 7u);
             }
             {
                 fault_scope f(sys::recv, ECONNRESET);
-                auto [ec, n] = co_await b.read_some(
-                    capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await b.read_some(capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                rec = ec;
+                rec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 fault_scope f(sys::recv, EINTR);
-                auto [ec, n] = co_await b.read_some(
-                    capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await b.read_some(capy::mutable_buffer(buf, 7));
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!ec);
                 BOOST_TEST_EQ(n, 7u);
@@ -291,8 +286,8 @@ struct reactor_common_faults
             {
                 fault_scope f(vec_write, EPIPE);
                 auto [ec, n] = co_await a.write_some(cb);
-                std::ignore = n;
-                wec_multi = ec;
+                std::ignore  = n;
+                wec_multi    = ec;
                 BOOST_TEST(f.fired());
             }
             {
@@ -310,8 +305,8 @@ struct reactor_common_faults
             {
                 fault_scope f(sys::readv, ECONNRESET);
                 auto [ec, n] = co_await b.read_some(mb);
-                std::ignore = n;
-                rec_multi = ec;
+                std::ignore  = n;
+                rec_multi    = ec;
                 BOOST_TEST(f.fired());
             }
             {
@@ -332,18 +327,17 @@ struct reactor_common_faults
             {
                 fault_scope f1(sys::recv, EAGAIN);
                 fault_scope f2(sys::readv, EIO);
-                auto writer = [&]() -> capy::task<>
-                {
-                    auto [ec, n] = co_await a.write_some(
-                        capy::const_buffer(buf, 4));
+                auto writer = [&]() -> capy::task<> {
+                    auto [ec, n] =
+                        co_await a.write_some(capy::const_buffer(buf, 4));
                     std::ignore = n;
                     BOOST_TEST(!ec);
                 };
                 capy::run_async(ioc.get_executor())(writer());
-                auto [ec, n] = co_await b.read_some(
-                    capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await b.read_some(capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                drec = ec;
+                drec        = ec;
                 BOOST_TEST(f1.fired());
                 BOOST_TEST(f2.fired());
             }
@@ -379,14 +373,14 @@ struct reactor_common_faults
         // path, so the vector form is reachable only from the parked
         // op's reactor retry (reactor_write_op::perform_io).
         fault_scope f(vec_write, EIO);
-        auto writer = [&]() -> capy::task<>
-        {
+        auto writer = [&]() -> capy::task<> {
             std::size_t off = 0;
-            while(off < payload.size())
+            while (off < payload.size())
             {
-                auto [ec, n] = co_await a.write_some(capy::const_buffer(
-                    payload.data() + off, payload.size() - off));
-                if(ec)
+                auto [ec, n] = co_await a.write_some(
+                    capy::const_buffer(
+                        payload.data() + off, payload.size() - off));
+                if (ec)
                 {
                     wec = ec;
                     break;
@@ -395,14 +389,13 @@ struct reactor_common_faults
             }
             a.close();
         };
-        auto reader = [&]() -> capy::task<>
-        {
+        auto reader = [&]() -> capy::task<> {
             std::vector<char> sink(4096);
-            for(;;)
+            for (;;)
             {
                 auto [ec, n] = co_await b.read_some(
                     capy::mutable_buffer(sink.data(), sink.size()));
-                if(ec || n == 0)
+                if (ec || n == 0)
                     break;
             }
         };
@@ -425,11 +418,10 @@ struct reactor_common_faults
             BOOST_TEST(f.fired());
         }
         std::error_code wec;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             fault_scope f(sys::poll, EIO);
             auto [ec] = co_await a.wait(wait_type::write);
-            wec = ec;
+            wec       = ec;
             BOOST_TEST(f.fired());
         };
         capy::run_async(ioc.get_executor())(body());
@@ -460,11 +452,11 @@ struct reactor_common_faults
         // A refused send is not the end of the loop: the peer's receive
         // buffer keeps draining ours, so the window reopens until that
         // is full too.
-        for(int i = 0; i < 512; ++i)
+        for (int i = 0; i < 512; ++i)
             std::ignore = ::send(fd, chunk.data(), chunk.size(), MSG_DONTWAIT);
-        for(int i = 0; i < 4096; ++i)
+        for (int i = 0; i < 4096; ++i)
         {
-            if(::send(fd, chunk.data(), 8, MSG_DONTWAIT) < 0)
+            if (::send(fd, chunk.data(), 8, MSG_DONTWAIT) < 0)
                 return true;
         }
         return false;
@@ -480,7 +472,7 @@ struct reactor_common_faults
     {
         std::vector<char> buf(64 * 1024);
         int const fd = static_cast<int>(s.native_handle());
-        while(::recv(fd, buf.data(), buf.size(), MSG_DONTWAIT) > 0)
+        while (::recv(fd, buf.data(), buf.size(), MSG_DONTWAIT) > 0)
         {
         }
     }
@@ -488,9 +480,11 @@ struct reactor_common_faults
     // Report a kernel this test cannot put into the state it needs.
     static void skip_unfillable(char const* what)
     {
-        std::fprintf(stderr,
+        std::fprintf(
+            stderr,
             "fault harness: the send window would not stay closed on "
-            "this kernel; skipping %s\n", what);
+            "this kernel; skipping %s\n",
+            what);
     }
 
     /* Raise an error condition on the far end of `peer`.
@@ -507,13 +501,12 @@ struct reactor_common_faults
         // of a coroutine, where it would abort the process and hide
         // whichever assertion actually failed.
         BOOST_TEST(peer.is_open());
-        if(!peer.is_open())
+        if (!peer.is_open())
             return;
-        if constexpr(is_select)
+        if constexpr (is_select)
         {
             char oob = '!';
-            BOOST_TEST_EQ(
-                ::send(peer.native_handle(), &oob, 1, MSG_OOB), 1);
+            BOOST_TEST_EQ(::send(peer.native_handle(), &oob, 1, MSG_OOB), 1);
         }
         else
         {
@@ -536,28 +529,25 @@ struct reactor_common_faults
         auto [c, peer] = test::make_socket_pair(ioc);
         std::stop_source guard;
         std::error_code wec;
-        auto waiter = [&]() -> capy::task<>
-        {
+        auto waiter = [&]() -> capy::task<> {
             fault_scope probe(sys::getsockopt, EBADF);
             auto [ec] = co_await c.wait(wait_type::read);
-            wec = ec;
+            wec       = ec;
             BOOST_TEST(probe.fired());
             // An out-of-band byte keeps select's except set raised, so
             // the socket that raised it goes before the next pass.
             peer.close();
             guard.request_stop();
         };
-        auto trigger = [&]() -> capy::task<>
-        {
-            std::ignore = co_await corosio::delay(
-                std::chrono::milliseconds(1));
+        auto trigger = [&]() -> capy::task<> {
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
             raise_error_condition(peer);
         };
         bool expired = false;
         capy::run_async(ioc.get_executor())(waiter());
         capy::run_async(ioc.get_executor())(trigger());
-        capy::run_async(ioc.get_executor(), guard.get_token())(
-            stop_guard(ioc, expired));
+        capy::run_async(
+            ioc.get_executor(), guard.get_token())(stop_guard(ioc, expired));
         ioc.run();
         BOOST_TEST(!expired);
         BOOST_TEST(wec == std::errc::bad_file_descriptor);
@@ -570,26 +560,23 @@ struct reactor_common_faults
         auto [c, peer] = test::make_socket_pair(ioc);
         std::stop_source guard;
         std::error_code wec;
-        auto waiter = [&]() -> capy::task<>
-        {
+        auto waiter = [&]() -> capy::task<> {
             fault_scope probe(sys::getsockopt, EBADF);
             auto [ec] = co_await c.wait(wait_type::error);
-            wec = ec;
+            wec       = ec;
             BOOST_TEST(probe.fired());
             peer.close();
             guard.request_stop();
         };
-        auto trigger = [&]() -> capy::task<>
-        {
-            std::ignore = co_await corosio::delay(
-                std::chrono::milliseconds(1));
+        auto trigger = [&]() -> capy::task<> {
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
             raise_error_condition(peer);
         };
         bool expired = false;
         capy::run_async(ioc.get_executor())(waiter());
         capy::run_async(ioc.get_executor())(trigger());
-        capy::run_async(ioc.get_executor(), guard.get_token())(
-            stop_guard(ioc, expired));
+        capy::run_async(
+            ioc.get_executor(), guard.get_token())(stop_guard(ioc, expired));
         ioc.run();
         BOOST_TEST(!expired);
         BOOST_TEST(wec == std::errc::bad_file_descriptor);
@@ -619,7 +606,7 @@ struct reactor_common_faults
     {
         io_context ioc(Backend);
         auto [c, peer] = make_backpressured_pair(ioc);
-        if(!fill_send_buffer(c))
+        if (!fill_send_buffer(c))
         {
             skip_unfillable("testErrorEventOnParkedWrite");
             return;
@@ -628,33 +615,30 @@ struct reactor_common_faults
         std::stop_source guard;
         std::error_code wec;
         bool done = false, parked = false, probe_fired = false;
-        auto writer = [&]() -> capy::task<>
-        {
+        auto writer = [&]() -> capy::task<> {
             fault_scope probe(sys::getsockopt, EBADF);
-            auto [ec, n] = co_await c.write_some(
-                capy::const_buffer(buf, 7));
-            std::ignore = n;
-            wec = ec;
-            probe_fired = probe.fired();
-            done = true;
+            auto [ec, n] = co_await c.write_some(capy::const_buffer(buf, 7));
+            std::ignore  = n;
+            wec          = ec;
+            probe_fired  = probe.fired();
+            done         = true;
             peer.close();
             guard.request_stop();
         };
-        auto trigger = [&]() -> capy::task<>
-        {
+        auto trigger = [&]() -> capy::task<> {
             parked = !done;
-            if(parked)
+            if (parked)
                 raise_error_condition(peer);
             co_return;
         };
         bool expired = false;
         capy::run_async(ioc.get_executor())(writer());
         capy::run_async(ioc.get_executor())(trigger());
-        capy::run_async(ioc.get_executor(), guard.get_token())(
-            stop_guard(ioc, expired));
+        capy::run_async(
+            ioc.get_executor(), guard.get_token())(stop_guard(ioc, expired));
         ioc.run();
         BOOST_TEST(!expired);
-        if(!parked)
+        if (!parked)
         {
             skip_unfillable("testErrorEventOnParkedWrite");
             return;
@@ -668,7 +652,7 @@ struct reactor_common_faults
     {
         io_context ioc(Backend);
         auto [c, peer] = make_backpressured_pair(ioc);
-        if(!fill_send_buffer(c))
+        if (!fill_send_buffer(c))
         {
             skip_unfillable("testErrorEventOnParkedWaitWrite");
             return;
@@ -676,31 +660,29 @@ struct reactor_common_faults
         std::stop_source guard;
         std::error_code wec;
         bool done = false, parked = false, probe_fired = false;
-        auto waiter = [&]() -> capy::task<>
-        {
+        auto waiter = [&]() -> capy::task<> {
             fault_scope probe(sys::getsockopt, EBADF);
-            auto [ec] = co_await c.wait(wait_type::write);
-            wec = ec;
+            auto [ec]   = co_await c.wait(wait_type::write);
+            wec         = ec;
             probe_fired = probe.fired();
-            done = true;
+            done        = true;
             peer.close();
             guard.request_stop();
         };
-        auto trigger = [&]() -> capy::task<>
-        {
+        auto trigger = [&]() -> capy::task<> {
             parked = !done;
-            if(parked)
+            if (parked)
                 raise_error_condition(peer);
             co_return;
         };
         bool expired = false;
         capy::run_async(ioc.get_executor())(waiter());
         capy::run_async(ioc.get_executor())(trigger());
-        capy::run_async(ioc.get_executor(), guard.get_token())(
-            stop_guard(ioc, expired));
+        capy::run_async(
+            ioc.get_executor(), guard.get_token())(stop_guard(ioc, expired));
         ioc.run();
         BOOST_TEST(!expired);
-        if(!parked)
+        if (!parked)
         {
             skip_unfillable("testErrorEventOnParkedWaitWrite");
             return;
@@ -730,7 +712,7 @@ struct reactor_common_faults
     static bool await_condition(tcp_socket& target, bool and_writable)
     {
         int const fd = static_cast<int>(target.native_handle());
-        for(int i = 0; i < 200; ++i)
+        for (int i = 0; i < 200; ++i)
         {
             fd_set w, ex;
             FD_ZERO(&w);
@@ -738,10 +720,10 @@ struct reactor_common_faults
             FD_SET(fd, &w);
             FD_SET(fd, &ex);
             timeval tv{0, 1000};
-            if(::select(fd + 1, nullptr, and_writable ? &w : nullptr,
-                    &ex, &tv) > 0 &&
-                FD_ISSET(fd, &ex) &&
-                (!and_writable || FD_ISSET(fd, &w)))
+            if (::select(
+                    fd + 1, nullptr, and_writable ? &w : nullptr, &ex, &tv) >
+                    0 &&
+                FD_ISSET(fd, &ex) && (!and_writable || FD_ISSET(fd, &w)))
             {
                 return true;
             }
@@ -792,9 +774,11 @@ struct reactor_common_faults
     // write-direction arms need.
     static void skip_unraisable(char const* what)
     {
-        std::fprintf(stderr,
+        std::fprintf(
+            stderr,
             "fault harness: an urgent byte did not raise the except set "
-            "on this kernel; skipping %s\n", what);
+            "on this kernel; skipping %s\n",
+            what);
     }
 
     /* The write-direction dispatch when the except set is raised
@@ -814,27 +798,26 @@ struct reactor_common_faults
     */
     void testErrorEventOnWritableWrite()
     {
-        if constexpr(is_select)
+        if constexpr (is_select)
         {
             io_context ioc(Backend);
             auto [c, peer] = test::make_socket_pair(ioc);
-            char buf[8] = "1234567";
+            char buf[8]    = "1234567";
             std::stop_source guard;
             std::error_code wec;
             bool open_after = false, spec_fired = false, raised = false;
-            auto writer = [&]() -> capy::task<>
-            {
+            auto writer = [&]() -> capy::task<> {
                 // Refusing the speculative write is what parks the
                 // operation. Backpressure would do it too, but how much
                 // a socket takes before it refuses is the kernel's
                 // business and a window that closed can reopen before
                 // the operation reaches it.
                 fault_scope spec(spec_write, EAGAIN);
-                auto [ec, n] = co_await c.write_some(
-                    capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await c.write_some(capy::const_buffer(buf, 7));
                 std::ignore = n;
-                wec = ec;
-                spec_fired = spec.fired();
+                wec         = ec;
+                spec_fired  = spec.fired();
                 // Nothing broke: the condition was one byte of urgent
                 // data, so the write completes normally.
                 open_after = c.is_open();
@@ -844,8 +827,7 @@ struct reactor_common_faults
                 c.close();
                 guard.request_stop();
             };
-            auto trigger = [&]() -> capy::task<>
-            {
+            auto trigger = [&]() -> capy::task<> {
                 raised = raise_urgent_byte(peer, c);
                 co_return;
             };
@@ -857,7 +839,7 @@ struct reactor_common_faults
             ioc.run();
             BOOST_TEST(!expired);
             BOOST_TEST(spec_fired);
-            if(!raised)
+            if (!raised)
             {
                 skip_unraisable("testErrorEventOnWritableWrite");
                 return;
@@ -869,11 +851,11 @@ struct reactor_common_faults
 
     void testErrorEventOnWritableWaitWrite()
     {
-        if constexpr(is_select)
+        if constexpr (is_select)
         {
             io_context ioc(Backend);
             auto [c, peer] = make_backpressured_pair(ioc);
-            if(!fill_send_buffer(c))
+            if (!fill_send_buffer(c))
             {
                 skip_unfillable("testErrorEventOnWritableWaitWrite");
                 return;
@@ -882,19 +864,17 @@ struct reactor_common_faults
             std::error_code wec;
             bool done = false, parked = false, open_after = false;
             bool raised = false;
-            auto waiter = [&]() -> capy::task<>
-            {
-                auto [ec] = co_await c.wait(wait_type::write);
-                wec = ec;
-                done = true;
+            auto waiter = [&]() -> capy::task<> {
+                auto [ec]  = co_await c.wait(wait_type::write);
+                wec        = ec;
+                done       = true;
                 open_after = c.is_open();
                 c.close();
                 guard.request_stop();
             };
-            auto trigger = [&]() -> capy::task<>
-            {
+            auto trigger = [&]() -> capy::task<> {
                 parked = !done;
-                if(parked)
+                if (parked)
                     raised = raise_writable_error_condition(peer, c);
                 co_return;
             };
@@ -905,12 +885,12 @@ struct reactor_common_faults
                 stop_guard(ioc, expired));
             ioc.run();
             BOOST_TEST(!expired);
-            if(!parked)
+            if (!parked)
             {
                 skip_unfillable("testErrorEventOnWritableWaitWrite");
                 return;
             }
-            if(!raised)
+            if (!raised)
             {
                 skip_unraisable("testErrorEventOnWritableWaitWrite");
                 return;
@@ -934,21 +914,21 @@ struct reactor_common_faults
         io_context ioc(Backend);
         tcp_acceptor acc(ioc, loopback());
         tcp_socket s(ioc);
-        if(s.open(tcp::v6()))
+        if (s.open(tcp::v6()))
         {
-            std::fprintf(stderr,
+            std::fprintf(
+                stderr,
                 "fault harness: no IPv6 socket on this host; skipping "
                 "testSocketFamilyProbeFails\n");
             return;
         }
         std::error_code cec;
         unsigned probes = 0;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body       = [&]() -> capy::task<> {
             fault_scope f(sys::getsockname, EBADF);
             auto [ec] = co_await s.connect(acc.local_endpoint());
-            cec = ec;
-            probes = f.count();
+            cec       = ec;
+            probes    = f.count();
             BOOST_TEST(f.fired());
         };
         capy::run_async(ioc.get_executor())(body());
@@ -970,8 +950,7 @@ struct reactor_common_faults
         io_context ioc(Backend);
         tcp_acceptor acc(ioc, loopback());
         std::error_code rec;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             tcp_socket c(ioc), s(ioc);
             {
                 auto [ec] = co_await c.connect(acc.local_endpoint());
@@ -981,15 +960,14 @@ struct reactor_common_faults
                 auto [ec] = co_await acc.accept(s);
                 BOOST_TEST(!ec);
             }
-            if constexpr(is_select)
+            if constexpr (is_select)
             {
                 // select() reports an exceptional condition only for
                 // out-of-band data; a RST shows up as plain readability
                 // and never reaches the SO_ERROR probe. One OOB byte is
                 // the portable way to raise the except set.
                 char oob = '!';
-                BOOST_TEST_EQ(
-                    ::send(s.native_handle(), &oob, 1, MSG_OOB), 1);
+                BOOST_TEST_EQ(::send(s.native_handle(), &oob, 1, MSG_OOB), 1);
             }
             else
             {
@@ -1003,22 +981,21 @@ struct reactor_common_faults
             fault_scope f2(sys::getsockopt, EBADF);
             // The frame only holds a pointer to the closure, so the
             // name has to outlive the read below, not just the spawn.
-            [[maybe_unused]] auto closer = [&]() -> capy::task<>
-            {
+            [[maybe_unused]] auto closer = [&]() -> capy::task<> {
                 s.close();
                 co_return;
             };
-            if constexpr(!is_select)
+            if constexpr (!is_select)
             {
                 capy::run_async(ioc.get_executor())(closer());
             }
             char buf[4];
             auto [ec, n] = co_await c.read_some(capy::mutable_buffer(buf, 4));
-            std::ignore = n;
-            rec = ec;
+            std::ignore  = n;
+            rec          = ec;
             BOOST_TEST(f1.fired());
             BOOST_TEST(f2.fired());
-            if constexpr(is_select)
+            if constexpr (is_select)
             {
                 // The OOB byte keeps the except set raised, so the
                 // socket that raised it has to go before the run loop
@@ -1042,10 +1019,9 @@ struct reactor_common_faults
         {
             fault_scope f(sys::connect, ENETUNREACH);
             std::error_code cec;
-            auto conn = [&]() -> capy::task<>
-            {
+            auto conn = [&]() -> capy::task<> {
                 auto [ec] = co_await a.connect(b.local_endpoint());
-                cec = ec;
+                cec       = ec;
             };
             capy::run_async(ioc.get_executor())(conn());
             ioc.run();
@@ -1060,14 +1036,13 @@ struct reactor_common_faults
         }
         char buf[8] = "1234567";
         std::error_code stec, rfec, sec, rec, dstec, drfec, dsfec, drrec;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             {
                 fault_scope f(sys::sendmsg, EPERM);
                 auto [ec, n] = co_await a.send_to(
                     capy::const_buffer(buf, 7), b.local_endpoint());
                 std::ignore = n;
-                stec = ec;
+                stec        = ec;
                 BOOST_TEST(f.fired());
             }
             {
@@ -1079,16 +1054,16 @@ struct reactor_common_faults
             {
                 fault_scope f(sys::recvmsg, EIO);
                 endpoint from;
-                auto [ec, n] = co_await b.recv_from(
-                    capy::mutable_buffer(buf, 7), from);
+                auto [ec, n] =
+                    co_await b.recv_from(capy::mutable_buffer(buf, 7), from);
                 std::ignore = n;
-                rfec = ec;
+                rfec        = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 endpoint from;
-                auto [ec, n] = co_await b.recv_from(
-                    capy::mutable_buffer(buf, 7), from);
+                auto [ec, n] =
+                    co_await b.recv_from(capy::mutable_buffer(buf, 7), from);
                 std::ignore = n;
                 BOOST_TEST(!ec);
             }
@@ -1106,22 +1081,21 @@ struct reactor_common_faults
                 udp_socket d(ioc);
                 BOOST_TEST(!d.open(udp::v4()));
                 BOOST_TEST(!d.bind(loopback()));
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
                 fault_scope f1(sys::sendmsg, EAGAIN);
                 fault_scope f2(sys::sendmsg, EIO, 2);
                 auto [ec, n] = co_await d.send_to(
                     capy::const_buffer(buf, 7), b.local_endpoint());
                 std::ignore = n;
-                dsfec = ec;
+                dsfec       = ec;
                 BOOST_TEST(f1.fired());
                 BOOST_TEST(f2.fired());
             }
             {
                 fault_scope f1(sys::recvmsg, EAGAIN);
                 fault_scope f2(sys::recvmsg, EIO, 2);
-                auto sender = [&]() -> capy::task<>
-                {
+                auto sender = [&]() -> capy::task<> {
                     auto [ec, n] = co_await a.send_to(
                         capy::const_buffer(buf, 4), b.local_endpoint());
                     std::ignore = n;
@@ -1129,10 +1103,10 @@ struct reactor_common_faults
                 };
                 capy::run_async(ioc.get_executor())(sender());
                 endpoint from;
-                auto [ec, n] = co_await b.recv_from(
-                    capy::mutable_buffer(buf, 7), from);
+                auto [ec, n] =
+                    co_await b.recv_from(capy::mutable_buffer(buf, 7), from);
                 std::ignore = n;
-                drrec = ec;
+                drrec       = ec;
                 BOOST_TEST(f1.fired());
                 BOOST_TEST(f2.fired());
             }
@@ -1143,41 +1117,39 @@ struct reactor_common_faults
             {
                 fault_scope f(sys::sendmsg, EPERM);
                 auto [ec, n] = co_await a.send(capy::const_buffer(buf, 7));
-                std::ignore = n;
-                sec = ec;
+                std::ignore  = n;
+                sec          = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 auto [ec, n] = co_await a.send(capy::const_buffer(buf, 7));
-                std::ignore = n;
+                std::ignore  = n;
                 BOOST_TEST(!ec);
             }
             {
                 fault_scope f(sys::recvmsg, EIO);
                 auto [ec, n] = co_await b.recv(capy::mutable_buffer(buf, 7));
-                std::ignore = n;
-                rec = ec;
+                std::ignore  = n;
+                rec          = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 auto [ec, n] = co_await b.recv(capy::mutable_buffer(buf, 7));
-                std::ignore = n;
+                std::ignore  = n;
                 BOOST_TEST(!ec);
             }
             {
                 fault_scope f1(sys::recvmsg, EAGAIN);
                 fault_scope f2(sys::recvmsg, EIO, 2);
-                auto sender = [&]() -> capy::task<>
-                {
-                    auto [ec, n] = co_await a.send(
-                        capy::const_buffer(buf, 4));
-                    std::ignore = n;
+                auto sender = [&]() -> capy::task<> {
+                    auto [ec, n] = co_await a.send(capy::const_buffer(buf, 4));
+                    std::ignore  = n;
                     BOOST_TEST(!ec);
                 };
                 capy::run_async(ioc.get_executor())(sender());
                 auto [ec, n] = co_await b.recv(capy::mutable_buffer(buf, 7));
-                std::ignore = n;
-                drfec = ec;
+                std::ignore  = n;
+                drfec        = ec;
                 BOOST_TEST(f1.fired());
                 BOOST_TEST(f2.fired());
             }
@@ -1190,13 +1162,13 @@ struct reactor_common_faults
                     auto [ec] = co_await d.connect(b.local_endpoint());
                     BOOST_TEST(!ec);
                 }
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
                 fault_scope f1(sys::sendmsg, EAGAIN);
                 fault_scope f2(sys::sendmsg, EIO, 2);
                 auto [ec, n] = co_await d.send(capy::const_buffer(buf, 7));
-                std::ignore = n;
-                dstec = ec;
+                std::ignore  = n;
+                dstec        = ec;
                 BOOST_TEST(f1.fired());
                 BOOST_TEST(f2.fired());
             }
@@ -1215,7 +1187,7 @@ struct reactor_common_faults
 
     void run()
     {
-        if(skip_under_valgrind())
+        if (skip_under_valgrind())
             return;
         testAcceptorFails();
         testConnectFails();
@@ -1236,6 +1208,6 @@ struct reactor_common_faults
     }
 };
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

@@ -270,9 +270,9 @@ public:
 
         @return The error code and new absolute position.
     */
-    [[nodiscard]] capy::io_result<std::uint64_t>
-    seek(std::int64_t offset,
-         file_base::seek_basis origin = file_base::seek_set) noexcept;
+    [[nodiscard]] capy::io_result<std::uint64_t> seek(
+        std::int64_t offset,
+        file_base::seek_basis origin = file_base::seek_set) noexcept;
 
 protected:
     /// Default-construct (for derived types that initialize io_object directly).

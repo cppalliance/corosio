@@ -31,20 +31,21 @@ namespace {
 // tag::use_pkcs12_file[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void load_a_pkcs12_bundle(corosio::tls_context& ctx)
+void
+load_a_pkcs12_bundle(corosio::tls_context& ctx)
 {
     // A PKCS#12 bundle carries the private key, so it is encrypted. Keep
     // its passphrase out of the source and out of the shipped binary: read
     // it from the environment, a secrets service, or a prompt.
     char const* passphrase = std::getenv("TLS_PKCS12_PASSPHRASE");
     if (passphrase == nullptr)
-        return;  // report the missing passphrase
+        return; // report the missing passphrase
 
     // A wrong passphrase is not reported here. The bundle is decoded when
     // the native context is first built, so it surfaces as a handshake
     // failure instead.
     if (auto ec = ctx.use_pkcs12_file("credentials.pfx", passphrase))
-        return;  // report the error
+        return; // report the error
 }
 // end::use_pkcs12_file[]
 

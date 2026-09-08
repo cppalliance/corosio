@@ -36,7 +36,8 @@ namespace boost::corosio::test::fault {
 
 namespace {
 
-endpoint loopback()
+endpoint
+loopback()
 {
     return endpoint(ipv4_address::loopback(), 0);
 }
@@ -57,24 +58,20 @@ struct kqueue_faults
 {
     void testConstructorFails()
     {
-        auto expect_throw = [](sys s, unsigned nth, int err, std::errc code)
-        {
+        auto expect_throw = [](sys s, unsigned nth, int err, std::errc code) {
             int before = open_fds();
             fault_scope f(s, err, nth);
-            expect_system_error([&]{ io_context ioc(kqueue); }, code);
+            expect_system_error([&] { io_context ioc(kqueue); }, code);
             BOOST_TEST(f.fired());
             // Every constructor failure past kqueue() closes the queue
             // before throwing (the kqueue_scheduler constructor).
             BOOST_TEST_EQ(open_fds(), before);
         };
-        expect_throw(sys::kqueue, 1, EMFILE,
-            std::errc::too_many_files_open);
+        expect_throw(sys::kqueue, 1, EMFILE, std::errc::too_many_files_open);
         // The only fcntl the scheduler makes is FD_CLOEXEC on the queue.
-        expect_throw(sys::fcntl, 1, EINVAL,
-            std::errc::invalid_argument);
+        expect_throw(sys::fcntl, 1, EINVAL, std::errc::invalid_argument);
         // 1 is the EVFILT_USER registration used to interrupt the wait.
-        expect_throw(sys::kevent, 1, ENOMEM,
-            std::errc::not_enough_memory);
+        expect_throw(sys::kevent, 1, ENOMEM, std::errc::not_enough_memory);
     }
 
     void testOpenFails()
@@ -90,7 +87,7 @@ struct kqueue_faults
         }
         // F_GETFL, F_SETFL(O_NONBLOCK) and F_SETFD(FD_CLOEXEC), in that
         // order (kqueue_traits::set_fd_options).
-        for(unsigned nth : {1u, 2u, 3u})
+        for (unsigned nth : {1u, 2u, 3u})
         {
             int before = open_fds();
             tcp_socket s(ioc);
@@ -161,7 +158,7 @@ struct kqueue_faults
     {
         io_context ioc(kqueue);
         int before = open_fds();
-        auto h = make_native_socket(AF_INET, SOCK_STREAM);
+        auto h     = make_native_socket(AF_INET, SOCK_STREAM);
         make_native_adoptable(h);
         {
             // assign rolls its own registration failure back rather
@@ -206,8 +203,7 @@ struct kqueue_faults
         tcp_acceptor acc(ioc, loopback());
         std::error_code aec, aec2;
         int leaked = 0;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body  = [&]() -> capy::task<> {
             tcp_socket client(ioc), server(ioc);
             {
                 auto [ec] = co_await client.connect(acc.local_endpoint());
@@ -233,7 +229,7 @@ struct kqueue_faults
                 // survives for the retry below.
                 fault_scope f(sys::accept, ECONNABORTED);
                 auto [ec] = co_await acc.accept(server);
-                aec = ec;
+                aec       = ec;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!server.is_open());
             }
@@ -253,8 +249,8 @@ struct kqueue_faults
                 int before = open_fds();
                 fault_scope f(sys::kevent, ENOMEM);
                 auto [ec] = co_await acc.accept(server);
-                aec2 = ec;
-                leaked = open_fds() - before;
+                aec2      = ec;
+                leaked    = open_fds() - before;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!server.is_open());
                 client3.close();
@@ -273,12 +269,11 @@ struct kqueue_faults
         tcp_acceptor acc(ioc, loopback());
         std::error_code fcntl_ecs[3], sockopt_ec;
         int fcntl_leaked[3] = {}, sockopt_leaked = 0;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             // Each failure closes the descriptor accept() already
             // handed back, consuming the queued connection, so every
             // iteration needs a client of its own.
-            for(unsigned nth = 1; nth <= 3; ++nth)
+            for (unsigned nth = 1; nth <= 3; ++nth)
             {
                 tcp_socket c(ioc), s(ioc);
                 {
@@ -290,8 +285,8 @@ struct kqueue_faults
                 // F_SETFL and F_SETFD accept_policy makes on the
                 // accepted fd (accept_policy::do_accept).
                 fault_scope f(sys::fcntl, EINVAL, nth);
-                auto [ec] = co_await acc.accept(s);
-                fcntl_ecs[nth - 1] = ec;
+                auto [ec]             = co_await acc.accept(s);
+                fcntl_ecs[nth - 1]    = ec;
                 fcntl_leaked[nth - 1] = open_fds() - before;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!s.is_open());
@@ -307,8 +302,8 @@ struct kqueue_faults
                 // SO_NOSIGPIPE on the accepted fd, fatal for the
                 // same reason (accept_policy::do_accept).
                 fault_scope f(sys::setsockopt, ENOPROTOOPT);
-                auto [ec] = co_await acc.accept(s);
-                sockopt_ec = ec;
+                auto [ec]      = co_await acc.accept(s);
+                sockopt_ec     = ec;
                 sockopt_leaked = open_fds() - before;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!s.is_open());
@@ -317,7 +312,7 @@ struct kqueue_faults
         };
         capy::run_async(ioc.get_executor())(body());
         ioc.run();
-        for(unsigned i = 0; i < 3; ++i)
+        for (unsigned i = 0; i < 3; ++i)
         {
             BOOST_TEST(fcntl_ecs[i] == std::errc::invalid_argument);
             BOOST_TEST_EQ(fcntl_leaked[i], 0);
@@ -337,10 +332,9 @@ struct kqueue_faults
             io_context ioc(kqueue);
             fault_scope f(sys::kevent, EINTR);
             bool done = false;
-            auto body = [&]() -> capy::task<>
-            {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+            auto body = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
                 done = true;
             };
             capy::run_async(ioc.get_executor())(body());
@@ -353,14 +347,13 @@ struct kqueue_faults
             // (kqueue_scheduler::run_task).
             io_context ioc(kqueue);
             fault_scope f(sys::kevent, EBADF);
-            auto body = [&]() -> capy::task<>
-            {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+            auto body = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
             };
             capy::run_async(ioc.get_executor())(body());
-            expect_system_error([&]{ ioc.run(); },
-                std::errc::bad_file_descriptor);
+            expect_system_error(
+                [&] { ioc.run(); }, std::errc::bad_file_descriptor);
             BOOST_TEST(f.fired());
         }
     }
@@ -395,11 +388,9 @@ struct kqueue_faults
         // work fires and a stop from inside ends run().
         ioc.restart();
         bool done = false;
-        auto body = [&]() -> capy::task<>
-        {
-            std::ignore = co_await corosio::delay(
-                std::chrono::milliseconds(1));
-            done = true;
+        auto body = [&]() -> capy::task<> {
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
+            done        = true;
             ioc.stop();
         };
         capy::run_async(ioc.get_executor())(body());
@@ -409,7 +400,7 @@ struct kqueue_faults
 
     void testSignalReaderRegisterFails()
     {
-        in_child([]{
+        in_child([] {
             io_context ioc(kqueue);
             signal_set ss(ioc);
             std::error_code ec;
@@ -419,7 +410,7 @@ struct kqueue_faults
                 // first; the kevent is the reader registration
                 // (posix_signal_service::add_signal).
                 fault_scope f(sys::kevent, ENOMEM);
-                ec = ss.add(SIGUSR2);
+                ec    = ss.add(SIGUSR2);
                 fired = f.fired();
             }
             // Not latched: the next add retries the registration.
@@ -435,10 +426,13 @@ struct kqueue_faults
         BOOST_TEST(static_cast<int>(h) >= 0);
         make_native_adoptable(h);
         sockaddr_in sa{};
-        sa.sin_family = AF_INET;
+        sa.sin_family      = AF_INET;
         sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        BOOST_TEST_EQ(::bind(static_cast<int>(h),
-            reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+        BOOST_TEST_EQ(
+            ::bind(
+                static_cast<int>(h), reinterpret_cast<sockaddr*>(&sa),
+                sizeof(sa)),
+            0);
         BOOST_TEST_EQ(::listen(static_cast<int>(h), 1), 0);
 
         int const before = open_fds();
@@ -479,10 +473,9 @@ struct kqueue_faults
         // Opened before any arm so its own registration is not counted.
         BOOST_TEST(!client.open(tcp::v4()));
         std::error_code aec;
-        int leaked = 0;
-        unsigned calls = 0;
-        auto accept_body = [&]() -> capy::task<>
-        {
+        int leaked       = 0;
+        unsigned calls   = 0;
+        auto accept_body = [&]() -> capy::task<> {
             int const before = open_fds();
             // Both filters of both descriptors are already registered,
             // so the next descriptor the kqueue is asked to add is the
@@ -491,15 +484,14 @@ struct kqueue_faults
             // run loop makes while the connection is on its way.
             fault_scope f(sys::kevent_register, ENOMEM);
             auto [ec] = co_await acc.accept(server);
-            aec = ec;
-            calls = f.count();
+            aec       = ec;
+            calls     = f.count();
             // The peer implementation owns the accepted descriptor by
             // then, so destroying it is what closes it.
             leaked = open_fds() - before;
             BOOST_TEST(f.fired());
         };
-        auto connect_body = [&]() -> capy::task<>
-        {
+        auto connect_body = [&]() -> capy::task<> {
             auto [ec] = co_await client.connect(acc.local_endpoint());
             BOOST_TEST(!ec);
         };
@@ -514,7 +506,7 @@ struct kqueue_faults
 
     void run()
     {
-        if(skip_under_valgrind())
+        if (skip_under_valgrind())
             return;
         testConstructorFails();
         testOpenFails();
@@ -532,6 +524,6 @@ struct kqueue_faults
 
 TEST_SUITE(kqueue_faults, "boost.corosio.fault.kqueue");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

@@ -28,18 +28,20 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::bind_listen_accept[]
-capy::task<> bind_listen_accept(corosio::io_context& ioc)
+capy::task<>
+bind_listen_accept(corosio::io_context& ioc)
 {
     corosio::local_stream_acceptor acc(ioc);
     if (auto ec = acc.open())
         co_return;
-    if (auto ec = acc.bind(corosio::local_endpoint("/tmp/my_app.sock"),
-                           corosio::bind_option::unlink_existing))
+    if (auto ec = acc.bind(
+            corosio::local_endpoint("/tmp/my_app.sock"),
+            corosio::bind_option::unlink_existing))
         co_return;
     if (auto ec = acc.listen())
         co_return;

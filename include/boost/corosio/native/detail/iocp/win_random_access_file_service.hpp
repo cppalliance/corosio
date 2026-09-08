@@ -49,10 +49,10 @@ public:
     explicit win_random_access_file_service(capy::execution_context& ctx);
     ~win_random_access_file_service();
 
-    win_random_access_file_service(
-        win_random_access_file_service const&)            = delete;
-    win_random_access_file_service& operator=(
-        win_random_access_file_service const&) = delete;
+    win_random_access_file_service(win_random_access_file_service const&) =
+        delete;
+    win_random_access_file_service&
+    operator=(win_random_access_file_service const&) = delete;
 
     io_object::implementation* construct() override;
     void destroy(io_object::implementation* p) override;
@@ -86,14 +86,21 @@ private:
     // NtFlushBuffersFileEx support for data-only sync
     struct io_status_block
     {
-        union { LONG Status; void* Pointer; };
+        union
+        {
+            LONG Status;
+            void* Pointer;
+        };
         ULONG_PTR Information;
     };
 
-    enum { flush_flags_file_data_sync_only = 4 };
+    enum
+    {
+        flush_flags_file_data_sync_only = 4
+    };
 
-    using nt_flush_fn = LONG(NTAPI*)(
-        HANDLE, ULONG, void*, ULONG, io_status_block*);
+    using nt_flush_fn =
+        LONG(NTAPI*)(HANDLE, ULONG, void*, ULONG, io_status_block*);
 
     win_scheduler& sched_;
     BOOST_COROSIO_MSVC_WARNING_PUSH
@@ -194,15 +201,13 @@ raf_concurrent_op::do_complete(
 // win_random_access_file_internal
 // ---------------------------------------------------------------------------
 
-inline
-win_random_access_file_internal::win_random_access_file_internal(
+inline win_random_access_file_internal::win_random_access_file_internal(
     win_random_access_file_service& svc) noexcept
     : svc_(svc)
 {
 }
 
-inline
-win_random_access_file_internal::~win_random_access_file_internal()
+inline win_random_access_file_internal::~win_random_access_file_internal()
 {
     svc_.unregister_impl(*this);
 }
@@ -226,9 +231,8 @@ win_random_access_file_internal::cancel() noexcept
         ::CancelIoEx(handle_, nullptr);
 
     std::lock_guard<win_mutex> lock(ops_mutex_);
-    outstanding_ops_.for_each([](raf_concurrent_op* op) {
-        op->request_cancel();
-    });
+    outstanding_ops_.for_each(
+        [](raf_concurrent_op* op) { op->request_cancel(); });
 }
 
 inline void
@@ -287,7 +291,7 @@ inline native_handle_type
 win_random_access_file_internal::release()
 {
     HANDLE h = handle_;
-    handle_ = INVALID_HANDLE_VALUE;
+    handle_  = INVALID_HANDLE_VALUE;
     return reinterpret_cast<native_handle_type>(h);
 }
 
@@ -318,11 +322,11 @@ win_random_access_file_internal::read_some_at(
 {
     static constexpr std::size_t max_buffers = 16;
 
-    auto* op = new raf_concurrent_op(*this);
+    auto* op     = new raf_concurrent_op(*this);
     op->file_ref = shared_from_this();
 
     op->reset();
-    op->is_read  = true;
+    op->is_read   = true;
     op->h         = h;
     op->ex        = ex;
     op->ec_out    = ec;
@@ -369,7 +373,7 @@ win_random_access_file_internal::read_some_at(
         outstanding_ops_.push_back(op);
     }
 
-    BOOL ok = ::ReadFile(handle_, op->buf, op->buf_len, nullptr, op);
+    BOOL ok   = ::ReadFile(handle_, op->buf, op->buf_len, nullptr, op);
     DWORD err = ok ? 0 : ::GetLastError();
 
     if (err != 0 && err != ERROR_IO_PENDING)
@@ -399,11 +403,11 @@ win_random_access_file_internal::write_some_at(
 {
     static constexpr std::size_t max_buffers = 16;
 
-    auto* op = new raf_concurrent_op(*this);
+    auto* op     = new raf_concurrent_op(*this);
     op->file_ref = shared_from_this();
 
     op->reset();
-    op->is_read  = false;
+    op->is_read   = false;
     op->h         = h;
     op->ex        = ex;
     op->ec_out    = ec;
@@ -449,7 +453,7 @@ win_random_access_file_internal::write_some_at(
         outstanding_ops_.push_back(op);
     }
 
-    BOOL ok = ::WriteFile(handle_, op->buf, op->buf_len, nullptr, op);
+    BOOL ok   = ::WriteFile(handle_, op->buf, op->buf_len, nullptr, op);
     DWORD err = ok ? 0 : ::GetLastError();
 
     if (err != 0 && err != ERROR_IO_PENDING)
@@ -471,8 +475,7 @@ win_random_access_file_internal::write_some_at(
 // win_random_access_file wrapper
 // ---------------------------------------------------------------------------
 
-inline
-win_random_access_file::win_random_access_file(
+inline win_random_access_file::win_random_access_file(
     std::shared_ptr<win_random_access_file_internal> internal) noexcept
     : internal_(std::move(internal))
 {
@@ -572,8 +575,7 @@ win_random_access_file::get_internal() const noexcept
 // win_random_access_file_service
 // ---------------------------------------------------------------------------
 
-inline
-win_random_access_file_service::win_random_access_file_service(
+inline win_random_access_file_service::win_random_access_file_service(
     capy::execution_context& ctx)
     : sched_(ctx.use_service<win_scheduler>())
     , iocp_(sched_.native_handle())
@@ -582,13 +584,12 @@ win_random_access_file_service::win_random_access_file_service(
     if (FARPROC p = ::GetProcAddress(
             ::GetModuleHandleA("NTDLL"), "NtFlushBuffersFileEx"))
     {
-        nt_flush_buffers_file_ex_ = reinterpret_cast<nt_flush_fn>(
-            reinterpret_cast<void*>(p));
+        nt_flush_buffers_file_ex_ =
+            reinterpret_cast<nt_flush_fn>(reinterpret_cast<void*>(p));
     }
 }
 
-inline
-win_random_access_file_service::~win_random_access_file_service()
+inline win_random_access_file_service::~win_random_access_file_service()
 {
     for (auto* w = wrapper_list_.pop_front(); w != nullptr;
          w       = wrapper_list_.pop_front())
@@ -598,8 +599,7 @@ win_random_access_file_service::~win_random_access_file_service()
 inline io_object::implementation*
 win_random_access_file_service::construct()
 {
-    auto internal =
-        std::make_shared<win_random_access_file_internal>(*this);
+    auto internal = std::make_shared<win_random_access_file_internal>(*this);
 
     {
         std::lock_guard<win_mutex> lock(mutex_);
@@ -674,27 +674,20 @@ win_random_access_file_service::open_file(
         disposition = TRUNCATE_EXISTING;
 
     // Build flags — FILE_FLAG_OVERLAPPED + FILE_FLAG_RANDOM_ACCESS
-    DWORD flags = FILE_ATTRIBUTE_NORMAL
-                | FILE_FLAG_OVERLAPPED
-                | FILE_FLAG_RANDOM_ACCESS;
+    DWORD flags =
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED | FILE_FLAG_RANDOM_ACCESS;
     if (mode & file_base::sync_all_on_write)
         flags |= FILE_FLAG_WRITE_THROUGH;
 
     HANDLE h = ::CreateFileW(
-        path.c_str(),
-        access,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr,
-        disposition,
-        flags,
-        nullptr);
+        path.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+        disposition, flags, nullptr);
 
     if (h == INVALID_HANDLE_VALUE)
         return make_err(::GetLastError());
 
     // Register with IOCP
-    if (!::CreateIoCompletionPort(
-            h, static_cast<HANDLE>(iocp_), key_io, 0))
+    if (!::CreateIoCompletionPort(h, static_cast<HANDLE>(iocp_), key_io, 0))
     {
         DWORD err = ::GetLastError();
         ::CloseHandle(h);
@@ -702,8 +695,8 @@ win_random_access_file_service::open_file(
     }
 
     // Handle truncation for create|truncate combo
-    if ((mode & file_base::create) && (mode & file_base::truncate)
-        && disposition == OPEN_ALWAYS)
+    if ((mode & file_base::create) && (mode & file_base::truncate) &&
+        disposition == OPEN_ALWAYS)
     {
         if (!::SetEndOfFile(h))
         {
@@ -713,8 +706,7 @@ win_random_access_file_service::open_file(
         }
     }
 
-    auto& internal =
-        *static_cast<win_random_access_file&>(impl).get_internal();
+    auto& internal = *static_cast<win_random_access_file&>(impl).get_internal();
     internal.handle_ = h;
 
     return {};
@@ -782,8 +774,7 @@ win_random_access_file_service::try_flush_data(HANDLE h) noexcept
     {
         io_status_block status = {};
         if (nt_flush_buffers_file_ex_(
-                h, flush_flags_file_data_sync_only,
-                nullptr, 0, &status) == 0)
+                h, flush_flags_file_data_sync_only, nullptr, 0, &status) == 0)
             return true;
     }
     return false;

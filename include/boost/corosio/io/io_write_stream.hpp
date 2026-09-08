@@ -54,10 +54,13 @@ protected:
 
         write_some_awaitable(
             io_write_stream& ios, ConstBufferSequence buffers) noexcept
-            : ios_(ios), buffers_(std::move(buffers)) {}
+            : ios_(ios)
+            , buffers_(std::move(buffers))
+        {
+        }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return ios_.do_write_some(
                 h, ex, buffers_, this->token_, &this->ec_, &this->bytes_);

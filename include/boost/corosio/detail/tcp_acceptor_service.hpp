@@ -63,8 +63,7 @@ public:
         @return Error code on failure, empty on success.
     */
     virtual std::error_code assign_socket(
-        tcp_acceptor::implementation& impl,
-        native_handle_type fd) = 0;
+        tcp_acceptor::implementation& impl, native_handle_type fd) = 0;
 
     /** Bind an open acceptor to a local endpoint.
 

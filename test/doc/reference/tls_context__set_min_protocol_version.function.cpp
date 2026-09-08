@@ -23,13 +23,14 @@ namespace {
 // tag::set_min_protocol_version[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void require_tls_1_3(corosio::tls_context& ctx)
+void
+require_tls_1_3(corosio::tls_context& ctx)
 {
     // Refuse anything older than TLS 1.3. The default floor is TLS 1.2,
     // which is still appropriate for the public internet; raise it when
     // every peer this context talks to is known to speak TLS 1.3.
     if (auto ec = ctx.set_min_protocol_version(corosio::tls_version::tls_1_3))
-        return;  // report the error
+        return; // report the error
 }
 // end::set_min_protocol_version[]
 

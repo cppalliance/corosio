@@ -185,8 +185,7 @@ class native_tcp_socket : public tcp_socket
             -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return self_.get_impl().wait(
-                h, env->executor, w_, token_, &ec_);
+            return self_.get_impl().wait(h, env->executor, w_, token_, &ec_);
         }
     };
 

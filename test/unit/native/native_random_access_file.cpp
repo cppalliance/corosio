@@ -40,9 +40,9 @@ struct native_random_access_file_test
                              std::uint64_t{0},
                              std::declval<capy::mutable_buffer>())),
             decltype(std::declval<random_access_file&>().read_some_at(
-                std::uint64_t{0},
-                std::declval<capy::mutable_buffer>()))>,
-        "native_random_access_file::read_some_at must shadow random_access_file::read_some_at");
+                std::uint64_t{0}, std::declval<capy::mutable_buffer>()))>,
+        "native_random_access_file::read_some_at must shadow "
+        "random_access_file::read_some_at");
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_random_access_file<Backend>&>()
@@ -50,9 +50,9 @@ struct native_random_access_file_test
                              std::uint64_t{0},
                              std::declval<capy::const_buffer>())),
             decltype(std::declval<random_access_file&>().write_some_at(
-                std::uint64_t{0},
-                std::declval<capy::const_buffer>()))>,
-        "native_random_access_file::write_some_at must shadow random_access_file::write_some_at");
+                std::uint64_t{0}, std::declval<capy::const_buffer>()))>,
+        "native_random_access_file::write_some_at must shadow "
+        "random_access_file::write_some_at");
 
     void testConstruct()
     {
@@ -81,12 +81,12 @@ struct native_random_access_file_test
         native_random_access_file<Backend> f(ioc);
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
 
-        char buf[5] = {};
+        char buf[5]       = {};
         std::size_t n_out = 0;
 
         auto task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await f.read_some_at(
-                3, capy::mutable_buffer(buf, 5));
+            auto [ec, n] =
+                co_await f.read_some_at(3, capy::mutable_buffer(buf, 5));
             BOOST_TEST_EQ(ec, std::error_code{});
             n_out = n;
         };
@@ -108,9 +108,9 @@ struct native_random_access_file_test
             file_base::read_write | file_base::create | file_base::truncate));
 
         std::size_t written = 0;
-        auto task = [&]() -> capy::task<> {
-            auto [ec, n] = co_await f.write_some_at(
-                0, capy::const_buffer("hello", 5));
+        auto task           = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await f.write_some_at(0, capy::const_buffer("hello", 5));
             BOOST_TEST_EQ(ec, std::error_code{});
             written = n;
         };
@@ -136,7 +136,7 @@ struct native_random_access_file_test
 
         bool done = false;
         auto task = [&]() -> capy::task<> {
-            char buf[4] = {};
+            char buf[4]    = {};
             auto [rec, rn] = co_await f.read_some_at(
                 0, capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(rec == std::errc::bad_file_descriptor);
@@ -147,8 +147,8 @@ struct native_random_access_file_test
             BOOST_TEST_EQ(wn, 0u);
 
             // Zero-length at-ops on a closed file still report closed.
-            auto [zrec, zrn] = co_await f.read_some_at(
-                0, capy::mutable_buffer(buf, 0));
+            auto [zrec, zrn] =
+                co_await f.read_some_at(0, capy::mutable_buffer(buf, 0));
             BOOST_TEST(zrec == std::errc::bad_file_descriptor);
             BOOST_TEST_EQ(zrn, 0u);
             done = true;
@@ -169,9 +169,9 @@ struct native_random_access_file_test
 
         random_access_file& base = f;
 
-        char buf[64] = {};
+        char buf[64]      = {};
         std::size_t n_out = 0;
-        auto task = [&]() -> capy::task<> {
+        auto task         = [&]() -> capy::task<> {
             auto [ec, n] = co_await base.read_some_at(
                 0, capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST_EQ(ec, std::error_code{});
@@ -196,7 +196,6 @@ struct native_random_access_file_test
 };
 
 COROSIO_BACKEND_TESTS(
-    native_random_access_file_test,
-    "boost.corosio.native.random_access_file")
+    native_random_access_file_test, "boost.corosio.native.random_access_file")
 
 } // namespace boost::corosio

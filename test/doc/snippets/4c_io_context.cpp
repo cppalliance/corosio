@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -39,7 +39,7 @@
 #include <boost/capy/ex/run_async.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 #include <boost/capy/continuation.hpp>
@@ -58,7 +58,8 @@ namespace {
 
 bool my_coroutine_ran = false;
 
-capy::task<> my_coroutine()
+capy::task<>
+my_coroutine()
 {
     my_coroutine_ran = true;
     co_return;
@@ -97,44 +98,39 @@ protected:
 
 struct io_context_test
 {
-    void
-    testOverview()
+    void testOverview()
     {
         // tag::overview[]
         corosio::io_context ioc;
 
         // ... create I/O objects and launch coroutines ...
 
-        ioc.run();  // Process events until all work completes
+        ioc.run(); // Process events until all work completes
         // end::overview[]
     }
 
-    void
-    testConstructDefault()
+    void testConstructDefault()
     {
         // tag::construct_default[]
         corosio::io_context ioc;
         // end::construct_default[]
     }
 
-    void
-    testConstructHintOne()
+    void testConstructHintOne()
     {
         // tag::construct_hint[]
-        corosio::io_context ioc(1);  // one thread expected to call run()
+        corosio::io_context ioc(1); // one thread expected to call run()
         // end::construct_hint[]
     }
 
-    void
-    testConstructHintFour()
+    void testConstructHintFour()
     {
         // tag::construct_hint[]
-        corosio::io_context ioc(4);  // up to 4 threads expected to call run()
+        corosio::io_context ioc(4); // up to 4 threads expected to call run()
         // end::construct_hint[]
     }
 
-    void
-    testRun()
+    void testRun()
     {
         corosio::io_context ioc;
         // tag::run[]
@@ -144,18 +140,16 @@ struct io_context_test
         BOOST_TEST(n == 0);
     }
 
-    void
-    testRunOne()
+    void testRunOne()
     {
         corosio::io_context ioc;
         // tag::run_one[]
-        std::size_t n = ioc.run_one();  // Returns 0 or 1
+        std::size_t n = ioc.run_one(); // Returns 0 or 1
         // end::run_one[]
         BOOST_TEST(n == 0);
     }
 
-    void
-    testRunFor()
+    void testRunFor()
     {
         corosio::io_context ioc;
         // With no outstanding work both calls return immediately.
@@ -163,27 +157,25 @@ struct io_context_test
         // tag::run_for[]
         using namespace std::chrono_literals;
 
-        auto n = ioc.run_for(100ms);   // Run for 100 milliseconds
-        auto m = ioc.run_until(deadline);  // Run until time point
+        auto n = ioc.run_for(100ms);      // Run for 100 milliseconds
+        auto m = ioc.run_until(deadline); // Run until time point
         // end::run_for[]
         BOOST_TEST(n == 0);
         BOOST_TEST(m == 0);
     }
 
-    void
-    testPoll()
+    void testPoll()
     {
         corosio::io_context ioc;
         // tag::poll[]
-        std::size_t n = ioc.poll();      // All ready handlers
-        std::size_t m = ioc.poll_one();  // At most one ready handler
+        std::size_t n = ioc.poll();     // All ready handlers
+        std::size_t m = ioc.poll_one(); // At most one ready handler
         // end::poll[]
         BOOST_TEST(n == 0);
         BOOST_TEST(m == 0);
     }
 
-    void
-    testStop()
+    void testStop()
     {
         corosio::io_context ioc;
         // tag::stop[]
@@ -192,8 +184,7 @@ struct io_context_test
         BOOST_TEST(ioc.stopped());
     }
 
-    void
-    testStopped()
+    void testStopped()
     {
         corosio::io_context ioc;
         ioc.stop();
@@ -204,23 +195,21 @@ struct io_context_test
         BOOST_TEST(ioc.stopped());
     }
 
-    void
-    testRestart()
+    void testRestart()
     {
         corosio::io_context ioc;
         // tag::restart[]
         ioc.stop();
         // ... do something ...
         ioc.restart();
-        ioc.run();  // Can run again
+        ioc.run(); // Can run again
         // end::restart[]
         // run() stops the context again once the work runs out; the
         // restart() above is what allowed it to process at all.
         BOOST_TEST(ioc.stopped());
     }
 
-    void
-    testExecutor()
+    void testExecutor()
     {
         my_coroutine_ran = false;
         corosio::io_context ioc;
@@ -242,20 +231,18 @@ struct io_context_test
         BOOST_TEST(my_coroutine_ran);
     }
 
-    void
-    testWorkTracking()
+    void testWorkTracking()
     {
         corosio::io_context ioc;
         auto ex = ioc.get_executor();
         // tag::work_tracking[]
-        ex.on_work_started();   // Increment work count
-        ex.on_work_finished();  // Decrement work count
+        ex.on_work_started();  // Increment work count
+        ex.on_work_finished(); // Decrement work count
         // end::work_tracking[]
         BOOST_TEST(ioc.run() == 0);
     }
 
-    void
-    testMultithreaded()
+    void testMultithreaded()
     {
         // tag::multithreaded[]
         corosio::io_context ioc(4);
@@ -270,8 +257,7 @@ struct io_context_test
         BOOST_TEST(threads.size() == 4);
     }
 
-    void
-    testTeardown()
+    void testTeardown()
     {
         // tag::teardown[]
         corosio::io_context ioc(4);
@@ -287,8 +273,7 @@ struct io_context_test
         BOOST_TEST(threads.size() == 4);
     }
 
-    void
-    testServices()
+    void testServices()
     {
         corosio::io_context ioc;
         // tag::services[]
@@ -305,8 +290,7 @@ struct io_context_test
         BOOST_TEST(&ioc.use_service<my_service>() == &svc);
     }
 
-    void
-    run()
+    void run()
     {
         testOverview();
         testConstructDefault();

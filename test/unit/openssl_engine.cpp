@@ -60,8 +60,7 @@ init_pair(
 
 struct openssl_engine_test
 {
-    void
-    testHandshake()
+    void testHandshake()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -86,8 +85,7 @@ struct openssl_engine_test
         BOOST_TEST(!server.received_shutdown());
     }
 
-    void
-    testAppDataBothDirections()
+    void testAppDataBothDirections()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -109,8 +107,7 @@ struct openssl_engine_test
         BOOST_TEST(got == s2c);
     }
 
-    void
-    testCloseNotifySequence()
+    void testCloseNotifySequence()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -181,8 +178,7 @@ struct openssl_engine_test
         BOOST_TEST(server.received_shutdown());
     }
 
-    void
-    testShutdownBeforeHandshake()
+    void testShutdownBeforeHandshake()
     {
         // The reachable truthy shutdown terminal: shutdown before any
         // handshake is an OpenSSL-level error, mapped in one place.
@@ -198,8 +194,7 @@ struct openssl_engine_test
         BOOST_TEST_EQ(client.pending_output(), 0u);
     }
 
-    void
-    testRekeyKeyUpdate()
+    void testRekeyKeyUpdate()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -213,7 +208,7 @@ struct openssl_engine_test
             SSL_key_update(server.native_handle(), SSL_KEY_UPDATE_REQUESTED),
             1);
         std::string const msg = "post-rekey payload";
-        auto r = server.perform(
+        auto r                = server.perform(
             engine_op::write, const_cast<char*>(msg.data()), msg.size());
         BOOST_TEST(!r.ec);
         BOOST_TEST(r.want == engine_want::output_then_done);
@@ -223,7 +218,7 @@ struct openssl_engine_test
         // A staged, unprocessed KeyUpdate is transparent to the
         // peer's write: rekeying gates reads, not writes.
         char one = 'x';
-        r = client.perform(engine_op::write, &one, 1);
+        r        = client.perform(engine_op::write, &one, 1);
         BOOST_TEST(!r.ec);
         BOOST_TEST(test::engine_step_done(r.want));
         BOOST_TEST_EQ(r.bytes, 1u);
@@ -250,8 +245,7 @@ struct openssl_engine_test
         BOOST_TEST(got == "after");
     }
 
-    void
-    testRekeyWriteNeedsRead()
+    void testRekeyWriteNeedsRead()
     {
         // The previously-untestable rekey-needs-read path: a TLS 1.2
         // renegotiation driven from `write` must report `input` after
@@ -260,10 +254,8 @@ struct openssl_engine_test
         // peer's write, so 1.2 is the only way to reach this mapping.
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
-        BOOST_TEST(
-            !client_ctx.set_max_protocol_version(tls_version::tls_1_2));
-        BOOST_TEST(
-            !server_ctx.set_max_protocol_version(tls_version::tls_1_2));
+        BOOST_TEST(!client_ctx.set_max_protocol_version(tls_version::tls_1_2));
+        BOOST_TEST(!server_ctx.set_max_protocol_version(tls_version::tls_1_2));
         ossl_engine client;
         ossl_engine server;
         BOOST_TEST(init_pair(client, server, client_ctx, server_ctx));
@@ -284,7 +276,7 @@ struct openssl_engine_test
         // The write stages the renegotiation ClientHello and needs
         // the server's answer: flush first.
         char two[2] = {'x', 'x'};
-        auto r = client.perform(engine_op::write, two, sizeof(two));
+        auto r      = client.perform(engine_op::write, two, sizeof(two));
         BOOST_TEST(!r.ec);
         BOOST_TEST(r.want == engine_want::output_then_retry);
         BOOST_TEST(test::shuttle_bytes(client, server) > 0);
@@ -320,8 +312,7 @@ struct openssl_engine_test
         BOOST_TEST(got == "xx");
     }
 
-    void
-    testTruncatedRecordWaitsForInput()
+    void testTruncatedRecordWaitsForInput()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -331,7 +322,7 @@ struct openssl_engine_test
         BOOST_TEST(test::run_engine_handshake(client, server));
 
         std::string const msg = "cut mid-record";
-        auto r = server.perform(
+        auto r                = server.perform(
             engine_op::write, const_cast<char*>(msg.data()), msg.size());
         BOOST_TEST(test::engine_step_done(r.want));
         std::vector<unsigned char> wire(server.pending_output());
@@ -351,8 +342,7 @@ struct openssl_engine_test
         BOOST_TEST(
             detail::map_fill_error(
                 engine_op::read, make_error_code(capy::error::eof),
-                client.received_shutdown()) ==
-            capy::error::stream_truncated);
+                client.received_shutdown()) == capy::error::stream_truncated);
 
         // The tail completes the record with no byte loss.
         BOOST_TEST_EQ(client.put_input(wire.data() + cut, 5), 5u);
@@ -368,8 +358,7 @@ struct openssl_engine_test
             capy::error::eof);
     }
 
-    void
-    testCorruptRecordMapsError()
+    void testCorruptRecordMapsError()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -379,7 +368,7 @@ struct openssl_engine_test
         BOOST_TEST(test::run_engine_handshake(client, server));
 
         std::string const msg = "tamper target";
-        auto r = server.perform(
+        auto r                = server.perform(
             engine_op::write, const_cast<char*>(msg.data()), msg.size());
         BOOST_TEST(test::engine_step_done(r.want));
         std::vector<unsigned char> wire(server.pending_output());
@@ -398,8 +387,7 @@ struct openssl_engine_test
         BOOST_TEST_EQ(r.bytes, 0u);
     }
 
-    void
-    testPartialPutInputNoLoss()
+    void testPartialPutInputNoLoss()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -466,8 +454,7 @@ struct openssl_engine_test
         BOOST_TEST_EQ(fed, wire.size());
     }
 
-    void
-    testWriteWantWrite()
+    void testWriteWantWrite()
     {
         // The raw WANT_WRITE branch (distinct from the WANT_READ-with-
         // pending-output branch that also yields output_then_retry):
@@ -486,8 +473,7 @@ struct openssl_engine_test
         int i = 0;
         for (; i < 64; ++i)
         {
-            r = client.perform(
-                engine_op::write, chunk.data(), chunk.size());
+            r = client.perform(engine_op::write, chunk.data(), chunk.size());
             BOOST_TEST(!r.ec);
             if (r.want == engine_want::output_then_retry && r.bytes == 0)
                 break;
@@ -498,8 +484,7 @@ struct openssl_engine_test
         BOOST_TEST(client.pending_output() > 0);
     }
 
-    void
-    testHandshakeFatalGarbageInput()
+    void testHandshakeFatalGarbageInput()
     {
         // A handshake fed non-TLS bytes hits a fatal decode error. Which
         // OpenSSL build sends a fatal alert before giving up (queuing
@@ -518,8 +503,7 @@ struct openssl_engine_test
         BOOST_TEST_EQ(
             server.put_input(garbage, sizeof(garbage)), sizeof(garbage));
 
-        auto const r =
-            server.perform(engine_op::handshake_server, nullptr, 0);
+        auto const r = server.perform(engine_op::handshake_server, nullptr, 0);
         BOOST_TEST(r.ec);
         BOOST_TEST(r.ec.category() == openssl_category());
         BOOST_TEST_EQ(r.bytes, 0u);
@@ -529,8 +513,7 @@ struct openssl_engine_test
             BOOST_TEST(r.want == engine_want::done);
     }
 
-    void
-    run()
+    void run()
     {
         testHandshake();
         testAppDataBothDirections();
@@ -557,16 +540,15 @@ struct openssl_engine_test
 
     // Convert a PEM cert/key fixture to DER with OpenSSL itself so the
     // engine's DER decode branch handles real input.
-    static std::string
-    pem_cert_to_der(char const* pem)
+    static std::string pem_cert_to_der(char const* pem)
     {
-        BIO* bio = BIO_new_mem_buf(pem, -1);
+        BIO* bio   = BIO_new_mem_buf(pem, -1);
         X509* cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
         BIO_free(bio);
         if (!cert)
             return {};
         unsigned char* der = nullptr;
-        int len = i2d_X509(cert, &der);
+        int len            = i2d_X509(cert, &der);
         std::string out;
         if (len > 0)
             out.assign(reinterpret_cast<char*>(der), std::size_t(len));
@@ -575,17 +557,15 @@ struct openssl_engine_test
         return out;
     }
 
-    static std::string
-    pem_key_to_der(char const* pem)
+    static std::string pem_key_to_der(char const* pem)
     {
-        BIO* bio = BIO_new_mem_buf(pem, -1);
-        EVP_PKEY* key =
-            PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
+        BIO* bio      = BIO_new_mem_buf(pem, -1);
+        EVP_PKEY* key = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
         BIO_free(bio);
         if (!key)
             return {};
         unsigned char* der = nullptr;
-        int len = i2d_PrivateKey(key, &der);
+        int len            = i2d_PrivateKey(key, &der);
         std::string out;
         if (len > 0)
             out.assign(reinterpret_cast<char*>(der), std::size_t(len));
@@ -594,8 +574,7 @@ struct openssl_engine_test
         return out;
     }
 
-    void
-    testDerCertificateAndKey()
+    void testDerCertificateAndKey()
     {
         auto cert_der = pem_cert_to_der(test::server_cert_pem);
         auto key_der  = pem_key_to_der(test::server_key_pem);
@@ -603,10 +582,8 @@ struct openssl_engine_test
         BOOST_TEST(!key_der.empty());
 
         tls_context server_ctx;
-        BOOST_TEST(!server_ctx.use_certificate(
-            cert_der, tls_file_format::der));
-        BOOST_TEST(!server_ctx.use_private_key(
-            key_der, tls_file_format::der));
+        BOOST_TEST(!server_ctx.use_certificate(cert_der, tls_file_format::der));
+        BOOST_TEST(!server_ctx.use_private_key(key_der, tls_file_format::der));
         BOOST_TEST(!server_ctx.set_verify_mode(tls_verify_mode::none));
 
         auto client_ctx = test::make_client_context();
@@ -619,16 +596,14 @@ struct openssl_engine_test
     // A password longer than OpenSSL's callback buffer is truncated,
     // which then fails the key decrypt; the context build must latch
     // the failure so the driver refuses the handshake.
-    void
-    testPasswordTruncation()
+    void testPasswordTruncation()
     {
         tls_context ctx;
         BOOST_TEST(
             !ctx.use_certificate(test::server_cert_pem, tls_file_format::pem));
-        ctx.set_password_callback(
-            [](std::size_t, tls_password_purpose) {
-                return std::string(4096, 'x');
-            });
+        ctx.set_password_callback([](std::size_t, tls_password_purpose) {
+            return std::string(4096, 'x');
+        });
         // The oversized password may fail here or latch for init().
         std::ignore = ctx.use_private_key(
             test::encrypted_server_key_pem, tls_file_format::pem);
@@ -640,14 +615,15 @@ struct openssl_engine_test
 
     // A certificate that does not parse in the declared format must
     // fail context setup instead of handshaking without an identity.
-    void
-    testGarbageDerCertificateFailsSetup()
+    void testGarbageDerCertificateFailsSetup()
     {
         tls_context ctx;
         // Whether the garbage surfaces here or at init() is
         // backend-dependent; the init failure below is what matters.
-        std::ignore = ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
-        std::ignore = ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
 
         ossl_engine eng;
         BOOST_TEST(!eng.init(ctx));

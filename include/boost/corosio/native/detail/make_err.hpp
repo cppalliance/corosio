@@ -92,8 +92,7 @@ make_err(unsigned long dwError) noexcept
     if (dwError == WSAENOTSOCK)
         return std::make_error_code(std::errc::not_a_socket);
     if (dwError == WSAEAFNOSUPPORT)
-        return std::make_error_code(
-            std::errc::address_family_not_supported);
+        return std::make_error_code(std::errc::address_family_not_supported);
     if (dwError == WSAEPROTOTYPE)
         return std::make_error_code(std::errc::wrong_protocol_type);
     if (dwError == WSAEADDRINUSE)
@@ -106,8 +105,7 @@ make_err(unsigned long dwError) noexcept
     // condition POSIX spells EAGAIN, which is what the contract
     // promises; no toolchain maps the Win32 spelling to it.
     if (dwError == ERROR_MAX_THRDS_REACHED)
-        return std::make_error_code(
-            std::errc::resource_unavailable_try_again);
+        return std::make_error_code(std::errc::resource_unavailable_try_again);
 
     return std::error_code(static_cast<int>(dwError), std::system_category());
 }

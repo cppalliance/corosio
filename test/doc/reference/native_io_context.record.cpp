@@ -31,10 +31,11 @@ namespace {
 
 #if BOOST_COROSIO_HAS_EPOLL
 // tag::poll[]
-void poll_native_context()
+void
+poll_native_context()
 {
     corosio::native_io_context<corosio::epoll> ctx;
-    ctx.poll();  // devirtualized call, no vtable dispatch
+    ctx.poll(); // devirtualized call, no vtable dispatch
 }
 // end::poll[]
 #endif // BOOST_COROSIO_HAS_EPOLL

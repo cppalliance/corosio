@@ -89,9 +89,7 @@ server_task(corosio::native_tcp_socket<Backend>& sock)
 
 template<auto Backend>
 capy::task<>
-client_task(
-    corosio::native_tcp_socket<Backend>& sock,
-    bench::state& state)
+client_task(corosio::native_tcp_socket<Backend>& sock, bench::state& state)
 {
     std::string buf;
 
@@ -212,7 +210,7 @@ bench_concurrent_connections(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    int num_connections = static_cast<int>(state.range(0));
+    int num_connections           = static_cast<int>(state.range(0));
     state.counters["connections"] = num_connections;
 
     corosio::native_io_context<Backend> ioc;
@@ -235,8 +233,7 @@ bench_concurrent_connections(bench::state& state)
 
     for (int i = 0; i < num_connections; ++i)
     {
-        capy::run_async(ioc.get_executor())(
-            server_task<Backend>(servers[i]));
+        capy::run_async(ioc.get_executor())(server_task<Backend>(servers[i]));
         capy::run_async(ioc.get_executor())(
             client_task<Backend>(clients[i], state));
     }
@@ -291,8 +288,7 @@ bench_multithread(bench::state& state)
 
     for (int i = 0; i < num_connections; ++i)
     {
-        capy::run_async(ioc.get_executor())(
-            server_task<Backend>(servers[i]));
+        capy::run_async(ioc.get_executor())(server_task<Backend>(servers[i]));
         capy::run_async(ioc.get_executor())(
             client_task<Backend>(clients[i], state));
     }
@@ -336,9 +332,9 @@ make_http_server_suite()
         .add("single_conn", bench_single_connection<Backend>)
         .add("single_conn_lockless", bench_single_connection_lockless<Backend>)
         .add("concurrent", bench_concurrent_connections<Backend>)
-            .args({1, 4, 16, 32})
+        .args({1, 4, 16, 32})
         .add("multithread", bench_multithread<Backend>)
-            .args({1, 2, 4, 8, 16});
+        .args({1, 2, 4, 8, 16});
 }
 
 } // namespace corosio_bench

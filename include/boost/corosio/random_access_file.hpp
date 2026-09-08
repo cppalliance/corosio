@@ -142,8 +142,10 @@ public:
         read_some_at_awaitable(
             random_access_file& f,
             std::uint64_t offset,
-            MutableBufferSequence buffers)
-            noexcept(std::is_nothrow_move_constructible_v<MutableBufferSequence>)
+            MutableBufferSequence
+                buffers) noexcept(std::
+                                      is_nothrow_move_constructible_v<
+                                          MutableBufferSequence>)
             : f_(f)
             , offset_(offset)
             , buffers_(std::move(buffers))
@@ -187,8 +189,10 @@ public:
         write_some_at_awaitable(
             random_access_file& f,
             std::uint64_t offset,
-            ConstBufferSequence buffers)
-            noexcept(std::is_nothrow_move_constructible_v<ConstBufferSequence>)
+            ConstBufferSequence
+                buffers) noexcept(std::
+                                      is_nothrow_move_constructible_v<
+                                          ConstBufferSequence>)
             : f_(f)
             , offset_(offset)
             , buffers_(std::move(buffers))

@@ -24,14 +24,14 @@
 #include <iostream>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::timeout[]
 // Precondition: sock is an open, connected socket.
-capy::task<> read_with_deadline(
-    corosio::tcp_socket& sock, capy::mutable_buffer buf)
+capy::task<>
+read_with_deadline(corosio::tcp_socket& sock, capy::mutable_buffer buf)
 {
     auto [ec, n] = co_await corosio::timeout(
         sock.read_some(buf), std::chrono::milliseconds(50));

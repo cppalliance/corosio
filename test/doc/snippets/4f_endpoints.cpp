@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -67,8 +67,7 @@ connecting(corosio::io_context& ioc, bool& done)
     // connect() opens the socket automatically
     corosio::tcp_socket s(ioc);
 
-    corosio::endpoint target(
-        corosio::ipv4_address::loopback(), 8080);
+    corosio::endpoint target(corosio::ipv4_address::loopback(), 8080);
 
     auto [ec] = co_await s.connect(target);
     // end::connecting[]
@@ -81,7 +80,8 @@ accepting(corosio::io_context& ioc)
 {
     // tag::accepting[]
     // Convenience constructor: open + SO_REUSEADDR + bind + listen
-    corosio::tcp_acceptor acc(ioc, corosio::endpoint(8080));  // bind to all interfaces
+    corosio::tcp_acceptor acc(
+        ioc, corosio::endpoint(8080)); // bind to all interfaces
     // end::accepting[]
 }
 
@@ -104,8 +104,7 @@ resolver_results_fragment(corosio::io_context& ioc)
 // Connects to resolved public endpoints; compiled but never executed.
 [[maybe_unused]] capy::task<>
 implicit_conversion(
-    corosio::tcp_socket& s,
-    corosio::resolver_results const& results)
+    corosio::tcp_socket& s, corosio::resolver_results const& results)
 {
     // tag::implicit_conversion[]
     for (corosio::endpoint ep : results)
@@ -119,8 +118,7 @@ implicit_conversion(
 
 struct endpoints_test
 {
-    void
-    testOverview()
+    void testOverview()
     {
         // tag::overview[]
         // IPv4 endpoint
@@ -138,50 +136,45 @@ struct endpoints_test
         BOOST_TEST(bind_ep.v4_address() == corosio::ipv4_address::any());
     }
 
-    void
-    testFromV4()
+    void testFromV4()
     {
         // tag::from_v4[]
-        auto addr = corosio::ipv4_address::loopback();  // 127.0.0.1
+        auto addr = corosio::ipv4_address::loopback(); // 127.0.0.1
         corosio::endpoint ep(addr, 8080);
         // end::from_v4[]
         BOOST_TEST(ep.is_v4());
         BOOST_TEST(ep.port() == 8080);
     }
 
-    void
-    testFromV6()
+    void testFromV6()
     {
         // tag::from_v6[]
-        auto addr = corosio::ipv6_address::loopback();  // ::1
+        auto addr = corosio::ipv6_address::loopback(); // ::1
         corosio::endpoint ep(addr, 8080);
         // end::from_v6[]
         BOOST_TEST(ep.is_v6());
         BOOST_TEST(ep.port() == 8080);
     }
 
-    void
-    testPortOnly()
+    void testPortOnly()
     {
         // tag::port_only[]
-        corosio::endpoint ep(8080);  // IPv4 any address (0.0.0.0)
+        corosio::endpoint ep(8080); // IPv4 any address (0.0.0.0)
         // end::port_only[]
         BOOST_TEST(ep.is_v4());
         BOOST_TEST(ep.v4_address() == corosio::ipv4_address::any());
     }
 
-    void
-    testDefaultCtor()
+    void testDefaultCtor()
     {
         // tag::default_ctor[]
-        corosio::endpoint ep;  // IPv4 any address, port 0
+        corosio::endpoint ep; // IPv4 any address, port 0
         // end::default_ctor[]
         BOOST_TEST(ep.is_v4());
         BOOST_TEST(ep.port() == 0);
     }
 
-    void
-    testQueryType()
+    void testQueryType()
     {
         corosio::endpoint ep(corosio::ipv4_address::loopback(), 8080);
         // tag::query_type[]
@@ -195,18 +188,16 @@ struct endpoints_test
         BOOST_TEST(!ep.is_v6());
     }
 
-    void
-    testPort()
+    void testPort()
     {
         corosio::endpoint ep(corosio::ipv4_address::loopback(), 8080);
         // tag::port[]
-        std::uint16_t port = ep.port();  // Host byte order
+        std::uint16_t port = ep.port(); // Host byte order
         // end::port[]
         BOOST_TEST(port == 8080);
     }
 
-    void
-    testV4Address()
+    void testV4Address()
     {
         corosio::endpoint ep(corosio::ipv4_address::loopback(), 8080);
         // tag::v4_address[]
@@ -219,8 +210,7 @@ struct endpoints_test
         BOOST_TEST(ep.v4_address().to_string() == "127.0.0.1");
     }
 
-    void
-    testV6Address()
+    void testV6Address()
     {
         corosio::endpoint ep(corosio::ipv6_address::loopback(), 8080);
         // tag::v6_address[]
@@ -233,8 +223,7 @@ struct endpoints_test
         BOOST_TEST(ep.v6_address().to_string() == "::1");
     }
 
-    void
-    testLoopback()
+    void testLoopback()
     {
         // tag::loopback[]
         // IPv4 loopback: 127.0.0.1
@@ -247,8 +236,7 @@ struct endpoints_test
         BOOST_TEST(v6_loop.to_string() == "::1");
     }
 
-    void
-    testAny()
+    void testAny()
     {
         // tag::any[]
         // IPv4 any: 0.0.0.0 (all interfaces)
@@ -261,8 +249,7 @@ struct endpoints_test
         BOOST_TEST(v6_any.to_string() == "::");
     }
 
-    void
-    testBroadcast()
+    void testBroadcast()
     {
         // tag::broadcast[]
         // IPv4 broadcast: 255.255.255.255
@@ -271,8 +258,7 @@ struct endpoints_test
         BOOST_TEST(v4_bcast.to_string() == "255.255.255.255");
     }
 
-    void
-    testParseAddresses()
+    void testParseAddresses()
     {
         // tag::make_addresses[]
         // IPv4
@@ -291,8 +277,7 @@ struct endpoints_test
         BOOST_TEST(ep6.v6_address().to_string() == "2001:db8::1");
     }
 
-    void
-    testParseEndpoint()
+    void testParseEndpoint()
     {
         // tag::make_endpoint[]
         auto [ec, ep] = corosio::make_endpoint("192.168.1.1:8080");
@@ -304,23 +289,21 @@ struct endpoints_test
         BOOST_TEST(ep.port() == 8080);
     }
 
-    void
-    testComparison()
+    void testComparison()
     {
         // tag::comparison[]
         corosio::endpoint ep1(corosio::ipv4_address::loopback(), 8080);
         corosio::endpoint ep2(corosio::ipv4_address::loopback(), 8080);
         corosio::endpoint ep3(corosio::ipv4_address::loopback(), 9090);
 
-        assert(ep1 == ep2);  // Same address and port
-        assert(ep1 != ep3);  // Different port
+        assert(ep1 == ep2); // Same address and port
+        assert(ep1 != ep3); // Different port
         // end::comparison[]
         BOOST_TEST(ep1 == ep2);
         BOOST_TEST(ep1 != ep3);
     }
 
-    void
-    testConnecting()
+    void testConnecting()
     {
         // Loopback connect completes either way: refused when the port
         // is closed, connected when something happens to listen.
@@ -331,8 +314,7 @@ struct endpoints_test
         BOOST_TEST(done);
     }
 
-    void
-    run()
+    void run()
     {
         testOverview();
         testFromV4();

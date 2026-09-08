@@ -41,7 +41,7 @@ bench_unix_throughput(bench::state& state)
 {
     using socket_type = corosio::native_local_stream_socket<Backend>;
 
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::native_io_context<Backend> ioc;
@@ -63,7 +63,8 @@ bench_unix_throughput(bench::state& state)
             if (ec)
                 break;
         }
-        std::ignore = writer.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore =
+            writer.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read_task = [&]() -> capy::task<> {
@@ -103,7 +104,7 @@ bench_unix_bidirectional_throughput(bench::state& state)
 {
     using socket_type = corosio::native_local_stream_socket<Backend>;
 
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::native_io_context<Backend> ioc;
@@ -126,7 +127,8 @@ bench_unix_bidirectional_throughput(bench::state& state)
             if (ec)
                 break;
         }
-        std::ignore = sock1.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore =
+            sock1.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read1_task = [&]() -> capy::task<> {
@@ -149,7 +151,8 @@ bench_unix_bidirectional_throughput(bench::state& state)
             if (ec)
                 break;
         }
-        std::ignore = sock2.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore =
+            sock2.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read2_task = [&]() -> capy::task<> {
@@ -192,7 +195,7 @@ bench_unix_throughput_lockless(bench::state& state)
 {
     using socket_type = corosio::native_local_stream_socket<Backend>;
 
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::io_context_options opts;
@@ -216,7 +219,8 @@ bench_unix_throughput_lockless(bench::state& state)
             if (ec)
                 break;
         }
-        std::ignore = writer.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore =
+            writer.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read_task = [&]() -> capy::task<> {
@@ -256,7 +260,7 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
 {
     using socket_type = corosio::native_local_stream_socket<Backend>;
 
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::io_context_options opts;
@@ -281,7 +285,8 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
             if (ec)
                 break;
         }
-        std::ignore = sock1.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore =
+            sock1.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read1_task = [&]() -> capy::task<> {
@@ -304,7 +309,8 @@ bench_unix_bidirectional_throughput_lockless(bench::state& state)
             if (ec)
                 break;
         }
-        std::ignore = sock2.shutdown(corosio::local_stream_socket::shutdown_send);
+        std::ignore =
+            sock2.shutdown(corosio::local_stream_socket::shutdown_send);
     };
 
     auto read2_task = [&]() -> capy::task<> {
@@ -351,17 +357,20 @@ make_local_socket_throughput_suite()
 
     return bench::benchmark_suite("local_socket_throughput", F::none)
         .add("unidirectional", bench_unix_throughput<Backend>)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("unidirectional_lockless", bench_unix_throughput_lockless<Backend>)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("bidirectional", bench_unix_bidirectional_throughput<Backend>)
-            .range(1024, 1048576, 4)
-        .add("bidirectional_lockless", bench_unix_bidirectional_throughput_lockless<Backend>)
-            .range(1024, 1048576, 4);
+        .range(1024, 1048576, 4)
+        .add(
+            "bidirectional_lockless",
+            bench_unix_bidirectional_throughput_lockless<Backend>)
+        .range(1024, 1048576, 4);
 }
 
 } // namespace corosio_bench
 
-COROSIO_SUITE_INSTANTIATE_POSIX(corosio_bench::make_local_socket_throughput_suite)
+COROSIO_SUITE_INSTANTIATE_POSIX(
+    corosio_bench::make_local_socket_throughput_suite)
 
 #endif // BOOST_COROSIO_POSIX

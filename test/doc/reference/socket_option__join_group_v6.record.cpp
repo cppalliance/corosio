@@ -26,11 +26,12 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::join_group_v6[]
-void receive_an_ipv6_multicast_group(corosio::io_context& ioc)
+void
+receive_an_ipv6_multicast_group(corosio::io_context& ioc)
 {
     corosio::udp_socket sock(ioc);
     if (auto ec = sock.open(corosio::udp::v6()))
-        return;  // report the error
+        return; // report the error
 
     // Lets other listeners on this host bind the same port and receive the
     // same group. set_option reports failure by throwing, not by returning
@@ -39,16 +40,17 @@ void receive_an_ipv6_multicast_group(corosio::io_context& ioc)
 
     // Bind before joining: a membership attaches to the socket's local port,
     // so there is nothing for the join to attach to until the bind succeeds.
-    if (auto ec = sock.bind(
-            corosio::endpoint(corosio::ipv6_address::any(), 9000)))
-        return;  // report the error
+    if (auto ec =
+            sock.bind(corosio::endpoint(corosio::ipv6_address::any(), 9000)))
+        return; // report the error
 
     // ff15::1234 is a transient, site-scoped group: the 1 marks it
     // non-permanent, the 5 sets the scope. The interface index selects which
     // link to join on; 0 lets the kernel choose, and if_nametoindex() maps a
     // name such as "eth0".
-    sock.set_option(corosio::socket_option::join_group_v6(
-        corosio::ipv6_address("ff15::1234"), 0));
+    sock.set_option(
+        corosio::socket_option::join_group_v6(
+            corosio::ipv6_address("ff15::1234"), 0));
 }
 // end::join_group_v6[]
 

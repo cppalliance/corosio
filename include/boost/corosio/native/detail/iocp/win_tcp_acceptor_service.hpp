@@ -47,7 +47,8 @@ class BOOST_COROSIO_DECL win_tcp_acceptor_service final
 public:
     using key_type = win_tcp_acceptor_service;
 
-    win_tcp_acceptor_service(capy::execution_context& ctx, win_tcp_service& svc);
+    win_tcp_acceptor_service(
+        capy::execution_context& ctx, win_tcp_service& svc);
 
     io_object::implementation* construct() override;
 
@@ -60,8 +61,8 @@ public:
         tcp_acceptor::implementation& impl, int family, int type, int protocol);
 
     /** Adopt an existing listening socket. */
-    std::error_code assign_socket(
-        tcp_acceptor::implementation& impl, native_handle_type fd);
+    std::error_code
+    assign_socket(tcp_acceptor::implementation& impl, native_handle_type fd);
 
     /** Bind an open acceptor to a local endpoint. */
     std::error_code
@@ -195,8 +196,7 @@ acceptor_wait_op::do_cancel_impl(overlapped_op* base) noexcept
     }
     if (op->acceptor_ptr)
     {
-        op->acceptor_ptr->socket_service().scheduler()
-            .cancel_wait(op);
+        op->acceptor_ptr->socket_service().scheduler().cancel_wait(op);
     }
 }
 
@@ -430,7 +430,8 @@ wait_op::do_complete(
 
 // win_tcp_socket_internal
 
-inline win_tcp_socket_internal::win_tcp_socket_internal(win_tcp_service& svc) noexcept
+inline win_tcp_socket_internal::win_tcp_socket_internal(
+    win_tcp_service& svc) noexcept
     : svc_(svc)
     , conn_(*this)
     , rd_(*this)
@@ -578,7 +579,7 @@ win_tcp_socket_internal::read_some(
 
     auto& op = rd_;
     op.reset();
-    op.is_read  = true;
+    op.is_read   = true;
     op.h         = h;
     op.ex        = d;
     op.ec_out    = ec;
@@ -746,8 +747,8 @@ win_tcp_socket_internal::wait(
         op.wsabuf = WSABUF{0, nullptr};
         op.flags  = 0;
 
-        int result = ::WSARecv(
-            socket_, &op.wsabuf, 1, nullptr, &op.flags, &op, nullptr);
+        int result =
+            ::WSARecv(socket_, &op.wsabuf, 1, nullptr, &op.flags, &op, nullptr);
 
         if (result == SOCKET_ERROR)
         {
@@ -1169,8 +1170,8 @@ win_tcp_service::assign_socket(
     sockaddr_storage remote_storage{};
     int remote_len = sizeof(remote_storage);
     if (::getpeername(
-            sock, reinterpret_cast<sockaddr*>(&remote_storage),
-            &remote_len) == 0)
+            sock, reinterpret_cast<sockaddr*>(&remote_storage), &remote_len) ==
+        0)
         remote_ep = detail::from_sockaddr(remote_storage);
     impl.set_endpoints(local_ep, remote_ep);
 
@@ -1218,7 +1219,8 @@ win_tcp_service::on_pending(overlapped_op* op) noexcept
 }
 
 inline void
-win_tcp_service::on_completion(overlapped_op* op, DWORD error, DWORD bytes) noexcept
+win_tcp_service::on_completion(
+    overlapped_op* op, DWORD error, DWORD bytes) noexcept
 {
     sched_.on_completion(op, error, bytes);
 }
@@ -1393,7 +1395,8 @@ win_tcp_service::listen_acceptor(win_tcp_acceptor_internal& impl, int backlog)
 
 // win_tcp_acceptor_internal
 
-inline win_tcp_acceptor_internal::win_tcp_acceptor_internal(win_tcp_service& svc) noexcept
+inline win_tcp_acceptor_internal::win_tcp_acceptor_internal(
+    win_tcp_service& svc) noexcept
     : svc_(svc)
 {
 }

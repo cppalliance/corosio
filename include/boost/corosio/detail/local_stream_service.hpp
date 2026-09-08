@@ -64,11 +64,10 @@ public:
         @return Error code on failure, empty on success.
     */
     virtual std::error_code assign_socket(
-        local_stream_socket::implementation& impl,
-        native_handle_type fd) = 0;
+        local_stream_socket::implementation& impl, native_handle_type fd) = 0;
 
 protected:
-    local_stream_service() = default;
+    local_stream_service()           = default;
     ~local_stream_service() override = default;
 };
 

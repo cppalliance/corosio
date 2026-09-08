@@ -132,16 +132,13 @@ public:
     void notify_reactor() const;
 
     /// Watch the read end of the POSIX signal self-pipe (see scheduler.hpp).
-    [[nodiscard]] std::error_code
-    register_signal_reader(int read_fd) override
+    [[nodiscard]] std::error_code register_signal_reader(int read_fd) override
     {
         return register_descriptor(read_fd, signal_pipe_reader_.arm());
     }
 
 private:
-    void
-    run_task(lock_type& lock, context_type& ctx,
-        long timeout_us) override;
+    void run_task(lock_type& lock, context_type& ctx, long timeout_us) override;
     void interrupt_reactor() const override;
     long calculate_timeout(long requested_timeout_us) const;
 
@@ -153,7 +150,8 @@ private:
     int pipe_fds_[2]; // [0]=read, [1]=write
 
     // Per-fd tracking for fd_set building
-    mutable std::unordered_map<int, reactor_descriptor_state*> registered_descs_;
+    mutable std::unordered_map<int, reactor_descriptor_state*>
+        registered_descs_;
     mutable int max_fd_ = -1;
 };
 
@@ -328,8 +326,7 @@ select_scheduler::calculate_timeout(long requested_timeout_us) const
 }
 
 inline void
-select_scheduler::run_task(
-    lock_type& lock, context_type& ctx, long timeout_us)
+select_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
 {
     long effective_timeout_us =
         task_interrupted_ ? 0 : calculate_timeout(timeout_us);
@@ -358,8 +355,7 @@ select_scheduler::run_task(
             snapshot[snapshot_count].fd   = fd;
             snapshot[snapshot_count].desc = desc;
             snapshot[snapshot_count].needs_write =
-                (desc->write_op || desc->connect_op ||
-                 desc->wait_write_op);
+                (desc->write_op || desc->connect_op || desc->wait_write_op);
             ++snapshot_count;
         }
     }
@@ -429,7 +425,7 @@ select_scheduler::run_task(
 
         for (int i = 0; i < snapshot_count; ++i)
         {
-            int fd                        = snapshot[i].fd;
+            int fd                         = snapshot[i].fd;
             reactor_descriptor_state* desc = snapshot[i].desc;
 
             std::uint32_t flags = 0;

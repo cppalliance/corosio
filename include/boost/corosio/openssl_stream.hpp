@@ -205,13 +205,16 @@ public:
 
 protected:
     capy::io_task<std::size_t> do_read_some(
-        capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers) override;
+        capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
+        override;
 
     capy::io_task<std::size_t> do_write_some(
-        capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers) override;
+        capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
+        override;
 
 private:
-    static implementation* make_implementation(capy::any_stream& stream, tls_context const& ctx);
+    static implementation*
+    make_implementation(capy::any_stream& stream, tls_context const& ctx);
 };
 
 /** Return the error category for raw OpenSSL errors.
@@ -229,8 +232,7 @@ private:
     @return A reference to a static category object with name
         `"corosio.openssl"`.
 */
-BOOST_COROSIO_DECL std::error_category const&
-openssl_category() noexcept;
+BOOST_COROSIO_DECL std::error_category const& openssl_category() noexcept;
 
 } // namespace boost::corosio
 

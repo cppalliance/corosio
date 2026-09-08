@@ -69,11 +69,11 @@ namespace boost::corosio::detail {
 inline void
 decode_io_result(
     std::error_code* ec_out,
-    bool             cancelled,
-    std::error_code  err,
-    bool             is_read,
-    std::size_t      bytes,
-    bool             empty_buffer) noexcept
+    bool cancelled,
+    std::error_code err,
+    bool is_read,
+    std::size_t bytes,
+    bool empty_buffer) noexcept
 {
     if (!ec_out)
         return;

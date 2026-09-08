@@ -27,13 +27,14 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::udp[]
-std::error_code open_and_bind_a_udp_socket(corosio::io_context& ioc)
+std::error_code
+open_and_bind_a_udp_socket(corosio::io_context& ioc)
 {
     corosio::udp_socket sock(ioc);
     if (auto ec = sock.open(corosio::udp::v4()))
         return ec;
-    if (auto ec = sock.bind(
-            corosio::endpoint(corosio::ipv4_address::any(), 9000)))
+    if (auto ec =
+            sock.bind(corosio::endpoint(corosio::ipv4_address::any(), 9000)))
         return ec;
     return {};
 }
