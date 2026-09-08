@@ -546,6 +546,13 @@ struct openssl_engine_test
         testDerCertificateAndKey();
         testPasswordTruncation();
         testGarbageDerCertificateFailsSetup();
+        testInvertedVersionWindowFailsSetup();
+        testGarbagePrivateKeyFailsSetup();
+        testGarbageCaFailsSetup();
+        testGarbagePkcs12FailsSetup();
+        testGarbageCrlFailsSetup();
+        testInvalidCipherListFailsSetup();
+        testInvalidTls13CiphersuitesFailsSetup();
     }
 
     // Convert a PEM cert/key fixture to DER with OpenSSL itself so the
@@ -641,6 +648,115 @@ struct openssl_engine_test
         // backend-dependent; the init failure below is what matters.
         std::ignore = ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
         std::ignore = ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // An inverted protocol-version window (min > max) admits no version
+    // and must fail context setup closed.
+    void testInvertedVersionWindowFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore = ctx.set_min_protocol_version(tls_version::tls_1_3);
+        std::ignore = ctx.set_max_protocol_version(tls_version::tls_1_2);
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // A private key that does not parse must fail setup rather than
+    // handshake without a usable key.
+    void testGarbagePrivateKeyFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore = ctx.use_private_key(
+            "-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----\n",
+            tls_file_format::pem);
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // A trust anchor that does not parse must fail setup.
+    void testGarbageCaFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore = ctx.add_certificate_authority(
+            "-----BEGIN CERTIFICATE-----\nnope\n-----END CERTIFICATE-----\n");
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // A PKCS#12 bundle that does not decode must fail setup closed, not
+    // leave the context silently credential-less.
+    void testGarbagePkcs12FailsSetup()
+    {
+        tls_context ctx;
+        std::ignore = ctx.use_pkcs12("not-a-pkcs12-bundle", "password");
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // A CRL that does not parse must fail setup when revocation checking
+    // is enabled.
+    void testGarbageCrlFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        ctx.set_revocation_policy(tls_revocation_policy::hard_fail);
+        std::ignore = ctx.add_crl(
+            "-----BEGIN X509 CRL-----\nnope\n-----END X509 CRL-----\n");
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // A cipher list OpenSSL rejects must fail setup.
+    void testInvalidCipherListFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore = ctx.set_ciphersuites("this-is-not-a-cipher");
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // A TLS 1.3 ciphersuite string OpenSSL rejects must fail setup.
+    void testInvalidTls13CiphersuitesFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore = ctx.set_ciphersuites_tls13("TLS_NOT_A_REAL_SUITE");
 
         ossl_engine eng;
         BOOST_TEST(!eng.init(ctx));
